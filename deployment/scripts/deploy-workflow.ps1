@@ -29,7 +29,7 @@
     Defaults to $env:TEMP\sfl-deploy
 
 .EXAMPLE
-    .\deploy-workflow.ps1 -Workflow weekly-repo-audit -Repos "HemSoft/hs-buddy"
+    .\deploy-workflow.ps1 -Workflow repo-audit -Repos "HemSoft/hs-buddy"
     .\deploy-workflow.ps1 -Workflow daily-repo-status -Repos "HemSoft/app1,HemSoft/app2" -DryRun
 #>
 

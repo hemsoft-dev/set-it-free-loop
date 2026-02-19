@@ -11,7 +11,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 | Name | Category | Trigger | Risk | Outcome | Version |
 |------|----------|---------|------|---------|---------|
 | [daily-repo-status](#daily-repo-status) | reporting | Schedule — daily | trivial | `type:report` issue with daily activity summary | 1.0.0 |
-| [weekly-repo-audit](#weekly-repo-audit) | quality | Schedule — Mondays 14:17 UTC | low | `type:report` issue with findings + recommendations | 1.0.0 |
+| [repo-audit](#repo-audit) | quality | Schedule — daily | low | `type:report` issue with findings + recommendations | 1.1.0 |
 
 ---
 
@@ -38,17 +38,17 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 ---
 
-### weekly-repo-audit
+### repo-audit
 
-**File**: [`deployment/workflows/weekly-repo-audit.md`](deployment/workflows/weekly-repo-audit.md)
+**File**: [`deployment/workflows/repo-audit.md`](deployment/workflows/repo-audit.md)
 
-**What it does**: Runs a high-signal repository audit every Monday. Detects documentation drift, stale artifacts, configuration hygiene risks, and cross-reference mismatches.
+**What it does**: Runs a high-signal repository audit daily. Detects documentation drift, stale artifacts, configuration hygiene risks, and cross-reference mismatches.
 
-**Output**: One `type:report` issue per week with an executive summary, findings table (severity + confidence), and prioritized recommendations. A human reviewer can promote findings to `type:action-item` + `agent:fixable` to authorize automated fixes.
+**Output**: One `type:report` issue per day with an executive summary, findings table (severity + confidence), and prioritized recommendations. A human reviewer can promote findings to `type:action-item` + `agent:fixable` to authorize automated fixes.
 
 **Deploy command**:
 ```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Workflow weekly-repo-audit -Repos "org/your-repo"
+.\deployment\scripts\deploy-workflow.ps1 -Workflow repo-audit -Repos "org/your-repo"
 ```
 
 **Acceptance criteria met**:

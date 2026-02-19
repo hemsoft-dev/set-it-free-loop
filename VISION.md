@@ -104,7 +104,7 @@ Consumer repo .github/workflows/{name}.md ← IN USE
 Consumer repos reference workflows by SHA pin in the `source:` field:
 
 ```yaml
-source: HemSoft/set-it-free-loop/deployment/workflows/weekly-repo-audit.md@<sha>
+source: HemSoft/set-it-free-loop/deployment/workflows/repo-audit.md@<sha>
 ```
 
 SHA pinning ensures: (1) reproducibility — runs exactly what was tested, (2) security — no silent upstream changes, (3) controlled upgrades — you choose when to move to a new SHA.

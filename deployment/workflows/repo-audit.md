@@ -1,11 +1,10 @@
 ---
 description: |
-  This workflow runs a weekly repository audit to detect documentation drift,
+  This workflow runs a daily repository audit to detect documentation drift,
   stale artifacts, configuration hygiene issues, and cross-reference mismatches.
 
 on:
-  schedule:
-    - cron: "17 14 * * 1"
+  schedule: daily
   workflow_dispatch:
 
 permissions:
@@ -26,23 +25,22 @@ safe-outputs:
 
 sfl:
   status: active
-  version: "1.0.0"
+  version: "1.1.0"
   category: quality
   risk-class: low
   outcome-definition: |
-    One audit issue per week surfacing documentation drift, stale artifacts,
+    One audit issue per day surfacing documentation drift, stale artifacts,
     and configuration hygiene risks with prioritized recommendations.
     KPI: >80% of findings are actionable within 2 weeks of creation.
   acceptance-criteria:
     - Runs without error on a repo with no prior issues
     - Creates exactly one issue per run (no duplicates on re-run)
     - Findings table includes severity and confidence columns
-    - Recommendations are labeled "Do now", "Do next", "Later"
     - Tone is practical and signal-focused; avoids speculative findings
   source-repo: HemSoft/set-it-free-loop
 ---
 
-# Weekly Repo Audit
+# Repo Audit
 
 Run a high-signal repository audit and publish exactly one actionable weekly report issue.
 

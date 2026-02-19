@@ -57,7 +57,7 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 ### 2. Deploy a workflow
 
 ```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Workflow weekly-repo-audit -Repos "org/repo1,org/repo2"
+.\deployment\scripts\deploy-workflow.ps1 -Workflow repo-audit -Repos "org/repo1,org/repo2"
 ```
 
 ### 3. Review the catalog
