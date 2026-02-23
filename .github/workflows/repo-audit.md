@@ -76,6 +76,46 @@ Run a high-signal repository audit and publish exactly one actionable weekly rep
   - Recommended actions labeled "Do now", "Do next", "Later"
   - A short "No action required" section if everything looks healthy
 
+### Per-finding issues (grouped by category)
+
+**Group findings by category and fix pattern.** Do NOT create one issue per
+individual finding. Instead, create one issue per group of related,
+mechanically similar fixes that share the same remediation approach.
+
+For example:
+- 50 "add `role` attribute" a11y warnings → ONE issue: "Fix accessibility roles"
+- 12 unused exports across 6 files → ONE issue: "Remove unused exports"
+- 3 `useState` lazy init fixes → ONE issue: "Fix useState lazy initialization"
+
+Each grouped issue must meet ALL of the following criteria:
+
+- Every fix in the group uses the **same mechanical pattern**
+- Each individual fix is **deterministic** — one clear correct outcome
+- Risk class is `risk:trivial` or `risk:low`
+- No user-facing behavioral change is required
+
+Label each agent-fixable issue with: `type:action-item`, `agent:fixable`, and
+the appropriate risk label (`risk:trivial` or `risk:low`).
+
+Issue title format: `[repo-audit] <short description of the group>`
+
+Issue body must include:
+
+- **Category**: The shared finding category
+- **Pattern**: The common fix pattern
+- **Affected files**: A checklist of every file and line
+- **Acceptance criteria**: How to verify the group of fixes is correct
+- **Risk**: `risk:trivial` or `risk:low` with justification
+
+Do NOT create agent-fixable issues for:
+
+- Findings requiring architectural decisions
+- Findings where multiple valid fixes exist per instance
+- Anything with risk:medium or higher
+- Groups that would touch more than 15 files (split into smaller groups)
+
+Cap total agent-fixable issues at 3 per run.
+
 - Keep tone concise and practical.
 - Prioritize signal over volume; avoid speculative findings.
 

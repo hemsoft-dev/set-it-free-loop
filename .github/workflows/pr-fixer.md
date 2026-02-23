@@ -97,12 +97,43 @@ analyzer comments. If ALL three verdicts say `**PASS**`, call `noop` and exit.
 
 Read PR description, linked issue, diff, and full file contents.
 
-## Step 7 — Check out the PR branch
+## Step 7 — Check out the PR branch and rebase onto main
 
 ```bash
-git fetch origin <head-branch-name>
+git fetch origin main <head-branch-name>
 git checkout <head-branch-name>
 ```
+
+### Rebase onto latest main
+
+Before implementing any fixes, rebase the branch onto the latest `main`:
+
+```bash
+git rebase origin/main
+```
+
+If the rebase completes cleanly, continue to Step 8.
+
+### Handling rebase conflicts
+
+If `git rebase` fails with merge conflicts:
+
+1. **Read each conflicting file** — look for `<<<<<<<`, `=======`, `>>>>>>>` markers
+2. **Resolve the conflicts** — for `risk:trivial` / `risk:low` fixes, the
+   resolution is usually straightforward
+3. **Stage resolved files** and continue:
+   ```bash
+   git add <resolved-file>
+   git rebase --continue
+   ```
+4. Repeat for each conflicting commit
+
+If you **cannot confidently resolve** a conflict:
+
+1. Abort the rebase: `git rebase --abort`
+2. Post a comment via `update_issue` explaining the conflict
+3. Add `agent:human-required` label
+4. Exit
 
 ## Step 8 — Implement all fixes
 
@@ -167,5 +198,8 @@ _None._
 - Never modify the linked issue's labels
 - Never remove `agent:human-required`
 - If pushing fails, post a comment and add `agent:human-required`
+- Always rebase onto `origin/main` before implementing fixes (Step 7)
+- Attempt to resolve rebase conflicts before escalating — only escalate if
+  resolution is ambiguous or outside the PR's scope
 - At most 5 `update_issue` calls per run
 - When findings conflict, prefer security over style

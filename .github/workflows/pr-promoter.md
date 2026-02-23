@@ -146,3 +146,6 @@ Only valid after Step 8 confirms PR is non-draft.
 - Never close or merge the PR — only draft → ready-for-review
 - Never apply `human:ready-for-review` to a draft PR
 - If `gh pr ready` fails, call `noop` and exit
+- If `gh pr merge --squash` fails (e.g., merge conflict), do NOT retry.
+  Instead: post a comment explaining the failure, add `agent:human-required`
+  label, and exit
