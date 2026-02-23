@@ -73,11 +73,11 @@ Extract:
 - **Finding**: the file path(s) and exact problem described
 - **Fix**: precisely what change to make
 - **Acceptance criteria**: how to verify the fix is correct
-- **Risk**: must be `risk:trivial` or `risk:low`
+- **Risk**: note the risk level for awareness (e.g. `risk:trivial`, `risk:low`, `risk:medium`)
 
-If any section is missing, or if risk is `risk:medium` or higher, or if the
-fix would touch more than 3 files: add label `agent:human-required`, remove
-`agent:in-progress`, post a comment explaining the reason, and exit.
+If any of the three required sections (Finding, Fix, Acceptance criteria) is
+missing: add label `agent:human-required`, remove `agent:in-progress`, post a
+comment explaining the reason, and exit.
 
 ## Step 4 — Inspect the codebase
 
