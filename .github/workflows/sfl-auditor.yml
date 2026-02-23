@@ -108,6 +108,38 @@ jobs:
           echo "conflicting_fixed=$FIXED" >> "$GITHUB_OUTPUT"
           echo "Fixed $FIXED conflicting label issues"
 
+      - name: "Check: action items missing agent:fixable"
+        id: missing-fixable
+        run: |
+          set -euo pipefail
+
+          FIXED=0
+
+          # Find open issues with type:action-item + audit but no agent lifecycle label
+          CANDIDATES=$(gh issue list --repo "$REPO" --state open \
+            --label "type:action-item" --label "audit" \
+            --json number,labels --jq '.[] |
+              select(
+                (.labels | map(.name) |
+                  all(. != "agent:fixable" and . != "agent:in-progress" and
+                      . != "agent:human-required" and . != "agent:pause" and
+                      . != "agent:escalated"))
+              ) | .number')
+
+          for ISSUE_NUM in $CANDIDATES; do
+            echo "Issue #$ISSUE_NUM has type:action-item + audit but missing agent:fixable — adding it"
+
+            gh issue edit "$ISSUE_NUM" --repo "$REPO" --add-label "agent:fixable"
+
+            gh issue comment "$ISSUE_NUM" --repo "$REPO" \
+              --body "🔧 **SFL Auditor**: This action item was missing \`agent:fixable\`. Added it so the Issue Processor can claim it on the next cycle."
+
+            FIXED=$((FIXED + 1))
+          done
+
+          echo "missing_fixable_fixed=$FIXED" >> "$GITHUB_OUTPUT"
+          echo "Fixed $FIXED action items missing agent:fixable"
+
       - name: "Check: orphaned agent PRs"
         id: orphaned-prs
         run: |
@@ -171,10 +203,11 @@ jobs:
         run: |
           ORPHANED_LABELS="${{ steps.orphaned-labels.outputs.orphaned_labels_fixed }}"
           CONFLICTING="${{ steps.conflicting.outputs.conflicting_fixed }}"
+          MISSING_FIXABLE="${{ steps.missing-fixable.outputs.missing_fixable_fixed }}"
           ORPHANED_PRS="${{ steps.orphaned-prs.outputs.orphaned_prs_found }}"
           PAUSED="${{ steps.paused.outputs.unexplained_pause_found }}"
 
-          TOTAL=$((ORPHANED_LABELS + CONFLICTING + ORPHANED_PRS + PAUSED))
+          TOTAL=$((ORPHANED_LABELS + CONFLICTING + MISSING_FIXABLE + ORPHANED_PRS + PAUSED))
 
           echo "## SFL Auditor Summary"
           echo ""
@@ -182,6 +215,7 @@ jobs:
           echo "|-------|-------|"
           echo "| Orphaned in-progress labels fixed | $ORPHANED_LABELS |"
           echo "| Conflicting labels fixed | $CONFLICTING |"
+          echo "| Action items missing agent:fixable fixed | $MISSING_FIXABLE |"
           echo "| Orphaned agent PRs flagged | $ORPHANED_PRS |"
           echo "| Unexplained pauses flagged | $PAUSED |"
           echo ""

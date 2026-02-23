@@ -257,16 +257,16 @@ function Deploy-ToRepo([string]$TargetRepo) {
             $owner = $TargetRepo.Split("/")[0]
             $repo  = $TargetRepo.Split("/")[1]
             $badgeUrl = "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2F$owner%2F$repo%2Fmain%2Fsfl.json&query=%24.version&prefix=v&label=Set%20it%20Free%20Loop&color=FFD700&style=flat&logo=githubactions&logoColor=white"
-            $badgeMarkdown = "[![Set it Free Loop]($badgeUrl)](https://github.com/HemSoft/set-it-free-loop)"
-            $badgeBlock = "<!-- SFL_BADGE_START -->`n$badgeMarkdown`n<!-- SFL_BADGE_END -->"
+            $badgeLine = "[![Set it Free Loop]($badgeUrl)](https://github.com/HemSoft/set-it-free-loop)"
+            $badgeWithMarker = "$badgeLine`n<!-- SFL_BADGE: auto-updated by deploy-workflow.ps1 -->"
 
-            if ($readmeContent -match '(?s)<!-- SFL_BADGE_START -->.*?<!-- SFL_BADGE_END -->') {
-                # Replace existing badge block
-                $readmeContent = $readmeContent -replace '(?s)<!-- SFL_BADGE_START -->.*?<!-- SFL_BADGE_END -->', $badgeBlock
+            if ($readmeContent -match '(?m)^.*<!-- SFL_BADGE:.*-->.*$') {
+                # Find the badge line above the marker and replace both lines
+                $readmeContent = $readmeContent -replace '(?m)^\[!\[Set it Free Loop\].*\n.*<!-- SFL_BADGE:.*-->', $badgeWithMarker
                 Set-Content $readmePath $readmeContent -NoNewline
                 Write-Status "🏷️ " "  README.md badge updated"
             } else {
-                # Insert badge after first line of badges (look for [![) or at the top
+                # Insert badge after the last consecutive badge line ([![...)
                 $lines = $readmeContent -split "`n"
                 $insertIndex = 0
                 for ($i = 0; $i -lt $lines.Count; $i++) {
@@ -278,7 +278,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
                 }
                 $before = $lines[0..($insertIndex - 1)] -join "`n"
                 $after  = $lines[$insertIndex..($lines.Count - 1)] -join "`n"
-                $newContent = "$before`n$badgeBlock`n$after"
+                $newContent = "$before`n$badgeWithMarker`n$after"
                 Set-Content $readmePath $newContent -NoNewline
                 Write-Status "🏷️ " "  README.md badge injected"
             }
