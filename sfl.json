@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "deployedAt": "2026-02-22T22:00:00Z",
+  "tier": "full",
+  "source": "HemSoft/set-it-free-loop",
+  "sourceSha": "self",
+  "components": [
+    "labels",
+    "governance",
+    "sfl-dispatcher",
+    "sfl-auditor",
+    "daily-repo-status",
+    "repo-audit",
+    "issue-processor",
+    "simplisticate",
+    "pr-analyzer-a",
+    "pr-analyzer-b",
+    "pr-analyzer-c",
+    "pr-fixer",
+    "pr-promoter"
+  ]
+}

@@ -24,8 +24,9 @@ safe-outputs:
   create-issue:
     title-prefix: "[repo-status] "
     labels: [type:report, daily-status]
+---
 
-sfl:
+<!-- sfl:
   status: active
   version: "1.0.0"
   category: reporting
@@ -39,7 +40,7 @@ sfl:
     - Labels correctly (type:report, daily-status)
     - Never sets type:action-item — reports are informational only
   source-repo: HemSoft/set-it-free-loop
----
+-->
 
 # Daily Repo Status
 

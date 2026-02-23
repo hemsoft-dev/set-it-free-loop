@@ -1,25 +1,44 @@
 <#
 .SYNOPSIS
-    Deploys one or more Set it Free Loop workflows to target repositories via Pull Requests.
+    Deploys Set it Free Loop workflows to target repositories via Pull Requests.
 
 .DESCRIPTION
+    Supports two modes:
+
+    1. Single workflow: Deploy one workflow by name.
+       .\deploy-workflow.ps1 -Workflow repo-audit -Repos "org/repo"
+
+    2. Tier-based: Deploy a predefined set of workflows by tier.
+       .\deploy-workflow.ps1 -Tier standard -Repos "org/repo"
+
     For each target repo, this script:
       1. Clones the repo (direct clone — no fork; assumes write access within the org)
       2. Creates a feature branch
-      3. Copies the workflow file from deployment/workflows/ into .github/workflows/
-      4. SHA-pins the source: reference to the current HEAD of set-it-free-loop
-      5. Opens a Pull Request via gh pr create
+      3. Copies workflow files into .github/workflows/
+      4. Copies infrastructure files (dispatcher, auditor) for standard/full tiers
+      5. Runs label setup
+      6. Creates/updates sfl.json manifest in the consumer repo
+      7. SHA-pins the source reference
+      8. Opens a Pull Request via gh pr create
 
     The consumer repo receives a PR — a human reviews and merges it.
     This script never force-pushes or auto-merges.
 
 .PARAMETER Workflow
-    Name of the workflow to deploy (without .md extension).
-    Must exist in deployment/workflows/.
+    Name of a single workflow to deploy (without .md extension).
+    Must exist in deployment/workflows/. Cannot be used with -Tier.
+
+.PARAMETER Tier
+    Deploy a predefined tier of workflows. Options: minimal, standard, full.
+    Cannot be used with -Workflow.
+
+    Tiers:
+      minimal  — Labels, governance, repo-audit, daily-repo-status
+      standard — Minimal + SFL Auditor, SFL Dispatcher, issue-processor, simplisticate
+      full     — Standard + PR Analyzers A/B/C, PR Fixer, PR Promoter
 
 .PARAMETER Repos
     Comma-separated list of target repos in "org/repo" format.
-    Example: "HemSoft/myapp,HemSoft/otherapp"
 
 .PARAMETER DryRun
     Print what would be done without making any changes or API calls.
@@ -30,13 +49,18 @@
 
 .EXAMPLE
     .\deploy-workflow.ps1 -Workflow repo-audit -Repos "HemSoft/hs-buddy"
-    .\deploy-workflow.ps1 -Workflow daily-repo-status -Repos "HemSoft/app1,HemSoft/app2" -DryRun
+    .\deploy-workflow.ps1 -Tier full -Repos "HemSoft/app1,HemSoft/app2"
+    .\deploy-workflow.ps1 -Tier standard -Repos "HemSoft/myapp" -DryRun
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)]
+    [Parameter(Mandatory = $false)]
     [string] $Workflow,
+
+    [Parameter(Mandatory = $false)]
+    [ValidateSet("minimal", "standard", "full")]
+    [string] $Tier,
 
     [Parameter(Mandatory)]
     [string] $Repos,
@@ -49,27 +73,93 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# ─── Resolve paths ────────────────────────────────────────────────────────────
+# ─── Validate parameters ─────────────────────────────────────────────────────
 
-$ScriptDir      = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot       = Resolve-Path (Join-Path $ScriptDir "..\..")
-$WorkflowSource = Join-Path $RepoRoot "deployment\workflows\$Workflow.md"
-
-if (-not (Test-Path $WorkflowSource)) {
-    Write-Error "Workflow not found: $WorkflowSource`nRun 'Get-ChildItem $RepoRoot\deployment\workflows\' to see available workflows."
+if (-not $Workflow -and -not $Tier) {
+    Write-Error "You must specify either -Workflow or -Tier."
+    exit 1
+}
+if ($Workflow -and $Tier) {
+    Write-Error "Cannot specify both -Workflow and -Tier. Use one or the other."
     exit 1
 }
 
+# ─── Resolve paths ────────────────────────────────────────────────────────────
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoRoot  = Resolve-Path (Join-Path $ScriptDir "..\..")
+
+# ─── SFL Version ──────────────────────────────────────────────────────────────
+
+$SflVersion = "2.0.0"
+
+# ─── Tier definitions ─────────────────────────────────────────────────────────
+
+$TierComponents = @{
+    "minimal"  = @{
+        Workflows      = @("daily-repo-status", "repo-audit")
+        Infrastructure = @()
+        Components     = @("labels", "governance", "daily-repo-status", "repo-audit")
+    }
+    "standard" = @{
+        Workflows      = @("daily-repo-status", "repo-audit", "issue-processor", "simplisticate")
+        Infrastructure = @("sfl-dispatcher", "sfl-auditor")
+        Components     = @("labels", "governance", "sfl-dispatcher", "sfl-auditor",
+                           "daily-repo-status", "repo-audit", "issue-processor", "simplisticate")
+    }
+    "full"     = @{
+        Workflows      = @("daily-repo-status", "repo-audit", "issue-processor", "simplisticate",
+                           "pr-analyzer-a", "pr-analyzer-b", "pr-analyzer-c", "pr-fixer", "pr-promoter")
+        Infrastructure = @("sfl-dispatcher", "sfl-auditor")
+        Components     = @("labels", "governance", "sfl-dispatcher", "sfl-auditor",
+                           "daily-repo-status", "repo-audit", "issue-processor", "simplisticate",
+                           "pr-analyzer-a", "pr-analyzer-b", "pr-analyzer-c", "pr-fixer", "pr-promoter")
+    }
+}
+
+# ─── Resolve what to deploy ──────────────────────────────────────────────────
+
+if ($Workflow) {
+    $WorkflowSource = Join-Path $RepoRoot "deployment\workflows\$Workflow.md"
+    if (-not (Test-Path $WorkflowSource)) {
+        Write-Error "Workflow not found: $WorkflowSource`nRun 'Get-ChildItem $RepoRoot\deployment\workflows\' to see available workflows."
+        exit 1
+    }
+    $WorkflowsToDeploy      = @($Workflow)
+    $InfrastructureToDeploy = @()
+    $DeployTier             = "custom"
+    $DeployComponents       = @($Workflow)
+} else {
+    $tierDef                = $TierComponents[$Tier]
+    $WorkflowsToDeploy      = $tierDef.Workflows
+    $InfrastructureToDeploy = $tierDef.Infrastructure
+    $DeployTier             = $Tier
+    $DeployComponents       = $tierDef.Components
+
+    # Validate all workflow files exist
+    foreach ($wf in $WorkflowsToDeploy) {
+        $wfPath = Join-Path $RepoRoot "deployment\workflows\$wf.md"
+        if (-not (Test-Path $wfPath)) {
+            Write-Error "Workflow not found: $wfPath"
+            exit 1
+        }
+    }
+    foreach ($inf in $InfrastructureToDeploy) {
+        $infPath = Join-Path $RepoRoot "deployment\infrastructure\$inf.yml"
+        if (-not (Test-Path $infPath)) {
+            Write-Error "Infrastructure file not found: $infPath"
+            exit 1
+        }
+    }
+}
+
 # ─── Resolve current SHA for source pinning ───────────────────────────────────
-# Consumers pin to this SHA so upgrades are always explicit.
 
 $CurrentSha = (git -C $RepoRoot rev-parse HEAD 2>$null).Trim()
 if (-not $CurrentSha) {
     Write-Error "Could not determine current git SHA. Is this repo initialized?"
     exit 1
 }
-
-$SflSourceRef = "HemSoft/set-it-free-loop/deployment/workflows/$Workflow.md@$CurrentSha"
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -79,17 +169,24 @@ function Write-Status([string]$Emoji, [string]$Message, [ConsoleColor]$Color = "
 
 function Deploy-ToRepo([string]$TargetRepo) {
     $RepoName    = $TargetRepo.Split("/")[-1]
-    $BranchName  = "sfl/add-$Workflow"
+    $BranchLabel = if ($Tier) { "tier-$Tier" } else { "add-$Workflow" }
+    $BranchName  = "sfl/$BranchLabel"
     $ClonePath   = Join-Path $CloneDir $RepoName
     $DestWorkdir = Join-Path $ClonePath ".github\workflows"
 
-    Write-Status "🚀" "Deploying $Workflow → $TargetRepo"
+    $DeployLabel = if ($Tier) { "tier '$Tier'" } else { "workflow '$Workflow'" }
+    Write-Status "🚀" "Deploying $DeployLabel → $TargetRepo"
 
     if ($DryRun) {
         Write-Status "🔍" "[DRY RUN] Would clone $TargetRepo to $ClonePath" Yellow
         Write-Status "🔍" "[DRY RUN] Would create branch: $BranchName" Yellow
-        Write-Status "🔍" "[DRY RUN] Would copy $Workflow.md → .github/workflows/" Yellow
-        Write-Status "🔍" "[DRY RUN] Would pin source: $SflSourceRef" Yellow
+        foreach ($wf in $WorkflowsToDeploy) {
+            Write-Status "🔍" "[DRY RUN] Would copy $wf.md → .github/workflows/" Yellow
+        }
+        foreach ($inf in $InfrastructureToDeploy) {
+            Write-Status "🔍" "[DRY RUN] Would copy $inf.yml → .github/workflows/" Yellow
+        }
+        Write-Status "🔍" "[DRY RUN] Would create/update sfl.json manifest" Yellow
         Write-Status "🔍" "[DRY RUN] Would open PR via gh pr create" Yellow
         return
     }
@@ -107,58 +204,106 @@ function Deploy-ToRepo([string]$TargetRepo) {
         git -C $ClonePath checkout -b $BranchName --quiet
         if ($LASTEXITCODE -ne 0) { throw "git checkout -b failed" }
 
-        # 3. Copy workflow file
+        # 3. Copy workflow files
         New-Item -ItemType Directory -Force $DestWorkdir | Out-Null
-        $DestFile = Join-Path $DestWorkdir "$Workflow.md"
-        Copy-Item $WorkflowSource $DestFile
 
-        # 4. Inject source: pin comment at top of the file
-        $content = Get-Content $DestFile -Raw
-        $pinComment = "# Deployed from: $SflSourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n"
-        if ($content -notmatch "# Deployed from:") {
-            Set-Content $DestFile ($pinComment + $content)
+        foreach ($wf in $WorkflowsToDeploy) {
+            $SourceFile = Join-Path $RepoRoot "deployment\workflows\$wf.md"
+            $DestFile   = Join-Path $DestWorkdir "$wf.md"
+            Copy-Item $SourceFile $DestFile
+
+            $content    = Get-Content $DestFile -Raw
+            $SflSourceRef = "HemSoft/set-it-free-loop/deployment/workflows/$wf.md@$CurrentSha"
+            $pinComment = "# Deployed from: $SflSourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n"
+            if ($content -notmatch "# Deployed from:") {
+                Set-Content $DestFile ($pinComment + $content)
+            }
+            Write-Status "📄" "  $wf.md"
         }
 
-        # 5. Commit
-        git -C $ClonePath add ".github/workflows/$Workflow.md" | Out-Null
-        git -C $ClonePath commit -m "chore: add $Workflow workflow from Set it Free Loop
+        # 4. Copy infrastructure files (standard YAML — go directly to .github/workflows/)
+        foreach ($inf in $InfrastructureToDeploy) {
+            $SourceFile = Join-Path $RepoRoot "deployment\infrastructure\$inf.yml"
+            $DestFile   = Join-Path $DestWorkdir "$inf.yml"
+            Copy-Item $SourceFile $DestFile
+            Write-Status "⚙️ " "  $inf.yml"
+        }
 
-Workflow: $Workflow
-Source: $SflSourceRef
+        # 5. Create sfl.json manifest
+        $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        $manifest = @{
+            version    = $SflVersion
+            deployedAt = $now
+            tier       = $DeployTier
+            source     = "HemSoft/set-it-free-loop"
+            sourceSha  = $CurrentSha
+            components = $DeployComponents
+        } | ConvertTo-Json -Depth 3
 
-See https://github.com/HemSoft/set-it-free-loop for full documentation.
-Run deployment/governance/setup-labels.ps1 if labels are not yet configured." --quiet
+        $manifestPath = Join-Path $ClonePath "sfl.json"
+        Set-Content $manifestPath $manifest
+        Write-Status "📋" "  sfl.json (v$SflVersion, tier: $DeployTier)"
+
+        # 6. Stage and commit
+        git -C $ClonePath add -A | Out-Null
+
+        $commitMsg = if ($Tier) {
+            "chore: deploy Set it Free Loop ($Tier tier, v$SflVersion)"
+        } else {
+            "chore: add $Workflow workflow from Set it Free Loop"
+        }
+
+        git -C $ClonePath commit -m "$commitMsg
+
+Source: HemSoft/set-it-free-loop@$CurrentSha
+Version: $SflVersion
+Tier: $DeployTier
+Components: $($DeployComponents -join ', ')
+
+See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
         if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
 
-        # 6. Push
+        # 7. Push
         git -C $ClonePath push origin $BranchName --quiet
         if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
-        # 7. Open PR
+        # 8. Open PR
+        $prTitle = if ($Tier) {
+            "chore: deploy Set it Free Loop ($Tier tier, v$SflVersion)"
+        } else {
+            "chore: add $Workflow workflow (Set it Free Loop)"
+        }
+
+        $componentList = ($DeployComponents | ForEach-Object { "- ``$_``" }) -join "`n"
+
         $prUrl = gh pr create `
             --repo $TargetRepo `
             --head $BranchName `
             --base main `
-            --title "chore: add $Workflow workflow (Set it Free Loop)" `
-            --body "## Set it Free Loop — Workflow Deployment
+            --title $prTitle `
+            --body "## Set it Free Loop — Deployment
 
-This PR adds the **$Workflow** workflow from the [Set it Free Loop](https://github.com/HemSoft/set-it-free-loop) library.
+**Version**: $SflVersion
+**Tier**: $DeployTier
+**Source SHA**: ``$CurrentSha``
 
-### What this workflow does
+### Components deployed
 
-See [\`deployment/workflows/$Workflow.md\`](https://github.com/HemSoft/set-it-free-loop/blob/main/deployment/workflows/$Workflow.md) for full documentation.
+$componentList
 
-### Source reference
+### What is the Set it Free Loop?
 
-\`\`\`
-$SflSourceRef
-\`\`\`
+The [Set it Free Loop](https://github.com/HemSoft/set-it-free-loop) is a continuous
+quality improvement operating model for software repositories. See the
+[CATALOG](https://github.com/HemSoft/set-it-free-loop/blob/main/CATALOG.md)
+for all available workflows.
 
 ### Before merging
 
-- [ ] Verify \`gh aw compile .github/workflows/$Workflow.md\` succeeds
-- [ ] Run \`deployment/governance/setup-labels.ps1\` if labels are not yet configured
-- [ ] Trigger manually via \`gh aw run $Workflow\` and confirm output
+- [ ] Run ``.\deployment\governance\setup-labels.ps1 -Owner <org> -Repo <repo>`` if labels are not yet configured
+- [ ] For each ``.md`` workflow: verify ``gh aw compile .github/workflows/<name>.md`` succeeds
+- [ ] Trigger a workflow manually to confirm output
+- [ ] Review ``sfl.json`` manifest in the repo root
 " 2>&1
 
         if ($LASTEXITCODE -eq 0) {
@@ -176,7 +321,11 @@ $SflSourceRef
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 Write-Status "🔄" "Set it Free Loop — Workflow Deployer" White
-Write-Status "📦" "Workflow: $Workflow"
+if ($Tier) {
+    Write-Status "📦" "Tier: $Tier ($($WorkflowsToDeploy.Count) workflows + $($InfrastructureToDeploy.Count) infrastructure)"
+} else {
+    Write-Status "📦" "Workflow: $Workflow"
+}
 Write-Status "🎯" "Source SHA: $CurrentSha"
 
 if ($DryRun) {

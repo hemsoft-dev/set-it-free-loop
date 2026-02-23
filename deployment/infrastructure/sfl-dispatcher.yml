@@ -1,0 +1,199 @@
+# SFL Dispatcher — lightweight gate that prevents wasteful gh-aw runs
+#
+# Runs every 30 minutes and checks GitHub state with simple gh CLI calls.
+# Only dispatches gh-aw workflows when there's actual work to do:
+#   - Issue Processor: when agent:fixable issues exist
+#   - PR Analyzers A/B/C: when draft PRs with agent:pr exist
+#   - PR Fixer: when draft PRs with agent:pr AND all 3 analyzer markers exist
+#   - PR Promoter: when draft PRs are ready for promotion OR approved PRs await merge
+#
+# This eliminates ~240 no-op Copilot inference calls/day.
+#
+# DEPLOYMENT: Copy this file to the consumer repo's .github/workflows/ directory.
+# Adjust workflow filenames in the Dispatch steps if your consumer uses different names.
+
+name: "SFL Dispatcher"
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+  actions: write
+
+concurrency:
+  group: "sfl-dispatcher"
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GH_AW_GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Check for fixable issues
+        id: issues
+        run: |
+          set -euo pipefail
+
+          COUNT=$(gh issue list --repo "$REPO" --label "agent:fixable" --state open --json number --jq 'length')
+          echo "fixable_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+          if [ "$COUNT" -gt 0 ]; then
+            echo "Found $COUNT fixable issue(s) — will dispatch Issue Processor."
+          else
+            echo "No fixable issues — skipping Issue Processor."
+          fi
+
+      - name: Check for draft PRs with agent:pr
+        id: prs
+        run: |
+          set -euo pipefail
+
+          PRS=$(gh pr list --repo "$REPO" --state open --draft --label "agent:pr" \
+            --json number,body,labels,createdAt \
+            --jq '[.[] | select(.labels | map(.name) | index("agent:human-required") | not)]')
+
+          COUNT=$(echo "$PRS" | jq 'length')
+          echo "draft_pr_count=$COUNT" >> "$GITHUB_OUTPUT"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No eligible draft PRs — skipping analyzers and fixer."
+            echo "fixer_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Found $COUNT eligible draft PR(s) — will dispatch analyzers."
+
+          OLDEST=$(echo "$PRS" | jq -r 'sort_by(.createdAt) | .[0]')
+          PR_NUMBER=$(echo "$OLDEST" | jq '.number')
+          PR_BODY=$(echo "$OLDEST" | jq -r '.body // ""')
+          PR_LABELS=$(echo "$OLDEST" | jq -c '[.labels[].name]')
+
+          CYCLE=0
+          for N in 1 2 3; do
+            if echo "$PR_LABELS" | jq -e "index(\"pr:cycle-$N\")" > /dev/null 2>&1; then
+              CYCLE=$N
+            fi
+          done
+
+          ALL_MARKERS=true
+          for ANALYZER in a b c; do
+            if ! echo "$PR_BODY" | grep -qF "[MARKER:pr-analyzer-$ANALYZER cycle:$CYCLE]"; then
+              ALL_MARKERS=false
+              break
+            fi
+          done
+
+          if echo "$PR_BODY" | grep -qF "[MARKER:pr-fixer cycle:$CYCLE]"; then
+            echo "PR #$PR_NUMBER already fixed in cycle $CYCLE — fixer not needed."
+            echo "fixer_ready=false" >> "$GITHUB_OUTPUT"
+          elif [ "$ALL_MARKERS" = "true" ]; then
+            echo "PR #$PR_NUMBER has all 3 analyzer markers for cycle $CYCLE — will dispatch fixer."
+            echo "fixer_ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "PR #$PR_NUMBER missing analyzer markers for cycle $CYCLE — fixer not ready."
+            echo "fixer_ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch Issue Processor
+        if: steps.issues.outputs.fixable_count != '0'
+        run: |
+          echo "Dispatching Issue Processor..."
+          gh workflow run issue-processor.lock.yml --repo "$REPO"
+
+      - name: Dispatch PR Analyzers
+        if: steps.prs.outputs.draft_pr_count != '0'
+        run: |
+          echo "Dispatching PR Analyzer A..."
+          gh workflow run pr-analyzer-a.lock.yml --repo "$REPO"
+          echo "Dispatching PR Analyzer B..."
+          gh workflow run pr-analyzer-b.lock.yml --repo "$REPO"
+          echo "Dispatching PR Analyzer C..."
+          gh workflow run pr-analyzer-c.lock.yml --repo "$REPO"
+
+      - name: Dispatch PR Fixer
+        if: steps.prs.outputs.fixer_ready == 'true'
+        run: |
+          echo "Dispatching PR Fixer..."
+          gh workflow run pr-fixer.lock.yml --repo "$REPO"
+
+      - name: Check for approved PRs awaiting merge
+        id: approved
+        run: |
+          set -euo pipefail
+
+          PRS=$(gh pr list --repo "$REPO" --state open --label "human:ready-for-review" \
+            --json number,isDraft,reviews \
+            --jq '[.[] | select(.isDraft == false)]')
+
+          APPROVED=0
+          for ROW in $(echo "$PRS" | jq -c '.[]'); do
+            HAS_APPROVAL=$(echo "$ROW" | jq '[.reviews | group_by(.author.login) | .[] | last | select(.state == "APPROVED")] | length')
+            if [ "$HAS_APPROVAL" -gt 0 ]; then
+              APPROVED=$((APPROVED + 1))
+            fi
+          done
+
+          echo "approved_count=$APPROVED" >> "$GITHUB_OUTPUT"
+
+          if [ "$APPROVED" -gt 0 ]; then
+            echo "Found $APPROVED approved PR(s) awaiting merge — will dispatch PR Promoter."
+          else
+            echo "No approved PRs awaiting merge."
+          fi
+
+      - name: Dispatch PR Promoter
+        if: steps.prs.outputs.draft_pr_count != '0' || steps.approved.outputs.approved_count != '0'
+        run: |
+          echo "Dispatching PR Promoter..."
+          gh workflow run pr-promoter.lock.yml --repo "$REPO"
+
+      - name: Summary
+        run: |
+          echo "## SFL Dispatcher Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Workflow | Dispatched |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|------------|" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${{ steps.issues.outputs.fixable_count }}" != "0" ]; then
+            echo "| Issue Processor | Yes (${{ steps.issues.outputs.fixable_count }} fixable issues) |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Issue Processor | No (0 fixable issues) |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "${{ steps.prs.outputs.draft_pr_count }}" != "0" ]; then
+            echo "| PR Analyzer A/B/C | Yes (${{ steps.prs.outputs.draft_pr_count }} draft PRs) |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| PR Analyzer A/B/C | No (0 draft PRs) |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "${{ steps.prs.outputs.fixer_ready }}" = "true" ]; then
+            echo "| PR Fixer | Yes (markers complete) |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| PR Fixer | No (markers incomplete) |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          PROMOTER_DISPATCHED="No"
+          PROMOTER_REASON=""
+          if [ "${{ steps.prs.outputs.draft_pr_count }}" != "0" ]; then
+            PROMOTER_DISPATCHED="Yes"
+            PROMOTER_REASON="${{ steps.prs.outputs.draft_pr_count }} draft PRs"
+          fi
+          if [ "${{ steps.approved.outputs.approved_count }}" != "0" ]; then
+            PROMOTER_DISPATCHED="Yes"
+            if [ -n "$PROMOTER_REASON" ]; then
+              PROMOTER_REASON="$PROMOTER_REASON + ${{ steps.approved.outputs.approved_count }} approved PRs"
+            else
+              PROMOTER_REASON="${{ steps.approved.outputs.approved_count }} approved PRs"
+            fi
+          fi
+          if [ "$PROMOTER_DISPATCHED" = "Yes" ]; then
+            echo "| PR Promoter | Yes ($PROMOTER_REASON) |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| PR Promoter | No (no draft or approved PRs) |" >> "$GITHUB_STEP_SUMMARY"
+          fi

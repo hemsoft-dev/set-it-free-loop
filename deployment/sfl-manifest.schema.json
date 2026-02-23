@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SFL Manifest",
+  "description": "Tracks which Set it Free Loop components are deployed to a consumer repository and at what version.",
+  "type": "object",
+  "required": ["version", "deployedAt", "tier", "source", "components"],
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "The SFL version that was deployed (e.g., '2.0.0').",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "deployedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when the deployment was performed."
+    },
+    "tier": {
+      "type": "string",
+      "enum": ["minimal", "standard", "full", "custom"],
+      "description": "The deployment tier selected during installation."
+    },
+    "source": {
+      "type": "string",
+      "description": "The source repository in org/repo format.",
+      "default": "HemSoft/set-it-free-loop"
+    },
+    "sourceSha": {
+      "type": "string",
+      "description": "The git SHA of the source repo at deployment time.",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "labels",
+          "governance",
+          "sfl-auditor",
+          "sfl-dispatcher",
+          "daily-repo-status",
+          "repo-audit",
+          "simplisticate",
+          "issue-processor",
+          "pr-analyzer-a",
+          "pr-analyzer-b",
+          "pr-analyzer-c",
+          "pr-fixer",
+          "pr-promoter"
+        ]
+      },
+      "uniqueItems": true,
+      "description": "List of deployed SFL components."
+    }
+  },
+  "additionalProperties": false
+}

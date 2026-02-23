@@ -6,12 +6,24 @@ Items move from here → `.github/workflows/` (staging) → `deployment/workflow
 
 ---
 
+## Graduated ✅
+
+These items have been built, proven in hs-buddy, and graduated to the deployment library.
+
+| Name | Graduated As | Version | Status |
+|------|-------------|---------|--------|
+| issue-to-pr-fixer | [issue-processor](deployment/workflows/issue-processor.md) | 1.0.0 | Active — in CATALOG |
+| pr-quality-analyzer | [pr-analyzer-a](deployment/workflows/pr-analyzer-a.md), [pr-analyzer-b](deployment/workflows/pr-analyzer-b.md), [pr-analyzer-c](deployment/workflows/pr-analyzer-c.md) | 1.0.0 | Active — in CATALOG |
+| *(new)* | [pr-fixer](deployment/workflows/pr-fixer.md) | 1.0.0 | Active — in CATALOG |
+| *(new)* | [pr-promoter](deployment/workflows/pr-promoter.md) | 1.0.0 | Active — in CATALOG |
+| *(new)* | [simplisticate](deployment/workflows/simplisticate.md) | 1.0.0 | Active — in CATALOG |
+
+---
+
 ## Ideas Pipeline
 
 | Priority | Name | Category | Trigger | Outcome Goal | Notes |
 |----------|------|----------|---------|-------------|-------|
-| 🔴 High | issue-to-pr-fixer | quality | Label `agent:fixable` | Auto-generate scoped PRs for low-risk issues | Core loop closer; requires safe-write-paths definition |
-| 🔴 High | pr-quality-analyzer | quality | PR opened/synchronized | Severity gate comment; fail gate if critical/high above threshold | Enables auto-merge for trivial/low risk class |
 | 🟡 Medium | feature-intake-normalizer | intake | Schedule — daily | Normalize Jira/GitHub → labeled `type:action-item` issues | Builds on `convex/featureIntakes.ts` pattern |
 | 🟡 Medium | loop-cost-reporter | telemetry | Schedule — monthly | Issue with run counts, p50/p90 cost, monthly budget burn | KPI visibility for portfolio-level SFL adoption |
 | 🟢 Low | onboarding-health-check | quality | Schedule — weekly | Report flagging missing governance artifacts (labels, opt-out file, CATALOG reference) | Consumer repo readiness gate |
@@ -19,41 +31,6 @@ Items move from here → `.github/workflows/` (staging) → `deployment/workflow
 ---
 
 ## Backlog Detail
-
-### issue-to-pr-fixer
-
-**Goal**: When an issue carries `agent:fixable`, claim it, generate a focused fix branch, and open a PR.
-
-**Design constraints**:
-- Safe-write paths allowlist (never touches auth, payments, CI config)
-- Risk class drives max diff size (≤ 300 lines for `risk:low`, ≤ 150 for `risk:medium`)
-- Sets `agent:in-progress` on claim; `agent:review-requested` on PR open
-- Max 2 retries for `risk:low`, 1 for `risk:medium`
-
-**Acceptance criteria**:
-- [ ] Claims issue atomically (no two runs claim the same issue)
-- [ ] PR body includes agent metadata block (idempotency key, risk class, safe-write verification)
-- [ ] Fails safely with `agent:pause` comment when prohibited paths are implicated
-- [ ] Tested on a synthetic issue in this repo before graduating to deployment/
-
----
-
-### pr-quality-analyzer
-
-**Goal**: Assess every PR for severity/risk and enforce merge gates.
-
-**Design constraints**:
-- Posts findings as a PR review comment, not a separate issue
-- Fails the check if critical/high findings exceed threshold
-- `risk:trivial` and `risk:low` can auto-merge if CI is green
-
-**Acceptance criteria**:
-- [ ] Runs on all PRs opened against main
-- [ ] Comment includes: risk class, finding count by severity, merge recommendation
-- [ ] Required check integration (blocks merge on failure)
-- [ ] Does not block human-authored PRs — analysis only, not veto power
-
----
 
 ### feature-intake-normalizer
 

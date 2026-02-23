@@ -22,8 +22,9 @@ safe-outputs:
   create-issue:
     title-prefix: "[repo-audit] "
     labels: [type:report]
+---
 
-sfl:
+<!-- sfl:
   status: staging
   version: "1.1.0"
   category: quality
@@ -38,7 +39,7 @@ sfl:
     - Findings table includes severity and confidence columns
     - Tone is practical and signal-focused; avoids speculative findings
   source-repo: HemSoft/set-it-free-loop
----
+-->
 
 # Repo Audit
 

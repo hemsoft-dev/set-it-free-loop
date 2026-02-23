@@ -26,8 +26,9 @@ safe-outputs:
   create-issue:
     title-prefix: "[workflow-name] "
     labels: [type:report]   # or type:action-item for actionable output
+---
 
-sfl:
+<!-- sfl:
   status: staging           # do not change until acceptance criteria are all met
   version: "1.0.0"
   category: quality         # quality | reporting | intake | security | custom
@@ -42,7 +43,7 @@ sfl:
     - No duplicate outputs on re-run
     - Add workflow-specific criteria here
   source-repo: HemSoft/set-it-free-loop
----
+-->
 
 # Workflow Title
 
