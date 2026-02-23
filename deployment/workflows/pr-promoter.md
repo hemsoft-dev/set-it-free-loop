@@ -25,10 +25,10 @@ tools:
 
 safe-outputs:
   noop:
-    max: 1
+    max: 2
   update-issue:
     target: "*"
-    max: 3
+    max: 5
 ---
 
 <!-- sfl:
@@ -80,7 +80,19 @@ All three markers must be present:
 - `[MARKER:pr-analyzer-b cycle:C]`
 - `[MARKER:pr-analyzer-c cycle:C]`
 
-If any missing, call `noop` and exit.
+If any missing:
+
+1. Check whether the PR was created more than **2 hours ago**. If yes, this is
+   a **stalled PR** — the analyzers should have run by now.
+
+   Search the PR body/comments for the text "missing analyzer markers". If that
+   text does NOT already exist, post a one-time warning by calling `update_issue`
+   with:
+   - `issue_number`: the PR number
+   - `operation`: `"append"`
+   - `body`: "⏰ **PR Promoter**: PR #<number> has been open for over 2 hours but is missing analyzer markers for cycle <C>. The PR Analyzers may not be running. A human should investigate."
+
+2. Regardless of PR age, call `noop` and exit.
 
 ## Step 5 — Check all analyzer verdicts
 

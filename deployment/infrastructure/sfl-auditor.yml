@@ -185,6 +185,56 @@ jobs:
           echo "stale_unclaimed_found=$FOUND" >> "$GITHUB_OUTPUT"
           echo "Found $FOUND stale unclaimed issues"
 
+      - name: "Check: stalled draft PRs without analyzer reviews"
+        id: stalled-prs
+        run: |
+          set -euo pipefail
+
+          FOUND=0
+          TWO_HOURS_AGO=$(date -u -d '2 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+
+          # Get open draft agent PRs
+          gh pr list --repo "$REPO" --state open --draft \
+            --json number,headRefName,createdAt,body,comments --limit 100 > /tmp/draft_prs.json
+
+          jq -c '[.[] | select(.headRefName | startswith("agent-fix/issue-"))] | .[]' \
+            /tmp/draft_prs.json | while IFS= read -r ROW; do
+            PR_NUM=$(echo "$ROW" | jq '.number')
+            CREATED=$(echo "$ROW" | jq -r '.createdAt')
+
+            # Skip if not older than 2 hours
+            if [[ "$CREATED" > "$TWO_HOURS_AGO" ]]; then
+              continue
+            fi
+
+            # Check for analyzer markers in PR body
+            BODY=$(echo "$ROW" | jq -r '.body // ""')
+            HAS_A=$(echo "$BODY" | grep -c '\[MARKER:pr-analyzer-a cycle:' || echo 0)
+            HAS_B=$(echo "$BODY" | grep -c '\[MARKER:pr-analyzer-b cycle:' || echo 0)
+            HAS_C=$(echo "$BODY" | grep -c '\[MARKER:pr-analyzer-c cycle:' || echo 0)
+
+            if [ "$HAS_A" -gt 0 ] && [ "$HAS_B" -gt 0 ] && [ "$HAS_C" -gt 0 ]; then
+              continue
+            fi
+
+            # Check if already flagged (in comments)
+            COMMENTS=$(echo "$ROW" | jq -r '.comments[].body // ""')
+            ALREADY_FLAGGED=$(echo "$COMMENTS" | grep -c 'missing analyzer markers' || echo 0)
+            if [ "$ALREADY_FLAGGED" -gt 0 ]; then
+              continue
+            fi
+
+            echo "Draft PR #$PR_NUM is older than 2 hours and missing analyzer markers"
+
+            gh pr comment "$PR_NUM" --repo "$REPO" \
+              --body "⏰ **SFL Auditor**: Draft PR #$PR_NUM has been open for over 2 hours and is missing one or more analyzer markers. The PR Analyzers may not be dispatching for this PR. A human should investigate."
+
+            FOUND=$((FOUND + 1))
+          done
+
+          echo "stalled_prs_found=$FOUND" >> "$GITHUB_OUTPUT"
+          echo "Found $FOUND stalled draft PRs"
+
       - name: "Check: unexplained agent:pause"
         id: paused
         run: |
@@ -218,9 +268,10 @@ jobs:
           CONFLICTING="${{ steps.conflicting.outputs.conflicting_fixed }}"
           ORPHANED_PRS="${{ steps.orphaned-prs.outputs.orphaned_prs_found }}"
           STALE_UNCLAIMED="${{ steps.stale-unclaimed.outputs.stale_unclaimed_found }}"
+          STALLED_PRS="${{ steps.stalled-prs.outputs.stalled_prs_found }}"
           PAUSED="${{ steps.paused.outputs.unexplained_pause_found }}"
 
-          TOTAL=$((ORPHANED_LABELS + CONFLICTING + ORPHANED_PRS + STALE_UNCLAIMED + PAUSED))
+          TOTAL=$((ORPHANED_LABELS + CONFLICTING + ORPHANED_PRS + STALE_UNCLAIMED + STALLED_PRS + PAUSED))
 
           echo "## SFL Auditor Summary"
           echo ""
@@ -230,6 +281,7 @@ jobs:
           echo "| Conflicting labels fixed | $CONFLICTING |"
           echo "| Orphaned agent PRs flagged | $ORPHANED_PRS |"
           echo "| Stale unclaimed issues flagged | $STALE_UNCLAIMED |"
+          echo "| Stalled draft PRs flagged | $STALLED_PRS |"
           echo "| Unexplained pauses flagged | $PAUSED |"
           echo ""
 
