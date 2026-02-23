@@ -16,8 +16,8 @@
       2. Creates a feature branch
       3. Copies workflow files into .github/workflows/
       4. Copies infrastructure files (dispatcher, auditor) for standard/full tiers
-      5. Runs label setup
-      6. Creates/updates sfl.json manifest in the consumer repo
+      5. Creates/updates sfl.json manifest in the consumer repo
+      6. Injects/updates the dynamic SFL badge in README.md
       7. SHA-pins the source reference
       8. Opens a Pull Request via gh pr create
 
@@ -192,6 +192,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
             Write-Status "🔍" "[DRY RUN] Would copy $inf.yml → .github/workflows/" Yellow
         }
         Write-Status "🔍" "[DRY RUN] Would create/update sfl.json manifest" Yellow
+        Write-Status "🔍" "[DRY RUN] Would inject/update SFL badge in README.md" Yellow
         Write-Status "🔍" "[DRY RUN] Would open PR via gh pr create" Yellow
         return
     }
@@ -249,7 +250,43 @@ function Deploy-ToRepo([string]$TargetRepo) {
         Set-Content $manifestPath $manifest
         Write-Status "📋" "  sfl.json (v$SflVersion, tier: $DeployTier)"
 
-        # 6. Stage and commit
+        # 7. Inject/update SFL badge in README.md
+        $readmePath = Join-Path $ClonePath "README.md"
+        if (Test-Path $readmePath) {
+            $readmeContent = Get-Content $readmePath -Raw
+            $owner = $TargetRepo.Split("/")[0]
+            $repo  = $TargetRepo.Split("/")[1]
+            $badgeUrl = "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2F$owner%2F$repo%2Fmain%2Fsfl.json&query=%24.version&prefix=v&label=Set%20it%20Free%20Loop&color=FFD700&style=flat&logo=githubactions&logoColor=white"
+            $badgeMarkdown = "[![Set it Free Loop]($badgeUrl)](https://github.com/HemSoft/set-it-free-loop)"
+            $badgeBlock = "<!-- SFL_BADGE_START -->`n$badgeMarkdown`n<!-- SFL_BADGE_END -->"
+
+            if ($readmeContent -match '(?s)<!-- SFL_BADGE_START -->.*?<!-- SFL_BADGE_END -->') {
+                # Replace existing badge block
+                $readmeContent = $readmeContent -replace '(?s)<!-- SFL_BADGE_START -->.*?<!-- SFL_BADGE_END -->', $badgeBlock
+                Set-Content $readmePath $readmeContent -NoNewline
+                Write-Status "🏷️ " "  README.md badge updated"
+            } else {
+                # Insert badge after first line of badges (look for [![) or at the top
+                $lines = $readmeContent -split "`n"
+                $insertIndex = 0
+                for ($i = 0; $i -lt $lines.Count; $i++) {
+                    if ($lines[$i] -match '^\[!\[') {
+                        $insertIndex = $i + 1
+                    } elseif ($insertIndex -gt 0 -and $lines[$i] -notmatch '^\[!\[') {
+                        break
+                    }
+                }
+                $before = $lines[0..($insertIndex - 1)] -join "`n"
+                $after  = $lines[$insertIndex..($lines.Count - 1)] -join "`n"
+                $newContent = "$before`n$badgeBlock`n$after"
+                Set-Content $readmePath $newContent -NoNewline
+                Write-Status "🏷️ " "  README.md badge injected"
+            }
+        } else {
+            Write-Status "⚠️ " "  No README.md found — skipping badge injection" Yellow
+        }
+
+        # 7. Stage and commit
         git -C $ClonePath add -A | Out-Null
 
         $commitMsg = if ($Tier) {
@@ -268,11 +305,11 @@ Components: $($DeployComponents -join ', ')
 See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
         if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
 
-        # 7. Push
+        # 8. Push
         git -C $ClonePath push origin $BranchName --quiet
         if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
-        # 8. Open PR
+        # 9. Open PR
         $prTitle = if ($Tier) {
             "chore: deploy Set it Free Loop ($Tier tier, v$SflVersion)"
         } else {

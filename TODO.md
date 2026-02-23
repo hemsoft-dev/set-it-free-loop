@@ -6,6 +6,108 @@ Items move from here → `.github/workflows/` (staging) → `deployment/workflow
 
 ---
 
+## Resume Work — Quick Start
+
+When switching back to this repo, follow these steps to verify everything works and continue where you left off.
+
+### 1. Verify the repo is up-to-date
+
+```powershell
+cd D:\github\HemSoft\set-it-free-loop
+git pull origin main
+```
+
+### 2. Verify workflows are running on GitHub
+
+Check that the SFL Dispatcher and SFL Auditor are active on the **set-it-free-loop** repo itself (dogfooding):
+
+```powershell
+# Check recent workflow runs
+gh run list --repo HemSoft/set-it-free-loop --limit 10
+
+# Check specific infrastructure workflows
+gh run list --repo HemSoft/set-it-free-loop --workflow "SFL Dispatcher" --limit 5
+gh run list --repo HemSoft/set-it-free-loop --workflow "SFL Auditor" --limit 5
+```
+
+If no runs appear, the workflows may not have been triggered yet (cron-based). Trigger them manually:
+
+```powershell
+gh workflow run sfl-dispatcher.yml --repo HemSoft/set-it-free-loop
+gh workflow run sfl-auditor.yml --repo HemSoft/set-it-free-loop
+```
+
+### 3. Verify the `GH_AW_GITHUB_TOKEN` secret exists
+
+Both `sfl-dispatcher.yml` and `sfl-auditor.yml` use `secrets.GH_AW_GITHUB_TOKEN`. Confirm the secret is configured:
+
+```powershell
+gh secret list --repo HemSoft/set-it-free-loop
+```
+
+If `GH_AW_GITHUB_TOKEN` is missing, create it with a PAT that has `repo`, `workflow`, and `issues` permissions.
+
+### 4. Verify governance labels are set up
+
+```powershell
+# Run the label setup script against THIS repo (safe to re-run — idempotent)
+.\deployment\governance\setup-labels.ps1 -Owner HemSoft -Repo set-it-free-loop
+```
+
+### 5. Test the deploy script (dry run)
+
+Confirm the deployment tool works against hs-buddy (or any consumer repo) without making changes:
+
+```powershell
+.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "HemSoft/hs-buddy" -DryRun
+```
+
+### 6. Verify gh-aw workflow compilation (if touching .md workflows)
+
+Each `.md` workflow in `.github/workflows/` and `deployment/workflows/` compiles via `gh aw`:
+
+```powershell
+# Test a single workflow
+gh aw compile .github/workflows/repo-audit.md
+
+# Test all .md workflows in the repo
+Get-ChildItem .github\workflows\*.md | ForEach-Object {
+    Write-Host "Compiling $($_.Name)..."
+    gh aw compile $_.FullName
+    if ($LASTEXITCODE -ne 0) { Write-Host "FAILED: $($_.Name)" -ForegroundColor Red }
+    else { Write-Host "OK" -ForegroundColor Green }
+}
+```
+
+### 7. Check for open issues / PRs in the pipeline
+
+```powershell
+# Any agent:fixable issues waiting for processing?
+gh issue list --repo HemSoft/set-it-free-loop --label "agent:fixable" --state open
+
+# Any agent:in-progress issues with open PRs?
+gh issue list --repo HemSoft/set-it-free-loop --label "agent:in-progress" --state open
+
+# Any open agent PRs?
+gh pr list --repo HemSoft/set-it-free-loop --state open --head "agent-fix/"
+```
+
+### 8. What to work on next
+
+See the [Ideas Pipeline](#ideas-pipeline) below for upcoming workflows to build.
+
+Key priorities:
+- **feature-intake-normalizer** (medium) — normalize external requests into GitHub Issues
+- **loop-cost-reporter** (medium) — monthly telemetry on SFL run costs / budget burn
+- **onboarding-health-check** (low) — verify consumer repos have governance artifacts
+
+Also consider:
+- Adding more consumer repos via `deploy-workflow.ps1 -Tier standard -Repos "org/repo"`
+- Reviewing and improving existing workflow prompts based on real-world run results
+- Publishing 30-day pilot metrics from hs-buddy back to this repo
+
+---
+
 ## Graduated ✅
 
 These items have been built, proven in hs-buddy, and graduated to the deployment library.
