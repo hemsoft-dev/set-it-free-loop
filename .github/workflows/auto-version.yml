@@ -1,0 +1,128 @@
+name: Auto Version
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'VERSION'
+      - 'sfl.json'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Skip commits made by this workflow (prevent infinite loop)
+    if: "!contains(github.event.head_commit.message, '[auto-version]')"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine bump type from commit message
+        id: bump
+        run: |
+          MSG="${{ github.event.head_commit.message }}"
+          FIRST_LINE=$(echo "$MSG" | head -n 1)
+
+          # Check for breaking change (major bump)
+          if echo "$FIRST_LINE" | grep -qE '^[a-z]+!(\(.+\))?:' || echo "$MSG" | grep -q 'BREAKING CHANGE'; then
+            echo "type=major" >> "$GITHUB_OUTPUT"
+          # Check for feat (minor bump)
+          elif echo "$FIRST_LINE" | grep -qE '^feat(\(.+\))?:'; then
+            echo "type=minor" >> "$GITHUB_OUTPUT"
+          # Check for fix, perf, refactor (patch bump)
+          elif echo "$FIRST_LINE" | grep -qE '^(fix|perf|refactor)(\(.+\))?:'; then
+            echo "type=patch" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=none" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read current version
+        if: steps.bump.outputs.type != 'none'
+        id: current
+        run: |
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate new version
+        if: steps.bump.outputs.type != 'none'
+        id: next
+        run: |
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${{ steps.current.outputs.version }}"
+
+          case "${{ steps.bump.outputs.type }}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "### Version bump: ${{ steps.current.outputs.version }} → $NEW_VERSION (${{ steps.bump.outputs.type }})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Update VERSION and sfl.json
+        if: steps.bump.outputs.type != 'none'
+        run: |
+          NEW_VERSION="${{ steps.next.outputs.version }}"
+
+          # Update VERSION file
+          echo "$NEW_VERSION" > VERSION
+
+          # Update sfl.json version field
+          jq --arg v "$NEW_VERSION" '.version = $v' sfl.json > sfl.json.tmp && mv sfl.json.tmp sfl.json
+
+      - name: Commit, tag, and push
+        if: steps.bump.outputs.type != 'none'
+        run: |
+          NEW_VERSION="${{ steps.next.outputs.version }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add VERSION sfl.json
+          git commit -m "chore: bump version to ${NEW_VERSION} [auto-version]"
+          git tag -a "v${NEW_VERSION}" -m "Release v${NEW_VERSION}"
+          git push origin main --follow-tags
+
+      - name: Create GitHub release
+        if: steps.bump.outputs.type != 'none'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NEW_VERSION="${{ steps.next.outputs.version }}"
+          PREV_VERSION="${{ steps.current.outputs.version }}"
+          COMMIT_MSG="${{ github.event.head_commit.message }}"
+          FIRST_LINE=$(echo "$COMMIT_MSG" | head -n 1)
+
+          gh release create "v${NEW_VERSION}" \
+            --title "v${NEW_VERSION}" \
+            --notes "## Changes
+
+${FIRST_LINE}
+
+**Bump**: \`${PREV_VERSION}\` → \`${NEW_VERSION}\` (${{ steps.bump.outputs.type }})
+**Commit**: ${{ github.sha }}
+
+---
+
+See [CATALOG.md](CATALOG.md) for the full workflow library.
+To upgrade a consumer repo, re-run \`deploy-workflow.ps1\` at this version." \
+            --latest

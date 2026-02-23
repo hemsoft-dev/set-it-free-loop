@@ -81,6 +81,19 @@ See [CATALOG.md](CATALOG.md) for all available workflows, tiers, and expected ou
 
 The SFL uses [Semantic Versioning](https://semver.org/). The single source of truth is the [`VERSION`](VERSION) file in this repo.
 
+### Automatic versioning
+
+Versions bump automatically on every push to `main` based on [Conventional Commits](https://www.conventionalcommits.org/):
+
+| Commit prefix | Bump | Example |
+|---------------|------|---------|
+| `feat:` | **minor** (2.0.0 → 2.1.0) | `feat: add cost reporter workflow` |
+| `fix:`, `perf:`, `refactor:` | **patch** (2.1.0 → 2.1.1) | `fix: dispatcher skips empty repos` |
+| `feat!:` or `BREAKING CHANGE` | **major** (2.1.1 → 3.0.0) | `feat!: rename sfl.json schema` |
+| `docs:`, `chore:`, `ci:`, `test:` | *no bump* | `docs: update README` |
+
+The workflow updates `VERSION`, stamps `sfl.json`, creates a git tag (`v2.1.0`), and publishes a GitHub release.
+
 ### How it works
 
 | Repo | Version source | Badge shows |
