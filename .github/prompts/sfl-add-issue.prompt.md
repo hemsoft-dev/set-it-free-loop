@@ -23,23 +23,29 @@ answer all of these:
 3. **What should the fix look like?** (the mechanical change)
 4. **Is the fix deterministic?** (one clear correct outcome per file)
 
-If the fix is NOT deterministic, or requires architectural decisions, or is
-risk:medium or higher — tell the user this is not a good candidate for SFL
-automation and suggest they create a regular issue instead.
-
 ---
 
 ## Step 2 — Assess risk
 
-Determine the risk class:
+Determine the risk class together with the user:
 
-- **risk:trivial** — cosmetic, formatting, typo, dead code removal, no
-  behavioral change possible
-- **risk:low** — mechanical refactor, adding missing attributes, removing
-  unused imports; clear single correct outcome; no user-facing behavior change
+| Risk | Description | Merge requirement |
+|------|-------------|-------------------|
+| **risk:trivial** | Cosmetic, formatting, typo, dead code removal — no behavioral change possible | Auto-merge (0 reviews) |
+| **risk:low** | Mechanical refactor, adding missing attributes, removing unused imports — one clear correct outcome | Auto-merge (0 reviews) |
+| **risk:medium** | Changes with limited behavioral impact, multiple valid approaches possible | 1 approved review |
+| **risk:high** | Significant behavioral change, cross-cutting concern, or security-adjacent | 1 human review required |
+| **risk:critical** | Core architecture, auth, data integrity, or broad blast radius | 2 human reviews required |
 
-If the fix would change runtime behavior, touch more than 15 files, or require
-judgment calls, it does NOT qualify. Tell the user and stop.
+For **risk:medium and above**, inform the user:
+
+> This is a `risk:<level>` change. The pipeline will still process it, but the
+> Issue Processor will add `agent:human-required` so a human can validate the
+> agent's approach before the PR proceeds. Merge will require <N> approved
+> review(s) per the governance matrix.
+
+Let the user decide whether to proceed. Never refuse — just ensure they know
+what the pipeline will do.
 
 ---
 
@@ -74,10 +80,10 @@ passes", "export is no longer referenced anywhere">
 
 ## Risk
 
-`risk:<trivial|low>` — <one-line justification>
+`risk:<trivial|low|medium|high|critical>` — <one-line justification>
 ```
 
-**Labels**: `agent:fixable`, `type:action-item`, `risk:<trivial|low>`
+**Labels**: `agent:fixable`, `type:action-item`, `risk:<trivial|low|medium|high|critical>`
 
 ---
 
@@ -102,7 +108,7 @@ gh issue create --repo "<owner>/<repo>" \
   --body "<body>" \
   --label "agent:fixable" \
   --label "type:action-item" \
-  --label "risk:<trivial|low>"
+  --label "risk:<trivial|low|medium|high|critical>"
 ```
 
 After creation, confirm the issue number and tell the user:
@@ -116,8 +122,10 @@ After creation, confirm the issue number and tell the user:
 ## Guardrails
 
 - Never create an issue without user confirmation
-- Never apply `agent:fixable` to anything risk:medium or higher
 - The body MUST contain all five sections (Category, Pattern, Affected files,
   Acceptance criteria, Risk) — the Issue Processor validates this
 - Max 15 affected files per issue; if more, split into multiple issues
 - Do not add `agent:in-progress` — that is the Issue Processor's job
+- For risk:medium+, the Issue Processor will add `agent:human-required` so a
+  human validates the agent's approach — this is expected behavior, not a
+  rejection
