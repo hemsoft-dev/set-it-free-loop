@@ -1,5 +1,9 @@
 # Set it Free Loop™
 
+[![SFL Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FHemSoft%2Fset-it-free-loop%2Fmain%2Fsfl.json&query=%24.version&label=SFL&color=FFD700&style=flat-square)](CATALOG.md)
+[![Tier](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FHemSoft%2Fset-it-free-loop%2Fmain%2Fsfl.json&query=%24.tier&label=tier&color=0e8a16&style=flat-square)](CATALOG.md)
+[![Workflows](https://img.shields.io/badge/workflows-9-blue?style=flat-square)](CATALOG.md)
+
 > **One Intake. One Loop. Compounding Quality.**
 
 The Set it Free Loop is a continuous quality improvement operating model for software repositories.
@@ -54,15 +58,63 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 .\deployment\governance\setup-labels.ps1 -Owner <org> -Repo <repo>
 ```
 
-### 2. Deploy a workflow
+### 2. Deploy a tier (or single workflow)
 
 ```powershell
+# Deploy the full autonomous loop
+.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "org/repo"
+
+# Or start with hygiene-only
+.\deployment\scripts\deploy-workflow.ps1 -Tier minimal -Repos "org/repo"
+
+# Or deploy a single workflow
 .\deployment\scripts\deploy-workflow.ps1 -Workflow repo-audit -Repos "org/repo1,org/repo2"
 ```
 
 ### 3. Review the catalog
 
-See [CATALOG.md](CATALOG.md) for all available workflows, their triggers, and expected outputs.
+See [CATALOG.md](CATALOG.md) for all available workflows, tiers, and expected outputs.
+
+---
+
+## Versioning
+
+The SFL uses [Semantic Versioning](https://semver.org/). The single source of truth is the [`VERSION`](VERSION) file in this repo.
+
+### How it works
+
+| Repo | Version source | Badge shows |
+|------|---------------|-------------|
+| **This repo** (SFL source) | `VERSION` file | Latest released version |
+| **Consumer repo** | `sfl.json` manifest | Version deployed to that consumer |
+
+When you deploy to a consumer repo, the deploy script reads `VERSION`, stamps it into the consumer's `sfl.json`, and SHA-pins the source. To check if a consumer is current:
+
+```
+SFL VERSION file:  2.1.0    ← latest
+Consumer sfl.json: 2.0.0    ← deployed version (behind)
+```
+
+### Adding the badge to a consumer repo
+
+After deploying, add this to the consumer's README:
+
+```markdown
+[![SFL](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2F<ORG>%2F<REPO>%2Fmain%2Fsfl.json&query=%24.version&label=SFL&color=FFD700&style=flat-square)](https://github.com/HemSoft/set-it-free-loop)
+```
+
+Replace `<ORG>/<REPO>` with the consumer's GitHub org and repo name.
+
+### Upgrading a consumer
+
+Re-run the deploy script at the desired SFL version:
+
+```powershell
+# Pull latest set-it-free-loop, then:
+.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "org/repo"
+```
+
+The deploy script reads the current `VERSION`, creates a PR with updated workflow files, and stamps the new version into `sfl.json`.
 
 ---
 

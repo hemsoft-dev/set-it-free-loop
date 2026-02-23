@@ -27,8 +27,8 @@
     },
     "sourceSha": {
       "type": "string",
-      "description": "The git SHA of the source repo at deployment time.",
-      "pattern": "^[0-9a-f]{40}$"
+      "description": "The git SHA of the source repo at deployment time. Use 'self' when the SFL repo dogfoods its own loop.",
+      "pattern": "^([0-9a-f]{40}|self)$"
     },
     "components": {
       "type": "array",

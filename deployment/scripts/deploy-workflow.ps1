@@ -89,9 +89,14 @@ if ($Workflow -and $Tier) {
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Resolve-Path (Join-Path $ScriptDir "..\..")
 
-# ─── SFL Version ──────────────────────────────────────────────────────────────
+# ─── SFL Version (read from VERSION file — single source of truth) ────────────
 
-$SflVersion = "2.0.0"
+$VersionFile = Join-Path $RepoRoot "VERSION"
+if (-not (Test-Path $VersionFile)) {
+    Write-Error "VERSION file not found at $VersionFile. This file is the single source of truth for the SFL version."
+    exit 1
+}
+$SflVersion = (Get-Content $VersionFile -Raw).Trim()
 
 # ─── Tier definitions ─────────────────────────────────────────────────────────
 
