@@ -25,10 +25,10 @@ tools:
 
 safe-outputs:
   noop:
-    max: 1
+    max: 2
   update-issue:
     target: "*"
-    max: 3
+    max: 5
 ---
 
 <!-- sfl:
@@ -60,7 +60,7 @@ post a promotion comment. Process exactly one PR per run.
 ## Step 1 — Find the target PR
 
 Search for open draft PRs with `agent:pr` and without `agent:human-required`.
-Take the single oldest. If none, call `noop` and exit.
+Take the single oldest. If none, skip to Phase 2 (Step 11 — Merge Job).
 
 ## Step 2 — Determine the current review cycle
 
@@ -68,7 +68,7 @@ Check labels for `pr:cycle-N`. No label = cycle 0.
 
 ## Step 3 — Check if already promoted
 
-If PR is non-draft and has a promoter marker, call `noop` and exit.
+If PR is non-draft and has a promoter marker, skip to Phase 2 (Step 11).
 If PR is still draft but has a marker, continue (retry promotion).
 
 ## Step 4 — Verify all three analyzers have reviewed
@@ -141,11 +141,70 @@ Only valid after Step 8 confirms PR is non-draft.
 ## Guardrails
 
 - Promote exactly ONE PR per run
+- Merge exactly ONE PR per run
 - For every skip path, call `noop`
 - Never modify PR code, title, or body content
-- Never close or merge the PR — only draft → ready-for-review
+- Never close or merge the PR during promotion — only draft → ready-for-review
 - Never apply `human:ready-for-review` to a draft PR
 - If `gh pr ready` fails, call `noop` and exit
 - If `gh pr merge --squash` fails (e.g., merge conflict), do NOT retry.
   Instead: post a comment explaining the failure, add `agent:human-required`
   label, and exit
+- `gh pr merge` is the only supported mechanism for merging approved PRs
+
+---
+
+## Phase 2 — Merge Job
+
+After completing Phase 1 (Promotion), check for approved PRs ready to merge.
+This phase runs regardless of whether Phase 1 promoted a PR or nooped.
+Process exactly ONE merge per run.
+
+## Step 11 — Find merge candidate
+
+Search for open PRs that are NOT draft, have `human:ready-for-review`, and
+have at least one `APPROVED` review. Take the oldest.
+
+If none, call `noop` with message "No approved PRs awaiting merge." and exit.
+
+## Step 12 — Verify merge eligibility
+
+Check `mergeable` = `MERGEABLE` and `mergeStateStatus` = `CLEAN`.
+If not, call `noop` and exit.
+
+## Step 13 — Authenticate GitHub CLI
+
+```bash
+export GH_TOKEN="${GITHUB_TOKEN:-$COPILOT_GITHUB_TOKEN}"
+gh auth status
+```
+
+If auth fails, call `noop` and exit.
+
+## Step 14 — Squash merge and delete branch
+
+```bash
+gh pr merge <number> --squash --delete-branch
+```
+
+## Step 15 — Verify merge succeeded
+
+If PR is still open, call `noop` and exit. If MERGED, continue.
+
+## Step 16 — Post merge comment
+
+```markdown
+[MARKER:pr-merge]
+## ✅ PR Merged
+
+**PR**: #<number>
+**Linked Issue**: #<issue-number>
+**Merge method**: squash
+**Branch**: <branch-name> (deleted)
+
+This PR was automatically merged after human approval.
+```
+
+## Step 17 — Clean up linked issue labels
+
+Remove `agent:in-progress` from the linked issue. Keep all other labels.
