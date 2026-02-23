@@ -140,6 +140,51 @@ jobs:
           echo "orphaned_prs_found=$FOUND" >> "$GITHUB_OUTPUT"
           echo "Found $FOUND orphaned agent PRs"
 
+      - name: "Check: stale unclaimed issues"
+        id: stale-unclaimed
+        run: |
+          set -euo pipefail
+
+          FOUND=0
+          TWO_HOURS_AGO=$(date -u -d '2 hours ago' '+%Y-%m-%dT%H:%M:%SZ')
+
+          # Get agent:fixable issues that don't have blocking labels
+          gh issue list --repo "$REPO" --state open --label "agent:fixable" \
+            --json number,createdAt,labels,title --limit 100 > /tmp/fixable_issues.json
+
+          while IFS= read -r ROW; do
+            ISSUE_NUM=$(echo "$ROW" | jq '.number')
+            CREATED=$(echo "$ROW" | jq -r '.createdAt')
+
+            # Skip if not older than 2 hours
+            if [[ "$CREATED" > "$TWO_HOURS_AGO" ]]; then
+              continue
+            fi
+
+            # Skip if issue has blocking labels
+            HAS_BLOCKING=$(echo "$ROW" | jq '[.labels[].name] | any(. == "agent:in-progress" or . == "agent:pause" or . == "agent:human-required" or . == "agent:escalated")')
+            if [ "$HAS_BLOCKING" = "true" ]; then
+              continue
+            fi
+
+            # Skip if already flagged
+            ALREADY_FLAGGED=$(gh issue view "$ISSUE_NUM" --repo "$REPO" --json comments \
+              --jq '.comments[].body' | grep -c 'over 2 hours without being claimed' || echo 0)
+            if [ "$ALREADY_FLAGGED" -gt 0 ]; then
+              continue
+            fi
+
+            echo "Issue #$ISSUE_NUM has been agent:fixable for over 2 hours without being claimed"
+
+            gh issue comment "$ISSUE_NUM" --repo "$REPO" \
+              --body "⏰ **SFL Auditor**: This issue has been \`agent:fixable\` for over 2 hours without being claimed by the Issue Processor. This may indicate a pipeline stall. A human should investigate whether the Issue Processor is running correctly."
+
+            FOUND=$((FOUND + 1))
+          done < <(jq -c '.[]' /tmp/fixable_issues.json)
+
+          echo "stale_unclaimed_found=$FOUND" >> "$GITHUB_OUTPUT"
+          echo "Found $FOUND stale unclaimed issues"
+
       - name: "Check: unexplained agent:pause"
         id: paused
         run: |
@@ -172,9 +217,10 @@ jobs:
           ORPHANED_LABELS="${{ steps.orphaned-labels.outputs.orphaned_labels_fixed }}"
           CONFLICTING="${{ steps.conflicting.outputs.conflicting_fixed }}"
           ORPHANED_PRS="${{ steps.orphaned-prs.outputs.orphaned_prs_found }}"
+          STALE_UNCLAIMED="${{ steps.stale-unclaimed.outputs.stale_unclaimed_found }}"
           PAUSED="${{ steps.paused.outputs.unexplained_pause_found }}"
 
-          TOTAL=$((ORPHANED_LABELS + CONFLICTING + ORPHANED_PRS + PAUSED))
+          TOTAL=$((ORPHANED_LABELS + CONFLICTING + ORPHANED_PRS + STALE_UNCLAIMED + PAUSED))
 
           echo "## SFL Auditor Summary"
           echo ""
@@ -183,6 +229,7 @@ jobs:
           echo "| Orphaned in-progress labels fixed | $ORPHANED_LABELS |"
           echo "| Conflicting labels fixed | $CONFLICTING |"
           echo "| Orphaned agent PRs flagged | $ORPHANED_PRS |"
+          echo "| Stale unclaimed issues flagged | $STALE_UNCLAIMED |"
           echo "| Unexplained pauses flagged | $PAUSED |"
           echo ""
 
