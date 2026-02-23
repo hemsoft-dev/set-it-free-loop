@@ -1,8 +1,8 @@
 ---
 description: |
-  This workflow claims the single oldest open issue labelled agent:fixable,
-  implements the described fix on a new branch, and opens a draft pull request.
-  One issue per run — no fan-out.
+  This workflow runs every 30 minutes, picks the single oldest open issue
+  labelled agent:fixable, claims it, implements the described fix on a new
+  branch, and opens a pull request. One issue per run — no fan-out.
 
 on:
   workflow_dispatch:
@@ -21,43 +21,24 @@ tools:
 safe-outputs:
   create-pull-request:
     title-prefix: "[agent-fix] "
-    labels: [agent:pr, type:fix]
+    labels: [agent:pr]
     draft: true
   update-issue:
     target: "*"
     max: 3
 ---
 
-<!-- sfl:
-  status: active
-  version: "1.0.0"
-  category: quality
-  risk-class: low
-  target-labels: [agent:fixable, type:action-item]
-  outcome-definition: |
-    Claims one agent:fixable issue per run, implements the fix, and opens a
-    draft PR. KPI: >90% of claimed issues result in a valid draft PR within
-    one run.
-  acceptance-criteria:
-    - Claims exactly one issue per run (atomic label swap)
-    - Opens a draft PR with linked issue reference
-    - Validates issue body contains Finding, Fix, and Acceptance Criteria
-    - Respects safe-write boundaries (never touches auth, payments, migrations, CI)
-    - Fails gracefully with agent:pause on unexpected errors
-  source-repo: HemSoft/set-it-free-loop
--->
-
 # Issue Processor
 
-Find the oldest open `agent:fixable` issue, claim it, implement the fix, and
-open a pull request. Process exactly one issue per run.
+Run every 30 minutes. Find the oldest open `agent:fixable` issue, claim it,
+implement the fix, and open a pull request. Process exactly one issue per run.
 
 ## Step 1 — Find the oldest claimable issue
 
 Search for open issues in this repository that have ALL of the following labels:
 
 - `agent:fixable`
-- `type:action-item`
+- `action-item`
 
 And do NOT have any of:
 
@@ -75,7 +56,7 @@ If no issue matches, exit immediately — nothing to do.
 Before doing any other work, call `update_issue` with:
 
 - `issue_number`: the issue number found in Step 1 (always required)
-- `labels`: replace with `["agent:in-progress", "type:report", "type:action-item", "audit"]`
+- `labels`: replace with `["agent:in-progress", "report", "action-item", "audit"]`
   (remove `agent:fixable`, add `agent:in-progress` — keep all other existing labels)
 - `body`: append "🤖 Issue Processor claimed this issue. Working on a fix."
 - `operation`: `"append"`

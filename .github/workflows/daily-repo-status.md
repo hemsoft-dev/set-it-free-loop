@@ -18,33 +18,35 @@ network: defaults
 
 tools:
   github:
+    # If in a public repo, setting `lockdown: false` allows
+    # reading issues, pull requests and comments from 3rd-parties
+    # If in a private repo this has no particular effect.
     lockdown: false
 
 safe-outputs:
   create-issue:
     title-prefix: "[repo-status] "
-    labels: [type:report, daily-status]
+    labels: [report, daily-status]
+  update-issue:
+    target: "*"
+    max: 5
+source: githubnext/agentics/workflows/daily-repo-status.md@d19056381ba48cb1f7c78510c23069701fa7ae87
 ---
-
-<!-- sfl:
-  status: active
-  version: "1.0.0"
-  category: reporting
-  risk-class: trivial
-  outcome-definition: |
-    One issue per day summarizing recent repository activity.
-    KPI: Issue created within 5 minutes of scheduled trigger; no duplicate issues per day.
-  acceptance-criteria:
-    - Runs without error on a repo with no prior issues
-    - Creates exactly one issue per run
-    - Labels correctly (type:report, daily-status)
-    - Never sets type:action-item — reports are informational only
-  source-repo: HemSoft/set-it-free-loop
--->
 
 # Daily Repo Status
 
 Create an upbeat daily status report for the repo as a GitHub issue.
+
+## Step 0 — Close previous daily status reports
+
+Before creating today's report, search for all **open** issues that have BOTH
+the `daily-status` AND `report` labels. For each one found, close it using
+`update_issue` with:
+
+- `issue_number`: the issue number
+- `status`: `"closed"`
+
+This ensures only today's report remains open.
 
 ## What to include
 
