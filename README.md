@@ -1,7 +1,7 @@
 # Set it Free Loop™
 
-[![SFL Version](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FHemSoft%2Fset-it-free-loop%2Fmain%2Fsfl.json&query=%24.version&label=SFL&color=FFD700&style=flat-square)](CATALOG.md)
-[![Tier](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FHemSoft%2Fset-it-free-loop%2Fmain%2Fsfl.json&query=%24.tier&label=tier&color=0e8a16&style=flat-square)](CATALOG.md)
+[![SFL](https://img.shields.io/badge/SFL-2.0.0-FFD700?style=flat-square)](CATALOG.md)
+[![Tier](https://img.shields.io/badge/tier-full-0e8a16?style=flat-square)](CATALOG.md)
 [![Workflows](https://img.shields.io/badge/workflows-9-blue?style=flat-square)](CATALOG.md)
 
 > **One Intake. One Loop. Compounding Quality.**
