@@ -138,3 +138,13 @@ Call `update_issue` with:
 - If any step fails unexpectedly: call `update_issue` with labels that replace
   `agent:in-progress` with `agent:pause` (keep all other labels), and body
   appending the failure reason, then exit cleanly
+
+## Known Limitation: Label Delivery
+
+`add_labels`/`remove_labels` safe outputs are best-effort (Safe Outputs Spec
+§10.1). When batched after `create_pull_request`, they can be **silently
+dropped**. Consumer repos that rely on label transitions (e.g.,
+`agent:fixable` → `agent:in-progress`) should add a deterministic
+`ensure-issue-labels` fallback job with `needs: [agent, safe_outputs]` and
+`if: (!cancelled())` that verifies labels via direct GitHub API and repairs
+if necessary. See `hs-buddy` for a reference implementation.
