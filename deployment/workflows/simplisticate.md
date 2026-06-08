@@ -14,6 +14,10 @@ permissions:
   issues: read
   pull-requests: read
 
+engine:
+  id: codex
+  model: gpt-5.5?effort=high
+
 network: defaults
 
 tools:

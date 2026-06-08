@@ -14,8 +14,8 @@ permissions:
   pull-requests: read
 
 engine:
-  id: copilot
-  model: claude-sonnet-4.6
+  id: codex
+  model: gpt-5.5?effort=high
 
 network: defaults
 

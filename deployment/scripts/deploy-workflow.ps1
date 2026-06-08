@@ -11,6 +11,10 @@
     2. Tier-based: Deploy a predefined set of workflows by tier.
        .\deploy-workflow.ps1 -Tier standard -Repos "org/repo"
 
+    3. Local materialization: Apply the central engine policy to local workflow
+       author files and optionally compile the staged .github workflows.
+       .\deploy-workflow.ps1 -Local -Compile
+
     For each target repo, this script:
       1. Clones the repo (direct clone — no fork; assumes write access within the org)
       2. Creates a feature branch
@@ -40,6 +44,14 @@
 .PARAMETER Repos
     Comma-separated list of target repos in "org/repo" format.
 
+.PARAMETER Local
+    Materialize the central engine policy into local deployment and staging
+    workflow markdown. When used without -Workflow or -Tier, updates every
+    deployment/workflows/*.md file except _TEMPLATE.md.
+
+.PARAMETER Compile
+    With -Local, compile the materialized .github/workflows/*.md files via gh aw.
+
 .PARAMETER DryRun
     Print what would be done without making any changes or API calls.
 
@@ -51,6 +63,7 @@
     .\deploy-workflow.ps1 -Workflow repo-audit -Repos "HemSoft/hs-buddy"
     .\deploy-workflow.ps1 -Tier full -Repos "HemSoft/app1,HemSoft/app2"
     .\deploy-workflow.ps1 -Tier standard -Repos "HemSoft/myapp" -DryRun
+    .\deploy-workflow.ps1 -Local -Compile
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -62,10 +75,14 @@ param(
     [ValidateSet("minimal", "standard", "full")]
     [string] $Tier,
 
-    [Parameter(Mandatory)]
+    [Parameter(Mandatory = $false)]
     [string] $Repos,
 
     [switch] $DryRun,
+
+    [switch] $Local,
+
+    [switch] $Compile,
 
     [string] $CloneDir = "$env:TEMP\sfl-deploy"
 )
@@ -75,12 +92,20 @@ $ErrorActionPreference = "Stop"
 
 # ─── Validate parameters ─────────────────────────────────────────────────────
 
-if (-not $Workflow -and -not $Tier) {
-    Write-Error "You must specify either -Workflow or -Tier."
+if (-not $Workflow -and -not $Tier -and -not $Local) {
+    Write-Error "You must specify -Workflow, -Tier, or -Local."
     exit 1
 }
 if ($Workflow -and $Tier) {
     Write-Error "Cannot specify both -Workflow and -Tier. Use one or the other."
+    exit 1
+}
+if (-not $Local -and [string]::IsNullOrWhiteSpace($Repos)) {
+    Write-Error "You must specify -Repos unless using -Local."
+    exit 1
+}
+if ($Compile -and -not $Local) {
+    Write-Error "-Compile can only be used with -Local."
     exit 1
 }
 
@@ -184,7 +209,7 @@ function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject
 
     $frontmatter = [regex]::Replace(
         $frontmatter,
-        '(?ms)^engine:[^\r\n]*(?:\r?\n(?:[ \t]+.*(?:\r?\n|$))*)?\r?\n?',
+        '(?m)(?:^[ \t]*\r?\n)?^engine:[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*\r?\n?',
         '',
         1
     ).TrimEnd("`r", "`n")
@@ -194,6 +219,8 @@ function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject
     } else {
         $frontmatter = "$frontmatter`n`n$engineBlock"
     }
+
+    $frontmatter = [regex]::Replace($frontmatter, '(\r?\n){3,}(?=engine:)', "`n`n")
 
     return "---`n$frontmatter`n---$rest"
 }
@@ -246,7 +273,17 @@ $TierComponents = @{
 
 # ─── Resolve what to deploy ──────────────────────────────────────────────────
 
-if ($Workflow) {
+if ($Local -and -not $Workflow -and -not $Tier) {
+    $WorkflowsToDeploy = @(
+        Get-ChildItem (Join-Path $RepoRoot "deployment\workflows") -Filter "*.md" |
+            Where-Object { $_.BaseName -ne "_TEMPLATE" } |
+            Sort-Object BaseName |
+            ForEach-Object { $_.BaseName }
+    )
+    $InfrastructureToDeploy = @()
+    $DeployTier = "local"
+    $DeployComponents = $WorkflowsToDeploy
+} elseif ($Workflow) {
     $WorkflowSource = Join-Path $RepoRoot "deployment\workflows\$Workflow.md"
     if (-not (Test-Path $WorkflowSource)) {
         Write-Error "Workflow not found: $WorkflowSource`nRun 'Get-ChildItem $RepoRoot\deployment\workflows\' to see available workflows."
@@ -501,9 +538,65 @@ for all available workflows.
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
+function Update-LocalWorkflowFiles {
+    $DestWorkdir = Join-Path $RepoRoot ".github\workflows"
+    Write-Status "🧩" "Materializing local workflows from engine policy"
+
+    if (-not $DryRun) {
+        New-Item -ItemType Directory -Force $DestWorkdir | Out-Null
+    }
+
+    foreach ($wf in $WorkflowsToDeploy) {
+        $engineProfile = Resolve-SflEngineProfile $wf
+        $SourceFile = Join-Path $RepoRoot "deployment\workflows\$wf.md"
+        $DestFile = Join-Path $DestWorkdir "$wf.md"
+        $sourceContent = ConvertTo-SflWorkflowWithEnginePolicy `
+            -Content (Get-Content $SourceFile -Raw) `
+            -EngineProfile $engineProfile `
+            -WorkflowName $wf
+        $destInput = if (Test-Path $DestFile) {
+            Get-Content $DestFile -Raw
+        } else {
+            $sourceContent
+        }
+        $destContent = ConvertTo-SflWorkflowWithEnginePolicy `
+            -Content $destInput `
+            -EngineProfile $engineProfile `
+            -WorkflowName $wf
+
+        if ($DryRun) {
+            Write-Status "🔍" "[DRY RUN] Would apply engine policy in deployment/workflows/$wf.md and .github/workflows/$wf.md with $($engineProfile.Provider) $($engineProfile.RenderedModel)" Yellow
+            continue
+        }
+
+        Set-Content $SourceFile -Value $sourceContent -NoNewline
+        Set-Content $DestFile -Value $destContent -NoNewline
+        Write-Status "📄" "  $wf.md ($($engineProfile.Provider) $($engineProfile.RenderedModel))"
+    }
+
+    if (-not $Compile) {
+        return
+    }
+
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        throw "GitHub CLI (gh) is not installed. Install via: winget install GitHub.cli"
+    }
+
+    foreach ($wf in $WorkflowsToDeploy) {
+        $DestFile = Join-Path $DestWorkdir "$wf.md"
+        Write-Status "🔧" "Compiling $wf.md"
+        gh aw compile $DestFile
+        if ($LASTEXITCODE -ne 0) {
+            throw "gh aw compile failed for $DestFile"
+        }
+    }
+}
+
 Write-Status "🔄" "Set it Free Loop — Workflow Deployer" White
 if ($Tier) {
     Write-Status "📦" "Tier: $Tier ($($WorkflowsToDeploy.Count) workflows + $($InfrastructureToDeploy.Count) infrastructure)"
+} elseif ($Local) {
+    Write-Status "📦" "Local: $($WorkflowsToDeploy.Count) workflows"
 } else {
     Write-Status "📦" "Workflow: $Workflow"
 }
@@ -512,6 +605,17 @@ Write-Status "🤖" "Engine policy: $DefaultEngineProfileName"
 
 if ($DryRun) {
     Write-Status "🔍" "DRY RUN — no changes will be made" Yellow
+}
+
+if ($Local) {
+    try {
+        Update-LocalWorkflowFiles
+        Write-Status "📊" "Local workflows updated: $($WorkflowsToDeploy.Count)" Green
+        exit 0
+    } catch {
+        Write-Status "❌" "Local workflow update failed: $_" Red
+        exit 1
+    }
 }
 
 # Verify gh CLI
