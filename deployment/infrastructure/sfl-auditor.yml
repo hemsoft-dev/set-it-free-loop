@@ -26,19 +26,29 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     env:
-      GH_TOKEN: ${{ secrets.GH_AW_GITHUB_TOKEN }}
       REPO: ${{ github.repository }}
     steps:
+      - name: Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.SFL_APP_ID }}
+          private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
+
       - name: Verify authentication
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           if ! gh auth status 2>&1; then
-            echo "::error::GH_AW_GITHUB_TOKEN is not valid"
+            echo "::error::SFL GitHub App token is not valid"
             exit 1
           fi
 
       - name: Gather current state
         id: gather
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -62,6 +72,8 @@ jobs:
 
       - name: "Check: orphaned agent:in-progress labels"
         id: orphaned-labels
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -90,6 +102,8 @@ jobs:
 
       - name: "Check: conflicting labels"
         id: conflicting
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -110,6 +124,8 @@ jobs:
 
       - name: "Check: orphaned agent PRs"
         id: orphaned-prs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -142,6 +158,8 @@ jobs:
 
       - name: "Check: stale unclaimed issues"
         id: stale-unclaimed
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -187,6 +205,8 @@ jobs:
 
       - name: "Check: stalled draft PRs without analyzer reviews"
         id: stalled-prs
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 
@@ -237,6 +257,8 @@ jobs:
 
       - name: "Check: unexplained agent:pause"
         id: paused
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
 

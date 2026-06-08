@@ -18,5 +18,118 @@
     "pr-analyzer-c",
     "pr-fixer",
     "pr-promoter"
-  ]
+  ],
+  "enginePolicy": {
+    "defaultProfile": "codex-gpt-55-high",
+    "workflows": [
+      {
+        "name": "daily-repo-status",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "repo-audit",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "issue-processor",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "simplisticate",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "pr-analyzer-a",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "pr-analyzer-b",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "pr-analyzer-c",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "pr-fixer",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "pr-promoter",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      }
+    ]
+  }
 }

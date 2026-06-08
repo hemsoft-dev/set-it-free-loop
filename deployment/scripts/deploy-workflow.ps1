@@ -98,6 +98,128 @@ if (-not (Test-Path $VersionFile)) {
 }
 $SflVersion = (Get-Content $VersionFile -Raw).Trim()
 
+$EnginePolicyPath = Join-Path $RepoRoot "deployment\engine-policy.json"
+if (-not (Test-Path $EnginePolicyPath)) {
+    Write-Error "Engine policy file not found at $EnginePolicyPath."
+    exit 1
+}
+
+$EnginePolicy = Get-Content $EnginePolicyPath -Raw | ConvertFrom-Json
+
+function Get-SflObjectProperty([object]$Object, [string]$Name, [string]$Context) {
+    if ($null -eq $Object) {
+        throw "$Context is null."
+    }
+
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property -or $null -eq $property.Value) {
+        throw "$Context is missing required property '$Name'."
+    }
+
+    return $property.Value
+}
+
+$DefaultEngineProfileName = [string](Get-SflObjectProperty $EnginePolicy "defaultProfile" "engine policy")
+$EnginePolicyProfiles = Get-SflObjectProperty $EnginePolicy "profiles" "engine policy"
+
+function Resolve-SflEngineProfile([string]$WorkflowName) {
+    $profileName = $DefaultEngineProfileName
+    $workflowsProperty = $EnginePolicy.PSObject.Properties["workflows"]
+    if ($null -ne $workflowsProperty -and $null -ne $workflowsProperty.Value) {
+        $workflowProperty = $workflowsProperty.Value.PSObject.Properties[$WorkflowName]
+        if ($null -ne $workflowProperty -and $null -ne $workflowProperty.Value) {
+            $profileProperty = $workflowProperty.Value.PSObject.Properties["profile"]
+            if ($null -ne $profileProperty -and $null -ne $profileProperty.Value) {
+                $profileName = [string]$profileProperty.Value
+            }
+        }
+    }
+
+    $profileProperty = $EnginePolicyProfiles.PSObject.Properties[$profileName]
+    if ($null -eq $profileProperty -or $null -eq $profileProperty.Value) {
+        throw "Engine profile '$profileName' was not found in $EnginePolicyPath."
+    }
+
+    $profile = $profileProperty.Value
+    $provider = [string](Get-SflObjectProperty $profile "provider" "engine profile '$profileName'")
+    $model = [string](Get-SflObjectProperty $profile "model" "engine profile '$profileName'")
+    $effortProperty = $profile.PSObject.Properties["effort"]
+    $effort = if ($null -ne $effortProperty -and $null -ne $effortProperty.Value) {
+        [string]$effortProperty.Value
+    } else {
+        $null
+    }
+
+    if ($effort -and @("low", "medium", "high") -notcontains $effort) {
+        throw "Engine profile '$profileName' uses unsupported effort '$effort'. Use low, medium, or high."
+    }
+
+    $renderedModel = if ($effort) { "$model`?effort=$effort" } else { $model }
+    $requiredSecretsProperty = $profile.PSObject.Properties["requiredSecretsAnyOf"]
+    $requiredSecretsAnyOf = if ($null -ne $requiredSecretsProperty -and $null -ne $requiredSecretsProperty.Value) {
+        @($requiredSecretsProperty.Value)
+    } else {
+        @()
+    }
+
+    return [pscustomobject]@{
+        Profile              = $profileName
+        Provider             = $provider
+        Model                = $model
+        Effort               = $effort
+        RenderedModel        = $renderedModel
+        RequiredSecretsAnyOf = $requiredSecretsAnyOf
+    }
+}
+
+function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject]$EngineProfile, [string]$WorkflowName) {
+    $frontmatterMatch = [regex]::Match($Content, '(?s)\A---\r?\n(?<frontmatter>.*?)\r?\n---')
+    if (-not $frontmatterMatch.Success) {
+        throw "Workflow '$WorkflowName' does not start with YAML frontmatter."
+    }
+
+    $frontmatter = $frontmatterMatch.Groups["frontmatter"].Value
+    $rest = $Content.Substring($frontmatterMatch.Length)
+    $engineBlock = "engine:`n  id: $($EngineProfile.Provider)`n  model: $($EngineProfile.RenderedModel)"
+
+    $frontmatter = [regex]::Replace(
+        $frontmatter,
+        '(?ms)^engine:[^\r\n]*(?:\r?\n(?:[ \t]+.*(?:\r?\n|$))*)?\r?\n?',
+        '',
+        1
+    ).TrimEnd("`r", "`n")
+
+    if ($frontmatter -match '(?m)^network:') {
+        $frontmatter = [regex]::Replace($frontmatter, '(?m)^network:', "$engineBlock`n`nnetwork:", 1)
+    } else {
+        $frontmatter = "$frontmatter`n`n$engineBlock"
+    }
+
+    return "---`n$frontmatter`n---$rest"
+}
+
+function New-SflEnginePolicyManifest([string[]]$WorkflowNames) {
+    $workflowEntries = @(
+        $WorkflowNames | ForEach-Object {
+            $profile = Resolve-SflEngineProfile $_
+            [ordered]@{
+                name                 = $_
+                profile              = $profile.Profile
+                provider             = $profile.Provider
+                model                = $profile.Model
+                effort               = $profile.Effort
+                renderedModel        = $profile.RenderedModel
+                requiredSecretsAnyOf = @($profile.RequiredSecretsAnyOf)
+            }
+        }
+    )
+
+    return [ordered]@{
+        defaultProfile = $DefaultEngineProfileName
+        workflows      = $workflowEntries
+    }
+}
+
 # ─── Tier definitions ─────────────────────────────────────────────────────────
 
 $TierComponents = @{
@@ -166,6 +288,8 @@ if (-not $CurrentSha) {
     exit 1
 }
 
+$EnginePolicyManifest = New-SflEnginePolicyManifest $WorkflowsToDeploy
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function Write-Status([string]$Emoji, [string]$Message, [ConsoleColor]$Color = "Cyan") {
@@ -186,7 +310,13 @@ function Deploy-ToRepo([string]$TargetRepo) {
         Write-Status "🔍" "[DRY RUN] Would clone $TargetRepo to $ClonePath" Yellow
         Write-Status "🔍" "[DRY RUN] Would create branch: $BranchName" Yellow
         foreach ($wf in $WorkflowsToDeploy) {
-            Write-Status "🔍" "[DRY RUN] Would copy $wf.md → .github/workflows/" Yellow
+            $engineProfile = Resolve-SflEngineProfile $wf
+            $sourceFile = Join-Path $RepoRoot "deployment\workflows\$wf.md"
+            [void](ConvertTo-SflWorkflowWithEnginePolicy `
+                -Content (Get-Content $sourceFile -Raw) `
+                -EngineProfile $engineProfile `
+                -WorkflowName $wf)
+            Write-Status "🔍" "[DRY RUN] Would copy $wf.md → .github/workflows/ with $($engineProfile.Provider) $($engineProfile.RenderedModel)" Yellow
         }
         foreach ($inf in $InfrastructureToDeploy) {
             Write-Status "🔍" "[DRY RUN] Would copy $inf.yml → .github/workflows/" Yellow
@@ -203,7 +333,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
     try {
         # 1. Clone
         Write-Status "📥" "Cloning $TargetRepo…"
-        git clone "git@github-work1:$TargetRepo.git" $ClonePath --depth=1 --quiet
+        git clone "git@github-personal1:$TargetRepo.git" $ClonePath --depth=1 --quiet
         if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
 
         # 2. Create branch
@@ -218,13 +348,19 @@ function Deploy-ToRepo([string]$TargetRepo) {
             $DestFile   = Join-Path $DestWorkdir "$wf.md"
             Copy-Item $SourceFile $DestFile
 
-            $content    = Get-Content $DestFile -Raw
+            $engineProfile = Resolve-SflEngineProfile $wf
+            $content = ConvertTo-SflWorkflowWithEnginePolicy `
+                -Content (Get-Content $DestFile -Raw) `
+                -EngineProfile $engineProfile `
+                -WorkflowName $wf
             $SflSourceRef = "HemSoft/set-it-free-loop/deployment/workflows/$wf.md@$CurrentSha"
             $pinComment = "# Deployed from: $SflSourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n"
             if ($content -notmatch "# Deployed from:") {
-                Set-Content $DestFile ($pinComment + $content)
+                Set-Content $DestFile -Value ($pinComment + $content) -NoNewline
+            } else {
+                Set-Content $DestFile -Value $content -NoNewline
             }
-            Write-Status "📄" "  $wf.md"
+            Write-Status "📄" "  $wf.md ($($engineProfile.Provider) $($engineProfile.RenderedModel))"
         }
 
         # 4. Copy infrastructure files (standard YAML — go directly to .github/workflows/)
@@ -244,7 +380,8 @@ function Deploy-ToRepo([string]$TargetRepo) {
             source     = "HemSoft/set-it-free-loop"
             sourceSha  = $CurrentSha
             components = $DeployComponents
-        } | ConvertTo-Json -Depth 3
+            enginePolicy = $EnginePolicyManifest
+        } | ConvertTo-Json -Depth 6
 
         $manifestPath = Join-Path $ClonePath "sfl.json"
         Set-Content $manifestPath $manifest
@@ -301,6 +438,7 @@ Source: HemSoft/set-it-free-loop@$CurrentSha
 Version: $SflVersion
 Tier: $DeployTier
 Components: $($DeployComponents -join ', ')
+Engine policy: $DefaultEngineProfileName
 
 See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
         if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
@@ -328,6 +466,7 @@ See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
 **Version**: $SflVersion
 **Tier**: $DeployTier
 **Source SHA**: ``$CurrentSha``
+**Engine policy**: ``$DefaultEngineProfileName``
 
 ### Components deployed
 
@@ -369,6 +508,7 @@ if ($Tier) {
     Write-Status "📦" "Workflow: $Workflow"
 }
 Write-Status "🎯" "Source SHA: $CurrentSha"
+Write-Status "🤖" "Engine policy: $DefaultEngineProfileName"
 
 if ($DryRun) {
     Write-Status "🔍" "DRY RUN — no changes will be made" Yellow

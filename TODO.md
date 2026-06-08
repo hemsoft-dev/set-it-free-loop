@@ -37,15 +37,35 @@ gh workflow run sfl-dispatcher.yml --repo HemSoft/set-it-free-loop
 gh workflow run sfl-auditor.yml --repo HemSoft/set-it-free-loop
 ```
 
-### 3. Verify the `GH_AW_GITHUB_TOKEN` secret exists
+### 3. Verify the SFL GitHub App credentials exist
 
-Both `sfl-dispatcher.yml` and `sfl-auditor.yml` use `secrets.GH_AW_GITHUB_TOKEN`. Confirm the secret is configured:
+Both `sfl-dispatcher.yml` and `sfl-auditor.yml` mint a short-lived
+installation token from the SFL GitHub App. Because `HemSoft` is a user account
+rather than a GitHub organization, configure these per repository:
 
 ```powershell
-gh secret list --repo HemSoft/set-it-free-loop
+gh variable list --repo HemSoft/set-it-free-loop
+gh secret list --repo HemSoft/set-it-free-loop --app actions
 ```
 
-If `GH_AW_GITHUB_TOKEN` is missing, create it with a PAT that has `repo`, `workflow`, and `issues` permissions.
+Required entries:
+
+- Variable: `SFL_APP_ID`
+- Secret: `SFL_APP_PRIVATE_KEY`
+
+For gh-aw safe outputs, also configure:
+
+- Variable: `SFL_APP_CLIENT_ID`
+
+To set these entries for HemSoft repositories after creating the GitHub App:
+
+```powershell
+.\deployment\scripts\set-sfl-github-app-credentials.ps1 `
+  -Repos HemSoft/set-it-free-loop,HemSoft/hs-buddy `
+  -AppId <app-id> `
+  -ClientId <client-id> `
+  -PrivateKeyPath <path-to-private-key.pem>
+```
 
 ### 4. Verify governance labels are set up
 

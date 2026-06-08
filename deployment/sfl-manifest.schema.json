@@ -52,6 +52,60 @@
       },
       "uniqueItems": true,
       "description": "List of deployed SFL components."
+    },
+    "enginePolicy": {
+      "type": "object",
+      "required": ["defaultProfile", "workflows"],
+      "properties": {
+        "defaultProfile": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workflows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "profile", "provider", "model", "renderedModel"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "profile": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provider": {
+                "type": "string",
+                "enum": ["copilot", "claude", "codex", "gemini", "crush", "opencode", "pi"]
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1
+              },
+              "effort": {
+                "type": ["string", "null"],
+                "enum": ["low", "medium", "high", null]
+              },
+              "renderedModel": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requiredSecretsAnyOf": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false,
+      "description": "Resolved engine policy used when deploying workflow markdown."
     }
   },
   "additionalProperties": false
