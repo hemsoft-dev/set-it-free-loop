@@ -337,14 +337,40 @@ jobs:
           fi
 
           MISSING=0
+          MISSING_ITEMS=""
           if ! gh api "repos/$REPO/actions/workflows/sfl-pr-review.lock.yml" >/dev/null 2>&1; then
             echo "::warning::Missing active workflow .github/workflows/sfl-pr-review.lock.yml"
             MISSING=$((MISSING + 1))
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review.lock.yml\`"$'\n'
           fi
 
           if ! gh api "repos/$REPO/labels/sfl-review" >/dev/null 2>&1; then
             echo "::warning::Missing required label sfl-review"
             MISSING=$((MISSING + 1))
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Create the \`sfl-review\` label"$'\n'
+          fi
+
+          ISSUE_TITLE="[SFL Auditor] Missing SFL review prerequisites"
+          EXISTING_ISSUE=$(gh issue list --repo "$REPO" --state open \
+            --search "\"$ISSUE_TITLE\" in:title" --json number,title \
+            --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" |
+            head -n 1)
+
+          if [ "$MISSING" -gt 0 ] && [ -z "$EXISTING_ISSUE" ]; then
+            gh issue create --repo "$REPO" \
+              --title "$ISSUE_TITLE" \
+              --label report \
+              --body "The repository declares \`sfl-pr-review\` in \`sfl.json\`, but the standalone reviewer is not usable.
+
+## Missing prerequisites
+
+$MISSING_ITEMS
+## Recovery
+
+Run \`deployment/scripts/deploy-workflow.ps1 -Tier review\` and \`deployment/governance/setup-labels.ps1\` from \`HemSoft/set-it-free-loop\`."
+          elif [ "$MISSING" -eq 0 ] && [ -n "$EXISTING_ISSUE" ]; then
+            gh issue close "$EXISTING_ISSUE" --repo "$REPO" \
+              --comment "✅ **SFL Auditor**: The standalone SFL review workflow and trigger label are available again."
           fi
 
           echo "sfl_review_prerequisites_missing=$MISSING" >> "$GITHUB_OUTPUT"
@@ -378,5 +404,5 @@ jobs:
           if [ "$TOTAL" -eq 0 ]; then
             echo "All checks passed — no discrepancies found."
           else
-            echo "Found and addressed $TOTAL discrepancies."
+            echo "Found or addressed $TOTAL discrepancies."
           fi

@@ -76,9 +76,9 @@ Review only the pull request that triggered this workflow. The reviewed commit
 must be `${{ github.event.pull_request.head.sha }}` and the SFL run ID is
 `${{ github.run_id }}`.
 
-Use the pre-fetched pull request diff at `/tmp/gh-aw/agent/pr-diff.patch`.
-Read `/tmp/gh-aw/agent/pr-review-comments.json` before creating comments so
-you do not repeat an existing current-head finding.
+Use the GitHub pull request tools to read the triggering PR, its changed files,
+and the complete diff. Before creating comments, list existing review comments
+and unresolved threads on the current head so you do not repeat a finding.
 
 ## Required review passes
 

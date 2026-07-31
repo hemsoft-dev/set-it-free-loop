@@ -81,11 +81,15 @@ Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns
 Assert-FileContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns $workflowPatterns
 Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns @(
     '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
-    'label_command'
+    'label_command',
+    'pr-diff\.patch',
+    'pr-review-comments\.json'
 )
 Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns @(
     '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
-    'label_command'
+    'label_command',
+    'pr-diff\.patch',
+    'pr-review-comments\.json'
 )
 Assert-FileExists -RelativePath '.github\workflows\sfl-pr-review.lock.yml'
 
@@ -152,7 +156,10 @@ Assert-FileContains -RelativePath 'deployment\infrastructure\sfl-auditor.yml' -P
     'permission-checks:\s*write',
     'installation/repositories',
     'viewer \{ login \}',
-    'sfl-app\[bot\]'
+    'sfl-app\[bot\]',
+    'Missing SFL review prerequisites',
+    'gh issue create',
+    'gh issue close'
 )
 Assert-FileContains -RelativePath '.github\workflows\sfl-auditor.md' -Patterns @(
     'Check: SFL review prerequisites',
