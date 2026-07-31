@@ -64,6 +64,9 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 # Deploy the full autonomous loop
 .\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "org/repo"
 
+# Or deploy only on-demand SFL pull request review
+.\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "org/repo"
+
 # Or start with hygiene-only
 .\deployment\scripts\deploy-workflow.ps1 -Tier minimal -Repos "org/repo"
 

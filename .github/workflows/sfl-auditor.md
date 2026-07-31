@@ -17,17 +17,29 @@ permissions:
 
 engine:
   id: codex
-  model: gpt-5.5?effort=high
+
+model: gpt-5.5?effort=high
 
 network: defaults
 
 tools:
   github:
     lockdown: false
+    github-app:
+      client-id: ${{ vars.SFL_APP_CLIENT_ID }}
+      private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
 
 safe-outputs:
+  github-app:
+    client-id: ${{ vars.SFL_APP_CLIENT_ID }}
+    private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
   noop:
     max: 1
+  create-issue:
+    title-prefix: "[SFL Auditor] "
+    labels: [report, audit]
+    max: 1
+    deduplicate-by-title: true
   update-issue:
     target: "*"
     max: 10
@@ -180,7 +192,27 @@ Call `update_issue` with:
 - `body`: "⏰ **SFL Auditor**: Draft PR #<pr-number> has been open for over 2 hours and is missing one or more analyzer markers. The PR Analyzers may not be dispatching for this PR. A human should investigate."
 - `operation`: `"append"`
 
-## Step 10 — Check: unexplained agent:pause
+## Step 10 — Check: SFL review prerequisites
+
+Read `sfl.json` from the repository default branch. If its `components` array
+does not contain `sfl-pr-review`, skip this check.
+
+If standalone review is declared, verify both prerequisites exist:
+
+1. `.github/workflows/sfl-pr-review.lock.yml` on the default branch
+2. The repository label `sfl-review`
+
+If either prerequisite is missing, call `create_issue` once with:
+
+- `title`: `Missing SFL review prerequisites`
+- `body`: A checklist naming every missing prerequisite and explaining that
+  `deployment/scripts/deploy-workflow.ps1 -Tier review` plus
+  `deployment/governance/setup-labels.ps1` restores the feature
+
+The safe output deduplicates this title, so do not create separate issues for
+the workflow and label.
+
+## Step 11 — Check: unexplained agent:pause
 
 For each open issue with `agent:pause`, check whether any comment on that
 issue contains the words "pause" or "paused" or "agent:pause".
@@ -192,11 +224,12 @@ If NO such comment exists:
    - `body`: "🔍 **SFL Auditor**: This issue has `agent:pause` but no explanation comment was found. A human should add a comment explaining the pause, or remove the label to resume processing."
    - `operation`: `"append"`
 
-## Step 11 — Signal completion
+## Step 12 — Signal completion
 
-After completing all checks (Steps 2–10), you MUST always call exactly one of:
+After completing all checks (Steps 2–11), you MUST always call at least one of:
 
 - `update_issue` — if any discrepancy was found and repaired (already called above)
+- `create_issue` — if SFL review prerequisites are missing
 - `noop` — if ALL checks passed and NO discrepancies were found
 
 Never finish the run without calling at least one safe output. A run with zero
@@ -210,3 +243,4 @@ safe outputs is treated as a failure.
 - Always post the recovery comment in Step 2 even if a previous auditor run already commented — it documents the recurring issue and aids debugging
 - If the GitHub API search fails for any step, skip that step and continue with the rest
 - At most 10 `update_issue` calls per run (enforced by safe-outputs max)
+- Create at most one SFL review prerequisite issue per run

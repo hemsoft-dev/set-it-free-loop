@@ -46,6 +46,7 @@ $Labels = @(
     @{ name = "agent:pause";             color = "e3771a"; description = "Agent halted; issue needs human intervention before retry" }
     @{ name = "agent:human-required";    color = "d73a4a"; description = "Fix exceeds safe automation boundary — human must own this" }
     @{ name = "agent:escalated";         color = "b60205"; description = "Escalated after repeated failures; senior review needed" }
+    @{ name = "sfl-review";              color = "6f42c1"; description = "One-shot command that requests a standalone SFL full-spectrum PR review" }
 
     # ── Risk-class labels ─────────────────────────────────────────────────────
     @{ name = "risk:trivial";  color = "cfd3d7"; description = "Zero-risk: formatting, typos, doc updates" }

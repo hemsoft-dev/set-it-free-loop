@@ -13,6 +13,7 @@
     "repo-audit",
     "issue-processor",
     "simplisticate",
+    "sfl-pr-review",
     "pr-analyzer-a",
     "pr-analyzer-b",
     "pr-analyzer-c",
@@ -69,6 +70,15 @@
           "CODEX_API_KEY",
           "OPENAI_API_KEY"
         ]
+      },
+      {
+        "name": "sfl-pr-review",
+        "profile": "copilot-gpt-55-high",
+        "provider": "copilot",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": []
       },
       {
         "name": "pr-analyzer-a",

@@ -28,12 +28,31 @@ jobs:
     env:
       REPO: ${{ github.repository }}
     steps:
+      - name: Verify SFL App configuration
+        env:
+          SFL_APP_ID: ${{ vars.SFL_APP_ID }}
+          SFL_APP_CLIENT_ID: ${{ vars.SFL_APP_CLIENT_ID }}
+          SFL_APP_PRIVATE_KEY: ${{ secrets.SFL_APP_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          for name in SFL_APP_ID SFL_APP_CLIENT_ID SFL_APP_PRIVATE_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required SFL App credential: $name"
+              exit 1
+            fi
+          done
+
       - name: Mint GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ vars.SFL_APP_ID }}
           private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
+          permission-actions: write
+          permission-checks: write
+          permission-contents: read
+          permission-issues: write
+          permission-pull-requests: write
 
       - name: Verify authentication
         env:
@@ -42,6 +61,18 @@ jobs:
           set -euo pipefail
           if ! gh auth status 2>&1; then
             echo "::error::SFL GitHub App token is not valid"
+            exit 1
+          fi
+
+          APP_LOGIN=$(gh api graphql -f query='{ viewer { login } }' --jq '.data.viewer.login')
+          if [ "$APP_LOGIN" != "sfl-app[bot]" ]; then
+            echo "::error::Expected sfl-app[bot], authenticated as $APP_LOGIN"
+            exit 1
+          fi
+
+          if ! gh api installation/repositories --paginate --jq '.repositories[].full_name' |
+            grep -qxF "$REPO"; then
+            echo "::error::The SFL App installation cannot access $REPO"
             exit 1
           fi
 
@@ -284,6 +315,41 @@ jobs:
           echo "unexplained_pause_found=$FOUND" >> "$GITHUB_OUTPUT"
           echo "Found $FOUND unexplained pauses"
 
+      - name: "Check: SFL review prerequisites"
+        id: sfl-review-prerequisites
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          EXPECTED=0
+          if MANIFEST=$(gh api "repos/$REPO/contents/sfl.json" --jq '.content' 2>/dev/null); then
+            if echo "$MANIFEST" | base64 --decode | jq -e \
+              '.components | index("sfl-pr-review") != null' >/dev/null; then
+              EXPECTED=1
+            fi
+          fi
+
+          if [ "$EXPECTED" -eq 0 ]; then
+            echo "sfl_review_prerequisites_missing=0" >> "$GITHUB_OUTPUT"
+            echo "Standalone SFL review is not declared in sfl.json — skipping prerequisite check"
+            exit 0
+          fi
+
+          MISSING=0
+          if ! gh api "repos/$REPO/actions/workflows/sfl-pr-review.lock.yml" >/dev/null 2>&1; then
+            echo "::warning::Missing active workflow .github/workflows/sfl-pr-review.lock.yml"
+            MISSING=$((MISSING + 1))
+          fi
+
+          if ! gh api "repos/$REPO/labels/sfl-review" >/dev/null 2>&1; then
+            echo "::warning::Missing required label sfl-review"
+            MISSING=$((MISSING + 1))
+          fi
+
+          echo "sfl_review_prerequisites_missing=$MISSING" >> "$GITHUB_OUTPUT"
+          echo "Found $MISSING missing SFL review prerequisite(s)"
+
       - name: Summary
         run: |
           ORPHANED_LABELS="${{ steps.orphaned-labels.outputs.orphaned_labels_fixed }}"
@@ -292,8 +358,9 @@ jobs:
           STALE_UNCLAIMED="${{ steps.stale-unclaimed.outputs.stale_unclaimed_found }}"
           STALLED_PRS="${{ steps.stalled-prs.outputs.stalled_prs_found }}"
           PAUSED="${{ steps.paused.outputs.unexplained_pause_found }}"
+          SFL_REVIEW_PREREQUISITES="${{ steps.sfl-review-prerequisites.outputs.sfl_review_prerequisites_missing }}"
 
-          TOTAL=$((ORPHANED_LABELS + CONFLICTING + ORPHANED_PRS + STALE_UNCLAIMED + STALLED_PRS + PAUSED))
+          TOTAL=$((ORPHANED_LABELS + CONFLICTING + ORPHANED_PRS + STALE_UNCLAIMED + STALLED_PRS + PAUSED + SFL_REVIEW_PREREQUISITES))
 
           echo "## SFL Auditor Summary"
           echo ""
@@ -305,6 +372,7 @@ jobs:
           echo "| Stale unclaimed issues flagged | $STALE_UNCLAIMED |"
           echo "| Stalled draft PRs flagged | $STALLED_PRS |"
           echo "| Unexplained pauses flagged | $PAUSED |"
+          echo "| Missing SFL review prerequisites | $SFL_REVIEW_PREREQUISITES |"
           echo ""
 
           if [ "$TOTAL" -eq 0 ]; then

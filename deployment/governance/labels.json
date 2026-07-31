@@ -6,6 +6,7 @@
   { "name": "agent:human-required",   "color": "d73a4a", "description": "Fix exceeds safe automation boundary — human must own this" },
   { "name": "agent:escalated",        "color": "b60205", "description": "Escalated after repeated failures; senior review needed" },
   { "name": "agent:pr",               "color": "1a7f37", "description": "PR created by the automation loop — eligible for analyzer review" },
+  { "name": "sfl-review",             "color": "6f42c1", "description": "One-shot command that requests a standalone SFL full-spectrum PR review" },
   { "name": "risk:trivial",           "color": "cfd3d7", "description": "Zero-risk: formatting, typos, doc updates" },
   { "name": "risk:low",               "color": "0e8a16", "description": "Low-risk: dependency bumps, safe refactors" },
   { "name": "risk:medium",            "color": "fbca04", "description": "Medium-risk: logic changes, new features" },
