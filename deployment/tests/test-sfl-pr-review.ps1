@@ -138,7 +138,7 @@ Assert-FileContains -RelativePath 'deployment\scripts\deploy-workflow.ps1' -Patt
     'ValidateSet\([^\)]*"review"',
     '"review"\s*=\s*@\{',
     'sfl-pr-review',
-    'gh label list --repo \$TargetRepo',
+    'gh label list --repo \$TargetRepo --limit 1000',
     'if \(\$labelExists\)',
     '''label'', ''create'', \$SflReviewLabel\.name',
     'Ensuring trigger label',

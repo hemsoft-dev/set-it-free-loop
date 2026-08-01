@@ -392,7 +392,7 @@ function Ensure-SflReviewLabel([string]$TargetRepo) {
         return
     }
 
-    $labelExistsOutput = & gh label list --repo $TargetRepo --json name `
+    $labelExistsOutput = & gh label list --repo $TargetRepo --limit 1000 --json name `
         --jq ".[] | select(.name == `"$($SflReviewLabel.name)`") | .name" 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to list labels on ${TargetRepo}: $labelExistsOutput"
