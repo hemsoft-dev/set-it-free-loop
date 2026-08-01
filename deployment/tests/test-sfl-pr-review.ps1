@@ -60,8 +60,11 @@ $workflowPatterns = @(
     'pull_request:',
     'names:\s*\[sfl-review\]',
     'sfl-review',
-    'copilot-requests:\s*write',
-    '(?m)^model:[ \t]*gpt-5\.5\?effort=high\r?$',
+    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?$',
+    '(?m)^model:[ \t]*moonshotai/kimi-k3\?effort=high\r?$',
+    'OPENAI_BASE_URL:[ \t]*https://openrouter\.ai/api/v1',
+    'OPENAI_API_KEY:[ \t]*\$\{\{ secrets\.OPENROUTER_API_KEY \}\}',
+    'openrouter\.ai',
     'SFL_APP_CLIENT_ID',
     'SFL_APP_PRIVATE_KEY',
     'create-pull-request-review-comment',
@@ -80,13 +83,15 @@ $workflowPatterns = @(
 Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns $workflowPatterns
 Assert-FileContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns $workflowPatterns
 Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns @(
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
+    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?\n[ \t]+model:',
+    'copilot-requests:\s*write',
     'label_command',
     'pr-diff\.patch',
     'pr-review-comments\.json'
 )
 Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns @(
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
+    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?\n[ \t]+model:',
+    'copilot-requests:\s*write',
     'label_command',
     'pr-diff\.patch',
     'pr-review-comments\.json'
@@ -117,13 +122,16 @@ if ('sfl-pr-review' -notin $componentEnum) {
 
 $enginePolicyPath = Join-Path $repoRoot 'deployment\engine-policy.json'
 $enginePolicy = Get-Content -LiteralPath $enginePolicyPath -Raw | ConvertFrom-Json
-$copilotProfile = $enginePolicy.profiles.PSObject.Properties['copilot-gpt-55-high']
-if ($null -eq $copilotProfile -or $copilotProfile.Value.provider -ne 'copilot') {
-    $failures.Add('deployment/engine-policy.json is missing the Copilot review profile.')
+$openRouterProfile = $enginePolicy.profiles.PSObject.Properties['openrouter-kimi-k3-high']
+if ($null -eq $openRouterProfile -or
+    $openRouterProfile.Value.provider -ne 'codex' -or
+    $openRouterProfile.Value.model -ne 'moonshotai/kimi-k3' -or
+    'OPENROUTER_API_KEY' -notin @($openRouterProfile.Value.requiredSecretsAnyOf)) {
+    $failures.Add('deployment/engine-policy.json is missing the OpenRouter Kimi K3 review profile.')
 }
 $reviewPolicy = $enginePolicy.workflows.PSObject.Properties['sfl-pr-review']
-if ($null -eq $reviewPolicy -or $reviewPolicy.Value.profile -ne 'copilot-gpt-55-high') {
-    $failures.Add('deployment/engine-policy.json does not map sfl-pr-review to Copilot.')
+if ($null -eq $reviewPolicy -or $reviewPolicy.Value.profile -ne 'openrouter-kimi-k3-high') {
+    $failures.Add('deployment/engine-policy.json does not map sfl-pr-review to OpenRouter Kimi K3.')
 }
 
 Assert-FileContains -RelativePath 'deployment\scripts\deploy-workflow.ps1' -Patterns @(
@@ -137,9 +145,22 @@ Assert-FileContains -RelativePath 'deployment\scripts\deploy-workflow.ps1' -Patt
     'Verifying SFL App credentials',
     'SFL_APP_CLIENT_ID',
     'SFL_APP_PRIVATE_KEY',
+    'Missing AI engine credential',
     'Compiling deployed workflow',
     'gh aw compile \$DestFile --approve',
+    'messageHeadline',
+    'Unexpected consumer-authored commit',
+    '\$CurrentSha\.Substring',
+    'git fetch origin \$BranchName',
+    'gh pr list',
+    'Existing PR updated',
     '\$modelLine\s*=\s*"model:'
+)
+Assert-FileContains -RelativePath 'deployment\scripts\install-gh-sfl-hemsoft.ps1' -Patterns @(
+    'hemSoftEngineConfigForWorkflow',
+    'Environment',
+    'hemSoftEnginePolicyJSON',
+    'json\.Unmarshal'
 )
 Assert-FileContains -RelativePath 'CATALOG.md' -Patterns @(
     '\|\s*\*\*review\*\*',

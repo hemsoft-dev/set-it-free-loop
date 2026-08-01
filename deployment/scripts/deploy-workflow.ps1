@@ -200,6 +200,12 @@ function Resolve-SflEngineProfile([string]$WorkflowName) {
     } else {
         @()
     }
+    $environmentProperty = $profile.PSObject.Properties["environment"]
+    $environment = if ($null -ne $environmentProperty -and $null -ne $environmentProperty.Value) {
+        $environmentProperty.Value
+    } else {
+        $null
+    }
 
     return [pscustomobject]@{
         Profile              = $profileName
@@ -208,6 +214,7 @@ function Resolve-SflEngineProfile([string]$WorkflowName) {
         Effort               = $effort
         RenderedModel        = $renderedModel
         RequiredSecretsAnyOf = $requiredSecretsAnyOf
+        Environment          = $environment
     }
 }
 
@@ -219,7 +226,14 @@ function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject
 
     $frontmatter = $frontmatterMatch.Groups["frontmatter"].Value
     $rest = $Content.Substring($frontmatterMatch.Length)
-    $engineBlock = "engine:`n  id: $($EngineProfile.Provider)"
+    $engineLines = @("engine:", "  id: $($EngineProfile.Provider)")
+    if ($null -ne $EngineProfile.Environment) {
+        $engineLines += "  env:"
+        foreach ($property in $EngineProfile.Environment.PSObject.Properties) {
+            $engineLines += "    $($property.Name): $($property.Value)"
+        }
+    }
+    $engineBlock = $engineLines -join "`n"
     $modelLine = "model: $($EngineProfile.RenderedModel)"
 
     $frontmatter = [regex]::Replace(
@@ -264,6 +278,7 @@ function New-SflEnginePolicyManifest([string[]]$WorkflowNames) {
                 effort               = $profile.Effort
                 renderedModel        = $profile.RenderedModel
                 requiredSecretsAnyOf = @($profile.RequiredSecretsAnyOf)
+                environment          = $profile.Environment
             }
         }
     )
@@ -433,12 +448,52 @@ function Assert-SflReviewCredentials([string]$TargetRepo) {
     if ($missing.Count -gt 0) {
         throw "Missing SFL App credential metadata on ${TargetRepo}: $($missing -join ', ')"
     }
+
+    foreach ($workflowName in $WorkflowsToDeploy) {
+        $profile = Resolve-SflEngineProfile $workflowName
+        $requiredSecrets = @($profile.RequiredSecretsAnyOf)
+        if ($requiredSecrets.Count -gt 0 -and
+            @($requiredSecrets | Where-Object { $_ -in $secretNames }).Count -eq 0) {
+            throw "Missing AI engine credential on ${TargetRepo} for ${workflowName}: one of $($requiredSecrets -join ', ')"
+        }
+    }
 }
 
 function Deploy-ToRepo([string]$TargetRepo) {
     $RepoName    = $TargetRepo.Split("/")[-1]
     $BranchLabel = if ($Tier) { "tier-$Tier" } else { "add-$Workflow" }
-    $BranchName  = "sfl/$BranchLabel"
+    $CanonicalBranchName = "sfl/$BranchLabel"
+    $BaseBranch = gh repo view $TargetRepo --json defaultBranchRef --jq '.defaultBranchRef.name'
+    if (-not $BaseBranch) {
+        throw "Repository $TargetRepo has no default branch."
+    }
+
+    $existingPrCandidates = @(
+        gh pr list --repo $TargetRepo --state open --json number,url,headRefName |
+            ConvertFrom-Json |
+            Where-Object { $_.headRefName -like "$CanonicalBranchName*" }
+    )
+    if ($existingPrCandidates.Count -gt 1) {
+        throw "Multiple open SFL deployment PRs match $CanonicalBranchName on $TargetRepo."
+    }
+
+    $existingPr = $existingPrCandidates | Select-Object -First 1
+    if ($existingPr) {
+        $unexpectedCommits = @(
+            gh pr view $existingPr.number --repo $TargetRepo --json commits `
+                --jq '.commits[].messageHeadline' |
+                Where-Object { $_ -notmatch '^chore: deploy Set it Free Loop' }
+        )
+        if ($unexpectedCommits.Count -gt 0) {
+            throw "Unexpected consumer-authored commit on $($existingPr.url): $($unexpectedCommits -join '; ')"
+        }
+        $BranchName = [string] $existingPr.headRefName
+        $existingPrUrl = [string] $existingPr.url
+    } else {
+        $BranchName = "$CanonicalBranchName-$($CurrentSha.Substring(0, 7))"
+        $existingPrUrl = $null
+    }
+
     $ClonePath   = Join-Path $CloneDir $RepoName
     $DestWorkdir = Join-Path $ClonePath ".github\workflows"
 
@@ -478,9 +533,21 @@ function Deploy-ToRepo([string]$TargetRepo) {
         git clone "git@github-personal1:$TargetRepo.git" $ClonePath --depth=1 --quiet
         if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
 
-        # 2. Create branch
-        git -C $ClonePath checkout -b $BranchName --quiet
-        if ($LASTEXITCODE -ne 0) { throw "git checkout -b failed" }
+        # 2. Create or reuse the open deployment PR branch
+        Push-Location $ClonePath
+        try {
+            if ($existingPr) {
+                git fetch origin $BranchName --depth=1 --quiet
+                if ($LASTEXITCODE -ne 0) { throw "git fetch origin $BranchName failed" }
+                git checkout -B $BranchName FETCH_HEAD --quiet
+                if ($LASTEXITCODE -ne 0) { throw "git checkout existing branch failed" }
+            } else {
+                git checkout -b $BranchName --quiet
+                if ($LASTEXITCODE -ne 0) { throw "git checkout -b failed" }
+            }
+        } finally {
+            Pop-Location
+        }
 
         # 3. Copy workflow files
         New-Item -ItemType Directory -Force $DestWorkdir | Out-Null
@@ -618,12 +685,16 @@ See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
 
         $componentList = ($DeployComponents | ForEach-Object { "- ``$_``" }) -join "`n"
 
-        $prUrl = gh pr create `
-            --repo $TargetRepo `
-            --head $BranchName `
-            --base main `
-            --title $prTitle `
-            --body "## Set it Free Loop — Deployment
+        if ($existingPrUrl) {
+            $prUrl = $existingPrUrl
+            Write-Status "✅" "Existing PR updated: $prUrl" Green
+        } else {
+            $prUrl = gh pr create `
+                --repo $TargetRepo `
+                --head $BranchName `
+                --base $BaseBranch `
+                --title $prTitle `
+                --body "## Set it Free Loop — Deployment
 
 **Version**: $SflVersion
 **Tier**: $DeployTier
@@ -649,10 +720,11 @@ for all available workflows.
 - [ ] Review ``sfl.json`` manifest in the repo root
 " 2>&1
 
-        if ($LASTEXITCODE -eq 0) {
-            Write-Status "✅" "PR created: $prUrl" Green
-        } else {
-            Write-Status "❌" "gh pr create failed: $prUrl" Red
+            if ($LASTEXITCODE -eq 0) {
+                Write-Status "✅" "PR created: $prUrl" Green
+            } else {
+                throw "gh pr create failed: $prUrl"
+            }
         }
 
     } finally {

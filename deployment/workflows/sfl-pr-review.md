@@ -13,14 +13,18 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  copilot-requests: write
 
 engine:
-  id: copilot
+  id: codex
+  env:
+    OPENAI_BASE_URL: https://openrouter.ai/api/v1
+    OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
-model: gpt-5.5?effort=high
+model: moonshotai/kimi-k3?effort=high
 
-network: defaults
+network:
+  allowed:
+    - openrouter.ai
 
 tools:
   github:

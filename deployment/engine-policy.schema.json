@@ -56,6 +56,13 @@
               "minLength": 1
             },
             "uniqueItems": true
+          },
+          "environment": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "additionalProperties": false

@@ -45,7 +45,8 @@ if (-not (Test-Path $EnginePolicyPath)) {
     throw "Engine policy file not found: $EnginePolicyPath"
 }
 
-$enginePolicy = Get-Content $EnginePolicyPath -Raw | ConvertFrom-Json
+$enginePolicyJson = Get-Content $EnginePolicyPath -Raw
+$enginePolicy = $enginePolicyJson | ConvertFrom-Json
 $defaultEngineProfileName = [string](Get-RequiredJsonProperty $enginePolicy 'defaultProfile' 'engine policy')
 $engineProfiles = Get-RequiredJsonProperty $enginePolicy 'profiles' 'engine policy'
 $defaultEngineProfileProperty = $engineProfiles.PSObject.Properties[$defaultEngineProfileName]
@@ -53,34 +54,12 @@ if ($null -eq $defaultEngineProfileProperty -or $null -eq $defaultEngineProfileP
     throw "Default engine profile '$defaultEngineProfileName' was not found in $EnginePolicyPath."
 }
 
-$defaultEngineProfile = $defaultEngineProfileProperty.Value
-$engineProvider = [string](Get-RequiredJsonProperty $defaultEngineProfile 'provider' "engine profile '$defaultEngineProfileName'")
-$engineModel = [string](Get-RequiredJsonProperty $defaultEngineProfile 'model' "engine profile '$defaultEngineProfileName'")
-$engineEffortProperty = $defaultEngineProfile.PSObject.Properties['effort']
-$engineEffort = if ($null -ne $engineEffortProperty -and $null -ne $engineEffortProperty.Value) {
-    [string] $engineEffortProperty.Value
-} else {
-    ''
-}
-
-if ($engineEffort -and @('low', 'medium', 'high') -notcontains $engineEffort) {
-    throw "Default engine profile '$defaultEngineProfileName' uses unsupported effort '$engineEffort'. Use low, medium, or high."
-}
-
-$engineRenderedModel = if ($engineEffort) { "$engineModel`?effort=$engineEffort" } else { $engineModel }
-$requiredSecretsProperty = $defaultEngineProfile.PSObject.Properties['requiredSecretsAnyOf']
-$engineRequiredSecrets = if ($null -ne $requiredSecretsProperty -and $null -ne $requiredSecretsProperty.Value) {
-    @($requiredSecretsProperty.Value)
-} else {
-    @()
-}
-
-$goEngineProfile = $defaultEngineProfileName.Replace('\', '\\').Replace('"', '\"')
-$goEngineProvider = $engineProvider.Replace('\', '\\').Replace('"', '\"')
-$goEngineModel = $engineModel.Replace('\', '\\').Replace('"', '\"')
-$goEngineEffort = $engineEffort.Replace('\', '\\').Replace('"', '\"')
-$goEngineRenderedModel = $engineRenderedModel.Replace('\', '\\').Replace('"', '\"')
-$goEngineRequiredSecrets = ($engineRequiredSecrets | ForEach-Object { "`t`t`"$($_.Replace('\', '\\').Replace('"', '\"'))`"," }) -join "`n"
+$goEnginePolicyJson = $enginePolicyJson.
+    Replace('\', '\\').
+    Replace('"', '\"').
+    Replace("`r", '\r').
+    Replace("`n", '\n').
+    Replace("`t", '\t')
 
 if (-not (Test-Path $GhSflSource)) {
     throw "gh-sfl source not found: $GhSflSource"
@@ -232,13 +211,14 @@ type sflEnginePolicyManifest struct {
 }
 
 type sflEngineWorkflowProfile struct {
-	Name                 string   `json:"name"`
-	Profile              string   `json:"profile"`
-	Provider             string   `json:"provider"`
-	Model                string   `json:"model"`
-	Effort               string   `json:"effort,omitempty"`
-	RenderedModel        string   `json:"renderedModel"`
-	RequiredSecretsAnyOf []string `json:"requiredSecretsAnyOf,omitempty"`
+	Name                 string            `json:"name"`
+	Profile              string            `json:"profile"`
+	Provider             string            `json:"provider"`
+	Model                string            `json:"model"`
+	Effort               string            `json:"effort,omitempty"`
+	RenderedModel        string            `json:"renderedModel"`
+	RequiredSecretsAnyOf []string          `json:"requiredSecretsAnyOf,omitempty"`
+	Environment          map[string]string `json:"environment,omitempty"`
 }
 '@
 $manifestGoContent = [regex]::Replace($manifestGoContent, '(?s)type sflManifest struct \{.*?\n\}', $manifestStructBlock, 1)
@@ -377,10 +357,129 @@ $hemSoftGoContent = @'
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 )
+
+const hemSoftEnginePolicyJSON = "{{ENGINE_POLICY_JSON}}"
+
+type hemSoftEnginePolicy struct {
+	DefaultProfile string                              `json:"defaultProfile"`
+	Profiles       map[string]hemSoftEngineProfile     `json:"profiles"`
+	Workflows      map[string]hemSoftWorkflowEngineRef `json:"workflows"`
+}
+
+type hemSoftEngineProfile struct {
+	Provider             string            `json:"provider"`
+	Model                string            `json:"model"`
+	Effort               string            `json:"effort,omitempty"`
+	RequiredSecretsAnyOf []string          `json:"requiredSecretsAnyOf,omitempty"`
+	Environment          map[string]string `json:"environment,omitempty"`
+}
+
+type hemSoftWorkflowEngineRef struct {
+	Profile string `json:"profile"`
+}
+
+type hemSoftEngineConfig struct {
+	Profile              string
+	Provider             string
+	Model                string
+	Effort               string
+	RenderedModel        string
+	RequiredSecretsAnyOf []string
+	Environment          map[string]string
+}
+
+var (
+	hemSoftEnginePolicyOnce sync.Once
+	hemSoftParsedPolicy     hemSoftEnginePolicy
+	hemSoftPolicyError      error
+)
+
+func hemSoftEnginePolicyConfig() (*hemSoftEnginePolicy, error) {
+	hemSoftEnginePolicyOnce.Do(func() {
+		hemSoftPolicyError = json.Unmarshal([]byte(hemSoftEnginePolicyJSON), &hemSoftParsedPolicy)
+		if hemSoftPolicyError != nil {
+			hemSoftPolicyError = fmt.Errorf("parsing embedded HemSoft engine policy: %w", hemSoftPolicyError)
+			return
+		}
+		if hemSoftParsedPolicy.DefaultProfile == "" {
+			hemSoftPolicyError = fmt.Errorf("embedded HemSoft engine policy has no default profile")
+		}
+	})
+
+	if hemSoftPolicyError != nil {
+		return nil, hemSoftPolicyError
+	}
+	return &hemSoftParsedPolicy, nil
+}
+
+func hemSoftEngineConfigForWorkflow(workflowName string) (hemSoftEngineConfig, error) {
+	policy, err := hemSoftEnginePolicyConfig()
+	if err != nil {
+		return hemSoftEngineConfig{}, err
+	}
+
+	profileName := policy.DefaultProfile
+	if workflow, ok := policy.Workflows[workflowName]; ok && workflow.Profile != "" {
+		profileName = workflow.Profile
+	}
+
+	profile, ok := policy.Profiles[profileName]
+	if !ok {
+		return hemSoftEngineConfig{}, fmt.Errorf(
+			"engine profile %q for workflow %s was not found",
+			profileName,
+			workflowName,
+		)
+	}
+	if profile.Provider == "" {
+		return hemSoftEngineConfig{}, fmt.Errorf("engine profile %q has no provider", profileName)
+	}
+	if profile.Model == "" {
+		return hemSoftEngineConfig{}, fmt.Errorf("engine profile %q has no model", profileName)
+	}
+	switch profile.Effort {
+	case "", "low", "medium", "high":
+	default:
+		return hemSoftEngineConfig{}, fmt.Errorf(
+			"engine profile %q uses unsupported effort %q",
+			profileName,
+			profile.Effort,
+		)
+	}
+
+	renderedModel := profile.Model
+	if profile.Effort != "" {
+		renderedModel += "?effort=" + profile.Effort
+	}
+
+	return hemSoftEngineConfig{
+		Profile:              profileName,
+		Provider:             profile.Provider,
+		Model:                profile.Model,
+		Effort:               profile.Effort,
+		RenderedModel:        renderedModel,
+		RequiredSecretsAnyOf: append([]string(nil), profile.RequiredSecretsAnyOf...),
+		Environment:          cloneHemSoftEnvironment(profile.Environment),
+	}, nil
+}
+
+func cloneHemSoftEnvironment(environment map[string]string) map[string]string {
+	if len(environment) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]string, len(environment))
+	for key, value := range environment {
+		cloned[key] = value
+	}
+	return cloned
+}
 
 func applyHemSoftOwnership(fileMap map[string]string) error {
 	if err := applyHemSoftEnginePolicy(fileMap); err != nil {
@@ -420,6 +519,11 @@ func applyHemSoftEnginePolicy(fileMap map[string]string) error {
 }
 
 func applyHemSoftEnginePolicyToWorkflow(content, workflowName string) (string, error) {
+	engineConfig, err := hemSoftEngineConfigForWorkflow(workflowName)
+	if err != nil {
+		return "", err
+	}
+
 	normalized := strings.ReplaceAll(content, "\r\n", "\n")
 	if !strings.HasPrefix(normalized, "---\n") {
 		return "", fmt.Errorf("workflow %s does not start with YAML frontmatter", workflowName)
@@ -435,28 +539,34 @@ func applyHemSoftEnginePolicyToWorkflow(content, workflowName string) (string, e
 	frontmatter := normalized[frontmatterStart:frontmatterEnd]
 	rest := normalized[frontmatterEnd+len("\n---"):]
 
-	frontmatter = removeTopLevelEngineBlock(frontmatter)
-	frontmatter = insertTopLevelEngineBlock(frontmatter, hemSoftEngineBlock())
+	frontmatter = removeTopLevelYamlEntry(frontmatter, "engine")
+	frontmatter = removeTopLevelYamlEntry(frontmatter, "model")
+	frontmatter = insertTopLevelEngineBlock(
+		frontmatter,
+		hemSoftEngineBlock(engineConfig)+"\n\nmodel: "+engineConfig.RenderedModel,
+	)
 
 	return "---\n" + frontmatter + "\n---" + rest, nil
 }
 
-func removeTopLevelEngineBlock(frontmatter string) string {
+func removeTopLevelYamlEntry(frontmatter, key string) string {
 	lines := strings.Split(frontmatter, "\n")
 	output := make([]string, 0, len(lines))
-	skippingEngine := false
+	skippingBlock := false
 
 	for _, line := range lines {
-		if isTopLevelYamlKey(line, "engine") {
-			skippingEngine = true
+		if isTopLevelYamlKey(line, key) {
+			_, value, _ := strings.Cut(strings.TrimSpace(line), ":")
+			value = strings.TrimSpace(value)
+			skippingBlock = value == "" || strings.HasPrefix(value, "|") || strings.HasPrefix(value, ">")
 			continue
 		}
 
-		if skippingEngine {
+		if skippingBlock {
 			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
 				continue
 			}
-			skippingEngine = false
+			skippingBlock = false
 		}
 
 		output = append(output, line)
@@ -498,11 +608,29 @@ func isTopLevelYamlKey(line, key string) bool {
 	return trimmed == key+":" || strings.HasPrefix(trimmed, key+": ")
 }
 
-func hemSoftEngineBlock() string {
-	return "engine:\n  id: {{ENGINE_PROVIDER}}\n  model: {{ENGINE_RENDERED_MODEL}}"
+func hemSoftEngineBlock(config hemSoftEngineConfig) string {
+	lines := []string{"engine:", "  id: " + config.Provider}
+	if len(config.Environment) > 0 {
+		keys := make([]string, 0, len(config.Environment))
+		for key := range config.Environment {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
+		lines = append(lines, "  env:")
+		for _, key := range keys {
+			lines = append(lines, "    "+key+": "+config.Environment[key])
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func hemSoftEnginePolicyManifestForFileMap(fileMap map[string]string) *sflEnginePolicyManifest {
+	policy, err := hemSoftEnginePolicyConfig()
+	if err != nil {
+		panic(err)
+	}
+
 	workflowNames := make([]string, 0)
 	for fpath := range fileMap {
 		if !strings.HasPrefix(fpath, ".github/workflows/") || !strings.HasSuffix(fpath, ".md") {
@@ -518,21 +646,25 @@ func hemSoftEnginePolicyManifestForFileMap(fileMap map[string]string) *sflEngine
 
 	workflows := make([]sflEngineWorkflowProfile, 0, len(workflowNames))
 	for _, workflowName := range workflowNames {
+		config, configErr := hemSoftEngineConfigForWorkflow(workflowName)
+		if configErr != nil {
+			panic(configErr)
+		}
+
 		workflows = append(workflows, sflEngineWorkflowProfile{
-			Name:          workflowName,
-			Profile:       "{{ENGINE_PROFILE}}",
-			Provider:      "{{ENGINE_PROVIDER}}",
-			Model:         "{{ENGINE_MODEL}}",
-			Effort:        "{{ENGINE_EFFORT}}",
-			RenderedModel: "{{ENGINE_RENDERED_MODEL}}",
-			RequiredSecretsAnyOf: []string{
-{{ENGINE_REQUIRED_SECRETS}}
-			},
+			Name:                 workflowName,
+			Profile:              config.Profile,
+			Provider:             config.Provider,
+			Model:                config.Model,
+			Effort:               config.Effort,
+			RenderedModel:        config.RenderedModel,
+			RequiredSecretsAnyOf: append([]string(nil), config.RequiredSecretsAnyOf...),
+			Environment:          cloneHemSoftEnvironment(config.Environment),
 		})
 	}
 
 	return &sflEnginePolicyManifest{
-		DefaultProfile: "{{ENGINE_PROFILE}}",
+		DefaultProfile: policy.DefaultProfile,
 		Workflows:      workflows,
 	}
 }
@@ -546,12 +678,7 @@ func sourceWorkflowPath(name string) string {
 	}
 }
 '@
-$hemSoftGoContent = $hemSoftGoContent.Replace('{{ENGINE_PROFILE}}', $goEngineProfile)
-$hemSoftGoContent = $hemSoftGoContent.Replace('{{ENGINE_PROVIDER}}', $goEngineProvider)
-$hemSoftGoContent = $hemSoftGoContent.Replace('{{ENGINE_MODEL}}', $goEngineModel)
-$hemSoftGoContent = $hemSoftGoContent.Replace('{{ENGINE_EFFORT}}', $goEngineEffort)
-$hemSoftGoContent = $hemSoftGoContent.Replace('{{ENGINE_RENDERED_MODEL}}', $goEngineRenderedModel)
-$hemSoftGoContent = $hemSoftGoContent.Replace('{{ENGINE_REQUIRED_SECRETS}}', $goEngineRequiredSecrets)
+$hemSoftGoContent = $hemSoftGoContent.Replace('{{ENGINE_POLICY_JSON}}', $goEnginePolicyJson)
 $hemSoftGoContent | Set-Content (Join-Path $WorkDir 'hemsoft.go') -NoNewline
 
 Push-Location $WorkDir
