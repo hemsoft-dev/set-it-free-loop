@@ -115,6 +115,7 @@ if ($Compile -and -not $Local) {
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Resolve-Path (Join-Path $ScriptDir "..\..")
+. (Join-Path $ScriptDir "merge-sfl-manifest.ps1")
 
 # ─── SFL Version (read from VERSION file — single source of truth) ────────────
 
@@ -514,7 +515,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
 
         # 5. Create sfl.json manifest
         $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        $manifest = @{
+        $incomingManifest = [pscustomobject] @{
             version    = $SflVersion
             deployedAt = $now
             tier       = $DeployTier
@@ -522,11 +523,20 @@ function Deploy-ToRepo([string]$TargetRepo) {
             sourceSha  = $CurrentSha
             components = $DeployComponents
             enginePolicy = $EnginePolicyManifest
-        } | ConvertTo-Json -Depth 6
+        }
 
         $manifestPath = Join-Path $ClonePath "sfl.json"
+        $existingManifest = if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+            Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        } else {
+            $null
+        }
+        $manifestObject = Merge-SflManifest `
+            -ExistingManifest $existingManifest `
+            -IncomingManifest $incomingManifest
+        $manifest = $manifestObject | ConvertTo-Json -Depth 6
         Set-Content $manifestPath $manifest
-        Write-Status "📋" "  sfl.json (v$SflVersion, tier: $DeployTier)"
+        Write-Status "📋" "  sfl.json (v$SflVersion, tier: $($manifestObject.tier))"
 
         # 7. Inject/update SFL badge in README.md
         $readmePath = Join-Path $ClonePath "README.md"
