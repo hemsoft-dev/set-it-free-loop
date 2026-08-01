@@ -376,11 +376,24 @@ function Ensure-SflReviewLabel([string]$TargetRepo) {
         return
     }
 
-    $labelOutput = & gh label create $SflReviewLabel.name `
-        --repo $TargetRepo `
-        --color $SflReviewLabel.color `
-        --description $SflReviewLabel.description `
-        --force 2>&1
+    $labelExistsOutput = & gh label list --repo $TargetRepo --json name `
+        --jq ".[] | select(.name == `"$($SflReviewLabel.name)`") | .name" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to list labels on ${TargetRepo}: $labelExistsOutput"
+    }
+
+    $labelExists = @($labelExistsOutput) -contains $SflReviewLabel.name
+    $labelArgs = @(
+        'label', 'create', $SflReviewLabel.name,
+        '--repo', $TargetRepo,
+        '--color', $SflReviewLabel.color,
+        '--description', $SflReviewLabel.description
+    )
+    if ($labelExists) {
+        $labelArgs += '--force'
+    }
+
+    $labelOutput = & gh @labelArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to create or update sfl-review on ${TargetRepo}: $labelOutput"
     }
