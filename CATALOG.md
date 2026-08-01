@@ -145,6 +145,9 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 `sfl-review` label is applied to a pull request. Posts one native inline thread
 per Critical, High, Medium, or Low finding, submits an approving or
 request-changes review, and publishes the `SFL Reviewer Approval` check.
+The HemSoft deployment policy runs this workflow with
+`moonshotai/kimi-k3` through OpenRouter; work-account SFL uses its own provider
+policy independently.
 
 **Output**: Current-head GitHub review, inline review threads, structured
 severity table, and an approval check that fails only for Critical or High
