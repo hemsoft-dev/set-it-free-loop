@@ -20,6 +20,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 | Tier | Workflows | Infrastructure | Use Case |
 |------|-----------|---------------|----------|
+| **review** | sfl-pr-review | — | On-demand native PR reviews through the `sfl-review` label |
 | **minimal** | daily-repo-status, repo-audit | — | Hygiene-only: daily reports, no AI fixes |
 | **standard** | minimal + issue-processor, simplisticate | sfl-dispatcher, sfl-auditor | Detect + claim + fix issues automatically |
 | **full** | standard + pr-analyzer-a/b/c, pr-fixer, pr-promoter | sfl-dispatcher, sfl-auditor | Complete autonomous loop with multi-model review |
@@ -34,6 +35,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 | [repo-audit](#repo-audit) | quality | Schedule — daily | low | `type:report` issue with findings + recommendations | 1.1.0 |
 | [issue-processor](#issue-processor) | automation | Dispatched — when `agent:fixable` issues exist | low | Draft PR with scoped fix for the oldest fixable issue | 1.0.0 |
 | [simplisticate](#simplisticate) | quality | Schedule — daily | low | Summary report issue + up to 3 `agent:fixable` issues | 1.0.0 |
+| [sfl-pr-review](#sfl-pr-review) | review | Label command — `sfl-review` | trivial | Native inline findings, consolidated review, and approval check | 1.0.0 |
 | [pr-analyzer-a](#pr-analyzer-a) | review | Dispatched — when draft PRs with `agent:pr` exist | trivial | PR comment with full-spectrum review (claude-sonnet-4.6) | 1.0.0 |
 | [pr-analyzer-b](#pr-analyzer-b) | review | Dispatched — when draft PRs with `agent:pr` exist | trivial | PR comment with full-spectrum review (gpt-5.3-codex) | 1.0.0 |
 | [pr-analyzer-c](#pr-analyzer-c) | review | Dispatched — when draft PRs with `agent:pr` exist | trivial | PR comment with full-spectrum review (claude-opus-4.6) | 1.0.0 |
@@ -132,6 +134,32 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 - [x] Creates scoped, actionable issues
 - [x] Fan-out capped at 3 issues per run
 - [x] Summary includes before/after complexity estimates
+
+---
+
+### sfl-pr-review
+
+**File**: [`deployment/workflows/sfl-pr-review.md`](deployment/workflows/sfl-pr-review.md)
+
+**What it does**: Runs a standalone three-pass full-spectrum review when the
+`sfl-review` label is applied to a pull request. Posts one native inline thread
+per Critical, High, Medium, or Low finding, submits an approving or
+request-changes review, and publishes the `SFL Reviewer Approval` check.
+
+**Output**: Current-head GitHub review, inline review threads, structured
+severity table, and an approval check that fails only for Critical or High
+findings.
+
+**Deploy command**:
+```powershell
+.\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "org/your-repo"
+```
+
+**Acceptance criteria met**:
+- [x] Trigger label is removed by App-authenticated safe outputs after review
+- [x] Security, correctness/reliability, and quality/maintainability passes run
+- [x] Every finding is a severity-classified native review thread
+- [x] Review and approval check are pinned to the triggering head SHA
 
 ---
 

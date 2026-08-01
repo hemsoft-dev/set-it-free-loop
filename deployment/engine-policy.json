@@ -10,7 +10,17 @@
         "CODEX_API_KEY",
         "OPENAI_API_KEY"
       ]
+    },
+    "copilot-gpt-55-high": {
+      "provider": "copilot",
+      "model": "gpt-5.5",
+      "effort": "high",
+      "requiredSecretsAnyOf": []
     }
   },
-  "workflows": {}
+  "workflows": {
+    "sfl-pr-review": {
+      "profile": "copilot-gpt-55-high"
+    }
+  }
 }
