@@ -116,6 +116,7 @@ if ($Compile -and -not $Local) {
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Resolve-Path (Join-Path $ScriptDir "..\..")
 . (Join-Path $ScriptDir "merge-sfl-manifest.ps1")
+. (Join-Path $ScriptDir "add-sfl-source-pin.ps1")
 
 # ─── SFL Version (read from VERSION file — single source of truth) ────────────
 
@@ -496,11 +497,8 @@ function Deploy-ToRepo([string]$TargetRepo) {
                 -WorkflowName $wf
             $SflSourceRef = "HemSoft/set-it-free-loop/deployment/workflows/$wf.md@$CurrentSha"
             $pinComment = "# Deployed from: $SflSourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n"
-            if ($content -notmatch "# Deployed from:") {
-                Set-Content $DestFile -Value ($pinComment + $content) -NoNewline
-            } else {
-                Set-Content $DestFile -Value $content -NoNewline
-            }
+            $content = Add-SflSourcePin -Content $content -PinComment $pinComment
+            Set-Content $DestFile -Value $content -NoNewline
             Write-Status "📄" "  $wf.md ($($engineProfile.Provider) $($engineProfile.RenderedModel))"
         }
 
