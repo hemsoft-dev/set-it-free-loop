@@ -64,6 +64,7 @@ $workflowPatterns = @(
     '(?m)^model:[ \t]*moonshotai/kimi-k3\r?$',
     'OPENAI_BASE_URL:[ \t]*https://openrouter\.ai/api/v1',
     'OPENAI_API_KEY:[ \t]*\$\{\{ secrets\.OPENROUTER_API_KEY \}\}',
+    'CODEX_API_KEY:[ \t]*\$\{\{ secrets\.OPENROUTER_API_KEY \}\}',
     'model_reasoning_effort\s*=\s*"high"',
     'openrouter\.ai',
     'SFL_APP_CLIENT_ID',
