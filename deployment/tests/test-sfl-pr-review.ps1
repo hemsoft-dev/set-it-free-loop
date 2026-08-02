@@ -105,6 +105,7 @@ $workflowPatterns = @(
     'exactly one consolidated review and one check run are required',
     'review event must be',
     'check conclusion must be',
+    'check title must be SFL full-spectrum review complete',
     'Repository-owner-approved exception',
     'complete finding inventory exceeded the inline-comment limit',
     'did\s+not exceed 20 comments',

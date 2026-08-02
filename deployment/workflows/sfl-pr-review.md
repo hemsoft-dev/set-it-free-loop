@@ -401,6 +401,11 @@ safe-outputs:
                 `${actualConclusion || 'empty'}`
             );
           }
+          if (checks[0].title !== 'SFL full-spectrum review complete') {
+            fail(
+              'check title must be SFL full-spectrum review complete'
+            );
+          }
 
           const totals = Object.fromEntries(
             severityOrder.map((severity) => [

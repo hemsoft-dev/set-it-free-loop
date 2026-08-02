@@ -192,7 +192,7 @@ Overflow: $Overflow
     [pscustomobject]@{
         type = 'create_check_run'
         conclusion = $Conclusion
-        title = 'SFL review'
+        title = 'SFL full-spectrum review complete'
         summary = $Summary
     }
 }
