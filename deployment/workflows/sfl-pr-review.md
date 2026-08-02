@@ -15,6 +15,28 @@ permissions:
   contents: read
   pull-requests: read
 
+post-steps:
+  - name: Require SFL review output
+    if: always()
+    shell: bash
+    run: |
+      node <<'NODE'
+      const fs = require('fs');
+      const path = '/tmp/gh-aw/agent_output.json';
+      if (!fs.existsSync(path)) {
+        throw new Error('SFL agent output file is missing');
+      }
+      const output = JSON.parse(fs.readFileSync(path, 'utf8'));
+      const items = Array.isArray(output.items) ? output.items : [];
+      const hasInventory = items.some(
+        (item) => item.type === 'sfl_review_inventory'
+      );
+      const hasNoop = items.some((item) => item.type === 'noop');
+      if (!hasInventory && !hasNoop) {
+        throw new Error('SFL review emitted neither an inventory nor a noop');
+      }
+      NODE
+
 engine:
   id: copilot
   env:
@@ -57,6 +79,7 @@ safe-outputs:
       - name: Validate SFL review verdict
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
           GH_TOKEN: ${{ steps.sfl-validation-token.outputs.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
@@ -70,6 +93,7 @@ safe-outputs:
             process.env.SFL_AGENT_OUTPUT_PATH ||
             '/tmp/gh-aw/threat-detection/agent_output.json';
           const expectedHead = process.env.EXPECTED_HEAD_SHA || '';
+          const expectedRunId = process.env.EXPECTED_RUN_ID || '';
           const fail = (message) => {
             console.error(`SFL verdict validation failed: ${message}`);
             process.exit(1);
@@ -97,16 +121,19 @@ safe-outputs:
               fail('GitHub context for deterministic PR validation is incomplete');
             }
             const query = [
-              'query($owner:String!,$repo:String!,$number:Int!){',
+              'query($owner:String!,$repo:String!,$number:Int!,$after:String){',
               'repository(owner:$owner,name:$repo){',
-              'pullRequest(number:$number){headRefOid reviewThreads(first:100){',
-              'nodes{isResolved comments(first:1){nodes{body author{login}}}}',
+              'pullRequest(number:$number){headRefOid reviewThreads(first:100,after:$after){',
+              'nodes{isResolved comments(first:1){nodes{body author{login}}}} ',
+              'pageInfo{hasNextPage endCursor}',
               '}}}}',
             ].join('');
+            const nodes = [];
+            let after = null;
+            let headRefOid = '';
             try {
-              const raw = execFileSync(
-                'gh',
-                [
+              do {
+                const args = [
                   'api',
                   'graphql',
                   '-f',
@@ -117,19 +144,27 @@ safe-outputs:
                   `repo=${repo}`,
                   '-F',
                   `number=${number}`,
-                ],
-                {
+                ];
+                if (after) {
+                  args.push('-f', `after=${after}`);
+                }
+                const raw = execFileSync('gh', args, {
                   encoding: 'utf8',
                   env: process.env,
                   stdio: ['ignore', 'pipe', 'pipe'],
+                });
+                const pullRequest =
+                  JSON.parse(raw)?.data?.repository?.pullRequest;
+                if (!pullRequest?.headRefOid) {
+                  fail('GitHub returned no pull request state');
                 }
-              );
-              const pullRequest =
-                JSON.parse(raw)?.data?.repository?.pullRequest;
-              if (!pullRequest?.headRefOid) {
-                fail('GitHub returned no pull request state');
-              }
-              return pullRequest;
+                headRefOid = pullRequest.headRefOid;
+                nodes.push(...(pullRequest.reviewThreads?.nodes || []));
+                after = pullRequest.reviewThreads?.pageInfo?.hasNextPage
+                  ? pullRequest.reviewThreads.pageInfo.endCursor
+                  : null;
+              } while (after);
+              return { headRefOid, reviewThreads: { nodes } };
             } catch (error) {
               fail(`unable to query live pull request state: ${error.message}`);
             }
@@ -289,6 +324,7 @@ safe-outputs:
           const blocking = blockingFindings || inventory.overflow > 0;
           const expectedEvent = blocking ? 'REQUEST_CHANGES' : 'APPROVE';
           const expectedConclusion = blocking ? 'failure' : 'success';
+          const expectedVerdict = blocking ? 'CHANGES_REQUESTED' : 'APPROVE';
           const actualEvent = String(reviews[0].event || '').toUpperCase();
           const actualConclusion = String(
             checks[0].conclusion || ''
@@ -304,6 +340,47 @@ safe-outputs:
               `check conclusion must be ${expectedConclusion}, got ` +
                 `${actualConclusion || 'empty'}`
             );
+          }
+
+          const totals = Object.fromEntries(
+            severityOrder.map((severity) => [
+              severity,
+              newlyFound[severity] + carried[severity],
+            ])
+          );
+          const reviewBody = String(reviews[0].body || '');
+          const requiredReviewFragments = [
+            `SFL run ID: ${expectedRunId}`,
+            `Head SHA: ${expectedHead}`,
+            `Verdict: ${expectedVerdict}`,
+            `| Critical | ${totals.critical} |`,
+            `| High | ${totals.high} |`,
+            `| Medium | ${totals.medium} |`,
+            `| Low | ${totals.low} |`,
+          ];
+          if (!expectedRunId) {
+            fail('workflow run ID is unavailable');
+          }
+          for (const fragment of requiredReviewFragments) {
+            if (!reviewBody.includes(fragment)) {
+              fail(`consolidated review is missing: ${fragment}`);
+            }
+          }
+
+          const checkSummary = String(checks[0].summary || '');
+          const requiredCheckFragments = [
+            `Verdict: ${expectedVerdict}`,
+            `Head SHA: ${expectedHead}`,
+            `SFL run ID: ${expectedRunId}`,
+            `Critical: ${totals.critical}`,
+            `High: ${totals.high}`,
+            `Medium: ${totals.medium}`,
+            `Low: ${totals.low}`,
+          ];
+          for (const fragment of requiredCheckFragments) {
+            if (!checkSummary.includes(fragment)) {
+              fail(`check summary is missing: ${fragment}`);
+            }
           }
 
           console.log('SFL verdict validation passed');
@@ -521,7 +598,14 @@ complete finding inventory exceeded 20 comments.
 Create exactly one check run named `SFL Reviewer Approval` with:
 
 - `title`: `SFL full-spectrum review complete`
-- `summary`: the verdict, head SHA, run ID, and severity counts
+- `summary`: exactly these lines with actual values:
+  - `Verdict: APPROVE`
+  - `Head SHA: ${{ github.event.pull_request.head.sha }}`
+  - `SFL run ID: ${{ github.run_id }}`
+  - `Critical: 0`
+  - `High: 0`
+  - `Medium: 0`
+  - `Low: 0`
 - `conclusion`: the approval-policy result above
 
 Do not modify code, branches, pull request labels, or pull request metadata.

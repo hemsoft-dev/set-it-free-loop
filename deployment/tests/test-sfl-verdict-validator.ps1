@@ -51,16 +51,19 @@ function Invoke-ValidatorCase {
     $previousOutputPath = $env:SFL_AGENT_OUTPUT_PATH
     $previousStatePath = $env:SFL_PR_STATE_PATH
     $previousHead = $env:EXPECTED_HEAD_SHA
+    $previousRunId = $env:EXPECTED_RUN_ID
     try {
         $env:SFL_AGENT_OUTPUT_PATH = $outputPath
         $env:SFL_PR_STATE_PATH = $statePath
         $env:EXPECTED_HEAD_SHA = 'abc123'
+        $env:EXPECTED_RUN_ID = '42'
         & node $scriptPath *> (Join-Path $tempRoot "$Name.log")
         $passed = $LASTEXITCODE -eq 0
     } finally {
         $env:SFL_AGENT_OUTPUT_PATH = $previousOutputPath
         $env:SFL_PR_STATE_PATH = $previousStatePath
         $env:EXPECTED_HEAD_SHA = $previousHead
+        $env:EXPECTED_RUN_ID = $previousRunId
     }
 
     if ($passed -ne $ShouldPass) {
@@ -107,23 +110,80 @@ function New-Comment {
 }
 
 function New-Review {
-    param([Parameter(Mandatory)][string] $Event)
+    param(
+        [Parameter(Mandatory)]
+        [string] $Event,
+
+        [int] $Critical = 0,
+        [int] $High = 0,
+        [int] $Medium = 0,
+        [int] $Low = 0,
+        [string] $Body
+    )
+
+    $verdict = if ($Event -eq 'REQUEST_CHANGES') {
+        'CHANGES_REQUESTED'
+    } else {
+        'APPROVE'
+    }
+    if (-not $Body) {
+        $Body = @"
+## SFL Full-Spectrum Review
+
+SFL run ID: 42
+Head SHA: abc123
+Verdict: $verdict
+
+| Severity | Count |
+| --- | ---: |
+| Critical | $Critical |
+| High | $High |
+| Medium | $Medium |
+| Low | $Low |
+"@
+    }
 
     [pscustomobject]@{
         type = 'submit_pull_request_review'
         event = $Event
-        body = 'Review summary'
+        body = $Body
     }
 }
 
 function New-Check {
-    param([Parameter(Mandatory)][string] $Conclusion)
+    param(
+        [Parameter(Mandatory)]
+        [string] $Conclusion,
+
+        [int] $Critical = 0,
+        [int] $High = 0,
+        [int] $Medium = 0,
+        [int] $Low = 0,
+        [string] $Summary
+    )
+
+    $verdict = if ($Conclusion -eq 'failure') {
+        'CHANGES_REQUESTED'
+    } else {
+        'APPROVE'
+    }
+    if (-not $Summary) {
+        $Summary = @"
+Verdict: $verdict
+Head SHA: abc123
+SFL run ID: 42
+Critical: $Critical
+High: $High
+Medium: $Medium
+Low: $Low
+"@
+    }
 
     [pscustomobject]@{
         type = 'create_check_run'
         conclusion = $Conclusion
         title = 'SFL review'
-        summary = 'Review summary'
+        summary = $Summary
     }
 }
 
@@ -137,15 +197,15 @@ try {
     Invoke-ValidatorCase -Name 'reject-high-approval' -ShouldPass $false -Items @(
         (New-Inventory -NewHigh 1),
         (New-Comment -Severity 'HIGH'),
-        (New-Review -Event 'APPROVE'),
-        (New-Check -Conclusion 'success')
+        (New-Review -Event 'APPROVE' -High 1),
+        (New-Check -Conclusion 'success' -High 1)
     )
 
     Invoke-ValidatorCase -Name 'accept-high-block' -ShouldPass $true -Items @(
         (New-Inventory -NewHigh 1),
         (New-Comment -Severity 'HIGH'),
-        (New-Review -Event 'REQUEST_CHANGES'),
-        (New-Check -Conclusion 'failure')
+        (New-Review -Event 'REQUEST_CHANGES' -High 1),
+        (New-Check -Conclusion 'failure' -High 1)
     )
 
     $overflowItems = [System.Collections.Generic.List[object]]::new()
@@ -153,8 +213,8 @@ try {
     1..20 | ForEach-Object {
         $overflowItems.Add((New-Comment -Severity 'MEDIUM'))
     }
-    $overflowItems.Add((New-Review -Event 'REQUEST_CHANGES'))
-    $overflowItems.Add((New-Check -Conclusion 'failure'))
+    $overflowItems.Add((New-Review -Event 'REQUEST_CHANGES' -Medium 21))
+    $overflowItems.Add((New-Check -Conclusion 'failure' -Medium 21))
     Invoke-ValidatorCase -Name 'accept-overflow-block' -ShouldPass $true -Items $overflowItems
 
     $badOverflowItems = [System.Collections.Generic.List[object]]::new()
@@ -162,8 +222,8 @@ try {
     1..20 | ForEach-Object {
         $badOverflowItems.Add((New-Comment -Severity 'LOW'))
     }
-    $badOverflowItems.Add((New-Review -Event 'APPROVE'))
-    $badOverflowItems.Add((New-Check -Conclusion 'success'))
+    $badOverflowItems.Add((New-Review -Event 'APPROVE' -Low 21))
+    $badOverflowItems.Add((New-Check -Conclusion 'success' -Low 21))
     Invoke-ValidatorCase -Name 'reject-overflow-approval' -ShouldPass $false -Items $badOverflowItems
 
     Invoke-ValidatorCase -Name 'accept-noop' -ShouldPass $true -LiveHead 'def456' -Items @(
@@ -200,9 +260,16 @@ try {
         -Threads @($unresolvedHighThread) `
         -Items @(
             (New-Inventory -CarriedHigh 1),
-            (New-Review -Event 'REQUEST_CHANGES'),
-            (New-Check -Conclusion 'failure')
+            (New-Review -Event 'REQUEST_CHANGES' -High 1),
+            (New-Check -Conclusion 'failure' -High 1)
         )
+
+    Invoke-ValidatorCase -Name 'reject-rendered-mismatch' -ShouldPass $false -Items @(
+        (New-Inventory -NewHigh 1),
+        (New-Comment -Severity 'HIGH'),
+        (New-Review -Event 'REQUEST_CHANGES' -Body 'Review summary'),
+        (New-Check -Conclusion 'failure' -High 1)
+    )
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force
 }
