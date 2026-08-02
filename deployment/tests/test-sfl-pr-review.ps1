@@ -57,8 +57,9 @@ function Assert-FileNotContains {
 }
 
 $workflowPatterns = @(
-    'pull_request:',
-    'names:\s*\[sfl-review\]',
+    'label_command:',
+    'name:\s*sfl-review',
+    'remove_label:\s*true',
     'sfl-review',
     '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?$',
     '(?m)^model:[ \t]*moonshotai/kimi-k3\r?$',
@@ -76,7 +77,7 @@ $workflowPatterns = @(
     'create-pull-request-review-comment',
     'submit-pull-request-review',
     'create-check-run',
-    'remove-labels',
+    'threat-detection:\s*false',
     'SFL Reviewer Approval',
     'SFL run ID:',
     'Verdict:\s*APPROVE',
@@ -93,7 +94,7 @@ Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patte
     'copilot-requests:\s*write',
     'OPENAI_API_KEY:',
     'CODEX_API_KEY:',
-    'label_command',
+    'remove-labels:',
     'pr-diff\.patch',
     'pr-review-comments\.json'
 )
@@ -102,7 +103,7 @@ Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Pa
     'copilot-requests:\s*write',
     'OPENAI_API_KEY:',
     'CODEX_API_KEY:',
-    'label_command',
+    'remove-labels:',
     'pr-diff\.patch',
     'pr-review-comments\.json'
 )

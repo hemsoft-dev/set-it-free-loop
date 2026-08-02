@@ -159,7 +159,7 @@ findings.
 ```
 
 **Acceptance criteria met**:
-- [x] Trigger label is removed by App-authenticated safe outputs after review
+- [x] Trigger label is consumed during authorized activation
 - [x] Security, correctness/reliability, and quality/maintainability passes run
 - [x] Every finding is a severity-classified native review thread
 - [x] Review and approval check are pinned to the triggering head SHA
