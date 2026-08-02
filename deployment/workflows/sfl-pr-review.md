@@ -6,9 +6,10 @@ description: |
   consolidated review, and publishes the SFL Reviewer Approval check.
 
 on:
-  pull_request:
-    types: [labeled]
-    names: [sfl-review]
+  label_command:
+    name: sfl-review
+    events: [pull_request]
+    remove_label: true
 
 permissions:
   contents: read
@@ -42,6 +43,7 @@ tools:
       private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
 
 safe-outputs:
+  threat-detection: false
   github-app:
     client-id: ${{ vars.SFL_APP_CLIENT_ID }}
     private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
@@ -55,10 +57,6 @@ safe-outputs:
   create-check-run:
     max: 1
     name: "SFL Reviewer Approval"
-  remove-labels:
-    allowed: [sfl-review]
-    max: 1
-    target: triggering
 ---
 
 <!-- sfl:
@@ -72,7 +70,7 @@ safe-outputs:
     one inline thread per finding, and an SFL Reviewer Approval check.
   acceptance-criteria:
     - The sfl-review label triggers exactly one current-head review run
-    - The trigger label is removed through App-authenticated safe outputs
+    - The trigger label is consumed during authorized activation
     - Security, correctness/reliability, and quality/maintainability are reviewed
     - Every finding is an inline thread classified Critical, High, Medium, or Low
     - The review body reports the run ID, head SHA, verdict, and severity counts
@@ -182,9 +180,4 @@ Create exactly one check run named `SFL Reviewer Approval` with:
 - `summary`: the verdict, head SHA, run ID, and severity counts
 - `conclusion`: the approval-policy result above
 
-After requesting the consolidated review and check run, call `remove-labels`
-for `sfl-review` on the triggering pull request. This must be the final safe
-output request so the label can be applied again for a later re-review.
-
-Do not modify code, branches, or pull request metadata. The only permitted
-label change is removing `sfl-review` through the configured safe output.
+Do not modify code, branches, pull request labels, or pull request metadata.
