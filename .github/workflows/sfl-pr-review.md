@@ -18,16 +18,6 @@ engine:
   id: codex
   args:
     - " -c"
-    - 'model_provider="openrouter"'
-    - "-c"
-    - 'model_providers.openrouter.name="OpenRouter"'
-    - "-c"
-    - 'model_providers.openrouter.base_url="https://openrouter.ai/api/v1"'
-    - "-c"
-    - 'model_providers.openrouter.env_key="OPENAI_API_KEY"'
-    - "-c"
-    - 'model_providers.openrouter.wire_api="responses"'
-    - "-c"
     - 'model_reasoning_effort="high"'
   env:
     OPENAI_BASE_URL: https://openrouter.ai/api/v1
