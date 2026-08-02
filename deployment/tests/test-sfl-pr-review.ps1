@@ -175,6 +175,7 @@ Assert-FileContains -RelativePath 'deployment\scripts\deploy-workflow.ps1' -Patt
     'git fetch origin \$BranchName',
     'gh pr list',
     'Existing PR updated',
+    '@\(\$EngineProfile\.Arguments\)\.Count',
     '\$modelLine\s*=\s*"model:'
 )
 Assert-FileContains -RelativePath 'deployment\scripts\install-gh-sfl-hemsoft.ps1' -Patterns @(

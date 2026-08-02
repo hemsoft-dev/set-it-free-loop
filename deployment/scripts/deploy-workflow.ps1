@@ -234,7 +234,7 @@ function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject
     $frontmatter = $frontmatterMatch.Groups["frontmatter"].Value
     $rest = $Content.Substring($frontmatterMatch.Length)
     $engineLines = @("engine:", "  id: $($EngineProfile.Provider)")
-    if ($EngineProfile.Arguments.Count -gt 0) {
+    if (@($EngineProfile.Arguments).Count -gt 0) {
         $engineLines += "  args:"
         foreach ($argument in $EngineProfile.Arguments) {
             $escapedArgument = ([string] $argument).Replace("'", "''")
