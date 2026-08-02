@@ -206,6 +206,12 @@ function Resolve-SflEngineProfile([string]$WorkflowName) {
     } else {
         $null
     }
+    $argumentsProperty = $profile.PSObject.Properties["arguments"]
+    $arguments = if ($null -ne $argumentsProperty -and $null -ne $argumentsProperty.Value) {
+        @($argumentsProperty.Value)
+    } else {
+        @()
+    }
 
     return [pscustomobject]@{
         Profile              = $profileName
@@ -215,6 +221,7 @@ function Resolve-SflEngineProfile([string]$WorkflowName) {
         RenderedModel        = $renderedModel
         RequiredSecretsAnyOf = $requiredSecretsAnyOf
         Environment          = $environment
+        Arguments            = $arguments
     }
 }
 
@@ -227,6 +234,13 @@ function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject
     $frontmatter = $frontmatterMatch.Groups["frontmatter"].Value
     $rest = $Content.Substring($frontmatterMatch.Length)
     $engineLines = @("engine:", "  id: $($EngineProfile.Provider)")
+    if ($EngineProfile.Arguments.Count -gt 0) {
+        $engineLines += "  args:"
+        foreach ($argument in $EngineProfile.Arguments) {
+            $escapedArgument = ([string] $argument).Replace("'", "''")
+            $engineLines += "    - '$escapedArgument'"
+        }
+    }
     if ($null -ne $EngineProfile.Environment) {
         $engineLines += "  env:"
         foreach ($property in $EngineProfile.Environment.PSObject.Properties) {
@@ -278,6 +292,7 @@ function New-SflEnginePolicyManifest([string[]]$WorkflowNames) {
                 effort               = $profile.Effort
                 renderedModel        = $profile.RenderedModel
                 requiredSecretsAnyOf = @($profile.RequiredSecretsAnyOf)
+                arguments            = @($profile.Arguments)
                 environment          = $profile.Environment
             }
         }
