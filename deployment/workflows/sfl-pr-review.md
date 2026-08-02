@@ -15,14 +15,13 @@ permissions:
   pull-requests: read
 
 engine:
-  id: codex
-  args:
-    - " -c"
-    - 'model_reasoning_effort="high"'
+  id: copilot
   env:
-    OPENAI_BASE_URL: https://openrouter.ai/api/v1
-    CODEX_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-    OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    COPILOT_PROVIDER_BASE_URL: https://openrouter.ai/api/v1
+    COPILOT_PROVIDER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    COPILOT_PROVIDER_TYPE: openai
+    COPILOT_PROVIDER_WIRE_API: responses
+    COPILOT_MODEL: moonshotai/kimi-k3
 
 model: moonshotai/kimi-k3
 

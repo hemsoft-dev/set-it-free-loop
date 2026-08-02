@@ -60,12 +60,13 @@ $workflowPatterns = @(
     'pull_request:',
     'names:\s*\[sfl-review\]',
     'sfl-review',
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?$',
+    '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?$',
     '(?m)^model:[ \t]*moonshotai/kimi-k3\r?$',
-    'OPENAI_BASE_URL:[ \t]*https://openrouter\.ai/api/v1',
-    'OPENAI_API_KEY:[ \t]*\$\{\{ secrets\.OPENROUTER_API_KEY \}\}',
-    'CODEX_API_KEY:[ \t]*\$\{\{ secrets\.OPENROUTER_API_KEY \}\}',
-    'model_reasoning_effort\s*=\s*"high"',
+    'COPILOT_PROVIDER_BASE_URL:[ \t]*https://openrouter\.ai/api/v1',
+    'COPILOT_PROVIDER_API_KEY:[ \t]*\$\{\{ secrets\.OPENROUTER_API_KEY \}\}',
+    'COPILOT_PROVIDER_TYPE:[ \t]*openai',
+    'COPILOT_PROVIDER_WIRE_API:[ \t]*responses',
+    'COPILOT_MODEL:[ \t]*moonshotai/kimi-k3',
     'openrouter\.ai',
     'SFL_APP_CLIENT_ID',
     'SFL_APP_PRIVATE_KEY',
@@ -85,29 +86,26 @@ $workflowPatterns = @(
 Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns $workflowPatterns
 Assert-FileContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns $workflowPatterns
 Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns @(
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?\n[ \t]+model:',
+    '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
     'copilot-requests:\s*write',
-    'model_provider\s*=\s*"openrouter"',
-    'model_providers\.openrouter',
+    'OPENAI_API_KEY:',
+    'CODEX_API_KEY:',
     'label_command',
     'pr-diff\.patch',
     'pr-review-comments\.json'
 )
 Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns @(
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?\n[ \t]+model:',
+    '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
     'copilot-requests:\s*write',
-    'model_provider\s*=\s*"openrouter"',
-    'model_providers\.openrouter',
+    'OPENAI_API_KEY:',
+    'CODEX_API_KEY:',
     'label_command',
     'pr-diff\.patch',
     'pr-review-comments\.json'
 )
 Assert-FileExists -RelativePath '.github\workflows\sfl-pr-review.lock.yml'
-Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
-    'detection_result\.json -c model_reasoning_effort="high"'
-)
 Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
-    'detection_result\.json-c'
+    'copilot-requests:\s*write'
 )
 
 $stagingPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.md'
@@ -142,10 +140,10 @@ $openRouterArguments = if ($null -ne $openRouterProfile -and
     @()
 }
 if ($null -eq $openRouterProfile -or
-    $openRouterProfile.Value.provider -ne 'codex' -or
+    $openRouterProfile.Value.provider -ne 'copilot' -or
     $openRouterProfile.Value.model -ne 'moonshotai/kimi-k3' -or
     'OPENROUTER_API_KEY' -notin @($openRouterProfile.Value.requiredSecretsAnyOf) -or
-    'model_reasoning_effort="high"' -notin $openRouterArguments) {
+    @($openRouterArguments).Count -ne 0) {
     $failures.Add('deployment/engine-policy.json is missing the OpenRouter Kimi K3 review profile.')
 }
 $reviewPolicy = $enginePolicy.workflows.PSObject.Properties['sfl-pr-review']
