@@ -25,6 +25,11 @@ engine:
 
 model: moonshotai/kimi-k3
 
+models:
+  default-ai-credits-pricing:
+    input: 3
+    output: 15
+
 network:
   allowed:
     - openrouter.ai
