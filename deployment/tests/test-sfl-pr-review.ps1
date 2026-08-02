@@ -61,9 +61,12 @@ $workflowPatterns = @(
     'names:\s*\[sfl-review\]',
     'sfl-review',
     '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?$',
-    '(?m)^model:[ \t]*moonshotai/kimi-k3\?effort=high\r?$',
+    '(?m)^model:[ \t]*moonshotai/kimi-k3\r?$',
     'OPENAI_BASE_URL:[ \t]*https://openrouter\.ai/api/v1',
     'OPENAI_API_KEY:[ \t]*\$\{\{ secrets\.OPENROUTER_API_KEY \}\}',
+    'model_provider\s*=\s*"openrouter"',
+    'wire_api\s*=\s*"responses"',
+    'model_reasoning_effort\s*=\s*"high"',
     'openrouter\.ai',
     'SFL_APP_CLIENT_ID',
     'SFL_APP_PRIVATE_KEY',
@@ -97,6 +100,12 @@ Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Pa
     'pr-review-comments\.json'
 )
 Assert-FileExists -RelativePath '.github\workflows\sfl-pr-review.lock.yml'
+Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
+    'detection_result\.json -c model_provider="openrouter"'
+)
+Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
+    'detection_result\.json-c'
+)
 
 $stagingPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.md'
 $deploymentPath = Join-Path $repoRoot 'deployment\workflows\sfl-pr-review.md'
@@ -123,10 +132,19 @@ if ('sfl-pr-review' -notin $componentEnum) {
 $enginePolicyPath = Join-Path $repoRoot 'deployment\engine-policy.json'
 $enginePolicy = Get-Content -LiteralPath $enginePolicyPath -Raw | ConvertFrom-Json
 $openRouterProfile = $enginePolicy.profiles.PSObject.Properties['openrouter-kimi-k3-high']
+$openRouterArguments = if ($null -ne $openRouterProfile -and
+    $null -ne $openRouterProfile.Value.PSObject.Properties['arguments']) {
+    @($openRouterProfile.Value.arguments)
+} else {
+    @()
+}
 if ($null -eq $openRouterProfile -or
     $openRouterProfile.Value.provider -ne 'codex' -or
     $openRouterProfile.Value.model -ne 'moonshotai/kimi-k3' -or
-    'OPENROUTER_API_KEY' -notin @($openRouterProfile.Value.requiredSecretsAnyOf)) {
+    'OPENROUTER_API_KEY' -notin @($openRouterProfile.Value.requiredSecretsAnyOf) -or
+    'model_provider="openrouter"' -notin $openRouterArguments -or
+    'model_providers.openrouter.env_key="OPENAI_API_KEY"' -notin $openRouterArguments -or
+    'model_reasoning_effort="high"' -notin $openRouterArguments) {
     $failures.Add('deployment/engine-policy.json is missing the OpenRouter Kimi K3 review profile.')
 }
 $reviewPolicy = $enginePolicy.workflows.PSObject.Properties['sfl-pr-review']

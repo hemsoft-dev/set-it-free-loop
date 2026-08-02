@@ -218,6 +218,7 @@ type sflEngineWorkflowProfile struct {
 	Effort               string            `json:"effort,omitempty"`
 	RenderedModel        string            `json:"renderedModel"`
 	RequiredSecretsAnyOf []string          `json:"requiredSecretsAnyOf,omitempty"`
+	Arguments            []string          `json:"arguments,omitempty"`
 	Environment          map[string]string `json:"environment,omitempty"`
 }
 '@
@@ -377,6 +378,7 @@ type hemSoftEngineProfile struct {
 	Model                string            `json:"model"`
 	Effort               string            `json:"effort,omitempty"`
 	RequiredSecretsAnyOf []string          `json:"requiredSecretsAnyOf,omitempty"`
+	Arguments            []string          `json:"arguments,omitempty"`
 	Environment          map[string]string `json:"environment,omitempty"`
 }
 
@@ -391,6 +393,7 @@ type hemSoftEngineConfig struct {
 	Effort               string
 	RenderedModel        string
 	RequiredSecretsAnyOf []string
+	Arguments            []string
 	Environment          map[string]string
 }
 
@@ -465,6 +468,7 @@ func hemSoftEngineConfigForWorkflow(workflowName string) (hemSoftEngineConfig, e
 		Effort:               profile.Effort,
 		RenderedModel:        renderedModel,
 		RequiredSecretsAnyOf: append([]string(nil), profile.RequiredSecretsAnyOf...),
+		Arguments:            append([]string(nil), profile.Arguments...),
 		Environment:          cloneHemSoftEnvironment(profile.Environment),
 	}, nil
 }
@@ -610,6 +614,12 @@ func isTopLevelYamlKey(line, key string) bool {
 
 func hemSoftEngineBlock(config hemSoftEngineConfig) string {
 	lines := []string{"engine:", "  id: " + config.Provider}
+	if len(config.Arguments) > 0 {
+		lines = append(lines, "  args:")
+		for _, argument := range config.Arguments {
+			lines = append(lines, "    - '"+strings.ReplaceAll(argument, "'", "''")+"'")
+		}
+	}
 	if len(config.Environment) > 0 {
 		keys := make([]string, 0, len(config.Environment))
 		for key := range config.Environment {
@@ -659,6 +669,7 @@ func hemSoftEnginePolicyManifestForFileMap(fileMap map[string]string) *sflEngine
 			Effort:               config.Effort,
 			RenderedModel:        config.RenderedModel,
 			RequiredSecretsAnyOf: append([]string(nil), config.RequiredSecretsAnyOf...),
+			Arguments:            append([]string(nil), config.Arguments...),
 			Environment:          cloneHemSoftEnvironment(config.Environment),
 		})
 	}
