@@ -297,6 +297,13 @@ try {
         $contradictoryReview,
         (New-Check -Conclusion 'success')
     )
+
+    Invoke-ValidatorCase -Name 'reject-incomplete-signal' -ShouldPass $false -Items @(
+        (New-Inventory),
+        (New-Review -Event 'APPROVE'),
+        (New-Check -Conclusion 'success'),
+        [pscustomobject]@{ type = 'missing_data'; message = 'incomplete review' }
+    )
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force
 }

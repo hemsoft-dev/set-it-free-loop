@@ -93,6 +93,7 @@ $workflowPatterns = @(
     'GitHub returned incomplete review-thread data',
     'output target repo must be',
     'output target \$\{field\} must be',
+    'unexpected safe output types',
     "author !== 'sfl-app\[bot\]'",
     'requiredCheckFragments',
     'requireSingleReviewLine',

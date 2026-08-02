@@ -224,6 +224,25 @@ safe-outputs:
             fail('noop is forbidden while the pull request head is unchanged');
           }
 
+          const allowedTypes = new Set([
+            'sfl_review_inventory',
+            'create_pull_request_review_comment',
+            'submit_pull_request_review',
+            'create_check_run',
+          ]);
+          const unexpectedTypes = [
+            ...new Set(
+              items
+                .map((item) => item.type)
+                .filter((type) => !allowedTypes.has(type))
+            ),
+          ];
+          if (unexpectedTypes.length > 0) {
+            fail(
+              `unexpected safe output types: ${unexpectedTypes.join(', ')}`
+            );
+          }
+
           const inventories = items.filter(
             (item) => item.type === 'sfl_review_inventory'
           );
