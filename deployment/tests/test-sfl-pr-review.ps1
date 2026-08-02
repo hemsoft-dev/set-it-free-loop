@@ -75,6 +75,7 @@ $workflowPatterns = @(
     'SFL_APP_CLIENT_ID',
     'SFL_APP_PRIVATE_KEY',
     'create-pull-request-review-comment',
+    'Set `side` to `LEFT` for a deleted line and `RIGHT`',
     'submit-pull-request-review',
     'create-check-run',
     'threat-detection:\s*\r?\n[ \t]+enabled:\s*true',
