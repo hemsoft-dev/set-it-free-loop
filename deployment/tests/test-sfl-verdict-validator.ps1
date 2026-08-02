@@ -118,6 +118,7 @@ function New-Review {
         [int] $High = 0,
         [int] $Medium = 0,
         [int] $Low = 0,
+        [int] $Overflow = 0,
         [string] $Body
     )
 
@@ -140,6 +141,7 @@ Verdict: $verdict
 | High | $High |
 | Medium | $Medium |
 | Low | $Low |
+| Overflow | $Overflow |
 "@
     }
 
@@ -159,6 +161,7 @@ function New-Check {
         [int] $High = 0,
         [int] $Medium = 0,
         [int] $Low = 0,
+        [int] $Overflow = 0,
         [string] $Summary
     )
 
@@ -176,6 +179,7 @@ Critical: $Critical
 High: $High
 Medium: $Medium
 Low: $Low
+Overflow: $Overflow
 "@
     }
 
@@ -213,8 +217,8 @@ try {
     1..20 | ForEach-Object {
         $overflowItems.Add((New-Comment -Severity 'MEDIUM'))
     }
-    $overflowItems.Add((New-Review -Event 'REQUEST_CHANGES' -Medium 21))
-    $overflowItems.Add((New-Check -Conclusion 'failure' -Medium 21))
+    $overflowItems.Add((New-Review -Event 'REQUEST_CHANGES' -Medium 21 -Overflow 1))
+    $overflowItems.Add((New-Check -Conclusion 'failure' -Medium 21 -Overflow 1))
     Invoke-ValidatorCase -Name 'accept-overflow-block' -ShouldPass $true -Items $overflowItems
 
     $badOverflowItems = [System.Collections.Generic.List[object]]::new()
@@ -222,8 +226,8 @@ try {
     1..20 | ForEach-Object {
         $badOverflowItems.Add((New-Comment -Severity 'LOW'))
     }
-    $badOverflowItems.Add((New-Review -Event 'APPROVE' -Low 21))
-    $badOverflowItems.Add((New-Check -Conclusion 'success' -Low 21))
+    $badOverflowItems.Add((New-Review -Event 'APPROVE' -Low 21 -Overflow 1))
+    $badOverflowItems.Add((New-Check -Conclusion 'success' -Low 21 -Overflow 1))
     Invoke-ValidatorCase -Name 'reject-overflow-approval' -ShouldPass $false -Items $badOverflowItems
 
     Invoke-ValidatorCase -Name 'accept-noop' -ShouldPass $true -LiveHead 'def456' -Items @(

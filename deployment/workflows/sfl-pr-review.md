@@ -153,15 +153,35 @@ safe-outputs:
                   env: process.env,
                   stdio: ['ignore', 'pipe', 'pipe'],
                 });
-                const pullRequest =
-                  JSON.parse(raw)?.data?.repository?.pullRequest;
+                const response = JSON.parse(raw);
+                if (
+                  Array.isArray(response.errors) &&
+                  response.errors.length > 0
+                ) {
+                  fail(
+                    `GitHub GraphQL returned errors: ` +
+                      response.errors
+                        .map((error) => error.message || 'unknown error')
+                        .join('; ')
+                  );
+                }
+                const pullRequest = response?.data?.repository?.pullRequest;
                 if (!pullRequest?.headRefOid) {
                   fail('GitHub returned no pull request state');
                 }
+                const reviewThreads = pullRequest.reviewThreads;
+                if (
+                  !Array.isArray(reviewThreads?.nodes) ||
+                  typeof reviewThreads?.pageInfo?.hasNextPage !== 'boolean' ||
+                  (reviewThreads.pageInfo.hasNextPage &&
+                    !reviewThreads.pageInfo.endCursor)
+                ) {
+                  fail('GitHub returned incomplete review-thread data');
+                }
                 headRefOid = pullRequest.headRefOid;
-                nodes.push(...(pullRequest.reviewThreads?.nodes || []));
-                after = pullRequest.reviewThreads?.pageInfo?.hasNextPage
-                  ? pullRequest.reviewThreads.pageInfo.endCursor
+                nodes.push(...reviewThreads.nodes);
+                after = reviewThreads.pageInfo.hasNextPage
+                  ? reviewThreads.pageInfo.endCursor
                   : null;
               } while (after);
               return { headRefOid, reviewThreads: { nodes } };
@@ -258,7 +278,7 @@ safe-outputs:
             }
             const firstComment = thread.comments?.nodes?.[0];
             const author = String(firstComment?.author?.login || '');
-            if (!author.startsWith('sfl-app')) {
+            if (author !== 'sfl-app[bot]') {
               continue;
             }
             const severity = severityOrder.find((candidate) =>
@@ -349,6 +369,9 @@ safe-outputs:
             ])
           );
           const reviewBody = String(reviews[0].body || '');
+          const reviewLines = new Set(
+            reviewBody.split(/\r?\n/).map((line) => line.trim())
+          );
           const requiredReviewFragments = [
             `SFL run ID: ${expectedRunId}`,
             `Head SHA: ${expectedHead}`,
@@ -357,17 +380,21 @@ safe-outputs:
             `| High | ${totals.high} |`,
             `| Medium | ${totals.medium} |`,
             `| Low | ${totals.low} |`,
+            `| Overflow | ${inventory.overflow} |`,
           ];
           if (!expectedRunId) {
             fail('workflow run ID is unavailable');
           }
           for (const fragment of requiredReviewFragments) {
-            if (!reviewBody.includes(fragment)) {
+            if (!reviewLines.has(fragment)) {
               fail(`consolidated review is missing: ${fragment}`);
             }
           }
 
           const checkSummary = String(checks[0].summary || '');
+          const checkLines = new Set(
+            checkSummary.split(/\r?\n/).map((line) => line.trim())
+          );
           const requiredCheckFragments = [
             `Verdict: ${expectedVerdict}`,
             `Head SHA: ${expectedHead}`,
@@ -376,9 +403,10 @@ safe-outputs:
             `High: ${totals.high}`,
             `Medium: ${totals.medium}`,
             `Low: ${totals.low}`,
+            `Overflow: ${inventory.overflow}`,
           ];
           for (const fragment of requiredCheckFragments) {
-            if (!checkSummary.includes(fragment)) {
+            if (!checkLines.has(fragment)) {
               fail(`check summary is missing: ${fragment}`);
             }
           }
@@ -579,6 +607,7 @@ Verdict: APPROVE
 | High | 0 |
 | Medium | 0 |
 | Low | 0 |
+| Overflow | 0 |
 
 ### Review passes
 
@@ -606,6 +635,7 @@ Create exactly one check run named `SFL Reviewer Approval` with:
   - `High: 0`
   - `Medium: 0`
   - `Low: 0`
+  - `Overflow: 0`
 - `conclusion`: the approval-policy result above
 
 Do not modify code, branches, pull request labels, or pull request metadata.
