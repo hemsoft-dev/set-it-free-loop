@@ -289,6 +289,14 @@ try {
         (New-Review -Event 'REQUEST_CHANGES' -High 1),
         (New-Check -Conclusion 'failure' -High 1)
     )
+
+    $contradictoryReview = New-Review -Event 'APPROVE'
+    $contradictoryReview.body += "`nVerdict: CHANGES_REQUESTED"
+    Invoke-ValidatorCase -Name 'reject-contradictory-review' -ShouldPass $false -Items @(
+        (New-Inventory),
+        $contradictoryReview,
+        (New-Check -Conclusion 'success')
+    )
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force
 }

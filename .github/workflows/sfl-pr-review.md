@@ -390,32 +390,59 @@ safe-outputs:
             ])
           );
           const reviewBody = String(reviews[0].body || '');
-          const reviewLines = new Set(
-            reviewBody.split(/\r?\n/).map((line) => line.trim())
+          const reviewLines = reviewBody
+            .split(/\r?\n/)
+            .map((line) => line.trim());
+          const requireSingleReviewLine = (prefix, expected) => {
+            const matches = reviewLines.filter((line) =>
+              line.startsWith(prefix)
+            );
+            if (matches.length !== 1 || matches[0] !== expected) {
+              fail(`consolidated review must contain exactly: ${expected}`);
+            }
+          };
+          requireSingleReviewLine(
+            'SFL run ID:',
+            `SFL run ID: ${expectedRunId}`
           );
-          const requiredReviewFragments = [
-            `SFL run ID: ${expectedRunId}`,
-            `Head SHA: ${expectedHead}`,
-            `Verdict: ${expectedVerdict}`,
-            `| Critical | ${totals.critical} |`,
-            `| High | ${totals.high} |`,
-            `| Medium | ${totals.medium} |`,
-            `| Low | ${totals.low} |`,
-            `| Overflow | ${inventory.overflow} |`,
-          ];
+          requireSingleReviewLine('Head SHA:', `Head SHA: ${expectedHead}`);
+          requireSingleReviewLine(
+            'Verdict:',
+            `Verdict: ${expectedVerdict}`
+          );
           if (!expectedRunId) {
             fail('workflow run ID is unavailable');
           }
-          for (const fragment of requiredReviewFragments) {
-            if (!reviewLines.has(fragment)) {
-              fail(`consolidated review is missing: ${fragment}`);
+          const expectedRows = {
+            Critical: totals.critical,
+            High: totals.high,
+            Medium: totals.medium,
+            Low: totals.low,
+            Overflow: inventory.overflow,
+          };
+          for (const [label, expectedCount] of Object.entries(expectedRows)) {
+            const rowPattern = new RegExp(
+              `^\\|\\s*${label}\\s*\\|\\s*(\\d+)\\s*\\|$`
+            );
+            const matches = reviewLines
+              .map((line) => line.match(rowPattern))
+              .filter(Boolean);
+            if (
+              matches.length !== 1 ||
+              Number(matches[0][1]) !== expectedCount
+            ) {
+              fail(
+                `consolidated review must contain one ${label} row with ` +
+                  `${expectedCount}`
+              );
             }
           }
 
           const checkSummary = String(checks[0].summary || '');
-          const checkLines = new Set(
-            checkSummary.split(/\r?\n/).map((line) => line.trim())
-          );
+          const checkLines = checkSummary
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
           const requiredCheckFragments = [
             `Verdict: ${expectedVerdict}`,
             `Head SHA: ${expectedHead}`,
@@ -426,10 +453,11 @@ safe-outputs:
             `Low: ${totals.low}`,
             `Overflow: ${inventory.overflow}`,
           ];
-          for (const fragment of requiredCheckFragments) {
-            if (!checkLines.has(fragment)) {
-              fail(`check summary is missing: ${fragment}`);
-            }
+          if (
+            JSON.stringify(checkLines) !==
+            JSON.stringify(requiredCheckFragments)
+          ) {
+            fail('check summary does not match the required exact shape');
           }
 
           console.log('SFL verdict validation passed');
