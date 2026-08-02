@@ -46,9 +46,226 @@ safe-outputs:
   threat-detection:
     enabled: true
     max-ai-credits: -1
+    post-steps:
+      - name: Validate SFL review verdict
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          # SFL_VERDICT_VALIDATOR_START
+          node <<'NODE'
+          const fs = require('fs');
+
+          const outputPath =
+            process.env.SFL_AGENT_OUTPUT_PATH ||
+            '/tmp/gh-aw/threat-detection/agent_output.json';
+          const expectedHead = process.env.EXPECTED_HEAD_SHA || '';
+          const fail = (message) => {
+            console.error(`SFL verdict validation failed: ${message}`);
+            process.exit(1);
+          };
+
+          if (!fs.existsSync(outputPath)) {
+            fail(`agent output is missing: ${outputPath}`);
+          }
+
+          const output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+          const items = Array.isArray(output.items) ? output.items : [];
+          const noops = items.filter((item) => item.type === 'noop');
+
+          if (noops.length > 0) {
+            if (noops.length !== 1 || items.length !== 1) {
+              fail('noop must be the only output for a stale-head cancellation');
+            }
+            console.log('SFL verdict validation passed: no-op cancellation');
+            process.exit(0);
+          }
+
+          const inventories = items.filter(
+            (item) => item.type === 'sfl_review_inventory'
+          );
+          if (inventories.length !== 1) {
+            fail('exactly one sfl_review_inventory output is required');
+          }
+
+          const inventory = inventories[0];
+          const countFields = [
+            'new_critical',
+            'new_high',
+            'new_medium',
+            'new_low',
+            'carried_critical',
+            'carried_high',
+            'carried_medium',
+            'carried_low',
+            'overflow',
+          ];
+          for (const field of countFields) {
+            if (
+              !Number.isInteger(inventory[field]) ||
+              inventory[field] < 0
+            ) {
+              fail(`${field} must be a non-negative integer`);
+            }
+          }
+          if (!expectedHead || inventory.head_sha !== expectedHead) {
+            fail('inventory head_sha does not match the triggering PR head');
+          }
+
+          const severityOrder = ['critical', 'high', 'medium', 'low'];
+          const prefixes = {
+            critical: '**CRITICAL Finding**',
+            high: '**HIGH Finding**',
+            medium: '**MEDIUM Finding**',
+            low: '**LOW Finding**',
+          };
+          const comments = items.filter(
+            (item) => item.type === 'create_pull_request_review_comment'
+          );
+          const emitted = Object.fromEntries(
+            severityOrder.map((severity) => [severity, 0])
+          );
+          for (const comment of comments) {
+            const severity = severityOrder.find((candidate) =>
+              String(comment.body || '').startsWith(prefixes[candidate])
+            );
+            if (!severity) {
+              fail('every inline review comment must use an SFL severity prefix');
+            }
+            emitted[severity]++;
+          }
+
+          const newlyFound = Object.fromEntries(
+            severityOrder.map((severity) => [
+              severity,
+              inventory[`new_${severity}`],
+            ])
+          );
+          const carried = Object.fromEntries(
+            severityOrder.map((severity) => [
+              severity,
+              inventory[`carried_${severity}`],
+            ])
+          );
+          const newTotal = Object.values(newlyFound).reduce(
+            (sum, count) => sum + count,
+            0
+          );
+          const expectedOverflow = Math.max(0, newTotal - 20);
+          if (inventory.overflow !== expectedOverflow) {
+            fail(
+              `overflow must be ${expectedOverflow}, got ${inventory.overflow}`
+            );
+          }
+
+          let remaining = Math.min(newTotal, 20);
+          const expectedEmitted = {};
+          for (const severity of severityOrder) {
+            expectedEmitted[severity] = Math.min(
+              newlyFound[severity],
+              remaining
+            );
+            remaining -= expectedEmitted[severity];
+          }
+          for (const severity of severityOrder) {
+            if (emitted[severity] !== expectedEmitted[severity]) {
+              fail(
+                `${severity} emitted count must be ` +
+                  `${expectedEmitted[severity]}, got ${emitted[severity]}`
+              );
+            }
+          }
+
+          const reviews = items.filter(
+            (item) => item.type === 'submit_pull_request_review'
+          );
+          const checks = items.filter(
+            (item) => item.type === 'create_check_run'
+          );
+          if (reviews.length !== 1 || checks.length !== 1) {
+            fail('exactly one consolidated review and one check run are required');
+          }
+
+          const blockingFindings =
+            newlyFound.critical +
+              carried.critical +
+              newlyFound.high +
+              carried.high >
+            0;
+          const blocking = blockingFindings || inventory.overflow > 0;
+          const expectedEvent = blocking ? 'REQUEST_CHANGES' : 'APPROVE';
+          const expectedConclusion = blocking ? 'failure' : 'success';
+          const actualEvent = String(reviews[0].event || '').toUpperCase();
+          const actualConclusion = String(
+            checks[0].conclusion || ''
+          ).toLowerCase();
+
+          if (actualEvent !== expectedEvent) {
+            fail(
+              `review event must be ${expectedEvent}, got ${actualEvent || 'empty'}`
+            );
+          }
+          if (actualConclusion !== expectedConclusion) {
+            fail(
+              `check conclusion must be ${expectedConclusion}, got ` +
+                `${actualConclusion || 'empty'}`
+            );
+          }
+
+          console.log('SFL verdict validation passed');
+          // SFL_VERDICT_VALIDATOR_END
+          NODE
+  # Repository-owner-approved exception: shared SFL writes intentionally use
+  # sfl-app[bot] so the reviewer has consistent attribution across HemSoft repos.
   github-app:
     client-id: ${{ vars.SFL_APP_CLIENT_ID }}
     private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
+  scripts:
+    sfl-review-inventory:
+      description: Record the complete SFL finding inventory for deterministic verdict validation.
+      inputs:
+        head_sha:
+          description: Triggering pull request head SHA.
+          required: true
+          type: string
+        new_critical:
+          description: Newly identified Critical findings.
+          required: true
+          type: number
+        new_high:
+          description: Newly identified High findings.
+          required: true
+          type: number
+        new_medium:
+          description: Newly identified Medium findings.
+          required: true
+          type: number
+        new_low:
+          description: Newly identified Low findings.
+          required: true
+          type: number
+        carried_critical:
+          description: Unresolved Critical findings carried from earlier SFL runs.
+          required: true
+          type: number
+        carried_high:
+          description: Unresolved High findings carried from earlier SFL runs.
+          required: true
+          type: number
+        carried_medium:
+          description: Unresolved Medium findings carried from earlier SFL runs.
+          required: true
+          type: number
+        carried_low:
+          description: Unresolved Low findings carried from earlier SFL runs.
+          required: true
+          type: number
+        overflow:
+          description: Newly identified findings omitted after the 20-comment cap.
+          required: true
+          type: number
+      script: |
+        return { success: true };
   create-pull-request-review-comment:
     side: RIGHT
     max: 20
@@ -152,6 +369,13 @@ inline comments can be published. If more than 20 findings exist, publish the
 20 highest-severity findings, report the overflow count in the consolidated
 review, and force `REQUEST_CHANGES` with a failing approval check. Never approve
 a review whose complete finding inventory exceeded the inline-comment limit.
+
+Before emitting the consolidated review or check, call
+`sfl_review_inventory` exactly once with the triggering head SHA; the complete
+new and carried counts for every severity; and the number of newly identified
+findings omitted by the 20-comment cap. The deterministic validation step
+checks this inventory against the emitted inline comments, review event, and
+check conclusion. Any mismatch blocks all safe outputs.
 
 ## Approval policy
 
