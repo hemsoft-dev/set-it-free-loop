@@ -21,6 +21,7 @@ engine:
     - 'model_reasoning_effort="high"'
   env:
     OPENAI_BASE_URL: https://openrouter.ai/api/v1
+    CODEX_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
 model: moonshotai/kimi-k3
