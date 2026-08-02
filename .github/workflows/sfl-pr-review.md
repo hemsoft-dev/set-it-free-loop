@@ -43,17 +43,21 @@ tools:
       private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
 
 safe-outputs:
-  threat-detection: false
+  threat-detection:
+    enabled: true
+    max-ai-credits: -1
   github-app:
     client-id: ${{ vars.SFL_APP_CLIENT_ID }}
     private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
   create-pull-request-review-comment:
     side: RIGHT
     max: 20
+    commit-id: ${{ github.event.pull_request.head.sha }}
   submit-pull-request-review:
     allowed-events: [APPROVE, REQUEST_CHANGES]
     supersede-older-reviews: true
     footer: always
+    commit-id: ${{ github.event.pull_request.head.sha }}
   create-check-run:
     max: 1
     name: "SFL Reviewer Approval"
@@ -88,7 +92,15 @@ must be `${{ github.event.pull_request.head.sha }}` and the SFL run ID is
 
 Use the GitHub pull request tools to read the triggering PR, its changed files,
 and the complete diff. Before creating comments, list existing review comments
-and unresolved threads on the current head so you do not repeat a finding.
+and unresolved threads from every SFL review run whose comment begins with an
+exact SFL severity prefix, so you do not repeat a finding and can carry
+unresolved findings into the current verdict.
+
+Immediately before producing any safe output, fetch the pull request again and
+compare its current head SHA with `${{ github.event.pull_request.head.sha }}`.
+If they differ, emit no review comments, review, or check run. Call `noop` with
+the stale-head reason and stop. The safe-output handlers pin review comments
+and the consolidated review to the triggering SHA as a second fail-closed guard.
 
 ## Required review passes
 
@@ -133,12 +145,22 @@ After the prefix, state the defect, impact, evidence, and a concrete fix.
 Create exactly one inline thread per finding. If there are no findings, create
 no inline comments.
 
+Build the complete finding inventory before emitting comments. At most 20
+inline comments can be published. If more than 20 findings exist, publish the
+20 highest-severity findings, report the overflow count in the consolidated
+review, and force `REQUEST_CHANGES` with a failing approval check. Never approve
+a review whose complete finding inventory exceeded the inline-comment limit.
+
 ## Approval policy
 
-Count all inline findings by severity.
+Count all newly identified findings plus unresolved SFL findings from earlier
+runs by severity. Do not duplicate an unresolved finding as a new inline
+comment, but carry it into the current counts and verdict until its GitHub
+review thread is resolved.
 
-- If any Critical or High finding exists, submit `REQUEST_CHANGES` and create
-  the `SFL Reviewer Approval` check with conclusion `failure`.
+- If any Critical or High finding remains unresolved, or the complete finding
+  inventory exceeded 20 comments, submit `REQUEST_CHANGES` and create the
+  `SFL Reviewer Approval` check with conclusion `failure`.
 - If only Medium or Low findings exist, submit `APPROVE` and create the check
   with conclusion `success`.
 - If no findings exist, submit `APPROVE` and create the check with conclusion

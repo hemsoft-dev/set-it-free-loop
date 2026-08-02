@@ -77,7 +77,12 @@ $workflowPatterns = @(
     'create-pull-request-review-comment',
     'submit-pull-request-review',
     'create-check-run',
-    'threat-detection:\s*false',
+    'threat-detection:\s*\r?\n[ \t]+enabled:\s*true',
+    'max-ai-credits:\s*-1',
+    'commit-id:\s*\$\{\{ github\.event\.pull_request\.head\.sha \}\}',
+    'complete finding inventory exceeded the inline-comment limit',
+    'unresolved SFL findings from earlier',
+    'Call `noop` with',
     'SFL Reviewer Approval',
     'SFL run ID:',
     'Verdict:\s*APPROVE',
@@ -176,7 +181,10 @@ Assert-FileContains -RelativePath 'deployment\scripts\deploy-workflow.ps1' -Patt
     'gh pr list',
     'Existing PR updated',
     '@\(\$EngineProfile\.Arguments\)\.Count',
-    '\$modelLine\s*=\s*"model:'
+    '\$modelLine\s*=\s*"model:',
+    'label=SFL%20Upstream',
+    '\[!\[SFL Upstream\]',
+    '\(\?:Set it Free Loop\|SFL Upstream\)'
 )
 Assert-FileContains -RelativePath 'deployment\scripts\install-gh-sfl-hemsoft.ps1' -Patterns @(
     'hemSoftEngineConfigForWorkflow',
