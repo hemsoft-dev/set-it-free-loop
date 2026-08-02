@@ -29,23 +29,37 @@ function Invoke-ValidatorCase {
         [object[]] $Items,
 
         [Parameter(Mandatory)]
-        [bool] $ShouldPass
+        [bool] $ShouldPass,
+
+        [string] $LiveHead = 'abc123',
+
+        [object[]] $Threads = @()
     )
 
     $outputPath = Join-Path $tempRoot "$Name.json"
     @{ items = $Items; errors = @() } |
         ConvertTo-Json -Depth 10 |
         Set-Content -LiteralPath $outputPath
+    $statePath = Join-Path $tempRoot "$Name-state.json"
+    @{
+        headRefOid = $LiveHead
+        reviewThreads = @{ nodes = $Threads }
+    } |
+        ConvertTo-Json -Depth 10 |
+        Set-Content -LiteralPath $statePath
 
     $previousOutputPath = $env:SFL_AGENT_OUTPUT_PATH
+    $previousStatePath = $env:SFL_PR_STATE_PATH
     $previousHead = $env:EXPECTED_HEAD_SHA
     try {
         $env:SFL_AGENT_OUTPUT_PATH = $outputPath
+        $env:SFL_PR_STATE_PATH = $statePath
         $env:EXPECTED_HEAD_SHA = 'abc123'
         & node $scriptPath *> (Join-Path $tempRoot "$Name.log")
         $passed = $LASTEXITCODE -eq 0
     } finally {
         $env:SFL_AGENT_OUTPUT_PATH = $previousOutputPath
+        $env:SFL_PR_STATE_PATH = $previousStatePath
         $env:EXPECTED_HEAD_SHA = $previousHead
     }
 
@@ -152,9 +166,43 @@ try {
     $badOverflowItems.Add((New-Check -Conclusion 'success'))
     Invoke-ValidatorCase -Name 'reject-overflow-approval' -ShouldPass $false -Items $badOverflowItems
 
-    Invoke-ValidatorCase -Name 'accept-noop' -ShouldPass $true -Items @(
+    Invoke-ValidatorCase -Name 'accept-noop' -ShouldPass $true -LiveHead 'def456' -Items @(
         [pscustomobject]@{ type = 'noop'; message = 'stale head' }
     )
+
+    Invoke-ValidatorCase -Name 'reject-noop-current-head' -ShouldPass $false -Items @(
+        [pscustomobject]@{ type = 'noop'; message = 'stale head' }
+    )
+
+    $unresolvedHighThread = [pscustomobject]@{
+        isResolved = $false
+        comments = @{
+            nodes = @(
+                [pscustomobject]@{
+                    author = @{ login = 'sfl-app[bot]' }
+                    body = '**HIGH Finding** Existing unresolved defect.'
+                }
+            )
+        }
+    }
+    Invoke-ValidatorCase `
+        -Name 'reject-carried-omission' `
+        -ShouldPass $false `
+        -Threads @($unresolvedHighThread) `
+        -Items @(
+            (New-Inventory),
+            (New-Review -Event 'APPROVE'),
+            (New-Check -Conclusion 'success')
+        )
+    Invoke-ValidatorCase `
+        -Name 'accept-carried-high' `
+        -ShouldPass $true `
+        -Threads @($unresolvedHighThread) `
+        -Items @(
+            (New-Inventory -CarriedHigh 1),
+            (New-Review -Event 'REQUEST_CHANGES'),
+            (New-Check -Conclusion 'failure')
+        )
 } finally {
     Remove-Item -LiteralPath $tempRoot -Recurse -Force
 }

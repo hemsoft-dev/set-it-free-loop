@@ -47,14 +47,24 @@ safe-outputs:
     enabled: true
     max-ai-credits: -1
     post-steps:
+      - name: Mint SFL validation token
+        id: sfl-validation-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.SFL_APP_ID }}
+          private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
+          permission-pull-requests: read
       - name: Validate SFL review verdict
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ steps.sfl-validation-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         shell: bash
         run: |
           # SFL_VERDICT_VALIDATOR_START
           node <<'NODE'
           const fs = require('fs');
+          const { execFileSync } = require('child_process');
 
           const outputPath =
             process.env.SFL_AGENT_OUTPUT_PATH ||
@@ -73,12 +83,69 @@ safe-outputs:
           const items = Array.isArray(output.items) ? output.items : [];
           const noops = items.filter((item) => item.type === 'noop');
 
-          if (noops.length > 0) {
-            if (noops.length !== 1 || items.length !== 1) {
-              fail('noop must be the only output for a stale-head cancellation');
+          const loadPrState = () => {
+            if (process.env.SFL_PR_STATE_PATH) {
+              return JSON.parse(
+                fs.readFileSync(process.env.SFL_PR_STATE_PATH, 'utf8')
+              );
             }
-            console.log('SFL verdict validation passed: no-op cancellation');
+            const [owner, repo] = String(
+              process.env.GITHUB_REPOSITORY || ''
+            ).split('/');
+            const number = process.env.PR_NUMBER || '';
+            if (!owner || !repo || !number || !process.env.GH_TOKEN) {
+              fail('GitHub context for deterministic PR validation is incomplete');
+            }
+            const query = [
+              'query($owner:String!,$repo:String!,$number:Int!){',
+              'repository(owner:$owner,name:$repo){',
+              'pullRequest(number:$number){headRefOid reviewThreads(first:100){',
+              'nodes{isResolved comments(first:1){nodes{body author{login}}}}',
+              '}}}}',
+            ].join('');
+            try {
+              const raw = execFileSync(
+                'gh',
+                [
+                  'api',
+                  'graphql',
+                  '-f',
+                  `query=${query}`,
+                  '-F',
+                  `owner=${owner}`,
+                  '-F',
+                  `repo=${repo}`,
+                  '-F',
+                  `number=${number}`,
+                ],
+                {
+                  encoding: 'utf8',
+                  env: process.env,
+                  stdio: ['ignore', 'pipe', 'pipe'],
+                }
+              );
+              const pullRequest =
+                JSON.parse(raw)?.data?.repository?.pullRequest;
+              if (!pullRequest?.headRefOid) {
+                fail('GitHub returned no pull request state');
+              }
+              return pullRequest;
+            } catch (error) {
+              fail(`unable to query live pull request state: ${error.message}`);
+            }
+          };
+
+          const prState = loadPrState();
+          const liveHead = prState.headRefOid;
+          if (liveHead !== expectedHead) {
+            if (noops.length !== 1 || items.length !== 1) {
+              fail('head drift requires exactly one noop output');
+            }
+            console.log('SFL verdict validation passed: verified head drift');
             process.exit(0);
+          }
+          if (noops.length > 0) {
+            fail('noop is forbidden while the pull request head is unchanged');
           }
 
           const inventories = items.filter(
@@ -147,6 +214,33 @@ safe-outputs:
               inventory[`carried_${severity}`],
             ])
           );
+          const actualCarried = Object.fromEntries(
+            severityOrder.map((severity) => [severity, 0])
+          );
+          for (const thread of prState.reviewThreads?.nodes || []) {
+            if (thread.isResolved) {
+              continue;
+            }
+            const firstComment = thread.comments?.nodes?.[0];
+            const author = String(firstComment?.author?.login || '');
+            if (!author.startsWith('sfl-app')) {
+              continue;
+            }
+            const severity = severityOrder.find((candidate) =>
+              String(firstComment?.body || '').startsWith(prefixes[candidate])
+            );
+            if (severity) {
+              actualCarried[severity]++;
+            }
+          }
+          for (const severity of severityOrder) {
+            if (carried[severity] !== actualCarried[severity]) {
+              fail(
+                `${severity} carried count must be ` +
+                  `${actualCarried[severity]}, got ${carried[severity]}`
+              );
+            }
+          }
           const newTotal = Object.values(newlyFound).reduce(
             (sum, count) => sum + count,
             0
