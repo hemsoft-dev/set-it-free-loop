@@ -61,6 +61,8 @@ safe-outputs:
   create-check-run:
     max: 1
     name: "SFL Reviewer Approval"
+  noop:
+    report-as-issue: false
 ---
 
 <!-- sfl:
@@ -161,8 +163,9 @@ review thread is resolved.
 - If any Critical or High finding remains unresolved, or the complete finding
   inventory exceeded 20 comments, submit `REQUEST_CHANGES` and create the
   `SFL Reviewer Approval` check with conclusion `failure`.
-- If only Medium or Low findings exist, submit `APPROVE` and create the check
-  with conclusion `success`.
+- If only Medium or Low findings exist and the complete finding inventory did
+  not exceed 20 comments, submit `APPROVE` and create the check with conclusion
+  `success`.
 - If no findings exist, submit `APPROVE` and create the check with conclusion
   `success`.
 
@@ -194,7 +197,8 @@ Concise evidence-based summary of the review result.
 ```
 
 Replace the verdict and counts with the actual result. Use
-`Verdict: CHANGES_REQUESTED` when Critical or High findings exist.
+`Verdict: CHANGES_REQUESTED` when Critical or High findings exist or the
+complete finding inventory exceeded 20 comments.
 
 Create exactly one check run named `SFL Reviewer Approval` with:
 
