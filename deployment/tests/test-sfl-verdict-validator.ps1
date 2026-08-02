@@ -52,11 +52,15 @@ function Invoke-ValidatorCase {
     $previousStatePath = $env:SFL_PR_STATE_PATH
     $previousHead = $env:EXPECTED_HEAD_SHA
     $previousRunId = $env:EXPECTED_RUN_ID
+    $previousRepository = $env:GITHUB_REPOSITORY
+    $previousPrNumber = $env:PR_NUMBER
     try {
         $env:SFL_AGENT_OUTPUT_PATH = $outputPath
         $env:SFL_PR_STATE_PATH = $statePath
         $env:EXPECTED_HEAD_SHA = 'abc123'
         $env:EXPECTED_RUN_ID = '42'
+        $env:GITHUB_REPOSITORY = 'HemSoft/test'
+        $env:PR_NUMBER = '384'
         & node $scriptPath *> (Join-Path $tempRoot "$Name.log")
         $passed = $LASTEXITCODE -eq 0
     } finally {
@@ -64,6 +68,8 @@ function Invoke-ValidatorCase {
         $env:SFL_PR_STATE_PATH = $previousStatePath
         $env:EXPECTED_HEAD_SHA = $previousHead
         $env:EXPECTED_RUN_ID = $previousRunId
+        $env:GITHUB_REPOSITORY = $previousRepository
+        $env:PR_NUMBER = $previousPrNumber
     }
 
     if ($passed -ne $ShouldPass) {
@@ -272,6 +278,15 @@ try {
         (New-Inventory -NewHigh 1),
         (New-Comment -Severity 'HIGH'),
         (New-Review -Event 'REQUEST_CHANGES' -Body 'Review summary'),
+        (New-Check -Conclusion 'failure' -High 1)
+    )
+
+    $wrongTargetComment = New-Comment -Severity 'HIGH'
+    $wrongTargetComment | Add-Member -NotePropertyName pull_request_number -NotePropertyValue 999
+    Invoke-ValidatorCase -Name 'reject-target-override' -ShouldPass $false -Items @(
+        (New-Inventory -NewHigh 1),
+        $wrongTargetComment,
+        (New-Review -Event 'REQUEST_CHANGES' -High 1),
         (New-Check -Conclusion 'failure' -High 1)
     )
 } finally {

@@ -106,6 +106,27 @@ safe-outputs:
           const output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
           const items = Array.isArray(output.items) ? output.items : [];
           const noops = items.filter((item) => item.type === 'noop');
+          const triggeringRepo = String(process.env.GITHUB_REPOSITORY || '');
+          const triggeringPr = Number(process.env.PR_NUMBER);
+          const targetFields = [
+            'pull_request_number',
+            'pr_number',
+            'pr',
+            'pull_number',
+          ];
+          for (const item of items) {
+            if (item.repo && item.repo !== triggeringRepo) {
+              fail(`output target repo must be ${triggeringRepo}`);
+            }
+            for (const field of targetFields) {
+              if (
+                item[field] !== undefined &&
+                Number(item[field]) !== triggeringPr
+              ) {
+                fail(`output target ${field} must be ${triggeringPr}`);
+              }
+            }
+          }
 
           const loadPrState = () => {
             if (process.env.SFL_PR_STATE_PATH) {

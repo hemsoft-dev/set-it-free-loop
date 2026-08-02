@@ -91,6 +91,8 @@ $workflowPatterns = @(
     'pageInfo\{hasNextPage endCursor\}',
     'GitHub GraphQL returned errors',
     'GitHub returned incomplete review-thread data',
+    'output target repo must be',
+    'output target \$\{field\} must be',
     "author !== 'sfl-app\[bot\]'",
     'requiredReviewFragments',
     'requiredCheckFragments',
