@@ -364,6 +364,21 @@ jobs:
             MISSING_ITEMS="${MISSING_ITEMS}- [ ] Create the \`sfl-review\` label"$'\n'
           fi
 
+          REVIEW_SOURCE=""
+          if REVIEW_SOURCE_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review.md" --jq '.content' 2>/dev/null); then
+            REVIEW_SOURCE=$(echo "$REVIEW_SOURCE_B64" | base64 --decode)
+          fi
+          if [ -z "$REVIEW_SOURCE" ]; then
+            echo "::warning::Missing source workflow .github/workflows/sfl-pr-review.md"
+            MISSING=$((MISSING + 1))
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review.md\`"$'\n'
+          elif ! grep -q '^<!-- Deployed from: .* -->$' <<< "$REVIEW_SOURCE" || \
+            grep -Eq '^# (Deployed from|To upgrade):' <<< "$REVIEW_SOURCE"; then
+            echo "::warning::Malformed SFL source provenance in .github/workflows/sfl-pr-review.md"
+            MISSING=$((MISSING + 1))
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review.md\` with non-heading source provenance"$'\n'
+          fi
+
           ISSUE_TITLE="[SFL Auditor] Missing SFL review prerequisites"
           EXISTING_ISSUE=$(gh issue list --repo "$REPO" --state open \
             --search "\"$ISSUE_TITLE\" in:title" --json number,title \
@@ -371,20 +386,17 @@ jobs:
             head -n 1)
 
           if [ "$MISSING" -gt 0 ] && [ -z "$EXISTING_ISSUE" ]; then
+            ISSUE_BODY=$(printf '%s\n\n## Missing prerequisites\n\n%s## Recovery\n\n%s' \
+              "The repository declares \`sfl-pr-review\` in \`sfl.json\`, but the standalone reviewer is missing or malformed." \
+              "$MISSING_ITEMS" \
+              "Run \`deployment/scripts/deploy-workflow.ps1 -Tier review\` and \`deployment/governance/setup-labels.ps1\` from \`HemSoft/set-it-free-loop\`.")
             gh issue create --repo "$REPO" \
               --title "$ISSUE_TITLE" \
               --label report \
-              --body "The repository declares \`sfl-pr-review\` in \`sfl.json\`, but the standalone reviewer is not usable.
-
-## Missing prerequisites
-
-$MISSING_ITEMS
-## Recovery
-
-Run \`deployment/scripts/deploy-workflow.ps1 -Tier review\` and \`deployment/governance/setup-labels.ps1\` from \`HemSoft/set-it-free-loop\`."
+              --body "$ISSUE_BODY"
           elif [ "$MISSING" -eq 0 ] && [ -n "$EXISTING_ISSUE" ]; then
             gh issue close "$EXISTING_ISSUE" --repo "$REPO" \
-              --comment "✅ **SFL Auditor**: The standalone SFL review workflow and trigger label are available again."
+              --comment "✅ **SFL Auditor**: The standalone SFL review workflow, source provenance, and trigger label are valid again."
           fi
 
           echo "sfl_review_prerequisites_missing=$MISSING" >> "$GITHUB_OUTPUT"

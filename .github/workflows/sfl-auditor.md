@@ -206,15 +206,19 @@ Call `update_issue` with:
 Read `sfl.json` from the repository default branch. If its `components` array
 does not contain `sfl-pr-review`, skip this check.
 
-If standalone review is declared, verify both prerequisites exist:
+If standalone review is declared, verify all prerequisites exist:
 
 1. `.github/workflows/sfl-pr-review.lock.yml` on the default branch
 2. The repository label `sfl-review`
+3. `.github/workflows/sfl-pr-review.md` contains source provenance as HTML
+   comments (`<!-- Deployed from: ... -->`) and does not contain legacy
+   `# Deployed from:` or `# To upgrade:` Markdown headings
 
-If either prerequisite is missing, call `create_issue` once with:
+If any prerequisite is missing or malformed, call `create_issue` once with:
 
 - `title`: `Missing SFL review prerequisites`
-- `body`: A checklist naming every missing prerequisite and explaining that
+- `body`: A checklist naming every missing or malformed prerequisite and
+  explaining that
   `deployment/scripts/deploy-workflow.ps1 -Tier review` plus
   `deployment/governance/setup-labels.ps1` restores the feature
 

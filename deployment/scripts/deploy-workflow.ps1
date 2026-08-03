@@ -585,7 +585,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
                 -EngineProfile $engineProfile `
                 -WorkflowName $wf
             $SflSourceRef = "HemSoft/set-it-free-loop/deployment/workflows/$wf.md@$CurrentSha"
-            $pinComment = "# Deployed from: $SflSourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n"
+            $pinComment = "<!-- Deployed from: $SflSourceRef -->`n<!-- To upgrade: re-run deploy-workflow.ps1 at the desired SHA -->`n"
             $content = Add-SflSourcePin -Content $content -PinComment $pinComment
             Set-Content $DestFile -Value $content -NoNewline
             Write-Status "📄" "  $wf.md ($($engineProfile.Provider) $($engineProfile.RenderedModel))"
