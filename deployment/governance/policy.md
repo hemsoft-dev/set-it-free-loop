@@ -32,6 +32,18 @@ All agent-generated issues and PRs must carry exactly **one** agent lifecycle la
 | `agent:human-required` | `#d73a4a` (red) | Fix exceeds safe automation boundary — human must own this |
 | `agent:escalated` | `#b60205` (dark red) | Escalated after repeated failures; senior review needed |
 
+### PR analyzer request labels (co-applied with `agent:pr`)
+
+| Label | Color | Meaning |
+|-------|-------|---------|
+| `pr-analyzer-quality` | `#0e8a16` (green) | Request the optional PR quality analyzer |
+| `pr-analyzer-security` | `#e11d48` (red) | Request the optional PR security analyzer |
+| `pr-analyzer-testing` | `#5319e7` (purple) | Request the optional PR testing analyzer |
+
+The general PR analyzer runs by default for every eligible draft PR labeled
+`agent:pr`. Specialty analyzers run only when their matching request label is
+present on the PR.
+
 ### Risk-class labels (co-applied with lifecycle labels)
 
 | Label | Color | Meaning |

@@ -166,18 +166,27 @@ Only flag each issue **once** — if the issue already has a comment containing
 For each PR in list B (open agent PRs), check whether the PR is a **draft**
 and was created more than **2 hours ago**.
 
-For each such stale draft PR, check the PR body for analyzer markers:
-`[MARKER:pr-analyzer-a cycle:`, `[MARKER:pr-analyzer-b cycle:`,
-`[MARKER:pr-analyzer-c cycle:`.
+For each such stale draft PR, determine the required analyzer set from labels:
 
-If ANY of the three markers is missing, and the PR does NOT already have a
-comment containing "missing analyzer markers", this PR is stalled — the
-analyzers are not running on it.
+- `pr-analyzer-general` is always required.
+- `pr-analyzer-quality` is required only when the PR has label `pr-analyzer-quality`.
+- `pr-analyzer-security` is required only when the PR has label `pr-analyzer-security`.
+- `pr-analyzer-testing` is required only when the PR has label `pr-analyzer-testing`.
+
+Then check the PR body for the matching required analyzer markers, for example:
+`[MARKER:pr-analyzer-general cycle:`,
+`[MARKER:pr-analyzer-quality cycle:`,
+`[MARKER:pr-analyzer-security cycle:`,
+`[MARKER:pr-analyzer-testing cycle:`.
+
+If ANY required marker is missing, and the PR does NOT already have a comment
+containing "missing required analyzer markers", this PR is stalled — the
+requested analyzers are not running on it.
 
 Call `update_issue` with:
 
 - `issue_number`: the PR number
-- `body`: "⏰ **SFL Auditor**: Draft PR #<pr-number> has been open for over 2 hours and is missing one or more analyzer markers. The PR Analyzers may not be dispatching for this PR. A human should investigate."
+- `body`: "⏰ **SFL Auditor**: Draft PR #<pr-number> has been open for over 2 hours and is missing one or more required analyzer markers. The PR Analyzers may not be dispatching for this PR. A human should investigate."
 - `operation`: `"append"`
 
 ## Step 10 — Check: unexplained agent:pause

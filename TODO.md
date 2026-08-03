@@ -135,7 +135,7 @@ These items have been built, proven in hs-buddy, and graduated to the deployment
 | Name | Graduated As | Version | Status |
 |------|-------------|---------|--------|
 | issue-to-pr-fixer | [issue-processor](deployment/workflows/issue-processor.md) | 1.0.0 | Active — in CATALOG |
-| pr-quality-analyzer | [pr-analyzer-a](deployment/workflows/pr-analyzer-a.md), [pr-analyzer-b](deployment/workflows/pr-analyzer-b.md), [pr-analyzer-c](deployment/workflows/pr-analyzer-c.md) | 1.0.0 | Active — in CATALOG |
+| pr-quality-analyzer | [pr-analyzer-general](deployment/workflows/pr-analyzer-general.md), [pr-analyzer-quality](deployment/workflows/pr-analyzer-quality.md), [pr-analyzer-security](deployment/workflows/pr-analyzer-security.md), [pr-analyzer-testing](deployment/workflows/pr-analyzer-testing.md) | 1.1.0 | Active — in CATALOG |
 | *(new)* | [pr-fixer](deployment/workflows/pr-fixer.md) | 1.0.0 | Active — in CATALOG |
 | *(new)* | [pr-promoter](deployment/workflows/pr-promoter.md) | 1.0.0 | Active — in CATALOG |
 | *(new)* | [simplisticate](deployment/workflows/simplisticate.md) | 1.0.0 | Active — in CATALOG |

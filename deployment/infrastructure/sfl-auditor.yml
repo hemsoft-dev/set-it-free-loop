@@ -215,7 +215,7 @@ jobs:
 
           # Get open draft agent PRs
           gh pr list --repo "$REPO" --state open --draft \
-            --json number,headRefName,createdAt,body,comments --limit 100 > /tmp/draft_prs.json
+            --json number,headRefName,createdAt,body,comments,labels --limit 100 > /tmp/draft_prs.json
 
           jq -c '[.[] | select(.headRefName | startswith("agent-fix/issue-"))] | .[]' \
             /tmp/draft_prs.json | while IFS= read -r ROW; do
@@ -227,27 +227,41 @@ jobs:
               continue
             fi
 
-            # Check for analyzer markers in PR body
+            # Check for required analyzer markers in PR body.
             BODY=$(echo "$ROW" | jq -r '.body // ""')
-            HAS_A=$(echo "$BODY" | grep -c '\[MARKER:pr-analyzer-a cycle:' || echo 0)
-            HAS_B=$(echo "$BODY" | grep -c '\[MARKER:pr-analyzer-b cycle:' || echo 0)
-            HAS_C=$(echo "$BODY" | grep -c '\[MARKER:pr-analyzer-c cycle:' || echo 0)
+            LABELS=$(echo "$ROW" | jq -c '[.labels[].name]')
+            REQUIRED_ANALYZERS='["pr-analyzer-general"]'
+            if echo "$LABELS" | jq -e 'index("pr-analyzer-quality")' > /dev/null 2>&1; then
+              REQUIRED_ANALYZERS=$(echo "$REQUIRED_ANALYZERS" | jq -c '. + ["pr-analyzer-quality"]')
+            fi
+            if echo "$LABELS" | jq -e 'index("pr-analyzer-security")' > /dev/null 2>&1; then
+              REQUIRED_ANALYZERS=$(echo "$REQUIRED_ANALYZERS" | jq -c '. + ["pr-analyzer-security"]')
+            fi
+            if echo "$LABELS" | jq -e 'index("pr-analyzer-testing")' > /dev/null 2>&1; then
+              REQUIRED_ANALYZERS=$(echo "$REQUIRED_ANALYZERS" | jq -c '. + ["pr-analyzer-testing"]')
+            fi
 
-            if [ "$HAS_A" -gt 0 ] && [ "$HAS_B" -gt 0 ] && [ "$HAS_C" -gt 0 ]; then
+            MISSING_MARKERS=$(echo "$REQUIRED_ANALYZERS" | jq -r '.[]' | while read -r ANALYZER; do
+              if ! echo "$BODY" | grep -qF "[MARKER:$ANALYZER cycle:"; then
+                echo "$ANALYZER"
+              fi
+            done | paste -sd ',' -)
+
+            if [ -z "$MISSING_MARKERS" ]; then
               continue
             fi
 
             # Check if already flagged (in comments)
             COMMENTS=$(echo "$ROW" | jq -r '.comments[].body // ""')
-            ALREADY_FLAGGED=$(echo "$COMMENTS" | grep -c 'missing analyzer markers' || echo 0)
+            ALREADY_FLAGGED=$(echo "$COMMENTS" | grep -c 'missing required analyzer markers' || echo 0)
             if [ "$ALREADY_FLAGGED" -gt 0 ]; then
               continue
             fi
 
-            echo "Draft PR #$PR_NUM is older than 2 hours and missing analyzer markers"
+            echo "Draft PR #$PR_NUM is older than 2 hours and missing required analyzer markers: $MISSING_MARKERS"
 
             gh pr comment "$PR_NUM" --repo "$REPO" \
-              --body "⏰ **SFL Auditor**: Draft PR #$PR_NUM has been open for over 2 hours and is missing one or more analyzer markers. The PR Analyzers may not be dispatching for this PR. A human should investigate."
+              --body "⏰ **SFL Auditor**: Draft PR #$PR_NUM has been open for over 2 hours and is missing one or more required analyzer markers ($MISSING_MARKERS). The PR Analyzers may not be dispatching for this PR. A human should investigate."
 
             FOUND=$((FOUND + 1))
           done

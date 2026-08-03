@@ -46,6 +46,11 @@ $Labels = @(
     @{ name = "agent:pause";             color = "e3771a"; description = "Agent halted; issue needs human intervention before retry" }
     @{ name = "agent:human-required";    color = "d73a4a"; description = "Fix exceeds safe automation boundary — human must own this" }
     @{ name = "agent:escalated";         color = "b60205"; description = "Escalated after repeated failures; senior review needed" }
+    @{ name = "agent:pr";                color = "1a7f37"; description = "PR created by the automation loop — eligible for analyzer review" }
+
+    @{ name = "pr-analyzer-quality";     color = "0e8a16"; description = "Request the optional PR quality analyzer" }
+    @{ name = "pr-analyzer-security";    color = "e11d48"; description = "Request the optional PR security analyzer" }
+    @{ name = "pr-analyzer-testing";     color = "5319e7"; description = "Request the optional PR testing analyzer" }
 
     # ── Risk-class labels ─────────────────────────────────────────────────────
     @{ name = "risk:trivial";  color = "cfd3d7"; description = "Zero-risk: formatting, typos, doc updates" }

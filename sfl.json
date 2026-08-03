@@ -13,9 +13,10 @@
     "repo-audit",
     "issue-processor",
     "simplisticate",
-    "pr-analyzer-a",
-    "pr-analyzer-b",
-    "pr-analyzer-c",
+    "pr-analyzer-general",
+    "pr-analyzer-quality",
+    "pr-analyzer-security",
+    "pr-analyzer-testing",
     "pr-fixer",
     "pr-promoter"
   ],
@@ -71,7 +72,7 @@
         ]
       },
       {
-        "name": "pr-analyzer-a",
+        "name": "pr-analyzer-general",
         "profile": "codex-gpt-55-high",
         "provider": "codex",
         "model": "gpt-5.5",
@@ -83,7 +84,7 @@
         ]
       },
       {
-        "name": "pr-analyzer-b",
+        "name": "pr-analyzer-quality",
         "profile": "codex-gpt-55-high",
         "provider": "codex",
         "model": "gpt-5.5",
@@ -95,7 +96,19 @@
         ]
       },
       {
-        "name": "pr-analyzer-c",
+        "name": "pr-analyzer-security",
+        "profile": "codex-gpt-55-high",
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "high",
+        "renderedModel": "gpt-5.5?effort=high",
+        "requiredSecretsAnyOf": [
+          "CODEX_API_KEY",
+          "OPENAI_API_KEY"
+        ]
+      },
+      {
+        "name": "pr-analyzer-testing",
         "profile": "codex-gpt-55-high",
         "provider": "codex",
         "model": "gpt-5.5",

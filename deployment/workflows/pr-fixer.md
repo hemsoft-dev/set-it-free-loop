@@ -1,10 +1,11 @@
 ---
 description: |
-  PR Fixer — Authority model. Reads all analyzer review comments on a draft
-  PR labeled agent:pr, implements all blocking and non-blocking fixes, commits
-  to the PR branch, increments the cycle label, and exits. Does NOT un-draft
-  the PR — that is the Promoter's job. Intended model: claude-opus-4
-  (set via GH_AW_MODEL_AGENT_COPILOT repo variable).
+  PR Fixer — Authority model. Reads required analyzer review comments on a
+  draft PR labeled agent:pr, implements all blocking and non-blocking fixes,
+  commits to the PR branch, increments the cycle label, and exits. General is
+  always required; quality, security, and testing are required only when their
+  matching request labels are present. Does NOT un-draft the PR — that is the
+  Promoter's job.
 
 on:
   workflow_dispatch:
@@ -38,7 +39,7 @@ safe-outputs:
 # PR Fixer — Authority
 
 Run every 30 minutes (offset from analyzers). Find the oldest draft PR labeled
-`agent:pr` whose current cycle has all three analyzer reviews posted. Read
+`agent:pr` whose current cycle has all required analyzer reviews posted. Read
 every finding, implement all fixes, commit to the PR branch, increment the
 cycle label, and post a structured fix summary. Process exactly one PR per run.
 
@@ -78,19 +79,27 @@ cycles and still has issues. Escalate:
 
 2. Exit.
 
-## Step 3 — Verify all three analyzers have reviewed
+## Step 3 — Verify required analyzers have reviewed
 
-Search the PR body for these exact marker texts for the current cycle number
-(N = current cycle from Step 2):
+Determine the required analyzer set from the PR's labels:
 
-- `[MARKER:pr-analyzer-a cycle:N]`
-- `[MARKER:pr-analyzer-b cycle:N]`
-- `[MARKER:pr-analyzer-c cycle:N]`
+- `pr-analyzer-general` is always required.
+- `pr-analyzer-quality` is required only when the PR has label `pr-analyzer-quality`.
+- `pr-analyzer-security` is required only when the PR has label `pr-analyzer-security`.
+- `pr-analyzer-testing` is required only when the PR has label `pr-analyzer-testing`.
 
-All three markers MUST be present. If any marker is missing, at least one
-analyzer has not reviewed this PR in the current cycle yet. Call `noop` with
-message "PR #<number> cycle <N>: waiting for all 3 analyzers (<missing>
-missing) — skipping." and exit. The next run will try again.
+Search the PR body for each required marker for the current cycle number
+(N = current cycle from Step 2), for example:
+
+- `[MARKER:pr-analyzer-general cycle:N]`
+- `[MARKER:pr-analyzer-quality cycle:N]`
+- `[MARKER:pr-analyzer-security cycle:N]`
+- `[MARKER:pr-analyzer-testing cycle:N]`
+
+All required markers MUST be present. If any required marker is missing, at
+least one requested analyzer has not reviewed this PR in the current cycle yet.
+Call `noop` with message "PR #<number> cycle <N>: waiting for required analyzers
+(<missing> missing) — skipping." and exit. The next run will try again.
 
 ## Step 4 — Check if already fixed in this cycle
 
@@ -102,7 +111,7 @@ with message "PR #<number> already fixed in cycle <N> — skipping." and exit.
 
 ## Step 5 — Parse all analyzer findings
 
-From the three analyzer comments found in Step 3, extract every finding:
+From the required analyzer comments found in Step 3, extract every finding:
 
 ### Blocking Issues
 
@@ -116,10 +125,10 @@ These are lines matching `- **[file:line]** — description`.
 
 ### Verdicts
 
-Check each analyzer's "### Verdict" line:
+Check each required analyzer's "### Verdict" line:
 
-- If ALL three verdicts say `**PASS**`, there is nothing to fix. Call `noop`
-  with message "PR #<number> cycle <N>: all analyzers passed — no fixes
+- If ALL required verdicts say `**PASS**`, there is nothing to fix. Call `noop`
+  with message "PR #<number> cycle <N>: all required analyzers passed — no fixes
   needed." and exit. (The PR Promoter will handle promotion.)
 
 Record the full list of findings for implementation.
@@ -214,7 +223,7 @@ git commit -m "fix: address analyzer findings from cycle N
 Fixes applied:
 - <one-line summary of each fix>
 
-Addresses blocking issues from PR analyzers A, B, C."
+Addresses blocking issues from required PR analyzers."
 ```
 
 **IMPORTANT**: Do NOT run `git push`. The `create_pull_request` safe output

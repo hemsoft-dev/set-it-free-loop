@@ -147,9 +147,10 @@ var tierWorkflows = map[string][]string{
 		"repo-audit.md",
 		"issue-processor.md",
 		"simplisticate.md",
-		"pr-analyzer-a.md",
-		"pr-analyzer-b.md",
-		"pr-analyzer-c.md",
+		"pr-analyzer-general.md",
+		"pr-analyzer-quality.md",
+		"pr-analyzer-security.md",
+		"pr-analyzer-testing.md",
 		"pr-fixer.md",
 		"pr-promoter.md",
 	},
@@ -160,7 +161,7 @@ $newComponentBlock = @'
 var tierComponents = map[string][]string{
 	"minimal":  {"labels", "governance", "sfl-dispatcher"},
 	"standard": {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate"},
-	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-a", "pr-analyzer-b", "pr-analyzer-c", "pr-fixer", "pr-promoter"},
+	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security", "pr-analyzer-testing", "pr-fixer", "pr-promoter"},
 }
 '@
 

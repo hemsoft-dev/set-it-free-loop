@@ -43,9 +43,10 @@
           "repo-audit",
           "simplisticate",
           "issue-processor",
-          "pr-analyzer-a",
-          "pr-analyzer-b",
-          "pr-analyzer-c",
+          "pr-analyzer-general",
+          "pr-analyzer-quality",
+          "pr-analyzer-security",
+          "pr-analyzer-testing",
           "pr-fixer",
           "pr-promoter"
         ]

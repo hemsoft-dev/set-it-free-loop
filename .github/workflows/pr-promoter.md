@@ -1,9 +1,11 @@
 ---
 description: |
   PR Promoter — two-phase workflow. Phase 1: converts clean draft PRs to
-  ready-for-review when all three analyzers PASS. Phase 2: squash-merges
-  approved PRs that have human approval and deletes the source branch.
-  Processes exactly one promotion and one merge per run.
+  ready-for-review when all required analyzers PASS. General is always
+  required; quality, security, and testing are required only when their
+  matching request labels are present. Phase 2: squash-merges approved PRs
+  that have human approval and deletes the source branch. Processes exactly
+  one promotion and one merge per run.
 
 on:
   workflow_dispatch:
@@ -34,7 +36,7 @@ safe-outputs:
 # PR Promoter
 
 Run every 30 minutes (offset 5 min after PR Fixer). Find the oldest draft PR
-labeled `agent:pr` where all three analyzer verdicts are **PASS** in the
+labeled `agent:pr` where all required analyzer verdicts are **PASS** in the
 current cycle. Convert it from draft to ready-for-review and post a promotion
 comment. Process exactly one PR per run.
 
@@ -78,7 +80,7 @@ flip draft state. Continue to Step 4 and retry promotion.
 If any such marker exists AND the PR is non-draft, skip to Phase 2
 (Step 11 — Merge Job).
 
-## Step 4 — Verify all three analyzers have reviewed the current cycle
+## Step 4 — Verify required analyzers have reviewed the current cycle
 
 Determine the cycle to check. This is the cycle BEFORE the current one if
 the PR Fixer has already incremented it:
@@ -96,13 +98,22 @@ So the logic is:
 2. If no fixer marker exists, check analyzer markers at the current cycle
   number (including cycle `0`).
 
-Search the PR body for these exact marker texts for the target cycle (C):
+Determine the required analyzer set from the PR's labels:
 
-- `[MARKER:pr-analyzer-a cycle:C]`
-- `[MARKER:pr-analyzer-b cycle:C]`
-- `[MARKER:pr-analyzer-c cycle:C]`
+- `pr-analyzer-general` is always required.
+- `pr-analyzer-quality` is required only when the PR has label `pr-analyzer-quality`.
+- `pr-analyzer-security` is required only when the PR has label `pr-analyzer-security`.
+- `pr-analyzer-testing` is required only when the PR has label `pr-analyzer-testing`.
 
-All three markers MUST be present. If any marker is missing:
+Search the PR body for each required marker for the target cycle (C), for
+example:
+
+- `[MARKER:pr-analyzer-general cycle:C]`
+- `[MARKER:pr-analyzer-quality cycle:C]`
+- `[MARKER:pr-analyzer-security cycle:C]`
+- `[MARKER:pr-analyzer-testing cycle:C]`
+
+All required markers MUST be present. If any required marker is missing:
 
 1. Check whether the PR was created more than **2 hours ago**. If yes, this is
    a **stalled PR** — the analyzers should have run by now.
@@ -112,21 +123,17 @@ All three markers MUST be present. If any marker is missing:
    with:
    - `issue_number`: the PR number
    - `operation`: `"append"`
-   - `body`: "⏰ **PR Promoter**: PR #<number> has been open for over 2 hours but is missing analyzer markers for cycle <C>. The PR Analyzers may not be running. A human should investigate."
+   - `body`: "⏰ **PR Promoter**: PR #<number> has been open for over 2 hours but is missing required analyzer markers for cycle <C>. The PR Analyzers may not be running. A human should investigate."
 
 2. Regardless of PR age, call `noop` with message "PR #<number> cycle <C>:
-   waiting for all 3 analyzers — skipping." and exit.
+   waiting for required analyzers — skipping." and exit.
 
 ## Step 5 — Check all analyzer verdicts
 
-From the three analyzer comments found in Step 4, find the **### Verdict**
-line in each:
+From the required analyzer comments found in Step 4, find the **### Verdict**
+line in each.
 
-- Analyzer A verdict line
-- Analyzer B verdict line
-- Analyzer C verdict line
-
-If ALL three verdicts say exactly `**PASS**`, the PR is clean and ready for
+If ALL required verdicts say exactly `**PASS**`, the PR is clean and ready for
 promotion. Proceed to Step 6.
 
 If ANY verdict says `**BLOCKING ISSUES FOUND**`, the PR has issues that need
@@ -195,13 +202,14 @@ pipeline may re-promote this PR.
 
 | Analyzer | Verdict |
 |----------|---------|
-| A | **PASS** |
-| B | **PASS** |
-| C | **PASS** |
+| General | **PASS** |
+| Quality | **PASS** if requested, otherwise N/A |
+| Security | **PASS** if requested, otherwise N/A |
+| Testing | **PASS** if requested, otherwise N/A |
 
 ### Summary
 
-All three analyzers found zero blocking issues. This PR has been converted
+All required analyzers found zero blocking issues. This PR has been converted
 from draft to ready-for-review.
 
 **Next step**: Human review and merge.

@@ -22,7 +22,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 |------|-----------|---------------|----------|
 | **minimal** | daily-repo-status, repo-audit | — | Hygiene-only: daily reports, no AI fixes |
 | **standard** | minimal + issue-processor, simplisticate | sfl-dispatcher, sfl-auditor | Detect + claim + fix issues automatically |
-| **full** | standard + pr-analyzer-a/b/c, pr-fixer, pr-promoter | sfl-dispatcher, sfl-auditor | Complete autonomous loop with multi-model review |
+| **full** | standard + pr-analyzer-general/quality/security/testing, pr-fixer, pr-promoter | sfl-dispatcher, sfl-auditor | Complete autonomous loop with label-requested specialty review |
 
 ---
 
@@ -34,10 +34,11 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 | [repo-audit](#repo-audit) | quality | Schedule — daily | low | `type:report` issue with findings + recommendations | 1.1.0 |
 | [issue-processor](#issue-processor) | automation | Dispatched — when `agent:fixable` issues exist | low | Draft PR with scoped fix for the oldest fixable issue | 1.0.0 |
 | [simplisticate](#simplisticate) | quality | Schedule — daily | low | Summary report issue + up to 3 `agent:fixable` issues | 1.0.0 |
-| [pr-analyzer-a](#pr-analyzer-a) | review | Dispatched — when draft PRs with `agent:pr` exist | trivial | PR comment with full-spectrum review (claude-sonnet-4.6) | 1.0.0 |
-| [pr-analyzer-b](#pr-analyzer-b) | review | Dispatched — when draft PRs with `agent:pr` exist | trivial | PR comment with full-spectrum review (gpt-5.3-codex) | 1.0.0 |
-| [pr-analyzer-c](#pr-analyzer-c) | review | Dispatched — when draft PRs with `agent:pr` exist | trivial | PR comment with full-spectrum review (claude-opus-4.6) | 1.0.0 |
-| [pr-fixer](#pr-fixer) | automation | Dispatched — when all 3 analyzer markers present | low | Implements all analyzer fixes, increments cycle label | 1.0.0 |
+| [pr-analyzer-general](#pr-analyzer-general) | review | Dispatched — when draft PRs with `agent:pr` exist | trivial | PR comment with full-spectrum review | 1.1.0 |
+| [pr-analyzer-quality](#pr-analyzer-quality) | review | Dispatched — when draft PRs have `pr-analyzer-quality` | trivial | PR comment with quality-focused review | 1.1.0 |
+| [pr-analyzer-security](#pr-analyzer-security) | review | Dispatched — when draft PRs have `pr-analyzer-security` | trivial | PR comment with security-focused review | 1.1.0 |
+| [pr-analyzer-testing](#pr-analyzer-testing) | review | Dispatched — when draft PRs have `pr-analyzer-testing` | trivial | PR comment with testing-focused review | 1.1.0 |
+| [pr-fixer](#pr-fixer) | automation | Dispatched — when required analyzer markers present | low | Implements all analyzer fixes, increments cycle label | 1.0.0 |
 | [pr-promoter](#pr-promoter) | automation | Dispatched — when draft PRs have all-PASS verdicts | trivial | Un-drafts PR, adds `human:ready-for-review` label | 1.0.0 |
 
 ## Infrastructure Components
@@ -135,17 +136,17 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 ---
 
-### pr-analyzer-a
+### pr-analyzer-general
 
-**File**: [`deployment/workflows/pr-analyzer-a.md`](deployment/workflows/pr-analyzer-a.md)
+**File**: [`deployment/workflows/pr-analyzer-general.md`](deployment/workflows/pr-analyzer-general.md)
 
-**What it does**: Full-spectrum PR review using **claude-sonnet-4.6**. Reviews all dimensions: correctness, security, performance, style, and best practices. Posts a structured comment with BLOCKING/NON-BLOCKING findings and a PASS or BLOCKING ISSUES FOUND verdict.
+**What it does**: Default full-spectrum PR review. Reviews correctness, security, performance, style, maintainability, and tests. Posts a structured comment with BLOCKING/NON-BLOCKING findings and a PASS or BLOCKING ISSUES FOUND verdict.
 
-**Output**: PR comment with `[MARKER:pr-analyzer-a cycle:N]` idempotency marker.
+**Output**: PR comment with `[MARKER:pr-analyzer-general cycle:N]` idempotency marker.
 
 **Deploy command**:
 ```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Workflow pr-analyzer-a -Repos "org/your-repo"
+.\deployment\scripts\deploy-workflow.ps1 -Workflow pr-analyzer-general -Repos "org/your-repo"
 ```
 
 **Acceptance criteria met**:
@@ -156,32 +157,47 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 ---
 
-### pr-analyzer-b
+### pr-analyzer-quality
 
-**File**: [`deployment/workflows/pr-analyzer-b.md`](deployment/workflows/pr-analyzer-b.md)
+**File**: [`deployment/workflows/pr-analyzer-quality.md`](deployment/workflows/pr-analyzer-quality.md)
 
-**What it does**: Same as pr-analyzer-a but uses **gpt-5.3-codex**. Provides a second independent review perspective.
+**What it does**: Optional quality-focused PR review requested by the `pr-analyzer-quality` label. Reviews maintainability, correctness, performance, complexity, naming, typing, and project conventions.
 
-**Output**: PR comment with `[MARKER:pr-analyzer-b cycle:N]` idempotency marker.
+**Output**: PR comment with `[MARKER:pr-analyzer-quality cycle:N]` idempotency marker.
 
 **Deploy command**:
 ```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Workflow pr-analyzer-b -Repos "org/your-repo"
+.\deployment\scripts\deploy-workflow.ps1 -Workflow pr-analyzer-quality -Repos "org/your-repo"
 ```
 
 ---
 
-### pr-analyzer-c
+### pr-analyzer-security
 
-**File**: [`deployment/workflows/pr-analyzer-c.md`](deployment/workflows/pr-analyzer-c.md)
+**File**: [`deployment/workflows/pr-analyzer-security.md`](deployment/workflows/pr-analyzer-security.md)
 
-**What it does**: Same as pr-analyzer-a but uses **claude-opus-4.6**. Provides a third independent review perspective — the most capable model for nuanced analysis.
+**What it does**: Optional security-focused PR review requested by the `pr-analyzer-security` label. Reviews auth, authorization, injection, secrets, dependency trust, data exposure, and abuse cases.
 
-**Output**: PR comment with `[MARKER:pr-analyzer-c cycle:N]` idempotency marker.
+**Output**: PR comment with `[MARKER:pr-analyzer-security cycle:N]` idempotency marker.
 
 **Deploy command**:
 ```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Workflow pr-analyzer-c -Repos "org/your-repo"
+.\deployment\scripts\deploy-workflow.ps1 -Workflow pr-analyzer-security -Repos "org/your-repo"
+```
+
+---
+
+### pr-analyzer-testing
+
+**File**: [`deployment/workflows/pr-analyzer-testing.md`](deployment/workflows/pr-analyzer-testing.md)
+
+**What it does**: Optional testing-focused PR review requested by the `pr-analyzer-testing` label. Reviews test coverage, assertions, edge cases, regression protection, fixtures, mocks, and CI impact.
+
+**Output**: PR comment with `[MARKER:pr-analyzer-testing cycle:N]` idempotency marker.
+
+**Deploy command**:
+```powershell
+.\deployment\scripts\deploy-workflow.ps1 -Workflow pr-analyzer-testing -Repos "org/your-repo"
 ```
 
 ---
@@ -190,7 +206,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 **File**: [`deployment/workflows/pr-fixer.md`](deployment/workflows/pr-fixer.md)
 
-**What it does**: Reads all 3 analyzer comments, implements every BLOCKING and NON-BLOCKING fix, pushes the changes, and increments the cycle label (`pr:cycle-1` → `pr:cycle-2` → `pr:cycle-3`). At cycle 3, escalates with `agent:human-required` instead of continuing.
+**What it does**: Reads all required analyzer comments, implements every BLOCKING and NON-BLOCKING fix, pushes the changes, and increments the cycle label (`pr:cycle-1` → `pr:cycle-2` → `pr:cycle-3`). General is always required; specialty analyzers are required only when their matching request labels are present. At cycle 3, escalates with `agent:human-required` instead of continuing.
 
 **Output**: Committed fixes on the PR branch + `[MARKER:pr-fixer cycle:N]` comment. Does NOT un-draft the PR.
 
@@ -200,7 +216,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 ```
 
 **Acceptance criteria met**:
-- [x] Requires all 3 analyzer markers before running
+- [x] Requires all requested analyzer markers before running
 - [x] Implements all findings (not just blocking)
 - [x] Cycle label management is correct
 - [x] Escalates at cycle 3
@@ -211,7 +227,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 **File**: [`deployment/workflows/pr-promoter.md`](deployment/workflows/pr-promoter.md)
 
-**What it does**: Converts clean draft PRs to ready-for-review after verifying all 3 analyzers posted PASS verdicts. Uses `gh pr ready` to un-draft, then adds `human:ready-for-review` label.
+**What it does**: Converts clean draft PRs to ready-for-review after verifying all required analyzers posted PASS verdicts. Uses `gh pr ready` to un-draft, then adds `human:ready-for-review` label.
 
 **Output**: PR transitions from draft → ready for review. `[MARKER:pr-promoter cycle:C]` comment posted.
 
@@ -221,7 +237,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 ```
 
 **Acceptance criteria met**:
-- [x] Verifies all 3 PASS verdicts before promoting
+- [x] Verifies all required PASS verdicts before promoting
 - [x] Confirms draft state actually changed
 - [x] Adds `human:ready-for-review` label
 - [x] Idempotent — won't re-promote already-promoted PRs
@@ -240,8 +256,9 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 **Dispatches**:
 - `issue-processor` — when `agent:fixable` issues exist
-- `pr-analyzer-a/b/c` — when draft PRs with `agent:pr` label exist
-- `pr-fixer` — when all 3 analyzer markers are present on a PR
+- `pr-analyzer-general` — when draft PRs with `agent:pr` label exist
+- `pr-analyzer-quality/security/testing` — when matching request labels are present
+- `pr-fixer` — when all required analyzer markers are present on a PR
 - `pr-promoter` — when draft or approved PRs exist
 
 ---

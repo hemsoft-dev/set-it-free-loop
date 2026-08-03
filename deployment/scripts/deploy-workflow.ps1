@@ -39,7 +39,7 @@
     Tiers:
       minimal  — Labels, governance, repo-audit, daily-repo-status
       standard — Minimal + SFL Auditor, SFL Dispatcher, issue-processor, simplisticate
-      full     — Standard + PR Analyzers A/B/C, PR Fixer, PR Promoter
+      full     — Standard + PR Analyzers, PR Fixer, PR Promoter
 
 .PARAMETER Repos
     Comma-separated list of target repos in "org/repo" format.
@@ -51,6 +51,9 @@
 
 .PARAMETER Compile
     With -Local, compile the materialized .github/workflows/*.md files via gh aw.
+
+.PARAMETER ScheduleSeed
+    Repository slug passed to gh aw compile when using -Local -Compile.
 
 .PARAMETER DryRun
     Print what would be done without making any changes or API calls.
@@ -83,6 +86,8 @@ param(
     [switch] $Local,
 
     [switch] $Compile,
+
+    [string] $ScheduleSeed = "HemSoft/set-it-free-loop",
 
     [string] $CloneDir = "$env:TEMP\sfl-deploy"
 )
@@ -263,11 +268,13 @@ $TierComponents = @{
     }
     "full"     = @{
         Workflows      = @("daily-repo-status", "repo-audit", "issue-processor", "simplisticate",
-                           "pr-analyzer-a", "pr-analyzer-b", "pr-analyzer-c", "pr-fixer", "pr-promoter")
+                           "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security",
+                           "pr-analyzer-testing", "pr-fixer", "pr-promoter")
         Infrastructure = @("sfl-dispatcher", "sfl-auditor")
         Components     = @("labels", "governance", "sfl-dispatcher", "sfl-auditor",
                            "daily-repo-status", "repo-audit", "issue-processor", "simplisticate",
-                           "pr-analyzer-a", "pr-analyzer-b", "pr-analyzer-c", "pr-fixer", "pr-promoter")
+                           "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security",
+                           "pr-analyzer-testing", "pr-fixer", "pr-promoter")
     }
 }
 
@@ -585,7 +592,11 @@ function Update-LocalWorkflowFiles {
     foreach ($wf in $WorkflowsToDeploy) {
         $DestFile = Join-Path $DestWorkdir "$wf.md"
         Write-Status "🔧" "Compiling $wf.md"
-        gh aw compile $DestFile
+        $CompileArgs = @("aw", "compile", $DestFile)
+        if (-not [string]::IsNullOrWhiteSpace($ScheduleSeed)) {
+            $CompileArgs += @("--schedule-seed", $ScheduleSeed)
+        }
+        gh @CompileArgs
         if ($LASTEXITCODE -ne 0) {
             throw "gh aw compile failed for $DestFile"
         }
