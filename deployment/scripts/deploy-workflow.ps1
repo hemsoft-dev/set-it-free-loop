@@ -491,7 +491,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
     }
 
     $existingPrCandidates = @(
-        gh pr list --repo $TargetRepo --state open --json number,url,headRefName |
+        gh pr list --repo $TargetRepo --state open --json 'number,url,headRefName' |
             ConvertFrom-Json |
             Where-Object { $_.headRefName -like "$CanonicalBranchName*" }
     )

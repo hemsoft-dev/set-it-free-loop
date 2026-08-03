@@ -208,6 +208,7 @@ Assert-FileContains -RelativePath 'deployment\scripts\deploy-workflow.ps1' -Patt
     '\$CurrentSha\.Substring',
     'git fetch origin \$BranchName',
     'gh pr list',
+    "--json 'number,url,headRefName'",
     'Existing PR updated',
     '@\(\$EngineProfile\.Arguments\)\.Count',
     '\$modelLine\s*=\s*"model:',
