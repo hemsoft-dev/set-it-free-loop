@@ -522,9 +522,9 @@ function Deploy-ToRepo([string]$TargetRepo) {
     $DeployLabel = if ($Tier) { "tier '$Tier'" } else { "workflow '$Workflow'" }
     Write-Status "🚀" "Deploying $DeployLabel → $TargetRepo"
     Assert-SflReviewCredentials $TargetRepo
-    Ensure-SflReviewLabel $TargetRepo
 
     if ($DryRun) {
+        Write-Status "🔍" "[DRY RUN] Would ensure trigger label sfl-review on $TargetRepo" Yellow
         Write-Status "🔍" "[DRY RUN] Would clone $TargetRepo to $ClonePath" Yellow
         Write-Status "🔍" "[DRY RUN] Would create branch: $BranchName" Yellow
         foreach ($wf in $WorkflowsToDeploy) {
@@ -546,6 +546,8 @@ function Deploy-ToRepo([string]$TargetRepo) {
         return
     }
 
+    Ensure-SflReviewLabel $TargetRepo
+
     # Clean up any previous clone attempt
     if (Test-Path $ClonePath) { Remove-Item $ClonePath -Recurse -Force }
 
@@ -558,11 +560,13 @@ function Deploy-ToRepo([string]$TargetRepo) {
         # 2. Create or reuse the open deployment PR branch
         Push-Location $ClonePath
         try {
+            $ExpectedRemoteSha = $null
             if ($existingPr) {
                 git fetch origin $BranchName --depth=1 --quiet
                 if ($LASTEXITCODE -ne 0) { throw "git fetch origin $BranchName failed" }
-                git checkout -B $BranchName FETCH_HEAD --quiet
-                if ($LASTEXITCODE -ne 0) { throw "git checkout existing branch failed" }
+                $ExpectedRemoteSha = (git rev-parse FETCH_HEAD).Trim()
+                git checkout -B $BranchName "origin/$BaseBranch" --quiet
+                if ($LASTEXITCODE -ne 0) { throw "git checkout existing branch from latest $BaseBranch failed" }
             } else {
                 git checkout -b $BranchName --quiet
                 if ($LASTEXITCODE -ne 0) { throw "git checkout -b failed" }
@@ -695,7 +699,11 @@ See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
         if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
 
         # 8. Push
-        git -C $ClonePath push origin $BranchName --quiet
+        if ($existingPr) {
+            git -C $ClonePath push origin $BranchName "--force-with-lease=${BranchName}:$ExpectedRemoteSha" --quiet
+        } else {
+            git -C $ClonePath push origin $BranchName --quiet
+        }
         if ($LASTEXITCODE -ne 0) { throw "git push failed" }
 
         # 9. Open PR
