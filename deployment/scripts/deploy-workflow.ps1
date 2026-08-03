@@ -644,13 +644,13 @@ function Deploy-ToRepo([string]$TargetRepo) {
             $readmeContent = Get-Content $readmePath -Raw
             $owner = $TargetRepo.Split("/")[0]
             $repo  = $TargetRepo.Split("/")[1]
-            $badgeUrl = "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2F$owner%2F$repo%2Fmain%2Fsfl.json&query=%24.version&prefix=v&label=Set%20it%20Free%20Loop&color=FFD700&style=flat&logo=githubactions&logoColor=white"
-            $badgeLine = "[![Set it Free Loop]($badgeUrl)](https://github.com/HemSoft/set-it-free-loop)"
+            $badgeUrl = "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2F$owner%2F$repo%2Fmain%2Fsfl.json&query=%24.version&prefix=v&label=SFL%20Upstream&color=FFD700&style=flat&logo=githubactions&logoColor=white"
+            $badgeLine = "[![SFL Upstream]($badgeUrl)](https://github.com/HemSoft/set-it-free-loop)"
             $badgeWithMarker = "$badgeLine`n<!-- SFL_BADGE: auto-updated by deploy-workflow.ps1 -->"
 
             if ($readmeContent -match '(?m)^.*<!-- SFL_BADGE:.*-->.*$') {
                 # Find the badge line above the marker and replace both lines
-                $readmeContent = $readmeContent -replace '(?m)^\[!\[Set it Free Loop\].*\n.*<!-- SFL_BADGE:.*-->', $badgeWithMarker
+                $readmeContent = $readmeContent -replace '(?m)^\[!\[(?:Set it Free Loop|SFL Upstream)\].*\r?\n.*<!-- SFL_BADGE:.*-->', $badgeWithMarker
                 Set-Content $readmePath $readmeContent -NoNewline
                 Write-Status "🏷️ " "  README.md badge updated"
             } else {

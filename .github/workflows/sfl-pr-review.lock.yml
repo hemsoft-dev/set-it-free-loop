@@ -1,5 +1,5 @@
-# gh-aw-metadata: {"schema_version":"v4","frontmatter_hash":"60bb049cadfd50c4f8f4e60c95764c09b9a0b230c6fd0a5c500b059aacb46c55","body_hash":"b6cf47bf471198cce8c34a8613e8caefd702a74840e4f4fdc2afa4c29d04f116","compiler_version":"v0.84.1","strict":true,"agent_id":"copilot","agent_model":"moonshotai/kimi-k3","engine_versions":{"copilot":"1.0.75"}}
-# gh-aw-manifest: {"version":1,"secrets":["COPILOT_GITHUB_TOKEN","GH_AW_GITHUB_MCP_SERVER_TOKEN","GH_AW_GITHUB_TOKEN","GITHUB_TOKEN","OPENROUTER_API_KEY","SFL_APP_PRIVATE_KEY"],"actions":[{"repo":"actions/cache/restore","sha":"55cc8345863c7cc4c66a329aec7e433d2d1c52a9","version":"v6.1.0"},{"repo":"actions/cache/save","sha":"55cc8345863c7cc4c66a329aec7e433d2d1c52a9","version":"v6.1.0"},{"repo":"actions/checkout","sha":"3d3c42e5aac5ba805825da76410c181273ba90b1","version":"v7.0.1"},{"repo":"actions/create-github-app-token","sha":"bcd2ba49218906704ab6c1aa796996da409d3eb1","version":"v3.2.0"},{"repo":"actions/download-artifact","sha":"3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c","version":"v8.0.1"},{"repo":"actions/github-script","sha":"3a2844b7e9c422d3c10d287c895573f7108da1b3","version":"v9.0.0"},{"repo":"actions/upload-artifact","sha":"043fb46d1a93c77aae656e7c1c64a875d1fc6a0a","version":"v7.0.1"},{"repo":"github/gh-aw-actions/setup","sha":"029204130cb73f6ba684e56428c7f3e9319b708c","version":"v0.84.1"}],"containers":[{"image":"ghcr.io/github/gh-aw-firewall/agent:0.27.43","digest":"sha256:04e2d1987a565000a8f114b89d806ae7a3864dd4f944be65275b28c93d8690e6","pinned_image":"ghcr.io/github/gh-aw-firewall/agent:0.27.43@sha256:04e2d1987a565000a8f114b89d806ae7a3864dd4f944be65275b28c93d8690e6"},{"image":"ghcr.io/github/gh-aw-firewall/api-proxy:0.27.43","digest":"sha256:d85f57975af5ea23af4996e41ed73fbc8f5b4a47402472bfe82e508f352cb0c1","pinned_image":"ghcr.io/github/gh-aw-firewall/api-proxy:0.27.43@sha256:d85f57975af5ea23af4996e41ed73fbc8f5b4a47402472bfe82e508f352cb0c1"},{"image":"ghcr.io/github/gh-aw-firewall/squid:0.27.43","digest":"sha256:26be5e0b8c8f4c41c8a59126b29bb5d80b07253597472ded2a16bdd75abcbf9d","pinned_image":"ghcr.io/github/gh-aw-firewall/squid:0.27.43@sha256:26be5e0b8c8f4c41c8a59126b29bb5d80b07253597472ded2a16bdd75abcbf9d"},{"image":"ghcr.io/github/gh-aw-mcpg:v0.4.7","digest":"sha256:7545220a9aca134b71e51193ee0eaf4c50756ebf8fbd25a63ae7556e62815c00","pinned_image":"ghcr.io/github/gh-aw-mcpg:v0.4.7@sha256:7545220a9aca134b71e51193ee0eaf4c50756ebf8fbd25a63ae7556e62815c00"},{"image":"ghcr.io/github/gh-aw-node","digest":"sha256:a8082161d7dceda14b68f32eb39d0eaa96b825d07f5895b096afab9d9e0c7748","pinned_image":"ghcr.io/github/gh-aw-node@sha256:a8082161d7dceda14b68f32eb39d0eaa96b825d07f5895b096afab9d9e0c7748"},{"image":"ghcr.io/github/github-mcp-server:v1.8.0","digest":"sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520","pinned_image":"ghcr.io/github/github-mcp-server:v1.8.0@sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520"}]}
+# gh-aw-metadata: {"schema_version":"v4","frontmatter_hash":"a8b9b9b23b5278a370722600e8a5def62c10b5db3dfa3a59235b1adaf0bbabef","body_hash":"3b082f78c7d4e83c1861a3a4f34fdb4ccbb433ed1558fe7608a05b891d460d52","compiler_version":"v0.84.1","strict":true,"agent_id":"copilot","agent_model":"moonshotai/kimi-k3","engine_versions":{"copilot":"1.0.75"}}
+# gh-aw-manifest: {"version":1,"secrets":["COPILOT_GITHUB_TOKEN","GH_AW_GITHUB_MCP_SERVER_TOKEN","GH_AW_GITHUB_TOKEN","GITHUB_TOKEN","OPENROUTER_API_KEY","SFL_APP_PRIVATE_KEY"],"actions":[{"repo":"actions/cache/restore","sha":"55cc8345863c7cc4c66a329aec7e433d2d1c52a9","version":"v6.1.0"},{"repo":"actions/cache/save","sha":"55cc8345863c7cc4c66a329aec7e433d2d1c52a9","version":"v6.1.0"},{"repo":"actions/checkout","sha":"3d3c42e5aac5ba805825da76410c181273ba90b1","version":"v7.0.1"},{"repo":"actions/create-github-app-token","sha":"bcd2ba49218906704ab6c1aa796996da409d3eb1","version":"bcd2ba49218906704ab6c1aa796996da409d3eb1"},{"repo":"actions/download-artifact","sha":"3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c","version":"v8.0.1"},{"repo":"actions/github-script","sha":"3a2844b7e9c422d3c10d287c895573f7108da1b3","version":"v9.0.0"},{"repo":"actions/setup-node","sha":"820762786026740c76f36085b0efc47a31fe5020","version":"v7.0.0"},{"repo":"actions/upload-artifact","sha":"043fb46d1a93c77aae656e7c1c64a875d1fc6a0a","version":"v7.0.1"},{"repo":"github/gh-aw-actions/setup","sha":"029204130cb73f6ba684e56428c7f3e9319b708c","version":"v0.84.1"}],"containers":[{"image":"ghcr.io/github/gh-aw-firewall/agent:0.27.43","digest":"sha256:04e2d1987a565000a8f114b89d806ae7a3864dd4f944be65275b28c93d8690e6","pinned_image":"ghcr.io/github/gh-aw-firewall/agent:0.27.43@sha256:04e2d1987a565000a8f114b89d806ae7a3864dd4f944be65275b28c93d8690e6"},{"image":"ghcr.io/github/gh-aw-firewall/api-proxy:0.27.43","digest":"sha256:d85f57975af5ea23af4996e41ed73fbc8f5b4a47402472bfe82e508f352cb0c1","pinned_image":"ghcr.io/github/gh-aw-firewall/api-proxy:0.27.43@sha256:d85f57975af5ea23af4996e41ed73fbc8f5b4a47402472bfe82e508f352cb0c1"},{"image":"ghcr.io/github/gh-aw-firewall/squid:0.27.43","digest":"sha256:26be5e0b8c8f4c41c8a59126b29bb5d80b07253597472ded2a16bdd75abcbf9d","pinned_image":"ghcr.io/github/gh-aw-firewall/squid:0.27.43@sha256:26be5e0b8c8f4c41c8a59126b29bb5d80b07253597472ded2a16bdd75abcbf9d"},{"image":"ghcr.io/github/gh-aw-mcpg:v0.4.7","digest":"sha256:7545220a9aca134b71e51193ee0eaf4c50756ebf8fbd25a63ae7556e62815c00","pinned_image":"ghcr.io/github/gh-aw-mcpg:v0.4.7@sha256:7545220a9aca134b71e51193ee0eaf4c50756ebf8fbd25a63ae7556e62815c00"},{"image":"ghcr.io/github/gh-aw-node","digest":"sha256:a8082161d7dceda14b68f32eb39d0eaa96b825d07f5895b096afab9d9e0c7748","pinned_image":"ghcr.io/github/gh-aw-node@sha256:a8082161d7dceda14b68f32eb39d0eaa96b825d07f5895b096afab9d9e0c7748"},{"image":"ghcr.io/github/github-mcp-server:v1.8.0","digest":"sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520","pinned_image":"ghcr.io/github/github-mcp-server:v1.8.0@sha256:d5a18c04b92714c309eb46a2305087e91a4dbd80420f6e462656699f95093520"}]}
 # This file was automatically generated by gh-aw (v0.84.1). DO NOT EDIT. To debug this workflow, load the skill at https://github.com/github/gh-aw/blob/main/debug.md
 #
 #    ___                   _   _
@@ -40,10 +40,12 @@
 #   - actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
 #   - actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
 #   - actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+#   - actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
 #   - actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
 #   - actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
 #   - actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
 #   - actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0 (source v9)
+#   - actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
 #   - actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
 #   - github/gh-aw-actions/setup@029204130cb73f6ba684e56428c7f3e9319b708c # v0.84.1
 #
@@ -302,20 +304,20 @@ jobs:
         run: |
           bash "${RUNNER_TEMP}/gh-aw/actions/create_prompt_first.sh"
           {
-          cat << 'GH_AW_PROMPT_503da790416b842c_EOF'
+          cat << 'GH_AW_PROMPT_f92ca49c1b3537f5_EOF'
           <system>
-          GH_AW_PROMPT_503da790416b842c_EOF
+          GH_AW_PROMPT_f92ca49c1b3537f5_EOF
           cat "${RUNNER_TEMP}/gh-aw/prompts/xpia.md"
           cat "${RUNNER_TEMP}/gh-aw/prompts/temp_folder_prompt.md"
           cat "${RUNNER_TEMP}/gh-aw/prompts/markdown.md"
           cat "${RUNNER_TEMP}/gh-aw/prompts/safe_outputs_prompt.md"
-          cat << 'GH_AW_PROMPT_503da790416b842c_EOF'
+          cat << 'GH_AW_PROMPT_f92ca49c1b3537f5_EOF'
           <safe-output-tools>
-          Tools: create_pull_request_review_comment(max:20), submit_pull_request_review, create_check_run, missing_tool, missing_data, noop
+          Tools: create_pull_request_review_comment(max:20), submit_pull_request_review, create_check_run, missing_tool, missing_data, noop, sfl_review_inventory
           </safe-output-tools>
-          GH_AW_PROMPT_503da790416b842c_EOF
+          GH_AW_PROMPT_f92ca49c1b3537f5_EOF
           cat "${RUNNER_TEMP}/gh-aw/prompts/mcp_cli_tools_prompt.md"
-          cat << 'GH_AW_PROMPT_503da790416b842c_EOF'
+          cat << 'GH_AW_PROMPT_f92ca49c1b3537f5_EOF'
           <github-context>
           The following GitHub context information is available for this workflow:
           {{#if github.actor}}
@@ -344,12 +346,12 @@ jobs:
           {{/if}}
           </github-context>
 
-          GH_AW_PROMPT_503da790416b842c_EOF
+          GH_AW_PROMPT_f92ca49c1b3537f5_EOF
           cat "${RUNNER_TEMP}/gh-aw/prompts/github_mcp_tools_with_safeoutputs_prompt.md"
-          cat << 'GH_AW_PROMPT_503da790416b842c_EOF'
+          cat << 'GH_AW_PROMPT_f92ca49c1b3537f5_EOF'
           </system>
           {{#runtime-import .github/workflows/sfl-pr-review.md}}
-          GH_AW_PROMPT_503da790416b842c_EOF
+          GH_AW_PROMPT_f92ca49c1b3537f5_EOF
           } > "$GH_AW_PROMPT"
       - name: Interpolate variables and render templates
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -578,9 +580,9 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/gh-aw/safeoutputs"
           mkdir -p /tmp/gh-aw/safeoutputs
           mkdir -p /tmp/gh-aw/mcp-logs/safeoutputs
-          cat > "${RUNNER_TEMP}/gh-aw/safeoutputs/config.json" << 'GH_AW_SAFE_OUTPUTS_CONFIG_2c67d2a3156e509e_EOF'
-          {"create_check_run":{"max":1,"name":"SFL Reviewer Approval"},"create_pull_request_review_comment":{"max":20,"side":"RIGHT"},"create_report_incomplete_issue":{},"missing_data":{},"missing_tool":{},"noop":{"max":1,"report-as-issue":"true"},"report_incomplete":{},"submit_pull_request_review":{"allowed_events":["APPROVE","REQUEST_CHANGES"],"footer":"always","max":1,"supersede_older_reviews":true}}
-          GH_AW_SAFE_OUTPUTS_CONFIG_2c67d2a3156e509e_EOF
+          cat > "${RUNNER_TEMP}/gh-aw/safeoutputs/config.json" << 'GH_AW_SAFE_OUTPUTS_CONFIG_f958e5be36167e1f_EOF'
+          {"create_check_run":{"max":1,"name":"SFL Reviewer Approval"},"create_pull_request_review_comment":{"commit_id":"${{ github.event.pull_request.head.sha }}","max":20,"side":"RIGHT"},"create_report_incomplete_issue":{},"missing_data":{},"missing_tool":{},"noop":{"max":1,"report-as-issue":"false"},"report_incomplete":{},"sfl_review_inventory":{"description":"Record the complete SFL finding inventory for deterministic verdict validation.","inputs":{"carried_critical":{"default":null,"description":"Unresolved Critical findings carried from earlier SFL runs.","required":true,"type":"number"},"carried_high":{"default":null,"description":"Unresolved High findings carried from earlier SFL runs.","required":true,"type":"number"},"carried_low":{"default":null,"description":"Unresolved Low findings carried from earlier SFL runs.","required":true,"type":"number"},"carried_medium":{"default":null,"description":"Unresolved Medium findings carried from earlier SFL runs.","required":true,"type":"number"},"head_sha":{"default":null,"description":"Triggering pull request head SHA.","required":true,"type":"string"},"new_critical":{"default":null,"description":"Newly identified Critical findings.","required":true,"type":"number"},"new_high":{"default":null,"description":"Newly identified High findings.","required":true,"type":"number"},"new_low":{"default":null,"description":"Newly identified Low findings.","required":true,"type":"number"},"new_medium":{"default":null,"description":"Newly identified Medium findings.","required":true,"type":"number"},"overflow":{"default":null,"description":"Newly identified findings omitted after the 20-comment cap.","required":true,"type":"number"}}},"submit_pull_request_review":{"allowed_events":["APPROVE","REQUEST_CHANGES"],"commit_id":"${{ github.event.pull_request.head.sha }}","footer":"always","max":1,"supersede_older_reviews":true}}
+          GH_AW_SAFE_OUTPUTS_CONFIG_f958e5be36167e1f_EOF
       - name: Generate Safe Outputs Tools
         env:
           GH_AW_TOOLS_META_JSON: |
@@ -591,7 +593,70 @@ jobs:
                 "submit_pull_request_review": " CONSTRAINTS: Maximum 1 review(s) can be submitted."
               },
               "repo_params": {},
-              "dynamic_tools": []
+              "dynamic_tools": [
+                {
+                  "description": "Record the complete SFL finding inventory for deterministic verdict validation.",
+                  "inputSchema": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "carried_critical": {
+                        "description": "Unresolved Critical findings carried from earlier SFL runs.",
+                        "type": "number"
+                      },
+                      "carried_high": {
+                        "description": "Unresolved High findings carried from earlier SFL runs.",
+                        "type": "number"
+                      },
+                      "carried_low": {
+                        "description": "Unresolved Low findings carried from earlier SFL runs.",
+                        "type": "number"
+                      },
+                      "carried_medium": {
+                        "description": "Unresolved Medium findings carried from earlier SFL runs.",
+                        "type": "number"
+                      },
+                      "head_sha": {
+                        "description": "Triggering pull request head SHA.",
+                        "type": "string"
+                      },
+                      "new_critical": {
+                        "description": "Newly identified Critical findings.",
+                        "type": "number"
+                      },
+                      "new_high": {
+                        "description": "Newly identified High findings.",
+                        "type": "number"
+                      },
+                      "new_low": {
+                        "description": "Newly identified Low findings.",
+                        "type": "number"
+                      },
+                      "new_medium": {
+                        "description": "Newly identified Medium findings.",
+                        "type": "number"
+                      },
+                      "overflow": {
+                        "description": "Newly identified findings omitted after the 20-comment cap.",
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "carried_critical",
+                      "carried_high",
+                      "carried_low",
+                      "carried_medium",
+                      "head_sha",
+                      "new_critical",
+                      "new_high",
+                      "new_low",
+                      "new_medium",
+                      "overflow"
+                    ],
+                    "type": "object"
+                  },
+                  "name": "sfl_review_inventory"
+                }
+              ]
             }
           GH_AW_VALIDATION_JSON: |
             {
@@ -1034,6 +1099,11 @@ jobs:
           if [ ! -f /tmp/gh-aw/agent_output.json ]; then
             echo '{"items":[]}' > /tmp/gh-aw/agent_output.json
           fi
+      - if: always()
+        name: Require SFL review output
+        run: "node <<'NODE'\nconst fs = require('fs');\nconst path = '/tmp/gh-aw/agent_output.json';\nif (!fs.existsSync(path)) {\n  throw new Error('SFL agent output file is missing');\n}\nconst output = JSON.parse(fs.readFileSync(path, 'utf8'));\nconst items = Array.isArray(output.items) ? output.items : [];\nconst hasInventory = items.some(\n  (item) => item.type === 'sfl_review_inventory'\n);\nconst hasNoop = items.some((item) => item.type === 'noop');\nif (!hasInventory && !hasNoop) {\n  throw new Error('SFL review emitted neither an inventory nor a noop');\n}\nNODE\n"
+        shell: bash
+
       - name: Upload agent artifacts
         if: always()
         continue-on-error: true
@@ -1052,6 +1122,8 @@ jobs:
             /tmp/gh-aw/github_rate_limits.jsonl
             /tmp/gh-aw/safeoutputs.jsonl
             /tmp/gh-aw/agent_output.json
+            /tmp/gh-aw/aw-*.patch
+            /tmp/gh-aw/aw-*.bundle
             /tmp/gh-aw/awf-config.json
             /tmp/gh-aw/sandbox/firewall/logs/
             /tmp/gh-aw/sandbox/firewall/audit/
@@ -1062,6 +1134,7 @@ jobs:
     needs:
       - activation
       - agent
+      - detection
       - safe_outputs
     if: >
       always() && (needs.agent.result != 'skipped' || needs.activation.outputs.lockdown_check_failed == 'true' ||
@@ -1226,8 +1299,9 @@ jobs:
           GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/sfl-pr-review.md"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
-          GH_AW_NOOP_REPORT_AS_ISSUE: "true"
+          GH_AW_NOOP_REPORT_AS_ISSUE: "false"
           GH_AW_AIC: ${{ needs.agent.outputs.aic }}
+          GH_AW_THREAT_DETECTION_AIC: ${{ needs.detection.outputs.aic }}
           GH_AW_AMBIENT_CONTEXT: ${{ needs.agent.outputs.ambient_context }}
           GH_AW_WORKFLOW_ID: "sfl-pr-review"
         with:
@@ -1236,6 +1310,23 @@ jobs:
             const { setupGlobals } = require('${{ runner.temp }}/gh-aw/actions/setup_globals.cjs');
             setupGlobals(core, github, context, exec, io, getOctokit);
             const { main } = require('${{ runner.temp }}/gh-aw/actions/handle_noop_message.cjs');
+            await main();
+      - name: Log detection run
+        id: detection_runs
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
+          GH_AW_WORKFLOW_NAME: "SFL Review - Full-Spectrum Pull Request Review"
+          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/sfl-pr-review.md"
+          GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_AW_DETECTION_CONCLUSION: ${{ needs.detection.outputs.detection_conclusion }}
+          GH_AW_DETECTION_REASON: ${{ needs.detection.outputs.detection_reason }}
+        with:
+          github-token: ${{ steps.safe-outputs-app-token.outputs.token }}
+          script: |
+            const { setupGlobals } = require('${{ runner.temp }}/gh-aw/actions/setup_globals.cjs');
+            setupGlobals(core, github, context, exec, io, getOctokit);
+            const { main } = require('${{ runner.temp }}/gh-aw/actions/handle_detection_runs.cjs');
             await main();
       - name: Record missing tool
         id: missing_tool
@@ -1285,6 +1376,7 @@ jobs:
           GH_AW_AI_CREDITS_RATE_LIMIT_ERROR: ${{ needs.agent.outputs.ai_credits_rate_limit_error || 'false' }}
           GH_AW_UNKNOWN_MODEL_AI_CREDITS: ${{ needs.agent.outputs.unknown_model_ai_credits || 'false' }}
           GH_AW_AIC: ${{ needs.agent.outputs.aic }}
+          GH_AW_THREAT_DETECTION_AIC: ${{ needs.detection.outputs.aic }}
           GH_AW_MAX_AI_CREDITS: ${{ vars.GH_AW_DEFAULT_MAX_AI_CREDITS || '1000' }}
           GH_AW_INFERENCE_ACCESS_ERROR: ${{ needs.agent.outputs.inference_access_error }}
           GH_AW_MCP_POLICY_ERROR: ${{ needs.agent.outputs.mcp_policy_error }}
@@ -1326,6 +1418,8 @@ jobs:
           GH_AW_WORKFLOW_NAME: "SFL Review - Full-Spectrum Pull Request Review"
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
           GH_AW_SAFE_OUTPUTS_RESULT: ${{ needs.safe_outputs.result }}
+          GH_AW_DETECTION_CONCLUSION: ${{ needs.detection.outputs.detection_conclusion }}
+          GH_AW_DETECTION_REASON: ${{ needs.detection.outputs.detection_reason }}
         with:
           github-token: ${{ steps.safe-outputs-app-token.outputs.token }}
           script: |
@@ -1333,6 +1427,673 @@ jobs:
             setupGlobals(core, github, context, exec, io, getOctokit);
             const { main } = require('${{ runner.temp }}/gh-aw/actions/notify_comment_error.cjs');
             await main();
+
+  detection:
+    needs:
+      - activation
+      - agent
+    if: always() && needs.agent.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      GH_AW_RUNTIME_FEATURES: ${{ vars.GH_AW_RUNTIME_FEATURES }}
+    outputs:
+      aic: ${{ steps.parse_detection_token_usage.outputs.aic }}
+      detection_conclusion: ${{ steps.detection_conclusion.outputs.conclusion }}
+      detection_reason: ${{ steps.detection_conclusion.outputs.reason }}
+      detection_success: ${{ steps.detection_conclusion.outputs.success }}
+    steps:
+      - name: Setup Scripts
+        id: setup
+        uses: github/gh-aw-actions/setup@029204130cb73f6ba684e56428c7f3e9319b708c # v0.84.1
+        with:
+          destination: ${{ runner.temp }}/gh-aw/actions
+          job-name: ${{ github.job }}
+          trace-id: ${{ needs.activation.outputs.setup-trace-id }}
+          parent-span-id: ${{ needs.activation.outputs.setup-parent-span-id || needs.activation.outputs.setup-span-id }}
+        env:
+          GH_AW_SETUP_WORKFLOW_NAME: "SFL Review - Full-Spectrum Pull Request Review"
+          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/sfl-pr-review.lock.yml@${{ github.ref }}
+          GH_AW_INFO_VERSION: "1.0.75"
+          GH_AW_INFO_AWF_VERSION: "v0.27.43"
+          GH_AW_INFO_ENGINE_ID: "copilot"
+      - name: Download agent output artifact
+        id: download-agent-output
+        continue-on-error: true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent
+          path: /tmp/gh-aw/
+      - name: Setup agent output environment variable
+        id: setup-agent-output-env
+        if: steps.download-agent-output.outcome == 'success'
+        run: |
+          mkdir -p /tmp/gh-aw/
+          find "/tmp/gh-aw/" -type f -print
+          echo "GH_AW_AGENT_OUTPUT=/tmp/gh-aw/agent_output.json" >> "$GITHUB_OUTPUT"
+      - name: Checkout repository for patch context
+        if: needs.agent.outputs.has_patch == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # --- Threat Detection ---
+      - name: Clean stale firewall files from agent artifact
+        run: |
+          rm -rf /tmp/gh-aw/sandbox/firewall/logs
+          rm -rf /tmp/gh-aw/sandbox/firewall/audit
+      - name: Download container images
+        run: bash "${RUNNER_TEMP}/gh-aw/actions/download_docker_images.sh" ghcr.io/github/gh-aw-firewall/agent:0.27.43@sha256:04e2d1987a565000a8f114b89d806ae7a3864dd4f944be65275b28c93d8690e6 ghcr.io/github/gh-aw-firewall/api-proxy:0.27.43@sha256:d85f57975af5ea23af4996e41ed73fbc8f5b4a47402472bfe82e508f352cb0c1 ghcr.io/github/gh-aw-firewall/squid:0.27.43@sha256:26be5e0b8c8f4c41c8a59126b29bb5d80b07253597472ded2a16bdd75abcbf9d
+      - name: Check if detection needed
+        id: detection_guard
+        if: always()
+        env:
+          OUTPUT_TYPES: ${{ needs.agent.outputs.output_types }}
+          HAS_PATCH: ${{ needs.agent.outputs.has_patch }}
+        run: |
+          if [[ -n "$OUTPUT_TYPES" || "$HAS_PATCH" == "true" ]]; then
+            echo "run_detection=true" >> "$GITHUB_OUTPUT"
+            echo "Detection will run: output_types=$OUTPUT_TYPES, has_patch=$HAS_PATCH"
+          else
+            echo "run_detection=false" >> "$GITHUB_OUTPUT"
+            echo "Detection skipped: no agent outputs or patches to analyze"
+          fi
+      - name: Clear MCP Config for detection
+        if: always() && steps.detection_guard.outputs.run_detection == 'true'
+        run: |
+          rm -f "${RUNNER_TEMP}/gh-aw/mcp-config/mcp-servers.json"
+          rm -f "$HOME/.copilot/mcp-config.json"
+          rm -f "$GITHUB_WORKSPACE/.gemini/settings.json"
+      - name: Prepare threat detection files
+        if: always() && steps.detection_guard.outputs.run_detection == 'true'
+        run: |
+          mkdir -p /tmp/gh-aw/threat-detection/aw-prompts
+          rm -f /tmp/gh-aw/agent_usage.json
+          cp /tmp/gh-aw/aw-prompts/prompt.txt /tmp/gh-aw/threat-detection/aw-prompts/prompt.txt 2>/dev/null || true
+          if [ ! -s /tmp/gh-aw/threat-detection/aw-prompts/prompt.txt ]; then
+            echo "::warning::ERR_VALIDATION: Missing or empty detection context prompt at /tmp/gh-aw/threat-detection/aw-prompts/prompt.txt. Ensure the agent artifact includes /tmp/gh-aw/aw-prompts/prompt.txt. Detection will continue with fallback workflow context."
+          fi
+          cp /tmp/gh-aw/agent_output.json /tmp/gh-aw/threat-detection/agent_output.json 2>/dev/null || true
+          for f in /tmp/gh-aw/aw-*.patch; do
+            [ -f "$f" ] && cp "$f" /tmp/gh-aw/threat-detection/ 2>/dev/null || true
+          done
+          for f in /tmp/gh-aw/aw-*.bundle; do
+            [ -f "$f" ] && cp "$f" /tmp/gh-aw/threat-detection/ 2>/dev/null || true
+          done
+          echo "Prepared threat detection files:"
+          ls -la /tmp/gh-aw/threat-detection/ 2>/dev/null || true
+      - name: Setup threat detection
+        if: always() && steps.detection_guard.outputs.run_detection == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKFLOW_NAME: "SFL Review - Full-Spectrum Pull Request Review"
+          WORKFLOW_DESCRIPTION: "Standalone full-spectrum pull request review triggered by the sfl-review\nlabel. Performs security, correctness and reliability, and quality and\nmaintainability passes, posts one inline thread per finding, submits a\nconsolidated review, and publishes the SFL Reviewer Approval check."
+          HAS_PATCH: ${{ needs.agent.outputs.has_patch }}
+        with:
+          script: |
+            const { setupGlobals } = require('${{ runner.temp }}/gh-aw/actions/setup_globals.cjs');
+            setupGlobals(core, github, context, exec, io, getOctokit);
+            const { main } = require('${{ runner.temp }}/gh-aw/actions/setup_threat_detection.cjs');
+            await main();
+      - name: Ensure threat-detection directory and log
+        if: always() && steps.detection_guard.outputs.run_detection == 'true'
+        run: |
+          mkdir -p /tmp/gh-aw/threat-detection
+          touch /tmp/gh-aw/threat-detection/detection.log
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install GitHub Copilot CLI
+        run: bash "${RUNNER_TEMP}/gh-aw/actions/install_copilot_cli.sh"
+        env:
+          GH_HOST: github.com
+          GH_AW_COMPILED_VERSION: v0.84.1
+      - name: Install AWF binary
+        run: bash "${RUNNER_TEMP}/gh-aw/actions/install_awf_binary.sh" v0.27.43
+      - name: Execute GitHub Copilot CLI
+        if: always() && steps.detection_guard.outputs.run_detection == 'true'
+        continue-on-error: true
+        id: detection_agentic_execution
+        # Copilot CLI tool arguments (sorted):
+        timeout-minutes: 20
+        run: |
+          set -o pipefail
+          printf '%s' "$(date +%s%3N)" > /tmp/gh-aw/agent_cli_start_ms.txt
+          trap 'gh_aw_exit_code=$?; mkdir -p /tmp/gh-aw >/dev/null 2>&1 || true; printf "%s" "$gh_aw_exit_code" > /tmp/gh-aw/agent_execution_exit_code.txt || true; rm -f "$HOME/.copilot/settings.json"' EXIT
+          mkdir -p "$HOME/.copilot"
+          printf '%s' '{"builtInAgents":{"rubberDuck":false}}' > "$HOME/.copilot/settings.json"
+          export XDG_CONFIG_HOME="$HOME"
+          touch /tmp/gh-aw/agent-step-summary.md
+          GH_AW_NODE_BIN=$(command -v node 2>/dev/null || true)
+          export GH_AW_NODE_BIN
+          export COPILOT_API_KEY="$COPILOT_DUMMY_BYOK"
+          (umask 177 && touch /tmp/gh-aw/threat-detection/detection.log)
+          # shellcheck disable=SC2016
+          printf '%s\n' '{"$schema":"https://github.com/github/gh-aw-firewall/releases/download/v0.27.43/awf-config.schema.json","network":{"allowDomains":["api.business.githubcopilot.com","api.enterprise.githubcopilot.com","api.github.com","api.githubcopilot.com","api.individual.githubcopilot.com","github.com","host.docker.internal","openrouter.ai","registry.npmjs.org","telemetry.enterprise.githubcopilot.com"]},"apiProxy":{"enabled":true,"maxRuns":500,"maxCacheMisses":5,"models":{"agent":["sonnet-6x","gpt-5.4","gpt-5.5","gpt-5.6","gpt-5.3","gemini-pro","any"],"antigravity":["copilot/antigravity*","google/antigravity*","gemini/antigravity*"],"any":["copilot/*","anthropic/*","openai/*","google/*","gemini/*"],"auto":["copilot/auto","large"],"claude":["agent"],"codex":["agent"],"coding":["copilot/gpt-5*codex*","openai/gpt-5*codex*","gpt-5-codex","kimi"],"computer-use":["copilot/*computer-use*","google/*computer-use*","gemini/*computer-use*","openai/*computer-use*"],"copilot":["agent"],"deep-research":["copilot/deep-research*","copilot/o3-deep-research*","copilot/o4-mini-deep-research*","google/deep-research*","gemini/deep-research*","openai/o3-deep-research*","openai/o4-mini-deep-research*"],"fable":["copilot/*fable*","anthropic/*fable*"],"gemini":["agent"],"gemini-3-flash":["copilot/gemini-3*flash*","google/gemini-3*flash*","gemini/gemini-3*flash*"],"gemini-3-pro":["copilot/gemini-3*pro*","google/gemini-3*pro*","google/nano-banana*","gemini/gemini-3*pro*"],"gemini-3.1-flash":["copilot/gemini-3.1*flash*","google/gemini-3.1*flash*","gemini/gemini-3.1*flash*"],"gemini-3.1-pro":["copilot/gemini-3.1*pro*","google/gemini-3.1*pro*","gemini/gemini-3.1*pro*"],"gemini-3.5-flash":["copilot/gemini-3.5*flash*","google/gemini-3.5*flash*","gemini/gemini-3.5*flash*"],"gemini-3.6-flash":["copilot/gemini-3.6*flash*","google/gemini-3.6*flash*","gemini/gemini-3.6*flash*"],"gemini-flash":["copilot/gemini-*flash*","google/gemini-*flash*","gemini/gemini-*flash*"],"gemini-flash-lite":["copilot/gemini-*flash*lite*","google/gemini-*flash*lite*","gemini/gemini-*flash*lite*"],"gemini-omni":["copilot/gemini-omni*","google/gemini-omni*","gemini/gemini-omni*"],"gemini-pro":["copilot/gemini-*pro*","google/gemini-*pro*","gemini/gemini-*pro*"],"gemma":["copilot/gemma*","google/gemma*","gemini/gemma*"],"gpt-5":["copilot/gpt-5*","openai/gpt-5*"],"gpt-5-codex":["copilot/gpt-5*codex*","openai/gpt-5*codex*"],"gpt-5-mini":["copilot/gpt-5*mini*","openai/gpt-5*mini*"],"gpt-5-nano":["copilot/gpt-5*nano*","openai/gpt-5*nano*"],"gpt-5-pro":["copilot/gpt-5*pro*","openai/gpt-5*pro*"],"gpt-5.1":["copilot/gpt-5.1*","openai/gpt-5.1*"],"gpt-5.2":["copilot/gpt-5.2*","openai/gpt-5.2*"],"gpt-5.3":["copilot/gpt-5.3*","openai/gpt-5.3*"],"gpt-5.4":["copilot/gpt-5.4*","openai/gpt-5.4*"],"gpt-5.5":["copilot/gpt-5.5*","openai/gpt-5.5*"],"gpt-5.6":["copilot/gpt-5.6*","openai/gpt-5.6*"],"grok":["copilot/*grok*","openai/*grok*"],"haiku":["copilot/*haiku*","anthropic/*haiku*"],"image-generation":["copilot/gpt-image*","openai/gpt-image*","openai/chatgpt-image*","copilot/gemini-*image*","google/gemini-*image*","gemini/gemini-*image*","google/imagen*"],"kimi":["copilot/kimi*","openai/kimi*"],"kiwi":["copilot/kiwi*","openai/kiwi*"],"large":["sonnet","gpt-5-pro","gpt-5","gemini-pro"],"lyria":["google/lyria*","gemini/lyria*","copilot/lyria*"],"mai-code":["copilot/MAI-Code*","copilot/mai-code*","openai/MAI-Code*"],"mai-code-1-flash-picker":["copilot/MAI-Code-1-Flash-picker*","copilot/mai-code-1-flash-picker*","openai/MAI-Code-1-Flash-picker*"],"mini":["haiku","gpt-5-mini","gpt-5-nano","gemini-flash-lite"],"nano-banana":["copilot/nano-banana*","google/nano-banana*","gemini/nano-banana*"],"opus":["copilot/*opus*","anthropic/*opus*"],"opusplan":["opus?effort=high"],"raptor-mini":["copilot/raptor*","openai/raptor*"],"reasoning":["copilot/o1*","copilot/o3*","copilot/o4*","openai/o1*","openai/o3*","openai/o4*"],"robotics":["copilot/*robotics*","google/*robotics*","gemini/*robotics*"],"small":["mini"],"small-agent":["haiku","gpt-5-mini","gemini-flash"],"sonnet":["copilot/*sonnet*","anthropic/*sonnet*"],"sonnet-6x":["copilot/*sonnet-4.5*","copilot/*sonnet-4.6*","copilot/*sonnet-5*","copilot/*sonnet-4-5-*","anthropic/*sonnet-4-5-*","copilot/*sonnet-4-6*","anthropic/*sonnet-4-6*","anthropic/*sonnet-5*"],"summarization":["haiku","gpt-5-mini","gemini-flash-lite","mini"],"veo":["google/veo*","gemini/veo*"],"vision":["copilot/gemini-*image*","google/gemini-*image*","gemini/gemini-*image*","copilot/gemini-*flash*","google/gemini-*flash*","gemini/gemini-*flash*"]}},"container":{"imageTag":"0.27.43,squid=sha256:26be5e0b8c8f4c41c8a59126b29bb5d80b07253597472ded2a16bdd75abcbf9d,agent=sha256:04e2d1987a565000a8f114b89d806ae7a3864dd4f944be65275b28c93d8690e6,api-proxy=sha256:d85f57975af5ea23af4996e41ed73fbc8f5b4a47402472bfe82e508f352cb0c1,cli-proxy=sha256:65c45ea2967984d0024f3df61bc71335658a77ede96c8d9665da7a5f33a795ab"},"logging":{"proxyLogsDir":"/tmp/gh-aw/sandbox/firewall/logs","auditDir":"/tmp/gh-aw/sandbox/firewall/audit"}}' > "${RUNNER_TEMP}/gh-aw/awf-config.json"
+          cp "${RUNNER_TEMP}/gh-aw/awf-config.json" /tmp/gh-aw/awf-config.json
+          export GH_AW_MODELS_JSON_PATH="/tmp/gh-aw/models.json"
+          GH_AW_DOCKER_HOST=""
+          if [[ "${DOCKER_HOST:-}" =~ ^tcp:// ]]; then
+            GH_AW_DOCKER_HOST="${DOCKER_HOST}"
+          fi
+          if [[ "${DOCKER_HOST:-}" =~ ^tcp:// ]]; then
+            _GH_AW_CHROOT_JSON=$(jq -c --arg src "${RUNNER_TEMP}/gh-aw" --arg user "$(id -un)" --argjson uid "$(id -u)" --argjson gid "$(id -g)" --arg home "${RUNNER_TEMP}/gh-aw/home" '.chroot={"binariesSourcePath":$src,"identity":{"user":$user,"uid":$uid,"gid":$gid,"home":$home}}' "${RUNNER_TEMP}/gh-aw/awf-config.json") || { echo "chroot config patch failed" >&2; exit 1; }
+            printf '%s\n' "$_GH_AW_CHROOT_JSON" > "${RUNNER_TEMP}/gh-aw/awf-config.json"
+            printf '%s\n' "$_GH_AW_CHROOT_JSON" > "${RUNNER_TEMP}/gh-aw/awf-config.json"
+          fi
+          GH_AW_TOOL_CACHE_MOUNT=""
+          GH_AW_TOOL_CACHE="${RUNNER_TOOL_CACHE:?RUNNER_TOOL_CACHE must be set}"
+          if [ -d "$GH_AW_TOOL_CACHE" ]; then
+            if [[ "$GH_AW_TOOL_CACHE" != /opt/* ]]; then
+              GH_AW_TOOL_CACHE_MOUNT="$GH_AW_TOOL_CACHE:$GH_AW_TOOL_CACHE:ro"
+            fi
+          fi
+          # shellcheck disable=SC1003,SC2016,SC2086
+          awf --config "${RUNNER_TEMP}/gh-aw/awf-config.json" --container-workdir "${GITHUB_WORKSPACE}" --mount "${RUNNER_TEMP}/gh-aw:${RUNNER_TEMP}/gh-aw:ro" --mount "${RUNNER_TEMP}/gh-aw:/host${RUNNER_TEMP}/gh-aw:ro" ${GH_AW_TOOL_CACHE_MOUNT:+--mount "$GH_AW_TOOL_CACHE_MOUNT"} ${GH_AW_DOCKER_HOST:+--docker-host "$GH_AW_DOCKER_HOST"} --env-all --exclude-env COPILOT_PROVIDER_API_KEY --log-level info --skip-pull \
+            -- /bin/bash -c 'set +o histexpand; : "${RUNNER_TOOL_CACHE:?RUNNER_TOOL_CACHE must be set}"; GH_AW_TOOL_CACHE="$RUNNER_TOOL_CACHE"; export PATH="$(find "$GH_AW_TOOL_CACHE" -maxdepth 5 -type d -name bin 2>/dev/null | tr '\''\n'\'' '\'':'\'')$PATH"; [ -n "$GOROOT" ] && export PATH="$GOROOT/bin:$PATH" || true; [ -n "$ERLANG_HOME" ] && export PATH="$ERLANG_HOME/bin:$PATH" || true && GH_AW_NODE_EXEC="${GH_AW_NODE_BIN:-}"; if [ -z "$GH_AW_NODE_EXEC" ] || [ ! -x "$GH_AW_NODE_EXEC" ]; then GH_AW_NODE_EXEC="$(command -v node 2>/dev/null || true)"; fi; if [ -z "$GH_AW_NODE_EXEC" ]; then echo "node runtime missing on this runner — check runtimes.node in workflow YAML" >&2; exit 127; fi; GH_AW_NPM_GLOBAL_ROOT="$(npm root -g 2>/dev/null || true)"; if [ -n "$GH_AW_NPM_GLOBAL_ROOT" ]; then export NODE_PATH="${GH_AW_NPM_GLOBAL_ROOT}${NODE_PATH:+:${NODE_PATH}}"; fi; "$GH_AW_NODE_EXEC" ${RUNNER_TEMP}/gh-aw/actions/copilot_harness.cjs /usr/local/bin/copilot --add-dir /tmp/gh-aw/ --log-level all --log-dir /tmp/gh-aw/sandbox/agent/logs/ --disable-builtin-mcps --no-ask-user --allow-all-tools --add-dir "${GITHUB_WORKSPACE}" --prompt-file /tmp/gh-aw/aw-prompts/prompt.txt' 2>&1 | tee -a /tmp/gh-aw/threat-detection/detection.log
+        env:
+          AWF_REFLECT_ENABLED: 1
+          COPILOT_AGENT_RUNNER_TYPE: STANDALONE
+          COPILOT_DUMMY_BYOK: dummy-byok-key-for-offline-mode
+          COPILOT_MODEL: moonshotai/kimi-k3
+          COPILOT_PROVIDER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          COPILOT_PROVIDER_BASE_URL: https://openrouter.ai/api/v1
+          COPILOT_PROVIDER_TYPE: openai
+          COPILOT_PROVIDER_WIRE_API: responses
+          GH_AW_LLM_PROVIDER: github
+          GH_AW_MAX_TURNS: ${{ vars.GH_AW_DEFAULT_MAX_TURNS || '' }}
+          GH_AW_PHASE: detection
+          GH_AW_PROMPT: /tmp/gh-aw/aw-prompts/prompt.txt
+          GH_AW_TIMEOUT_MINUTES: 20
+          GH_AW_VERSION: v0.84.1
+          GITHUB_API_URL: ${{ github.api_url }}
+          GITHUB_AW: true
+          GITHUB_COPILOT_INTEGRATION_ID: agentic-workflows
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+          GITHUB_STEP_SUMMARY: /tmp/gh-aw/agent-step-summary.md
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          GIT_AUTHOR_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          RUNNER_TEMP: ${{ runner.temp }}
+          TRACEPARENT: ${{ env.GITHUB_AW_OTEL_TRACE_ID != '' && env.GITHUB_AW_OTEL_PARENT_SPAN_ID != '' && format('00-{0}-{1}-01', env.GITHUB_AW_OTEL_TRACE_ID, env.GITHUB_AW_OTEL_PARENT_SPAN_ID) || '' }}
+      - name: Mint SFL validation token
+        id: sfl-validation-token
+        if: always() && steps.detection_guard.outputs.run_detection == 'true'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          app-id: ${{ vars.SFL_APP_ID }}
+          permission-pull-requests: read
+          private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
+      - name: Validate SFL review verdict
+        if: always() && steps.detection_guard.outputs.run_detection == 'true'
+        run: |
+          # SFL_VERDICT_VALIDATOR_START
+          node <<'NODE'
+          const fs = require('fs');
+          const { execFileSync } = require('child_process');
+
+          const outputPath =
+            process.env.SFL_AGENT_OUTPUT_PATH ||
+            '/tmp/gh-aw/threat-detection/agent_output.json';
+          const expectedHead = process.env.EXPECTED_HEAD_SHA || '';
+          const expectedRunId = process.env.EXPECTED_RUN_ID || '';
+          const fail = (message) => {
+            console.error(`SFL verdict validation failed: ${message}`);
+            process.exit(1);
+          };
+
+          if (!fs.existsSync(outputPath)) {
+            fail(`agent output is missing: ${outputPath}`);
+          }
+
+          const output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+          const items = Array.isArray(output.items) ? output.items : [];
+          const noops = items.filter((item) => item.type === 'noop');
+          const triggeringRepo = String(process.env.GITHUB_REPOSITORY || '');
+          const triggeringPr = Number(process.env.PR_NUMBER);
+          const targetFields = [
+            'pull_request_number',
+            'pr_number',
+            'pr',
+            'pull_number',
+          ];
+          for (const item of items) {
+            if (item.repo && item.repo !== triggeringRepo) {
+              fail(`output target repo must be ${triggeringRepo}`);
+            }
+            for (const field of targetFields) {
+              if (
+                item[field] !== undefined &&
+                Number(item[field]) !== triggeringPr
+              ) {
+                fail(`output target ${field} must be ${triggeringPr}`);
+              }
+            }
+          }
+
+          const loadPrState = () => {
+            if (process.env.SFL_PR_STATE_PATH) {
+              return JSON.parse(
+                fs.readFileSync(process.env.SFL_PR_STATE_PATH, 'utf8')
+              );
+            }
+            const [owner, repo] = String(
+              process.env.GITHUB_REPOSITORY || ''
+            ).split('/');
+            const number = process.env.PR_NUMBER || '';
+            if (!owner || !repo || !number || !process.env.GH_TOKEN) {
+              fail('GitHub context for deterministic PR validation is incomplete');
+            }
+            const query = [
+              'query($owner:String!,$repo:String!,$number:Int!,$after:String){',
+              'repository(owner:$owner,name:$repo){',
+              'pullRequest(number:$number){headRefOid reviewThreads(first:100,after:$after){',
+              'nodes{isResolved comments(first:1){nodes{body author{login}}}} ',
+              'pageInfo{hasNextPage endCursor}',
+              '}}}}',
+            ].join('');
+            const nodes = [];
+            let after = null;
+            let headRefOid = '';
+            try {
+              do {
+                const args = [
+                  'api',
+                  'graphql',
+                  '-f',
+                  `query=${query}`,
+                  '-F',
+                  `owner=${owner}`,
+                  '-F',
+                  `repo=${repo}`,
+                  '-F',
+                  `number=${number}`,
+                ];
+                if (after) {
+                  args.push('-f', `after=${after}`);
+                }
+                const raw = execFileSync('gh', args, {
+                  encoding: 'utf8',
+                  env: process.env,
+                  stdio: ['ignore', 'pipe', 'pipe'],
+                });
+                const response = JSON.parse(raw);
+                if (
+                  Array.isArray(response.errors) &&
+                  response.errors.length > 0
+                ) {
+                  fail(
+                    `GitHub GraphQL returned errors: ` +
+                      response.errors
+                        .map((error) => error.message || 'unknown error')
+                        .join('; ')
+                  );
+                }
+                const pullRequest = response?.data?.repository?.pullRequest;
+                if (!pullRequest?.headRefOid) {
+                  fail('GitHub returned no pull request state');
+                }
+                const reviewThreads = pullRequest.reviewThreads;
+                if (
+                  !Array.isArray(reviewThreads?.nodes) ||
+                  typeof reviewThreads?.pageInfo?.hasNextPage !== 'boolean' ||
+                  (reviewThreads.pageInfo.hasNextPage &&
+                    !reviewThreads.pageInfo.endCursor)
+                ) {
+                  fail('GitHub returned incomplete review-thread data');
+                }
+                headRefOid = pullRequest.headRefOid;
+                nodes.push(...reviewThreads.nodes);
+                after = reviewThreads.pageInfo.hasNextPage
+                  ? reviewThreads.pageInfo.endCursor
+                  : null;
+              } while (after);
+              return { headRefOid, reviewThreads: { nodes } };
+            } catch (error) {
+              fail(`unable to query live pull request state: ${error.message}`);
+            }
+          };
+
+          const prState = loadPrState();
+          const liveHead = prState.headRefOid;
+          if (liveHead !== expectedHead) {
+            if (noops.length !== 1 || items.length !== 1) {
+              fail('head drift requires exactly one noop output');
+            }
+            console.log('SFL verdict validation passed: verified head drift');
+            process.exit(0);
+          }
+          if (noops.length > 0) {
+            fail('noop is forbidden while the pull request head is unchanged');
+          }
+
+          const allowedTypes = new Set([
+            'sfl_review_inventory',
+            'create_pull_request_review_comment',
+            'submit_pull_request_review',
+            'create_check_run',
+          ]);
+          const unexpectedTypes = [
+            ...new Set(
+              items
+                .map((item) => item.type)
+                .filter((type) => !allowedTypes.has(type))
+            ),
+          ];
+          if (unexpectedTypes.length > 0) {
+            fail(
+              `unexpected safe output types: ${unexpectedTypes.join(', ')}`
+            );
+          }
+
+          const inventories = items.filter(
+            (item) => item.type === 'sfl_review_inventory'
+          );
+          if (inventories.length !== 1) {
+            fail('exactly one sfl_review_inventory output is required');
+          }
+
+          const inventory = inventories[0];
+          const countFields = [
+            'new_critical',
+            'new_high',
+            'new_medium',
+            'new_low',
+            'carried_critical',
+            'carried_high',
+            'carried_medium',
+            'carried_low',
+            'overflow',
+          ];
+          for (const field of countFields) {
+            if (
+              !Number.isInteger(inventory[field]) ||
+              inventory[field] < 0
+            ) {
+              fail(`${field} must be a non-negative integer`);
+            }
+          }
+          if (!expectedHead || inventory.head_sha !== expectedHead) {
+            fail('inventory head_sha does not match the triggering PR head');
+          }
+
+          const severityOrder = ['critical', 'high', 'medium', 'low'];
+          const prefixes = {
+            critical: '**CRITICAL Finding**',
+            high: '**HIGH Finding**',
+            medium: '**MEDIUM Finding**',
+            low: '**LOW Finding**',
+          };
+          const comments = items.filter(
+            (item) => item.type === 'create_pull_request_review_comment'
+          );
+          const emitted = Object.fromEntries(
+            severityOrder.map((severity) => [severity, 0])
+          );
+          for (const comment of comments) {
+            const severity = severityOrder.find((candidate) =>
+              String(comment.body || '').startsWith(prefixes[candidate])
+            );
+            if (!severity) {
+              fail('every inline review comment must use an SFL severity prefix');
+            }
+            emitted[severity]++;
+          }
+
+          const newlyFound = Object.fromEntries(
+            severityOrder.map((severity) => [
+              severity,
+              inventory[`new_${severity}`],
+            ])
+          );
+          const carried = Object.fromEntries(
+            severityOrder.map((severity) => [
+              severity,
+              inventory[`carried_${severity}`],
+            ])
+          );
+          const actualCarried = Object.fromEntries(
+            severityOrder.map((severity) => [severity, 0])
+          );
+          for (const thread of prState.reviewThreads?.nodes || []) {
+            if (thread.isResolved) {
+              continue;
+            }
+            const firstComment = thread.comments?.nodes?.[0];
+            const author = String(firstComment?.author?.login || '');
+            if (author !== 'sfl-app[bot]') {
+              continue;
+            }
+            const severity = severityOrder.find((candidate) =>
+              String(firstComment?.body || '').startsWith(prefixes[candidate])
+            );
+            if (severity) {
+              actualCarried[severity]++;
+            }
+          }
+          for (const severity of severityOrder) {
+            if (carried[severity] !== actualCarried[severity]) {
+              fail(
+                `${severity} carried count must be ` +
+                  `${actualCarried[severity]}, got ${carried[severity]}`
+              );
+            }
+          }
+          const newTotal = Object.values(newlyFound).reduce(
+            (sum, count) => sum + count,
+            0
+          );
+          const expectedOverflow = Math.max(0, newTotal - 20);
+          if (inventory.overflow !== expectedOverflow) {
+            fail(
+              `overflow must be ${expectedOverflow}, got ${inventory.overflow}`
+            );
+          }
+
+          let remaining = Math.min(newTotal, 20);
+          const expectedEmitted = {};
+          for (const severity of severityOrder) {
+            expectedEmitted[severity] = Math.min(
+              newlyFound[severity],
+              remaining
+            );
+            remaining -= expectedEmitted[severity];
+          }
+          for (const severity of severityOrder) {
+            if (emitted[severity] !== expectedEmitted[severity]) {
+              fail(
+                `${severity} emitted count must be ` +
+                  `${expectedEmitted[severity]}, got ${emitted[severity]}`
+              );
+            }
+          }
+
+          const reviews = items.filter(
+            (item) => item.type === 'submit_pull_request_review'
+          );
+          const checks = items.filter(
+            (item) => item.type === 'create_check_run'
+          );
+          if (reviews.length !== 1 || checks.length !== 1) {
+            fail('exactly one consolidated review and one check run are required');
+          }
+
+          const blockingFindings =
+            newlyFound.critical +
+              carried.critical +
+              newlyFound.high +
+              carried.high >
+            0;
+          const blocking = blockingFindings || inventory.overflow > 0;
+          const expectedEvent = blocking ? 'REQUEST_CHANGES' : 'APPROVE';
+          const expectedConclusion = blocking ? 'failure' : 'success';
+          const expectedVerdict = blocking ? 'CHANGES_REQUESTED' : 'APPROVE';
+          const actualEvent = String(reviews[0].event || '').toUpperCase();
+          const actualConclusion = String(
+            checks[0].conclusion || ''
+          ).toLowerCase();
+
+          if (actualEvent !== expectedEvent) {
+            fail(
+              `review event must be ${expectedEvent}, got ${actualEvent || 'empty'}`
+            );
+          }
+          if (actualConclusion !== expectedConclusion) {
+            fail(
+              `check conclusion must be ${expectedConclusion}, got ` +
+                `${actualConclusion || 'empty'}`
+            );
+          }
+          if (checks[0].title !== 'SFL full-spectrum review complete') {
+            fail(
+              'check title must be SFL full-spectrum review complete'
+            );
+          }
+
+          const totals = Object.fromEntries(
+            severityOrder.map((severity) => [
+              severity,
+              newlyFound[severity] + carried[severity],
+            ])
+          );
+          const reviewBody = String(reviews[0].body || '');
+          const reviewLines = reviewBody
+            .split(/\r?\n/)
+            .map((line) => line.trim());
+          const requireSingleReviewLine = (prefix, expected) => {
+            const matches = reviewLines.filter((line) =>
+              line.startsWith(prefix)
+            );
+            if (matches.length !== 1 || matches[0] !== expected) {
+              fail(`consolidated review must contain exactly: ${expected}`);
+            }
+          };
+          requireSingleReviewLine(
+            'SFL run ID:',
+            `SFL run ID: ${expectedRunId}`
+          );
+          requireSingleReviewLine('Head SHA:', `Head SHA: ${expectedHead}`);
+          requireSingleReviewLine(
+            'Verdict:',
+            `Verdict: ${expectedVerdict}`
+          );
+          if (!expectedRunId) {
+            fail('workflow run ID is unavailable');
+          }
+          const expectedRows = {
+            Critical: totals.critical,
+            High: totals.high,
+            Medium: totals.medium,
+            Low: totals.low,
+            Overflow: inventory.overflow,
+          };
+          for (const [label, expectedCount] of Object.entries(expectedRows)) {
+            const rowPattern = new RegExp(
+              `^\\|\\s*${label}\\s*\\|\\s*(\\d+)\\s*\\|$`
+            );
+            const matches = reviewLines
+              .map((line) => line.match(rowPattern))
+              .filter(Boolean);
+            if (
+              matches.length !== 1 ||
+              Number(matches[0][1]) !== expectedCount
+            ) {
+              fail(
+                `consolidated review must contain one ${label} row with ` +
+                  `${expectedCount}`
+              );
+            }
+          }
+
+          const checkSummary = String(checks[0].summary || '');
+          const checkLines = checkSummary
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+          const requiredCheckFragments = [
+            `Verdict: ${expectedVerdict}`,
+            `Head SHA: ${expectedHead}`,
+            `SFL run ID: ${expectedRunId}`,
+            `Critical: ${totals.critical}`,
+            `High: ${totals.high}`,
+            `Medium: ${totals.medium}`,
+            `Low: ${totals.low}`,
+            `Overflow: ${inventory.overflow}`,
+          ];
+          if (
+            JSON.stringify(checkLines) !==
+            JSON.stringify(requiredCheckFragments)
+          ) {
+            fail('check summary does not match the required exact shape');
+          }
+
+          console.log('SFL verdict validation passed');
+          // SFL_VERDICT_VALIDATOR_END
+          NODE
+        env:
+          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+          GH_TOKEN: ${{ steps.sfl-validation-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+      - name: Parse threat detection token usage for step summary
+        id: parse_detection_token_usage
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          GH_AW_TOKEN_USAGE_SUMMARY_TITLE: Threat Detection Token Usage
+        with:
+          script: |
+            const { setupGlobals } = require('${{ runner.temp }}/gh-aw/actions/setup_globals.cjs');
+            setupGlobals(core, github, context, exec, io, getOctokit);
+            const { main } = require('${{ runner.temp }}/gh-aw/actions/parse_token_usage.cjs');
+            await main();
+      - name: Upload threat detection log
+        if: always() && steps.detection_guard.outputs.run_detection == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: detection
+          path: /tmp/gh-aw/threat-detection/detection.log
+          if-no-files-found: ignore
+      - name: Parse and conclude threat detection
+        id: detection_conclusion
+        if: always()
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RUN_DETECTION: ${{ steps.detection_guard.outputs.run_detection }}
+          DETECTION_AGENTIC_EXECUTION_OUTCOME: ${{ steps.detection_agentic_execution.outcome }}
+          GH_AW_DETECTION_CONTINUE_ON_ERROR: "true"
+        with:
+          script: |
+            try {
+              const { setupGlobals } = require('${{ runner.temp }}/gh-aw/actions/setup_globals.cjs');
+              setupGlobals(core, github, context, exec, io, getOctokit);
+              const { main } = require('${{ runner.temp }}/gh-aw/actions/parse_threat_detection_results.cjs');
+              await main();
+            } catch (loadErr) {
+              const continueOnError = process.env.GH_AW_DETECTION_CONTINUE_ON_ERROR !== 'false';
+              const detectionExecutionFailed = process.env.DETECTION_AGENTIC_EXECUTION_OUTCOME === 'failure';
+              const msg = 'ERR_SYSTEM: \u274C Unexpected error loading threat detection module: ' + (loadErr && loadErr.message ? loadErr.message : String(loadErr));
+              core.error(msg);
+              core.setOutput('reason', 'parse_error');
+              if (continueOnError && !detectionExecutionFailed) {
+                core.warning('\u26A0\uFE0F ' + msg);
+                core.setOutput('conclusion', 'warning');
+                core.setOutput('success', 'false');
+              } else {
+                core.setOutput('conclusion', 'failure');
+                core.setOutput('success', 'false');
+                core.setFailed(msg);
+              }
+            }
 
   pre_activation:
     if: github.event_name == 'pull_request' && github.event.label.name == 'sfl-review'
@@ -1375,7 +2136,8 @@ jobs:
     needs:
       - activation
       - agent
-    if: (!cancelled()) && needs.agent.result != 'skipped'
+      - detection
+    if: (!cancelled()) && needs.agent.result != 'skipped' && needs.detection.result == 'success'
     runs-on: ubuntu-slim
     permissions:
       checks: write
@@ -1387,11 +2149,14 @@ jobs:
       GH_AW_AIC: ${{ needs.agent.outputs.aic }}
       GH_AW_AMBIENT_CONTEXT: ${{ needs.agent.outputs.ambient_context }}
       GH_AW_CALLER_WORKFLOW_ID: "${{ github.repository }}/sfl-pr-review"
+      GH_AW_DETECTION_CONCLUSION: ${{ needs.detection.outputs.detection_conclusion }}
+      GH_AW_DETECTION_REASON: ${{ needs.detection.outputs.detection_reason }}
       GH_AW_EFFECTIVE_TOKENS: ${{ needs.agent.outputs.effective_tokens }}
       GH_AW_ENGINE_ID: "copilot"
       GH_AW_ENGINE_MODEL: "moonshotai/kimi-k3"
       GH_AW_LABEL_COMMANDS: "[\"sfl-review\"]"
       GH_AW_RUNTIME_FEATURES: ${{ vars.GH_AW_RUNTIME_FEATURES }}
+      GH_AW_THREAT_DETECTION_AIC: ${{ needs.detection.outputs.aic }}
       GH_AW_WORKFLOW_ID: "sfl-pr-review"
       GH_AW_WORKFLOW_NAME: "SFL Review - Full-Spectrum Pull Request Review"
       GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/sfl-pr-review.md"
@@ -1453,6 +2218,26 @@ jobs:
           GH_HOST="${GITHUB_SERVER_URL#https://}"
           GH_HOST="${GH_HOST#http://}"
           echo "GH_HOST=${GH_HOST}" >> "$GITHUB_ENV"
+      - name: Configure Safe Outputs Custom Scripts
+        run: |
+          cat > "${RUNNER_TEMP}/gh-aw/actions/safe_output_script_sfl_review_inventory.cjs" << 'GH_AW_SAFE_OUTPUT_SCRIPT_SFL_REVIEW_INVENTORY_1fc424916c2b1bb4_EOF'
+          // @ts-check
+          /// <reference types="./safe-output-script" />
+          // Auto-generated safe-output script handler: sfl-review-inventory
+
+          const { sanitizeContent } = require("./sanitize_content.cjs");
+
+          /** @type {import('./types/safe-output-script').SafeOutputScriptMain} */
+          async function main(config = {}) {
+            const { carried_critical, carried_high, carried_low, carried_medium, head_sha, new_critical, new_high, new_low, new_medium, overflow } = config;
+            return async function handleSflReviewInventory(item, resolvedTemporaryIds, temporaryIdMap) {
+              return { success: true };
+
+            };
+          }
+          module.exports = { main };
+
+          GH_AW_SAFE_OUTPUT_SCRIPT_SFL_REVIEW_INVENTORY_1fc424916c2b1bb4_EOF
       - name: Process Safe Outputs
         id: process_safe_outputs
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -1462,7 +2247,8 @@ jobs:
           GH_AW_ALLOWED_DOMAINS: "api.business.githubcopilot.com,api.enterprise.githubcopilot.com,api.github.com,api.githubcopilot.com,api.individual.githubcopilot.com,github.com,host.docker.internal,openrouter.ai,raw.githubusercontent.com,registry.npmjs.org,telemetry.enterprise.githubcopilot.com"
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_API_URL: ${{ github.api_url }}
-          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"create_check_run\":{\"max\":1,\"name\":\"SFL Reviewer Approval\"},\"create_pull_request_review_comment\":{\"max\":20,\"side\":\"RIGHT\"},\"create_report_incomplete_issue\":{},\"missing_data\":{},\"missing_tool\":{},\"noop\":{\"max\":1,\"report-as-issue\":\"true\"},\"report_incomplete\":{},\"submit_pull_request_review\":{\"allowed_events\":[\"APPROVE\",\"REQUEST_CHANGES\"],\"footer\":\"always\",\"max\":1,\"supersede_older_reviews\":true}}"
+          GH_AW_SAFE_OUTPUT_SCRIPTS: "{\"sfl_review_inventory\":\"safe_output_script_sfl_review_inventory.cjs\"}"
+          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"create_check_run\":{\"max\":1,\"name\":\"SFL Reviewer Approval\"},\"create_pull_request_review_comment\":{\"commit_id\":\"${{ github.event.pull_request.head.sha }}\",\"max\":20,\"side\":\"RIGHT\"},\"create_report_incomplete_issue\":{},\"missing_data\":{},\"missing_tool\":{},\"noop\":{\"max\":1,\"report-as-issue\":\"false\"},\"report_incomplete\":{},\"submit_pull_request_review\":{\"allowed_events\":[\"APPROVE\",\"REQUEST_CHANGES\"],\"commit_id\":\"${{ github.event.pull_request.head.sha }}\",\"footer\":\"always\",\"max\":1,\"supersede_older_reviews\":true}}"
         with:
           github-token: ${{ steps.safe-outputs-app-token.outputs.token }}
           script: |
