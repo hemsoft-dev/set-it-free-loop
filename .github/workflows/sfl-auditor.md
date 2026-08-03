@@ -25,9 +25,6 @@ network: defaults
 tools:
   github:
     lockdown: false
-    github-app:
-      client-id: ${{ vars.SFL_APP_CLIENT_ID }}
-      private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
 
 safe-outputs:
   github-app:
@@ -213,6 +210,10 @@ If standalone review is declared, verify all prerequisites exist:
 3. `.github/workflows/sfl-pr-review.md` contains source provenance in an HTML
    comment block (`<!--`, `Deployed from: ...`, `-->`) and does not contain legacy
    `# Deployed from:` or `# To upgrade:` Markdown headings
+4. `.github/workflows/sfl-pr-review.lock.yml` contains the generated GitHub
+   `allow-only` guard policy and safe-output `write-sink` guard policy. A lock
+   missing either policy is malformed because safe outputs can be denied even
+   when the reviewer completes successfully.
 
 If any prerequisite is missing or malformed, call `create_issue` once with:
 

@@ -358,6 +358,19 @@ jobs:
             MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review.lock.yml\`"$'\n'
           fi
 
+          REVIEW_LOCK=""
+          if REVIEW_LOCK_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review.lock.yml" --jq '.content' 2>/dev/null); then
+            REVIEW_LOCK=$(echo "$REVIEW_LOCK_B64" | base64 --decode)
+          fi
+          if [ -n "$REVIEW_LOCK" ] && { \
+            ! grep -q '"allow-only"' <<< "$REVIEW_LOCK" || \
+            ! grep -q '"write-sink"' <<< "$REVIEW_LOCK"; \
+          }; then
+            echo "::warning::Malformed SFL review guard policies in .github/workflows/sfl-pr-review.lock.yml"
+            MISSING=$((MISSING + 1))
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review.lock.yml\` with generated \`allow-only\` and \`write-sink\` guard policies"$'\n'
+          fi
+
           if ! gh api "repos/$REPO/labels/sfl-review" >/dev/null 2>&1; then
             echo "::warning::Missing required label sfl-review"
             MISSING=$((MISSING + 1))
@@ -396,7 +409,7 @@ jobs:
               --body "$ISSUE_BODY"
           elif [ "$MISSING" -eq 0 ] && [ -n "$EXISTING_ISSUE" ]; then
             gh issue close "$EXISTING_ISSUE" --repo "$REPO" \
-              --comment "✅ **SFL Auditor**: The standalone SFL review workflow, source provenance, and trigger label are valid again."
+              --comment "✅ **SFL Auditor**: The standalone SFL review workflow, guard policies, source provenance, and trigger label are valid again."
           fi
 
           echo "sfl_review_prerequisites_missing=$MISSING" >> "$GITHUB_OUTPUT"

@@ -65,9 +65,6 @@ network:
 tools:
   github:
     toolsets: [pull_requests, repos]
-    github-app:
-      client-id: ${{ vars.SFL_APP_CLIENT_ID }}
-      private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
 
 safe-outputs:
   threat-detection:

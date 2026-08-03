@@ -129,6 +129,7 @@ Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns
 Assert-FileContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns $workflowPatterns
 Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns @(
     '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
+    '(?ms)^tools:\r?\n  github:\r?\n(?:(?!^safe-outputs:).)*?^    github-app:',
     'copilot-requests:\s*write',
     'OPENAI_API_KEY:',
     'CODEX_API_KEY:',
@@ -138,6 +139,7 @@ Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patte
 )
 Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns @(
     '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
+    '(?ms)^tools:\r?\n  github:\r?\n(?:(?!^safe-outputs:).)*?^    github-app:',
     'copilot-requests:\s*write',
     'OPENAI_API_KEY:',
     'CODEX_API_KEY:',
@@ -147,6 +149,11 @@ Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Pa
     'vars\.SFL_APP_ID'
 )
 Assert-FileExists -RelativePath '.github\workflows\sfl-pr-review.lock.yml'
+Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
+    '"guard-policies"',
+    '"allow-only"',
+    '"write-sink"'
+)
 Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
     'copilot-requests:\s*write'
 )
@@ -257,6 +264,9 @@ Assert-FileContains -RelativePath 'deployment\infrastructure\sfl-auditor.yml' -P
     'sfl-pr-review\.md',
     'Deployed from: HemSoft/set-it-free-loop/',
     'Malformed SFL source provenance',
+    'Malformed SFL review guard policies',
+    'allow-only',
+    'write-sink',
     'non-heading source provenance'
 )
 Assert-FileContains -RelativePath '.github\workflows\sfl-auditor.md' -Patterns @(
@@ -269,10 +279,19 @@ Assert-FileContains -RelativePath '.github\workflows\sfl-auditor.md' -Patterns @
     'SFL_APP_PRIVATE_KEY',
     'Deployed from:',
     '# Deployed from:',
+    'allow-only',
+    'write-sink',
     '(?m)^model:[ \t]*gpt-5\.5\?effort=high\r?$'
 )
+Assert-FileExists -RelativePath '.github\workflows\sfl-auditor.lock.yml'
+Assert-FileContains -RelativePath '.github\workflows\sfl-auditor.lock.yml' -Patterns @(
+    '"guard-policies"',
+    '"allow-only"',
+    '"write-sink"'
+)
 Assert-FileNotContains -RelativePath '.github\workflows\sfl-auditor.md' -Patterns @(
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?\n[ \t]+model:'
+    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?\n[ \t]+model:',
+    '(?ms)^tools:\r?\n  github:\r?\n(?:(?!^safe-outputs:).)*?^    github-app:'
 )
 
 if ($failures.Count -gt 0) {
