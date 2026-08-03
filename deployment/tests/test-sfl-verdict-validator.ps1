@@ -298,6 +298,14 @@ try {
         (New-Check -Conclusion 'success')
     )
 
+    Invoke-ValidatorCase -Name 'accept-terminal-missing-tool' -ShouldPass $true -Items @(
+        [pscustomobject]@{ type = 'missing_tool'; message = 'required tool unavailable' }
+    )
+
+    Invoke-ValidatorCase -Name 'accept-terminal-missing-data' -ShouldPass $true -Items @(
+        [pscustomobject]@{ type = 'missing_data'; message = 'required data unavailable' }
+    )
+
     Invoke-ValidatorCase -Name 'reject-incomplete-signal' -ShouldPass $false -Items @(
         (New-Inventory),
         (New-Review -Event 'APPROVE'),

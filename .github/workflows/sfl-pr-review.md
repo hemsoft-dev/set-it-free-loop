@@ -32,8 +32,13 @@ post-steps:
         (item) => item.type === 'sfl_review_inventory'
       );
       const hasNoop = items.some((item) => item.type === 'noop');
-      if (!hasInventory && !hasNoop) {
-        throw new Error('SFL review emitted neither an inventory nor a noop');
+      const hasMissingSignal = items.some(
+        (item) => item.type === 'missing_tool' || item.type === 'missing_data'
+      );
+      if (!hasInventory && !hasNoop && !hasMissingSignal) {
+        throw new Error(
+          'SFL review emitted neither an inventory, noop, nor missing signal'
+        );
       }
       NODE
 
@@ -73,7 +78,7 @@ safe-outputs:
         id: sfl-validation-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
-          app-id: ${{ vars.SFL_APP_ID }}
+          client-id: ${{ vars.SFL_APP_CLIENT_ID }}
           private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
           permission-pull-requests: read
       - name: Validate SFL review verdict
@@ -229,6 +234,8 @@ safe-outputs:
             'create_pull_request_review_comment',
             'submit_pull_request_review',
             'create_check_run',
+            'missing_tool',
+            'missing_data',
           ]);
           const unexpectedTypes = [
             ...new Set(
@@ -241,6 +248,17 @@ safe-outputs:
             fail(
               `unexpected safe output types: ${unexpectedTypes.join(', ')}`
             );
+          }
+
+          const missingSignals = items.filter(
+            (item) => item.type === 'missing_tool' || item.type === 'missing_data'
+          );
+          if (missingSignals.length > 0) {
+            if (missingSignals.length !== 1 || items.length !== 1) {
+              fail('a missing signal must be the only safe output item');
+            }
+            console.log('SFL verdict validation passed: terminal missing signal');
+            process.exit(0);
           }
 
           const inventories = items.filter(
@@ -623,7 +641,7 @@ Classify every finding into exactly one severity:
 Do not report style preferences, speculative concerns, or findings without
 specific evidence from the changed code.
 
-For each finding, call `create-pull-request-review-comment` on the most precise
+For each finding, call `create_pull_request_review_comment` on the most precise
 changed line. Set `side` to `LEFT` for a deleted line and `RIGHT` for an added
 or context line. The comment body must begin with one of these exact prefixes:
 

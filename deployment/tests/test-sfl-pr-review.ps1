@@ -74,7 +74,7 @@ $workflowPatterns = @(
     'openrouter\.ai',
     'SFL_APP_CLIENT_ID',
     'SFL_APP_PRIVATE_KEY',
-    'create-pull-request-review-comment',
+    'create_pull_request_review_comment',
     'Set `side` to `LEFT` for a deleted line and `RIGHT`',
     'submit-pull-request-review',
     'create-check-run',
@@ -88,6 +88,10 @@ $workflowPatterns = @(
     'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
     'permission-pull-requests:\s*read',
     'Require SFL review output',
+    'missing_tool',
+    'missing_data',
+    'a missing signal must be the only safe output item',
+    'client-id:\s*\$\{\{ vars\.SFL_APP_CLIENT_ID \}\}',
     'reviewThreads\(first:100,after:\$after\)',
     'pageInfo\{hasNextPage endCursor\}',
     'GitHub GraphQL returned errors',
@@ -139,7 +143,8 @@ Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Pa
     'CODEX_API_KEY:',
     'remove-labels:',
     'pr-diff\.patch',
-    'pr-review-comments\.json'
+    'pr-review-comments\.json',
+    'vars\.SFL_APP_ID'
 )
 Assert-FileExists -RelativePath '.github\workflows\sfl-pr-review.lock.yml'
 Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
