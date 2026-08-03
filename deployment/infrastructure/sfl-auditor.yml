@@ -372,7 +372,7 @@ jobs:
             echo "::warning::Missing source workflow .github/workflows/sfl-pr-review.md"
             MISSING=$((MISSING + 1))
             MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review.md\`"$'\n'
-          elif ! grep -q '^<!-- Deployed from: .* -->$' <<< "$REVIEW_SOURCE" || \
+          elif ! grep -q '^Deployed from: HemSoft/set-it-free-loop/' <<< "$REVIEW_SOURCE" || \
             grep -Eq '^# (Deployed from|To upgrade):' <<< "$REVIEW_SOURCE"; then
             echo "::warning::Malformed SFL source provenance in .github/workflows/sfl-pr-review.md"
             MISSING=$((MISSING + 1))

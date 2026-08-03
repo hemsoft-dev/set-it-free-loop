@@ -210,8 +210,8 @@ If standalone review is declared, verify all prerequisites exist:
 
 1. `.github/workflows/sfl-pr-review.lock.yml` on the default branch
 2. The repository label `sfl-review`
-3. `.github/workflows/sfl-pr-review.md` contains source provenance as HTML
-   comments (`<!-- Deployed from: ... -->`) and does not contain legacy
+3. `.github/workflows/sfl-pr-review.md` contains source provenance in an HTML
+   comment block (`<!--`, `Deployed from: ...`, `-->`) and does not contain legacy
    `# Deployed from:` or `# To upgrade:` Markdown headings
 
 If any prerequisite is missing or malformed, call `create_issue` once with:

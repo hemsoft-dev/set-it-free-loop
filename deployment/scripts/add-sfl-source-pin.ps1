@@ -10,7 +10,7 @@ function Add-SflSourcePin {
 
     $withoutExistingPin = [regex]::Replace(
         $Content,
-        '(?m)^(?:# Deployed from:[^\r\n]*\r?\n# To upgrade:[^\r\n]*|<!-- Deployed from:[^\r\n]* -->\r?\n<!-- To upgrade:[^\r\n]* -->)\r?\n?',
+        '(?m)^(?:# Deployed from:[^\r\n]*\r?\n# To upgrade:[^\r\n]*|<!-- Deployed from:[^\r\n]* -->\r?\n<!-- To upgrade:[^\r\n]* -->|<!--\r?\nDeployed from:[^\r\n]*\r?\nTo upgrade:[^\r\n]*\r?\n-->)\r?\n?',
         ''
     )
     $frontmatter = [regex]::Match($withoutExistingPin, '(?s)\A---\r?\n.*?\r?\n---\r?\n?')

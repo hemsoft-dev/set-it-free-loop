@@ -209,8 +209,8 @@ Assert-FileContains -RelativePath 'deployment\scripts\deploy-workflow.ps1' -Patt
     'git fetch origin \$BranchName',
     'gh pr list',
     "--json 'number,url,headRefName'",
-    '<!-- Deployed from:',
-    '<!-- To upgrade:',
+    'Deployed from:',
+    'To upgrade:',
     'Existing PR updated',
     '@\(\$EngineProfile\.Arguments\)\.Count',
     '\$modelLine\s*=\s*"model:',
@@ -246,7 +246,7 @@ Assert-FileContains -RelativePath 'deployment\infrastructure\sfl-auditor.yml' -P
     'gh issue create',
     'gh issue close',
     'sfl-pr-review\.md',
-    '<!-- Deployed from:',
+    'Deployed from: HemSoft/set-it-free-loop/',
     'Malformed SFL source provenance',
     'non-heading source provenance'
 )
@@ -258,7 +258,7 @@ Assert-FileContains -RelativePath '.github\workflows\sfl-auditor.md' -Patterns @
     'github-app:',
     'SFL_APP_CLIENT_ID',
     'SFL_APP_PRIVATE_KEY',
-    '<!-- Deployed from:',
+    'Deployed from:',
     '# Deployed from:',
     '(?m)^model:[ \t]*gpt-5\.5\?effort=high\r?$'
 )
