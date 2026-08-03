@@ -17,7 +17,7 @@
     },
     "tier": {
       "type": "string",
-      "enum": ["minimal", "standard", "full", "custom"],
+      "enum": ["review", "minimal", "standard", "full", "custom"],
       "description": "The deployment tier selected during installation."
     },
     "source": {
@@ -43,6 +43,7 @@
           "repo-audit",
           "simplisticate",
           "issue-processor",
+          "sfl-pr-review",
           "pr-analyzer-general",
           "pr-analyzer-quality",
           "pr-analyzer-security",
@@ -99,6 +100,20 @@
                   "minLength": 1
                 },
                 "uniqueItems": true
+              },
+              "arguments": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "environment": {
+                "type": ["object", "null"],
+                "additionalProperties": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
             },
             "additionalProperties": false

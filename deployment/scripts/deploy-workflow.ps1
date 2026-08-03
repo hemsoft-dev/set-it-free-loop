@@ -33,13 +33,14 @@
     Must exist in deployment/workflows/. Cannot be used with -Tier.
 
 .PARAMETER Tier
-    Deploy a predefined tier of workflows. Options: minimal, standard, full.
+    Deploy a predefined tier of workflows. Options: review, minimal, standard, full.
     Cannot be used with -Workflow.
 
     Tiers:
+      review   — Labels, governance, standalone SFL full-spectrum PR review
       minimal  — Labels, governance, repo-audit, daily-repo-status
       standard — Minimal + SFL Auditor, SFL Dispatcher, issue-processor, simplisticate
-      full     — Standard + PR Analyzers, PR Fixer, PR Promoter
+      full     — Standard + standalone review, focused PR Analyzers, PR Fixer, PR Promoter
 
 .PARAMETER Repos
     Comma-separated list of target repos in "org/repo" format.
@@ -64,6 +65,7 @@
 
 .EXAMPLE
     .\deploy-workflow.ps1 -Workflow repo-audit -Repos "HemSoft/hs-buddy"
+    .\deploy-workflow.ps1 -Tier review -Repos "HemSoft/app1,HemSoft/app2"
     .\deploy-workflow.ps1 -Tier full -Repos "HemSoft/app1,HemSoft/app2"
     .\deploy-workflow.ps1 -Tier standard -Repos "HemSoft/myapp" -DryRun
     .\deploy-workflow.ps1 -Local -Compile
@@ -75,7 +77,7 @@ param(
     [string] $Workflow,
 
     [Parameter(Mandatory = $false)]
-    [ValidateSet("minimal", "standard", "full")]
+    [ValidateSet("review", "minimal", "standard", "full")]
     [string] $Tier,
 
     [Parameter(Mandatory = $false)]
@@ -118,6 +120,8 @@ if ($Compile -and -not $Local) {
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Resolve-Path (Join-Path $ScriptDir "..\..")
+. (Join-Path $ScriptDir "merge-sfl-manifest.ps1")
+. (Join-Path $ScriptDir "add-sfl-source-pin.ps1")
 
 # ─── SFL Version (read from VERSION file — single source of truth) ────────────
 
@@ -135,6 +139,16 @@ if (-not (Test-Path $EnginePolicyPath)) {
 }
 
 $EnginePolicy = Get-Content $EnginePolicyPath -Raw | ConvertFrom-Json
+$LabelsPath = Join-Path $RepoRoot "deployment\governance\labels.json"
+$SflReviewLabel = @(
+    Get-Content $LabelsPath -Raw |
+        ConvertFrom-Json |
+        Where-Object name -eq "sfl-review"
+) | Select-Object -First 1
+if ($null -eq $SflReviewLabel) {
+    Write-Error "Label definition 'sfl-review' was not found in $LabelsPath."
+    exit 1
+}
 
 function Get-SflObjectProperty([object]$Object, [string]$Name, [string]$Context) {
     if ($null -eq $Object) {
@@ -191,6 +205,18 @@ function Resolve-SflEngineProfile([string]$WorkflowName) {
     } else {
         @()
     }
+    $environmentProperty = $profile.PSObject.Properties["environment"]
+    $environment = if ($null -ne $environmentProperty -and $null -ne $environmentProperty.Value) {
+        $environmentProperty.Value
+    } else {
+        $null
+    }
+    $argumentsProperty = $profile.PSObject.Properties["arguments"]
+    $arguments = if ($null -ne $argumentsProperty -and $null -ne $argumentsProperty.Value) {
+        @($argumentsProperty.Value)
+    } else {
+        @()
+    }
 
     return [pscustomobject]@{
         Profile              = $profileName
@@ -199,6 +225,8 @@ function Resolve-SflEngineProfile([string]$WorkflowName) {
         Effort               = $effort
         RenderedModel        = $renderedModel
         RequiredSecretsAnyOf = $requiredSecretsAnyOf
+        Environment          = $environment
+        Arguments            = $arguments
     }
 }
 
@@ -210,7 +238,22 @@ function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject
 
     $frontmatter = $frontmatterMatch.Groups["frontmatter"].Value
     $rest = $Content.Substring($frontmatterMatch.Length)
-    $engineBlock = "engine:`n  id: $($EngineProfile.Provider)`n  model: $($EngineProfile.RenderedModel)"
+    $engineLines = @("engine:", "  id: $($EngineProfile.Provider)")
+    if (@($EngineProfile.Arguments).Count -gt 0) {
+        $engineLines += "  args:"
+        foreach ($argument in $EngineProfile.Arguments) {
+            $escapedArgument = ([string] $argument).Replace("'", "''")
+            $engineLines += "    - '$escapedArgument'"
+        }
+    }
+    if ($null -ne $EngineProfile.Environment) {
+        $engineLines += "  env:"
+        foreach ($property in $EngineProfile.Environment.PSObject.Properties) {
+            $engineLines += "    $($property.Name): $($property.Value)"
+        }
+    }
+    $engineBlock = $engineLines -join "`n"
+    $modelLine = "model: $($EngineProfile.RenderedModel)"
 
     $frontmatter = [regex]::Replace(
         $frontmatter,
@@ -219,13 +262,25 @@ function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject
         1
     ).TrimEnd("`r", "`n")
 
+    $frontmatter = [regex]::Replace(
+        $frontmatter,
+        '(?m)(?:^[ \t]*\r?\n)?^model:[^\r\n]*\r?\n?',
+        '',
+        1
+    ).TrimEnd("`r", "`n")
+
     if ($frontmatter -match '(?m)^network:') {
-        $frontmatter = [regex]::Replace($frontmatter, '(?m)^network:', "$engineBlock`n`nnetwork:", 1)
+        $frontmatter = [regex]::Replace(
+            $frontmatter,
+            '(?m)^network:',
+            "$engineBlock`n`n$modelLine`n`nnetwork:",
+            1
+        )
     } else {
-        $frontmatter = "$frontmatter`n`n$engineBlock"
+        $frontmatter = "$frontmatter`n`n$engineBlock`n`n$modelLine"
     }
 
-    $frontmatter = [regex]::Replace($frontmatter, '(\r?\n){3,}(?=engine:)', "`n`n")
+    $frontmatter = [regex]::Replace($frontmatter, '(\r?\n){3,}(?=(?:engine|model):)', "`n`n")
 
     return "---`n$frontmatter`n---$rest"
 }
@@ -242,6 +297,8 @@ function New-SflEnginePolicyManifest([string[]]$WorkflowNames) {
                 effort               = $profile.Effort
                 renderedModel        = $profile.RenderedModel
                 requiredSecretsAnyOf = @($profile.RequiredSecretsAnyOf)
+                arguments            = @($profile.Arguments)
+                environment          = $profile.Environment
             }
         }
     )
@@ -255,6 +312,11 @@ function New-SflEnginePolicyManifest([string[]]$WorkflowNames) {
 # ─── Tier definitions ─────────────────────────────────────────────────────────
 
 $TierComponents = @{
+    "review"   = @{
+        Workflows      = @("sfl-pr-review")
+        Infrastructure = @()
+        Components     = @("labels", "governance", "sfl-pr-review")
+    }
     "minimal"  = @{
         Workflows      = @("daily-repo-status", "repo-audit")
         Infrastructure = @()
@@ -268,11 +330,13 @@ $TierComponents = @{
     }
     "full"     = @{
         Workflows      = @("daily-repo-status", "repo-audit", "issue-processor", "simplisticate",
+                           "sfl-pr-review",
                            "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security",
                            "pr-analyzer-testing", "pr-fixer", "pr-promoter")
         Infrastructure = @("sfl-dispatcher", "sfl-auditor")
         Components     = @("labels", "governance", "sfl-dispatcher", "sfl-auditor",
                            "daily-repo-status", "repo-audit", "issue-processor", "simplisticate",
+                           "sfl-pr-review",
                            "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security",
                            "pr-analyzer-testing", "pr-fixer", "pr-promoter")
     }
@@ -340,15 +404,125 @@ function Write-Status([string]$Emoji, [string]$Message, [ConsoleColor]$Color = "
     Write-Host "$Emoji  $Message" -ForegroundColor $Color
 }
 
+function Ensure-SflReviewLabel([string]$TargetRepo) {
+    if ("sfl-pr-review" -notin $DeployComponents) {
+        return
+    }
+
+    Write-Status "🏷️ " "Ensuring trigger label sfl-review on $TargetRepo"
+    if ($DryRun) {
+        return
+    }
+
+    $labelExistsOutput = & gh label list --repo $TargetRepo --limit 1000 --json name `
+        --jq ".[] | select(.name == `"$($SflReviewLabel.name)`") | .name" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to list labels on ${TargetRepo}: $labelExistsOutput"
+    }
+
+    $labelExists = @($labelExistsOutput) -contains $SflReviewLabel.name
+    $labelArgs = @(
+        'label', 'create', $SflReviewLabel.name,
+        '--repo', $TargetRepo,
+        '--color', $SflReviewLabel.color,
+        '--description', $SflReviewLabel.description
+    )
+    if ($labelExists) {
+        $labelArgs += '--force'
+    }
+
+    $labelOutput = & gh @labelArgs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create or update sfl-review on ${TargetRepo}: $labelOutput"
+    }
+}
+
+function Assert-SflReviewCredentials([string]$TargetRepo) {
+    if ("sfl-pr-review" -notin $DeployComponents) {
+        return
+    }
+
+    Write-Status "🔐" "Verifying SFL App credentials on $TargetRepo"
+    if ($DryRun) {
+        return
+    }
+
+    $variableNames = @(
+        & gh variable list --repo $TargetRepo --json name --jq '.[].name' 2>&1
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to list Actions variables on ${TargetRepo}: $($variableNames -join [Environment]::NewLine)"
+    }
+
+    $secretNames = @(
+        & gh secret list --repo $TargetRepo --app actions --json name --jq '.[].name' 2>&1
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to list Actions secrets on ${TargetRepo}: $($secretNames -join [Environment]::NewLine)"
+    }
+
+    $missing = @(
+        @("SFL_APP_ID", "SFL_APP_CLIENT_ID") |
+            Where-Object { $_ -notin $variableNames }
+        @("SFL_APP_PRIVATE_KEY") |
+            Where-Object { $_ -notin $secretNames }
+    )
+    if ($missing.Count -gt 0) {
+        throw "Missing SFL App credential metadata on ${TargetRepo}: $($missing -join ', ')"
+    }
+
+    foreach ($workflowName in $WorkflowsToDeploy) {
+        $profile = Resolve-SflEngineProfile $workflowName
+        $requiredSecrets = @($profile.RequiredSecretsAnyOf)
+        if ($requiredSecrets.Count -gt 0 -and
+            @($requiredSecrets | Where-Object { $_ -in $secretNames }).Count -eq 0) {
+            throw "Missing AI engine credential on ${TargetRepo} for ${workflowName}: one of $($requiredSecrets -join ', ')"
+        }
+    }
+}
+
 function Deploy-ToRepo([string]$TargetRepo) {
     $RepoName    = $TargetRepo.Split("/")[-1]
     $BranchLabel = if ($Tier) { "tier-$Tier" } else { "add-$Workflow" }
-    $BranchName  = "sfl/$BranchLabel"
+    $CanonicalBranchName = "sfl/$BranchLabel"
+    $BaseBranch = gh repo view $TargetRepo --json defaultBranchRef --jq '.defaultBranchRef.name'
+    if (-not $BaseBranch) {
+        throw "Repository $TargetRepo has no default branch."
+    }
+
+    $existingPrCandidates = @(
+        gh pr list --repo $TargetRepo --state open --json number,url,headRefName |
+            ConvertFrom-Json |
+            Where-Object { $_.headRefName -like "$CanonicalBranchName*" }
+    )
+    if ($existingPrCandidates.Count -gt 1) {
+        throw "Multiple open SFL deployment PRs match $CanonicalBranchName on $TargetRepo."
+    }
+
+    $existingPr = $existingPrCandidates | Select-Object -First 1
+    if ($existingPr) {
+        $unexpectedCommits = @(
+            gh pr view $existingPr.number --repo $TargetRepo --json commits `
+                --jq '.commits[].messageHeadline' |
+                Where-Object { $_ -notmatch '^chore: deploy Set it Free Loop' }
+        )
+        if ($unexpectedCommits.Count -gt 0) {
+            throw "Unexpected consumer-authored commit on $($existingPr.url): $($unexpectedCommits -join '; ')"
+        }
+        $BranchName = [string] $existingPr.headRefName
+        $existingPrUrl = [string] $existingPr.url
+    } else {
+        $BranchName = "$CanonicalBranchName-$($CurrentSha.Substring(0, 7))"
+        $existingPrUrl = $null
+    }
+
     $ClonePath   = Join-Path $CloneDir $RepoName
     $DestWorkdir = Join-Path $ClonePath ".github\workflows"
 
     $DeployLabel = if ($Tier) { "tier '$Tier'" } else { "workflow '$Workflow'" }
     Write-Status "🚀" "Deploying $DeployLabel → $TargetRepo"
+    Assert-SflReviewCredentials $TargetRepo
+    Ensure-SflReviewLabel $TargetRepo
 
     if ($DryRun) {
         Write-Status "🔍" "[DRY RUN] Would clone $TargetRepo to $ClonePath" Yellow
@@ -361,6 +535,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
                 -EngineProfile $engineProfile `
                 -WorkflowName $wf)
             Write-Status "🔍" "[DRY RUN] Would copy $wf.md → .github/workflows/ with $($engineProfile.Provider) $($engineProfile.RenderedModel)" Yellow
+            Write-Status "🔍" "[DRY RUN] Would compile deployed workflow $wf.md" Yellow
         }
         foreach ($inf in $InfrastructureToDeploy) {
             Write-Status "🔍" "[DRY RUN] Would copy $inf.yml → .github/workflows/" Yellow
@@ -380,9 +555,21 @@ function Deploy-ToRepo([string]$TargetRepo) {
         git clone "git@github-personal1:$TargetRepo.git" $ClonePath --depth=1 --quiet
         if ($LASTEXITCODE -ne 0) { throw "git clone failed" }
 
-        # 2. Create branch
-        git -C $ClonePath checkout -b $BranchName --quiet
-        if ($LASTEXITCODE -ne 0) { throw "git checkout -b failed" }
+        # 2. Create or reuse the open deployment PR branch
+        Push-Location $ClonePath
+        try {
+            if ($existingPr) {
+                git fetch origin $BranchName --depth=1 --quiet
+                if ($LASTEXITCODE -ne 0) { throw "git fetch origin $BranchName failed" }
+                git checkout -B $BranchName FETCH_HEAD --quiet
+                if ($LASTEXITCODE -ne 0) { throw "git checkout existing branch failed" }
+            } else {
+                git checkout -b $BranchName --quiet
+                if ($LASTEXITCODE -ne 0) { throw "git checkout -b failed" }
+            }
+        } finally {
+            Pop-Location
+        }
 
         # 3. Copy workflow files
         New-Item -ItemType Directory -Force $DestWorkdir | Out-Null
@@ -399,12 +586,23 @@ function Deploy-ToRepo([string]$TargetRepo) {
                 -WorkflowName $wf
             $SflSourceRef = "HemSoft/set-it-free-loop/deployment/workflows/$wf.md@$CurrentSha"
             $pinComment = "# Deployed from: $SflSourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n"
-            if ($content -notmatch "# Deployed from:") {
-                Set-Content $DestFile -Value ($pinComment + $content) -NoNewline
-            } else {
-                Set-Content $DestFile -Value $content -NoNewline
-            }
+            $content = Add-SflSourcePin -Content $content -PinComment $pinComment
+            Set-Content $DestFile -Value $content -NoNewline
             Write-Status "📄" "  $wf.md ($($engineProfile.Provider) $($engineProfile.RenderedModel))"
+        }
+
+        foreach ($wf in $WorkflowsToDeploy) {
+            $DestFile = Join-Path $DestWorkdir "$wf.md"
+            Write-Status "🔧" "Compiling deployed workflow $wf.md"
+            Push-Location $ClonePath
+            try {
+                gh aw compile $DestFile --approve --no-check-update --actionlint --schedule-seed $TargetRepo
+                if ($LASTEXITCODE -ne 0) {
+                    throw "gh aw compile failed for $DestFile"
+                }
+            } finally {
+                Pop-Location
+            }
         }
 
         # 4. Copy infrastructure files (standard YAML — go directly to .github/workflows/)
@@ -417,7 +615,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
 
         # 5. Create sfl.json manifest
         $now = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-        $manifest = @{
+        $incomingManifest = [pscustomobject] @{
             version    = $SflVersion
             deployedAt = $now
             tier       = $DeployTier
@@ -425,11 +623,20 @@ function Deploy-ToRepo([string]$TargetRepo) {
             sourceSha  = $CurrentSha
             components = $DeployComponents
             enginePolicy = $EnginePolicyManifest
-        } | ConvertTo-Json -Depth 6
+        }
 
         $manifestPath = Join-Path $ClonePath "sfl.json"
+        $existingManifest = if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+            Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        } else {
+            $null
+        }
+        $manifestObject = Merge-SflManifest `
+            -ExistingManifest $existingManifest `
+            -IncomingManifest $incomingManifest
+        $manifest = $manifestObject | ConvertTo-Json -Depth 6
         Set-Content $manifestPath $manifest
-        Write-Status "📋" "  sfl.json (v$SflVersion, tier: $DeployTier)"
+        Write-Status "📋" "  sfl.json (v$SflVersion, tier: $($manifestObject.tier))"
 
         # 7. Inject/update SFL badge in README.md
         $readmePath = Join-Path $ClonePath "README.md"
@@ -500,12 +707,16 @@ See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
 
         $componentList = ($DeployComponents | ForEach-Object { "- ``$_``" }) -join "`n"
 
-        $prUrl = gh pr create `
-            --repo $TargetRepo `
-            --head $BranchName `
-            --base main `
-            --title $prTitle `
-            --body "## Set it Free Loop — Deployment
+        if ($existingPrUrl) {
+            $prUrl = $existingPrUrl
+            Write-Status "✅" "Existing PR updated: $prUrl" Green
+        } else {
+            $prUrl = gh pr create `
+                --repo $TargetRepo `
+                --head $BranchName `
+                --base $BaseBranch `
+                --title $prTitle `
+                --body "## Set it Free Loop — Deployment
 
 **Version**: $SflVersion
 **Tier**: $DeployTier
@@ -531,10 +742,11 @@ for all available workflows.
 - [ ] Review ``sfl.json`` manifest in the repo root
 " 2>&1
 
-        if ($LASTEXITCODE -eq 0) {
-            Write-Status "✅" "PR created: $prUrl" Green
-        } else {
-            Write-Status "❌" "gh pr create failed: $prUrl" Red
+            if ($LASTEXITCODE -eq 0) {
+                Write-Status "✅" "PR created: $prUrl" Green
+            } else {
+                throw "gh pr create failed: $prUrl"
+            }
         }
 
     } finally {
