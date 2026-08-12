@@ -62,10 +62,10 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 
 ```powershell
 # Deploy the full autonomous loop
-.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "org/repo"
+.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "HemSoft/private-repository"
 
-# Or deploy only on-demand SFL pull request review
-.\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "org/repo"
+# Or deploy the automatic, recoverable SFL pull request reviewer
+.\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "HemSoft/private-repository"
 
 # Or start with hygiene-only
 .\deployment\scripts\deploy-workflow.ps1 -Tier minimal -Repos "org/repo"
@@ -77,6 +77,8 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 ### 3. Review the catalog
 
 See [CATALOG.md](CATALOG.md) for all available workflows, tiers, and expected outputs.
+Reviewer installation, recovery, and optional gating are documented in
+[docs/SFL-REVIEWER.md](docs/SFL-REVIEWER.md).
 
 ---
 

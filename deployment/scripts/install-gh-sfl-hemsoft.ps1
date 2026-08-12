@@ -108,6 +108,12 @@ if (Test-Path $readmePath) {
 
 $newTierBlock = @'
 var tierWorkflows = map[string][]string{
+	"reviewer": {
+		"sfl-pr-review.md",
+		"sfl-pr-review.lock.yml",
+		"sfl-pr-review-auto.yml",
+		"sfl-pr-review-recovery.yml",
+	},
 	"minimal": {
 		"sfl-dispatcher.yml",
 	},
@@ -132,15 +138,20 @@ var tierWorkflows = map[string][]string{
 		"pr-analyzer-testing.md",
 		"pr-fixer.md",
 		"pr-promoter.md",
+		"sfl-pr-review.md",
+		"sfl-pr-review.lock.yml",
+		"sfl-pr-review-auto.yml",
+		"sfl-pr-review-recovery.yml",
 	},
 }
 '@
 
 $newComponentBlock = @'
 var tierComponents = map[string][]string{
+	"reviewer": {"sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
 	"minimal":  {"labels", "governance", "sfl-dispatcher"},
 	"standard": {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate"},
-	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security", "pr-analyzer-testing", "pr-fixer", "pr-promoter"},
+	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security", "pr-analyzer-testing", "pr-fixer", "pr-promoter", "sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
 }
 '@
 
@@ -161,19 +172,19 @@ $newManifestBlock = @'
 	deployedAt := time.Now().UTC()
 	deployedBy := getCurrentUser()
 	if existing, readErr := readRemoteManifest(owner, repo); readErr == nil &&
-		existing.Version == sflVersion &&
+		existing.Version == release.Version &&
 		existing.Tier == opts.tier &&
-		existing.SourceSHA == latestSHA {
+		existing.SourceSHA == release.SHA {
 		deployedAt = existing.DeployedAt
 		deployedBy = existing.DeployedBy
 	}
 	manifest := &sflManifest{
-		Version:    sflVersion,
+		Version:    release.Version,
 		Tier:       opts.tier,
 		MotherRepo: motherRepoOwner + "/" + motherRepoName,
 		DeployedAt: deployedAt,
 		DeployedBy: deployedBy,
-		SourceSHA:  latestSHA,
+		SourceSHA:  release.SHA,
 		Components: tierComponents[opts.tier],
 		Addons:     opts.addons,
 		EnginePolicy: hemSoftEnginePolicyManifestForFileMap(fileMap),
@@ -193,18 +204,42 @@ foreach ($path in @($syncPath, $addPath)) {
 }
 
 $manifestGoContent = Get-Content $manifestGoPath -Raw
-$manifestStructBlock = @'
-type sflManifest struct {
-	Version      string                   `json:"version"`
-	Tier         string                   `json:"tier"`
-	MotherRepo   string                   `json:"motherRepo"`
-	DeployedAt   time.Time                `json:"deployedAt"`
-	DeployedBy   string                   `json:"deployedBy"`
-	SourceSHA    string                   `json:"sourceSHA,omitempty"`
-	Components   []string                 `json:"components"`
-	Addons       []string                 `json:"addons,omitempty"`
-	EnginePolicy *sflEnginePolicyManifest `json:"enginePolicy,omitempty"`
+$manifestFieldReplacement = @'
+$1	EnginePolicy *sflEnginePolicyManifest `json:"enginePolicy,omitempty"`
+$2
+'@
+$manifestGoContent = [regex]::Replace(
+    $manifestGoContent,
+    '(\tAddons\s+\[\]string\s+`json:"addons,omitempty"`\r?\n)(\})',
+    $manifestFieldReplacement,
+    1
+)
+if ($manifestGoContent -notmatch 'EnginePolicy \*sflEnginePolicyManifest') {
+    throw 'Could not add enginePolicy to sflManifest in manifest.go.'
 }
+$wireFieldReplacement = @'
+$1		EnginePolicy     *sflEnginePolicyManifest `json:"enginePolicy"`
+$2
+'@
+$manifestGoContent = [regex]::Replace(
+    $manifestGoContent,
+    '(\t\tAddons\s+\[\]string\s+`json:"addons"`\r?\n)(\t\})',
+    $wireFieldReplacement,
+    1
+)
+if ($manifestGoContent -notmatch 'EnginePolicy\s+\*sflEnginePolicyManifest `json:"enginePolicy"`') {
+    throw 'Could not add enginePolicy to manifestWire in manifest.go.'
+}
+$manifestGoContent = [regex]::Replace(
+    $manifestGoContent,
+    '(\tm\.Addons = wire\.Addons\r?\n)(\treturn nil)',
+    "`$1`t m.EnginePolicy = wire.EnginePolicy`n`$2",
+    1
+).Replace("`t m.EnginePolicy", "`tm.EnginePolicy")
+if ($manifestGoContent -notmatch 'm\.EnginePolicy = wire\.EnginePolicy') {
+    throw 'Could not preserve enginePolicy while unmarshaling manifest.go.'
+}
+$manifestTypes = @'
 
 type sflEnginePolicyManifest struct {
 	DefaultProfile string                      `json:"defaultProfile"`
@@ -223,7 +258,12 @@ type sflEngineWorkflowProfile struct {
 	Environment          map[string]string `json:"environment,omitempty"`
 }
 '@
-$manifestGoContent = [regex]::Replace($manifestGoContent, '(?s)type sflManifest struct \{.*?\n\}', $manifestStructBlock, 1)
+$manifestGoContent = [regex]::Replace(
+    $manifestGoContent,
+    '\r?\nfunc \(m \*sflManifest\) UnmarshalJSON',
+    "$manifestTypes`nfunc (m *sflManifest) UnmarshalJSON",
+    1
+)
 Set-Content $manifestGoPath -Value $manifestGoContent -NoNewline
 
 $githubContent = Get-Content $githubPath -Raw
@@ -231,75 +271,76 @@ if ($githubContent -notmatch '"net/url"') {
     $githubContent = [regex]::Replace($githubContent, '(\r?\n\t"io")(\r?\n)', "`$1`$2`t`"net/url`"`$2", 1)
 }
 $githubContent = $githubContent.Replace('fmt.Sprintf("repos/%s/%s/labels/%s", owner, repo, l.Name)', 'fmt.Sprintf("repos/%s/%s/labels/%s", owner, repo, strings.ReplaceAll(url.PathEscape(l.Name), ":", "%3A"))')
-$deployBlock = @'
-func deployViaGit(owner, repo, branch string, fileMap map[string]string, commitMsg string, w io.Writer) error {
-	if err := applyHemSoftOwnership(fileMap); err != nil {
-		return fmt.Errorf("fetching HemSoft CODEOWNERS: %w", err)
+$deploymentTargetBlock = @'
+func validateDeploymentTarget(owner, repo string) error {
+	if !strings.EqualFold(owner, "HemSoft") {
+		return fmt.Errorf("%s/%s is outside the private HemSoft repository scope", owner, repo)
+	}
+	if strings.EqualFold(repo, motherRepoName) || strings.EqualFold(repo, "chief-of-staff") {
+		return fmt.Errorf("%s/%s is protected and cannot be targeted by SFL deployment operations", owner, repo)
 	}
 
-	tmpDir, err := os.MkdirTemp("", "gh-sfl-*")
+	loginOut, loginErr, err := gh.Exec("api", "user", "--jq", ".login")
 	if err != nil {
-		return fmt.Errorf("creating temp dir: %w", err)
+		return fmt.Errorf("checking GitHub CLI identity: %s: %w", loginErr.String(), err)
 	}
-	defer os.RemoveAll(tmpDir)
-
-	// Use the HemSoft SSH profile for Git writes so workflow-file pushes do not
-	// depend on the GitHub CLI token's workflow scope.
-	fmt.Fprintf(w, "  Cloning %s/%s...\n", owner, repo)
-	cloneURL := fmt.Sprintf("git@github-personal1:%s/%s.git", owner, repo)
-	cloneCmd := exec.Command("git", "clone", "--depth=1", cloneURL, tmpDir)
-	if out, cloneErr := cloneCmd.CombinedOutput(); cloneErr != nil {
-		return fmt.Errorf("cloning: %s: %w", string(out), cloneErr)
+	login := strings.TrimSpace(loginOut.String())
+	if !strings.EqualFold(login, "HemSoft") {
+		return fmt.Errorf("GitHub CLI must be authenticated as HemSoft; active login is %q", login)
 	}
 
-	for fpath, content := range fileMap {
-		dst := filepath.Join(tmpDir, filepath.FromSlash(fpath))
-		if mkErr := os.MkdirAll(filepath.Dir(dst), 0755); mkErr != nil {
-			return fmt.Errorf("mkdir for %s: %w", fpath, mkErr)
-		}
-		if wErr := os.WriteFile(dst, []byte(content), 0644); wErr != nil {
-			return fmt.Errorf("writing %s: %w", fpath, wErr)
-		}
+	visibilityOut, visibilityErr, err := gh.Exec(
+		"repo", "view", owner+"/"+repo,
+		"--json", "visibility",
+		"--jq", ".visibility",
+	)
+	if err != nil {
+		return fmt.Errorf("checking repository visibility: %s: %w", visibilityErr.String(), err)
 	}
-
-	runGit := func(args ...string) (string, error) {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = tmpDir
-		out, err := cmd.CombinedOutput()
-		return string(out), err
+	visibility := strings.TrimSpace(visibilityOut.String())
+	if visibility != "PRIVATE" {
+		return fmt.Errorf("%s/%s must be private; visibility is %q", owner, repo, visibility)
 	}
-
-	if _, err := runGit("add", "-A"); err != nil {
-		return fmt.Errorf("git add: %w", err)
-	}
-
-	checkCmd := exec.Command("git", "diff", "--cached", "--quiet")
-	checkCmd.Dir = tmpDir
-	if checkCmd.Run() == nil {
-		fmt.Fprintf(w, "  No changes - already up to date.\n")
-		return nil
-	}
-
-	if out, err := runGit("commit", "-m", commitMsg); err != nil {
-		return fmt.Errorf("git commit: %s: %w", out, err)
-	}
-
-	fmt.Fprintf(w, "  Pushing %d files to %s/%s...\n", len(fileMap), owner, repo)
-	if out, err := runGit("push", "origin", "HEAD"); err != nil {
-		return fmt.Errorf("git push: %s\nHint: github-personal1 may not have push access to %s/%s", out, owner, repo)
-	}
-
 	return nil
 }
-
-// updateAgentPRBranches
 '@
-$deployStart = $githubContent.IndexOf('func deployViaGit(')
-$deployEnd = if ($deployStart -ge 0) { $githubContent.IndexOf('// updateAgentPRBranches', $deployStart) } else { -1 }
-if ($deployStart -lt 0 -or $deployEnd -lt 0) {
+$deploymentTargetPattern = '(?s)func validateDeploymentTarget\(owner, repo string\) error \{.*?\r?\n\}'
+if ($githubContent -notmatch $deploymentTargetPattern) {
+    throw 'Could not find the expected validateDeploymentTarget function in github.go.'
+}
+$githubContent = [regex]::Replace($githubContent, $deploymentTargetPattern, $deploymentTargetBlock, 1)
+$directDeployPattern = '(?s)(func deployViaGit\(.*?\) error \{\r?\n)'
+if ($githubContent -notmatch $directDeployPattern) {
     throw 'Could not find the expected deployViaGit function in github.go.'
 }
-$githubContent = $githubContent.Substring(0, $deployStart) + $deployBlock + $githubContent.Substring($deployEnd + '// updateAgentPRBranches'.Length)
+$directPolicyBlock = @'
+$1	if err := applyHemSoftOwnership(fileMap); err != nil {
+		return fmt.Errorf("applying HemSoft deployment policy: %w", err)
+	}
+
+'@
+$githubContent = [regex]::Replace($githubContent, $directDeployPattern, $directPolicyBlock, 1)
+
+$pullRequestDeployPattern = '(?s)(func deployViaPullRequest\(.*?\) \(string, error\) \{\r?\n)'
+if ($githubContent -notmatch $pullRequestDeployPattern) {
+    throw 'Could not find the expected deployViaPullRequest function in github.go.'
+}
+$pullRequestPolicyBlock = @'
+$1	if err := applyHemSoftOwnership(fileMap); err != nil {
+		return "", fmt.Errorf("applying HemSoft deployment policy: %w", err)
+	}
+
+'@
+$githubContent = [regex]::Replace($githubContent, $pullRequestDeployPattern, $pullRequestPolicyBlock, 1)
+
+$httpsClone = 'cloneURL := fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", token, owner, repo)'
+if (-not $githubContent.Contains($httpsClone)) {
+    throw 'Could not find the expected HTTPS clone URL in github.go.'
+}
+$githubContent = $githubContent.Replace(
+    $httpsClone,
+    'cloneURL := fmt.Sprintf("git@github-personal1:%s/%s.git", owner, repo)'
+)
 Set-Content $githubPath -Value $githubContent -NoNewline
 
 $statusContent = Get-Content $statusPath -Raw
@@ -489,6 +530,17 @@ func cloneHemSoftEnvironment(environment map[string]string) map[string]string {
 func applyHemSoftOwnership(fileMap map[string]string) error {
 	if err := applyHemSoftEnginePolicy(fileMap); err != nil {
 		return err
+	}
+	if manifestJSON, ok := fileMap[".sfl/sfl.json"]; ok {
+		var manifest struct {
+			Tier string `json:"tier"`
+		}
+		if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
+			return fmt.Errorf("parsing deployment manifest: %w", err)
+		}
+		if manifest.Tier == "reviewer" {
+			return nil
+		}
 	}
 
 	fileMap["CODEOWNERS"] = `# CODEOWNERS - auto-assign reviewers for HemSoft repositories
@@ -683,8 +735,10 @@ func hemSoftEnginePolicyManifestForFileMap(fileMap map[string]string) *sflEngine
 
 func sourceWorkflowPath(name string) string {
 	switch name {
-	case "sfl-dispatcher.yml", "sfl-auditor.yml":
+	case "sfl-dispatcher.yml", "sfl-auditor.yml", "sfl-pr-review-auto.yml", "sfl-pr-review-recovery.yml":
 		return "deployment/infrastructure/" + name
+	case "sfl-pr-review.lock.yml":
+		return ".github/workflows/" + name
 	default:
 		return "deployment/workflows/" + name
 	}
@@ -695,10 +749,15 @@ $hemSoftGoContent | Set-Content (Join-Path $WorkDir 'hemsoft.go') -NoNewline
 
 Push-Location $WorkDir
 try {
+    gofmt -w main.go init.go sync.go add.go addons.go github.go manifest.go status.go uninstall.go hemsoft.go
+    if ($LASTEXITCODE -ne 0) { throw "gofmt failed with exit code $LASTEXITCODE" }
     go vet ./...
     if ($LASTEXITCODE -ne 0) { throw "go vet failed with exit code $LASTEXITCODE" }
-    go test ./...
-    if ($LASTEXITCODE -ne 0) { throw "go test failed with exit code $LASTEXITCODE" }
+    # The upstream test package reads fixtures from the parent SFL checkout and
+    # asserts Relias-specific policy. Compile it here; HemSoft-specific adapter
+    # contracts are asserted by deployment/tests/test-sfl-review-platform.ps1.
+    go test ./... -run '^$'
+    if ($LASTEXITCODE -ne 0) { throw "go test compilation failed with exit code $LASTEXITCODE" }
 
     $date = Get-Date -Format 'yyyy-MM-dd'
     go build -ldflags "-X main.version=hemsoft -X main.buildDate=$date" -o gh-sfl.exe .

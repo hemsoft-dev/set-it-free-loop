@@ -22,3 +22,21 @@ function Add-SflSourcePin {
     $rest = $withoutExistingPin.Substring($frontmatter.Length).TrimStart("`r", "`n")
     $frontmatter.Value.TrimEnd("`r", "`n") + "`n" + $pin + "`n" + $rest
 }
+
+function Add-SflYamlSourcePin {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Content,
+
+        [Parameter(Mandatory)]
+        [string] $SourceRef
+    )
+
+    $withoutExistingPin = [regex]::Replace(
+        $Content,
+        '\A# Deployed from: HemSoft/set-it-free-loop/[^\r\n]+\r?\n# To upgrade: re-run deploy-workflow\.ps1 at the desired SHA\r?\n',
+        ''
+    )
+    return "# Deployed from: $SourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n$withoutExistingPin"
+}

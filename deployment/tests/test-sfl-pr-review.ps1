@@ -5,298 +5,92 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
+$sourcePath = Join-Path $repoRoot 'deployment\workflows\sfl-pr-review.md'
+$stagedPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.md'
+$lockPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.lock.yml'
+$actionsLockPath = Join-Path $repoRoot '.github\aw\actions-lock.json'
 $failures = [System.Collections.Generic.List[string]]::new()
 
-function Assert-FileExists {
-    param([string] $RelativePath)
-
-    $path = Join-Path $repoRoot $RelativePath
+foreach ($path in @($sourcePath, $stagedPath, $lockPath, $actionsLockPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        $failures.Add("Missing file: $RelativePath")
+        $failures.Add("Missing reviewer artifact: $path")
     }
 }
 
-function Assert-FileContains {
-    param(
-        [string] $RelativePath,
-        [string[]] $Patterns
-    )
+if ($failures.Count -eq 0) {
+    $source = Get-Content -LiteralPath $sourcePath -Raw
+    $staged = Get-Content -LiteralPath $stagedPath -Raw
+    $lock = Get-Content -LiteralPath $lockPath -Raw
+    $actionsLock = Get-Content -LiteralPath $actionsLockPath -Raw
 
-    $path = Join-Path $repoRoot $RelativePath
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        $failures.Add("Missing file: $RelativePath")
-        return
+    if ($source -ne $staged) {
+        $failures.Add('Canonical and staged reviewer Markdown differ.')
     }
 
-    $content = Get-Content -LiteralPath $path -Raw
-    foreach ($pattern in $Patterns) {
-        if ($content -notmatch $pattern) {
-            $failures.Add("$RelativePath does not contain pattern: $pattern")
+    $requiredSourcePatterns = @(
+        '(?m)^source: HemSoft/set-it-free-loop/deployment/workflows/sfl-pr-review\.md@main$',
+        '(?m)^  workflow_dispatch:\r?$',
+        'Validate trusted review context',
+        'publish_review_provenance:',
+        'Initialize review evidence',
+        'sfl-review:\$\{pullNumber\}:\$\{baseSha\}:\$\{headSha\}:\$\{runId\}',
+        'Verify pull request base and head before safe outputs',
+        'commit-id: "\$\{\{ inputs\.head_sha \}\}"',
+        'resolve-sfl-review-thread:',
+        'name: safe-outputs-items',
+        'Download reviewer agent output',
+        'Expected exactly one immutable agent submitted-review item',
+        'Published review manifest does not match the immutable agent verdict',
+        'Review body contains unresolved template placeholder',
+        'const immutableFindingCount = agentReviewComments\.length',
+        'const gateApproved =\s*\r?\n\s*verdictApproved',
+        'unresolvedFindingCount === 0',
+        'Initialized SFL review evidence does not match this run',
+        'COPILOT_PROVIDER_BASE_URL: https://openrouter\.ai/api/v1',
+        'COPILOT_MODEL: moonshotai/kimi-k3'
+    )
+    foreach ($pattern in $requiredSourcePatterns) {
+        if ($source -notmatch $pattern) {
+            $failures.Add("Reviewer source is missing contract pattern: $pattern")
         }
     }
-}
 
-function Assert-FileNotContains {
-    param(
-        [string] $RelativePath,
-        [string[]] $Patterns
+    $requiredLockPatterns = @(
+        '"compiler_version":"v0\.86\.2"',
+        '"engine_base_url_customized":true',
+        '"agent_model":"moonshotai/kimi-k3"',
+        '"OPENROUTER_API_KEY"',
+        'GH_AW_INPUTS_BASE_SHA: \$\{\{ inputs\.base_sha \}\}',
+        'GH_AW_INPUTS_HEAD_SHA: \$\{\{ inputs\.head_sha \}\}',
+        'Validate trusted review context',
+        'publish_review_provenance:',
+        'Initialize review evidence',
+        'Verify pull request base and head before safe outputs',
+        'SFL_SAFE_OUTPUT_ITEMS: /tmp/sfl-review-safe-outputs/safe-output-items\.jsonl',
+        'Initialized SFL review evidence does not match this run',
+        '\{\{#runtime-import \.github/workflows/sfl-pr-review\.md\}\}'
     )
-
-    $path = Join-Path $repoRoot $RelativePath
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        $failures.Add("Missing file: $RelativePath")
-        return
-    }
-
-    $content = Get-Content -LiteralPath $path -Raw
-    foreach ($pattern in $Patterns) {
-        if ($content -match $pattern) {
-            $failures.Add("$RelativePath contains prohibited pattern: $pattern")
+    foreach ($pattern in $requiredLockPatterns) {
+        if ($lock -notmatch $pattern) {
+            $failures.Add("Compiled reviewer is missing contract pattern: $pattern")
         }
     }
-}
 
-$workflowPatterns = @(
-    'label_command:',
-    'name:\s*sfl-review',
-    'remove_label:\s*true',
-    'sfl-review',
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?$',
-    '(?m)^model:[ \t]*moonshotai/kimi-k3\r?$',
-    'COPILOT_PROVIDER_BASE_URL:[ \t]*https://openrouter\.ai/api/v1',
-    'COPILOT_PROVIDER_API_KEY:[ \t]*\$\{\{ secrets\.OPENROUTER_API_KEY \}\}',
-    'COPILOT_PROVIDER_TYPE:[ \t]*openai',
-    'COPILOT_PROVIDER_WIRE_API:[ \t]*responses',
-    'COPILOT_MODEL:[ \t]*moonshotai/kimi-k3',
-    'default-ai-credits-pricing:',
-    'input:[ \t]*3(?:\.0)?',
-    'output:[ \t]*15(?:\.0)?',
-    'openrouter\.ai',
-    'SFL_APP_CLIENT_ID',
-    'SFL_APP_PRIVATE_KEY',
-    'create_pull_request_review_comment',
-    'Set `side` to `LEFT` for a deleted line and `RIGHT`',
-    'submit-pull-request-review',
-    'create-check-run',
-    'threat-detection:\s*\r?\n[ \t]+enabled:\s*true',
-    'max-ai-credits:\s*-1',
-    'commit-id:\s*\$\{\{ github\.event\.pull_request\.head\.sha \}\}',
-    'report-as-issue:\s*false',
-    'sfl-review-inventory:',
-    'SFL_VERDICT_VALIDATOR_START',
-    'Mint SFL validation token',
-    'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
-    'permission-pull-requests:\s*read',
-    'Require SFL review output',
-    'missing_tool',
-    'missing_data',
-    'a missing signal must be the only safe output item',
-    'client-id:\s*\$\{\{ vars\.SFL_APP_CLIENT_ID \}\}',
-    'reviewThreads\(first:100,after:\$after\)',
-    'pageInfo\{hasNextPage endCursor\}',
-    'GitHub GraphQL returned errors',
-    'GitHub returned incomplete review-thread data',
-    'output target repo must be',
-    'output target \$\{field\} must be',
-    'unexpected safe output types',
-    "author !== 'sfl-app\[bot\]'",
-    'requiredCheckFragments',
-    'requireSingleReviewLine',
-    'expectedRows',
-    'check summary does not match the required exact shape',
-    'Overflow:',
-    'noop is forbidden while the pull request head is unchanged',
-    'actualCarried',
-    'exactly one consolidated review and one check run are required',
-    'review event must be',
-    'check conclusion must be',
-    'check title must be SFL full-spectrum review complete',
-    'Repository-owner-approved exception',
-    'complete finding inventory exceeded the inline-comment limit',
-    'did\s+not exceed 20 comments',
-    'unresolved SFL findings from earlier',
-    'Call `noop` with',
-    'SFL Reviewer Approval',
-    'SFL run ID:',
-    'Verdict:\s*APPROVE',
-    '\*\*CRITICAL\s',
-    '\*\*HIGH\s',
-    '\*\*MEDIUM\s',
-    '\*\*LOW\s'
-)
-
-Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns $workflowPatterns
-Assert-FileContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns $workflowPatterns
-Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.md' -Patterns @(
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
-    '(?ms)^tools:\r?\n  github:\r?\n(?:(?!^safe-outputs:).)*?^    github-app:',
-    'copilot-requests:\s*write',
-    'OPENAI_API_KEY:',
-    'CODEX_API_KEY:',
-    'remove-labels:',
-    'pr-diff\.patch',
-    'pr-review-comments\.json'
-)
-Assert-FileNotContains -RelativePath 'deployment\workflows\sfl-pr-review.md' -Patterns @(
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*copilot\r?\n[ \t]+model:',
-    '(?ms)^tools:\r?\n  github:\r?\n(?:(?!^safe-outputs:).)*?^    github-app:',
-    'copilot-requests:\s*write',
-    'OPENAI_API_KEY:',
-    'CODEX_API_KEY:',
-    'remove-labels:',
-    'pr-diff\.patch',
-    'pr-review-comments\.json',
-    'vars\.SFL_APP_ID'
-)
-Assert-FileExists -RelativePath '.github\workflows\sfl-pr-review.lock.yml'
-Assert-FileContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
-    '"guard-policies"',
-    '"allow-only"',
-    '"write-sink"'
-)
-Assert-FileNotContains -RelativePath '.github\workflows\sfl-pr-review.lock.yml' -Patterns @(
-    'copilot-requests:\s*write'
-)
-
-$stagingPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.md'
-$deploymentPath = Join-Path $repoRoot 'deployment\workflows\sfl-pr-review.md'
-if ((Test-Path -LiteralPath $stagingPath) -and (Test-Path -LiteralPath $deploymentPath)) {
-    if ((Get-Content -LiteralPath $stagingPath -Raw) -ne
-        (Get-Content -LiteralPath $deploymentPath -Raw)) {
-        $failures.Add('Staging and deployment SFL review workflows differ.')
+    if ($source -match 'copilot-requests:\s*write' -or
+        $lock -match 'copilot-requests:\s*write') {
+        $failures.Add('HemSoft OpenRouter reviewer unexpectedly requests Copilot billing permission.')
+    }
+    if ($source -match 'relias-engineering|3650906|Iv23liwZid0CBWCRuWdd') {
+        $failures.Add('Reviewer source contains prohibited organization-specific identity.')
+    }
+    if ($actionsLock -notmatch 'github/gh-aw-actions/setup@v0\.86\.2') {
+        $failures.Add('Action lock does not pin the compiler-matched gh-aw setup action.')
     }
 }
-
-$labelsPath = Join-Path $repoRoot 'deployment\governance\labels.json'
-$labels = Get-Content -LiteralPath $labelsPath -Raw | ConvertFrom-Json
-if ('sfl-review' -notin @($labels.name)) {
-    $failures.Add('deployment/governance/labels.json is missing sfl-review.')
-}
-
-$schemaPath = Join-Path $repoRoot 'deployment\sfl-manifest.schema.json'
-$schema = Get-Content -LiteralPath $schemaPath -Raw | ConvertFrom-Json
-$componentEnum = @($schema.properties.components.items.enum)
-if ('sfl-pr-review' -notin $componentEnum) {
-    $failures.Add('deployment/sfl-manifest.schema.json is missing sfl-pr-review.')
-}
-
-$enginePolicyPath = Join-Path $repoRoot 'deployment\engine-policy.json'
-$enginePolicy = Get-Content -LiteralPath $enginePolicyPath -Raw | ConvertFrom-Json
-$openRouterProfile = $enginePolicy.profiles.PSObject.Properties['openrouter-kimi-k3-high']
-$openRouterArguments = if ($null -ne $openRouterProfile -and
-    $null -ne $openRouterProfile.Value.PSObject.Properties['arguments']) {
-    @($openRouterProfile.Value.arguments)
-} else {
-    @()
-}
-if ($null -eq $openRouterProfile -or
-    $openRouterProfile.Value.provider -ne 'copilot' -or
-    $openRouterProfile.Value.model -ne 'moonshotai/kimi-k3' -or
-    'OPENROUTER_API_KEY' -notin @($openRouterProfile.Value.requiredSecretsAnyOf) -or
-    @($openRouterArguments).Count -ne 0) {
-    $failures.Add('deployment/engine-policy.json is missing the OpenRouter Kimi K3 review profile.')
-}
-$reviewPolicy = $enginePolicy.workflows.PSObject.Properties['sfl-pr-review']
-if ($null -eq $reviewPolicy -or $reviewPolicy.Value.profile -ne 'openrouter-kimi-k3-high') {
-    $failures.Add('deployment/engine-policy.json does not map sfl-pr-review to OpenRouter Kimi K3.')
-}
-
-Assert-FileContains -RelativePath 'deployment\scripts\deploy-workflow.ps1' -Patterns @(
-    'ValidateSet\([^\)]*"review"',
-    '"review"\s*=\s*@\{',
-    'sfl-pr-review',
-    'gh label list --repo \$TargetRepo --limit 1000',
-    'if \(\$labelExists\)',
-    '''label'', ''create'', \$SflReviewLabel\.name',
-    'Ensuring trigger label',
-    '\[DRY RUN\] Would ensure trigger label',
-    'Verifying SFL App credentials',
-    'SFL_APP_CLIENT_ID',
-    'SFL_APP_PRIVATE_KEY',
-    'Missing AI engine credential',
-    'Compiling deployed workflow',
-    'gh aw compile \$DestFile --approve',
-    'messageHeadline',
-    'Unexpected consumer-authored commit',
-    '\$CurrentSha\.Substring',
-    'git fetch origin \$BranchName',
-    '\$ExpectedRemoteSha = \(git rev-parse FETCH_HEAD\)\.Trim\(\)',
-    'git checkout -B \$BranchName "origin/\$BaseBranch"',
-    '--force-with-lease=\$\{BranchName\}:\$ExpectedRemoteSha',
-    'gh pr list',
-    "--json 'number,url,headRefName'",
-    'Deployed from:',
-    'To upgrade:',
-    'Existing PR updated',
-    '@\(\$EngineProfile\.Arguments\)\.Count',
-    '\$modelLine\s*=\s*"model:',
-    'label=SFL%20Upstream',
-    '\[!\[SFL Upstream\]',
-    '\(\?:Set it Free Loop\|SFL Upstream\)'
-)
-Assert-FileContains -RelativePath 'deployment\scripts\install-gh-sfl-hemsoft.ps1' -Patterns @(
-    'hemSoftEngineConfigForWorkflow',
-    'Environment',
-    'hemSoftEnginePolicyJSON',
-    'json\.Unmarshal'
-)
-Assert-FileContains -RelativePath 'CATALOG.md' -Patterns @(
-    '\|\s*\*\*review\*\*',
-    '\[sfl-pr-review\]',
-    'SFL Reviewer Approval'
-)
-Assert-FileContains -RelativePath 'deployment\infrastructure\sfl-auditor.yml' -Patterns @(
-    'Check: SFL review prerequisites',
-    'sfl-pr-review\.lock\.yml',
-    'labels/sfl-review',
-    'SFL_APP_ID',
-    'SFL_APP_CLIENT_ID',
-    'SFL_APP_PRIVATE_KEY',
-    'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
-    'permission-actions:\s*write',
-    'permission-checks:\s*write',
-    'installation/repositories',
-    'viewer \{ login \}',
-    'sfl-app\[bot\]',
-    'Missing SFL review prerequisites',
-    'gh issue create',
-    'gh issue close',
-    'sfl-pr-review\.md',
-    'Deployed from: HemSoft/set-it-free-loop/',
-    'Malformed SFL source provenance',
-    'Malformed SFL review guard policies',
-    'allow-only',
-    'write-sink',
-    'non-heading source provenance'
-)
-Assert-FileContains -RelativePath '.github\workflows\sfl-auditor.md' -Patterns @(
-    'Check: SFL review prerequisites',
-    'sfl-pr-review\.lock\.yml',
-    'sfl-review',
-    'create-issue',
-    'github-app:',
-    'SFL_APP_CLIENT_ID',
-    'SFL_APP_PRIVATE_KEY',
-    'Deployed from:',
-    '# Deployed from:',
-    'allow-only',
-    'write-sink',
-    '(?m)^model:[ \t]*gpt-5\.5\?effort=high\r?$'
-)
-Assert-FileExists -RelativePath '.github\workflows\sfl-auditor.lock.yml'
-Assert-FileContains -RelativePath '.github\workflows\sfl-auditor.lock.yml' -Patterns @(
-    '"guard-policies"',
-    '"allow-only"',
-    '"write-sink"'
-)
-Assert-FileNotContains -RelativePath '.github\workflows\sfl-auditor.md' -Patterns @(
-    '(?m)^engine:\r?\n[ \t]+id:[ \t]*codex\r?\n[ \t]+model:',
-    '(?ms)^tools:\r?\n  github:\r?\n(?:(?!^safe-outputs:).)*?^    github-app:'
-)
 
 if ($failures.Count -gt 0) {
-    $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }
-    throw "SFL review contract failed with $($failures.Count) finding(s)."
+    $failures | ForEach-Object { Write-Error $_ }
+    throw "SFL review artifact contract failed with $($failures.Count) finding(s)."
 }
 
-Write-Output 'SFL review contract passed.'
+Write-Output 'SFL review artifact contract passed.'

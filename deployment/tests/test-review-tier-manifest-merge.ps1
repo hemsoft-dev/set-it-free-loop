@@ -36,18 +36,24 @@ $incomingReview = [pscustomobject]@{
     tier = 'review'
     source = 'HemSoft/set-it-free-loop'
     sourceSha = '2222222222222222222222222222222222222222'
-    components = @('labels', 'governance', 'sfl-pr-review')
+    components = @(
+        'labels',
+        'governance',
+        'sfl-pr-review',
+        'sfl-pr-review-auto',
+        'sfl-pr-review-recovery'
+    )
     enginePolicy = [pscustomobject]@{
         defaultProfile = 'codex-gpt-55-high'
         workflows = @(
             [pscustomobject]@{
                 name = 'sfl-pr-review'
-                profile = 'copilot-gpt-55-high'
+                profile = 'openrouter-kimi-k3-high'
                 provider = 'copilot'
-                model = 'gpt-5.5'
+                model = 'moonshotai/kimi-k3'
                 effort = 'high'
-                renderedModel = 'gpt-5.5?effort=high'
-                requiredSecretsAnyOf = @()
+                renderedModel = 'moonshotai/kimi-k3'
+                requiredSecretsAnyOf = @('OPENROUTER_API_KEY')
             }
         )
     }
@@ -59,7 +65,15 @@ if ($merged.tier -ne 'full') {
     throw "Expected existing full tier to be preserved; got '$($merged.tier)'."
 }
 
-$expectedComponents = @('governance', 'labels', 'pr-fixer', 'repo-audit', 'sfl-pr-review')
+$expectedComponents = @(
+    'governance',
+    'labels',
+    'pr-fixer',
+    'repo-audit',
+    'sfl-pr-review',
+    'sfl-pr-review-auto',
+    'sfl-pr-review-recovery'
+)
 $actualComponents = @($merged.components | Sort-Object)
 if (($actualComponents -join ',') -ne ($expectedComponents -join ',')) {
     throw "Unexpected merged components: $($actualComponents -join ', ')"
@@ -96,8 +110,10 @@ $legacyMerged = Merge-SflManifest `
 if ($legacyMerged.tier -ne 'standard') {
     throw "Expected legacy standard tier to be preserved; got '$($legacyMerged.tier)'."
 }
-if ('sfl-pr-review' -notin @($legacyMerged.components)) {
-    throw 'Legacy manifest did not receive the review component.'
+foreach ($component in @('sfl-pr-review', 'sfl-pr-review-auto', 'sfl-pr-review-recovery')) {
+    if ($component -notin @($legacyMerged.components)) {
+        throw "Legacy manifest did not receive the $component component."
+    }
 }
 if (@($legacyMerged.enginePolicy.workflows).Count -ne 1 -or
     $legacyMerged.enginePolicy.workflows[0].name -ne 'sfl-pr-review') {

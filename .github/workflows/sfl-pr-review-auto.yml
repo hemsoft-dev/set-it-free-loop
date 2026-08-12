@@ -1,0 +1,409 @@
+# HemSoft SFL reviewer platform v2
+name: SFL PR Review Auto Trigger
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled]
+  pull_request_review:
+    types: [submitted]
+
+concurrency:
+  group: sfl-pr-review-auto-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}-${{ github.event_name }}-${{ github.event.action }}-${{ github.event.action == 'labeled' && github.event.label.name == 'sfl-review' && 'explicit' || 'standard' }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    if: >-
+      github.event.action != 'labeled'
+      || github.event.label.name == 'sfl-review'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      expected-review-run-id: ${{ steps.dispatch-review.outputs.review-run-id }}
+    steps:
+      - name: Configure GH_HOST for enterprise compatibility
+        shell: bash
+        run: |
+          GH_HOST="${GITHUB_SERVER_URL#https://}"
+          GH_HOST="${GH_HOST#http://}"
+          echo "GH_HOST=${GH_HOST}" >> "$GITHUB_ENV"
+
+      - name: Validate review eligibility
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; then
+            echo "::error::SFL required review does not execute untrusted fork code"
+            exit 1
+          fi
+          if [ "$DRAFT" = "true" ]; then
+            echo "::error::SFL required review waits until the pull request is ready"
+            exit 1
+          fi
+          if [ "$BASE_REF" != "$DEFAULT_BRANCH" ]; then
+            echo "::error::SFL required review only validates the default branch"
+            exit 1
+          fi
+
+      - name: Mint SFL GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SFL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: write
+          permission-contents: read
+          permission-issues: write
+          permission-pull-requests: read
+
+      - name: Reset stale SFL review state after a push
+        if: >-
+          github.event.action == 'synchronize'
+          && contains(github.event.pull_request.labels.*.name, 'sfl-pr')
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          LIVE_LABELS=$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" \
+            --paginate \
+            --jq '.[].name')
+          if ! grep -Eq '^(sfl-done|sfl-needs-work)$' <<< "$LIVE_LABELS"; then
+            echo "PR #${PR_NUMBER} has no stale terminal review state to reset"
+            exit 0
+          fi
+          gh api --method POST "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels" \
+            -f "labels[]=sfl-ready-for-review" > /dev/null
+          gh api --method DELETE \
+            "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels/sfl-done" 2>/dev/null || true
+          gh api --method DELETE \
+            "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels/sfl-needs-work" 2>/dev/null || true
+          echo "PR #${PR_NUMBER} received a new head — reset stale review state"
+
+      - name: Dispatch or resolve full-spectrum review
+        id: dispatch-review
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EVENT_ACTION: ${{ github.event.action }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+          REQUESTED_REVIEWER: ${{ github.event.requested_reviewer.login }}
+          REVIEW_AUTHOR: ${{ github.event.review.user.login }}
+          REVIEW_BODY: ${{ github.event.review.body }}
+          TRUSTED_REF: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          normalize_login() {
+            printf '%s' "$1" | sed -E 's/\[bot\]$//I' | tr '[:upper:]' '[:lower:]'
+          }
+
+          # BEGIN TESTABLE REVIEW EFFORT
+          resolve_review_effort() {
+            local labels="$1"
+            local effort
+            for effort in high medium low; do
+              if grep -Fxq "sfl-effort:${effort}" <<< "$labels"; then
+                printf '%s\n' "$effort"
+                return
+              fi
+            done
+            printf 'low\n'
+          }
+          # END TESTABLE REVIEW EFFORT
+
+          consume_review_label() {
+            local labels="$1"
+            local error_file error_text
+            if ! grep -Fxq "sfl-review" <<< "$labels"; then
+              return 0
+            fi
+            error_file=$(mktemp)
+            if gh api --method DELETE \
+              "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels/sfl-review" \
+              > /dev/null 2>"$error_file"; then
+              rm -f "$error_file"
+              echo "Consumed sfl-review trigger label from PR #${PR_NUMBER}"
+              return 0
+            fi
+            error_text=$(cat "$error_file")
+            rm -f "$error_file"
+            if grep -q 'HTTP 404' <<< "$error_text"; then
+              echo "sfl-review trigger label is already absent from PR #${PR_NUMBER}"
+              return 0
+            fi
+            echo "::error::Could not consume sfl-review trigger label: ${error_text}" >&2
+            return 1
+          }
+
+          if [ "$EVENT_NAME" = "pull_request_review" ]; then
+            REVIEW_RUN_ID=""
+            if [ "$(normalize_login "$REVIEW_AUTHOR")" = "set-it-free-loop" ]; then
+              REVIEW_RUN_ID=$(printf '%s' "$REVIEW_BODY" \
+                | sed -nE 's#.*actions/runs/([0-9]+).*#\1#p' \
+                | tail -n 1)
+              if ! [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+                echo "::error::SFL review does not identify its workflow run"
+                exit 1
+              fi
+            fi
+            echo "review-run-id=${REVIEW_RUN_ID}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$EVENT_ACTION" = "review_requested" ] \
+            && [ "$(normalize_login "$REQUESTED_REVIEWER")" != "set-it-free-loop" ]; then
+            echo "review-run-id=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PR_LABELS=$(gh api \
+            "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" \
+            --paginate --jq '.[].name')
+          REVIEW_EFFORT=$(resolve_review_effort "$PR_LABELS")
+
+          # Dedup: never dispatch a second review for the same sealed
+          # base/head. Rapid event flurries (labeled/edited/synchronize
+          # bursts) and recovery workflow dispatches otherwise race into
+          # duplicate paid runs; review-side concurrency cancels the loser
+          # only after agent time is already spent.
+          #
+          # This check is deliberately not backed by a shared concurrency
+          # group: a group holds at most one running plus one pending job, so
+          # a trigger burst could evict a pending recovery transition — a
+          # correctness hazard worse than an occasional duplicate. The
+          # residual check-then-dispatch window is sub-second, and its worst
+          # case is one duplicate run that sealed provenance rejects.
+          EXPECTED_TITLE="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="
+          # Bounded lookup: only active statuses, single page — never paginate
+          # the workflow's full run history on every pull request event.
+          # BEGIN TESTABLE DISPATCH DEDUP
+          find_active_review_run() {
+            local expected_title="$1"
+            local event_action="${2:-}"
+            local review_label_present="${3:-false}"
+            if [ "$event_action" = "labeled" ] \
+              && [ "$review_label_present" = "true" ]; then
+              cat > /dev/null
+              return 0
+            fi
+            jq --arg title "${expected_title}" '
+              [.workflow_runs[] | select(.display_title | startswith($title))]
+              | sort_by(.id)
+              | last
+              | .id // empty
+            '
+          }
+          # END TESTABLE DISPATCH DEDUP
+          ACTIVE_RUN_ID=""
+          REVIEW_LABEL_PRESENT="false"
+          if grep -Fxq "sfl-review" <<< "$PR_LABELS"; then
+            REVIEW_LABEL_PRESENT="true"
+          fi
+          # An explicit sfl-review request must dispatch with the effort labels
+          # selected at request time, even if another effort is already active.
+          # A stale queued labeled event whose trigger was already consumed
+          # uses ordinary deduplication instead.
+          for STATUS in queued in_progress; do
+            MATCHING_RUN_ID=$(gh api \
+              "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?status=${STATUS}&per_page=100" \
+              | find_active_review_run \
+                "${EXPECTED_TITLE}" "$EVENT_ACTION" "$REVIEW_LABEL_PRESENT")
+            if [[ "$MATCHING_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+              ACTIVE_RUN_ID="$MATCHING_RUN_ID"
+              break
+            fi
+          done
+          if [ -n "$ACTIVE_RUN_ID" ]; then
+            consume_review_label "$PR_LABELS"
+            echo "Current-state review already active for ${BASE_SHA}:${HEAD_SHA} — skipping duplicate dispatch"
+            echo "review-run-id=${ACTIVE_RUN_ID}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          AW_CONTEXT=$(jq -cn \
+            --arg base_sha "${BASE_SHA}" \
+            --arg head_sha "${HEAD_SHA}" \
+            --argjson item_number "${PR_NUMBER}" \
+            '{item_type: "pull_request", item_number: $item_number, base_sha: $base_sha, head_sha: $head_sha}')
+
+          dispatch_args=(
+            --method POST
+            "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/dispatches"
+            -f "ref=${TRUSTED_REF}"
+            -f "inputs[item_number]=${PR_NUMBER}"
+            -f "inputs[aw_context]=${AW_CONTEXT}"
+          )
+
+          base_workflow="$(gh api \
+            --method GET \
+            "repos/${REPOSITORY}/contents/.github/workflows/sfl-pr-review.lock.yml" \
+            -f "ref=${TRUSTED_REF}" \
+            -H "Accept: application/vnd.github.raw+json")"
+          if grep -qE '^\s+head_sha:\s*$' <<< "${base_workflow}"; then
+            dispatch_args+=(-f "inputs[head_sha]=${HEAD_SHA}")
+          fi
+          if grep -qE '^\s+base_sha:\s*$' <<< "${base_workflow}"; then
+            dispatch_args+=(-f "inputs[base_sha]=${BASE_SHA}")
+          fi
+          if grep -qE '^\s+retry_count:\s*$' <<< "${base_workflow}"; then
+            dispatch_args+=(-f "inputs[retry_count]=0")
+          fi
+          if grep -qE '^\s+review_effort:\s*$' <<< "${base_workflow}"; then
+            dispatch_args+=(-f "inputs[review_effort]=${REVIEW_EFFORT}")
+          fi
+          DISPATCH_ID="auto-${GITHUB_RUN_ID}"
+          if ! grep -qE '^\s+dispatch_id:\s*$' <<< "${base_workflow}"; then
+            echo "::error::The installed reviewer does not support exact dispatch correlation"
+            exit 1
+          fi
+          dispatch_args+=(-f "inputs[dispatch_id]=${DISPATCH_ID}")
+
+          BEFORE_RUN_ID=$(gh api \
+            "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
+            | jq -r \
+              --arg title "$EXPECTED_TITLE" '
+                [.workflow_runs[]
+                  | select(.display_title | startswith($title))]
+                | sort_by(.id)
+                | last
+                | .id // 0
+              ')
+          gh api "${dispatch_args[@]}"
+          consume_review_label "$PR_LABELS"
+          for ATTEMPT in $(seq 1 15); do
+            REVIEW_RUN_ID=$(gh api \
+              "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
+              | jq -r \
+                --arg title "$EXPECTED_TITLE" \
+                --arg dispatch_id "$DISPATCH_ID" \
+                --argjson before_run_id "$BEFORE_RUN_ID" '
+                  [.workflow_runs[]
+                    | select(.display_title | startswith($title))
+                    | select(.display_title | endswith(" dispatch=" + $dispatch_id))
+                    | select(.id > $before_run_id)]
+                  | sort_by(.id)
+                  | last
+                  | .id // empty
+                ')
+            if [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+              echo "review-run-id=${REVIEW_RUN_ID}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Could not resolve the dispatched SFL review run"
+          exit 1
+
+  approval:
+    name: SFL Reviewer Approval
+    needs: dispatch
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Configure GH_HOST for enterprise compatibility
+        shell: bash
+        run: |
+          GH_HOST="${GITHUB_SERVER_URL#https://}"
+          GH_HOST="${GH_HOST#http://}"
+          echo "GH_HOST=${GH_HOST}" >> "$GITHUB_ENV"
+
+      - name: Wait for exact SFL review run
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EXPECTED_REVIEW_RUN_ID: ${{ needs.dispatch.outputs.expected-review-run-id }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          EXPECTED_TITLE="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="
+
+          # BEGIN TESTABLE AUTO GATE RUN VALIDATION
+          validate_review_run() {
+            local repository="$1"
+            local default_branch="$2"
+            local expected_title="$3"
+            jq -e \
+              --arg repository "$repository" \
+              --arg default_branch "$default_branch" \
+              --arg expected_title "$expected_title" '
+                .path == ".github/workflows/sfl-pr-review.lock.yml"
+                and .event == "workflow_dispatch"
+                and .head_repository.full_name == $repository
+                and .head_branch == $default_branch
+                and ((.display_title // .name // "") |
+                  startswith($expected_title))
+              ' >/dev/null
+          }
+          # END TESTABLE AUTO GATE RUN VALIDATION
+
+          if [ -z "$EXPECTED_REVIEW_RUN_ID" ]; then
+            EXPECTED_REVIEW_RUN_ID=$(gh api \
+              "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
+              --paginate --jq '.workflow_runs[]' \
+              | jq -s -r \
+                --arg title "$EXPECTED_TITLE" '
+                  [.[] | select(.display_title | startswith($title))]
+                  | sort_by(.id)
+                  | last
+                  | .id // empty
+                ')
+          fi
+          if ! [[ "$EXPECTED_REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Could not resolve the exact SFL review run"
+            exit 1
+          fi
+
+          # 440 attempts at 15 seconds leaves roughly 110 minutes for the
+          # review, preserving headroom under the 120-minute wrapper ceiling.
+          for ATTEMPT in $(seq 1 440); do
+            if ! REVIEW_RUN=$(gh api \
+              "repos/${REPOSITORY}/actions/runs/${EXPECTED_REVIEW_RUN_ID}"); then
+              echo "::warning::Actions run lookup failed (attempt ${ATTEMPT}/440)"
+              sleep 15
+              continue
+            fi
+            if ! printf '%s' "$REVIEW_RUN" \
+              | validate_review_run \
+                  "$REPOSITORY" \
+                  "$DEFAULT_BRANCH" \
+                  "$EXPECTED_TITLE"; then
+              echo "::error::Rejected untrusted SFL review run ${EXPECTED_REVIEW_RUN_ID}"
+              exit 1
+            fi
+
+            STATUS=$(echo "$REVIEW_RUN" | jq -r '.status // ""')
+            CONCLUSION=$(echo "$REVIEW_RUN" | jq -r '.conclusion // ""')
+            if [ "$STATUS" != "completed" ]; then
+              sleep 15
+              continue
+            fi
+            if [ "$CONCLUSION" = "success" ]; then
+              echo "Exact SFL review run approved PR #${PR_NUMBER}"
+              exit 0
+            fi
+            echo "::error::Exact SFL review run concluded ${CONCLUSION:-missing}"
+            exit 1
+          done
+
+          echo "::error::Timed out waiting for exact SFL review run"
+          exit 1

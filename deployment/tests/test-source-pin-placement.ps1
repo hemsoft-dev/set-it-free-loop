@@ -60,4 +60,23 @@ if ($upgraded -match '(?m)^# (?:Deployed from|To upgrade):' -or
     throw 'Legacy source pin was not replaced cleanly.'
 }
 
+$yamlWorkflow = @'
+# HemSoft SFL reviewer platform v2
+name: SFL PR Review Auto Trigger
+on:
+  pull_request_target:
+'@
+$yamlRef = 'HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+$yamlPinned = Add-SflYamlSourcePin -Content $yamlWorkflow -SourceRef $yamlRef
+if ($yamlPinned -notmatch "\A# Deployed from: $([regex]::Escape($yamlRef))\r?\n# To upgrade:") {
+    throw 'YAML source pin was not placed at the beginning of the workflow.'
+}
+
+$yamlUpdatedRef = 'HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@cccccccccccccccccccccccccccccccccccccccc'
+$yamlRepinned = Add-SflYamlSourcePin -Content $yamlPinned -SourceRef $yamlUpdatedRef
+if (([regex]::Matches($yamlRepinned, '(?m)^# Deployed from:').Count -ne 1) -or
+    $yamlRepinned -notmatch [regex]::Escape($yamlUpdatedRef)) {
+    throw 'Existing YAML source pin was not replaced idempotently.'
+}
+
 Write-Output 'Source pin placement test passed.'
