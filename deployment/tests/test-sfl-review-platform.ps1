@@ -81,7 +81,13 @@ Assert-Patterns $auto @(
     'runs\?status=\$\{STATUS\}',
     'inputs\[base_sha\]',
     'inputs\[head_sha\]',
-    'name: SFL Reviewer Approval',
+    'name: SFL Reviewer Gate Runner',
+    'checks: write',
+    '--arg name "SFL Reviewer Approval"',
+    'head_sha: \$head_sha',
+    'continue-on-error: true',
+    'name: Finalize head approval check',
+    'WAIT_OUTCOME: \$\{\{ steps\.wait-review\.outcome \}\}',
     'validate_review_run'
 )
 

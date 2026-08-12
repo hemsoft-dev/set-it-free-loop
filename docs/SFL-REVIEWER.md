@@ -2,7 +2,7 @@
 
 The HemSoft reviewer is a private-repository package that performs three
 evidence-based passes over eligible pull requests, publishes native inline
-findings, and exposes a current-head approval job suitable for branch
+findings, and exposes a current-head approval check suitable for branch
 protection.
 
 ## Distribution boundary
@@ -19,7 +19,7 @@ The `review` tier installs these files:
 - `.github/workflows/sfl-pr-review.md` - runtime-imported agent instructions
 - `.github/workflows/sfl-pr-review.lock.yml` - generated executable workflow
 - `.github/workflows/sfl-pr-review-auto.yml` - PR lifecycle dispatcher and
-  native `SFL Reviewer Approval` job
+  immutable-head `SFL Reviewer Approval` check publisher
 - `.github/workflows/sfl-pr-review-recovery.yml` - one-shot missing-output
   recovery
 
@@ -124,6 +124,9 @@ Every unresolved Critical, High, Medium, or Low SFL finding blocks approval.
 Older success cannot satisfy a newer head or a pull request whose base branch
 advanced. Obsolete threads are resolved only after verifying their SFL App
 ownership and proving they belong to the expected pull request context.
+The trusted wrapper publishes `SFL Reviewer Approval` directly on that head
+with the repository-scoped `GITHUB_TOKEN`; the wrapper job itself runs in the
+safer default-branch context and is not used as the required status context.
 
 ## Recovery
 
@@ -144,7 +147,7 @@ produce a duplicate review.
 ## Advisory and gated operation
 
 Deployment is advisory until branch protection requires the native
-`SFL Reviewer Approval` job. After the deployment PR is merged, enable strict
+`SFL Reviewer Approval` check. After the deployment PR is merged, enable strict
 gating with:
 
 ```powershell

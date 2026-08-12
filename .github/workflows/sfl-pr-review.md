@@ -272,7 +272,7 @@ safe-outputs:
               }
               const severityPrefix =
                 /^(🔴 \*\*CRITICAL|🟠 \*\*HIGH|🟡 \*\*MEDIUM|⚪ \*\*LOW) —/;
-              const unresolvedOutdatedThreadIds = [];
+              const unresolvedSflThreadIds = [];
 
               for (const threadId of threadIds) {
                 if (typeof threadId !== 'string' || !threadId.startsWith('PRRT_')) {
@@ -284,7 +284,6 @@ safe-outputs:
                     node(id: $threadId) {
                       ... on PullRequestReviewThread {
                         id
-                        isOutdated
                         isResolved
                         pullRequest {
                           number
@@ -325,8 +324,7 @@ safe-outputs:
                   !severityPrefix.test(body) ||
                   !body.includes('SFL Reviewer') ||
                   typeof path !== 'string' ||
-                  path.length === 0 ||
-                  (!thread.isResolved && !thread.isOutdated)
+                  path.length === 0
                 ) {
                   core.setFailed(
                     `Thread ${threadId} is not an obsolete SFL finding on PR #${pullNumber} at base ${expectedBase} and head ${expectedHead}`
@@ -359,11 +357,11 @@ safe-outputs:
                   }
                   throw error;
                 }
-                unresolvedOutdatedThreadIds.push(threadId);
+                unresolvedSflThreadIds.push(threadId);
               }
 
               const failedThreadIds = [];
-              for (const threadId of unresolvedOutdatedThreadIds) {
+              for (const threadId of unresolvedSflThreadIds) {
                 let resolved = false;
                 let lastError;
                 for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -1469,9 +1467,10 @@ carried unresolved findings:
     `sfl-review:<pr>:<base>:<head>:<run>` locator. Because check fields are
     caller-controlled, neither App ID nor `external_id` authorizes a merge. The
     branch protection requires the GitHub Actions-owned native
-    `SFL Reviewer Approval` job; the default-branch
-    `sfl-pr-review-auto.yml` job authenticates the exact reviewer through the
-    Actions API and requires that run to succeed.
+    immutable-head `SFL Reviewer Approval` check; the default-branch
+    `sfl-pr-review-auto.yml` gate runner authenticates the exact reviewer
+    through the Actions API and publishes that check with the
+    repository-scoped `GITHUB_TOKEN` only when the exact run succeeds.
     Maintainers who can modify workflows on the protected default branch are
     explicitly trusted under this first-version model. Defending against those
     maintainers requires a central publisher or OIDC broker and is deliberately

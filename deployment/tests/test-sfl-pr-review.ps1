@@ -37,6 +37,7 @@ if ($failures.Count -eq 0) {
         'Verify pull request base and head before safe outputs',
         'commit-id: "\$\{\{ inputs\.head_sha \}\}"',
         'resolve-sfl-review-thread:',
+        'const unresolvedSflThreadIds = \[\]',
         'name: safe-outputs-items',
         'Download reviewer agent output',
         'Expected exactly one immutable agent submitted-review item',
@@ -79,6 +80,9 @@ if ($failures.Count -eq 0) {
     if ($source -match 'copilot-requests:\s*write' -or
         $lock -match 'copilot-requests:\s*write') {
         $failures.Add('HemSoft OpenRouter reviewer unexpectedly requests Copilot billing permission.')
+    }
+    if ($source -match '!thread\.isResolved && !thread\.isOutdated') {
+        $failures.Add('Thread resolution incorrectly requires GitHub to mark a no-longer-applicable finding outdated.')
     }
     if ($source -match 'relias-engineering|3650906|Iv23liwZid0CBWCRuWdd') {
         $failures.Add('Reviewer source contains prohibited organization-specific identity.')

@@ -49,7 +49,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 |------|------|----------|---------|
 | [sfl-dispatcher](#sfl-dispatcher) | Standard YAML | Every 30 min | Gates gh-aw runs; only dispatches when work exists |
 | [sfl-auditor](#sfl-auditor) | Standard YAML | :15, :45 every hour | Repairs label/PR state discrepancies |
-| `sfl-pr-review-auto` | Standard YAML | Internal PR lifecycle | Deduplicates immutable-head review dispatch and exposes the native approval job |
+| `sfl-pr-review-auto` | Standard YAML | Internal PR lifecycle | Deduplicates immutable-head review dispatch and publishes the native head approval check |
 | `sfl-pr-review-recovery` | Standard YAML | Failed reviewer run | Performs at most one provenance-validated missing-output retry |
 
 ---
@@ -149,14 +149,14 @@ eligible non-draft internal pull request is opened, reopened, marked ready, or
 updated. The `sfl-review` label requests an explicit rerun. It posts one native
 inline thread per Critical, High, Medium, or Low finding, safely retires obsolete
 SFL-owned threads, and publishes immutable review evidence for the native
-`SFL Reviewer Approval` job. A recovery workflow performs at most one retry when
+`SFL Reviewer Approval` head check. A recovery workflow performs at most one retry when
 formal review output is missing or partial.
 The HemSoft deployment policy runs this workflow with
 `moonshotai/kimi-k3` through OpenRouter; work-account SFL uses its own provider
 policy independently.
 
 **Output**: Current-head GitHub review, inline review threads, structured
-severity table, and an approval job that fails while any Critical, High,
+severity table, and an approval check that fails while any Critical, High,
 Medium, or Low SFL finding remains unresolved.
 
 **Deploy command**:

@@ -345,13 +345,14 @@ jobs:
           exit 1
 
   approval:
-    name: SFL Reviewer Approval
+    name: SFL Reviewer Gate Runner
     needs: dispatch
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
       actions: read
+      checks: write
       contents: read
     steps:
       - name: Configure GH_HOST for enterprise compatibility
@@ -361,7 +362,47 @@ jobs:
           GH_HOST="${GH_HOST#http://}"
           echo "GH_HOST=${GH_HOST}" >> "$GITHUB_ENV"
 
+      - name: Initialize head approval check
+        id: approval-check
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          payload=$(jq -nc \
+            --arg details_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg external_id "sfl-review-approval:${PR_NUMBER}:${BASE_SHA}:${HEAD_SHA}:${GITHUB_RUN_ID}" \
+            --arg head_sha "$HEAD_SHA" \
+            --arg name "SFL Reviewer Approval" \
+            '{
+              name: $name,
+              head_sha: $head_sha,
+              status: "in_progress",
+              details_url: $details_url,
+              external_id: $external_id,
+              output: {
+                title: "SFL reviewer gate is running",
+                summary: "Validating the exact SFL reviewer run for the immutable pull request head."
+              }
+            }')
+          response=$(printf '%s' "$payload" | gh api \
+            --method POST \
+            "repos/${REPOSITORY}/check-runs" \
+            --header "Accept: application/vnd.github+json" \
+            --input -)
+          check_run_id=$(jq -r '.id // empty' <<< "$response")
+          if ! [[ "$check_run_id" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::GitHub did not return the immutable-head approval check ID"
+            exit 1
+          fi
+          echo "check-run-id=${check_run_id}" >> "$GITHUB_OUTPUT"
+
       - name: Wait for exact SFL review run
+        id: wait-review
+        continue-on-error: true
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -449,3 +490,42 @@ jobs:
 
           echo "::error::Timed out waiting for exact SFL review run"
           exit 1
+
+      - name: Finalize head approval check
+        if: always() && steps.approval-check.outputs.check-run-id != ''
+        env:
+          APPROVAL_CHECK_ID: ${{ steps.approval-check.outputs.check-run-id }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+          WAIT_OUTCOME: ${{ steps.wait-review.outcome }}
+        run: |
+          set -euo pipefail
+          conclusion=failure
+          title="SFL Reviewer Approval failed"
+          summary="The exact SFL reviewer run did not approve PR #${PR_NUMBER} at ${HEAD_SHA}."
+          if [ "$WAIT_OUTCOME" = "success" ]; then
+            conclusion=success
+            title="SFL Reviewer Approval passed"
+            summary="The exact SFL reviewer run approved PR #${PR_NUMBER} at ${HEAD_SHA}."
+          fi
+          payload=$(jq -nc \
+            --arg completed_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg conclusion "$conclusion" \
+            --arg summary "$summary" \
+            --arg title "$title" \
+            '{
+              status: "completed",
+              conclusion: $conclusion,
+              completed_at: $completed_at,
+              output: {title: $title, summary: $summary}
+            }')
+          printf '%s' "$payload" | gh api \
+            --method PATCH \
+            "repos/${REPOSITORY}/check-runs/${APPROVAL_CHECK_ID}" \
+            --header "Accept: application/vnd.github+json" \
+            --input - > /dev/null
+          if [ "$conclusion" != "success" ]; then
+            exit 1
+          fi
