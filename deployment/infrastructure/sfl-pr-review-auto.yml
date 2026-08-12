@@ -21,6 +21,7 @@ jobs:
       contents: read
     outputs:
       expected-review-run-id: ${{ steps.dispatch-review.outputs.review-run-id }}
+      reviewer-installed: ${{ steps.reviewer-contract.outputs.installed }}
     steps:
       - name: Configure GH_HOST for enterprise compatibility
         shell: bash
@@ -29,7 +30,40 @@ jobs:
           GH_HOST="${GH_HOST#http://}"
           echo "GH_HOST=${GH_HOST}" >> "$GITHUB_ENV"
 
+      - name: Detect installed reviewer contract
+        id: reviewer-contract
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TRUSTED_REF: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          error_file=$(mktemp)
+          if ! base_workflow="$(gh api \
+              --method GET \
+              "repos/${REPOSITORY}/contents/.github/workflows/sfl-pr-review.lock.yml" \
+              -f "ref=${TRUSTED_REF}" \
+              -H "Accept: application/vnd.github.raw+json" 2>"$error_file")"; then
+            error_text=$(cat "$error_file")
+            rm -f "$error_file"
+            if grep -q 'HTTP 404' <<< "$error_text"; then
+              echo "installed=false" >> "$GITHUB_OUTPUT"
+              echo "Reviewer lock is absent from ${TRUSTED_REF}; treating this as bootstrap deployment"
+              exit 0
+            fi
+            echo "::error::Could not inspect the default-branch reviewer contract: ${error_text}" >&2
+            exit 1
+          fi
+          rm -f "$error_file"
+          if grep -qE '^\s+dispatch_id:\s*$' <<< "${base_workflow}"; then
+            echo "installed=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "installed=false" >> "$GITHUB_OUTPUT"
+          echo "Compatible reviewer lock is not on ${TRUSTED_REF}; treating this as bootstrap deployment"
+
       - name: Validate review eligibility
+        if: steps.reviewer-contract.outputs.installed == 'true'
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -52,6 +86,7 @@ jobs:
           fi
 
       - name: Mint SFL GitHub App token
+        if: steps.reviewer-contract.outputs.installed == 'true'
         id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
@@ -66,7 +101,8 @@ jobs:
 
       - name: Reset stale SFL review state after a push
         if: >-
-          github.event.action == 'synchronize'
+          steps.reviewer-contract.outputs.installed == 'true'
+          && github.event.action == 'synchronize'
           && contains(github.event.pull_request.labels.*.name, 'sfl-pr')
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -91,6 +127,7 @@ jobs:
 
       - name: Dispatch or resolve full-spectrum review
         id: dispatch-review
+        if: steps.reviewer-contract.outputs.installed == 'true'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           EVENT_ACTION: ${{ github.event.action }}
@@ -333,8 +370,13 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
+          REVIEWER_INSTALLED: ${{ needs.dispatch.outputs.reviewer-installed }}
         run: |
           set -euo pipefail
+          if [ "$REVIEWER_INSTALLED" != "true" ]; then
+            echo "Reviewer bootstrap deployment detected; gate activates after the compatible lock reaches the default branch"
+            exit 0
+          fi
           EXPECTED_TITLE="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="
 
           # BEGIN TESTABLE AUTO GATE RUN VALIDATION

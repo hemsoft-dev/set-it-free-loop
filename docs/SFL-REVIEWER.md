@@ -74,6 +74,13 @@ Both deployment paths reject non-HemSoft or non-private mutation targets. The
 CLI also requires the active GitHub CLI identity to be `HemSoft`; direct Git
 writes use the `github-personal1` SSH profile.
 
+During the first deployment, review-submitted events can load the wrapper from
+the deployment branch before the compatible reviewer lock exists on the
+default branch. The wrapper detects that state, does not mint or dispatch, and
+reports a successful bootstrap gate. This exception ends as soon as the lock
+with exact `dispatch_id` correlation reaches the default branch. Configure
+branch protection only after that deployment is merged.
+
 ## Automatic and explicit review
 
 An internal, non-draft pull request targeting the default branch is reviewed
