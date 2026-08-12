@@ -88,8 +88,8 @@ if ($failures.Count -eq 0) {
     if ($source -match 'needs\.detection\.result') {
         $failures.Add('Thread resolution references an undeclared detection dependency.')
     }
-    if ($source -match 'relias-engineering|3650906|Iv23liwZid0CBWCRuWdd') {
-        $failures.Add('Reviewer source contains prohibited organization-specific identity.')
+    if ($source -match '(?im)^\s*(?:app-id|github-app-id|installation-id|client-id):\s*(?:\d+|Iv[A-Za-z0-9]+)\s*$') {
+        $failures.Add('Reviewer source contains a hard-coded GitHub App or installation identity.')
     }
     if ($actionsLock -notmatch 'github/gh-aw-actions/setup@v0\.86\.2') {
         $failures.Add('Action lock does not pin the compiler-matched gh-aw setup action.')

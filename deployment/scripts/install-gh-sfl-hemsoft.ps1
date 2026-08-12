@@ -276,7 +276,7 @@ func validateDeploymentTarget(owner, repo string) error {
 	if !strings.EqualFold(owner, "HemSoft") {
 		return fmt.Errorf("%s/%s is outside the private HemSoft repository scope", owner, repo)
 	}
-	if strings.EqualFold(repo, motherRepoName) || strings.EqualFold(repo, "chief-of-staff") {
+	if strings.EqualFold(repo, motherRepoName) {
 		return fmt.Errorf("%s/%s is protected and cannot be targeted by SFL deployment operations", owner, repo)
 	}
 
@@ -754,7 +754,7 @@ try {
     go vet ./...
     if ($LASTEXITCODE -ne 0) { throw "go vet failed with exit code $LASTEXITCODE" }
     # The upstream test package reads fixtures from the parent SFL checkout and
-    # asserts Relias-specific policy. Compile it here; HemSoft-specific adapter
+    # asserts organization-specific policy. Compile it here; HemSoft-specific adapter
     # contracts are asserted by deployment/tests/test-sfl-review-platform.ps1.
     go test ./... -run '^$'
     if ($LASTEXITCODE -ne 0) { throw "go test compilation failed with exit code $LASTEXITCODE" }

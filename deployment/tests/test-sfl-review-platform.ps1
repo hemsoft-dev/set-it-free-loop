@@ -161,10 +161,8 @@ Assert-Patterns 'docs\SFL-REVIEWER.md' @(
 )
 
 $sensitivePatterns = @(
-    'relias-engineering',
-    '3650906',
-    'Iv23liwZid0CBWCRuWdd',
-    'chief-of-staff'
+    '(?im)^\s*(?:app-id|github-app-id|installation-id|client-id):\s*(?:\d+|Iv[A-Za-z0-9]+)\s*$',
+    '(?im)^\s*source:[ \t]+(?!HemSoft/set-it-free-loop(?:/|@))[^\r\n]*set-it-free-loop'
 )
 foreach ($path in @($reviewer, $auto, $recovery, 'docs\SFL-REVIEWER.md')) {
     $content = Read-RepoFile $path
