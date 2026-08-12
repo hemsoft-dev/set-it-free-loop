@@ -1,0 +1,407 @@
+{
+  ".codex/hooks.json": {
+    "mtime": 1785866812.7024906,
+    "ast_hash": "95abc56bf697d43bd474b517c035a00c",
+    "semantic_hash": ""
+  },
+  ".github/aw/actions-lock.json": {
+    "mtime": 1786577859.034448,
+    "ast_hash": "4a6698b76af8fa5b305316a78079faee",
+    "semantic_hash": ""
+  },
+  "deployment/engine-policy.json": {
+    "mtime": 1785733449.9564788,
+    "ast_hash": "2a5c5cf3672877171f2a7723ddc04141",
+    "semantic_hash": ""
+  },
+  "deployment/engine-policy.schema.json": {
+    "mtime": 1785733449.9574828,
+    "ast_hash": "c14d06a3dee4dd75680a118265bbca06",
+    "semantic_hash": ""
+  },
+  "deployment/governance/labels.json": {
+    "mtime": 1785733521.6982646,
+    "ast_hash": "0291fbfa7b7b7a3ac5345831c8c98828",
+    "semantic_hash": ""
+  },
+  "deployment/governance/setup-labels.ps1": {
+    "mtime": 1785733521.6992655,
+    "ast_hash": "6c4327db39d31a890300aabb6bacad2b",
+    "semantic_hash": ""
+  },
+  "deployment/scripts/RecoverDNS.ps1": {
+    "mtime": 1772749414.9060264,
+    "ast_hash": "a8ad7b64b81eb7f98506c40a6a542427",
+    "semantic_hash": ""
+  },
+  "deployment/scripts/add-sfl-source-pin.ps1": {
+    "mtime": 1786577859.0419664,
+    "ast_hash": "bf82791f96daa968639eeb9573a8aaaf",
+    "semantic_hash": ""
+  },
+  "deployment/scripts/deploy-workflow.ps1": {
+    "mtime": 1786577859.0429678,
+    "ast_hash": "0b9a1340d37d81c7560f8eba5a2f10a6",
+    "semantic_hash": ""
+  },
+  "deployment/scripts/install-gh-sfl-hemsoft.ps1": {
+    "mtime": 1786577859.043966,
+    "ast_hash": "e9c443820da98f67bca24079cd7170ef",
+    "semantic_hash": ""
+  },
+  "deployment/scripts/merge-sfl-manifest.ps1": {
+    "mtime": 1785733449.9614828,
+    "ast_hash": "c3878e4ebbe71905fd68ccabbbecf500",
+    "semantic_hash": ""
+  },
+  "deployment/scripts/set-sfl-github-app-credentials.ps1": {
+    "mtime": 1780873997.8264391,
+    "ast_hash": "f730b9e2a1ec4fc2166f0567bc69a2cb",
+    "semantic_hash": ""
+  },
+  "deployment/scripts/set-sfl-review-gate.ps1": {
+    "mtime": 1786577859.044465,
+    "ast_hash": "568a53960530d6de62a42ea6e3bb3119",
+    "semantic_hash": ""
+  },
+  "deployment/scripts/setup-hemsoft-github-routing.ps1": {
+    "mtime": 1780793716.1064763,
+    "ast_hash": "7aaa9ef2e86c847804634a8e970d02f5",
+    "semantic_hash": ""
+  },
+  "deployment/sfl-manifest.schema.json": {
+    "mtime": 1786577859.0454686,
+    "ast_hash": "b199d621e5e5d2f4e62465f17317e4ff",
+    "semantic_hash": ""
+  },
+  "deployment/tests/test-review-tier-manifest-merge.ps1": {
+    "mtime": 1786577859.046474,
+    "ast_hash": "fc63d13a669f9888074493adb0078e88",
+    "semantic_hash": ""
+  },
+  "deployment/tests/test-sfl-pr-review.ps1": {
+    "mtime": 1786577859.0474834,
+    "ast_hash": "fd5a04c2639090e4311703f47c20ea51",
+    "semantic_hash": ""
+  },
+  "deployment/tests/test-sfl-review-platform.ps1": {
+    "mtime": 1786577859.0479884,
+    "ast_hash": "0576c3beb31085ff97dc4b5bbbffb544",
+    "semantic_hash": ""
+  },
+  "deployment/tests/test-sfl-verdict-validator.ps1": {
+    "mtime": 1786577859.04849,
+    "ast_hash": "dadf5d887e12e1b88e61dcf36fb35894",
+    "semantic_hash": ""
+  },
+  "deployment/tests/test-source-pin-placement.ps1": {
+    "mtime": 1786577859.0494957,
+    "ast_hash": "6442b02aa9c67657fde1949d39fdd231",
+    "semantic_hash": ""
+  },
+  "sfl.json": {
+    "mtime": 1786577859.052005,
+    "ast_hash": "1b4e13c037754c5cdfc26c5de910372b",
+    "semantic_hash": ""
+  },
+  ".github/agents/agentic-workflows.agent.md": {
+    "mtime": 1772349793.616533,
+    "ast_hash": "029ccf9c7205e738e00dcdeacad4dca6",
+    "semantic_hash": ""
+  },
+  ".github/prompts/new-workflow.prompt.md": {
+    "mtime": 1772355325.0915258,
+    "ast_hash": "09fbe5ab4e621ffeeb64048bb694b762",
+    "semantic_hash": ""
+  },
+  ".github/prompts/sfl-add-issue.prompt.md": {
+    "mtime": 1772349793.617037,
+    "ast_hash": "714a4528e40b980053bb2d7e0665953b",
+    "semantic_hash": ""
+  },
+  ".github/workflows/agentics-maintenance.yml": {
+    "mtime": 1785783013.1826625,
+    "ast_hash": "5b02a115001db04eab7759d0c070ef00",
+    "semantic_hash": ""
+  },
+  ".github/workflows/auto-version.yml": {
+    "mtime": 1772349793.6180418,
+    "ast_hash": "9ddcd76193b9cafce350c444da3324d4",
+    "semantic_hash": ""
+  },
+  ".github/workflows/daily-repo-status.lock.yml": {
+    "mtime": 1785733391.3599584,
+    "ast_hash": "f48e52fcb336993a4f4d214f5d084acb",
+    "semantic_hash": ""
+  },
+  ".github/workflows/daily-repo-status.md": {
+    "mtime": 1780886295.927201,
+    "ast_hash": "0837eb7367c1a3bb3202d78bcc6ccbe6",
+    "semantic_hash": ""
+  },
+  ".github/workflows/issue-processor.lock.yml": {
+    "mtime": 1785733391.4316092,
+    "ast_hash": "5e9f8b7e2b1e593d90824462bc4f5eab",
+    "semantic_hash": ""
+  },
+  ".github/workflows/issue-processor.md": {
+    "mtime": 1780886295.9337337,
+    "ast_hash": "b3e32bce45bb2fca58cee6c6bd3ed2ce",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-analyzer-general.lock.yml": {
+    "mtime": 1785733391.489508,
+    "ast_hash": "262b3097a52f395fbef9506b85b32269",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-analyzer-general.md": {
+    "mtime": 1780885976.6350617,
+    "ast_hash": "90ba047f94df29d807e21730dc0fa722",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-analyzer-quality.lock.yml": {
+    "mtime": 1785733391.5401242,
+    "ast_hash": "21a0b4a2588d7a3e531eac932c72617b",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-analyzer-quality.md": {
+    "mtime": 1780885976.649593,
+    "ast_hash": "2b04ac22fc347820215d08f3a1d7dac9",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-analyzer-security.lock.yml": {
+    "mtime": 1785733391.5927749,
+    "ast_hash": "7650e125eae554d0e4409e02a188b2ac",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-analyzer-security.md": {
+    "mtime": 1780885976.6601071,
+    "ast_hash": "59fb3083054fddfd849634319b441e60",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-analyzer-testing.lock.yml": {
+    "mtime": 1785733391.6435893,
+    "ast_hash": "0f082030409c2588d0bf794a72e2db28",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-analyzer-testing.md": {
+    "mtime": 1780885976.67014,
+    "ast_hash": "be532b275ba223c0c75eec5cc7a6c484",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-fixer.lock.yml": {
+    "mtime": 1785733391.6976926,
+    "ast_hash": "4016e814b825535f6d6d75db2a3092b4",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-fixer.md": {
+    "mtime": 1780885976.6771698,
+    "ast_hash": "4256e5b1843717684d8eee22ec395348",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-promoter.lock.yml": {
+    "mtime": 1785733391.7537138,
+    "ast_hash": "d14a17724e53fd42e14afb0fef0cd7ec",
+    "semantic_hash": ""
+  },
+  ".github/workflows/pr-promoter.md": {
+    "mtime": 1780885976.6927104,
+    "ast_hash": "0543864d690af773ec12341ee04ca2eb",
+    "semantic_hash": ""
+  },
+  ".github/workflows/repo-audit.lock.yml": {
+    "mtime": 1785733391.806442,
+    "ast_hash": "54448921eeb096c32c1103ac4db9e678",
+    "semantic_hash": ""
+  },
+  ".github/workflows/repo-audit.md": {
+    "mtime": 1780886295.9362342,
+    "ast_hash": "5e72c29cba948cee7e886d77e4de0343",
+    "semantic_hash": ""
+  },
+  ".github/workflows/sfl-auditor.lock.yml": {
+    "mtime": 1785782972.082594,
+    "ast_hash": "34ff48f4488cfa132a08f71c36f2ffbc",
+    "semantic_hash": ""
+  },
+  ".github/workflows/sfl-auditor.md": {
+    "mtime": 1785782955.9855368,
+    "ast_hash": "43adc1775cd72fa8d0c4a228a4b2ecf9",
+    "semantic_hash": ""
+  },
+  ".github/workflows/sfl-dispatcher.yml": {
+    "mtime": 1780886515.672615,
+    "ast_hash": "c4eae4797f45ede7b46dde3718496b3c",
+    "semantic_hash": ""
+  },
+  ".github/workflows/sfl-pr-review-auto.yml": {
+    "mtime": 1786577859.0354514,
+    "ast_hash": "0f59736ecdf4e406c8d44763113f9fbb",
+    "semantic_hash": ""
+  },
+  ".github/workflows/sfl-pr-review-recovery.yml": {
+    "mtime": 1786577859.0359552,
+    "ast_hash": "1f97a87f980c5bd4feaaed30cd5cde34",
+    "semantic_hash": ""
+  },
+  ".github/workflows/sfl-pr-review.lock.yml": {
+    "mtime": 1786577859.0379622,
+    "ast_hash": "1aa9de0fc1d924f72d6a1954bb280fc2",
+    "semantic_hash": ""
+  },
+  ".github/workflows/sfl-pr-review.md": {
+    "mtime": 1786577859.0389647,
+    "ast_hash": "e8f2b86f67421271ccf56842721bf1d1",
+    "semantic_hash": ""
+  },
+  ".github/workflows/simplisticate.lock.yml": {
+    "mtime": 1785733391.9087458,
+    "ast_hash": "39e19e6c096de92e5c873a4fe87aec5c",
+    "semantic_hash": ""
+  },
+  ".github/workflows/simplisticate.md": {
+    "mtime": 1780896329.0728202,
+    "ast_hash": "e4d746ac5919eee8da0395adf100b2d3",
+    "semantic_hash": ""
+  },
+  "AGENTS.md": {
+    "mtime": 1785866812.6949642,
+    "ast_hash": "8d476f7a133380f68be9ed818b3a54f2",
+    "semantic_hash": ""
+  },
+  "CATALOG.md": {
+    "mtime": 1786577859.0394657,
+    "ast_hash": "1d8c9469602690a971182bd8098b3fac",
+    "semantic_hash": ""
+  },
+  "NOTE-TO-SFL.md": {
+    "mtime": 1785704758.4823344,
+    "ast_hash": "d1e46a32485fb58fce3249c38284aaf7",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1786577859.0404654,
+    "ast_hash": "2df422e9c73ff1c511f298b20fc2ad20",
+    "semantic_hash": ""
+  },
+  "SOLVING-SOFTWARE-ENGINEERING.md": {
+    "mtime": 1772349793.622547,
+    "ast_hash": "075cec06671d11df63d8bc9593900478",
+    "semantic_hash": ""
+  },
+  "TODO.md": {
+    "mtime": 1780885913.7940156,
+    "ast_hash": "d3c6f77675d01198977e8faec85302fa",
+    "semantic_hash": ""
+  },
+  "VISION.md": {
+    "mtime": 1772355325.1034524,
+    "ast_hash": "f8a9b964bfd853331d8a9300c5f5785c",
+    "semantic_hash": ""
+  },
+  "deployment/governance/policy.md": {
+    "mtime": 1780885824.5914905,
+    "ast_hash": "ee54ac6132eb529bf976014007f59da0",
+    "semantic_hash": ""
+  },
+  "deployment/infrastructure/sfl-auditor.yml": {
+    "mtime": 1785763652.1326382,
+    "ast_hash": "e64f3a87eef6859c692ccf191bd1c6fb",
+    "semantic_hash": ""
+  },
+  "deployment/infrastructure/sfl-dispatcher.yml": {
+    "mtime": 1780886408.0568192,
+    "ast_hash": "9f0d1ccdd0ea15225e0b024a9645f01a",
+    "semantic_hash": ""
+  },
+  "deployment/infrastructure/sfl-pr-review-auto.yml": {
+    "mtime": 1786577859.040965,
+    "ast_hash": "0f59736ecdf4e406c8d44763113f9fbb",
+    "semantic_hash": ""
+  },
+  "deployment/infrastructure/sfl-pr-review-recovery.yml": {
+    "mtime": 1786577859.0414667,
+    "ast_hash": "1f97a87f980c5bd4feaaed30cd5cde34",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/_TEMPLATE.md": {
+    "mtime": 1772355325.095209,
+    "ast_hash": "0ebd6db6bb535f2ff250bb60ab628df5",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/daily-repo-status.md": {
+    "mtime": 1780885976.609475,
+    "ast_hash": "c4293ae11b560a2bc9b513268b6c0048",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/issue-processor.md": {
+    "mtime": 1780885976.619488,
+    "ast_hash": "0b709721dcf574a458e5376ff6df6e3e",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/pr-analyzer-general.md": {
+    "mtime": 1780885976.629535,
+    "ast_hash": "90ba047f94df29d807e21730dc0fa722",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/pr-analyzer-quality.md": {
+    "mtime": 1780885976.6455798,
+    "ast_hash": "2b04ac22fc347820215d08f3a1d7dac9",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/pr-analyzer-security.md": {
+    "mtime": 1780885976.6560977,
+    "ast_hash": "59fb3083054fddfd849634319b441e60",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/pr-analyzer-testing.md": {
+    "mtime": 1780885976.6666327,
+    "ast_hash": "be532b275ba223c0c75eec5cc7a6c484",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/pr-fixer.md": {
+    "mtime": 1780885976.6771698,
+    "ast_hash": "4256e5b1843717684d8eee22ec395348",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/pr-promoter.md": {
+    "mtime": 1780885976.6927104,
+    "ast_hash": "0543864d690af773ec12341ee04ca2eb",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/repo-audit.md": {
+    "mtime": 1780885976.7027378,
+    "ast_hash": "43a7a7d1d0708601e2de56c401db16aa",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/sfl-auditor.md": {
+    "mtime": 1780885976.7117584,
+    "ast_hash": "0469494e74985c9bf4125608d8182259",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/sfl-pr-review.md": {
+    "mtime": 1786577859.050503,
+    "ast_hash": "e8f2b86f67421271ccf56842721bf1d1",
+    "semantic_hash": ""
+  },
+  "deployment/workflows/simplisticate.md": {
+    "mtime": 1780896329.0671053,
+    "ast_hash": "d797a14a9cbd1d1b9913680abfaffefc",
+    "semantic_hash": ""
+  },
+  "docs/SFL-REVIEWER.md": {
+    "mtime": 1786577859.0515013,
+    "ast_hash": "896b6234cbef2afde2f4e7a9edcd0b8d",
+    "semantic_hash": ""
+  },
+  "docs/intake-format.md": {
+    "mtime": 1772355325.0982535,
+    "ast_hash": "ba7055a01cf633941bf1059b48d4f527",
+    "semantic_hash": ""
+  },
+  "kimi-review-smoke.txt": {
+    "mtime": 1785733449.9650002,
+    "ast_hash": "df66db8c8124167ee61dc924a6f69acc",
+    "semantic_hash": ""
+  }
+}

@@ -1,0 +1,2 @@
+# Graphify's content-addressed extraction and query caches are machine-local.
+/graphify-out/cache/
