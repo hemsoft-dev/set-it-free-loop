@@ -183,7 +183,7 @@ safe-outputs:
       description: Resolve one obsolete SFL finding thread after deterministic validation
       runs-on: ubuntu-slim
       needs: safe_outputs
-      if: needs.detection.result == 'success' && needs.safe_outputs.result == 'success'
+      if: needs.safe_outputs.result == 'success'
       permissions:
         contents: write
         pull-requests: write

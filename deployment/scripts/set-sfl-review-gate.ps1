@@ -64,14 +64,26 @@ if ([string]::IsNullOrWhiteSpace($Branch)) {
 $encodedBranch = [uri]::EscapeDataString($Branch)
 $endpoint = "repos/$Repo/branches/$encodedBranch/protection/required_status_checks"
 $currentJson = gh api --method GET $endpoint 2>&1
-$branchProtectionExists = $LASTEXITCODE -eq 0
-if ($branchProtectionExists) {
+$statusChecksExist = $LASTEXITCODE -eq 0
+$protectionExists = $statusChecksExist
+if ($statusChecksExist) {
     $current = $currentJson | ConvertFrom-Json
 } elseif (($currentJson -join "`n") -match 'Branch not protected|"status"\s*:\s*"?404') {
     $current = [pscustomobject]@{
         strict   = $false
         contexts = @()
         checks   = @()
+    }
+    $protectionEndpoint = "repos/$Repo/branches/$encodedBranch/protection"
+    $protectionJson = gh api --method GET $protectionEndpoint 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        # Required checks are absent, but other protection exists. PATCH the
+        # status-check subresource below; never replace the full policy.
+        $protectionExists = $true
+    } elseif (($protectionJson -join "`n") -match 'Branch not protected|"status"\s*:\s*"?404') {
+        $protectionExists = $false
+    } else {
+        throw "Could not inspect full branch protection on ${Repo}:$Branch. GitHub returned: $protectionJson"
     }
 } else {
     throw "Could not inspect branch protection on ${Repo}:$Branch. GitHub returned: $currentJson"
@@ -122,13 +134,15 @@ $initialProtection = [ordered]@{
 $initialProtectionJson = $initialProtection | ConvertTo-Json -Depth 5
 
 if ($DryRun) {
-    $operation = if ($branchProtectionExists) {
+    $operation = if ($statusChecksExist) {
         "preserving $(@($current.checks).Count) existing check(s)"
+    } elseif ($protectionExists) {
+        'enabling status checks without replacing existing branch protection'
     } else {
         'initializing minimal branch protection'
     }
     Write-Output "[DRY RUN] Would require '$reviewContext' on ${Repo}:$Branch while $operation."
-    if (-not $branchProtectionExists) {
+    if (-not $protectionExists) {
         Write-Output $initialProtectionJson
     }
     Write-Output $payloadJson
@@ -136,7 +150,7 @@ if ($DryRun) {
 }
 
 if ($PSCmdlet.ShouldProcess("${Repo}:$Branch", "Require $reviewContext with strict status checks")) {
-    if (-not $branchProtectionExists) {
+    if (-not $protectionExists) {
         $protectionEndpoint = "repos/$Repo/branches/$encodedBranch/protection"
         $null = $initialProtectionJson | gh api `
             --method PUT `

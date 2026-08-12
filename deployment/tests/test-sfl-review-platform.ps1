@@ -101,7 +101,13 @@ Assert-Patterns $recovery @(
     '\.retry_count == 0 or \.retry_count == 1',
     'inputs\[retry_count\]=1',
     'suppressing stale retry',
-    'produced no formal review after its one trusted retry'
+    'produced no formal review after its one trusted retry',
+    'Review agent output is unavailable; refusing an unproven retry',
+    'Review agent output is malformed; refusing an unproven retry',
+    'Last-moment interlock',
+    'FINAL_PULL_REQUEST=',
+    'FINAL_NEWER_RUN_ID=',
+    'changed before recovery dispatch; suppressing stale retry'
 )
 
 Assert-Patterns 'deployment\scripts\deploy-workflow.ps1' @(
@@ -121,6 +127,9 @@ Assert-Patterns 'deployment\scripts\set-sfl-review-gate.ps1' @(
     "activeLogin -ne 'HemSoft'",
     'strict = \$true',
     'protection/required_status_checks',
+    'protectionExists',
+    'enabling status checks without replacing existing branch protection',
+    'Could not inspect full branch protection',
     '--method PUT',
     '--method PATCH',
     'preserving'

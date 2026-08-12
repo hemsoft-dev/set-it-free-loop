@@ -37,6 +37,7 @@ if ($failures.Count -eq 0) {
         'Verify pull request base and head before safe outputs',
         'commit-id: "\$\{\{ inputs\.head_sha \}\}"',
         'resolve-sfl-review-thread:',
+        "if: needs\.safe_outputs\.result == 'success'",
         'const unresolvedSflThreadIds = \[\]',
         'name: safe-outputs-items',
         'Download reviewer agent output',
@@ -83,6 +84,9 @@ if ($failures.Count -eq 0) {
     }
     if ($source -match '!thread\.isResolved && !thread\.isOutdated') {
         $failures.Add('Thread resolution incorrectly requires GitHub to mark a no-longer-applicable finding outdated.')
+    }
+    if ($source -match 'needs\.detection\.result') {
+        $failures.Add('Thread resolution references an undeclared detection dependency.')
     }
     if ($source -match 'relias-engineering|3650906|Iv23liwZid0CBWCRuWdd') {
         $failures.Add('Reviewer source contains prohibited organization-specific identity.')

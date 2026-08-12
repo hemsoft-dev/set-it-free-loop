@@ -248,38 +248,38 @@ jobs:
             "$MANIFEST_REVIEW_COUNT" \
             "$PUBLISHED_REVIEW_COUNT")
 
-          # gh-aw omits metadata-only signals from the durable manifest.
-          TERMINAL_SIGNAL_COUNT=0
-          if [ -f "$AGENT_OUTPUT" ]; then
-            if ! PARSED_TERMINAL_SIGNAL_COUNT=$(jq -r \
-              '
-                if (.items | type) != "array" then
-                  error("agent output items must be an array")
-                else
-                  [
-                    .items[] |
-                    select(
-                      .type == "missing_data" or
-                      .type == "missing_tool" or
-                      .type == "report_incomplete"
-                    )
-                  ] | length
-                end
-              ' "$AGENT_OUTPUT"); then
-              echo "::warning::Review agent output is malformed; treating terminal signal count as zero"
-            else
-              TERMINAL_SIGNAL_COUNT="$PARSED_TERMINAL_SIGNAL_COUNT"
-            fi
-          else
-            echo "::warning::Review agent output is unavailable; treating terminal signal count as zero"
-          fi
-
           if [ "$REVIEW_COUNT" -eq 1 ]; then
             echo "Run ${FAILED_RUN_ID} produced its formal review; no missing-output retry is allowed"
             exit 0
           fi
           if [ "$REVIEW_COUNT" -gt 1 ]; then
             echo "::error::Run ${FAILED_RUN_ID} produced multiple formal reviews"
+            exit 1
+          fi
+
+          # gh-aw omits metadata-only signals from the durable manifest. A
+          # retry is safe only after proving the agent emitted no terminal
+          # missing-data/tool/incomplete-report signal.
+          if [ ! -f "$AGENT_OUTPUT" ]; then
+            echo "::error::Review agent output is unavailable; refusing an unproven retry"
+            exit 1
+          fi
+          if ! TERMINAL_SIGNAL_COUNT=$(jq -r \
+            '
+              if (.items | type) != "array" then
+                error("agent output items must be an array")
+              else
+                [
+                  .items[] |
+                  select(
+                    .type == "missing_data" or
+                    .type == "missing_tool" or
+                    .type == "report_incomplete"
+                  )
+                ] | length
+              end
+            ' "$AGENT_OUTPUT"); then
+            echo "::error::Review agent output is malformed; refusing an unproven retry"
             exit 1
           fi
 
@@ -437,6 +437,45 @@ jobs:
           fi
           if grep -qE '^\s+dispatch_id:\s*$' <<< "${base_workflow}"; then
             dispatch_args+=(-f "inputs[dispatch_id]=recovery-${GITHUB_RUN_ID}")
+          fi
+
+          # Last-moment interlock: the artifact/provenance checks above can be
+          # slow. Revalidate both immutable PR state and newer-run ownership
+          # immediately before dispatch so a stale retry cannot cancel a newer
+          # current-state review through the shared reviewer concurrency group.
+          FINAL_PULL_REQUEST=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")
+          if ! jq -e \
+            --arg base_sha "$BASE_SHA" \
+            --arg default_branch "$DEFAULT_BRANCH" \
+            --arg head_sha "$HEAD_SHA" \
+            --arg repository "$REPOSITORY" \
+            '
+              .state == "open" and
+              .draft == false and
+              .base.ref == $default_branch and
+              .base.sha == $base_sha and
+              .head.repo.full_name == $repository and
+              .head.sha == $head_sha
+            ' <<< "$FINAL_PULL_REQUEST" >/dev/null; then
+            echo "PR #${PR_NUMBER} changed before recovery dispatch; suppressing stale retry"
+            exit 0
+          fi
+          FINAL_NEWER_RUN_ID=$(gh api \
+            "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
+            | jq -r \
+              --arg expected_title "$EXPECTED_REVIEW_TITLE_PREFIX" \
+              --argjson failed_run_id "$FAILED_RUN_ID" '
+                [.workflow_runs[]
+                  | select(.id > $failed_run_id)
+                  | select(.conclusion != "cancelled")
+                  | select((.display_title // "") | startswith($expected_title))]
+                | sort_by(.id)
+                | last
+                | .id // empty
+              ')
+          if [[ "$FINAL_NEWER_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Newer review run ${FINAL_NEWER_RUN_ID} acquired PR #${PR_NUMBER} before recovery dispatch; suppressing duplicate retry"
+            exit 0
           fi
           gh api "${dispatch_args[@]}"
           echo "Dispatched one trusted missing-output retry for PR #${PR_NUMBER} at ${HEAD_SHA}"
