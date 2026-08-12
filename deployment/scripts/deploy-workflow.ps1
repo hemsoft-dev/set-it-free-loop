@@ -19,7 +19,7 @@
       1. Clones the repo (direct clone — no fork; assumes write access within the org)
       2. Creates a feature branch
       3. Copies workflow files into .github/workflows/
-      4. Copies infrastructure files (dispatcher, auditor) for standard/full tiers
+      4. Copies infrastructure files (dispatcher, auditor, reviewer wrappers)
       5. Creates/updates sfl.json manifest in the consumer repo
       6. Injects/updates the dynamic SFL badge in README.md
       7. SHA-pins the source reference
@@ -37,7 +37,7 @@
     Cannot be used with -Workflow.
 
     Tiers:
-      review   — Labels, governance, standalone SFL full-spectrum PR review
+      review   — Labels, governance, automatic/recoverable SFL full-spectrum PR review
       minimal  — Labels, governance, repo-audit, daily-repo-status
       standard — Minimal + SFL Auditor, SFL Dispatcher, issue-processor, simplisticate
       full     — Standard + standalone review, focused PR Analyzers, PR Fixer, PR Promoter
@@ -314,8 +314,9 @@ function New-SflEnginePolicyManifest([string[]]$WorkflowNames) {
 $TierComponents = @{
     "review"   = @{
         Workflows      = @("sfl-pr-review")
-        Infrastructure = @()
-        Components     = @("labels", "governance", "sfl-pr-review")
+        Infrastructure = @("sfl-pr-review-auto", "sfl-pr-review-recovery")
+        Components     = @("labels", "governance", "sfl-pr-review",
+                           "sfl-pr-review-auto", "sfl-pr-review-recovery")
     }
     "minimal"  = @{
         Workflows      = @("daily-repo-status", "repo-audit")
@@ -333,10 +334,11 @@ $TierComponents = @{
                            "sfl-pr-review",
                            "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security",
                            "pr-analyzer-testing", "pr-fixer", "pr-promoter")
-        Infrastructure = @("sfl-dispatcher", "sfl-auditor")
+        Infrastructure = @("sfl-dispatcher", "sfl-auditor",
+                           "sfl-pr-review-auto", "sfl-pr-review-recovery")
         Components     = @("labels", "governance", "sfl-dispatcher", "sfl-auditor",
                            "daily-repo-status", "repo-audit", "issue-processor", "simplisticate",
-                           "sfl-pr-review",
+                           "sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery",
                            "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security",
                            "pr-analyzer-testing", "pr-fixer", "pr-promoter")
     }
@@ -351,9 +353,13 @@ if ($Local -and -not $Workflow -and -not $Tier) {
             Sort-Object BaseName |
             ForEach-Object { $_.BaseName }
     )
-    $InfrastructureToDeploy = @()
+    $InfrastructureToDeploy = if ("sfl-pr-review" -in $WorkflowsToDeploy) {
+        @("sfl-pr-review-auto", "sfl-pr-review-recovery")
+    } else {
+        @()
+    }
     $DeployTier = "local"
-    $DeployComponents = $WorkflowsToDeploy
+    $DeployComponents = @($WorkflowsToDeploy) + @($InfrastructureToDeploy)
 } elseif ($Workflow) {
     $WorkflowSource = Join-Path $RepoRoot "deployment\workflows\$Workflow.md"
     if (-not (Test-Path $WorkflowSource)) {
@@ -361,9 +367,13 @@ if ($Local -and -not $Workflow -and -not $Tier) {
         exit 1
     }
     $WorkflowsToDeploy      = @($Workflow)
-    $InfrastructureToDeploy = @()
+    $InfrastructureToDeploy = if ($Workflow -eq "sfl-pr-review") {
+        @("sfl-pr-review-auto", "sfl-pr-review-recovery")
+    } else {
+        @()
+    }
     $DeployTier             = "custom"
-    $DeployComponents       = @($Workflow)
+    $DeployComponents       = @($Workflow) + @($InfrastructureToDeploy)
 } else {
     $tierDef                = $TierComponents[$Tier]
     $WorkflowsToDeploy      = $tierDef.Workflows
@@ -402,6 +412,23 @@ $EnginePolicyManifest = New-SflEnginePolicyManifest $WorkflowsToDeploy
 
 function Write-Status([string]$Emoji, [string]$Message, [ConsoleColor]$Color = "Cyan") {
     Write-Host "$Emoji  $Message" -ForegroundColor $Color
+}
+
+function Assert-HemSoftPrivateRepository([string] $TargetRepo) {
+    if ($DryRun) {
+        return
+    }
+    $activeLogin = (gh api user --jq '.login').Trim()
+    if ($LASTEXITCODE -ne 0 -or $activeLogin -ne 'HemSoft') {
+        throw "GitHub CLI must be authenticated as HemSoft; active login is '$activeLogin'."
+    }
+    $metadata = gh repo view $TargetRepo --json 'owner,visibility' | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read repository visibility for $TargetRepo."
+    }
+    if ($metadata.owner.login -ne 'HemSoft' -or $metadata.visibility -ne 'PRIVATE') {
+        throw 'This SFL distribution is restricted to private HemSoft repositories.'
+    }
 }
 
 function Ensure-SflReviewLabel([string]$TargetRepo) {
@@ -485,6 +512,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
     $RepoName    = $TargetRepo.Split("/")[-1]
     $BranchLabel = if ($Tier) { "tier-$Tier" } else { "add-$Workflow" }
     $CanonicalBranchName = "sfl/$BranchLabel"
+    Assert-HemSoftPrivateRepository $TargetRepo
     $BaseBranch = gh repo view $TargetRepo --json defaultBranchRef --jq '.defaultBranchRef.name'
     if (-not $BaseBranch) {
         throw "Repository $TargetRepo has no default branch."
@@ -614,6 +642,13 @@ function Deploy-ToRepo([string]$TargetRepo) {
             $SourceFile = Join-Path $RepoRoot "deployment\infrastructure\$inf.yml"
             $DestFile   = Join-Path $DestWorkdir "$inf.yml"
             Copy-Item $SourceFile $DestFile
+            if ($inf -in @("sfl-pr-review-auto", "sfl-pr-review-recovery")) {
+                $sourceRef = "HemSoft/set-it-free-loop/deployment/infrastructure/$inf.yml@$CurrentSha"
+                $content = Add-SflYamlSourcePin `
+                    -Content (Get-Content $DestFile -Raw) `
+                    -SourceRef $sourceRef
+                Set-Content $DestFile -Value $content -NoNewline
+            }
             Write-Status "⚙️ " "  $inf.yml"
         }
 
@@ -799,6 +834,17 @@ function Update-LocalWorkflowFiles {
         Set-Content $SourceFile -Value $sourceContent -NoNewline
         Set-Content $DestFile -Value $destContent -NoNewline
         Write-Status "📄" "  $wf.md ($($engineProfile.Provider) $($engineProfile.RenderedModel))"
+    }
+
+    foreach ($inf in $InfrastructureToDeploy) {
+        $SourceFile = Join-Path $RepoRoot "deployment\infrastructure\$inf.yml"
+        $DestFile = Join-Path $DestWorkdir "$inf.yml"
+        if ($DryRun) {
+            Write-Status "🔍" "[DRY RUN] Would copy $inf.yml to .github/workflows/" Yellow
+            continue
+        }
+        Copy-Item $SourceFile $DestFile
+        Write-Status "⚙️ " "  $inf.yml"
     }
 
     if (-not $Compile) {

@@ -11,7 +11,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 **To deploy a tier**:
 
 ```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Tier <minimal|standard|full> -Repos "org/repo"
+.\deployment\scripts\deploy-workflow.ps1 -Tier <review|minimal|standard|full> -Repos "HemSoft/private-repository"
 ```
 
 ---
@@ -20,10 +20,10 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 | Tier | Workflows | Infrastructure | Use Case |
 |------|-----------|---------------|----------|
-| **review** | sfl-pr-review | — | On-demand native PR reviews through the `sfl-review` label |
+| **review** | sfl-pr-review | sfl-pr-review-auto, sfl-pr-review-recovery | Automatic, recoverable native PR reviews with explicit reruns through `sfl-review` |
 | **minimal** | daily-repo-status, repo-audit | — | Hygiene-only: daily reports, no AI fixes |
 | **standard** | minimal + issue-processor, simplisticate | sfl-dispatcher, sfl-auditor | Detect + claim + fix issues automatically |
-| **full** | standard + pr-analyzer-general/quality/security/testing, pr-fixer, pr-promoter | sfl-dispatcher, sfl-auditor | Complete autonomous loop with label-requested specialty review |
+| **full** | standard + sfl-pr-review + pr-analyzer-general/quality/security/testing, pr-fixer, pr-promoter | sfl-dispatcher, sfl-auditor, sfl-pr-review-auto, sfl-pr-review-recovery | Complete autonomous loop with automatic full-spectrum and label-requested specialty review |
 
 ---
 
@@ -35,7 +35,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 | [repo-audit](#repo-audit) | quality | Schedule — daily | low | `type:report` issue with findings + recommendations | 1.1.0 |
 | [issue-processor](#issue-processor) | automation | Dispatched — when `agent:fixable` issues exist | low | Draft PR with scoped fix for the oldest fixable issue | 1.0.0 |
 | [simplisticate](#simplisticate) | quality | Schedule — daily | low | Summary report issue + up to 3 `agent:fixable` issues | 1.0.0 |
-| [sfl-pr-review](#sfl-pr-review) | review | Label command — `sfl-review` | trivial | Native inline findings, consolidated review, and approval check | 1.0.0 |
+| [sfl-pr-review](#sfl-pr-review) | review | Internal PR lifecycle + `sfl-review` | high | Immutable inline findings, bounded recovery, and fresh approval gate | 2.0.0 |
 | [pr-analyzer-general](#pr-analyzer-general) | review | Dispatched — when draft PRs with `agent:pr` exist | trivial | PR comment with full-spectrum review | 1.1.0 |
 | [pr-analyzer-quality](#pr-analyzer-quality) | review | Dispatched — when draft PRs have `pr-analyzer-quality` | trivial | PR comment with quality-focused review | 1.1.0 |
 | [pr-analyzer-security](#pr-analyzer-security) | review | Dispatched — when draft PRs have `pr-analyzer-security` | trivial | PR comment with security-focused review | 1.1.0 |
@@ -49,6 +49,8 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 |------|------|----------|---------|
 | [sfl-dispatcher](#sfl-dispatcher) | Standard YAML | Every 30 min | Gates gh-aw runs; only dispatches when work exists |
 | [sfl-auditor](#sfl-auditor) | Standard YAML | :15, :45 every hour | Repairs label/PR state discrepancies |
+| `sfl-pr-review-auto` | Standard YAML | Internal PR lifecycle | Deduplicates immutable-head review dispatch and publishes the native head approval check |
+| `sfl-pr-review-recovery` | Standard YAML | Failed reviewer run | Performs at most one provenance-validated missing-output retry |
 
 ---
 
@@ -142,17 +144,20 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 
 **File**: [`deployment/workflows/sfl-pr-review.md`](deployment/workflows/sfl-pr-review.md)
 
-**What it does**: Runs a standalone three-pass full-spectrum review when the
-`sfl-review` label is applied to a pull request. Posts one native inline thread
-per Critical, High, Medium, or Low finding, submits an approving or
-request-changes review, and publishes the `SFL Reviewer Approval` check.
+**What it does**: Runs a three-pass full-spectrum review automatically when an
+eligible non-draft internal pull request is opened, reopened, marked ready, or
+updated. The `sfl-review` label requests an explicit rerun. It posts one native
+inline thread per Critical, High, Medium, or Low finding, safely retires obsolete
+SFL-owned threads, and publishes immutable review evidence for the native
+`SFL Reviewer Approval` head check. A recovery workflow performs at most one retry when
+formal review output is missing or partial.
 The HemSoft deployment policy runs this workflow with
 `moonshotai/kimi-k3` through OpenRouter; work-account SFL uses its own provider
 policy independently.
 
 **Output**: Current-head GitHub review, inline review threads, structured
-severity table, and an approval check that fails only for Critical or High
-findings.
+severity table, and an approval check that fails while any Critical, High,
+Medium, or Low SFL finding remains unresolved.
 
 **Deploy command**:
 ```powershell
@@ -160,10 +165,11 @@ findings.
 ```
 
 **Acceptance criteria met**:
-- [x] Trigger label is consumed during authorized activation
+- [x] Eligible internal PR lifecycle events dispatch automatically
+- [x] Trigger label is consumed during explicit activation
 - [x] Security, correctness/reliability, and quality/maintainability passes run
 - [x] Every finding is a severity-classified native review thread
-- [x] Review and approval check are pinned to the triggering head SHA
+- [x] Review, evidence, recovery, and approval are pinned to immutable PR context
 
 ---
 

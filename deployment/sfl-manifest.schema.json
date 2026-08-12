@@ -44,6 +44,8 @@
           "simplisticate",
           "issue-processor",
           "sfl-pr-review",
+          "sfl-pr-review-auto",
+          "sfl-pr-review-recovery",
           "pr-analyzer-general",
           "pr-analyzer-quality",
           "pr-analyzer-security",
