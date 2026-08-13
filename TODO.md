@@ -70,8 +70,8 @@ Known gaps:
   and current manifest.
 - [ ] Historical reviewer artifacts exist in public HemSoft repositories even
   though the supported distribution boundary is now private-only.
-- [ ] `deployment/tests/test-sfl-pr-review.ps1` has line-ending-sensitive source
-  assertions and fails against a CRLF checkout.
+- [x] Reviewer canonical/staged contract assertions normalize CRLF, LF, and CR
+  while retaining case-sensitive content-drift detection.
 
 ## Required work
 
@@ -191,7 +191,7 @@ and a zero-drift convergence report for all approved consumers.
   recovery, gate, CLI, or release behavior.
 - [ ] Make parity audit failures create one deduplicated tracking issue rather
   than silently changing HemSoft workflows.
-- [ ] Keep Windows and Linux contract tests line-ending independent.
+- [x] Keep Windows and Linux contract tests line-ending independent.
 
 Evidence required: a fixture proving an unapproved upstream safety change fails
 the audit and an approved provider-only difference passes.

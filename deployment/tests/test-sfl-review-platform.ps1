@@ -5,6 +5,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
+. (Join-Path $PSScriptRoot 'line-ending-test-helpers.ps1')
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Read-RepoFile([string] $RelativePath) {
@@ -16,7 +17,7 @@ function Read-RepoFile([string] $RelativePath) {
     return Get-Content -LiteralPath $path -Raw
 }
 
-function Assert-Patterns(
+function Assert-PatternSet(
     [string] $RelativePath,
     [string[]] $Patterns
 ) {
@@ -34,7 +35,7 @@ function Assert-ExactPair(
 ) {
     $canonical = Read-RepoFile $CanonicalPath
     $staged = Read-RepoFile $StagedPath
-    if ($canonical -ne $staged) {
+    if (-not (Test-NormalizedTextEqual $canonical $staged)) {
         $failures.Add("Staged file differs from canonical source: $StagedPath")
     }
 }
@@ -47,7 +48,7 @@ Assert-ExactPair $reviewer '.github\workflows\sfl-pr-review.md'
 Assert-ExactPair $auto '.github\workflows\sfl-pr-review-auto.yml'
 Assert-ExactPair $recovery '.github\workflows\sfl-pr-review-recovery.yml'
 
-Assert-Patterns $reviewer @(
+Assert-PatternSet $reviewer @(
     'source: HemSoft/set-it-free-loop/deployment/workflows/sfl-pr-review\.md@main',
     'COPILOT_PROVIDER_BASE_URL: https://openrouter\.ai/api/v1',
     'COPILOT_MODEL: moonshotai/kimi-k3',
@@ -64,7 +65,7 @@ Assert-Patterns $reviewer @(
     'SFL Reviewer Approval'
 )
 
-Assert-Patterns $auto @(
+Assert-PatternSet $auto @(
     'types: \[opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled\]',
     'pull_request_review:\s*\r?\n\s+types: \[submitted\]',
     "github\.event\.label\.name == 'sfl-review'",
@@ -104,7 +105,7 @@ if ($autoContent -match 'permission-issues:\s*write') {
     $failures.Add('Auto-review dispatcher should not retain issue-wide write access when pull-request write covers its label mutations.')
 }
 
-Assert-Patterns $recovery @(
+Assert-PatternSet $recovery @(
     "github\.event\.workflow_run\.path == '\.github/workflows/sfl-pr-review\.lock\.yml'",
     'decide_review_recovery',
     'newer_run_suppresses_retry',
@@ -123,7 +124,7 @@ Assert-Patterns $recovery @(
     'changed before recovery dispatch; suppressing stale retry'
 )
 
-Assert-Patterns 'deployment\scripts\deploy-workflow.ps1' @(
+Assert-PatternSet 'deployment\scripts\deploy-workflow.ps1' @(
     'sfl-pr-review-auto',
     'sfl-pr-review-recovery',
     'Assert-HemSoftPrivateRepository',
@@ -132,7 +133,7 @@ Assert-Patterns 'deployment\scripts\deploy-workflow.ps1' @(
     'deployment/infrastructure/\$inf\.yml@\$CurrentSha'
 )
 
-Assert-Patterns 'deployment\scripts\set-sfl-review-gate.ps1' @(
+Assert-PatternSet 'deployment\scripts\set-sfl-review-gate.ps1' @(
     "ValidatePattern\('\^HemSoft/",
     "visibility -ne 'PRIVATE'",
     "reviewContext = 'SFL Reviewer Approval'",
@@ -148,7 +149,7 @@ Assert-Patterns 'deployment\scripts\set-sfl-review-gate.ps1' @(
     'preserving'
 )
 
-Assert-Patterns 'deployment\scripts\install-gh-sfl-hemsoft.ps1' @(
+Assert-PatternSet 'deployment\scripts\install-gh-sfl-hemsoft.ps1' @(
     '"reviewer": \{',
     'sfl-pr-review\.lock\.yml',
     'sfl-pr-review-auto\.yml',
@@ -162,10 +163,10 @@ Assert-Patterns 'deployment\scripts\install-gh-sfl-hemsoft.ps1' @(
 )
 
 foreach ($manifestPath in @('deployment\sfl-manifest.schema.json', 'sfl.json')) {
-    Assert-Patterns $manifestPath @('sfl-pr-review-auto', 'sfl-pr-review-recovery')
+    Assert-PatternSet $manifestPath @('sfl-pr-review-auto', 'sfl-pr-review-recovery')
 }
 
-Assert-Patterns 'docs\SFL-REVIEWER.md' @(
+Assert-PatternSet 'docs\SFL-REVIEWER.md' @(
     'private HemSoft repositories',
     'OPENROUTER_API_KEY',
     'retries exactly once',

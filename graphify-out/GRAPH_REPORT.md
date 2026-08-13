@@ -1,16 +1,16 @@
-# Graph Report - issue-55-release-metadata  (2026-08-13)
+# Graph Report - issue-57-line-endings  (2026-08-13)
 
 ## Corpus Check
-- 64 files · ~160,051 words
+- 66 files · ~160,184 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 772 nodes · 764 edges · 57 communities (56 shown, 1 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 2 edges (avg confidence: 0.8)
+- 776 nodes · 768 edges · 58 communities (57 shown, 1 thin omitted)
+- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 3 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `05823735`
+- Built from commit: `2df7132a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -18,7 +18,7 @@
 - Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀
 - properties
 - properties
-- enginePolicy
+- properties
 - Set it Free — Governance Policy
 - environment
 - enum
@@ -56,9 +56,9 @@
 - Workflow Title
 - Daily Repo Status
 - /new-workflow — Set it Free Loop Intake
-- test-sfl-review-platform.ps1
+- Test-NormalizedTextEqual
 - AGENTS.md
-- HemSoft SFL Pull Request Reviewer
+- Issue Processor
 
 ## God Nodes (most connected - your core abstractions)
 1. `PR Promoter` - 20 edges
@@ -77,11 +77,13 @@
   deployment/scripts/deploy-workflow.ps1 → deployment/scripts/add-sfl-source-pin.ps1
 - `Deploy-ToRepo()` --calls--> `Merge-SflManifest()`  [INFERRED]
   deployment/scripts/deploy-workflow.ps1 → deployment/scripts/merge-sfl-manifest.ps1
+- `Assert-ExactPair()` --calls--> `Test-NormalizedTextEqual()`  [INFERRED]
+  deployment/tests/test-sfl-review-platform.ps1 → deployment/tests/line-ending-test-helpers.ps1
 
 ## Import Cycles
 - None detected.
 
-## Communities (57 total, 1 thin omitted)
+## Communities (58 total, 1 thin omitted)
 
 ### Community 0 - "Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀"
 Cohesion: 0.04
@@ -93,11 +95,11 @@ Nodes (45): additionalProperties, minLength, properties, required, type, items, 
 
 ### Community 3 - "properties"
 Cohesion: 0.05
-Nodes (41): additionalProperties, description, type, uniqueItems, description, format, type, description (+33 more)
+Nodes (37): additionalProperties, description, format, type, description, properties, deployedAt, source (+29 more)
 
-### Community 4 - "enginePolicy"
-Cohesion: 0.15
-Nodes (13): minLength, type, additionalProperties, description, properties, required, type, defaultProfile (+5 more)
+### Community 4 - "properties"
+Cohesion: 0.06
+Nodes (31): minLength, type, additionalProperties, description, properties, required, type, additionalProperties (+23 more)
 
 ### Community 5 - "Set it Free — Governance Policy"
 Cohesion: 0.07
@@ -108,8 +110,8 @@ Cohesion: 0.08
 Nodes (24): effort, model, provider, requiredSecretsAnyOf, defaultProfile, COPILOT_MODEL, COPILOT_PROVIDER_API_KEY, COPILOT_PROVIDER_BASE_URL (+16 more)
 
 ### Community 7 - "enum"
-Cohesion: 0.05
-Nodes (38): items, additionalProperties, enum, properties, required, type, model, profile (+30 more)
+Cohesion: 0.08
+Nodes (24): description, items, type, uniqueItems, enum, type, components, daily-repo-status (+16 more)
 
 ### Community 8 - "PR Fixer — Authority"
 Cohesion: 0.09
@@ -204,8 +206,8 @@ Cohesion: 0.20
 Nodes (10): provider, enum, type, claude, codex, copilot, crush, gemini (+2 more)
 
 ### Community 31 - "CATALOG.md"
-Cohesion: 0.05
-Nodes (30): Daily Repo Status, Process, Step 0 — Close previous daily status reports, Style, What to include, Guardrails, Issue Processor, Known Limitation: Label Delivery (+22 more)
+Cohesion: 0.06
+Nodes (29): Daily Repo Status, Process, Step 0 — Close previous daily status reports, Style, What to include, Audit Scope, Goals, Output Requirements (+21 more)
 
 ### Community 32 - "Issue Processor"
 Cohesion: 0.20
@@ -247,13 +249,13 @@ Nodes (5): Daily Repo Status, Process, Step 0 — Close previous daily status re
 Cohesion: 0.40
 Nodes (4): /new-workflow — Set it Free Loop Intake, Step 1 — Gather Requirements, Step 2 — Generate the Draft Workflow File, Step 3 — Output the TODO.md Entry
 
-### Community 43 - "test-sfl-review-platform.ps1"
-Cohesion: 0.83
-Nodes (3): Assert-ExactPair(), Assert-Patterns(), Read-RepoFile()
+### Community 43 - "Test-NormalizedTextEqual"
+Cohesion: 0.43
+Nodes (5): ConvertTo-NormalizedLineEnding(), Test-NormalizedTextEqual(), Assert-ExactPair(), Assert-PatternSet(), Read-RepoFile()
 
-### Community 54 - "HemSoft SFL Pull Request Reviewer"
-Cohesion: 0.22
-Nodes (9): Advisory and gated operation, Automatic and explicit review, Deployment, Distribution boundary, Evidence and approval, HemSoft SFL Pull Request Reviewer, Package, Recovery (+1 more)
+### Community 54 - "Issue Processor"
+Cohesion: 0.18
+Nodes (10): Guardrails, Issue Processor, Known Limitation: Label Delivery, Step 1 — Find the oldest claimable issue, Step 2 — Claim the issue, Step 3 — Validate the issue body, Step 4 — Inspect the codebase, Step 5 — Implement the fix (+2 more)
 
 ## Knowledge Gaps
 - **550 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+545 more)
@@ -274,6 +276,6 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `properties` be split into smaller, more focused modules?**
   _Cohesion score 0.051515151515151514 - nodes in this community are weakly interconnected._
 - **Should `properties` be split into smaller, more focused modules?**
-  _Cohesion score 0.047619047619047616 - nodes in this community are weakly interconnected._
-- **Should `Set it Free — Governance Policy` be split into smaller, more focused modules?**
-  _Cohesion score 0.06896551724137931 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05263157894736842 - nodes in this community are weakly interconnected._
+- **Should `properties` be split into smaller, more focused modules?**
+  _Cohesion score 0.06451612903225806 - nodes in this community are weakly interconnected._

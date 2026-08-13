@@ -5,12 +5,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
+. (Join-Path $PSScriptRoot 'line-ending-test-helpers.ps1')
 $canonicalPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review-auto.yml'
 $deployedPath = Join-Path $repoRoot 'deployment\infrastructure\sfl-pr-review-auto.yml'
 $canonical = Get-Content -LiteralPath $canonicalPath -Raw
 $deployed = Get-Content -LiteralPath $deployedPath -Raw
 
-if ($canonical -cne $deployed) {
+if (-not (Test-NormalizedTextEqual $canonical $deployed)) {
     throw 'Canonical and deployable auto-review dispatchers differ.'
 }
 

@@ -3,7 +3,7 @@
   "1": "properties",
   "2": "test-relias-reviewer-parity.ps1",
   "3": "properties",
-  "4": "enginePolicy",
+  "4": "properties",
   "5": "Set it Free — Governance Policy",
   "6": "environment",
   "7": "enum",
@@ -42,7 +42,7 @@
   "40": "Daily Repo Status",
   "41": "setup-labels.ps1",
   "42": "/new-workflow — Set it Free Loop Intake",
-  "43": "test-sfl-review-platform.ps1",
+  "43": "Test-NormalizedTextEqual",
   "44": "AGENTS.md",
   "45": "RecoverDNS.ps1",
   "46": "install-gh-sfl-hemsoft.ps1",
@@ -53,7 +53,8 @@
   "51": "test-review-tier-manifest-merge.ps1",
   "52": "test-sfl-pr-review.ps1",
   "53": "test-source-pin-placement.ps1",
-  "54": "HemSoft SFL Pull Request Reviewer",
+  "54": "Issue Processor",
   "55": "test-release-metadata.ps1",
+  "56": "test-line-ending-normalization.ps1",
   "59": "test-sfl-dispatch-dedup.ps1"
 }
