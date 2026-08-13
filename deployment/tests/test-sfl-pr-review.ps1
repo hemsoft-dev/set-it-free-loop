@@ -53,7 +53,12 @@ if ($failures.Count -eq 0) {
         'unresolvedFindingCount === 0',
         'Initialized SFL review evidence does not match this run',
         'COPILOT_PROVIDER_BASE_URL: https://openrouter\.ai/api/v1',
-        'COPILOT_MODEL: moonshotai/kimi-k3'
+        'COPILOT_MODEL: moonshotai/kimi-k3',
+        '(?m)^  providers:\r?$',
+        '(?m)^    github-copilot:\r?$',
+        '(?m)^        "moonshotai/kimi-k3":\r?$',
+        '(?m)^            input: "3e-06"\r?$',
+        '(?m)^            output: "1\.5e-05"\r?$'
     )
     foreach ($pattern in $requiredSourcePatterns) {
         if ($source -notmatch $pattern) {
@@ -84,6 +89,16 @@ if ($failures.Count -eq 0) {
         if ($lock -notmatch $pattern) {
             $failures.Add("Compiled reviewer is missing contract pattern: $pattern")
         }
+    }
+
+    $compiledPricingPattern = '\\"providers\\":\{\\"github-copilot\\":\{\\"models\\":\{\\"moonshotai/kimi-k3\\":\{\\"cost\\":\{\\"input\\":\\"3e-06\\",\\"output\\":\\"1\.5e-05\\"\}\}\}\}\}'
+    $compiledPricingCount = [regex]::Matches($lock, $compiledPricingPattern).Count
+    if ($compiledPricingCount -ne 2) {
+        $failures.Add("Expected explicit Kimi pricing in both primary and threat-detection firewall configurations; found $compiledPricingCount occurrence(s).")
+    }
+    if ($source -match 'default-ai-credits-pricing' -or
+        $lock -match 'defaultAiCreditsPricing') {
+        $failures.Add('Reviewer still relies on generic fallback pricing instead of explicit Kimi pricing.')
     }
 
     if ($source -match 'copilot-requests:\s*write' -or

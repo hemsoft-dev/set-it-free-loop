@@ -26,15 +26,21 @@ The `review` tier installs these files:
 The lock must be generated from the deployed Markdown with the repository's
 checksum-verified `gh-aw` compiler. Never edit the lock directly.
 
+The Kimi model has explicit provider pricing in the Markdown frontmatter. The
+compiler must carry that pricing into both the primary reviewer and the
+mandatory threat-detection firewall configuration. Generic fallback pricing
+is not an acceptable substitute because the two runtimes are generated
+independently.
+
 ## Required repository configuration
 
 The target repository needs the following Actions configuration:
 
 | Kind | Name | Purpose |
 | --- | --- | --- |
-| Variable | `SFL_APP_CLIENT_ID` | Client ID for the HemSoft reviewer GitHub App |
-| Secret | `SFL_APP_PRIVATE_KEY` | Private key for short-lived installation tokens |
-| Secret | `OPENROUTER_API_KEY` | Runs Kimi K3 through the HemSoft OpenRouter route |
+| Variable | `SFL_APP_CLIENT_ID` | Reviewer GitHub App client ID |
+| Secret | `SFL_APP_PRIVATE_KEY` | App installation private key |
+| Secret | `OPENROUTER_API_KEY` | Private Kimi K3 route |
 
 The App installation must be limited to the intended private repositories. It
 needs Actions read/write, Contents read, Issues read/write, and Pull requests
