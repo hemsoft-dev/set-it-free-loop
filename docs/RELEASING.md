@@ -9,9 +9,9 @@ Start from an issue branch and synchronize all version-bearing metadata with one
 command:
 
 ```powershell
-.\deployment\scripts\set-release-version.ps1 -Version 2.1.0-rc.1
+.\deployment\scripts\set-release-version.ps1 -Version 2.1.0-rc.2
 .\deployment\tests\test-release-metadata.ps1 `
-  -ExpectedVersion 2.1.0-rc.1 -RequirePrerelease
+  -ExpectedVersion 2.1.0-rc.2 -RequirePrerelease
 ```
 
 The command updates `VERSION`, `sfl.json`, and the distribution version, tag,
@@ -48,7 +48,7 @@ The version metadata and tag ruleset must already be on `main`:
 gh workflow run publish-private-prerelease.yml `
   --repo HemSoft/set-it-free-loop `
   --ref main `
-  -f version=2.1.0-rc.1
+  -f version=2.1.0-rc.2
 ```
 
 The workflow verifies clean immutable `main`, rejects existing tags/releases,
@@ -60,8 +60,9 @@ runs Go generation, formatting, vet, and tests, and builds:
 - `SHA256SUMS`
 
 It creates a draft with every asset, publishes it under GitHub's immutable
-release policy, verifies GitHub's signed release and per-asset attestations, and
-then downloads the Linux artifact through the installer into a fresh temporary
+release policy, waits up to five minutes for GitHub's signed release
+attestation to propagate, verifies the release and every asset, and then
+downloads the Linux artifact through the installer into a fresh temporary
 directory to prove checksum verification and embedded version identity.
 
 ## Install and verify
@@ -70,7 +71,7 @@ With GitHub CLI authenticated to an account that can read the private release:
 
 ```powershell
 .\deployment\scripts\install-gh-sfl-hemsoft.ps1 `
-  -ReleaseVersion 2.1.0-rc.1
+  -ReleaseVersion 2.1.0-rc.2
 gh sfl version
 ```
 

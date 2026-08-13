@@ -7,7 +7,7 @@ Deploy and manage the **SFL PR Reviewer** in GitHub repositories from the comman
 From a private `HemSoft/set-it-free-loop` checkout, install a published release:
 
 ```powershell
-.\deployment\scripts\install-gh-sfl-hemsoft.ps1 -ReleaseVersion 2.1.0-rc.1
+.\deployment\scripts\install-gh-sfl-hemsoft.ps1 -ReleaseVersion 2.1.0-rc.2
 ```
 
 The installer uses the active `HemSoft` GitHub CLI authentication to download
