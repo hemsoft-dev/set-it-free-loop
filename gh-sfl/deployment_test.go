@@ -609,6 +609,18 @@ func TestSyncChecksManagedFilesWhenSourceRevisionIsCurrent(t *testing.T) {
 	}
 }
 
+func TestSyncReportsNonFatalLabelSourceFailures(t *testing.T) {
+	source := string(readContractFile(t, "sync.go"))
+	for _, required := range []string{
+		"label sync skipped; could not fetch labels",
+		"label sync skipped; labels are invalid JSON",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("sync.go does not report %q", required)
+		}
+	}
+}
+
 func TestReviewerTierContainsOnlyReviewerPackage(t *testing.T) {
 	want := []string{
 		"sfl-pr-review.md",

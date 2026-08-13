@@ -475,8 +475,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/deployment_test.go": {
-    "mtime": 1786613490.073701,
-    "ast_hash": "ca344f2fedc37d6db60a68745ccf5764",
+    "mtime": 1786614216.912215,
+    "ast_hash": "4301fef59687f3f6060e83d39501b9d2",
     "semantic_hash": ""
   },
   "gh-sfl/dispatch_dedup_fixture_test.go": {
@@ -565,8 +565,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/sync.go": {
-    "mtime": 1786610433.4829311,
-    "ast_hash": "345a5dfe45d95976cc3d6fede474094a",
+    "mtime": 1786614216.912215,
+    "ast_hash": "c2b8d981a062c9439865ad4f985af2aa",
     "semantic_hash": ""
   },
   "gh-sfl/table.go": {

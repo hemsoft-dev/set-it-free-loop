@@ -170,9 +170,13 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	if installedTier != "reviewer" {
 		fmt.Fprintf(stdout, "\n  Syncing labels...\n")
 		labelsJSON, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, "deployment/governance/labels.json", sourceRef)
-		if fetchErr == nil {
+		if fetchErr != nil {
+			fmt.Fprintf(stderr, "  Warning: label sync skipped; could not fetch labels: %v\n", fetchErr)
+		} else {
 			var labels []labelDef
-			if jsonErr := json.Unmarshal([]byte(labelsJSON), &labels); jsonErr == nil {
+			if jsonErr := json.Unmarshal([]byte(labelsJSON), &labels); jsonErr != nil {
+				fmt.Fprintf(stderr, "  Warning: label sync skipped; labels are invalid JSON: %v\n", jsonErr)
+			} else {
 				created, updated, labelErr := ensureLabels(owner, repo, labels)
 				if labelErr != nil {
 					fmt.Fprintf(stderr, "  Warning: label sync error: %v\n", labelErr)
