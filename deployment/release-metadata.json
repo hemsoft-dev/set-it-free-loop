@@ -71,7 +71,7 @@
       "upstreamPath": "workflows/sfl-pr-review-auto.yml",
       "upstreamSha256": "abbb6615ec2c598e42ef242596c0e6f05e3b616641da7c656d74b7bbb5487bf6",
       "hemsoftPath": "deployment/infrastructure/sfl-pr-review-auto.yml",
-      "hemsoftSha256": "c90eab6f153afa8ac3a3dbcf87b228e3eaf2ed1dd04f2194a86a4fad3d74de24",
+      "hemsoftSha256": "27f71dce9f12648b54bfd2210b5020315ee7c4d5ccd872e2000925dedf4c0280",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review-auto.yml"
       ],
@@ -89,7 +89,7 @@
       "upstreamPath": "workflows/sfl-pr-review-recovery.yml",
       "upstreamSha256": "d94fb4a788a0f4c39ed45a24d14e44ec6f0a8bcd2027c3357edae2167ae33a25",
       "hemsoftPath": "deployment/infrastructure/sfl-pr-review-recovery.yml",
-      "hemsoftSha256": "2614f1b559e0c3fc12c2b3127cfa9b5a224ada0a5a7f5718220d47610889adf1",
+      "hemsoftSha256": "805fc294d7f76f9e2d0bd8be108ea5cf01a7c0e8f3e467bec93eddfde6b877fe",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review-recovery.yml"
       ],

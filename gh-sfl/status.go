@@ -146,42 +146,8 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) error {
 			labelSet[l.Name] = true
 		}
 
-		requiredLabels := []string{
-			"agent:fixable",
-			"agent:in-progress",
-			"agent:review-requested",
-			"agent:pause",
-			"agent:human-required",
-			"agent:escalated",
-			"agent:pr",
-			"pr-analyzer-quality",
-			"pr-analyzer-security",
-			"pr-analyzer-testing",
-			"sfl-review",
-			"risk:trivial",
-			"risk:low",
-			"risk:medium",
-			"risk:high",
-			"risk:critical",
-			"pr:cycle-1",
-			"pr:cycle-2",
-			"pr:cycle-3",
-			"human:ready-for-review",
-			"source:repo-audit",
-			"source:simplisticate",
-			"source:jira",
-			"source:github-issue",
-			"source:manual",
-			"report",
-			"action-item",
-			"feature-request",
-			"daily-status",
-			"audit",
-			"no-agent",
-		}
-
 		missing := 0
-		for _, name := range requiredLabels {
+		for _, name := range sflLabels {
 			if !labelSet[name] {
 				missing++
 			}
@@ -189,12 +155,12 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) error {
 
 		if missing == 0 {
 			fmt.Fprintf(stdout, "    %s All %d labels present\n",
-				styler.colored("✓", termenv.ANSIGreen).styled, len(requiredLabels))
+				styler.colored("✓", termenv.ANSIGreen).styled, len(sflLabels))
 		} else {
 			fmt.Fprintf(stdout, "    %s %d of %d labels present (%d missing)\n",
 				styler.colored("!", termenv.ANSIYellow).styled,
-				len(requiredLabels)-missing, len(requiredLabels), missing)
-			for _, name := range requiredLabels {
+				len(sflLabels)-missing, len(sflLabels), missing)
+			for _, name := range sflLabels {
 				if !labelSet[name] {
 					fmt.Fprintf(stdout, "      missing: %s\n", name)
 				}

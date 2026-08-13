@@ -169,6 +169,10 @@ func upgradeStaleReviewerRulesets(
 	if err != nil {
 		return nil, err
 	}
+	// Re-fetch and validate the complete candidate set before the first write.
+	// This is intentionally separate from discovery: it prevents partial
+	// mutation when any ruleset became shared, retargeted, or already current.
+	// Each subsequent PUT is also protected by the freshly read ETag.
 	staleWorkflowDetails, err = collectStaleReviewerRulesets(
 		client,
 		owner,

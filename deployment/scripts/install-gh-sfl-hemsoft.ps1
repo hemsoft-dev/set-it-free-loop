@@ -45,6 +45,11 @@ $outputPath = Join-Path $WorkDir 'gh-sfl.exe'
 
 Push-Location $sourceDir
 try {
+    go generate ./...
+    if ($LASTEXITCODE -ne 0) {
+        throw "go generate contract checks failed with exit code $LASTEXITCODE"
+    }
+
     $unformatted = @(gofmt -l .)
     if ($LASTEXITCODE -ne 0) {
         throw "gofmt failed with exit code $LASTEXITCODE"

@@ -450,6 +450,57 @@ func TestParseAddOptionsDefaultsToPullRequest(t *testing.T) {
 	}
 }
 
+func TestSyncPreservesAuditFieldsOnlyForCurrentCanonicalDeployment(t *testing.T) {
+	release := deploymentRelease{Version: "2.0.0", SHA: strings.Repeat("a", 40)}
+	current := &sflManifest{Version: release.Version, SourceSHA: release.SHA, Tier: "reviewer"}
+	if !shouldPreserveSyncAudit(current, release, "reviewer") {
+		t.Fatal("current canonical deployment did not preserve audit fields")
+	}
+	for _, stale := range []*sflManifest{
+		{Version: "1.9.0", SourceSHA: release.SHA, Tier: "reviewer"},
+		{Version: release.Version, SourceSHA: strings.Repeat("b", 40), Tier: "reviewer"},
+		{Version: release.Version, SourceSHA: release.SHA, Tier: "review"},
+	} {
+		if shouldPreserveSyncAudit(stale, release, "reviewer") {
+			t.Errorf("stale deployment unexpectedly preserved audit fields: %+v", stale)
+		}
+	}
+}
+
+func TestGeneratedLabelsMatchCanonicalDeploymentLabels(t *testing.T) {
+	raw := readContractFile(t, filepath.Join("..", "deployment", "governance", "labels.json"))
+	var definitions []labelDef
+	if err := json.Unmarshal(raw, &definitions); err != nil {
+		t.Fatalf("parse canonical labels: %v", err)
+	}
+	names := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		names = append(names, definition.Name)
+	}
+	if !slices.Equal(sflLabels, names) {
+		t.Fatalf("generated labels are stale:\n generated=%v\n canonical=%v", sflLabels, names)
+	}
+}
+
+func TestVersionUpdateHintIsCrossPlatform(t *testing.T) {
+	oldVersion := version
+	oldLatest := fetchLatestReleaseFunc
+	version = "1.0.0"
+	fetchLatestReleaseFunc = func(string, string) (string, error) { return "v2.0.0", nil }
+	t.Cleanup(func() {
+		version = oldVersion
+		fetchLatestReleaseFunc = oldLatest
+	})
+
+	var output bytes.Buffer
+	if err := runVersion(&output); err != nil {
+		t.Fatalf("runVersion() unexpected error: %v", err)
+	}
+	if strings.Contains(output.String(), `.\\`) || !strings.Contains(output.String(), "rerun its installer") {
+		t.Fatalf("runVersion() emitted platform-specific update guidance: %q", output.String())
+	}
+}
+
 func TestAddUsesPinnedSourceAndMergesEnginePolicy(t *testing.T) {
 	source := string(readContractFile(t, "add.go"))
 	for _, required := range []string{

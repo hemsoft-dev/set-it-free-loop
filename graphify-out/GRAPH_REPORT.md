@@ -1,16 +1,16 @@
 # Graph Report - issue-59-own-gh-sfl  (2026-08-13)
 
 ## Corpus Check
-- 96 files · ~192,491 words
+- 99 files · ~193,146 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1206 nodes · 1822 edges · 90 communities (87 shown, 3 thin omitted)
-- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 218 edges (avg confidence: 0.8)
+- 1216 nodes · 1839 edges · 92 communities (89 shown, 3 thin omitted)
+- Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 221 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `122b9298`
+- Built from commit: `4ae68918`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -63,15 +63,15 @@
 - repositoryRuleset
 - properties
 - renderRunTable
-- conditionalRESTClient
+- github.go
 - review.go
 - main.go
-- github.go
+- runInit
 - fakeREST
 - Commands
 - version
 - addons
-- reviewer_contract_test.go
+- generatelabels/main.go
 - hemsoft.go
 - reviewerFixtureBash
 - properties
@@ -94,30 +94,30 @@
 1. `deployViaPullRequest()` - 26 edges
 2. `repositoryRuleset` - 24 edges
 3. `runInit()` - 21 edges
-4. `restAPI` - 20 edges
-5. `runSync()` - 20 edges
+4. `runSync()` - 21 edges
+5. `restAPI` - 20 edges
 6. `PR Promoter` - 20 edges
 7. `PR Promoter` - 20 edges
 8. `enum` - 18 edges
 9. `runAdd()` - 18 edges
-10. `readContractFile()` - 17 edges
+10. `readContractFile()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `runInit()` --calls--> `setRepoSecret()`  [INFERRED]
+  gh-sfl/init.go → gh-sfl/github.go
 - `Deploy-ToRepo()` --calls--> `Add-SflSourcePin()`  [INFERRED]
   deployment/scripts/deploy-workflow.ps1 → deployment/scripts/add-sfl-source-pin.ps1
 - `Deploy-ToRepo()` --calls--> `Merge-SflManifest()`  [INFERRED]
   deployment/scripts/deploy-workflow.ps1 → deployment/scripts/merge-sfl-manifest.ps1
 - `runAdd()` --calls--> `knownAddonNames()`  [INFERRED]
   gh-sfl/add.go → gh-sfl/addons.go
-- `runAdd()` --calls--> `deployViaPullRequest()`  [INFERRED]
+- `runAdd()` --calls--> `deployViaGit()`  [INFERRED]
   gh-sfl/add.go → gh-sfl/github.go
-- `runAdd()` --calls--> `hemSoftEnginePolicyManifestForFileMap()`  [INFERRED]
-  gh-sfl/add.go → gh-sfl/hemsoft.go
 
 ## Import Cycles
 - None detected.
 
-## Communities (90 total, 3 thin omitted)
+## Communities (92 total, 3 thin omitted)
 
 ### Community 0 - "Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀"
 Cohesion: 0.04
@@ -152,7 +152,7 @@ Cohesion: 0.09
 Nodes (21): After all fixes, Blocking Issues, Fix priorities, Guardrails, Handling rebase conflicts, Implementation rules, Non-Blocking Suggestions, PR Fixer — Authority (+13 more)
 
 ### Community 9 - "PR Fixer — Authority"
-Cohesion: 0.09
+Cohesion: 0.10
 Nodes (21): After all fixes, Blocking Issues, Fix priorities, Guardrails, Handling rebase conflicts, Implementation rules, Non-Blocking Suggestions, PR Fixer — Authority (+13 more)
 
 ### Community 10 - "PR Promoter"
@@ -256,7 +256,7 @@ Cohesion: 0.22
 Nodes (8): additionalProperties, description, defaultProfile, required, $schema, title, type, profiles
 
 ### Community 35 - "Daily Simplisticate Audit"
-Cohesion: 0.22
+Cohesion: 0.20
 Nodes (9): Audit Scope, Complexity Signals to Detect, Daily Simplisticate Audit, Goals, Output Requirements, Per-finding issues (for agent-fixable findings only), Process, Step 0 — Close previous simplisticate summary reports (+1 more)
 
 ### Community 36 - "SFL — Add Issue to Pipeline"
@@ -292,12 +292,12 @@ Cohesion: 0.20
 Nodes (10): Guardrails, Issue Processor, Known Limitation: Label Delivery, Step 1 — Find the oldest claimable issue, Step 2 — Claim the issue, Step 3 — Validate the issue body, Step 4 — Inspect the codebase, Step 5 — Implement the fix (+2 more)
 
 ### Community 57 - "deployment_test.go"
-Cohesion: 0.06
-Nodes (87): knownAddonNames(), findAddition(), T, installDeploymentFakes(), legacyReviewerRuleset(), reviewerWorkflowRuleset(), TestAddUsesPinnedSourceAndMergesEnginePolicy(), TestBuildFileAdditionsSortsAndEncodes() (+79 more)
+Cohesion: 0.05
+Nodes (90): knownAddonNames(), findAddition(), T, installDeploymentFakes(), legacyReviewerRuleset(), reviewerWorkflowRuleset(), TestAddUsesPinnedSourceAndMergesEnginePolicy(), TestBuildFileAdditionsSortsAndEncodes() (+82 more)
 
 ### Community 58 - "repositoryRuleset"
-Cohesion: 0.08
-Nodes (63): appInstallation, TestClassifyReviewerGate(), collectStaleReviewerRulesets(), createReviewerRuleset(), Writer, isDedicatedLegacyReviewerGate(), mergeReviewerFreshnessRule(), parseGateOptions() (+55 more)
+Cohesion: 0.11
+Nodes (48): TestClassifyReviewerGate(), collectStaleReviewerRulesets(), createReviewerRuleset(), Writer, isDedicatedLegacyReviewerGate(), mergeReviewerFreshnessRule(), parseGateOptions(), removeDedicatedLegacyReviewerGate() (+40 more)
 
 ### Community 60 - "properties"
 Cohesion: 0.25
@@ -307,9 +307,9 @@ Nodes (8): description, format, type, description, type, properties, deployedAt,
 Cohesion: 0.12
 Nodes (26): ANSIColor, fetchWorkflowRuns(), tableStyler, Time, Writer, parseListOptions(), renderRunTable(), resolveRunStatus() (+18 more)
 
-### Community 62 - "conditionalRESTClient"
-Cohesion: 0.27
-Nodes (4): Client, conditionalRESTClient, Reader, RESTClient
+### Community 62 - "github.go"
+Cohesion: 0.07
+Nodes (40): Client, ClientOptions, conditionalRESTClient, dirEntry, fileDeletion, apiBaseURL(), currentRepo(), deploymentFileContent() (+32 more)
 
 ### Community 63 - "review.go"
 Cohesion: 0.21
@@ -319,13 +319,13 @@ Nodes (16): dispatchCapabilities, pullRequestShas, detectDispatchInputs(), fetch
 Cohesion: 0.23
 Nodes (14): Duration, asyncUpdateCheck(), formatVersion(), Writer, main(), printBanner(), resolveCommand(), run() (+6 more)
 
-### Community 65 - "github.go"
-Cohesion: 0.05
-Nodes (75): ClientOptions, Writer, parseAddOptions(), runAdd(), writeAddUsage(), addonWorkflowFiles(), validAddon(), addOptions (+67 more)
+### Community 65 - "runInit"
+Cohesion: 0.07
+Nodes (53): Writer, parseAddOptions(), runAdd(), writeAddUsage(), addonWorkflowFiles(), validAddon(), addOptions, TestForceUninstallRemovesEveryManagedDeploymentPath() (+45 more)
 
 ### Community 66 - "fakeREST"
-Cohesion: 0.24
-Nodes (6): decodeTestResponse(), Reader, splitEvery(), TestConditionalRESTClientUsesEntityTags(), fakeGraphQL, fakeREST
+Cohesion: 0.22
+Nodes (7): appInstallation, decodeTestResponse(), Reader, splitEvery(), TestConditionalRESTClientUsesEntityTags(), fakeGraphQL, fakeREST
 
 ### Community 67 - "Commands"
 Cohesion: 0.14
@@ -339,13 +339,13 @@ Nodes (4): version, description, pattern, type
 Cohesion: 0.18
 Nodes (11): description, items, type, uniqueItems, description, items, type, uniqueItems (+3 more)
 
-### Community 70 - "reviewer_contract_test.go"
-Cohesion: 0.24
-Nodes (13): T, TestReviewTriggerConcurrencyGroups(), assertFilesEqual(), assertRunBlocksWithinLimit(), T, normalizeLineEndings(), TestAutoTriggerTokenPermissions(), TestCompiledEvidencePublishesWithRepositoryToken() (+5 more)
+### Community 70 - "generatelabels/main.go"
+Cohesion: 0.67
+Nodes (3): label, fatalf(), main()
 
 ### Community 71 - "hemsoft.go"
-Cohesion: 0.14
-Nodes (29): validateDeploymentTarget(), applyHemSoftEnginePolicy(), applyHemSoftEnginePolicyToWorkflow(), applyHemSoftOwnership(), cloneHemSoftEnvironment(), hemSoftEngineBlock(), hemSoftEngineConfigForWorkflow(), hemSoftEnginePolicyConfig() (+21 more)
+Cohesion: 0.09
+Nodes (43): T, TestReviewTriggerConcurrencyGroups(), validateDeploymentTarget(), applyHemSoftEnginePolicy(), applyHemSoftEnginePolicyToWorkflow(), applyHemSoftOwnership(), cloneHemSoftEnvironment(), hemSoftEngineBlock() (+35 more)
 
 ### Community 72 - "reviewerFixtureBash"
 Cohesion: 0.24
@@ -404,24 +404,24 @@ Cohesion: 0.67
 Nodes (3): T, TestNewerRunSuppressionFixtures(), TestReviewRecoveryPolicyFixtures()
 
 ## Knowledge Gaps
-- **571 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+566 more)
+- **572 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+567 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **3 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `readContractFile()` connect `deployment_test.go` to `reviewer_contract_test.go`, `hemsoft.go`?**
-  _High betweenness centrality (0.014) - this node is a cross-community bridge._
-- **Why does `fetchFileRaw()` connect `github.go` to `changelog.go`, `repositoryRuleset`, `conditionalRESTClient`, `review.go`?**
-  _High betweenness centrality (0.014) - this node is a cross-community bridge._
 - **Why does `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` connect `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` to `CATALOG.md`?**
+  _High betweenness centrality (0.016) - this node is a cross-community bridge._
+- **Why does `fetchFileRaw()` connect `runInit` to `changelog.go`, `repositoryRuleset`, `github.go`, `review.go`?**
+  _High betweenness centrality (0.012) - this node is a cross-community bridge._
+- **Why does `PR Fixer — Authority` connect `PR Fixer — Authority` to `CATALOG.md`?**
   _High betweenness centrality (0.011) - this node is a cross-community bridge._
 - **Are the 14 inferred relationships involving `deployViaPullRequest()` (e.g. with `runAdd()` and `TestDeployViaPullRequest()`) actually correct?**
   _`deployViaPullRequest()` has 14 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 15 inferred relationships involving `runInit()` (e.g. with `addonWorkflowFiles()` and `deployViaGit()`) actually correct?**
   _`runInit()` has 15 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 17 inferred relationships involving `runSync()` (e.g. with `addonWorkflowFiles()` and `deployViaGit()`) actually correct?**
+  _`runSync()` has 17 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `$schema`, `defaultProfile`, `provider` to the rest of the system?**
-  _571 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` be split into smaller, more focused modules?**
-  _Cohesion score 0.0425531914893617 - nodes in this community are weakly interconnected._
+  _572 weakly-connected nodes found - possible documentation gaps or missing edges._

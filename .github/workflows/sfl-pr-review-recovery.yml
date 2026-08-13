@@ -12,6 +12,7 @@ permissions:
 jobs:
   recover:
     if: >-
+      vars.SFL_ENABLED != 'false' &&
       (github.event.workflow_run.conclusion == 'failure' ||
        github.event.workflow_run.conclusion == 'timed_out') &&
       github.event.workflow_run.path == '.github/workflows/sfl-pr-review.lock.yml' &&

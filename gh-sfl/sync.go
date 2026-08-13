@@ -17,6 +17,11 @@ type syncOptions struct {
 	sourceRef string
 }
 
+func shouldPreserveSyncAudit(manifest *sflManifest, release deploymentRelease, installedTier string) bool {
+	return manifest.Version == release.Version &&
+		manifest.SourceSHA == release.SHA && manifest.Tier == installedTier
+}
+
 func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	opts, err := parseSyncOptions(args, stderr)
 	if err != nil {
@@ -131,6 +136,16 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		}
 	}
 
+	// Preserve audit fields for a true no-op sync. Direct deployments compare
+	// raw bytes, while PR deployments intentionally ignore these audit fields.
+	deploymentMetadataCurrent := shouldPreserveSyncAudit(manifest, release, installedTier)
+	deployedAt := time.Now().UTC()
+	deployedBy := getCurrentUser()
+	if deploymentMetadataCurrent {
+		deployedAt = manifest.DeployedAt
+		deployedBy = manifest.DeployedBy
+	}
+
 	// Update manifest
 	manifest.Version = release.Version
 	manifest.SourceSHA = latestSHA
@@ -138,8 +153,8 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		manifest.Tier = "reviewer"
 		manifest.Components = tierComponents["reviewer"]
 	}
-	manifest.DeployedAt = time.Now().UTC()
-	manifest.DeployedBy = getCurrentUser()
+	manifest.DeployedAt = deployedAt
+	manifest.DeployedBy = deployedBy
 	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
 	manifestJSON, err := marshalManifest(manifest)
 	if err != nil {

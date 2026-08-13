@@ -1,0 +1,37 @@
+// Code generated from deployment/governance/labels.json; DO NOT EDIT.
+
+package main
+
+var sflLabels = []string{
+	"agent:fixable",
+	"agent:in-progress",
+	"agent:review-requested",
+	"agent:pause",
+	"agent:human-required",
+	"agent:escalated",
+	"agent:pr",
+	"pr-analyzer-quality",
+	"pr-analyzer-security",
+	"pr-analyzer-testing",
+	"sfl-review",
+	"risk:trivial",
+	"risk:low",
+	"risk:medium",
+	"risk:high",
+	"risk:critical",
+	"pr:cycle-1",
+	"pr:cycle-2",
+	"pr:cycle-3",
+	"human:ready-for-review",
+	"source:repo-audit",
+	"source:simplisticate",
+	"source:jira",
+	"source:github-issue",
+	"source:manual",
+	"report",
+	"action-item",
+	"feature-request",
+	"daily-status",
+	"audit",
+	"no-agent",
+}

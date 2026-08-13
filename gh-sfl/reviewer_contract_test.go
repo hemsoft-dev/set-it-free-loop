@@ -224,9 +224,10 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		"types: [opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled]",
 		"github.event.action != 'labeled'",
 		"github.event.label.name == 'sfl-review'",
+		"vars.SFL_ENABLED != 'false'",
 		"cancel-in-progress: false",
 		"name: SFL Reviewer Gate Runner",
-		"if: always()",
+		"if: always() && vars.SFL_ENABLED != 'false'",
 		"timeout-minutes: 120",
 		"for ATTEMPT in $(seq 1 440); do",
 		"Wait for exact SFL review run",
@@ -307,6 +308,7 @@ func TestReviewerDeploymentContract(t *testing.T) {
 	))
 	for _, required := range []string{
 		`workflows: ["SFL PR Review"]`,
+		"vars.SFL_ENABLED != 'false'",
 		"github.event.workflow_run.conclusion == 'failure'",
 		"github.event.workflow_run.conclusion == 'timed_out'",
 		"github.event.workflow_run.path == '.github/workflows/sfl-pr-review.lock.yml'",

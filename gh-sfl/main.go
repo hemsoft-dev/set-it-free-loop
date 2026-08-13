@@ -194,8 +194,8 @@ Available Commands:
   uninstall  Remove SFL from a repository
   list       Show recent SFL workflow runs
   status     Show SFL health dashboard for a repository
-  stop       Disable SFL in a repository (maintenance mode)
-  start      Re-enable SFL in a repository
+  stop       Pause automatic SFL dispatch and recovery
+  start      Re-enable automatic SFL dispatch and recovery
   version    Show version and check for updates
 
 Examples:

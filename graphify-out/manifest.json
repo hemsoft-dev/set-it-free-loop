@@ -45,8 +45,8 @@
     "semantic_hash": ""
   },
   "deployment/scripts/install-gh-sfl-hemsoft.ps1": {
-    "mtime": 1786608400.6139114,
-    "ast_hash": "620d1a8d36707fd2b56dbcfac168cd16",
+    "mtime": 1786618785.8263414,
+    "ast_hash": "7b0ffea4b51a58e673f2e7d240c83b4b",
     "semantic_hash": ""
   },
   "deployment/scripts/merge-sfl-manifest.ps1": {
@@ -85,8 +85,8 @@
     "semantic_hash": ""
   },
   "deployment/tests/test-sfl-review-platform.ps1": {
-    "mtime": 1786608627.388558,
-    "ast_hash": "3ccbad7fe3f84266c2377721241c930b",
+    "mtime": 1786619168.6975038,
+    "ast_hash": "8a3697878c60b750e7f4b4e6c4e7794f",
     "semantic_hash": ""
   },
   "deployment/tests/test-sfl-verdict-validator.ps1": {
@@ -235,13 +235,13 @@
     "semantic_hash": ""
   },
   ".github/workflows/sfl-pr-review-auto.yml": {
-    "mtime": 1786607354.5099785,
-    "ast_hash": "ae8bb431fd81c9a147ca7785ee8ebed9",
+    "mtime": 1786618813.4799795,
+    "ast_hash": "b696e1037853d85c88d68da3d2f8ddaf",
     "semantic_hash": ""
   },
   ".github/workflows/sfl-pr-review-recovery.yml": {
-    "mtime": 1786607354.5099785,
-    "ast_hash": "1f97a87f980c5bd4feaaed30cd5cde34",
+    "mtime": 1786618813.4810874,
+    "ast_hash": "aab25bfd38c7b27b66143d339144c0b8",
     "semantic_hash": ""
   },
   ".github/workflows/sfl-pr-review.lock.yml": {
@@ -315,13 +315,13 @@
     "semantic_hash": ""
   },
   "deployment/infrastructure/sfl-pr-review-auto.yml": {
-    "mtime": 1786607354.5184937,
-    "ast_hash": "ae8bb431fd81c9a147ca7785ee8ebed9",
+    "mtime": 1786618813.4789789,
+    "ast_hash": "b696e1037853d85c88d68da3d2f8ddaf",
     "semantic_hash": ""
   },
   "deployment/infrastructure/sfl-pr-review-recovery.yml": {
-    "mtime": 1786607354.5184937,
-    "ast_hash": "1f97a87f980c5bd4feaaed30cd5cde34",
+    "mtime": 1786618813.4799795,
+    "ast_hash": "aab25bfd38c7b27b66143d339144c0b8",
     "semantic_hash": ""
   },
   "deployment/workflows/_TEMPLATE.md": {
@@ -425,13 +425,13 @@
     "semantic_hash": ""
   },
   "docs/SFL-REVIEWER-PARITY.md": {
-    "mtime": 1786608675.1004727,
-    "ast_hash": "115138267c443297688105c0d8731c46",
+    "mtime": 1786619168.6975038,
+    "ast_hash": "3171f6610e2bc259d7469e6a37bcfb33",
     "semantic_hash": ""
   },
   "deployment/release-metadata.json": {
-    "mtime": 1786609211.6566682,
-    "ast_hash": "3ac75b4c26327b2a007a4048735aabe3",
+    "mtime": 1786619168.6965082,
+    "ast_hash": "708cd8497399d2685dc1c15b94cc998a",
     "semantic_hash": ""
   },
   "deployment/tests/test-release-metadata.ps1": {
@@ -475,8 +475,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/deployment_test.go": {
-    "mtime": 1786617416.3319087,
-    "ast_hash": "b7f408123400d2e0e2e33bf9911224a4",
+    "mtime": 1786618871.1271868,
+    "ast_hash": "22a4dd5d0ab3430d76e3566138e4493e",
     "semantic_hash": ""
   },
   "gh-sfl/dispatch_dedup_fixture_test.go": {
@@ -485,8 +485,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/gate.go": {
-    "mtime": 1786608103.841936,
-    "ast_hash": "4e6b9347902675148ad70defefa158e2",
+    "mtime": 1786618785.8253417,
+    "ast_hash": "81dc871927a40fcdb8ae01e3d4799132",
     "semantic_hash": ""
   },
   "gh-sfl/github.go": {
@@ -520,8 +520,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/main.go": {
-    "mtime": 1786609173.648539,
-    "ast_hash": "395004b787bea0bb25fe34da6ddf86f0",
+    "mtime": 1786618813.481979,
+    "ast_hash": "bb174127c2ac77402f0e1f4ef2c5c3b7",
     "semantic_hash": ""
   },
   "gh-sfl/manifest.go": {
@@ -550,8 +550,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/reviewer_contract_test.go": {
-    "mtime": 1786608000.0104632,
-    "ast_hash": "defd616f0ff54c48af1f02ff41be0d52",
+    "mtime": 1786618813.4829776,
+    "ast_hash": "3414181c290ae7a5abb5aa0267bedb19",
     "semantic_hash": ""
   },
   "gh-sfl/reviewer_gate_fixture_test.go": {
@@ -560,13 +560,13 @@
     "semantic_hash": ""
   },
   "gh-sfl/status.go": {
-    "mtime": 1786613305.1200569,
-    "ast_hash": "dc12333043fb5787bf65d3711a628834",
+    "mtime": 1786618785.8233418,
+    "ast_hash": "a5ca4b12dcaeffb621ab373aa709b532",
     "semantic_hash": ""
   },
   "gh-sfl/sync.go": {
-    "mtime": 1786617378.5705914,
-    "ast_hash": "c978cbd3c8a4ad9f3f075aa048f07655",
+    "mtime": 1786618871.1261868,
+    "ast_hash": "0c407224276c6930c9419cc47e348200",
     "semantic_hash": ""
   },
   "gh-sfl/table.go": {
@@ -575,18 +575,18 @@
     "semantic_hash": ""
   },
   "gh-sfl/toggle.go": {
-    "mtime": 1786615033.0341716,
-    "ast_hash": "3b93fda99c0f6cd507e355647970eb72",
+    "mtime": 1786618813.4810874,
+    "ast_hash": "75b5ab6f5fff86340037d5e1e1226074",
     "semantic_hash": ""
   },
   "gh-sfl/uninstall.go": {
-    "mtime": 1786611984.8615355,
-    "ast_hash": "eb588f41f298f7ee9400a311a0b1d231",
+    "mtime": 1786618785.8233418,
+    "ast_hash": "6534cb1476f9c0f5b384181256b24c9a",
     "semantic_hash": ""
   },
   "gh-sfl/version.go": {
-    "mtime": 1786608907.5316997,
-    "ast_hash": "1714510fb70adac38d32eac6d2d76fea",
+    "mtime": 1786618785.8253417,
+    "ast_hash": "c567f23f85619f64905bc3e62d6a5cef",
     "semantic_hash": ""
   },
   ".github/workflows/validate-gh-sfl.yml": {
@@ -602,6 +602,21 @@
   "gh-sfl/README.md": {
     "mtime": 1786613395.7249963,
     "ast_hash": "1d4061ca5c921d7139a2fb1c57634abe",
+    "semantic_hash": ""
+  },
+  "gh-sfl/internal/generatelabels/main.go": {
+    "mtime": 1786618785.8223417,
+    "ast_hash": "084e126bdbd1f79f29d330c4afd539f5",
+    "semantic_hash": ""
+  },
+  "gh-sfl/labels.go": {
+    "mtime": 1786618785.820343,
+    "ast_hash": "a15393c400c32bbab635e72ee4e16044",
+    "semantic_hash": ""
+  },
+  "gh-sfl/labels_generated.go": {
+    "mtime": 1786618793.6117654,
+    "ast_hash": "52e2bdf2d35611db551b3d09410f6f54",
     "semantic_hash": ""
   }
 }

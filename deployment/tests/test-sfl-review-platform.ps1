@@ -66,6 +66,7 @@ Assert-PatternSet $reviewer @(
 )
 
 Assert-PatternSet $auto @(
+    "vars.SFL_ENABLED != 'false'",
     'types: \[opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled\]',
     'pull_request_review:\s*\r?\n\s+types: \[submitted\]',
     "github\.event\.label\.name == 'sfl-review'",
@@ -106,6 +107,7 @@ if ($autoContent -match 'permission-issues:\s*write') {
 }
 
 Assert-PatternSet $recovery @(
+    "vars.SFL_ENABLED != 'false'",
     "github\.event\.workflow_run\.path == '\.github/workflows/sfl-pr-review\.lock\.yml'",
     'decide_review_recovery',
     'newer_run_suppresses_retry',

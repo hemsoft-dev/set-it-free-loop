@@ -633,41 +633,6 @@ func isDirEmpty(path string) (bool, error) {
 	return len(entries) == 0, nil
 }
 
-// sflLabels is the list of labels deployed by SFL init.
-var sflLabels = []string{
-	"agent:fixable",
-	"agent:in-progress",
-	"agent:review-requested",
-	"agent:pause",
-	"agent:human-required",
-	"agent:escalated",
-	"agent:pr",
-	"pr-analyzer-quality",
-	"pr-analyzer-security",
-	"pr-analyzer-testing",
-	"sfl-review",
-	"risk:trivial",
-	"risk:low",
-	"risk:medium",
-	"risk:high",
-	"risk:critical",
-	"pr:cycle-1",
-	"pr:cycle-2",
-	"pr:cycle-3",
-	"human:ready-for-review",
-	"source:repo-audit",
-	"source:simplisticate",
-	"source:jira",
-	"source:github-issue",
-	"source:manual",
-	"report",
-	"action-item",
-	"feature-request",
-	"daily-status",
-	"audit",
-	"no-agent",
-}
-
 func parseUninstallOptions(args []string, stderr io.Writer) (uninstallOptions, error) {
 	var opts uninstallOptions
 
