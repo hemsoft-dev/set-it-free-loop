@@ -47,6 +47,9 @@ Already present:
   exist.
 - [x] Issue #40 / PR #41 brought most reviewer behavior to the Relias v6.5.7
   contract.
+- [x] Issue #21 configures explicit Kimi K3 pricing in both the primary reviewer
+  and mandatory threat-detection runtimes; contract coverage rejects a lock
+  that prices only one runtime.
 
 Known gaps:
 
