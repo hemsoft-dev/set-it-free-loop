@@ -38,43 +38,50 @@ try {
     $script = @"
 set -euo pipefail
 $functionBody
-find_reusable_review_run "`$1" "`$2" "`$3"
+if [ "`$1" = '--statuses' ]; then
+    reusable_review_statuses
+    exit 0
+fi
+find_reusable_review_run "`$1" "`$2"
 "@
     Set-Content -LiteralPath $scriptPath -Value $script -Encoding utf8NoBOM
 
     $expectedTitle = 'SFL PR Review #49 base:head retry='
+    $statuses = @(& $bashPath $scriptPath --statuses)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Reusable review statuses failed to execute.'
+    }
+    if (($statuses -join ',') -cne 'queued,in_progress,success') {
+        throw "Reusable review statuses were '$($statuses -join ',')'; expected queued,in_progress,success."
+    }
+
     $fixtures = @(
         @{
             Name = 'queued exact-state run'
-            EventAction = 'edited'
             LabelPresent = 'false'
             Expected = '102'
             Json = '{"workflow_runs":[{"id":101,"status":"queued","display_title":"SFL PR Review #49 base:head retry=0 dispatch=first"},{"id":102,"status":"queued","display_title":"SFL PR Review #49 base:head retry=0 dispatch=second"}]}'
         },
         @{
             Name = 'in-progress exact-state run'
-            EventAction = 'synchronize'
             LabelPresent = 'false'
             Expected = '201'
             Json = '{"workflow_runs":[{"id":201,"status":"in_progress","display_title":"SFL PR Review #49 base:head retry=0 dispatch=active"}]}'
         },
         @{
             Name = 'successful completed exact-state run'
-            EventAction = 'edited'
             LabelPresent = 'false'
             Expected = '301'
             Json = '{"workflow_runs":[{"id":301,"status":"completed","conclusion":"success","display_title":"SFL PR Review #49 base:head retry=0 dispatch=completed"}]}'
         },
         @{
             Name = 'unrelated completed history'
-            EventAction = 'edited'
             LabelPresent = 'false'
             Expected = ''
             Json = '{"workflow_runs":[{"id":401,"status":"completed","conclusion":"success","display_title":"SFL PR Review #48 other:head retry=0 dispatch=other"}]}'
         },
         @{
-            Name = 'explicit review label bypass'
-            EventAction = 'labeled'
+            Name = 'live explicit label bypass from any concurrent event'
             LabelPresent = 'true'
             Expected = ''
             Json = '{"workflow_runs":[{"id":501,"status":"completed","conclusion":"success","display_title":"SFL PR Review #49 base:head retry=0 dispatch=completed"}]}'
@@ -82,7 +89,7 @@ find_reusable_review_run "`$1" "`$2" "`$3"
     )
 
     foreach ($fixture in $fixtures) {
-        $output = @($fixture.Json | & $bashPath $scriptPath $expectedTitle $fixture.EventAction $fixture.LabelPresent)
+        $output = @($fixture.Json | & $bashPath $scriptPath $expectedTitle $fixture.LabelPresent)
         if ($LASTEXITCODE -ne 0) {
             throw "Dispatch dedup fixture failed to execute: $($fixture.Name)"
         }

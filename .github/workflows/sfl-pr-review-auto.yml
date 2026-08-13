@@ -229,12 +229,14 @@ jobs:
           # closes the queue-delay window where an edited event starts after
           # the original reviewer has already completed.
           # BEGIN TESTABLE DISPATCH DEDUP
+          reusable_review_statuses() {
+            printf '%s\n' queued in_progress success
+          }
+
           find_reusable_review_run() {
             local expected_title="$1"
-            local event_action="${2:-}"
-            local review_label_present="${3:-false}"
-            if [ "$event_action" = "labeled" ] \
-              && [ "$review_label_present" = "true" ]; then
+            local review_label_present="${2:-false}"
+            if [ "$review_label_present" = "true" ]; then
               cat > /dev/null
               return 0
             fi
@@ -251,15 +253,16 @@ jobs:
           if grep -Fxq "sfl-review" <<< "$PR_LABELS"; then
             REVIEW_LABEL_PRESENT="true"
           fi
-          # An explicit sfl-review request must dispatch with the effort labels
-          # selected at request time, even if another effort is already active.
-          # A stale queued labeled event whose trigger was already consumed
-          # uses ordinary deduplication instead.
-          for STATUS in queued in_progress success; do
+          # Whichever concurrent event first observes a live explicit request
+          # must dispatch with the effort labels selected at request time, even
+          # if another review is already active or successfully completed. A
+          # stale queued labeled event whose trigger was consumed by another
+          # event uses ordinary deduplication instead.
+          for STATUS in $(reusable_review_statuses); do
             MATCHING_RUN_ID=$(gh api \
               "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?status=${STATUS}&per_page=100" \
               | find_reusable_review_run \
-                "${EXPECTED_TITLE}" "$EVENT_ACTION" "$REVIEW_LABEL_PRESENT")
+                "${EXPECTED_TITLE}" "$REVIEW_LABEL_PRESENT")
             if [[ "$MATCHING_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
               REUSABLE_RUN_ID="$MATCHING_RUN_ID"
               break
