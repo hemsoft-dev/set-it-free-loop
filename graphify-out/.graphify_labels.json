@@ -21,7 +21,7 @@
   "19": "PR Analyzer Testing",
   "20": "SFL Auditor",
   "21": "Set it Free Loop™",
-  "22": "HemSoft SFL Reviewer Parity TODO",
+  "22": "Required work",
   "23": "PR Analyzer General — Full-Spectrum Review",
   "24": "PR Analyzer Quality",
   "25": "PR Analyzer Security",
@@ -29,6 +29,8 @@
   "27": "SFL Auditor",
   "28": "HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.",
   "29": "HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.",
+  "30": "enum",
+  "31": "Issue Processor",
   "32": "Issue Processor",
   "33": "Daily Simplisticate Audit",
   "34": "engine-policy.schema.json",
@@ -50,5 +52,10 @@
   "50": "setup-hemsoft-github-routing.ps1",
   "51": "test-review-tier-manifest-merge.ps1",
   "52": "test-sfl-pr-review.ps1",
-  "53": "test-source-pin-placement.ps1"
+  "53": "test-source-pin-placement.ps1",
+  "54": "HemSoft SFL Pull Request Reviewer",
+  "55": "sfl: Frontmatter Spec",
+  "56": "Daily Repo Status",
+  "57": "Repo Audit",
+  "58": "HemSoft SFL Reviewer Parity TODO"
 }

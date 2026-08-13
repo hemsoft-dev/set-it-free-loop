@@ -53,8 +53,8 @@ Already present:
 
 Known gaps:
 
-- [ ] HemSoft does not validate GitHub's `isOutdated` flag before resolving an
-  obsolete SFL review thread, unlike Relias v6.5.7.
+- [x] HemSoft validates GitHub's `isOutdated` flag before resolving an
+  obsolete SFL review thread, matching Relias v6.5.7.
 - [ ] `VERSION` and `sfl.json` still report `2.0.0`; there is no recorded Relias
   baseline in release metadata.
 - [ ] The repository has no Git tags or GitHub releases.
@@ -77,9 +77,9 @@ phase has evidence that must exist before it is complete.
 
 ### P0 — Close reviewer contract drift
 
-- [ ] Port Relias's obsolete-thread guard: query `isOutdated` and refuse to
+- [x] Port Relias's obsolete-thread guard: query `isOutdated` and refuse to
   resolve a live unresolved thread.
-- [ ] Add regression cases proving that an outdated SFL thread may be resolved,
+- [x] Add regression cases proving that an outdated SFL thread may be resolved,
   an already resolved thread is idempotent, and a live unresolved thread is
   rejected.
 - [ ] Compare all reviewer source/runtime artifacts with current Relias `main`.
@@ -87,7 +87,7 @@ phase has evidence that must exist before it is complete.
   - HemSoft OpenRouter/Kimi configuration;
   - private HemSoft repository enforcement;
   - a tested HemSoft hardening that is at least as strict as Relias.
-- [ ] Regenerate the reviewer lock with the repository's checksum-verified
+- [x] Regenerate the reviewer lock with the repository's checksum-verified
   `gh-aw` compiler; never edit the generated lock directly.
 - [ ] Pass the reviewer platform, verdict, recovery, and workflow contract
   suites plus `actionlint` for the generated and wrapper workflows.

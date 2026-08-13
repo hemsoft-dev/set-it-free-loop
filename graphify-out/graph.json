@@ -373,8 +373,8 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "properties"
     },
     {
@@ -384,8 +384,8 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_schema",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "$schema"
     },
     {
@@ -395,8 +395,8 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_schema_type",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -406,8 +406,8 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_defaultprofile",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "defaultprofile"
     },
     {
@@ -417,8 +417,8 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_defaultprofile_type",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -428,8 +428,8 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_defaultprofile_minlength",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "minlength"
     },
     {
@@ -439,8 +439,8 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_profiles",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "profiles"
     },
     {
@@ -450,8 +450,8 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_profiles_type",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -461,8 +461,8 @@
       "source_location": "L20",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_profiles_minproperties",
-      "community": 34,
-      "community_name": "engine-policy.schema.json",
+      "community": 1,
+      "community_name": "properties",
       "norm_label": "minproperties"
     },
     {
@@ -538,8 +538,8 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_provider",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "provider"
     },
     {
@@ -549,8 +549,8 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_provider_type",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "type"
     },
     {
@@ -560,8 +560,8 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_provider_enum",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "enum"
     },
     {
@@ -571,8 +571,8 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "ref_copilot",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "copilot"
     },
     {
@@ -582,8 +582,8 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "ref_claude",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "claude"
     },
     {
@@ -593,8 +593,8 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "ref_codex",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "codex"
     },
     {
@@ -604,8 +604,8 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "ref_gemini",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "gemini"
     },
     {
@@ -615,8 +615,8 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "ref_crush",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "crush"
     },
     {
@@ -626,8 +626,8 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "ref_opencode",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "opencode"
     },
     {
@@ -637,8 +637,8 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "ref_pi",
-      "community": 1,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "pi"
     },
     {
@@ -2345,6 +2345,17 @@
       "community": 52,
       "community_name": "test-sfl-pr-review.ps1",
       "norm_label": "test-sfl-pr-review.ps1"
+    },
+    {
+      "label": "Get-ExpectedThreadResolutionEligibility()",
+      "file_type": "code",
+      "source_file": "deployment/tests/test-sfl-pr-review.ps1",
+      "source_location": "L132",
+      "_origin": "ast",
+      "id": "deployment_tests_test_sfl_pr_review_get_expectedthreadresolutioneligibility",
+      "community": 52,
+      "community_name": "test-sfl-pr-review.ps1",
+      "norm_label": "get-expectedthreadresolutioneligibility()"
     },
     {
       "label": "test-sfl-review-platform.ps1",
@@ -4352,7 +4363,7 @@
       "label": "Full-Spectrum PR Review",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1189",
+      "source_location": "L1191",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_full_spectrum_pr_review",
       "community": 29,
@@ -4363,7 +4374,7 @@
       "label": "Required Configuration",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1191",
+      "source_location": "L1193",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_required_configuration",
       "community": 29,
@@ -4374,7 +4385,7 @@
       "label": "Setup",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1225",
+      "source_location": "L1227",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_setup",
       "community": 29,
@@ -4385,7 +4396,7 @@
       "label": "Review Passes",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1256",
+      "source_location": "L1260",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_review_passes",
       "community": 29,
@@ -4396,7 +4407,7 @@
       "label": "Severity Accounting",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1262",
+      "source_location": "L1266",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_severity_accounting",
       "community": 29,
@@ -4407,7 +4418,7 @@
       "label": "Pass 1: \ud83d\udd12 Security Review",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1296",
+      "source_location": "L1300",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_pass_1_security_review",
       "community": 29,
@@ -4418,7 +4429,7 @@
       "label": "Pass 2: \u2705 Accuracy & Reliability Review",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1317",
+      "source_location": "L1321",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_pass_2_accuracy_reliability_review",
       "community": 29,
@@ -4429,7 +4440,7 @@
       "label": "Pass 3: \ud83e\uddf0 Quality & Maintainability Review",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1337",
+      "source_location": "L1341",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_pass_3_quality_maintainability_review",
       "community": 29,
@@ -4440,7 +4451,7 @@
       "label": "Conditional Evidence Checks",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1355",
+      "source_location": "L1359",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_conditional_evidence_checks",
       "community": 29,
@@ -4451,7 +4462,7 @@
       "label": "Summary",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1374",
+      "source_location": "L1378",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_summary",
       "community": 29,
@@ -4462,7 +4473,7 @@
       "label": "Rules",
       "file_type": "document",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1451",
+      "source_location": "L1456",
       "_origin": "ast",
       "id": "github_workflows_sfl_pr_review_rules",
       "community": 29,
@@ -5642,7 +5653,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "todo_hemsoft_sfl_reviewer_parity_todo",
-      "community": 22,
+      "community": 58,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "hemsoft sfl reviewer parity todo"
     },
@@ -5653,7 +5664,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "todo_definition_of_parity",
-      "community": 22,
+      "community": 58,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "definition of parity"
     },
@@ -5664,7 +5675,7 @@
       "source_location": "L33",
       "_origin": "ast",
       "id": "todo_verified_baseline_2026_08_12",
-      "community": 22,
+      "community": 58,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "verified baseline \u2014 2026-08-12"
     },
@@ -5676,7 +5687,7 @@
       "_origin": "ast",
       "id": "todo_required_work",
       "community": 22,
-      "community_name": "HemSoft SFL Reviewer Parity TODO",
+      "community_name": "Required work",
       "norm_label": "required work"
     },
     {
@@ -5687,7 +5698,7 @@
       "_origin": "ast",
       "id": "todo_p0_close_reviewer_contract_drift",
       "community": 22,
-      "community_name": "HemSoft SFL Reviewer Parity TODO",
+      "community_name": "Required work",
       "norm_label": "p0 \u2014 close reviewer contract drift"
     },
     {
@@ -5698,7 +5709,7 @@
       "_origin": "ast",
       "id": "todo_p0_restore_a_trustworthy_release_pipeline",
       "community": 22,
-      "community_name": "HemSoft SFL Reviewer Parity TODO",
+      "community_name": "Required work",
       "norm_label": "p0 \u2014 restore a trustworthy release pipeline"
     },
     {
@@ -5709,7 +5720,7 @@
       "_origin": "ast",
       "id": "todo_p0_make_gh_sfl_independently_distributable",
       "community": 22,
-      "community_name": "HemSoft SFL Reviewer Parity TODO",
+      "community_name": "Required work",
       "norm_label": "p0 \u2014 make `gh sfl` independently distributable"
     },
     {
@@ -5720,7 +5731,7 @@
       "_origin": "ast",
       "id": "todo_p1_make_review_gating_part_of_the_rollout_contract",
       "community": 22,
-      "community_name": "HemSoft SFL Reviewer Parity TODO",
+      "community_name": "Required work",
       "norm_label": "p1 \u2014 make review gating part of the rollout contract"
     },
     {
@@ -5731,7 +5742,7 @@
       "_origin": "ast",
       "id": "todo_p1_converge_approved_private_consumers",
       "community": 22,
-      "community_name": "HemSoft SFL Reviewer Parity TODO",
+      "community_name": "Required work",
       "norm_label": "p1 \u2014 converge approved private consumers"
     },
     {
@@ -5742,7 +5753,7 @@
       "_origin": "ast",
       "id": "todo_p1_prevent_future_relias_drift",
       "community": 22,
-      "community_name": "HemSoft SFL Reviewer Parity TODO",
+      "community_name": "Required work",
       "norm_label": "p1 \u2014 prevent future relias drift"
     },
     {
@@ -5752,7 +5763,7 @@
       "source_location": "L196",
       "_origin": "ast",
       "id": "todo_definition_of_done",
-      "community": 22,
+      "community": 58,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "definition of done"
     },
@@ -5763,7 +5774,7 @@
       "source_location": "L213",
       "_origin": "ast",
       "id": "todo_deferred_until_required_parity_is_complete",
-      "community": 22,
+      "community": 58,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "deferred until required parity is complete"
     },
@@ -5774,7 +5785,7 @@
       "source_location": "L228",
       "_origin": "ast",
       "id": "todo_reference_implementation",
-      "community": 22,
+      "community": 58,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "reference implementation"
     },
@@ -6379,8 +6390,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 56,
+      "community_name": "Daily Repo Status",
       "norm_label": "deployment/workflows/daily-repo-status.md"
     },
     {
@@ -6390,8 +6401,8 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_daily_repo_status",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 56,
+      "community_name": "Daily Repo Status",
       "norm_label": "daily repo status"
     },
     {
@@ -6401,8 +6412,8 @@
       "source_location": "L44",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_step_0_close_previous_daily_status_reports",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 56,
+      "community_name": "Daily Repo Status",
       "norm_label": "step 0 \u2014 close previous daily status reports"
     },
     {
@@ -6412,8 +6423,8 @@
       "source_location": "L55",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_what_to_include",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 56,
+      "community_name": "Daily Repo Status",
       "norm_label": "what to include"
     },
     {
@@ -6423,8 +6434,8 @@
       "source_location": "L62",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_style",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 56,
+      "community_name": "Daily Repo Status",
       "norm_label": "style"
     },
     {
@@ -6434,8 +6445,8 @@
       "source_location": "L68",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_process",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 56,
+      "community_name": "Daily Repo Status",
       "norm_label": "process"
     },
     {
@@ -6456,8 +6467,8 @@
       "source_location": "L35",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_issue_processor",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "issue processor"
     },
     {
@@ -6467,8 +6478,8 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_1_find_the_oldest_claimable_issue",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "step 1 \u2014 find the oldest claimable issue"
     },
     {
@@ -6478,8 +6489,8 @@
       "source_location": "L58",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_2_claim_the_issue",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "step 2 \u2014 claim the issue"
     },
     {
@@ -6489,8 +6500,8 @@
       "source_location": "L70",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_3_validate_the_issue_body",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "step 3 \u2014 validate the issue body"
     },
     {
@@ -6500,8 +6511,8 @@
       "source_location": "L86",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_4_inspect_the_codebase",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "step 4 \u2014 inspect the codebase"
     },
     {
@@ -6511,8 +6522,8 @@
       "source_location": "L94",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_5_implement_the_fix",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "step 5 \u2014 implement the fix"
     },
     {
@@ -6522,8 +6533,8 @@
       "source_location": "L112",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_6_open_a_pull_request_via_safe_output",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "step 6 \u2014 open a pull request via safe output"
     },
     {
@@ -6533,8 +6544,8 @@
       "source_location": "L129",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_7_update_the_issue",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "step 7 \u2014 update the issue"
     },
     {
@@ -6544,8 +6555,8 @@
       "source_location": "L137",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_guardrails",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "guardrails"
     },
     {
@@ -6555,8 +6566,8 @@
       "source_location": "L146",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_known_limitation_label_delivery",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 31,
+      "community_name": "Issue Processor",
       "norm_label": "known limitation: label delivery"
     },
     {
@@ -7226,8 +7237,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_workflows_pr_fixer",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 9,
+      "community_name": "PR Fixer \u2014 Authority",
       "norm_label": "deployment/workflows/pr-fixer.md"
     },
     {
@@ -7699,8 +7710,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 57,
+      "community_name": "Repo Audit",
       "norm_label": "deployment/workflows/repo-audit.md"
     },
     {
@@ -7710,8 +7721,8 @@
       "source_location": "L48",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_repo_audit",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 57,
+      "community_name": "Repo Audit",
       "norm_label": "repo audit"
     },
     {
@@ -7721,8 +7732,8 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_goals",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 57,
+      "community_name": "Repo Audit",
       "norm_label": "goals"
     },
     {
@@ -7732,8 +7743,8 @@
       "source_location": "L59",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_audit_scope",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 57,
+      "community_name": "Repo Audit",
       "norm_label": "audit scope"
     },
     {
@@ -7743,8 +7754,8 @@
       "source_location": "L75",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_output_requirements",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 57,
+      "community_name": "Repo Audit",
       "norm_label": "output requirements"
     },
     {
@@ -7754,8 +7765,8 @@
       "source_location": "L86",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_process",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 57,
+      "community_name": "Repo Audit",
       "norm_label": "process"
     },
     {
@@ -7949,7 +7960,7 @@
       "label": "Full-Spectrum PR Review",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1189",
+      "source_location": "L1191",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_full_spectrum_pr_review",
       "community": 28,
@@ -7960,7 +7971,7 @@
       "label": "Required Configuration",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1191",
+      "source_location": "L1193",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_required_configuration",
       "community": 28,
@@ -7971,7 +7982,7 @@
       "label": "Setup",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1225",
+      "source_location": "L1227",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_setup",
       "community": 28,
@@ -7982,7 +7993,7 @@
       "label": "Review Passes",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1256",
+      "source_location": "L1260",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_review_passes",
       "community": 28,
@@ -7993,7 +8004,7 @@
       "label": "Severity Accounting",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1262",
+      "source_location": "L1266",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_severity_accounting",
       "community": 28,
@@ -8004,7 +8015,7 @@
       "label": "Pass 1: \ud83d\udd12 Security Review",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1296",
+      "source_location": "L1300",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_pass_1_security_review",
       "community": 28,
@@ -8015,7 +8026,7 @@
       "label": "Pass 2: \u2705 Accuracy & Reliability Review",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1317",
+      "source_location": "L1321",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_pass_2_accuracy_reliability_review",
       "community": 28,
@@ -8026,7 +8037,7 @@
       "label": "Pass 3: \ud83e\uddf0 Quality & Maintainability Review",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1337",
+      "source_location": "L1341",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_pass_3_quality_maintainability_review",
       "community": 28,
@@ -8037,7 +8048,7 @@
       "label": "Conditional Evidence Checks",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1355",
+      "source_location": "L1359",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_conditional_evidence_checks",
       "community": 28,
@@ -8048,7 +8059,7 @@
       "label": "Summary",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1374",
+      "source_location": "L1378",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_summary",
       "community": 28,
@@ -8059,7 +8070,7 @@
       "label": "Rules",
       "file_type": "document",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1451",
+      "source_location": "L1456",
       "_origin": "ast",
       "id": "deployment_workflows_sfl_pr_review_rules",
       "community": 28,
@@ -8194,8 +8205,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_hemsoft_sfl_pull_request_reviewer",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "hemsoft sfl pull request reviewer"
     },
     {
@@ -8205,8 +8216,8 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_distribution_boundary",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "distribution boundary"
     },
     {
@@ -8216,8 +8227,8 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_package",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "package"
     },
     {
@@ -8227,8 +8238,8 @@
       "source_location": "L35",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_required_repository_configuration",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "required repository configuration"
     },
     {
@@ -8238,8 +8249,8 @@
       "source_location": "L50",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_deployment",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "deployment"
     },
     {
@@ -8249,8 +8260,8 @@
       "source_location": "L90",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_automatic_and_explicit_review",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "automatic and explicit review"
     },
     {
@@ -8260,8 +8271,8 @@
       "source_location": "L121",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_evidence_and_approval",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "evidence and approval"
     },
     {
@@ -8271,8 +8282,8 @@
       "source_location": "L137",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_recovery",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "recovery"
     },
     {
@@ -8282,8 +8293,8 @@
       "source_location": "L153",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_advisory_and_gated_operation",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "HemSoft SFL Pull Request Reviewer",
       "norm_label": "advisory and gated operation"
     },
     {
@@ -8304,8 +8315,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "docs_intake_format_sfl_frontmatter_spec",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 55,
+      "community_name": "sfl: Frontmatter Spec",
       "norm_label": "sfl: frontmatter spec"
     },
     {
@@ -8315,8 +8326,8 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "docs_intake_format_overview",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 55,
+      "community_name": "sfl: Frontmatter Spec",
       "norm_label": "overview"
     },
     {
@@ -8326,8 +8337,8 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "docs_intake_format_full_field_reference",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 55,
+      "community_name": "sfl: Frontmatter Spec",
       "norm_label": "full field reference"
     },
     {
@@ -8337,8 +8348,8 @@
       "source_location": "L64",
       "_origin": "ast",
       "id": "docs_intake_format_field_matrix",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 55,
+      "community_name": "sfl: Frontmatter Spec",
       "norm_label": "field matrix"
     },
     {
@@ -8348,8 +8359,8 @@
       "source_location": "L79",
       "_origin": "ast",
       "id": "docs_intake_format_what_not_to_add_to_sfl",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 55,
+      "community_name": "sfl: Frontmatter Spec",
       "norm_label": "what not to add to sfl:"
     },
     {
@@ -8359,8 +8370,8 @@
       "source_location": "L93",
       "_origin": "ast",
       "id": "docs_intake_format_minimal_example",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 55,
+      "community_name": "sfl: Frontmatter Spec",
       "norm_label": "minimal example"
     },
     {
@@ -8370,8 +8381,8 @@
       "source_location": "L140",
       "_origin": "ast",
       "id": "docs_intake_format_future_proofing",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 55,
+      "community_name": "sfl: Frontmatter Spec",
       "norm_label": "future-proofing"
     }
   ],
@@ -10886,6 +10897,17 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "deployment/tests/test-sfl-pr-review.ps1",
+      "source_location": "L132",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "deployment_tests_test_sfl_pr_review",
+      "target": "deployment_tests_test_sfl_pr_review_get_expectedthreadresolutioneligibility",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
       "source_location": "L31",
       "weight": 1.0,
@@ -12724,7 +12746,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1189",
+      "source_location": "L1191",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -12735,7 +12757,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1191",
+      "source_location": "L1193",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -12746,7 +12768,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1256",
+      "source_location": "L1260",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -12757,7 +12779,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1451",
+      "source_location": "L1456",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -12768,7 +12790,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1225",
+      "source_location": "L1227",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -12779,7 +12801,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1374",
+      "source_location": "L1378",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -12790,7 +12812,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1355",
+      "source_location": "L1359",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_review_passes",
@@ -12801,7 +12823,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1296",
+      "source_location": "L1300",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_review_passes",
@@ -12812,7 +12834,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1317",
+      "source_location": "L1321",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_review_passes",
@@ -12823,7 +12845,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1337",
+      "source_location": "L1341",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_review_passes",
@@ -12834,7 +12856,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": ".github/workflows/sfl-pr-review.md",
-      "source_location": "L1262",
+      "source_location": "L1266",
       "weight": 1.0,
       "_origin": "ast",
       "source": "github_workflows_sfl_pr_review_review_passes",
@@ -16354,7 +16376,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1189",
+      "source_location": "L1191",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -16365,7 +16387,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1191",
+      "source_location": "L1193",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -16376,7 +16398,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1256",
+      "source_location": "L1260",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -16387,7 +16409,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1451",
+      "source_location": "L1456",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -16398,7 +16420,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1225",
+      "source_location": "L1227",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -16409,7 +16431,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1374",
+      "source_location": "L1378",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_hemsoft_runs_the_reviewer_through_kimi_k3_on_its_private_openrouter_route",
@@ -16420,7 +16442,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1355",
+      "source_location": "L1359",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_review_passes",
@@ -16431,7 +16453,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1296",
+      "source_location": "L1300",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_review_passes",
@@ -16442,7 +16464,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1317",
+      "source_location": "L1321",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_review_passes",
@@ -16453,7 +16475,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1337",
+      "source_location": "L1341",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_review_passes",
@@ -16464,7 +16486,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/workflows/sfl-pr-review.md",
-      "source_location": "L1262",
+      "source_location": "L1266",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_workflows_sfl_pr_review_review_passes",
@@ -16748,5 +16770,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "337eaec6f8544ed43c6ace1bcef15420fd370709"
+  "built_at_commit": "b104b88146b821bb5b061bb4c64407174700e9a6"
 }
