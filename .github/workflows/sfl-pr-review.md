@@ -113,9 +113,13 @@ engine:
 model: moonshotai/kimi-k3
 
 models:
-  default-ai-credits-pricing:
-    input: 3
-    output: 15
+  providers:
+    github-copilot:
+      models:
+        "moonshotai/kimi-k3":
+          cost:
+            input: "3e-06"
+            output: "1.5e-05"
 
 network:
   allowed:

@@ -1,16 +1,16 @@
-# Graph Report - set-it-free-loop  (2026-08-12)
+# Graph Report - issue-21-threat-pricing  (2026-08-12)
 
 ## Corpus Check
-- 59 files · ~156,428 words
+- 59 files · ~157,340 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 763 nodes · 766 edges · 54 communities (53 shown, 1 thin omitted)
+- 761 nodes · 756 edges · 52 communities (51 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 2 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1a7766f9`
+- Built from commit: `337eaec6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -37,7 +37,7 @@
 - PR Analyzer Testing
 - SFL Auditor
 - Set it Free Loop™
-- Resume Work — Quick Start
+- HemSoft SFL Reviewer Parity TODO
 - PR Analyzer General — Full-Spectrum Review
 - PR Analyzer Quality
 - PR Analyzer Security
@@ -45,8 +45,6 @@
 - SFL Auditor
 - HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.
 - HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.
-- enum
-- Issue Processor
 - Issue Processor
 - Daily Simplisticate Audit
 - engine-policy.schema.json
@@ -81,7 +79,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (54 total, 1 thin omitted)
+## Communities (52 total, 1 thin omitted)
 
 ### Community 0 - "Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀"
 Cohesion: 0.04
@@ -89,11 +87,11 @@ Nodes (47): 10) Cost Predictions at Scale (Hundreds of Repos), 11) Rollout Strat
 
 ### Community 1 - "properties"
 Cohesion: 0.05
-Nodes (45): additionalProperties, minLength, properties, required, type, items, type, minLength (+37 more)
+Nodes (46): additionalProperties, minLength, properties, required, type, items, type, enum (+38 more)
 
 ### Community 2 - "CATALOG.md"
-Cohesion: 0.06
-Nodes (26): Daily Repo Status, Process, Step 0 — Close previous daily status reports, Style, What to include, Audit Scope, Goals, Output Requirements (+18 more)
+Cohesion: 0.05
+Nodes (36): Daily Repo Status, Process, Step 0 — Close previous daily status reports, Style, What to include, Guardrails, Issue Processor, Known Limitation: Label Delivery (+28 more)
 
 ### Community 3 - "properties"
 Cohesion: 0.05
@@ -171,24 +169,24 @@ Nodes (14): Guardrails, SFL Auditor, Step 10 — Check: SFL review prerequisites
 Cohesion: 0.13
 Nodes (15): 1. Set up labels, 2. Deploy a tier (or single workflow), 3. Review the catalog, Adding a new workflow, Adding the badge to a consumer repo, Automatic versioning, How it works, How the loop works (+7 more)
 
-### Community 22 - "Resume Work — Quick Start"
-Cohesion: 0.13
-Nodes (15): 1. Verify the repo is up-to-date, 2. Verify workflows are running on GitHub, 3. Verify the SFL GitHub App credentials exist, 4. Verify governance labels are set up, 5. Test the deploy script (dry run), 6. Verify gh-aw workflow compilation (if touching .md workflows), 7. Check for open issues / PRs in the pipeline, 8. What to work on next (+7 more)
+### Community 22 - "HemSoft SFL Reviewer Parity TODO"
+Cohesion: 0.15
+Nodes (13): Deferred until required parity is complete, Definition of done, Definition of parity, HemSoft SFL Reviewer Parity TODO, P0 — Close reviewer contract drift, P0 — Make `gh sfl` independently distributable, P0 — Restore a trustworthy release pipeline, P1 — Converge approved private consumers (+5 more)
 
 ### Community 23 - "PR Analyzer General — Full-Spectrum Review"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (14): Best Practices, Correctness & Logic, Guardrails, Performance, PR Analyzer General — Full-Spectrum Review, Security, Step 1 — Find the target PR, Step 2 — Determine the current review cycle (+6 more)
 
 ### Community 24 - "PR Analyzer Quality"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (14): Best Practices, Correctness & Logic, Guardrails, Performance, PR Analyzer Quality, Security-Relevant Quality, Step 1 — Find the target PR, Step 2 — Determine the current review cycle (+6 more)
 
 ### Community 25 - "PR Analyzer Security"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (14): Abuse Resistance, Evidence, Guardrails, PR Analyzer Security, Security, Security Maintainability, Security-Relevant Correctness, Step 1 — Find the target PR (+6 more)
 
 ### Community 26 - "PR Analyzer Testing"
-Cohesion: 0.14
+Cohesion: 0.13
 Nodes (14): Behavior Coverage, CI and Maintenance, Gaps, Guardrails, Merge Risk, PR Analyzer Testing, Step 1 — Find the target PR, Step 2 — Determine the current review cycle (+6 more)
 
 ### Community 27 - "SFL Auditor"
@@ -203,14 +201,6 @@ Nodes (13): Conditional Evidence Checks, Full-Spectrum PR Review, HemSoft runs t
 Cohesion: 0.14
 Nodes (13): Conditional Evidence Checks, Full-Spectrum PR Review, HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route., HemSoft SFL reviewer platform v2, Pass 1: 🔒 Security Review, Pass 2: ✅ Accuracy & Reliability Review, Pass 3: 🧰 Quality & Maintainability Review, Required Configuration (+5 more)
 
-### Community 30 - "enum"
-Cohesion: 0.20
-Nodes (10): provider, enum, type, claude, codex, copilot, crush, gemini (+2 more)
-
-### Community 31 - "Issue Processor"
-Cohesion: 0.20
-Nodes (10): Guardrails, Issue Processor, Known Limitation: Label Delivery, Step 1 — Find the oldest claimable issue, Step 2 — Claim the issue, Step 3 — Validate the issue body, Step 4 — Inspect the codebase, Step 5 — Implement the fix (+2 more)
-
 ### Community 32 - "Issue Processor"
 Cohesion: 0.20
 Nodes (9): Guardrails, Issue Processor, Step 1 — Find the oldest claimable issue, Step 2 — Claim the issue, Step 3 — Validate the issue body, Step 4 — Inspect the codebase, Step 5 — Implement the fix, Step 6 — Open a pull request via safe output (+1 more)
@@ -220,11 +210,11 @@ Cohesion: 0.20
 Nodes (9): Audit Scope, Complexity Signals to Detect, Daily Simplisticate Audit, Goals, Output Requirements, Per-finding issues (for agent-fixable findings only), Process, Step 0 — Close previous simplisticate summary reports (+1 more)
 
 ### Community 34 - "engine-policy.schema.json"
-Cohesion: 0.22
-Nodes (8): additionalProperties, description, defaultProfile, required, $schema, title, type, profiles
+Cohesion: 0.11
+Nodes (17): additionalProperties, minLength, type, description, defaultProfile, minProperties, type, properties (+9 more)
 
 ### Community 35 - "Daily Simplisticate Audit"
-Cohesion: 0.22
+Cohesion: 0.20
 Nodes (9): Audit Scope, Complexity Signals to Detect, Daily Simplisticate Audit, Goals, Output Requirements, Per-finding issues (for agent-fixable findings only), Process, Step 0 — Close previous simplisticate summary reports (+1 more)
 
 ### Community 36 - "SFL — Add Issue to Pipeline"
@@ -256,7 +246,7 @@ Cohesion: 0.83
 Nodes (3): Assert-ExactPair(), Assert-Patterns(), Read-RepoFile()
 
 ## Knowledge Gaps
-- **549 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+544 more)
+- **548 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+543 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -270,10 +260,10 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `PR Fixer — Authority` connect `PR Fixer — Authority` to `CATALOG.md`?**
   _High betweenness centrality (0.021) - this node is a cross-community bridge._
 - **What connects `$schema`, `defaultProfile`, `provider` to the rest of the system?**
-  _549 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _548 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` be split into smaller, more focused modules?**
   _Cohesion score 0.0425531914893617 - nodes in this community are weakly interconnected._
 - **Should `properties` be split into smaller, more focused modules?**
-  _Cohesion score 0.051515151515151514 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.04927536231884058 - nodes in this community are weakly interconnected._
 - **Should `CATALOG.md` be split into smaller, more focused modules?**
-  _Cohesion score 0.06025369978858351 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.04591836734693878 - nodes in this community are weakly interconnected._
