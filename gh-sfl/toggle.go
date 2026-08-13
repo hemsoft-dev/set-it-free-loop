@@ -77,6 +77,9 @@ func parseToggleOptions(cmd string, args []string, errw io.Writer) (toggleOption
 	}
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return opts, errHelpDisplayed
+		}
 		return opts, err
 	}
 

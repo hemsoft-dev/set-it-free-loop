@@ -475,8 +475,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/deployment_test.go": {
-    "mtime": 1786614216.912215,
-    "ast_hash": "4301fef59687f3f6060e83d39501b9d2",
+    "mtime": 1786615033.035172,
+    "ast_hash": "63dc02206f447be3a3801b94ed60a61a",
     "semantic_hash": ""
   },
   "gh-sfl/dispatch_dedup_fixture_test.go": {
@@ -575,8 +575,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/toggle.go": {
-    "mtime": 1786611897.6698315,
-    "ast_hash": "f529d2b19b8a6efa8e23b3e9edb64096",
+    "mtime": 1786615033.0341716,
+    "ast_hash": "3b93fda99c0f6cd507e355647970eb72",
     "semantic_hash": ""
   },
   "gh-sfl/uninstall.go": {

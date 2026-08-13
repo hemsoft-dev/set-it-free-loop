@@ -510,6 +510,14 @@ func TestParseToggleOptionsRejectsInvalidPositionalRepositories(t *testing.T) {
 	}
 }
 
+func TestToggleHelpIsSuccessful(t *testing.T) {
+	for _, run := range []func([]string, io.Writer, io.Writer) error{runStart, runStop} {
+		if err := run([]string{"--help"}, io.Discard, io.Discard); err != nil {
+			t.Fatalf("toggle --help returned error: %v", err)
+		}
+	}
+}
+
 func TestEnsureRepoVariableOnlyCreatesOnNotFound(t *testing.T) {
 	for _, test := range []struct {
 		name      string
