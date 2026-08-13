@@ -1715,8 +1715,8 @@
       "source_location": "L33",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_components",
-      "community": 7,
-      "community_name": "enum",
+      "community": 3,
+      "community_name": "properties",
       "norm_label": "components"
     },
     {
@@ -1726,8 +1726,8 @@
       "source_location": "L34",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_components_type",
-      "community": 7,
-      "community_name": "enum",
+      "community": 3,
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -1957,8 +1957,8 @@
       "source_location": "L57",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_components_uniqueitems",
-      "community": 7,
-      "community_name": "enum",
+      "community": 3,
+      "community_name": "properties",
       "norm_label": "uniqueitems"
     },
     {
@@ -1968,8 +1968,8 @@
       "source_location": "L58",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_components_description",
-      "community": 7,
-      "community_name": "enum",
+      "community": 3,
+      "community_name": "properties",
       "norm_label": "description"
     },
     {
@@ -1980,7 +1980,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_enginepolicy",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "enginepolicy"
     },
     {
@@ -1991,7 +1991,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_type",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "type"
     },
     {
@@ -2002,7 +2002,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_required",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "required"
     },
     {
@@ -2013,7 +2013,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_json_ref_defaultprofile",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "defaultprofile"
     },
     {
@@ -2024,7 +2024,7 @@
       "_origin": "ast",
       "id": "ref_workflows",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "workflows"
     },
     {
@@ -2035,7 +2035,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_properties",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "properties"
     },
     {
@@ -2046,7 +2046,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_defaultprofile",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "defaultprofile"
     },
     {
@@ -2057,7 +2057,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_defaultprofile_type",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "type"
     },
     {
@@ -2068,7 +2068,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_defaultprofile_minlength",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "minlength"
     },
     {
@@ -2079,7 +2079,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_workflows",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "workflows"
     },
     {
@@ -2090,7 +2090,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_workflows_type",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "type"
     },
     {
@@ -2100,8 +2100,8 @@
       "source_location": "L70",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_workflows_items",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "items"
     },
     {
@@ -2111,8 +2111,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_items_required",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "required"
     },
     {
@@ -2122,8 +2122,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "ref_name",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "name"
     },
     {
@@ -2133,8 +2133,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_json_ref_profile",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "profile"
     },
     {
@@ -2144,8 +2144,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_json_ref_provider",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "provider"
     },
     {
@@ -2155,8 +2155,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_json_ref_model",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "model"
     },
     {
@@ -2166,8 +2166,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "ref_renderedmodel",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "renderedmodel"
     },
     {
@@ -2177,8 +2177,8 @@
       "source_location": "L73",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_items_properties",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "properties"
     },
     {
@@ -2188,8 +2188,8 @@
       "source_location": "L74",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_name",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "name"
     },
     {
@@ -2199,8 +2199,8 @@
       "source_location": "L78",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_profile",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "profile"
     },
     {
@@ -2210,8 +2210,8 @@
       "source_location": "L82",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_provider",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "provider"
     },
     {
@@ -2221,8 +2221,8 @@
       "source_location": "L86",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_model",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "model"
     },
     {
@@ -2232,8 +2232,8 @@
       "source_location": "L90",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_effort",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "effort"
     },
     {
@@ -2243,8 +2243,8 @@
       "source_location": "L94",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_renderedmodel",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "renderedmodel"
     },
     {
@@ -2254,8 +2254,8 @@
       "source_location": "L98",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_requiredsecretsanyof",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "requiredsecretsanyof"
     },
     {
@@ -2265,8 +2265,8 @@
       "source_location": "L106",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_arguments",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "arguments"
     },
     {
@@ -2276,8 +2276,8 @@
       "source_location": "L113",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_environment",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "environment"
     },
     {
@@ -2287,8 +2287,8 @@
       "source_location": "L121",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_items_additionalproperties",
-      "community": 4,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "additionalproperties"
     },
     {
@@ -2299,7 +2299,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_additionalproperties",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "additionalproperties"
     },
     {
@@ -2310,7 +2310,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_description",
       "community": 4,
-      "community_name": "properties",
+      "community_name": "enginePolicy",
       "norm_label": "description"
     },
     {
@@ -2323,6 +2323,50 @@
       "community": 3,
       "community_name": "properties",
       "norm_label": "additionalproperties"
+    },
+    {
+      "label": "test-relias-reviewer-parity.ps1",
+      "file_type": "code",
+      "source_file": "deployment/tests/test-relias-reviewer-parity.ps1",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "deployment_tests_test_relias_reviewer_parity",
+      "community": 2,
+      "community_name": "test-relias-reviewer-parity.ps1",
+      "norm_label": "test-relias-reviewer-parity.ps1"
+    },
+    {
+      "label": "Get-NormalizedSha256()",
+      "file_type": "code",
+      "source_file": "deployment/tests/test-relias-reviewer-parity.ps1",
+      "source_location": "L13",
+      "_origin": "ast",
+      "id": "deployment_tests_test_relias_reviewer_parity_get_normalizedsha256",
+      "community": 2,
+      "community_name": "test-relias-reviewer-parity.ps1",
+      "norm_label": "get-normalizedsha256()"
+    },
+    {
+      "label": "Resolve-RepoFile()",
+      "file_type": "code",
+      "source_file": "deployment/tests/test-relias-reviewer-parity.ps1",
+      "source_location": "L25",
+      "_origin": "ast",
+      "id": "deployment_tests_test_relias_reviewer_parity_resolve_repofile",
+      "community": 2,
+      "community_name": "test-relias-reviewer-parity.ps1",
+      "norm_label": "resolve-repofile()"
+    },
+    {
+      "label": "Invoke-GitText()",
+      "file_type": "code",
+      "source_file": "deployment/tests/test-relias-reviewer-parity.ps1",
+      "source_location": "L39",
+      "_origin": "ast",
+      "id": "deployment_tests_test_relias_reviewer_parity_invoke_gittext",
+      "community": 2,
+      "community_name": "test-relias-reviewer-parity.ps1",
+      "norm_label": "invoke-gittext()"
     },
     {
       "label": "test-review-tier-manifest-merge.ps1",
@@ -4641,7 +4685,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "catalog",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "catalog.md"
     },
@@ -4949,7 +4993,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "readme",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "readme.md"
     },
@@ -5125,7 +5169,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "solving_software_engineering",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "solving-software-engineering.md"
     },
@@ -5653,7 +5697,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "todo",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "todo.md"
     },
@@ -5664,7 +5708,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "todo_hemsoft_sfl_reviewer_parity_todo",
-      "community": 58,
+      "community": 22,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "hemsoft sfl reviewer parity todo"
     },
@@ -5672,10 +5716,10 @@
       "label": "Definition of parity",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L12",
+      "source_location": "L14",
       "_origin": "ast",
       "id": "todo_definition_of_parity",
-      "community": 58,
+      "community": 22,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "definition of parity"
     },
@@ -5683,10 +5727,10 @@
       "label": "Verified baseline \u2014 2026-08-12",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L33",
+      "source_location": "L35",
       "_origin": "ast",
       "id": "todo_verified_baseline_2026_08_12",
-      "community": 58,
+      "community": 22,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "verified baseline \u2014 2026-08-12"
     },
@@ -5694,87 +5738,87 @@
       "label": "Required work",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L74",
+      "source_location": "L76",
       "_origin": "ast",
       "id": "todo_required_work",
       "community": 22,
-      "community_name": "Required work",
+      "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "required work"
     },
     {
       "label": "P0 \u2014 Close reviewer contract drift",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L79",
+      "source_location": "L81",
       "_origin": "ast",
       "id": "todo_p0_close_reviewer_contract_drift",
       "community": 22,
-      "community_name": "Required work",
+      "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "p0 \u2014 close reviewer contract drift"
     },
     {
       "label": "P0 \u2014 Restore a trustworthy release pipeline",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L99",
+      "source_location": "L101",
       "_origin": "ast",
       "id": "todo_p0_restore_a_trustworthy_release_pipeline",
       "community": 22,
-      "community_name": "Required work",
+      "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "p0 \u2014 restore a trustworthy release pipeline"
     },
     {
       "label": "P0 \u2014 Make `gh sfl` independently distributable",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L117",
+      "source_location": "L119",
       "_origin": "ast",
       "id": "todo_p0_make_gh_sfl_independently_distributable",
       "community": 22,
-      "community_name": "Required work",
+      "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "p0 \u2014 make `gh sfl` independently distributable"
     },
     {
       "label": "P1 \u2014 Make review gating part of the rollout contract",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L141",
+      "source_location": "L143",
       "_origin": "ast",
       "id": "todo_p1_make_review_gating_part_of_the_rollout_contract",
       "community": 22,
-      "community_name": "Required work",
+      "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "p1 \u2014 make review gating part of the rollout contract"
     },
     {
       "label": "P1 \u2014 Converge approved private consumers",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L160",
+      "source_location": "L162",
       "_origin": "ast",
       "id": "todo_p1_converge_approved_private_consumers",
       "community": 22,
-      "community_name": "Required work",
+      "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "p1 \u2014 converge approved private consumers"
     },
     {
       "label": "P1 \u2014 Prevent future Relias drift",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L182",
+      "source_location": "L184",
       "_origin": "ast",
       "id": "todo_p1_prevent_future_relias_drift",
       "community": 22,
-      "community_name": "Required work",
+      "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "p1 \u2014 prevent future relias drift"
     },
     {
       "label": "Definition of done",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L197",
+      "source_location": "L199",
       "_origin": "ast",
       "id": "todo_definition_of_done",
-      "community": 58,
+      "community": 22,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "definition of done"
     },
@@ -5782,10 +5826,10 @@
       "label": "Deferred until required parity is complete",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L214",
+      "source_location": "L216",
       "_origin": "ast",
       "id": "todo_deferred_until_required_parity_is_complete",
-      "community": 58,
+      "community": 22,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "deferred until required parity is complete"
     },
@@ -5793,10 +5837,10 @@
       "label": "Reference implementation",
       "file_type": "document",
       "source_file": "TODO.md",
-      "source_location": "L229",
+      "source_location": "L231",
       "_origin": "ast",
       "id": "todo_reference_implementation",
-      "community": 58,
+      "community": 22,
       "community_name": "HemSoft SFL Reviewer Parity TODO",
       "norm_label": "reference implementation"
     },
@@ -5807,7 +5851,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "vision",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "vision.md"
     },
@@ -6005,7 +6049,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_governance_policy",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "policy.md"
     },
@@ -6401,8 +6445,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status",
-      "community": 56,
-      "community_name": "Daily Repo Status",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "deployment/workflows/daily-repo-status.md"
     },
     {
@@ -6412,8 +6456,8 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_daily_repo_status",
-      "community": 56,
-      "community_name": "Daily Repo Status",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "daily repo status"
     },
     {
@@ -6423,8 +6467,8 @@
       "source_location": "L44",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_step_0_close_previous_daily_status_reports",
-      "community": 56,
-      "community_name": "Daily Repo Status",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "step 0 \u2014 close previous daily status reports"
     },
     {
@@ -6434,8 +6478,8 @@
       "source_location": "L55",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_what_to_include",
-      "community": 56,
-      "community_name": "Daily Repo Status",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "what to include"
     },
     {
@@ -6445,8 +6489,8 @@
       "source_location": "L62",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_style",
-      "community": 56,
-      "community_name": "Daily Repo Status",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "style"
     },
     {
@@ -6456,8 +6500,8 @@
       "source_location": "L68",
       "_origin": "ast",
       "id": "deployment_workflows_daily_repo_status_process",
-      "community": 56,
-      "community_name": "Daily Repo Status",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "process"
     },
     {
@@ -6467,7 +6511,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "deployment/workflows/issue-processor.md"
     },
@@ -6479,7 +6523,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_issue_processor",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "issue processor"
     },
     {
@@ -6490,7 +6534,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_1_find_the_oldest_claimable_issue",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "step 1 \u2014 find the oldest claimable issue"
     },
     {
@@ -6501,7 +6545,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_2_claim_the_issue",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "step 2 \u2014 claim the issue"
     },
     {
@@ -6512,7 +6556,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_3_validate_the_issue_body",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "step 3 \u2014 validate the issue body"
     },
     {
@@ -6523,7 +6567,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_4_inspect_the_codebase",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "step 4 \u2014 inspect the codebase"
     },
     {
@@ -6534,7 +6578,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_5_implement_the_fix",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "step 5 \u2014 implement the fix"
     },
     {
@@ -6545,7 +6589,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_6_open_a_pull_request_via_safe_output",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "step 6 \u2014 open a pull request via safe output"
     },
     {
@@ -6556,7 +6600,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_7_update_the_issue",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "step 7 \u2014 update the issue"
     },
     {
@@ -6567,7 +6611,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_guardrails",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "guardrails"
     },
     {
@@ -6578,7 +6622,7 @@
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_known_limitation_label_delivery",
       "community": 31,
-      "community_name": "Issue Processor",
+      "community_name": "CATALOG.md",
       "norm_label": "known limitation: label delivery"
     },
     {
@@ -7490,8 +7534,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_workflows_pr_promoter",
-      "community": 2,
-      "community_name": "CATALOG.md",
+      "community": 12,
+      "community_name": "PR Promoter",
       "norm_label": "deployment/workflows/pr-promoter.md"
     },
     {
@@ -7721,8 +7765,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit",
-      "community": 57,
-      "community_name": "Repo Audit",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "deployment/workflows/repo-audit.md"
     },
     {
@@ -7732,8 +7776,8 @@
       "source_location": "L48",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_repo_audit",
-      "community": 57,
-      "community_name": "Repo Audit",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "repo audit"
     },
     {
@@ -7743,8 +7787,8 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_goals",
-      "community": 57,
-      "community_name": "Repo Audit",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "goals"
     },
     {
@@ -7754,8 +7798,8 @@
       "source_location": "L59",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_audit_scope",
-      "community": 57,
-      "community_name": "Repo Audit",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "audit scope"
     },
     {
@@ -7765,8 +7809,8 @@
       "source_location": "L75",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_output_requirements",
-      "community": 57,
-      "community_name": "Repo Audit",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "output requirements"
     },
     {
@@ -7776,8 +7820,8 @@
       "source_location": "L86",
       "_origin": "ast",
       "id": "deployment_workflows_repo_audit_process",
-      "community": 57,
-      "community_name": "Repo Audit",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "process"
     },
     {
@@ -8199,13 +8243,57 @@
       "norm_label": "process"
     },
     {
+      "label": "SFL-REVIEWER-PARITY.md",
+      "file_type": "document",
+      "source_file": "docs/SFL-REVIEWER-PARITY.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_sfl_reviewer_parity",
+      "community": 31,
+      "community_name": "CATALOG.md",
+      "norm_label": "sfl-reviewer-parity.md"
+    },
+    {
+      "label": "SFL reviewer parity baseline",
+      "file_type": "document",
+      "source_file": "docs/SFL-REVIEWER-PARITY.md",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "docs_sfl_reviewer_parity_sfl_reviewer_parity_baseline",
+      "community": 31,
+      "community_name": "CATALOG.md",
+      "norm_label": "sfl reviewer parity baseline"
+    },
+    {
+      "label": "Intentional differences",
+      "file_type": "document",
+      "source_file": "docs/SFL-REVIEWER-PARITY.md",
+      "source_location": "L16",
+      "_origin": "ast",
+      "id": "docs_sfl_reviewer_parity_intentional_differences",
+      "community": 31,
+      "community_name": "CATALOG.md",
+      "norm_label": "intentional differences"
+    },
+    {
+      "label": "Running the audit",
+      "file_type": "document",
+      "source_file": "docs/SFL-REVIEWER-PARITY.md",
+      "source_location": "L39",
+      "_origin": "ast",
+      "id": "docs_sfl_reviewer_parity_running_the_audit",
+      "community": 31,
+      "community_name": "CATALOG.md",
+      "norm_label": "running the audit"
+    },
+    {
       "label": "SFL-REVIEWER.md",
       "file_type": "document",
       "source_file": "docs/SFL-REVIEWER.md",
       "source_location": "L1",
       "_origin": "ast",
       "id": "docs_sfl_reviewer",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "sfl-reviewer.md"
     },
@@ -8315,7 +8403,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "docs_intake_format",
-      "community": 2,
+      "community": 31,
       "community_name": "CATALOG.md",
       "norm_label": "intake-format.md"
     },
@@ -8326,8 +8414,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "docs_intake_format_sfl_frontmatter_spec",
-      "community": 55,
-      "community_name": "sfl: Frontmatter Spec",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "sfl: frontmatter spec"
     },
     {
@@ -8337,8 +8425,8 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "docs_intake_format_overview",
-      "community": 55,
-      "community_name": "sfl: Frontmatter Spec",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "overview"
     },
     {
@@ -8348,8 +8436,8 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "docs_intake_format_full_field_reference",
-      "community": 55,
-      "community_name": "sfl: Frontmatter Spec",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "full field reference"
     },
     {
@@ -8359,8 +8447,8 @@
       "source_location": "L64",
       "_origin": "ast",
       "id": "docs_intake_format_field_matrix",
-      "community": 55,
-      "community_name": "sfl: Frontmatter Spec",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "field matrix"
     },
     {
@@ -8370,8 +8458,8 @@
       "source_location": "L79",
       "_origin": "ast",
       "id": "docs_intake_format_what_not_to_add_to_sfl",
-      "community": 55,
-      "community_name": "sfl: Frontmatter Spec",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "what not to add to sfl:"
     },
     {
@@ -8381,8 +8469,8 @@
       "source_location": "L93",
       "_origin": "ast",
       "id": "docs_intake_format_minimal_example",
-      "community": 55,
-      "community_name": "sfl: Frontmatter Spec",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "minimal example"
     },
     {
@@ -8392,8 +8480,8 @@
       "source_location": "L140",
       "_origin": "ast",
       "id": "docs_intake_format_future_proofing",
-      "community": 55,
-      "community_name": "sfl: Frontmatter Spec",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "future-proofing"
     }
   ],
@@ -10903,6 +10991,39 @@
       "_origin": "ast",
       "source": "deployment_sfl_manifest_schema_items_properties",
       "target": "deployment_sfl_manifest_schema_properties_requiredsecretsanyof",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "deployment/tests/test-relias-reviewer-parity.ps1",
+      "source_location": "L13",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "deployment_tests_test_relias_reviewer_parity",
+      "target": "deployment_tests_test_relias_reviewer_parity_get_normalizedsha256",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "deployment/tests/test-relias-reviewer-parity.ps1",
+      "source_location": "L39",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "deployment_tests_test_relias_reviewer_parity",
+      "target": "deployment_tests_test_relias_reviewer_parity_invoke_gittext",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "deployment/tests/test-relias-reviewer-parity.ps1",
+      "source_location": "L25",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "deployment_tests_test_relias_reviewer_parity",
+      "target": "deployment_tests_test_relias_reviewer_parity_resolve_repofile",
       "confidence_score": 1.0
     },
     {
@@ -13439,7 +13560,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "README.md",
-      "source_location": "L175",
+      "source_location": "L176",
       "weight": 1.0,
       "_origin": "ast",
       "source": "readme",
@@ -13450,7 +13571,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "README.md",
-      "source_location": "L176",
+      "source_location": "L177",
       "weight": 1.0,
       "_origin": "ast",
       "source": "readme",
@@ -13466,6 +13587,17 @@
       "_origin": "ast",
       "source": "readme",
       "target": "docs_sfl_reviewer",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "README.md",
+      "source_location": "L173",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "readme",
+      "target": "docs_sfl_reviewer_parity",
       "confidence_score": 1.0
     },
     {
@@ -13505,7 +13637,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "README.md",
-      "source_location": "L173",
+      "source_location": "L174",
       "weight": 1.0,
       "_origin": "ast",
       "source": "readme",
@@ -14198,7 +14330,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L235",
+      "source_location": "L237",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo",
@@ -14220,7 +14352,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L214",
+      "source_location": "L216",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_hemsoft_sfl_reviewer_parity_todo",
@@ -14231,7 +14363,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L197",
+      "source_location": "L199",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_hemsoft_sfl_reviewer_parity_todo",
@@ -14242,7 +14374,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L12",
+      "source_location": "L14",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_hemsoft_sfl_reviewer_parity_todo",
@@ -14253,7 +14385,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L229",
+      "source_location": "L231",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_hemsoft_sfl_reviewer_parity_todo",
@@ -14264,7 +14396,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L74",
+      "source_location": "L76",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_hemsoft_sfl_reviewer_parity_todo",
@@ -14275,7 +14407,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L33",
+      "source_location": "L35",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_hemsoft_sfl_reviewer_parity_todo",
@@ -14286,7 +14418,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L79",
+      "source_location": "L81",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_required_work",
@@ -14297,7 +14429,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L117",
+      "source_location": "L119",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_required_work",
@@ -14308,7 +14440,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L99",
+      "source_location": "L101",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_required_work",
@@ -14319,7 +14451,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L160",
+      "source_location": "L162",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_required_work",
@@ -14330,7 +14462,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L141",
+      "source_location": "L143",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_required_work",
@@ -14341,7 +14473,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "TODO.md",
-      "source_location": "L182",
+      "source_location": "L184",
       "weight": 1.0,
       "_origin": "ast",
       "source": "todo_required_work",
@@ -16606,6 +16738,39 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "docs/SFL-REVIEWER-PARITY.md",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_sfl_reviewer_parity",
+      "target": "docs_sfl_reviewer_parity_sfl_reviewer_parity_baseline",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/SFL-REVIEWER-PARITY.md",
+      "source_location": "L16",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_sfl_reviewer_parity_sfl_reviewer_parity_baseline",
+      "target": "docs_sfl_reviewer_parity_intentional_differences",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "docs/SFL-REVIEWER-PARITY.md",
+      "source_location": "L39",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "docs_sfl_reviewer_parity_sfl_reviewer_parity_baseline",
+      "target": "docs_sfl_reviewer_parity_running_the_audit",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "docs/SFL-REVIEWER.md",
       "source_location": "L1",
       "weight": 1.0,
@@ -16781,5 +16946,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "777af6266b22e35e312eee3e5f4437d83b78ba31"
+  "built_at_commit": "f88b12f6df1bfdc7152302021b3af742488bfd63"
 }

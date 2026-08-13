@@ -1,16 +1,16 @@
-# Graph Report - issue-51-auto-version-syntax  (2026-08-13)
+# Graph Report - issue-53-reviewer-parity-audit  (2026-08-13)
 
 ## Corpus Check
-- 60 files · ~158,351 words
+- 63 files · ~159,743 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 763 nodes · 757 edges · 60 communities (59 shown, 1 thin omitted)
+- 771 nodes · 764 edges · 56 communities (55 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 2 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `777af626`
+- Built from commit: `f88b12f6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -18,7 +18,7 @@
 - Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀
 - properties
 - properties
-- properties
+- enginePolicy
 - Set it Free — Governance Policy
 - environment
 - enum
@@ -36,7 +36,7 @@
 - PR Analyzer Testing
 - SFL Auditor
 - Set it Free Loop™
-- Required work
+- HemSoft SFL Reviewer Parity TODO
 - PR Analyzer General — Full-Spectrum Review
 - PR Analyzer Quality
 - PR Analyzer Security
@@ -45,7 +45,7 @@
 - HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.
 - HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.
 - enum
-- Issue Processor
+- CATALOG.md
 - Issue Processor
 - Daily Simplisticate Audit
 - engine-policy.schema.json
@@ -59,10 +59,6 @@
 - test-sfl-review-platform.ps1
 - AGENTS.md
 - HemSoft SFL Pull Request Reviewer
-- sfl: Frontmatter Spec
-- Daily Repo Status
-- Repo Audit
-- HemSoft SFL Reviewer Parity TODO
 
 ## God Nodes (most connected - your core abstractions)
 1. `PR Promoter` - 20 edges
@@ -85,7 +81,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (60 total, 1 thin omitted)
+## Communities (56 total, 1 thin omitted)
 
 ### Community 0 - "Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀"
 Cohesion: 0.04
@@ -97,11 +93,11 @@ Nodes (45): additionalProperties, minLength, properties, required, type, items, 
 
 ### Community 3 - "properties"
 Cohesion: 0.05
-Nodes (37): additionalProperties, description, format, type, description, properties, deployedAt, source (+29 more)
+Nodes (41): additionalProperties, description, type, uniqueItems, description, format, type, description (+33 more)
 
-### Community 4 - "properties"
-Cohesion: 0.06
-Nodes (31): minLength, type, additionalProperties, description, properties, required, type, additionalProperties (+23 more)
+### Community 4 - "enginePolicy"
+Cohesion: 0.15
+Nodes (13): minLength, type, additionalProperties, description, properties, required, type, defaultProfile (+5 more)
 
 ### Community 5 - "Set it Free — Governance Policy"
 Cohesion: 0.07
@@ -112,8 +108,8 @@ Cohesion: 0.08
 Nodes (24): effort, model, provider, requiredSecretsAnyOf, defaultProfile, COPILOT_MODEL, COPILOT_PROVIDER_API_KEY, COPILOT_PROVIDER_BASE_URL (+16 more)
 
 ### Community 7 - "enum"
-Cohesion: 0.08
-Nodes (24): description, items, type, uniqueItems, enum, type, components, daily-repo-status (+16 more)
+Cohesion: 0.05
+Nodes (38): items, additionalProperties, enum, properties, required, type, model, profile (+30 more)
 
 ### Community 8 - "PR Fixer — Authority"
 Cohesion: 0.09
@@ -171,9 +167,9 @@ Nodes (14): Guardrails, SFL Auditor, Step 10 — Check: SFL review prerequisites
 Cohesion: 0.13
 Nodes (15): 1. Set up labels, 2. Deploy a tier (or single workflow), 3. Review the catalog, Adding a new workflow, Adding the badge to a consumer repo, Automatic versioning, How it works, How the loop works (+7 more)
 
-### Community 22 - "Required work"
-Cohesion: 0.29
-Nodes (7): P0 — Close reviewer contract drift, P0 — Make `gh sfl` independently distributable, P0 — Restore a trustworthy release pipeline, P1 — Converge approved private consumers, P1 — Make review gating part of the rollout contract, P1 — Prevent future Relias drift, Required work
+### Community 22 - "HemSoft SFL Reviewer Parity TODO"
+Cohesion: 0.15
+Nodes (13): Deferred until required parity is complete, Definition of done, Definition of parity, HemSoft SFL Reviewer Parity TODO, P0 — Close reviewer contract drift, P0 — Make `gh sfl` independently distributable, P0 — Restore a trustworthy release pipeline, P1 — Converge approved private consumers (+5 more)
 
 ### Community 23 - "PR Analyzer General — Full-Spectrum Review"
 Cohesion: 0.13
@@ -207,9 +203,9 @@ Nodes (13): Conditional Evidence Checks, Full-Spectrum PR Review, HemSoft runs t
 Cohesion: 0.20
 Nodes (10): provider, enum, type, claude, codex, copilot, crush, gemini (+2 more)
 
-### Community 31 - "Issue Processor"
-Cohesion: 0.20
-Nodes (10): Guardrails, Issue Processor, Known Limitation: Label Delivery, Step 1 — Find the oldest claimable issue, Step 2 — Claim the issue, Step 3 — Validate the issue body, Step 4 — Inspect the codebase, Step 5 — Implement the fix (+2 more)
+### Community 31 - "CATALOG.md"
+Cohesion: 0.05
+Nodes (30): Daily Repo Status, Process, Step 0 — Close previous daily status reports, Style, What to include, Guardrails, Issue Processor, Known Limitation: Label Delivery (+22 more)
 
 ### Community 32 - "Issue Processor"
 Cohesion: 0.20
@@ -259,24 +255,8 @@ Nodes (3): Assert-ExactPair(), Assert-Patterns(), Read-RepoFile()
 Cohesion: 0.22
 Nodes (9): Advisory and gated operation, Automatic and explicit review, Deployment, Distribution boundary, Evidence and approval, HemSoft SFL Pull Request Reviewer, Package, Recovery (+1 more)
 
-### Community 55 - "sfl: Frontmatter Spec"
-Cohesion: 0.29
-Nodes (7): Field Matrix, Full Field Reference, Future-Proofing, Minimal Example, Overview, sfl: Frontmatter Spec, What NOT to add to sfl:
-
-### Community 56 - "Daily Repo Status"
-Cohesion: 0.33
-Nodes (5): Daily Repo Status, Process, Step 0 — Close previous daily status reports, Style, What to include
-
-### Community 57 - "Repo Audit"
-Cohesion: 0.33
-Nodes (5): Audit Scope, Goals, Output Requirements, Process, Repo Audit
-
-### Community 58 - "HemSoft SFL Reviewer Parity TODO"
-Cohesion: 0.33
-Nodes (6): Deferred until required parity is complete, Definition of done, Definition of parity, HemSoft SFL Reviewer Parity TODO, Reference implementation, Verified baseline — 2026-08-12
-
 ## Knowledge Gaps
-- **548 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+543 more)
+- **550 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+545 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -284,16 +264,16 @@ Nodes (6): Deferred until required parity is complete, Definition of done, Defin
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` connect `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` to `CATALOG.md`?**
-  _High betweenness centrality (0.046) - this node is a cross-community bridge._
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Why does `Set it Free — Governance Policy` connect `Set it Free — Governance Policy` to `CATALOG.md`?**
   _High betweenness centrality (0.029) - this node is a cross-community bridge._
 - **What connects `$schema`, `defaultProfile`, `provider` to the rest of the system?**
-  _548 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _550 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` be split into smaller, more focused modules?**
   _Cohesion score 0.0425531914893617 - nodes in this community are weakly interconnected._
 - **Should `properties` be split into smaller, more focused modules?**
   _Cohesion score 0.051515151515151514 - nodes in this community are weakly interconnected._
 - **Should `properties` be split into smaller, more focused modules?**
-  _Cohesion score 0.05263157894736842 - nodes in this community are weakly interconnected._
-- **Should `properties` be split into smaller, more focused modules?**
-  _Cohesion score 0.06451612903225806 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.047619047619047616 - nodes in this community are weakly interconnected._
+- **Should `Set it Free — Governance Policy` be split into smaller, more focused modules?**
+  _Cohesion score 0.06896551724137931 - nodes in this community are weakly interconnected._
