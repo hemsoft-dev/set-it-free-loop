@@ -1,0 +1,54 @@
+<#
+.SYNOPSIS
+    Enables GitHub immutable releases for the private HemSoft SFL repository.
+#>
+[CmdletBinding()]
+param(
+    [string] $Repository = 'HemSoft/set-it-free-loop',
+    [switch] $Plan
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+if ($Repository -ne 'HemSoft/set-it-free-loop') {
+    throw "Release protection is restricted to HemSoft/set-it-free-loop, got $Repository."
+}
+if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+    throw 'GitHub CLI is required to configure release protection.'
+}
+
+$login = (& gh api user --jq .login).Trim()
+if ($LASTEXITCODE -ne 0 -or $login -ne 'HemSoft') {
+    throw "Active GitHub CLI identity must be HemSoft, got '$login'."
+}
+$repositoryState = & gh api "repos/$Repository" | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not $repositoryState.private -or $repositoryState.owner.login -ne 'HemSoft') {
+    throw 'Release protection requires the private HemSoft repository.'
+}
+
+$immutableState = & gh api "repos/$Repository/immutable-releases" | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw 'Could not inspect immutable-release state.'
+}
+if ($Plan) {
+    [ordered]@{
+        repository = $Repository
+        immutableReleasesEnabled = [bool] $immutableState.enabled
+        action = if ([bool] $immutableState.enabled) { 'none' } else { 'enable' }
+    } | ConvertTo-Json
+    return
+}
+
+if (-not [bool] $immutableState.enabled) {
+    & gh api --method PUT -H 'X-GitHub-Api-Version: 2026-03-10' "repos/$Repository/immutable-releases" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Enabling immutable releases failed.' }
+    Write-Output 'Enabled immutable releases.'
+} else {
+    Write-Output 'Immutable releases already enabled.'
+}
+
+$verifiedState = & gh api "repos/$Repository/immutable-releases" | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not [bool] $verifiedState.enabled) {
+    throw 'Immutable releases did not remain enabled after configuration.'
+}

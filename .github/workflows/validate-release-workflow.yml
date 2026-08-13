@@ -3,15 +3,35 @@ name: Validate Release Workflow
 on:
   pull_request:
     paths:
-      - '.github/workflows/auto-version.yml'
+      - '.github/workflows/publish-private-prerelease.yml'
       - '.github/workflows/validate-gh-sfl.yml'
       - '.github/workflows/validate-release-workflow.yml'
+      - 'deployment/scripts/build-release-artifacts.ps1'
+      - 'deployment/scripts/install-gh-sfl-hemsoft.ps1'
+      - 'deployment/scripts/set-release-protection.ps1'
+      - 'deployment/scripts/set-release-version.ps1'
+      - 'deployment/tests/test-release-metadata.ps1'
+      - 'deployment/tests/test-release-installer.ps1'
+      - 'VERSION'
+      - 'sfl.json'
+      - 'deployment/release-metadata.json'
+      - 'gh-sfl/**'
   push:
     branches: [main]
     paths:
-      - '.github/workflows/auto-version.yml'
+      - '.github/workflows/publish-private-prerelease.yml'
       - '.github/workflows/validate-gh-sfl.yml'
       - '.github/workflows/validate-release-workflow.yml'
+      - 'deployment/scripts/build-release-artifacts.ps1'
+      - 'deployment/scripts/install-gh-sfl-hemsoft.ps1'
+      - 'deployment/scripts/set-release-protection.ps1'
+      - 'deployment/scripts/set-release-version.ps1'
+      - 'deployment/tests/test-release-metadata.ps1'
+      - 'deployment/tests/test-release-installer.ps1'
+      - 'VERSION'
+      - 'sfl.json'
+      - 'deployment/release-metadata.json'
+      - 'gh-sfl/**'
 
 permissions:
   contents: read
@@ -25,6 +45,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: gh-sfl/go.mod
+          cache-dependency-path: gh-sfl/go.sum
 
       - name: Install checksum-verified actionlint
         id: actionlint
@@ -46,6 +72,28 @@ jobs:
         shell: bash
         run: |
           "${{ steps.actionlint.outputs.executable }}" -color \
-            .github/workflows/auto-version.yml \
+            .github/workflows/publish-private-prerelease.yml \
             .github/workflows/validate-gh-sfl.yml \
             .github/workflows/validate-release-workflow.yml
+
+      - name: Validate synchronized release contract
+        shell: pwsh
+        run: |
+          ./deployment/tests/test-release-metadata.ps1
+          ./deployment/tests/test-release-installer.ps1
+
+      - name: Build release contract artifacts
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          ./deployment/scripts/build-release-artifacts.ps1 `
+            -Version $version `
+            -BuildDate '2026-08-13' `
+            -OutputDirectory (Join-Path $env:RUNNER_TEMP 'release-contract')
+
+      - name: Verify release contract checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release-contract"
+          sha256sum --check SHA256SUMS

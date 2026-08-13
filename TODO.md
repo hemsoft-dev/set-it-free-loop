@@ -57,12 +57,11 @@ Known gaps:
 
 - [x] HemSoft validates GitHub's `isOutdated` flag before resolving an
   obsolete SFL review thread, matching Relias v6.5.7.
-- [x] Release metadata distinguishes HemSoft distribution `2.0.0` from the
+- [x] Release metadata distinguishes HemSoft distribution `2.1.0-rc.1` from the
   pinned Relias reviewer release and immutable reviewed commit.
 - [ ] The repository has no Git tags or GitHub releases.
-- [x] `.github/workflows/auto-version.yml` parses and has a checksum-pinned
-  actionlint gate; publication remains opt-in until the release contract below
-  is complete.
+- [x] `.github/workflows/publish-private-prerelease.yml` parses and has a
+  checksum-pinned actionlint gate; publication is manual and prerelease-only.
 - [x] The HemSoft CLI source is version-controlled under `gh-sfl/`; its build,
   tests, and installer have no dependency on a local Relias checkout.
 - [x] CI formats, vets, tests, and cross-builds the CLI for Windows and Linux.
@@ -100,8 +99,8 @@ and checksum, and canonical/runtime artifact parity.
 
 ### P0 — Restore a trustworthy release pipeline
 
-- [x] Repair `.github/workflows/auto-version.yml` and add a YAML/actionlint gate
-  that would catch the current parse failure.
+- [x] Replace the unsafe automatic version workflow with a manually dispatched,
+  fail-closed prerelease workflow and checksum-pinned actionlint gate.
 - [x] Make release metadata distinguish the HemSoft distribution version from
   the Relias reviewer baseline version and immutable baseline commit.
 - [ ] Keep `VERSION`, `sfl.json`, tags, release notes, and CLI artifacts in sync

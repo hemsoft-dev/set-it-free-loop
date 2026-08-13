@@ -61,7 +61,7 @@ func main() {
 		if err != nil {
 			fatalf("read generated labels: %v", err)
 		}
-		if !bytes.Equal(current, formatted) {
+		if !bytes.Equal(normalizeLineEndings(current), normalizeLineEndings(formatted)) {
 			fatalf("%s is stale; regenerate it without -check", *output)
 		}
 		return
@@ -69,6 +69,11 @@ func main() {
 	if err := os.WriteFile(*output, formatted, 0o644); err != nil {
 		fatalf("write generated labels: %v", err)
 	}
+}
+
+func normalizeLineEndings(content []byte) []byte {
+	content = bytes.ReplaceAll(content, []byte("\r\n"), []byte("\n"))
+	return bytes.ReplaceAll(content, []byte("\r"), []byte("\n"))
 }
 
 func fatalf(format string, args ...any) {

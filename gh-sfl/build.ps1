@@ -10,7 +10,9 @@
 param(
     [string] $WorkDir,
     [string] $Version,
+    [string] $ReleaseVersion,
     [string] $BuildDate,
+    [string] $GitHubCliPath,
     [switch] $NoInstall
 )
 

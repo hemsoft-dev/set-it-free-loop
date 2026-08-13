@@ -1,0 +1,153 @@
+name: Publish Private Prerelease
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact prerelease version already synchronized on main
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-private-prerelease
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.repository == 'HemSoft/set-it-free-loop' &&
+      github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Checkout immutable main revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: gh-sfl/go.mod
+          cache-dependency-path: gh-sfl/go.sum
+
+      - name: Preflight synchronized prerelease
+        shell: pwsh
+        run: ./deployment/tests/test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -RequirePrerelease
+
+      - name: Preflight immutable source and destination
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE_VERSION}"
+          default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
+          test "$default_branch" = "main"
+          remote_main_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          test "$(git rev-parse HEAD)" = "$remote_main_sha"
+          test -z "$(git status --porcelain)"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "::error::Tag ${tag} already exists"
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release ${tag} already exists"
+            exit 1
+          fi
+          immutable_enabled=$(gh api "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq .enabled)
+          test "$immutable_enabled" = "true"
+
+      - name: Build release artifacts and checksums
+        shell: pwsh
+        run: |
+          $buildDate = (& git show -s --format=%cs HEAD).Trim()
+          ./deployment/scripts/build-release-artifacts.ps1 `
+            -Version $env:RELEASE_VERSION `
+            -BuildDate $buildDate `
+            -OutputDirectory (Join-Path $env:RUNNER_TEMP 'release')
+
+      - name: Verify release bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/release"
+          sha256sum --check SHA256SUMS
+          test -f "gh-sfl_${RELEASE_VERSION}_linux_amd64"
+          test -f "gh-sfl_${RELEASE_VERSION}_windows_amd64.exe"
+          test -f install-gh-sfl-hemsoft.ps1
+          chmod 755 "gh-sfl_${RELEASE_VERSION}_linux_amd64"
+          first_line=$("./gh-sfl_${RELEASE_VERSION}_linux_amd64" --version | head -n 1)
+          [[ "$first_line" == "gh-sfl ${RELEASE_VERSION} "* ]]
+
+      - name: Create draft private prerelease with all assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE_VERSION}"
+          gh release create "$tag" "$RUNNER_TEMP"/release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --generate-notes \
+            --draft \
+            --prerelease \
+            --latest=false
+
+      - name: Publish immutable private prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE_VERSION}"
+          gh release edit "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --prerelease \
+            --latest=false
+
+      - name: Verify GitHub release attestations
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v${RELEASE_VERSION}"
+          for attempt in 1 2 3 4 5 6; do
+            if gh release verify "$tag" --repo "$GITHUB_REPOSITORY"; then
+              break
+            fi
+            if [ "$attempt" -eq 6 ]; then
+              echo "::error::Immutable release attestation was not available after six attempts"
+              exit 1
+            fi
+            sleep 10
+          done
+          for asset in "$RUNNER_TEMP"/release/*; do
+            gh release verify-asset "$tag" "$asset" --repo "$GITHUB_REPOSITORY"
+          done
+
+      - name: Prove clean release download and checksum verification
+        shell: pwsh
+        run: |
+          $smokeDir = Join-Path $env:RUNNER_TEMP 'clean-install-smoke'
+          ./deployment/scripts/install-gh-sfl-hemsoft.ps1 `
+            -ReleaseVersion $env:RELEASE_VERSION `
+            -WorkDir $smokeDir `
+            -NoInstall
+          $binary = Join-Path $smokeDir "gh-sfl_$($env:RELEASE_VERSION)_linux_amd64"
+          & chmod 755 $binary
+          if ($LASTEXITCODE -ne 0) { throw 'chmod failed for smoke-test binary.' }
+          $firstLine = (& $binary --version | Select-Object -First 1)
+          if ($LASTEXITCODE -ne 0 -or $firstLine -notlike "gh-sfl $($env:RELEASE_VERSION) *") {
+            throw "Downloaded binary version proof failed: $firstLine"
+          }
+          $immutable = gh api "repos/$($env:GITHUB_REPOSITORY)/immutable-releases" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $immutable.enabled) {
+            throw 'Immutable releases are not enabled after publication.'
+          }
+          "Verified private release v$($env:RELEASE_VERSION) from $($env:GITHUB_SHA)." |
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
