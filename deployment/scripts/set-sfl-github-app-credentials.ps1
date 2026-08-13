@@ -4,9 +4,11 @@ Sets per-repository SFL GitHub App credentials for HemSoft-owned repositories.
 
 .DESCRIPTION
 HemSoft is a GitHub user account, not an organization, so Actions credentials
-must be configured on each repository. This script sets the SFL GitHub App
-Actions variables and stores the app private key as an Actions secret without
-echoing the key value.
+must be configured on each repository. Before writing anything, this script
+authenticates as the App and proves that every target is a selected private
+HemSoft repository with the exact reviewer permission contract. It then sets
+the SFL GitHub App Actions variables and stores the app private key as an
+Actions secret without echoing the key value.
 
 .PARAMETER Repos
 Repository names in OWNER/REPO format.
@@ -57,6 +59,8 @@ $InformationPreference = 'Continue'
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module (Join-Path $PSScriptRoot 'SflGitHubAppBootstrap.psm1') -Force
+
 function Invoke-GhCommand {
     param(
         [Parameter(Mandatory = $true)]
@@ -81,8 +85,47 @@ if ($activeLogin -ne $ExpectedLogin) {
 $resolvedPrivateKeyPath = (Resolve-Path -LiteralPath $PrivateKeyPath).ProviderPath
 $requiredVariables = @('SFL_APP_ID', 'SFL_APP_CLIENT_ID')
 $requiredSecrets = @('SFL_APP_PRIVATE_KEY')
+$validatedRepos = [Collections.Generic.List[string]]::new()
 
 foreach ($repo in $Repos) {
+    $repositoryJson = Invoke-GhCommand -Arguments @(
+        'repo', 'view', $repo,
+        '--json', 'nameWithOwner,owner,visibility'
+    )
+    $repository = $repositoryJson | ConvertFrom-Json
+    if ($repository.nameWithOwner -cne $repo) {
+        throw "Resolved repository '$($repository.nameWithOwner)' does not match requested repository '$repo'."
+    }
+    if ($repository.owner.login -cne $ExpectedLogin) {
+        throw "Repository '$repo' is not owned by '$ExpectedLogin'."
+    }
+    if ($repository.visibility -cne 'PRIVATE') {
+        throw "Repository '$repo' must be private; visibility is '$($repository.visibility)'."
+    }
+    $validatedRepos.Add($repo)
+}
+
+$privateKeyPem = Get-Content -LiteralPath $resolvedPrivateKeyPath -Raw
+$appJwt = ConvertTo-SflGitHubAppJwt -ClientId $ClientId -PrivateKeyPem $privateKeyPem
+$appIdentity = Get-SflGitHubAppIdentity -Jwt $appJwt
+Assert-SflGitHubAppIdentity `
+    -Identity $appIdentity `
+    -ExpectedAppId $AppId `
+    -ExpectedClientId $ClientId `
+    -ExpectedOwner $ExpectedLogin
+
+foreach ($repo in $validatedRepos) {
+    $installation = Get-SflGitHubAppRepositoryInstallation -Repository $repo -Jwt $appJwt
+    Assert-SflGitHubAppInstallation `
+        -Installation $installation `
+        -Repository $repo `
+        -ExpectedAppId $AppId `
+        -ExpectedClientId $ClientId `
+        -ExpectedOwner $ExpectedLogin
+    Write-Information "Verified selected-repository SFL App installation and permission ceiling on $repo"
+}
+
+foreach ($repo in $validatedRepos) {
     if (-not $PSCmdlet.ShouldProcess($repo, 'Set SFL GitHub App credentials')) {
         continue
     }

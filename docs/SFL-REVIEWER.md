@@ -42,10 +42,29 @@ The target repository needs the following Actions configuration:
 | Secret | `SFL_APP_PRIVATE_KEY` | App installation private key |
 | Secret | `OPENROUTER_API_KEY` | Private Kimi K3 route |
 
-The App installation must be limited to the intended private repositories. It
-needs Actions read/write, Contents read, Issues read/write, and Pull requests
-read/write for automatic dispatch, label handling, recovery, and SFL-owned
-review-thread management. It does not need repository administration.
+The App installation must be limited to selected intended private repositories.
+Its exact repository permission contract is Actions read/write, Checks read,
+Contents read, Issues read/write, Metadata read, and Pull requests read/write.
+It must not have Checks write, Contents write, Workflows write, an
+all-repositories installation, or unrelated repository permissions. Review
+evidence and obsolete-thread mutations use the repository-scoped `GITHUB_TOKEN`
+instead of expanding the shared App's permission ceiling.
+
+Configure App credentials only through the fail-closed bootstrap:
+
+```powershell
+.\deployment\scripts\set-sfl-github-app-credentials.ps1 `
+  -Repos HemSoft/private-repository `
+  -AppId 123456 `
+  -ClientId Iv1.example `
+  -PrivateKeyPath C:\secure\sfl-app.private-key.pem
+```
+
+Before its first variable or secret write, the bootstrap uses a locally signed
+App JWT to verify the App ID, client ID, HemSoft ownership, exact target
+installation, selected-repository scope, and permission ceiling for every
+requested repository. It also independently verifies each target is a private
+`HemSoft/*` repository. If any target fails, none of the targets are mutated.
 
 `gh sfl init`, `gh sfl sync`, and `gh sfl add pr-review` inspect only repository
 metadata and credential names; they never read secret values. Before preparing
@@ -121,9 +140,9 @@ branch protection only after that deployment is merged.
 
 The supported rollout order is:
 
-1. Install the App for the explicitly approved private repository and set the
-   required variable and secrets. The credential bootstrap must verify the
-   selected-repository scope and permission ceiling with App authentication.
+1. Install the App for the explicitly approved private repository and run the
+   credential bootstrap above. It verifies the selected-repository scope and
+   permission ceiling with App authentication before setting credentials.
 2. Run `gh sfl init` or `gh sfl sync` and merge its reviewed deployment PR.
 3. Run `gh sfl gate` to require the reviewer without replacing unrelated
    repository rules.
