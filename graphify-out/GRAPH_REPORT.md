@@ -1,16 +1,16 @@
-# Graph Report - issue-43-obsolete-thread-guard  (2026-08-13)
+# Graph Report - issue-49-completed-review-dedup  (2026-08-13)
 
 ## Corpus Check
-- 59 files · ~157,648 words
+- 60 files · ~158,122 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 762 nodes · 757 edges · 59 communities (58 shown, 1 thin omitted)
+- 763 nodes · 757 edges · 60 communities (59 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 2 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b104b881`
+- Built from commit: `b9d34b0e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -85,7 +85,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (59 total, 1 thin omitted)
+## Communities (60 total, 1 thin omitted)
 
 ### Community 0 - "Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀"
 Cohesion: 0.04
