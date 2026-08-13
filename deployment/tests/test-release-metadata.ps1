@@ -34,6 +34,7 @@ foreach ($property in @('releaseCommit', 'reviewedCommit')) {
 }
 
 $requiredWorkflowPatterns = @(
+    "- 'deployment/release-metadata.json'",
     'jq --arg v "$NEW_VERSION" ''.distribution.version = $v'' deployment/release-metadata.json',
     'git add VERSION sfl.json deployment/release-metadata.json'
 )

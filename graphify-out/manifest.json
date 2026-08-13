@@ -125,8 +125,8 @@
     "semantic_hash": ""
   },
   ".github/workflows/auto-version.yml": {
-    "mtime": 1786601884.811636,
-    "ast_hash": "e7d4975c228d3a4b2705a00e96fdec05",
+    "mtime": 1786602755.8951318,
+    "ast_hash": "c718a5f12297e4ab288ad02b90e05321",
     "semantic_hash": ""
   },
   ".github/workflows/daily-repo-status.lock.yml": {
@@ -435,8 +435,8 @@
     "semantic_hash": ""
   },
   "deployment/tests/test-release-metadata.ps1": {
-    "mtime": 1786601915.294175,
-    "ast_hash": "134192f7b51d90a993100e53ebbe9ee9",
+    "mtime": 1786602755.8966405,
+    "ast_hash": "7a0b45f61ca7c03fd725a330f56b58a1",
     "semantic_hash": ""
   }
 }

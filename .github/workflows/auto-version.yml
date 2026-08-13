@@ -6,6 +6,7 @@ on:
     paths-ignore:
       - 'VERSION'
       - 'sfl.json'
+      - 'deployment/release-metadata.json'
 
 permissions:
   contents: write
