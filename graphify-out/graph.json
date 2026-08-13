@@ -1715,8 +1715,8 @@
       "source_location": "L33",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_components",
-      "community": 3,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "components"
     },
     {
@@ -1726,8 +1726,8 @@
       "source_location": "L34",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_components_type",
-      "community": 3,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "type"
     },
     {
@@ -1957,8 +1957,8 @@
       "source_location": "L57",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_components_uniqueitems",
-      "community": 3,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "uniqueitems"
     },
     {
@@ -1968,8 +1968,8 @@
       "source_location": "L58",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_components_description",
-      "community": 3,
-      "community_name": "properties",
+      "community": 7,
+      "community_name": "enum",
       "norm_label": "description"
     },
     {
@@ -1980,7 +1980,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_enginepolicy",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "enginepolicy"
     },
     {
@@ -1991,7 +1991,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_type",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -2002,7 +2002,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_required",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "required"
     },
     {
@@ -2013,7 +2013,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_json_ref_defaultprofile",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "defaultprofile"
     },
     {
@@ -2024,7 +2024,7 @@
       "_origin": "ast",
       "id": "ref_workflows",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "workflows"
     },
     {
@@ -2035,7 +2035,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_properties",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "properties"
     },
     {
@@ -2046,7 +2046,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_defaultprofile",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "defaultprofile"
     },
     {
@@ -2057,7 +2057,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_defaultprofile_type",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -2068,7 +2068,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_defaultprofile_minlength",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "minlength"
     },
     {
@@ -2079,7 +2079,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_workflows",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "workflows"
     },
     {
@@ -2090,7 +2090,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_workflows_type",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -2100,8 +2100,8 @@
       "source_location": "L70",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_workflows_items",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "items"
     },
     {
@@ -2111,8 +2111,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_items_required",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "required"
     },
     {
@@ -2122,8 +2122,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "ref_name",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "name"
     },
     {
@@ -2133,8 +2133,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_json_ref_profile",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "profile"
     },
     {
@@ -2144,8 +2144,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_json_ref_provider",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "provider"
     },
     {
@@ -2155,8 +2155,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_json_ref_model",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "model"
     },
     {
@@ -2166,8 +2166,8 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "ref_renderedmodel",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "renderedmodel"
     },
     {
@@ -2177,8 +2177,8 @@
       "source_location": "L73",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_items_properties",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "properties"
     },
     {
@@ -2188,8 +2188,8 @@
       "source_location": "L74",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_name",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "name"
     },
     {
@@ -2199,8 +2199,8 @@
       "source_location": "L78",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_profile",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "profile"
     },
     {
@@ -2210,8 +2210,8 @@
       "source_location": "L82",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_provider",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "provider"
     },
     {
@@ -2221,8 +2221,8 @@
       "source_location": "L86",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_model",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "model"
     },
     {
@@ -2232,8 +2232,8 @@
       "source_location": "L90",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_effort",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "effort"
     },
     {
@@ -2243,8 +2243,8 @@
       "source_location": "L94",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_renderedmodel",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "renderedmodel"
     },
     {
@@ -2254,8 +2254,8 @@
       "source_location": "L98",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_requiredsecretsanyof",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "requiredsecretsanyof"
     },
     {
@@ -2265,8 +2265,8 @@
       "source_location": "L106",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_arguments",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "arguments"
     },
     {
@@ -2276,8 +2276,8 @@
       "source_location": "L113",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_environment",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "environment"
     },
     {
@@ -2287,8 +2287,8 @@
       "source_location": "L121",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_items_additionalproperties",
-      "community": 7,
-      "community_name": "enum",
+      "community": 4,
+      "community_name": "properties",
       "norm_label": "additionalproperties"
     },
     {
@@ -2299,7 +2299,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_additionalproperties",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "additionalproperties"
     },
     {
@@ -2310,7 +2310,7 @@
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_enginepolicy_description",
       "community": 4,
-      "community_name": "enginePolicy",
+      "community_name": "properties",
       "norm_label": "description"
     },
     {
@@ -2323,6 +2323,50 @@
       "community": 3,
       "community_name": "properties",
       "norm_label": "additionalproperties"
+    },
+    {
+      "label": "line-ending-test-helpers.ps1",
+      "file_type": "code",
+      "source_file": "deployment/tests/line-ending-test-helpers.ps1",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "deployment_tests_line_ending_test_helpers",
+      "community": 43,
+      "community_name": "Test-NormalizedTextEqual",
+      "norm_label": "line-ending-test-helpers.ps1"
+    },
+    {
+      "label": "ConvertTo-NormalizedLineEnding()",
+      "file_type": "code",
+      "source_file": "deployment/tests/line-ending-test-helpers.ps1",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "deployment_tests_line_ending_test_helpers_convertto_normalizedlineending",
+      "community": 43,
+      "community_name": "Test-NormalizedTextEqual",
+      "norm_label": "convertto-normalizedlineending()"
+    },
+    {
+      "label": "Test-NormalizedTextEqual()",
+      "file_type": "code",
+      "source_file": "deployment/tests/line-ending-test-helpers.ps1",
+      "source_location": "L10",
+      "_origin": "ast",
+      "id": "deployment_tests_line_ending_test_helpers_test_normalizedtextequal",
+      "community": 43,
+      "community_name": "Test-NormalizedTextEqual",
+      "norm_label": "test-normalizedtextequal()"
+    },
+    {
+      "label": "test-line-ending-normalization.ps1",
+      "file_type": "code",
+      "source_file": "deployment/tests/test-line-ending-normalization.ps1",
+      "source_location": "L1",
+      "_origin": "ast",
+      "id": "deployment_tests_test_line_ending_normalization",
+      "community": 56,
+      "community_name": "test-line-ending-normalization.ps1",
+      "norm_label": "test-line-ending-normalization.ps1"
     },
     {
       "label": "test-release-metadata.ps1",
@@ -2416,7 +2460,7 @@
       "label": "Get-ExpectedThreadResolutionEligibility()",
       "file_type": "code",
       "source_file": "deployment/tests/test-sfl-pr-review.ps1",
-      "source_location": "L132",
+      "source_location": "L133",
       "_origin": "ast",
       "id": "deployment_tests_test_sfl_pr_review_get_expectedthreadresolutioneligibility",
       "community": 52,
@@ -2431,40 +2475,40 @@
       "_origin": "ast",
       "id": "deployment_tests_test_sfl_review_platform",
       "community": 43,
-      "community_name": "test-sfl-review-platform.ps1",
+      "community_name": "Test-NormalizedTextEqual",
       "norm_label": "test-sfl-review-platform.ps1"
     },
     {
       "label": "Read-RepoFile()",
       "file_type": "code",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
-      "source_location": "L10",
+      "source_location": "L11",
       "_origin": "ast",
       "id": "deployment_tests_test_sfl_review_platform_read_repofile",
       "community": 43,
-      "community_name": "test-sfl-review-platform.ps1",
+      "community_name": "Test-NormalizedTextEqual",
       "norm_label": "read-repofile()"
     },
     {
-      "label": "Assert-Patterns()",
+      "label": "Assert-PatternSet()",
       "file_type": "code",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
-      "source_location": "L19",
+      "source_location": "L20",
       "_origin": "ast",
-      "id": "deployment_tests_test_sfl_review_platform_assert_patterns",
+      "id": "deployment_tests_test_sfl_review_platform_assert_patternset",
       "community": 43,
-      "community_name": "test-sfl-review-platform.ps1",
-      "norm_label": "assert-patterns()"
+      "community_name": "Test-NormalizedTextEqual",
+      "norm_label": "assert-patternset()"
     },
     {
       "label": "Assert-ExactPair()",
       "file_type": "code",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
-      "source_location": "L31",
+      "source_location": "L32",
       "_origin": "ast",
       "id": "deployment_tests_test_sfl_review_platform_assert_exactpair",
       "community": 43,
-      "community_name": "test-sfl-review-platform.ps1",
+      "community_name": "Test-NormalizedTextEqual",
       "norm_label": "assert-exactpair()"
     },
     {
@@ -6522,8 +6566,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "deployment/workflows/issue-processor.md"
     },
     {
@@ -6533,8 +6577,8 @@
       "source_location": "L35",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_issue_processor",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "issue processor"
     },
     {
@@ -6544,8 +6588,8 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_1_find_the_oldest_claimable_issue",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "step 1 \u2014 find the oldest claimable issue"
     },
     {
@@ -6555,8 +6599,8 @@
       "source_location": "L58",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_2_claim_the_issue",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "step 2 \u2014 claim the issue"
     },
     {
@@ -6566,8 +6610,8 @@
       "source_location": "L70",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_3_validate_the_issue_body",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "step 3 \u2014 validate the issue body"
     },
     {
@@ -6577,8 +6621,8 @@
       "source_location": "L86",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_4_inspect_the_codebase",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "step 4 \u2014 inspect the codebase"
     },
     {
@@ -6588,8 +6632,8 @@
       "source_location": "L94",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_5_implement_the_fix",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "step 5 \u2014 implement the fix"
     },
     {
@@ -6599,8 +6643,8 @@
       "source_location": "L112",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_6_open_a_pull_request_via_safe_output",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "step 6 \u2014 open a pull request via safe output"
     },
     {
@@ -6610,8 +6654,8 @@
       "source_location": "L129",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_step_7_update_the_issue",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "step 7 \u2014 update the issue"
     },
     {
@@ -6621,8 +6665,8 @@
       "source_location": "L137",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_guardrails",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "guardrails"
     },
     {
@@ -6632,8 +6676,8 @@
       "source_location": "L146",
       "_origin": "ast",
       "id": "deployment_workflows_issue_processor_known_limitation_label_delivery",
-      "community": 31,
-      "community_name": "CATALOG.md",
+      "community": 54,
+      "community_name": "Issue Processor",
       "norm_label": "known limitation: label delivery"
     },
     {
@@ -8315,8 +8359,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_hemsoft_sfl_pull_request_reviewer",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "hemsoft sfl pull request reviewer"
     },
     {
@@ -8326,8 +8370,8 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_distribution_boundary",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "distribution boundary"
     },
     {
@@ -8337,8 +8381,8 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_package",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "package"
     },
     {
@@ -8348,8 +8392,8 @@
       "source_location": "L35",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_required_repository_configuration",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "required repository configuration"
     },
     {
@@ -8359,8 +8403,8 @@
       "source_location": "L50",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_deployment",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "deployment"
     },
     {
@@ -8370,8 +8414,8 @@
       "source_location": "L90",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_automatic_and_explicit_review",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "automatic and explicit review"
     },
     {
@@ -8381,8 +8425,8 @@
       "source_location": "L121",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_evidence_and_approval",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "evidence and approval"
     },
     {
@@ -8392,8 +8436,8 @@
       "source_location": "L137",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_recovery",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "recovery"
     },
     {
@@ -8403,8 +8447,8 @@
       "source_location": "L153",
       "_origin": "ast",
       "id": "docs_sfl_reviewer_advisory_and_gated_operation",
-      "community": 54,
-      "community_name": "HemSoft SFL Pull Request Reviewer",
+      "community": 31,
+      "community_name": "CATALOG.md",
       "norm_label": "advisory and gated operation"
     },
     {
@@ -11007,6 +11051,51 @@
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
+      "source_file": "deployment/tests/line-ending-test-helpers.ps1",
+      "source_location": "L1",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "deployment_tests_line_ending_test_helpers",
+      "target": "deployment_tests_line_ending_test_helpers_convertto_normalizedlineending",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "deployment/tests/line-ending-test-helpers.ps1",
+      "source_location": "L10",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "deployment_tests_line_ending_test_helpers",
+      "target": "deployment_tests_line_ending_test_helpers_test_normalizedtextequal",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "source_file": "deployment/tests/line-ending-test-helpers.ps1",
+      "source_location": "L19",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "deployment_tests_line_ending_test_helpers_test_normalizedtextequal",
+      "target": "deployment_tests_line_ending_test_helpers_convertto_normalizedlineending",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "deployment/tests/test-sfl-review-platform.ps1",
+      "source_location": "L38",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "deployment_tests_test_sfl_review_platform_assert_exactpair",
+      "target": "deployment_tests_line_ending_test_helpers_test_normalizedtextequal"
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
       "source_file": "deployment/tests/test-relias-reviewer-parity.ps1",
       "source_location": "L13",
       "weight": 1.0,
@@ -11041,7 +11130,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/tests/test-sfl-pr-review.ps1",
-      "source_location": "L132",
+      "source_location": "L133",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_tests_test_sfl_pr_review",
@@ -11052,7 +11141,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
-      "source_location": "L31",
+      "source_location": "L32",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_tests_test_sfl_review_platform",
@@ -11063,18 +11152,18 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
-      "source_location": "L19",
+      "source_location": "L20",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_tests_test_sfl_review_platform",
-      "target": "deployment_tests_test_sfl_review_platform_assert_patterns",
+      "target": "deployment_tests_test_sfl_review_platform_assert_patternset",
       "confidence_score": 1.0
     },
     {
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
-      "source_location": "L10",
+      "source_location": "L11",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_tests_test_sfl_review_platform",
@@ -11085,7 +11174,7 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
-      "source_location": "L35",
+      "source_location": "L36",
       "weight": 1.0,
       "_origin": "ast",
       "source": "deployment_tests_test_sfl_review_platform_assert_exactpair",
@@ -11096,10 +11185,10 @@
       "relation": "calls",
       "confidence": "EXTRACTED",
       "source_file": "deployment/tests/test-sfl-review-platform.ps1",
-      "source_location": "L23",
+      "source_location": "L24",
       "weight": 1.0,
       "_origin": "ast",
-      "source": "deployment_tests_test_sfl_review_platform_assert_patterns",
+      "source": "deployment_tests_test_sfl_review_platform_assert_patternset",
       "target": "deployment_tests_test_sfl_review_platform_read_repofile",
       "confidence_score": 1.0
     },
@@ -16957,5 +17046,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "05823735bce2cea90cf8ca76cf25f36aea9473f5"
+  "built_at_commit": "2df7132af1f92d5b861fd1fb1d5a3e2c12f23c28"
 }

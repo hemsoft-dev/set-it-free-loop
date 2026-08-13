@@ -5,6 +5,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
+. (Join-Path $PSScriptRoot 'line-ending-test-helpers.ps1')
 $sourcePath = Join-Path $repoRoot 'deployment\workflows\sfl-pr-review.md'
 $stagedPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.md'
 $lockPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.lock.yml'
@@ -23,7 +24,7 @@ if ($failures.Count -eq 0) {
     $lock = Get-Content -LiteralPath $lockPath -Raw
     $actionsLock = Get-Content -LiteralPath $actionsLockPath -Raw
 
-    if ($source -ne $staged) {
+    if (-not (Test-NormalizedTextEqual $source $staged)) {
         $failures.Add('Canonical and staged reviewer Markdown differ.')
     }
 
