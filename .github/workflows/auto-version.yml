@@ -54,7 +54,7 @@ jobs:
         if: steps.bump.outputs.type != 'none'
         id: current
         run: |
-          VERSION=$(cat VERSION | tr -d '[:space:]')
+          VERSION=$(tr -d '[:space:]' < VERSION)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Calculate new version
