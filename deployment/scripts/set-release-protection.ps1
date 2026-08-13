@@ -36,6 +36,7 @@ if ($Plan) {
         repository = $Repository
         immutableReleasesEnabled = [bool] $immutableState.enabled
         action = if ([bool] $immutableState.enabled) { 'none' } else { 'enable' }
+        repositoryVariable = 'SFL_IMMUTABLE_RELEASES_ENABLED=true'
     } | ConvertTo-Json
     return
 }
@@ -52,3 +53,12 @@ $verifiedState = & gh api "repos/$Repository/immutable-releases" | ConvertFrom-J
 if ($LASTEXITCODE -ne 0 -or -not [bool] $verifiedState.enabled) {
     throw 'Immutable releases did not remain enabled after configuration.'
 }
+& gh variable set SFL_IMMUTABLE_RELEASES_ENABLED --repo $Repository --body true
+if ($LASTEXITCODE -ne 0) {
+    throw 'Recording the immutable-release preflight variable failed.'
+}
+$recordedState = (& gh variable get SFL_IMMUTABLE_RELEASES_ENABLED --repo $Repository).Trim()
+if ($LASTEXITCODE -ne 0 -or $recordedState -ne 'true') {
+    throw 'The immutable-release preflight variable was not recorded as true.'
+}
+Write-Output 'Recorded SFL_IMMUTABLE_RELEASES_ENABLED=true for release preflight.'
