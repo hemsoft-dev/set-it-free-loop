@@ -1,16 +1,16 @@
-# Graph Report - issue-53-reviewer-parity-audit  (2026-08-13)
+# Graph Report - issue-55-release-metadata  (2026-08-13)
 
 ## Corpus Check
-- 63 files · ~159,743 words
+- 64 files · ~160,051 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 771 nodes · 764 edges · 56 communities (55 shown, 1 thin omitted)
+- 772 nodes · 764 edges · 57 communities (56 shown, 1 thin omitted)
 - Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 2 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `f88b12f6`
+- Built from commit: `05823735`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -81,7 +81,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (56 total, 1 thin omitted)
+## Communities (57 total, 1 thin omitted)
 
 ### Community 0 - "Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀"
 Cohesion: 0.04
@@ -266,7 +266,7 @@ _Questions this graph is uniquely positioned to answer:_
 - **Why does `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` connect `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` to `CATALOG.md`?**
   _High betweenness centrality (0.045) - this node is a cross-community bridge._
 - **Why does `Set it Free — Governance Policy` connect `Set it Free — Governance Policy` to `CATALOG.md`?**
-  _High betweenness centrality (0.029) - this node is a cross-community bridge._
+  _High betweenness centrality (0.028) - this node is a cross-community bridge._
 - **What connects `$schema`, `defaultProfile`, `provider` to the rest of the system?**
   _550 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` be split into smaller, more focused modules?**

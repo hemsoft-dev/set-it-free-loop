@@ -1,8 +1,14 @@
 {
   "schemaVersion": 1,
   "reviewedAt": "2026-08-13",
-  "upstream": {
+  "distribution": {
+    "repository": "HemSoft/set-it-free-loop",
+    "version": "2.0.0",
+    "visibility": "private"
+  },
+  "reviewerBaseline": {
     "repository": "relias-engineering/set-it-free-loop",
+    "releaseVersion": "6.5.7",
     "releaseTag": "v6.5.7",
     "releaseCommit": "8d5e30714fa6cc61a89189266f8eb463132abde9",
     "reviewedCommit": "669d4d84ef37ebab107c5931d6727846626062e5",

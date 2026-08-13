@@ -54,5 +54,6 @@
   "52": "test-sfl-pr-review.ps1",
   "53": "test-source-pin-placement.ps1",
   "54": "HemSoft SFL Pull Request Reviewer",
+  "55": "test-release-metadata.ps1",
   "59": "test-sfl-dispatch-dedup.ps1"
 }

@@ -57,8 +57,8 @@ Known gaps:
 
 - [x] HemSoft validates GitHub's `isOutdated` flag before resolving an
   obsolete SFL review thread, matching Relias v6.5.7.
-- [ ] `VERSION` and `sfl.json` still report `2.0.0`; there is no recorded Relias
-  baseline in release metadata.
+- [x] Release metadata distinguishes HemSoft distribution `2.0.0` from the
+  pinned Relias reviewer release and immutable reviewed commit.
 - [ ] The repository has no Git tags or GitHub releases.
 - [x] `.github/workflows/auto-version.yml` parses and has a checksum-pinned
   actionlint gate; publication remains opt-in until the release contract below
@@ -102,7 +102,7 @@ and checksum, and canonical/runtime artifact parity.
 
 - [x] Repair `.github/workflows/auto-version.yml` and add a YAML/actionlint gate
   that would catch the current parse failure.
-- [ ] Make release metadata distinguish the HemSoft distribution version from
+- [x] Make release metadata distinguish the HemSoft distribution version from
   the Relias reviewer baseline version and immutable baseline commit.
 - [ ] Keep `VERSION`, `sfl.json`, tags, release notes, and CLI artifacts in sync
   from one release command or workflow.

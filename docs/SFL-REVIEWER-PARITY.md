@@ -6,8 +6,10 @@ identity as the goal. Provider configuration and distribution boundaries differ
 intentionally, and HemSoft retains tested hardening when it is at least as
 strict as the Relias behavior.
 
-The machine-readable baseline is
-[`deployment/reviewer-parity-baseline.json`](../deployment/reviewer-parity-baseline.json).
+The machine-readable baseline and HemSoft release identity are in
+[`deployment/release-metadata.json`](../deployment/release-metadata.json).
+Its `distribution.version` is the HemSoft package version; the independent
+`reviewerBaseline.releaseVersion` identifies the reviewed Relias contract.
 It distinguishes the `v6.5.7` tag commit
 `8d5e30714fa6cc61a89189266f8eb463132abde9` from the reviewed default-branch
 commit `669d4d84ef37ebab107c5931d6727846626062e5`. Only `TODO.md` changed between
@@ -59,4 +61,5 @@ pwsh -NoProfile -File deployment/tests/test-relias-reviewer-parity.ps1 `
 Any reviewer artifact change fails the audit until the baseline hashes and this
 contract-diff note are deliberately reviewed together. A future Relias baseline
 update must record both the release tag commit and the exact reviewed commit;
-never move the recorded commit to a mutable branch name.
+never move the recorded commit to a mutable branch name. HemSoft release bumps
+change only `distribution.version`; they do not rewrite the reviewer baseline.
