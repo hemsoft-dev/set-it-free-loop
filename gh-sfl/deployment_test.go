@@ -1924,13 +1924,16 @@ func TestResolveDeploymentReleaseUsesLatestTagAndPinnedVersion(t *testing.T) {
 }
 
 func TestSemanticVersionPatternAcceptsPrereleaseAndRejectsMalformedVersions(t *testing.T) {
-	valid := []string{"2.0.0", "2.1.0-rc.1", "2.1.0-rc.1+build.7"}
+	valid := []string{"0.0.0", "2.0.0", "2.1.0-rc.1", "2.1.0-alpha-beta+build-meta.7"}
 	for _, version := range valid {
 		if !semanticVersionPattern.MatchString(version) {
 			t.Errorf("semanticVersionPattern rejected %q", version)
 		}
 	}
-	invalid := []string{"v2.0.0", "2.0", "2.0.0-", "2.0.0+", "2.0.0 rc.1"}
+	invalid := []string{
+		"v2.0.0", "2.0", "2.0.0-", "2.0.0+", "2.0.0 rc.1",
+		"01.0.0", "1.01.0", "1.0.01", "1.0.0-rc.01",
+	}
 	for _, version := range invalid {
 		if semanticVersionPattern.MatchString(version) {
 			t.Errorf("semanticVersionPattern accepted %q", version)

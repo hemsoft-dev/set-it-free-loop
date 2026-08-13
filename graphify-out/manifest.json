@@ -45,8 +45,8 @@
     "semantic_hash": ""
   },
   "deployment/scripts/install-gh-sfl-hemsoft.ps1": {
-    "mtime": 1786622639.9620516,
-    "ast_hash": "dd201fc8146444a6d69a6773df07b91f",
+    "mtime": 1786623195.286147,
+    "ast_hash": "84a50a59997c37ff63b312b8699d3c59",
     "semantic_hash": ""
   },
   "deployment/scripts/merge-sfl-manifest.ps1": {
@@ -70,8 +70,8 @@
     "semantic_hash": ""
   },
   "deployment/sfl-manifest.schema.json": {
-    "mtime": 1786621636.80452,
-    "ast_hash": "fde2524e9f400a4b2153f4bbf8c58e06",
+    "mtime": 1786623195.288147,
+    "ast_hash": "5f25306572dde5508b0e1c760353943b",
     "semantic_hash": ""
   },
   "deployment/tests/test-review-tier-manifest-merge.ps1": {
@@ -405,8 +405,8 @@
     "semantic_hash": ""
   },
   ".github/workflows/validate-release-workflow.yml": {
-    "mtime": 1786622365.5648706,
-    "ast_hash": "d989fc0bff12eb6574b916aceb761a1c",
+    "mtime": 1786623195.284147,
+    "ast_hash": "c2e75678764954f5d94783a4519c94ed",
     "semantic_hash": ""
   },
   "deployment/tests/test-relias-reviewer-parity.ps1": {
@@ -430,8 +430,8 @@
     "semantic_hash": ""
   },
   "deployment/tests/test-release-metadata.ps1": {
-    "mtime": 1786622429.4256368,
-    "ast_hash": "d25d508d1b0d431a264fda7a6af7e27c",
+    "mtime": 1786623195.286147,
+    "ast_hash": "83b33db24ec38e18bd7221cfa15c2028",
     "semantic_hash": ""
   },
   "deployment/tests/line-ending-test-helpers.ps1": {
@@ -470,8 +470,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/deployment_test.go": {
-    "mtime": 1786621825.6125855,
-    "ast_hash": "6bdb9a64d3f4e367d8389428f37ef543",
+    "mtime": 1786623223.3032496,
+    "ast_hash": "c6ae3da3d44a67c477aa2d14fa3d2ca3",
     "semantic_hash": ""
   },
   "gh-sfl/dispatch_dedup_fixture_test.go": {
@@ -505,8 +505,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/init.go": {
-    "mtime": 1786621825.607837,
-    "ast_hash": "d6f3f09ca2e4337e124256f79ff7d80a",
+    "mtime": 1786623195.2871468,
+    "ast_hash": "55fc2ae76a7d109bbefbe446eb554eb2",
     "semantic_hash": ""
   },
   "gh-sfl/list.go": {
@@ -615,8 +615,8 @@
     "semantic_hash": ""
   },
   "deployment/scripts/build-release-artifacts.ps1": {
-    "mtime": 1786622349.0453742,
-    "ast_hash": "5deda860ee942573382797f2ce292aa4",
+    "mtime": 1786623195.2851477,
+    "ast_hash": "9d17b123b730e111785d39e16b6e2e7b",
     "semantic_hash": ""
   },
   "deployment/scripts/set-release-protection.ps1": {
@@ -625,13 +625,13 @@
     "semantic_hash": ""
   },
   "deployment/scripts/set-release-version.ps1": {
-    "mtime": 1786621636.8025198,
-    "ast_hash": "e7522c6a7edf099db2f4955fe1d0d65a",
+    "mtime": 1786623195.2851477,
+    "ast_hash": "33fc07847b938acdc4b6c18a1f9c45d9",
     "semantic_hash": ""
   },
   "deployment/tests/test-release-installer.ps1": {
-    "mtime": 1786622627.4484806,
-    "ast_hash": "3b8da359eb8fcbee1d0607158eac51ae",
+    "mtime": 1786623297.6729631,
+    "ast_hash": "de59b3ea2b930a1f7b0127dc682f4dac",
     "semantic_hash": ""
   },
   "gh-sfl/internal/generatelabels/main_test.go": {
@@ -640,8 +640,8 @@
     "semantic_hash": ""
   },
   ".github/workflows/publish-private-prerelease.yml": {
-    "mtime": 1786622429.4246354,
-    "ast_hash": "0f9b732306c94b2dbbaa62e3914d7334",
+    "mtime": 1786623195.284147,
+    "ast_hash": "3b3a85fb98bb77db4c33f0b1dd9d96e5",
     "semantic_hash": ""
   },
   "docs/RELEASING.md": {

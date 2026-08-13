@@ -14,7 +14,7 @@ $release = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\release-met
     ConvertFrom-Json
 $workflow = Get-Content -LiteralPath (Join-Path $repoRoot '.github\workflows\publish-private-prerelease.yml') -Raw
 $failures = [System.Collections.Generic.List[string]]::new()
-$semanticVersionPattern = '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$'
+$semanticVersionPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$'
 
 if ($version -notmatch $semanticVersionPattern) {
     $failures.Add("VERSION is not semantic version metadata: '$version'.")
@@ -66,8 +66,10 @@ $requiredWorkflowPatterns = @(
     "github.repository == 'HemSoft/set-it-free-loop'",
     "github.ref == 'refs/heads/main'",
     'test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -RequirePrerelease',
-    'git rev-parse origin/main',
+    'repos/${GITHUB_REPOSITORY}/commits/main',
+    'test "$(git rev-parse HEAD)" = "$remote_main_sha"',
     'immutable-releases',
+    'test "$immutable_enabled" = "true"',
     'build-release-artifacts.ps1',
     'sha256sum --check SHA256SUMS',
     'gh release create "$tag"',
@@ -132,16 +134,18 @@ try {
         $failures.Add('set-release-version.ps1 did not synchronize the fixture metadata.')
     }
 
-    $invalidVersionFailure = $null
-    try {
-        & (Join-Path $repoRoot 'deployment\scripts\set-release-version.ps1') `
-            -Version '9.8' -RepositoryRoot $fixtureRoot | Out-Null
-    }
-    catch {
-        $invalidVersionFailure = $_.Exception.Message
-    }
-    if ($invalidVersionFailure -notlike 'Invalid semantic version*') {
-        $failures.Add("set-release-version.ps1 did not reject a malformed version: $invalidVersionFailure")
+    foreach ($invalidVersion in @('9.8', '01.0.0', '1.0.0-rc.01', '1.0.0-')) {
+        $invalidVersionFailure = $null
+        try {
+            & (Join-Path $repoRoot 'deployment\scripts\set-release-version.ps1') `
+                -Version $invalidVersion -RepositoryRoot $fixtureRoot | Out-Null
+        }
+        catch {
+            $invalidVersionFailure = $_.Exception.Message
+        }
+        if ($invalidVersionFailure -notlike 'Invalid semantic version*') {
+            $failures.Add("set-release-version.ps1 did not reject '$invalidVersion': $invalidVersionFailure")
+        }
     }
 
     $nonEmptyOutput = Join-Path $fixtureRoot 'non-empty-output'
@@ -158,6 +162,20 @@ try {
     if ($nonEmptyFailure -notlike 'Release output directory must be empty*' -or
         -not (Test-Path -LiteralPath (Join-Path $nonEmptyOutput 'sentinel.txt') -PathType Leaf)) {
         $failures.Add("Release artifact builder did not preserve a non-empty output directory: $nonEmptyFailure")
+    }
+
+    $relativeOutputName = "relative-release-$([guid]::NewGuid().ToString('N'))"
+    Push-Location $fixtureRoot
+    try {
+        & (Join-Path $repoRoot 'deployment\scripts\build-release-artifacts.ps1') `
+            -Version '9.8.7-rc.2' -BuildDate '2026-08-13' `
+            -OutputDirectory $relativeOutputName -RepositoryRoot $repoRoot | Out-Null
+    }
+    finally {
+        Pop-Location
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $fixtureRoot "$relativeOutputName\SHA256SUMS") -PathType Leaf)) {
+        $failures.Add('Release artifact builder resolved a relative output path after changing location.')
     }
 }
 finally {

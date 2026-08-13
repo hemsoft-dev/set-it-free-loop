@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$semanticVersionPattern = '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$'
+$semanticVersionPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$'
 if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = (Get-Content -LiteralPath (Join-Path $RepositoryRoot 'VERSION') -Raw).Trim()
 }
@@ -34,6 +34,11 @@ if (-not (Test-Path -LiteralPath $sourceDirectory -PathType Container) -or
     throw 'Repository-owned CLI source or installer is missing.'
 }
 
+$OutputDirectory = if ([System.IO.Path]::IsPathFullyQualified($OutputDirectory)) {
+    [System.IO.Path]::GetFullPath($OutputDirectory)
+} else {
+    [System.IO.Path]::GetFullPath((Join-Path (Get-Location).ProviderPath $OutputDirectory))
+}
 if (Test-Path -LiteralPath $OutputDirectory) {
     $existingOutput = @(Get-ChildItem -LiteralPath $OutputDirectory -Force)
     if ($existingOutput.Count -gt 0) {

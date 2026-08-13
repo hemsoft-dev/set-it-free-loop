@@ -11,6 +11,19 @@ $version = '9.8.7-rc.2'
 
 try {
     New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
+    foreach ($invalidVersion in @('01.0.0', '1.0.0-rc.01')) {
+        $invalidFailure = $null
+        try {
+            & $installer -ReleaseVersion $invalidVersion -GitHubCliPath 'gh' `
+                -WorkDir (Join-Path $fixtureRoot "invalid-$invalidVersion") -NoInstall
+        }
+        catch {
+            $invalidFailure = $_.Exception.Message
+        }
+        if ($invalidFailure -notlike 'Invalid release version*') {
+            throw "Release installer did not reject '$invalidVersion': $invalidFailure"
+        }
+    }
     $artifactName = if ([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform(
         [System.Runtime.InteropServices.OSPlatform]::Windows)) {
         "gh-sfl_${version}_windows_amd64.exe"

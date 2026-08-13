@@ -50,8 +50,8 @@ jobs:
           tag="v${RELEASE_VERSION}"
           default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
           test "$default_branch" = "main"
-          git fetch --no-tags origin main
-          test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+          remote_main_sha=$(gh api "repos/${GITHUB_REPOSITORY}/commits/main" --jq .sha)
+          test "$(git rev-parse HEAD)" = "$remote_main_sha"
           test -z "$(git status --porcelain)"
           if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
             echo "::error::Tag ${tag} already exists"
@@ -61,7 +61,8 @@ jobs:
             echo "::error::Release ${tag} already exists"
             exit 1
           fi
-          gh api "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq -e '.enabled == true' >/dev/null
+          immutable_enabled=$(gh api "repos/${GITHUB_REPOSITORY}/immutable-releases" --jq .enabled)
+          test "$immutable_enabled" = "true"
 
       - name: Build release artifacts and checksums
         shell: pwsh
