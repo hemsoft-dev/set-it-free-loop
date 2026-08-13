@@ -32,6 +32,11 @@ The idempotent script only targets the private
 to be repaired, then lock its published tag and assets against movement,
 replacement, or deletion and issue release attestations. This is stronger than
 a tag-only ruleset because the checksum file and binaries become immutable too.
+After verifying the admin-only setting, the script records
+`SFL_IMMUTABLE_RELEASES_ENABLED=true` as the workflow's preflight bridge. The
+workflow token cannot read GitHub's repository Administration endpoint; the
+signed release and per-asset attestations remain the authoritative post-publish
+proof.
 
 ## Publish a prerelease
 

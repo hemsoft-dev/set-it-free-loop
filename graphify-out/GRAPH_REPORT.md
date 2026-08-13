@@ -1,16 +1,16 @@
-# Graph Report - issue-63-private-release-pipeline  (2026-08-13)
+# Graph Report - issue-63-release-preflight  (2026-08-13)
 
 ## Corpus Check
-- 105 files · ~196,086 words
+- 105 files · ~196,195 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1236 nodes · 1873 edges · 102 communities (99 shown, 3 thin omitted)
+- 1236 nodes · 1873 edges · 103 communities (100 shown, 3 thin omitted)
 - Extraction: 88% EXTRACTED · 12% INFERRED · 0% AMBIGUOUS · INFERRED: 225 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `0f532d41`
+- Built from commit: `1ebb9c1a`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -69,7 +69,7 @@
 - runInit
 - fakeREST
 - Commands
-- version
+- enum
 - addons
 - generatelabels/main.go
 - readContractFile
@@ -77,6 +77,7 @@
 - properties
 - requiredSecretsAnyOf
 - properties
+- deployedAt
 - enum
 - sfl: Frontmatter Spec
 - changelog.go
@@ -123,7 +124,7 @@
 ## Import Cycles
 - None detected.
 
-## Communities (102 total, 3 thin omitted)
+## Communities (103 total, 3 thin omitted)
 
 ### Community 0 - "Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀"
 Cohesion: 0.04
@@ -242,8 +243,8 @@ Cohesion: 0.14
 Nodes (13): Conditional Evidence Checks, Full-Spectrum PR Review, HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route., HemSoft SFL reviewer platform v2, Pass 1: 🔒 Security Review, Pass 2: ✅ Accuracy & Reliability Review, Pass 3: 🧰 Quality & Maintainability Review, Required Configuration (+5 more)
 
 ### Community 30 - "enum"
-Cohesion: 0.20
-Nodes (10): provider, enum, type, claude, codex, copilot, crush, gemini (+2 more)
+Cohesion: 0.25
+Nodes (8): enum, claude, codex, copilot, crush, gemini, opencode, pi
 
 ### Community 31 - "HemSoft SFL Pull Request Reviewer"
 Cohesion: 0.22
@@ -307,7 +308,7 @@ Nodes (63): appInstallation, TestClassifyReviewerGate(), collectStaleReviewerRul
 
 ### Community 60 - "properties"
 Cohesion: 0.25
-Nodes (8): description, format, type, description, type, properties, deployedAt, deployedBy
+Nodes (8): description, type, properties, deployedBy, version, description, pattern, type
 
 ### Community 61 - "renderRunTable"
 Cohesion: 0.12
@@ -337,9 +338,9 @@ Nodes (7): decodeTestResponse(), Reader, splitEvery(), TestConditionalRESTClient
 Cohesion: 0.14
 Nodes (13): Building, Commands, `gh sfl add`, `gh sfl gate`, gh-sfl — GitHub CLI Extension for Set it Free Loop, `gh sfl init`, `gh sfl list`, `gh sfl status` (+5 more)
 
-### Community 68 - "version"
-Cohesion: 0.50
-Nodes (4): version, description, pattern, type
+### Community 68 - "enum"
+Cohesion: 0.33
+Nodes (6): enum, type, effort, high, low, medium
 
 ### Community 69 - "addons"
 Cohesion: 0.18
@@ -358,8 +359,8 @@ Cohesion: 0.24
 Nodes (7): T, TestDispatchDedupFixtures(), T, TestReviewEffortResolutionFixtures(), T, reviewerFixtureBash(), TestAutoGateRunValidationFixtures()
 
 ### Community 73 - "properties"
-Cohesion: 0.15
-Nodes (13): properties, enum, type, minLength, type, minLength, type, effort (+5 more)
+Cohesion: 0.22
+Nodes (9): properties, minLength, type, minLength, type, model, profile, provider (+1 more)
 
 ### Community 74 - "requiredSecretsAnyOf"
 Cohesion: 0.25
@@ -368,6 +369,10 @@ Nodes (9): items, type, minLength, type, arguments, requiredSecretsAnyOf, items,
 ### Community 75 - "properties"
 Cohesion: 0.22
 Nodes (9): minLength, type, minProperties, type, properties, defaultProfile, profiles, $schema (+1 more)
+
+### Community 77 - "deployedAt"
+Cohesion: 0.50
+Nodes (4): description, format, type, deployedAt
 
 ### Community 78 - "enum"
 Cohesion: 0.20

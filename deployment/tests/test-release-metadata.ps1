@@ -68,8 +68,8 @@ $requiredWorkflowPatterns = @(
     'test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -RequirePrerelease',
     'repos/${GITHUB_REPOSITORY}/commits/main',
     'test "$(git rev-parse HEAD)" = "$remote_main_sha"',
-    'immutable-releases',
-    'test "$immutable_enabled" = "true"',
+    'IMMUTABLE_RELEASES_ATTESTED: ${{ vars.SFL_IMMUTABLE_RELEASES_ENABLED }}',
+    'test "$IMMUTABLE_RELEASES_ATTESTED" = "true"',
     'build-release-artifacts.ps1',
     'sha256sum --check SHA256SUMS',
     'gh release create "$tag"',
@@ -110,6 +110,16 @@ $installer = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\scripts\i
 foreach ($pattern in @('release download', 'SHA256SUMS', 'Get-FileHash', 'Checksum mismatch')) {
     if (-not $installer.Contains($pattern)) {
         $failures.Add("Release installer is missing checksum contract fragment: $pattern")
+    }
+}
+$protection = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\scripts\set-release-protection.ps1') -Raw
+foreach ($pattern in @(
+    'repos/$Repository/immutable-releases',
+    'gh variable set SFL_IMMUTABLE_RELEASES_ENABLED',
+    'gh variable get SFL_IMMUTABLE_RELEASES_ENABLED'
+)) {
+    if (-not $protection.Contains($pattern)) {
+        $failures.Add("Release protection script is missing attested-state bridge: $pattern")
     }
 }
 

@@ -538,8 +538,8 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_provider",
-      "community": 30,
-      "community_name": "enum",
+      "community": 73,
+      "community_name": "properties",
       "norm_label": "provider"
     },
     {
@@ -549,8 +549,8 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_provider_type",
-      "community": 30,
-      "community_name": "enum",
+      "community": 73,
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -681,8 +681,8 @@
       "source_location": "L44",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_effort",
-      "community": 73,
-      "community_name": "properties",
+      "community": 68,
+      "community_name": "enum",
       "norm_label": "effort"
     },
     {
@@ -692,8 +692,8 @@
       "source_location": "L45",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_effort_type",
-      "community": 73,
-      "community_name": "properties",
+      "community": 68,
+      "community_name": "enum",
       "norm_label": "type"
     },
     {
@@ -703,8 +703,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_effort_enum",
-      "community": 73,
-      "community_name": "properties",
+      "community": 68,
+      "community_name": "enum",
       "norm_label": "enum"
     },
     {
@@ -714,8 +714,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "ref_low",
-      "community": 73,
-      "community_name": "properties",
+      "community": 68,
+      "community_name": "enum",
       "norm_label": "low"
     },
     {
@@ -725,8 +725,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "ref_medium",
-      "community": 73,
-      "community_name": "properties",
+      "community": 68,
+      "community_name": "enum",
       "norm_label": "medium"
     },
     {
@@ -736,8 +736,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "ref_high",
-      "community": 73,
-      "community_name": "properties",
+      "community": 68,
+      "community_name": "enum",
       "norm_label": "high"
     },
     {
@@ -1462,8 +1462,8 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_version",
-      "community": 68,
-      "community_name": "version",
+      "community": 60,
+      "community_name": "properties",
       "norm_label": "version"
     },
     {
@@ -1473,8 +1473,8 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_version_type",
-      "community": 68,
-      "community_name": "version",
+      "community": 60,
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -1484,8 +1484,8 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_version_description",
-      "community": 68,
-      "community_name": "version",
+      "community": 60,
+      "community_name": "properties",
       "norm_label": "description"
     },
     {
@@ -1495,8 +1495,8 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_version_pattern",
-      "community": 68,
-      "community_name": "version",
+      "community": 60,
+      "community_name": "properties",
       "norm_label": "pattern"
     },
     {
@@ -1506,8 +1506,8 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_properties_deployedat",
-      "community": 60,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "deployedAt",
       "norm_label": "deployedat"
     },
     {
@@ -1517,8 +1517,8 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_deployedat_type",
-      "community": 60,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "deployedAt",
       "norm_label": "type"
     },
     {
@@ -1528,8 +1528,8 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_deployedat_format",
-      "community": 60,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "deployedAt",
       "norm_label": "format"
     },
     {
@@ -1539,8 +1539,8 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "deployment_sfl_manifest_schema_deployedat_description",
-      "community": 60,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "deployedAt",
       "norm_label": "description"
     },
     {
@@ -13154,7 +13154,7 @@
       "label": "Publish a prerelease",
       "file_type": "document",
       "source_file": "docs/RELEASING.md",
-      "source_location": "L36",
+      "source_location": "L41",
       "_origin": "ast",
       "id": "docs_releasing_publish_a_prerelease",
       "community": 95,
@@ -13165,7 +13165,7 @@
       "label": "Install and verify",
       "file_type": "document",
       "source_file": "docs/RELEASING.md",
-      "source_location": "L60",
+      "source_location": "L65",
       "_origin": "ast",
       "id": "docs_releasing_install_and_verify",
       "community": 95,
@@ -34570,7 +34570,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "docs/RELEASING.md",
-      "source_location": "L60",
+      "source_location": "L65",
       "weight": 1.0,
       "_origin": "ast",
       "source": "docs_releasing_private_hemsoft_release_contract",
@@ -34603,7 +34603,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "docs/RELEASING.md",
-      "source_location": "L36",
+      "source_location": "L41",
       "weight": 1.0,
       "_origin": "ast",
       "source": "docs_releasing_private_hemsoft_release_contract",
@@ -34986,5 +34986,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "0f532d41911236751269b4be67793d78a9dfa322"
+  "built_at_commit": "1ebb9c1aa02ecc2ebc22d6af097d4a3ebabd2d96"
 }
