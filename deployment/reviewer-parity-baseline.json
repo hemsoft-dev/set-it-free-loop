@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-08-13",
+  "upstream": {
+    "repository": "relias-engineering/set-it-free-loop",
+    "releaseTag": "v6.5.7",
+    "releaseCommit": "8d5e30714fa6cc61a89189266f8eb463132abde9",
+    "reviewedCommit": "669d4d84ef37ebab107c5931d6727846626062e5",
+    "postReleaseChanges": [
+      "TODO.md"
+    ]
+  },
+  "allowedDifferenceClasses": [
+    "provider-configuration",
+    "private-distribution-boundary",
+    "tested-hemsoft-hardening"
+  ],
+  "artifacts": [
+    {
+      "name": "reviewer-source",
+      "upstreamPath": "workflows/sfl-pr-review.md",
+      "upstreamSha256": "35b1d066abd0df5498a9ece6937be0c92c8dbfc04f3adf1c43b22dc7d2dc3a5a",
+      "hemsoftPath": "deployment/workflows/sfl-pr-review.md",
+      "hemsoftSha256": "592227607edff332cd33af46427372b5907d9a84509b77a59001a010de013211",
+      "stagedPaths": [
+        ".github/workflows/sfl-pr-review.md"
+      ],
+      "differenceClasses": [
+        "provider-configuration",
+        "private-distribution-boundary",
+        "tested-hemsoft-hardening"
+      ],
+      "evidenceTests": [
+        "deployment/tests/test-sfl-pr-review.ps1",
+        "deployment/tests/test-sfl-verdict-validator.ps1"
+      ]
+    },
+    {
+      "name": "reviewer-lock",
+      "upstreamPath": "workflows/sfl-pr-review.lock.yml",
+      "upstreamSha256": "b232c552c59b17edef1bfe3326a9b0eb6d29d379be44a33e861f33a6ae47af02",
+      "hemsoftPath": ".github/workflows/sfl-pr-review.lock.yml",
+      "hemsoftSha256": "8a90a93ed7cb4cb1c7dfe9deee42d5549e7d768a5f55575ae0c46675821fad7b",
+      "stagedPaths": [],
+      "differenceClasses": [
+        "provider-configuration",
+        "private-distribution-boundary",
+        "tested-hemsoft-hardening"
+      ],
+      "evidenceTests": [
+        "deployment/tests/test-sfl-pr-review.ps1"
+      ]
+    },
+    {
+      "name": "auto-trigger-gate",
+      "upstreamPath": "workflows/sfl-pr-review-auto.yml",
+      "upstreamSha256": "abbb6615ec2c598e42ef242596c0e6f05e3b616641da7c656d74b7bbb5487bf6",
+      "hemsoftPath": "deployment/infrastructure/sfl-pr-review-auto.yml",
+      "hemsoftSha256": "c90eab6f153afa8ac3a3dbcf87b228e3eaf2ed1dd04f2194a86a4fad3d74de24",
+      "stagedPaths": [
+        ".github/workflows/sfl-pr-review-auto.yml"
+      ],
+      "differenceClasses": [
+        "private-distribution-boundary",
+        "tested-hemsoft-hardening"
+      ],
+      "evidenceTests": [
+        "deployment/tests/test-sfl-dispatch-dedup.ps1",
+        "deployment/tests/test-sfl-review-platform.ps1"
+      ]
+    },
+    {
+      "name": "recovery",
+      "upstreamPath": "workflows/sfl-pr-review-recovery.yml",
+      "upstreamSha256": "d94fb4a788a0f4c39ed45a24d14e44ec6f0a8bcd2027c3357edae2167ae33a25",
+      "hemsoftPath": "deployment/infrastructure/sfl-pr-review-recovery.yml",
+      "hemsoftSha256": "2614f1b559e0c3fc12c2b3127cfa9b5a224ada0a5a7f5718220d47610889adf1",
+      "stagedPaths": [
+        ".github/workflows/sfl-pr-review-recovery.yml"
+      ],
+      "differenceClasses": [
+        "tested-hemsoft-hardening"
+      ],
+      "evidenceTests": [
+        "deployment/tests/test-sfl-review-platform.ps1"
+      ]
+    }
+  ]
+}

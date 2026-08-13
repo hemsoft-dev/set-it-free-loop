@@ -170,6 +170,7 @@ Nothing enters `deployment/` without having run successfully in staging first.
 
 - [CATALOG.md](CATALOG.md) — ready-to-deploy workflow registry
 - [TODO.md](TODO.md) — active reviewer parity backlog
+- [docs/SFL-REVIEWER-PARITY.md](docs/SFL-REVIEWER-PARITY.md) — pinned Relias reviewer baseline and read-only parity audit
 - [VISION.md](VISION.md) — strategic vision
 - [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) — operating model playbook
 - [deployment/governance/policy.md](deployment/governance/policy.md) — governance policy

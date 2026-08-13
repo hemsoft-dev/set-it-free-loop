@@ -5,9 +5,11 @@ SFL pull request reviewer to operational parity with
 `relias-engineering/set-it-free-loop` while preserving HemSoft's intentionally
 different model provider and private-repository boundary.
 
-The comparison baseline is Relias SFL `v6.5.7` at commit
-`669d4d84ef37ebab107c5931d6727846626062e5`. Recheck the Relias default branch
-before starting each parity item because that baseline can move.
+The comparison baseline is Relias SFL `v6.5.7` at tag commit
+`8d5e30714fa6cc61a89189266f8eb463132abde9`, reviewed through default-branch
+commit `669d4d84ef37ebab107c5931d6727846626062e5`. Only `TODO.md` changed between
+those commits. Recheck the Relias default branch before starting each parity
+item because that baseline can move.
 
 ## Definition of parity
 
@@ -83,14 +85,14 @@ phase has evidence that must exist before it is complete.
 - [x] Add regression cases proving that an outdated SFL thread may be resolved,
   an already resolved thread is idempotent, and a live unresolved thread is
   rejected.
-- [ ] Compare all reviewer source/runtime artifacts with current Relias `main`.
+- [x] Compare all reviewer source/runtime artifacts with current Relias `main`.
   Document every remaining difference as one of:
   - HemSoft OpenRouter/Kimi configuration;
   - private HemSoft repository enforcement;
   - a tested HemSoft hardening that is at least as strict as Relias.
 - [x] Regenerate the reviewer lock with the repository's checksum-verified
   `gh-aw` compiler; never edit the generated lock directly.
-- [ ] Pass the reviewer platform, verdict, recovery, and workflow contract
+- [x] Pass the reviewer platform, verdict, recovery, and workflow contract
   suites plus `actionlint` for the generated and wrapper workflows.
 
 Evidence required: a contract-diff note, green focused tests, compiler version
@@ -181,9 +183,9 @@ and a zero-drift convergence report for all approved consumers.
 
 ### P1 — Prevent future Relias drift
 
-- [ ] Record the last reviewed Relias tag and commit in machine-readable
+- [x] Record the last reviewed Relias tag and commit in machine-readable
   metadata.
-- [ ] Add a read-only parity audit that compares the HemSoft reviewer package
+- [x] Add a read-only parity audit that compares the HemSoft reviewer package
   with the recorded Relias baseline and permits only documented differences.
 - [ ] Require a deliberate baseline update when Relias changes reviewer safety,
   recovery, gate, CLI, or release behavior.
