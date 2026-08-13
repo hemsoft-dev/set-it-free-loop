@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"path"
 	"sort"
 	"strings"
 )
@@ -15,13 +14,13 @@ type reviewerRolloutHealth struct {
 	DefaultBranch    string
 	ActionsEnabled   bool
 	ActionsIssues    []string
-	AppIssues        []string
+	AppNotice        string
 	MissingVariables []string
 	MissingSecrets   []string
 }
 
 func (health reviewerRolloutHealth) issues() []string {
-	issues := append([]string(nil), health.AppIssues...)
+	var issues []string
 	if strings.TrimSpace(health.DefaultBranch) == "" {
 		issues = append(issues, "repository has no default branch")
 	}
@@ -73,10 +72,6 @@ func inspectReviewerRolloutWithClient(
 		return reviewerRolloutHealth{}, err
 	}
 
-	appIssues, err := reviewerAppIssuesWithClient(client, owner, repo)
-	if err != nil {
-		return reviewerRolloutHealth{}, fmt.Errorf("inspecting reviewer App: %w", err)
-	}
 	variables, err := repositoryActionNames(client, owner, repo, "variables")
 	if err != nil {
 		return reviewerRolloutHealth{}, fmt.Errorf("listing Actions variables: %w", err)
@@ -87,10 +82,11 @@ func inspectReviewerRolloutWithClient(
 	}
 
 	return reviewerRolloutHealth{
-		DefaultBranch:    repository.DefaultBranch,
-		ActionsEnabled:   actionsPermissions.Enabled,
-		ActionsIssues:    actionsIssues,
-		AppIssues:        appIssues,
+		DefaultBranch:  repository.DefaultBranch,
+		ActionsEnabled: actionsPermissions.Enabled,
+		ActionsIssues:  actionsIssues,
+		AppNotice: "GitHub CLI OAuth cannot inspect App installations for the HemSoft personal account; " +
+			"verify scope and permissions with the App-authenticated credential bootstrap",
 		MissingVariables: missingNames(reviewerRequiredVariables, variables),
 		MissingSecrets:   missingNames(reviewerRequiredSecrets, secrets),
 	}, nil
@@ -107,8 +103,7 @@ func reviewerActionsPolicyIssues(
 		return []string{"Actions policy allows only local actions; reviewer requires pinned GitHub-owned actions"}, nil
 	case "selected":
 		var selected struct {
-			GitHubOwnedAllowed bool     `json:"github_owned_allowed"`
-			PatternsAllowed    []string `json:"patterns_allowed"`
+			GitHubOwnedAllowed bool `json:"github_owned_allowed"`
 		}
 		if err := client.Get(
 			fmt.Sprintf("repos/%s/%s/actions/permissions/selected-actions", owner, repo),
@@ -116,34 +111,17 @@ func reviewerActionsPolicyIssues(
 		); err != nil {
 			return nil, fmt.Errorf("reading selected Actions policy: %w", err)
 		}
-		if selected.GitHubOwnedAllowed || selectedActionsCoverReviewer(selected.PatternsAllowed) {
+		if selected.GitHubOwnedAllowed {
 			return nil, nil
 		}
-		return []string{"selected Actions policy does not allow GitHub-owned actions required by the reviewer"}, nil
+		return []string{
+			"selected Actions policy must allow GitHub-owned actions required by the reviewer; exact action patterns are not a supported rollout policy",
+		}, nil
 	case "":
 		return []string{"Actions policy did not report allowed_actions"}, nil
 	default:
 		return []string{"unsupported Actions allowed_actions policy " + allowedActions}, nil
 	}
-}
-
-func selectedActionsCoverReviewer(patterns []string) bool {
-	required := []string{"actions/checkout", "github/gh-aw-actions/setup"}
-	for _, action := range required {
-		allowed := false
-		for _, pattern := range patterns {
-			matchesWithoutRef, _ := path.Match(pattern, action)
-			matchesPinnedRef, _ := path.Match(pattern, action+"@0000000000000000000000000000000000000000")
-			if matchesWithoutRef || matchesPinnedRef {
-				allowed = true
-				break
-			}
-		}
-		if !allowed {
-			return false
-		}
-	}
-	return true
 }
 
 func repositoryActionNames(

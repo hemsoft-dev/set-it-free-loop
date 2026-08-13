@@ -49,10 +49,15 @@ review-thread management. It does not need repository administration.
 
 `gh sfl init` and `gh sfl sync` inspect only repository metadata and credential
 names; they never read secret values. Before preparing a reviewer deployment
-pull request they require a default branch, enabled GitHub Actions, the selected
-repository App installation, the variable above, and both secrets above.
-Repositories with a selected-actions policy must allow GitHub-owned actions;
-the reviewer uses SHA-pinned `actions/*` and `github/gh-aw-actions/*` actions.
+pull request they require a default branch, enabled GitHub Actions, the variable
+above, and both secrets above. A normal GitHub CLI OAuth token cannot inspect
+GitHub App installations owned by the `HemSoft` personal account, so App scope
+and permission-ceiling validation belongs to the App-authenticated credential
+bootstrap and remains a required rollout step.
+Repositories with a selected-actions policy must enable the policy's
+GitHub-owned-actions option; exact allowlist patterns are intentionally not a
+supported rollout policy because the compiled reviewer uses a changing set of
+SHA-pinned `actions/*` and `github/gh-aw-actions/*` actions.
 `gh sfl status` reports each missing prerequisite separately from package drift,
 gate posture, and reviewer-run health.
 
@@ -116,7 +121,8 @@ branch protection only after that deployment is merged.
 The supported rollout order is:
 
 1. Install the App for the explicitly approved private repository and set the
-   required variable and secrets.
+   required variable and secrets. The credential bootstrap must verify the
+   selected-repository scope and permission ceiling with App authentication.
 2. Run `gh sfl init` or `gh sfl sync` and merge its reviewed deployment PR.
 3. Run `gh sfl gate` to require the reviewer without replacing unrelated
    repository rules.

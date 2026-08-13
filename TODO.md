@@ -143,9 +143,12 @@ green CLI tests, and an immutable-source deployment PR.
 
 ### P1 — Make review gating part of the rollout contract
 
-- [x] Preflight the required App installation, `SFL_APP_CLIENT_ID`,
-  `SFL_APP_PRIVATE_KEY`, OpenRouter credential, Actions permissions, and default
-  branch before opening a deployment PR.
+- [x] Preflight `SFL_APP_CLIENT_ID`, `SFL_APP_PRIVATE_KEY`, the OpenRouter
+  credential, Actions permissions, and the default branch before opening a
+  deployment PR.
+- [ ] Verify the App's selected-repository scope and permission ceiling in the
+  App-authenticated credential bootstrap. Normal GitHub CLI OAuth cannot inspect
+  installations owned by the `HemSoft` personal account.
 - [ ] After the deployment PR merges, configure the native
   `SFL Reviewer Approval` required check without replacing unrelated branch
   protection settings.
