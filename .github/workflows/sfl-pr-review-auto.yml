@@ -96,8 +96,7 @@ jobs:
           repositories: ${{ github.event.repository.name }}
           permission-actions: write
           permission-contents: read
-          permission-issues: write
-          permission-pull-requests: read
+          permission-pull-requests: write
 
       - name: Reset stale SFL review state after a push
         if: >-
