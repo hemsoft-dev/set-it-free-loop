@@ -59,11 +59,9 @@ Known gaps:
   obsolete SFL review thread, matching Relias v6.5.7.
 - [x] Release metadata distinguishes HemSoft distribution `2.1.0-rc.3` from the
   pinned Relias reviewer release and immutable reviewed commit.
-- [x] Private prerelease `v2.1.0-rc.1` is an immutable GitHub release at commit
-  `16e327eeef57fc7be025d6734238ea020fe5a0b9`; its publication probe exposed an
-  attestation verification failure. `v2.1.0-rc.2` proved that the workflow's
-  `GITHUB_TOKEN` needs explicit `attestations: read`, so `v2.1.0-rc.3` remains
-  the end-to-end proof.
+- [x] Private prerelease `v2.1.0-rc.3` is an immutable, signed GitHub release at
+  commit `c8ae5e8da61eccedc005c3e37c0818319e16cb04`; workflow run `31704942136`
+  verified every asset and a clean private install.
 - [x] `.github/workflows/publish-private-prerelease.yml` parses and has a
   checksum-pinned actionlint gate; publication is manual and prerelease-only.
 - [x] The HemSoft CLI source is version-controlled under `gh-sfl/`; its build,
@@ -107,13 +105,13 @@ and checksum, and canonical/runtime artifact parity.
   fail-closed prerelease workflow and checksum-pinned actionlint gate.
 - [x] Make release metadata distinguish the HemSoft distribution version from
   the Relias reviewer baseline version and immutable baseline commit.
-- [ ] Keep `VERSION`, `sfl.json`, tags, release notes, and CLI artifacts in sync
+- [x] Keep `VERSION`, `sfl.json`, tags, release notes, and CLI artifacts in sync
   from one release command or workflow.
-- [ ] Generate SHA-256 checksums for every published CLI artifact and verify
+- [x] Generate SHA-256 checksums for every published CLI artifact and verify
   them during installation.
-- [ ] Protect release tags from movement or replacement using the strongest
+- [x] Protect release tags from movement or replacement using the strongest
   repository-level control available to the HemSoft account.
-- [ ] Publish one private prerelease and prove installation from its immutable
+- [x] Publish one private prerelease and prove installation from its immutable
   tag before publishing the first stable release.
 
 Evidence required: green release workflow, immutable tag, private GitHub
@@ -207,7 +205,7 @@ All required work above is complete, and:
   same commit.
 - [ ] The release, CLI, workflow, security, and contract-test suites pass from a
   clean checkout.
-- [ ] The latest private HemSoft release can be installed without local Relias
+- [x] The latest private HemSoft release can be installed without local Relias
   files and verifies all checksums.
 - [ ] Every allowlisted private consumer is on that immutable release with no
   managed-file drift and a required `SFL Reviewer Approval` gate.
@@ -242,6 +240,8 @@ an explicit design decision before implementation.
   [deployment/scripts/deploy-workflow.ps1](deployment/scripts/deploy-workflow.ps1)
 - HemSoft gate script:
   [deployment/scripts/set-sfl-review-gate.ps1](deployment/scripts/set-sfl-review-gate.ps1)
+- Latest private release proof:
+  [docs/release-evidence/v2.1.0-rc.3.md](docs/release-evidence/v2.1.0-rc.3.md)
 
 The local Relias paths are comparison conveniences only. HemSoft build,
 installation, and deployment must not depend on those paths.
