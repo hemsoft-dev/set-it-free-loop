@@ -1324,6 +1324,9 @@ func TestPrintReviewerPrerequisitesSeparatesCredentialFaults(t *testing.T) {
 			t.Errorf("status output missing %q:\n%s", want, output.String())
 		}
 	}
+	if strings.Contains(output.String(), "Selected-repository installation uses the reviewer permission contract") {
+		t.Fatalf("status falsely reported App verification:\n%s", output.String())
+	}
 }
 
 func TestWorkflowsIncludeReviewer(t *testing.T) {

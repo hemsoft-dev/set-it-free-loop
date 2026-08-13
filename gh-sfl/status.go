@@ -362,9 +362,6 @@ func printReviewerPrerequisites(
 	} else if health.AppNotice != "" {
 		fmt.Fprintf(stdout, "    %s %s\n",
 			styler.colored("!", termenv.ANSIYellow).styled, health.AppNotice)
-	} else {
-		fmt.Fprintf(stdout, "    %s Selected-repository installation uses the reviewer permission contract\n",
-			styler.colored("✓", termenv.ANSIGreen).styled)
 	}
 
 	fmt.Fprintf(stdout, "\n  Reviewer credentials and Actions:\n")
