@@ -1382,6 +1382,19 @@ func TestWorkflowsIncludeReviewer(t *testing.T) {
 	}
 }
 
+func TestDryRunSyncSkipsReviewerPreflight(t *testing.T) {
+	reviewer := tierWorkflows["reviewer"]
+	if shouldPreflightReviewerSync(true, reviewer) {
+		t.Fatal("dry-run sync unexpectedly enforced reviewer rollout prerequisites")
+	}
+	if !shouldPreflightReviewerSync(false, reviewer) {
+		t.Fatal("write-capable sync skipped reviewer rollout prerequisites")
+	}
+	if shouldPreflightReviewerSync(false, tierWorkflows["minimal"]) {
+		t.Fatal("non-reviewer sync unexpectedly enforced reviewer rollout prerequisites")
+	}
+}
+
 func TestForceUninstallRemovesEveryManagedDeploymentPath(t *testing.T) {
 	files, err := uninstallFiles(nil, true)
 	if err != nil {
