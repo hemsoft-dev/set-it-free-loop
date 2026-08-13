@@ -81,11 +81,17 @@ func parseToggleOptions(cmd string, args []string, errw io.Writer) (toggleOption
 	}
 
 	// Treat positional arg as repo shorthand
-	if fs.NArg() > 0 && opts.repo == "" {
+	if fs.NArg() > 1 {
+		return opts, fmt.Errorf("unexpected arguments: %s", strings.Join(fs.Args(), ", "))
+	}
+	if fs.NArg() == 1 && opts.repo == "" {
 		arg := fs.Arg(0)
-		if strings.Contains(arg, "/") {
-			opts.repo = arg
+		if !strings.Contains(arg, "/") {
+			return opts, fmt.Errorf("invalid repository format %q (expected OWNER/REPO)", arg)
 		}
+		opts.repo = arg
+	} else if fs.NArg() == 1 {
+		return opts, fmt.Errorf("repository specified by both --repo and positional argument")
 	}
 
 	return opts, nil

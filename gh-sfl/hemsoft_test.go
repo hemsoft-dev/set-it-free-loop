@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -74,18 +73,17 @@ func TestHemSoftReviewerUsesPrivateOpenRouterProfile(t *testing.T) {
 	}
 }
 
-func TestHemSoftOwnershipKeepsReviewerPackageScoped(t *testing.T) {
-	manifest, err := json.Marshal(sflManifest{Tier: "reviewer"})
-	if err != nil {
-		t.Fatalf("marshal reviewer manifest: %v", err)
+func TestHemSoftOwnershipPreservesConsumerCodeowners(t *testing.T) {
+	files := map[string]string{
+		".sfl/sfl.json": `{"tier":"full"}`,
+		"CODEOWNERS":    "* @consumer-team\n",
 	}
-	files := map[string]string{".sfl/sfl.json": string(manifest)}
 
 	if err := applyHemSoftOwnership(files); err != nil {
 		t.Fatalf("apply HemSoft ownership: %v", err)
 	}
-	if _, ok := files["CODEOWNERS"]; ok {
-		t.Error("reviewer-only package unexpectedly overwrites consumer CODEOWNERS")
+	if files["CODEOWNERS"] != "* @consumer-team\n" {
+		t.Fatalf("consumer CODEOWNERS was overwritten: %q", files["CODEOWNERS"])
 	}
 }
 

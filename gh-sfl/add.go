@@ -182,13 +182,12 @@ Usage:
   gh sfl add <addon-name> [flags]
 
 Available Add-ons:
-  policy-manager    Daily error summary from Azure App Insights
-  pr-review         Evidence-based PR review (Security, Accuracy & Reliability, Quality & Maintainability)
+  pr-review    Evidence-based PR review with recovery and a zero-finding approval gate
 
 Flags:
   -R, --repo string    Target repository (OWNER/REPO). Defaults to current repo.
 
 Examples:
   gh sfl add pr-review
-  gh sfl add policy-manager --repo owner/repo
+  gh sfl add pr-review --repo owner/repo
 `

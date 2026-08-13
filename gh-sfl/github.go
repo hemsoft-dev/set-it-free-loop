@@ -198,23 +198,37 @@ func validateDeploymentTarget(owner, repo string) error {
 
 // ensureRepoVariable creates or updates a repository Actions variable.
 func ensureRepoVariable(owner, repo, name, value string) error {
-	// Try PATCH first (update existing)
-	_, _, err := gh.Exec(
-		"api", fmt.Sprintf("repos/%s/%s/actions/variables/%s", owner, repo, name),
-		"--method", "PATCH",
-		"-f", "value="+value,
-	)
+	client, err := newRESTClient()
 	if err != nil {
-		// Doesn't exist — create it
-		_, stderrBuf, createErr := gh.Exec(
-			"api", fmt.Sprintf("repos/%s/%s/actions/variables", owner, repo),
-			"--method", "POST",
-			"-f", "name="+name,
-			"-f", "value="+value,
-		)
-		if createErr != nil {
-			return fmt.Errorf("%s: %w", stderrBuf.String(), createErr)
+		return fmt.Errorf("creating GitHub REST client: %w", err)
+	}
+	return ensureRepoVariableWithClient(client, owner, repo, name, value)
+}
+
+func ensureRepoVariableWithClient(client restAPI, owner, repo, name, value string) error {
+	variablePath := fmt.Sprintf("repos/%s/%s/actions/variables/%s", owner, repo, name)
+	var current struct {
+		Name string `json:"name"`
+	}
+	err := client.Get(variablePath, &current)
+	payload, payloadErr := jsonBody(map[string]string{"name": name, "value": value})
+	if payloadErr != nil {
+		return fmt.Errorf("encoding repository variable %s: %w", name, payloadErr)
+	}
+	if err == nil {
+		if err := client.Patch(variablePath, payload, nil); err != nil {
+			return fmt.Errorf("updating repository variable %s: %w", name, err)
 		}
+		return nil
+	}
+
+	var httpErr *api.HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("checking repository variable %s: %w", name, err)
+	}
+	collectionPath := fmt.Sprintf("repos/%s/%s/actions/variables", owner, repo)
+	if err := client.Post(collectionPath, payload, nil); err != nil {
+		return fmt.Errorf("creating repository variable %s: %w", name, err)
 	}
 	return nil
 }

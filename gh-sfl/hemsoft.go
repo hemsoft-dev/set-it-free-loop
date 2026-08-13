@@ -129,33 +129,7 @@ func cloneHemSoftEnvironment(environment map[string]string) map[string]string {
 }
 
 func applyHemSoftOwnership(fileMap map[string]string) error {
-	if err := applyHemSoftEnginePolicy(fileMap); err != nil {
-		return err
-	}
-	if manifestJSON, ok := fileMap[".sfl/sfl.json"]; ok {
-		var manifest struct {
-			Tier string `json:"tier"`
-		}
-		if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
-			return fmt.Errorf("parsing deployment manifest: %w", err)
-		}
-		if canonicalDeploymentTier(manifest.Tier) == "reviewer" {
-			return nil
-		}
-	}
-
-	fileMap["CODEOWNERS"] = `# CODEOWNERS - auto-assign reviewers for HemSoft repositories
-# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
-
-* @HemSoft
-
-# Automation and SFL-managed files
-/.github/ @HemSoft
-/.github/workflows/ @HemSoft
-/.sfl/ @HemSoft
-/.sfl/** @HemSoft
-`
-	return nil
+	return applyHemSoftEnginePolicy(fileMap)
 }
 
 func applyHemSoftEnginePolicy(fileMap map[string]string) error {

@@ -200,7 +200,11 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "  SFL release: %s (%s)\n\n", release.Ref, release.SHA[:12])
+	shortReleaseSHA := release.SHA
+	if len(shortReleaseSHA) > 12 {
+		shortReleaseSHA = shortReleaseSHA[:12]
+	}
+	fmt.Fprintf(stdout, "  SFL release: %s (%s)\n\n", release.Ref, shortReleaseSHA)
 
 	defaultBranch, err := getDefaultBranch(owner, repo)
 	if err != nil {
@@ -260,12 +264,12 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Manifest
 	deployedAt := time.Now().UTC()
 	deployedBy := getCurrentUser()
-	if existing, readErr := readRemoteManifest(owner, repo); readErr == nil &&
-		existing.Version == release.Version &&
-		existing.Tier == opts.tier &&
-		existing.SourceSHA == release.SHA {
-		deployedAt = existing.DeployedAt
-		deployedBy = existing.DeployedBy
+	if existingManifest != nil &&
+		existingManifest.Version == release.Version &&
+		existingManifest.Tier == opts.tier &&
+		existingManifest.SourceSHA == release.SHA {
+		deployedAt = existingManifest.DeployedAt
+		deployedBy = existingManifest.DeployedBy
 	}
 	manifest := &sflManifest{
 		Version:      release.Version,
@@ -376,6 +380,7 @@ func parseInitOptions(args []string, stderr io.Writer) (initOptions, error) {
 	flags.StringVar(&opts.tier, "tier", "reviewer", "Deployment tier: reviewer, minimal, standard, or full")
 	flags.StringVar(&opts.tier, "t", "reviewer", "Deployment tier: reviewer, minimal, standard, or full")
 	flags.StringVar(&opts.slackWebhook, "slack-webhook", "", "Slack Incoming Webhook URL for notifications")
+	flags.Var(&stringSliceFlag{values: &opts.addons}, "addon", "Optional add-on to include (repeatable)")
 	flags.BoolVar(&opts.pr, "pr", true, "Create a pull request (default)")
 	flags.BoolVar(&opts.direct, "direct", false, "Push directly to the default branch instead of opening a pull request")
 	flags.StringVar(&opts.sourceRef, "source-ref", "", "Synchronized SFL release tag to deploy (defaults to latest)")

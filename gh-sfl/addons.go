@@ -1,8 +1,19 @@
 package main
 
-var addonWorkflows = map[string][]string{}
+import "sort"
 
-var addonDescriptions = map[string]string{}
+var addonWorkflows = map[string][]string{
+	"pr-review": {
+		"sfl-pr-review.md",
+		"sfl-pr-review.lock.yml",
+		"sfl-pr-review-auto.yml",
+		"sfl-pr-review-recovery.yml",
+	},
+}
+
+var addonDescriptions = map[string]string{
+	"pr-review": "Automatic evidence-based PR review with recovery and a zero-finding approval gate",
+}
 
 func validAddon(name string) bool {
 	_, ok := addonWorkflows[name]
@@ -14,6 +25,7 @@ func knownAddonNames() []string {
 	for k := range addonWorkflows {
 		names = append(names, k)
 	}
+	sort.Strings(names)
 	return names
 }
 

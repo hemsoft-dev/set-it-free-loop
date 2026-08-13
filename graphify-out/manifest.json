@@ -450,13 +450,13 @@
     "semantic_hash": ""
   },
   "gh-sfl/add.go": {
-    "mtime": 1786610467.177664,
-    "ast_hash": "2151f6c9a5ece4f1a2567a1b4f374856",
+    "mtime": 1786611855.503999,
+    "ast_hash": "ae8ced68b29154787109d1a93ce7c711",
     "semantic_hash": ""
   },
   "gh-sfl/addons.go": {
-    "mtime": 1786607370.8294237,
-    "ast_hash": "72cf01c26ed8f4514408cb208233b1f4",
+    "mtime": 1786611850.6748202,
+    "ast_hash": "5d6c39d78af1d20466afc2778b78a511",
     "semantic_hash": ""
   },
   "gh-sfl/build.ps1": {
@@ -475,8 +475,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/deployment_test.go": {
-    "mtime": 1786610396.0433974,
-    "ast_hash": "8edd011580cf5356afbab15fe95f0e65",
+    "mtime": 1786611994.6190572,
+    "ast_hash": "39c298bf237d13d92774311d57cc8bd2",
     "semantic_hash": ""
   },
   "gh-sfl/dispatch_dedup_fixture_test.go": {
@@ -490,8 +490,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/github.go": {
-    "mtime": 1786610308.2314885,
-    "ast_hash": "989e1cd46fb9647a3dff8e12039c4f49",
+    "mtime": 1786611871.099957,
+    "ast_hash": "59a1e92a121d8ec51f4939941f2190e8",
     "semantic_hash": ""
   },
   "gh-sfl/go.mod": {
@@ -500,18 +500,18 @@
     "semantic_hash": ""
   },
   "gh-sfl/hemsoft.go": {
-    "mtime": 1786610292.0343437,
-    "ast_hash": "287d1cd0d209502c22004ee227232867",
+    "mtime": 1786611850.6768086,
+    "ast_hash": "505c91dc6d16874ae64afec872aa8862",
     "semantic_hash": ""
   },
   "gh-sfl/hemsoft_test.go": {
-    "mtime": 1786609138.730194,
-    "ast_hash": "bccc6283b5d422f56ca7e01e2ebc7735",
+    "mtime": 1786611974.4361565,
+    "ast_hash": "6ba58470490a304c776e9dca1afb387a",
     "semantic_hash": ""
   },
   "gh-sfl/init.go": {
-    "mtime": 1786610367.3371549,
-    "ast_hash": "2e58067bf6f0f3bbd4686692591fa6ea",
+    "mtime": 1786611850.6758027,
+    "ast_hash": "06431e858e3c2c354337e7a886cbb3a1",
     "semantic_hash": ""
   },
   "gh-sfl/list.go": {
@@ -570,18 +570,18 @@
     "semantic_hash": ""
   },
   "gh-sfl/table.go": {
-    "mtime": 1786505675.2270825,
-    "ast_hash": "af1e67d478c0098e676eeec398c9b762",
+    "mtime": 1786611850.6778088,
+    "ast_hash": "83211c9b87a537f80f00896e05ddc405",
     "semantic_hash": ""
   },
   "gh-sfl/toggle.go": {
-    "mtime": 1786505675.2245822,
-    "ast_hash": "dd68cc677d53192e9fd267aa3d86ddc2",
+    "mtime": 1786611897.6698315,
+    "ast_hash": "f529d2b19b8a6efa8e23b3e9edb64096",
     "semantic_hash": ""
   },
   "gh-sfl/uninstall.go": {
-    "mtime": 1786610308.2304873,
-    "ast_hash": "8f746cb1ec7bc0c7de74349ae762464b",
+    "mtime": 1786611984.8615355,
+    "ast_hash": "eb588f41f298f7ee9400a311a0b1d231",
     "semantic_hash": ""
   },
   "gh-sfl/version.go": {

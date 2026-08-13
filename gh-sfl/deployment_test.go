@@ -17,8 +17,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cli/go-gh/v2/pkg/api"
+	"github.com/mattn/go-runewidth"
 )
 
 type fakeREST struct {
@@ -38,6 +40,8 @@ type fakeREST struct {
 	rulesetDetailReads          map[int64]int
 	deleteErrors                map[string]error
 	postErrors                  map[string]error
+	variableExists              bool
+	variableGetError            error
 	gets                        []string
 	posts                       []string
 	puts                        []string
@@ -50,6 +54,14 @@ type fakeREST struct {
 func (f *fakeREST) Get(path string, response interface{}) error {
 	f.gets = append(f.gets, path)
 	switch {
+	case strings.Contains(path, "/actions/variables/"):
+		if f.variableGetError != nil {
+			return f.variableGetError
+		}
+		if !f.variableExists {
+			return &api.HTTPError{StatusCode: http.StatusNotFound}
+		}
+		return decodeTestResponse(response, map[string]string{"name": "SFL_ENABLED"})
 	case strings.Contains(path, "/repositories?") && strings.Contains(path, "user/installations/"):
 		page := 0
 		if strings.Contains(path, "page=2") {
@@ -408,6 +420,66 @@ func TestParseInitOptionsDirectDisablesPullRequest(t *testing.T) {
 	}
 	if opts.pr {
 		t.Error("parseInitOptions() pr = true with --direct")
+	}
+}
+
+func TestParseInitOptionsRegistersAndDeduplicatesAddons(t *testing.T) {
+	opts, err := parseInitOptions([]string{"--tier", "minimal", "--addon", "pr-review", "--addon", "pr-review"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseInitOptions() unexpected error: %v", err)
+	}
+	if !slices.Equal(opts.addons, []string{"pr-review"}) {
+		t.Fatalf("parseInitOptions() addons = %v, want [pr-review]", opts.addons)
+	}
+	if names := knownAddonNames(); !slices.Equal(names, []string{"pr-review"}) {
+		t.Fatalf("knownAddonNames() = %v, want [pr-review]", names)
+	}
+}
+
+func TestTrimTextPreservesUTF8AndDisplayWidth(t *testing.T) {
+	got := trimText("🚀 deployment ready", 10)
+	if !utf8.ValidString(got) {
+		t.Fatalf("trimText() returned invalid UTF-8: %q", got)
+	}
+	if width := runewidth.StringWidth(got); width > 10 {
+		t.Fatalf("trimText() display width = %d, want <= 10: %q", width, got)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Fatalf("trimText() = %q, want ellipsis suffix", got)
+	}
+}
+
+func TestParseToggleOptionsRejectsInvalidPositionalRepositories(t *testing.T) {
+	if _, err := parseToggleOptions("start", []string{"repo-only"}, io.Discard); err == nil ||
+		!strings.Contains(err.Error(), "OWNER/REPO") {
+		t.Fatalf("invalid positional repository error = %v", err)
+	}
+	if _, err := parseToggleOptions("start", []string{"owner/repo", "extra"}, io.Discard); err == nil {
+		t.Fatal("multiple positional repositories unexpectedly accepted")
+	}
+}
+
+func TestEnsureRepoVariableOnlyCreatesOnNotFound(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		client    *fakeREST
+		wantPatch int
+		wantPost  int
+		wantError bool
+	}{
+		{name: "update existing", client: &fakeREST{variableExists: true}, wantPatch: 1},
+		{name: "create missing", client: &fakeREST{}, wantPost: 1},
+		{name: "preserve permission error", client: &fakeREST{variableGetError: &api.HTTPError{StatusCode: http.StatusForbidden}}, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := ensureRepoVariableWithClient(test.client, "owner", "repo", "SFL_ENABLED", "true")
+			if (err != nil) != test.wantError {
+				t.Fatalf("ensureRepoVariableWithClient() error = %v, wantError=%v", err, test.wantError)
+			}
+			if len(test.client.patches) != test.wantPatch || len(test.client.posts) != test.wantPost {
+				t.Fatalf("patches=%v posts=%v", test.client.patches, test.client.posts)
+			}
+		})
 	}
 }
 
@@ -996,6 +1068,35 @@ func TestForceUninstallRemovesEveryManagedDeploymentPath(t *testing.T) {
 		if !slices.Contains(files, managed) {
 			t.Errorf("force uninstall files missing managed path %q", managed)
 		}
+	}
+}
+
+func TestRemoveExistingManagedFilesReportsRemovalFailure(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "managed.yml")
+	if err := os.WriteFile(path, []byte("managed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("locked")
+	removed, err := removeExistingManagedFiles(root, []string{"managed.yml"}, func(string) error {
+		return wantErr
+	}, io.Discard)
+	if removed != 0 || !errors.Is(err, wantErr) {
+		t.Fatalf("removeExistingManagedFiles() = (%d, %v), want (0, locked error)", removed, err)
+	}
+}
+
+func TestParseUninstallOptionsSeparatesConfirmationFromManifestFallback(t *testing.T) {
+	opts, err := parseUninstallOptions([]string{"--force", "--allow-manifest-fallback"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseUninstallOptions() unexpected error: %v", err)
+	}
+	if !opts.force || !opts.allowManifestFallback {
+		t.Fatalf("parseUninstallOptions() = %+v", opts)
+	}
+	opts, err = parseUninstallOptions([]string{"--force"}, io.Discard)
+	if err != nil || !opts.force || opts.allowManifestFallback {
+		t.Fatalf("--force unexpectedly enables manifest fallback: opts=%+v err=%v", opts, err)
 	}
 }
 
@@ -1732,15 +1833,15 @@ func TestDeployViaPullRequest(t *testing.T) {
 	}
 	changes := input["fileChanges"].(map[string]any)
 	additions := changes["additions"].([]fileAddition)
-	if len(additions) != 2 {
+	if len(additions) != 1 {
 		t.Fatalf("GraphQL additions = %+v", additions)
 	}
 	workflowAddition, ok := findAddition(additions, ".github/workflows/sfl.yml")
 	if !ok {
 		t.Fatalf("GraphQL additions are missing the workflow: %+v", additions)
 	}
-	if _, ok := findAddition(additions, "CODEOWNERS"); !ok {
-		t.Fatalf("GraphQL additions are missing HemSoft CODEOWNERS: %+v", additions)
+	if _, ok := findAddition(additions, "CODEOWNERS"); ok {
+		t.Fatalf("GraphQL additions unexpectedly overwrite consumer CODEOWNERS: %+v", additions)
 	}
 	decoded, err := base64.StdEncoding.DecodeString(workflowAddition.Contents)
 	if err != nil || string(decoded) != "workflow" {

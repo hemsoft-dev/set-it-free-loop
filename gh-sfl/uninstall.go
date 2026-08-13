@@ -16,10 +16,11 @@ import (
 )
 
 type uninstallOptions struct {
-	repo       string
-	keepLabels bool
-	dryRun     bool
-	force      bool
+	repo                  string
+	keepLabels            bool
+	dryRun                bool
+	force                 bool
+	allowManifestFallback bool
 }
 
 func runUninstall(args []string, stdout io.Writer, stderr io.Writer) error {
@@ -40,11 +41,14 @@ func runUninstall(args []string, stdout io.Writer, stderr io.Writer) error {
 	manifest, err := readRemoteManifest(owner, repo)
 	forceFallback := false
 	if err != nil {
-		if !opts.force {
-			return fmt.Errorf("no SFL installation found in %s/%s (.sfl/sfl.json missing)\nUse --force to remove files anyway", owner, repo)
+		if !isNotFoundError(err) {
+			return fmt.Errorf("reading SFL installation manifest in %s/%s: %w", owner, repo, err)
+		}
+		if !opts.allowManifestFallback {
+			return fmt.Errorf("no SFL installation found in %s/%s (.sfl/sfl.json missing)\nUse --allow-manifest-fallback to select the complete managed file list", owner, repo)
 		}
 		forceFallback = true
-		fmt.Fprintf(stdout, "  ⚠ No valid manifest found — using --force with the complete managed file list\n\n")
+		fmt.Fprintf(stdout, "  ⚠ No manifest found — using the complete managed file list\n\n")
 	}
 
 	tier := "unknown"
@@ -509,14 +513,9 @@ func removeViaGit(
 		return string(out), err
 	}
 
-	removed := 0
-	for _, f := range files {
-		target := filepath.Join(tmpDir, filepath.FromSlash(f))
-		if _, statErr := os.Stat(target); statErr == nil {
-			os.Remove(target)
-			removed++
-			fmt.Fprintf(w, "    ✓ %s\n", f)
-		}
+	removed, err := removeExistingManagedFiles(tmpDir, files, os.Remove, w)
+	if err != nil {
+		return err
 	}
 
 	// Also remove empty .sfl directory
@@ -582,6 +581,30 @@ func removeViaGit(
 	}
 
 	return nil
+}
+
+func removeExistingManagedFiles(
+	root string,
+	files []string,
+	remove func(string) error,
+	w io.Writer,
+) (int, error) {
+	removed := 0
+	for _, file := range files {
+		target := filepath.Join(root, filepath.FromSlash(file))
+		if _, err := os.Stat(target); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return removed, fmt.Errorf("inspecting %s before removal: %w", file, err)
+		}
+		if err := remove(target); err != nil {
+			return removed, fmt.Errorf("removing %s: %w", file, err)
+		}
+		removed++
+		fmt.Fprintf(w, "    ✓ %s\n", file)
+	}
+	return removed, nil
 }
 
 func uninstallCommitReachedRemote(
@@ -659,6 +682,7 @@ func parseUninstallOptions(args []string, stderr io.Writer) (uninstallOptions, e
 	flags.BoolVar(&opts.dryRun, "n", false, "Show what would be removed without making changes")
 	flags.BoolVar(&opts.force, "force", false, "Confirm destructive uninstall")
 	flags.BoolVar(&opts.force, "f", false, "Confirm destructive uninstall")
+	flags.BoolVar(&opts.allowManifestFallback, "allow-manifest-fallback", false, "Use the complete managed file list when the manifest is missing")
 
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -691,10 +715,13 @@ Flags:
   -f, --force          Confirm the uninstall (required)
   -n, --dry-run        Show what would be removed without making changes
       --keep-labels    Keep SFL labels (only remove workflow files)
+      --allow-manifest-fallback
+                       Use the complete managed file list when the manifest is missing
 
 Examples:
   gh sfl uninstall --dry-run              # Preview what would be removed
   gh sfl uninstall --force                # Remove SFL from current repo
   gh sfl uninstall --force --keep-labels  # Remove workflows but keep labels
+  gh sfl uninstall --dry-run --allow-manifest-fallback # Preview removal without a manifest
   gh sfl uninstall --force --repo o/r     # Remove SFL from another repo
 `

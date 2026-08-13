@@ -169,13 +169,10 @@ func truncateCells(rows [][]tableCell, colWidths []int, flexibleCols []int) [][]
 
 func trimText(text string, limit int) string {
 	text = strings.TrimSpace(text)
-	if limit <= 0 || len(text) <= limit {
+	if limit <= 0 || runewidth.StringWidth(text) <= limit {
 		return text
 	}
-	if limit <= 3 {
-		return text[:limit]
-	}
-	return text[:limit-3] + "..."
+	return runewidth.Truncate(text, limit, "...")
 }
 
 func formatRelativeTime(t time.Time, now time.Time) string {
