@@ -272,7 +272,7 @@ safe-outputs:
               }
               const severityPrefix =
                 /^(🔴 \*\*CRITICAL|🟠 \*\*HIGH|🟡 \*\*MEDIUM|⚪ \*\*LOW) —/;
-              const unresolvedSflThreadIds = [];
+              const unresolvedOutdatedThreadIds = [];
 
               for (const threadId of threadIds) {
                 if (typeof threadId !== 'string' || !threadId.startsWith('PRRT_')) {
@@ -284,6 +284,7 @@ safe-outputs:
                     node(id: $threadId) {
                       ... on PullRequestReviewThread {
                         id
+                        isOutdated
                         isResolved
                         pullRequest {
                           number
@@ -324,7 +325,8 @@ safe-outputs:
                   !severityPrefix.test(body) ||
                   !body.includes('SFL Reviewer') ||
                   typeof path !== 'string' ||
-                  path.length === 0
+                  path.length === 0 ||
+                  (!thread.isResolved && !thread.isOutdated)
                 ) {
                   core.setFailed(
                     `Thread ${threadId} is not an obsolete SFL finding on PR #${pullNumber} at base ${expectedBase} and head ${expectedHead}`
@@ -357,11 +359,11 @@ safe-outputs:
                   }
                   throw error;
                 }
-                unresolvedSflThreadIds.push(threadId);
+                unresolvedOutdatedThreadIds.push(threadId);
               }
 
               const failedThreadIds = [];
-              for (const threadId of unresolvedSflThreadIds) {
+              for (const threadId of unresolvedOutdatedThreadIds) {
                 let resolved = false;
                 let lastError;
                 for (let attempt = 1; attempt <= 3; attempt += 1) {

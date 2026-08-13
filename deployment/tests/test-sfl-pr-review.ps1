@@ -28,7 +28,7 @@ if ($failures.Count -eq 0) {
     }
 
     $requiredSourcePatterns = @(
-        '(?m)^source: HemSoft/set-it-free-loop/deployment/workflows/sfl-pr-review\.md@main$',
+        '(?m)^source: HemSoft/set-it-free-loop/deployment/workflows/sfl-pr-review\.md@main\r?$',
         '(?m)^  workflow_dispatch:\r?$',
         'Validate trusted review context',
         'publish_review_provenance:',
@@ -38,7 +38,11 @@ if ($failures.Count -eq 0) {
         'commit-id: "\$\{\{ inputs\.head_sha \}\}"',
         'resolve-sfl-review-thread:',
         "if: needs\.safe_outputs\.result == 'success'",
-        'const unresolvedSflThreadIds = \[\]',
+        'isOutdated',
+        '\(!thread\.isResolved && !thread\.isOutdated\)',
+        'const unresolvedOutdatedThreadIds = \[\]',
+        'for \(const threadId of unresolvedOutdatedThreadIds\)',
+        'if \(thread\.isResolved\) \{\s*core\.info\(`SFL review thread \$\{threadId\} is already resolved`\);\s*continue;',
         'name: safe-outputs-items',
         'Download reviewer agent output',
         'Expected exactly one immutable agent submitted-review item',
@@ -70,6 +74,10 @@ if ($failures.Count -eq 0) {
         'Verify pull request base and head before safe outputs',
         'SFL_SAFE_OUTPUT_ITEMS: /tmp/sfl-review-safe-outputs/safe-output-items\.jsonl',
         'Initialized SFL review evidence does not match this run',
+        'isOutdated',
+        '\(!thread\.isResolved && !thread\.isOutdated\)',
+        'const unresolvedOutdatedThreadIds = \[\]',
+        'for \(const threadId of unresolvedOutdatedThreadIds\)',
         '\{\{#runtime-import \.github/workflows/sfl-pr-review\.md\}\}'
     )
     foreach ($pattern in $requiredLockPatterns) {
@@ -82,9 +90,6 @@ if ($failures.Count -eq 0) {
         $lock -match 'copilot-requests:\s*write') {
         $failures.Add('HemSoft OpenRouter reviewer unexpectedly requests Copilot billing permission.')
     }
-    if ($source -match '!thread\.isResolved && !thread\.isOutdated') {
-        $failures.Add('Thread resolution incorrectly requires GitHub to mark a no-longer-applicable finding outdated.')
-    }
     if ($source -match 'needs\.detection\.result') {
         $failures.Add('Thread resolution references an undeclared detection dependency.')
     }
@@ -93,6 +98,41 @@ if ($failures.Count -eq 0) {
     }
     if ($actionsLock -notmatch 'github/gh-aw-actions/setup@v0\.86\.2') {
         $failures.Add('Action lock does not pin the compiler-matched gh-aw setup action.')
+    }
+
+    $eligibilityGuardIndex = $source.IndexOf('(!thread.isResolved && !thread.isOutdated)')
+    $resolvedGuardIndex = $source.IndexOf('if (thread.isResolved)')
+    $resolutionQueueIndex = $source.IndexOf('unresolvedOutdatedThreadIds.push(threadId)')
+    $resolutionMutationIndex = $source.IndexOf('resolveReviewThread(input: { threadId: $threadId })')
+    if ($eligibilityGuardIndex -lt 0 -or
+        $resolvedGuardIndex -le $eligibilityGuardIndex -or
+        $resolutionQueueIndex -le $resolvedGuardIndex -or
+        $resolutionMutationIndex -le $resolutionQueueIndex) {
+        $failures.Add('Thread eligibility, idempotency, queueing, and mutation are not ordered fail-closed.')
+    }
+}
+
+function Get-ExpectedThreadResolutionEligibility {
+    param(
+        [bool] $IsResolved,
+        [bool] $IsOutdated
+    )
+
+    return $IsResolved -or $IsOutdated
+}
+
+$threadStateCases = @(
+    @{ Name = 'live unresolved thread'; Resolved = $false; Outdated = $false; Expected = $false },
+    @{ Name = 'outdated unresolved thread'; Resolved = $false; Outdated = $true; Expected = $true },
+    @{ Name = 'already resolved current thread'; Resolved = $true; Outdated = $false; Expected = $true },
+    @{ Name = 'already resolved outdated thread'; Resolved = $true; Outdated = $true; Expected = $true }
+)
+foreach ($case in $threadStateCases) {
+    $actual = Get-ExpectedThreadResolutionEligibility `
+        -IsResolved $case.Resolved `
+        -IsOutdated $case.Outdated
+    if ($actual -ne $case.Expected) {
+        $failures.Add("Thread eligibility case failed: $($case.Name)")
     }
 }
 

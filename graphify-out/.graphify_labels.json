@@ -21,7 +21,7 @@
   "19": "PR Analyzer Testing",
   "20": "SFL Auditor",
   "21": "Set it Free Loop™",
-  "22": "Resume Work — Quick Start",
+  "22": "HemSoft SFL Pull Request Reviewer",
   "23": "PR Analyzer General — Full-Spectrum Review",
   "24": "PR Analyzer Quality",
   "25": "PR Analyzer Security",
@@ -52,5 +52,10 @@
   "50": "setup-hemsoft-github-routing.ps1",
   "51": "test-review-tier-manifest-merge.ps1",
   "52": "test-sfl-pr-review.ps1",
-  "53": "test-source-pin-placement.ps1"
+  "53": "test-source-pin-placement.ps1",
+  "54": "sfl: Frontmatter Spec",
+  "55": "Required work",
+  "56": "Daily Repo Status",
+  "57": "Repo Audit",
+  "58": "HemSoft SFL Reviewer Parity TODO"
 }
