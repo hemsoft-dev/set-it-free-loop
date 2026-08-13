@@ -45,8 +45,8 @@
     "semantic_hash": ""
   },
   "deployment/scripts/install-gh-sfl-hemsoft.ps1": {
-    "mtime": 1786621990.089829,
-    "ast_hash": "fcf8335e74a8f26137dc6863f3b9bbbf",
+    "mtime": 1786622639.9620516,
+    "ast_hash": "dd201fc8146444a6d69a6773df07b91f",
     "semantic_hash": ""
   },
   "deployment/scripts/merge-sfl-manifest.ps1": {
@@ -630,8 +630,8 @@
     "semantic_hash": ""
   },
   "deployment/tests/test-release-installer.ps1": {
-    "mtime": 1786621990.090829,
-    "ast_hash": "e98ad67e924d54b5def4fd6e143f2ed1",
+    "mtime": 1786622627.4484806,
+    "ast_hash": "3b8da359eb8fcbee1d0607158eac51ae",
     "semantic_hash": ""
   },
   "gh-sfl/internal/generatelabels/main_test.go": {

@@ -61,10 +61,13 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseVersion)) {
     }
 
     $tag = "v$ReleaseVersion"
+    $LASTEXITCODE = 0
     & $GitHubCliPath release download $tag --repo HemSoft/set-it-free-loop --pattern $artifactName `
         --pattern SHA256SUMS --dir $WorkDir --clobber
-    if ($LASTEXITCODE -ne 0) {
-        throw "Downloading private HemSoft gh-sfl release $tag failed with exit code $LASTEXITCODE"
+    $downloadSucceeded = $?
+    $downloadExitCode = $LASTEXITCODE
+    if (-not $downloadSucceeded -or $downloadExitCode -ne 0) {
+        throw "Downloading private HemSoft gh-sfl release $tag failed with exit code $downloadExitCode"
     }
 
     $outputPath = Join-Path $WorkDir $artifactName

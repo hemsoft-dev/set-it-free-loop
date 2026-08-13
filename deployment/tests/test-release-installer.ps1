@@ -45,6 +45,7 @@ Get-ChildItem -LiteralPath $env:SFL_INSTALLER_FIXTURE -File |
 '@ | Set-Content -LiteralPath $fakeGh -Encoding utf8NoBOM
 
     $env:SFL_INSTALLER_FIXTURE = $releaseRoot
+    Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
     & $installer -ReleaseVersion $version -GitHubCliPath $fakeGh -WorkDir $downloadRoot -NoInstall
     if (-not (Test-Path -LiteralPath (Join-Path $downloadRoot $artifactName) -PathType Leaf)) {
         throw 'Release installer did not retain the verified artifact.'
