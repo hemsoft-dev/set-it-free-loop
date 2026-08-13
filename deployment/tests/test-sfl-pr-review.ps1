@@ -43,6 +43,8 @@ if ($failures.Count -eq 0) {
         'const unresolvedOutdatedThreadIds = \[\]',
         'for \(const threadId of unresolvedOutdatedThreadIds\)',
         'if \(thread\.isResolved\) \{\s*core\.info\(`SFL review thread \$\{threadId\} is already resolved`\);\s*continue;',
+        'whose thread GitHub reports as outdated',
+        'Never request resolution for a live unresolved thread',
         'name: safe-outputs-items',
         'Download reviewer agent output',
         'Expected exactly one immutable agent submitted-review item',

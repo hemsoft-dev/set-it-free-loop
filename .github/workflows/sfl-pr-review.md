@@ -1251,9 +1251,11 @@ vulnerabilities, logic errors, and architectural concerns — not style nits.
    finding is an unresolved inline comment authored by the SFL reviewer whose
    body starts with one of the exact severity prefixes below and contains the
    `SFL Reviewer` run footer. Carry forward findings that still apply. Exclude
-   resolved findings. For every unresolved SFL finding that no longer applies,
-   call `resolve_sfl_review_thread` with its thread ID before
-   submitting the current review.
+   resolved findings. For every unresolved SFL finding that no longer applies
+   and whose thread GitHub reports as outdated, call
+   `resolve_sfl_review_thread` with its thread ID before submitting the current
+   review. Never request resolution for a live unresolved thread; carry it
+   forward until a maintainer resolves it or a later commit makes it outdated.
 
 ## Review Passes
 
@@ -1430,8 +1432,9 @@ carried unresolved findings:
 1. Count each successfully posted current-run inline finding exactly once.
 2. Count each still-applicable unresolved SFL finding from an earlier run
    exactly once without duplicating its inline comment.
-3. Resolve every earlier SFL thread that no longer applies. Never approve while
-   any SFL finding thread remains unresolved.
+3. Resolve every earlier SFL thread that no longer applies and GitHub reports
+   as outdated. Never request resolution for a live unresolved thread. Never
+   approve while any SFL finding thread remains unresolved.
 4. Never count resolved findings or duplicate reports of the same defect.
 5. Every counted finding must have exactly one severity prefix.
 6. Each table cell must equal the union of new and carried findings with that
@@ -1466,7 +1469,8 @@ carried unresolved findings:
    `${{ inputs.head_sha }}` and apply only to base `${{ inputs.base_sha }}`.
    Never target a later pull request head or a different base.
 10. **Close obsolete threads**: Resolve prior SFL threads only after verifying
-    their findings no longer apply to the expected head.
+    their findings no longer apply to the expected head and GitHub reports the
+    thread as outdated. Never request resolution for a live unresolved thread.
 11. **Accepted gate trust boundary**: The reviewer initializes and finalizes
     one `SFL Review Evidence` check on the immutable head with the
     repository-scoped `GITHUB_TOKEN` and exact
