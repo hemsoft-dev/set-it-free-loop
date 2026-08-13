@@ -1,0 +1,369 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+)
+
+const hemSoftEnginePolicyJSON = "{\r\n  \"$schema\": \"./engine-policy.schema.json\",\r\n  \"defaultProfile\": \"codex-gpt-55-high\",\r\n  \"profiles\": {\r\n    \"codex-gpt-55-high\": {\r\n      \"provider\": \"codex\",\r\n      \"model\": \"gpt-5.5\",\r\n      \"effort\": \"high\",\r\n      \"requiredSecretsAnyOf\": [\r\n        \"CODEX_API_KEY\",\r\n        \"OPENAI_API_KEY\"\r\n      ]\r\n    },\r\n    \"openrouter-kimi-k3-high\": {\r\n      \"provider\": \"copilot\",\r\n      \"model\": \"moonshotai/kimi-k3\",\r\n      \"requiredSecretsAnyOf\": [\r\n        \"OPENROUTER_API_KEY\"\r\n      ],\r\n      \"environment\": {\r\n        \"COPILOT_PROVIDER_BASE_URL\": \"https://openrouter.ai/api/v1\",\r\n        \"COPILOT_PROVIDER_API_KEY\": \"${{ secrets.OPENROUTER_API_KEY }}\",\r\n        \"COPILOT_PROVIDER_TYPE\": \"openai\",\r\n        \"COPILOT_PROVIDER_WIRE_API\": \"responses\",\r\n        \"COPILOT_MODEL\": \"moonshotai/kimi-k3\"\r\n      }\r\n    }\r\n  },\r\n  \"workflows\": {\r\n    \"sfl-pr-review\": {\r\n      \"profile\": \"openrouter-kimi-k3-high\"\r\n    }\r\n  }\r\n}\r\n"
+
+type hemSoftEnginePolicy struct {
+	DefaultProfile string                              `json:"defaultProfile"`
+	Profiles       map[string]hemSoftEngineProfile     `json:"profiles"`
+	Workflows      map[string]hemSoftWorkflowEngineRef `json:"workflows"`
+}
+
+type hemSoftEngineProfile struct {
+	Provider             string            `json:"provider"`
+	Model                string            `json:"model"`
+	Effort               string            `json:"effort,omitempty"`
+	RequiredSecretsAnyOf []string          `json:"requiredSecretsAnyOf,omitempty"`
+	Arguments            []string          `json:"arguments,omitempty"`
+	Environment          map[string]string `json:"environment,omitempty"`
+}
+
+type hemSoftWorkflowEngineRef struct {
+	Profile string `json:"profile"`
+}
+
+type hemSoftEngineConfig struct {
+	Profile              string
+	Provider             string
+	Model                string
+	Effort               string
+	RenderedModel        string
+	RequiredSecretsAnyOf []string
+	Arguments            []string
+	Environment          map[string]string
+}
+
+var (
+	hemSoftEnginePolicyOnce sync.Once
+	hemSoftParsedPolicy     hemSoftEnginePolicy
+	hemSoftPolicyError      error
+)
+
+func hemSoftEnginePolicyConfig() (*hemSoftEnginePolicy, error) {
+	hemSoftEnginePolicyOnce.Do(func() {
+		hemSoftPolicyError = json.Unmarshal([]byte(hemSoftEnginePolicyJSON), &hemSoftParsedPolicy)
+		if hemSoftPolicyError != nil {
+			hemSoftPolicyError = fmt.Errorf("parsing embedded HemSoft engine policy: %w", hemSoftPolicyError)
+			return
+		}
+		if hemSoftParsedPolicy.DefaultProfile == "" {
+			hemSoftPolicyError = fmt.Errorf("embedded HemSoft engine policy has no default profile")
+		}
+	})
+
+	if hemSoftPolicyError != nil {
+		return nil, hemSoftPolicyError
+	}
+	return &hemSoftParsedPolicy, nil
+}
+
+func hemSoftEngineConfigForWorkflow(workflowName string) (hemSoftEngineConfig, error) {
+	policy, err := hemSoftEnginePolicyConfig()
+	if err != nil {
+		return hemSoftEngineConfig{}, err
+	}
+
+	profileName := policy.DefaultProfile
+	if workflow, ok := policy.Workflows[workflowName]; ok && workflow.Profile != "" {
+		profileName = workflow.Profile
+	}
+
+	profile, ok := policy.Profiles[profileName]
+	if !ok {
+		return hemSoftEngineConfig{}, fmt.Errorf(
+			"engine profile %q for workflow %s was not found",
+			profileName,
+			workflowName,
+		)
+	}
+	if profile.Provider == "" {
+		return hemSoftEngineConfig{}, fmt.Errorf("engine profile %q has no provider", profileName)
+	}
+	if profile.Model == "" {
+		return hemSoftEngineConfig{}, fmt.Errorf("engine profile %q has no model", profileName)
+	}
+	switch profile.Effort {
+	case "", "low", "medium", "high":
+	default:
+		return hemSoftEngineConfig{}, fmt.Errorf(
+			"engine profile %q uses unsupported effort %q",
+			profileName,
+			profile.Effort,
+		)
+	}
+
+	renderedModel := profile.Model
+	if profile.Effort != "" {
+		renderedModel += "?effort=" + profile.Effort
+	}
+
+	return hemSoftEngineConfig{
+		Profile:              profileName,
+		Provider:             profile.Provider,
+		Model:                profile.Model,
+		Effort:               profile.Effort,
+		RenderedModel:        renderedModel,
+		RequiredSecretsAnyOf: append([]string(nil), profile.RequiredSecretsAnyOf...),
+		Arguments:            append([]string(nil), profile.Arguments...),
+		Environment:          cloneHemSoftEnvironment(profile.Environment),
+	}, nil
+}
+
+func cloneHemSoftEnvironment(environment map[string]string) map[string]string {
+	if len(environment) == 0 {
+		return nil
+	}
+
+	cloned := make(map[string]string, len(environment))
+	for key, value := range environment {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func applyHemSoftOwnership(fileMap map[string]string) error {
+	if err := applyHemSoftEnginePolicy(fileMap); err != nil {
+		return err
+	}
+	if manifestJSON, ok := fileMap[".sfl/sfl.json"]; ok {
+		var manifest struct {
+			Tier string `json:"tier"`
+		}
+		if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
+			return fmt.Errorf("parsing deployment manifest: %w", err)
+		}
+		if manifest.Tier == "reviewer" {
+			return nil
+		}
+	}
+
+	fileMap["CODEOWNERS"] = `# CODEOWNERS - auto-assign reviewers for HemSoft repositories
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @HemSoft
+
+# Automation and SFL-managed files
+/.github/ @HemSoft
+/.github/workflows/ @HemSoft
+/.sfl/ @HemSoft
+/.sfl/** @HemSoft
+`
+	return nil
+}
+
+func applyHemSoftEnginePolicy(fileMap map[string]string) error {
+	for fpath, content := range fileMap {
+		if !strings.HasPrefix(fpath, ".github/workflows/") || !strings.HasSuffix(fpath, ".md") {
+			continue
+		}
+
+		workflowName := strings.TrimSuffix(strings.TrimPrefix(fpath, ".github/workflows/"), ".md")
+		rewritten, err := applyHemSoftEnginePolicyToWorkflow(content, workflowName)
+		if err != nil {
+			return err
+		}
+
+		fileMap[fpath] = rewritten
+	}
+
+	return nil
+}
+
+func applyHemSoftEnginePolicyToWorkflow(content, workflowName string) (string, error) {
+	engineConfig, err := hemSoftEngineConfigForWorkflow(workflowName)
+	if err != nil {
+		return "", err
+	}
+
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	if !strings.HasPrefix(normalized, "---\n") {
+		return "", fmt.Errorf("workflow %s does not start with YAML frontmatter", workflowName)
+	}
+
+	frontmatterStart := len("---\n")
+	closingOffset := strings.Index(normalized[frontmatterStart:], "\n---")
+	if closingOffset < 0 {
+		return "", fmt.Errorf("workflow %s has no closing YAML frontmatter marker", workflowName)
+	}
+
+	frontmatterEnd := frontmatterStart + closingOffset
+	frontmatter := normalized[frontmatterStart:frontmatterEnd]
+	rest := normalized[frontmatterEnd+len("\n---"):]
+
+	frontmatter = removeTopLevelYamlEntry(frontmatter, "engine")
+	frontmatter = removeTopLevelYamlEntry(frontmatter, "model")
+	frontmatter = insertTopLevelEngineBlock(
+		frontmatter,
+		hemSoftEngineBlock(engineConfig)+"\n\nmodel: "+engineConfig.RenderedModel,
+	)
+
+	return "---\n" + frontmatter + "\n---" + rest, nil
+}
+
+func removeTopLevelYamlEntry(frontmatter, key string) string {
+	lines := strings.Split(frontmatter, "\n")
+	output := make([]string, 0, len(lines))
+	skippingBlock := false
+	skipFollowingBlank := false
+
+	for _, line := range lines {
+		if isTopLevelYamlKey(line, key) {
+			for len(output) > 0 && strings.TrimSpace(output[len(output)-1]) == "" {
+				output = output[:len(output)-1]
+			}
+			_, value, _ := strings.Cut(strings.TrimSpace(line), ":")
+			value = strings.TrimSpace(value)
+			skippingBlock = value == "" || strings.HasPrefix(value, "|") || strings.HasPrefix(value, ">")
+			skipFollowingBlank = true
+			continue
+		}
+
+		if skippingBlock {
+			if strings.TrimSpace(line) == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+				continue
+			}
+			skippingBlock = false
+		}
+		if skipFollowingBlank && strings.TrimSpace(line) == "" {
+			continue
+		}
+		skipFollowingBlank = false
+
+		output = append(output, line)
+	}
+
+	return strings.TrimRight(strings.Join(output, "\n"), "\n")
+}
+
+func insertTopLevelEngineBlock(frontmatter, engineBlock string) string {
+	lines := strings.Split(frontmatter, "\n")
+	output := make([]string, 0, len(lines)+4)
+	inserted := false
+
+	for _, line := range lines {
+		if !inserted && isTopLevelYamlKey(line, "network") {
+			for len(output) > 0 && strings.TrimSpace(output[len(output)-1]) == "" {
+				output = output[:len(output)-1]
+			}
+			output = append(output, strings.Split(engineBlock, "\n")...)
+			output = append(output, "")
+			inserted = true
+		}
+		output = append(output, line)
+	}
+
+	if !inserted {
+		if strings.TrimSpace(frontmatter) != "" {
+			output = append(output, "")
+		}
+		output = append(output, strings.Split(engineBlock, "\n")...)
+	}
+
+	return strings.Join(output, "\n")
+}
+
+func isTopLevelYamlKey(line, key string) bool {
+	if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+		return false
+	}
+
+	trimmed := strings.TrimSpace(line)
+	return trimmed == key+":" || strings.HasPrefix(trimmed, key+": ")
+}
+
+func hemSoftEngineBlock(config hemSoftEngineConfig) string {
+	lines := []string{"engine:", "  id: " + config.Provider}
+	if len(config.Arguments) > 0 {
+		lines = append(lines, "  args:")
+		for _, argument := range config.Arguments {
+			lines = append(lines, "    - '"+strings.ReplaceAll(argument, "'", "''")+"'")
+		}
+	}
+	if len(config.Environment) > 0 {
+		keys := make([]string, 0, len(config.Environment))
+		for key := range config.Environment {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
+		lines = append(lines, "  env:")
+		for _, key := range keys {
+			lines = append(lines, "    "+key+": "+config.Environment[key])
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func hemSoftEnginePolicyManifestForFileMap(fileMap map[string]string) *sflEnginePolicyManifest {
+	policy, err := hemSoftEnginePolicyConfig()
+	if err != nil {
+		panic(err)
+	}
+
+	workflowNames := make([]string, 0)
+	for fpath := range fileMap {
+		if !strings.HasPrefix(fpath, ".github/workflows/") || !strings.HasSuffix(fpath, ".md") {
+			continue
+		}
+
+		workflowNames = append(
+			workflowNames,
+			strings.TrimSuffix(strings.TrimPrefix(fpath, ".github/workflows/"), ".md"),
+		)
+	}
+	sort.Strings(workflowNames)
+
+	workflows := make([]sflEngineWorkflowProfile, 0, len(workflowNames))
+	for _, workflowName := range workflowNames {
+		config, configErr := hemSoftEngineConfigForWorkflow(workflowName)
+		if configErr != nil {
+			panic(configErr)
+		}
+
+		workflows = append(workflows, sflEngineWorkflowProfile{
+			Name:                 workflowName,
+			Profile:              config.Profile,
+			Provider:             config.Provider,
+			Model:                config.Model,
+			Effort:               config.Effort,
+			RenderedModel:        config.RenderedModel,
+			RequiredSecretsAnyOf: append([]string(nil), config.RequiredSecretsAnyOf...),
+			Arguments:            append([]string(nil), config.Arguments...),
+			Environment:          cloneHemSoftEnvironment(config.Environment),
+		})
+	}
+
+	return &sflEnginePolicyManifest{
+		DefaultProfile: policy.DefaultProfile,
+		Workflows:      workflows,
+	}
+}
+
+func sourceWorkflowPath(name string) string {
+	switch name {
+	case "sfl-dispatcher.yml", "sfl-auditor.yml", "sfl-pr-review-auto.yml", "sfl-pr-review-recovery.yml":
+		return "deployment/infrastructure/" + name
+	case "sfl-pr-review.lock.yml":
+		return ".github/workflows/" + name
+	default:
+		return "deployment/workflows/" + name
+	}
+}
+
+func renderHemSoftWorkflow(name, content, sflVersion string) (string, error) {
+	rendered := renderWorkflow(content, sflVersion)
+	if !strings.HasSuffix(name, ".md") {
+		return rendered, nil
+	}
+	return applyHemSoftEnginePolicyToWorkflow(
+		rendered,
+		strings.TrimSuffix(name, ".md"),
+	)
+}

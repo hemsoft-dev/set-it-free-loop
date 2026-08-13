@@ -32,7 +32,7 @@ through its private OpenRouter route; Relias uses its organization Copilot
 configuration. The review and security contracts must remain equivalent even
 when provider-specific configuration differs.
 
-## Verified baseline — 2026-08-12
+## Verified baseline — 2026-08-13
 
 Already present:
 
@@ -63,9 +63,9 @@ Known gaps:
 - [x] `.github/workflows/auto-version.yml` parses and has a checksum-pinned
   actionlint gate; publication remains opt-in until the release contract below
   is complete.
-- [ ] The HemSoft CLI installer transforms source from a local
-  `D:\github\Relias\set-it-free-loop\gh-sfl` checkout, so installation is not
-  reproducible on a fresh machine.
+- [x] The HemSoft CLI source is version-controlled under `gh-sfl/`; its build,
+  tests, and installer have no dependency on a local Relias checkout.
+- [x] CI formats, vets, tests, and cross-builds the CLI for Windows and Linux.
 - [ ] No private consumer currently has the complete current reviewer package
   and current manifest.
 - [ ] Historical reviewer artifacts exist in public HemSoft repositories even
@@ -118,22 +118,22 @@ release, checksums, and a clean-machine install log.
 
 ### P0 — Make `gh sfl` independently distributable
 
-- [ ] Remove the runtime/build dependency on a local Relias checkout. Maintain
+- [x] Remove the runtime/build dependency on a local Relias checkout. Maintain
   the HemSoft adaptation from version-controlled source or an immutable,
   checksum-verified upstream input.
-- [ ] Preserve the hard gates for active GitHub identity `HemSoft`, owner
+- [x] Preserve the hard gates for active GitHub identity `HemSoft`, owner
   `HemSoft`, and repository visibility `PRIVATE` on every mutating command.
-- [ ] Make reviewer-only installation the default tier; require an explicit
+- [x] Make reviewer-only installation the default tier; require an explicit
   option for the legacy full suite.
-- [ ] Resolve workflow content from an immutable HemSoft release and record its
+- [x] Resolve workflow content from an immutable HemSoft release and record its
   version and source SHA in `.sfl/sfl.json`.
-- [ ] Default `init` and `sync` to a deployment PR. Keep direct mutation an
+- [x] Default `init` and `sync` to a deployment PR. Keep direct mutation an
   explicit opt-in and reject it for protected targets where it is unsafe.
-- [ ] Ensure `status` compares the installed manifest and managed files with the
+- [x] Ensure `status` compares the installed manifest and managed files with the
   latest synchronized HemSoft release, not merely with a mutable branch.
-- [ ] Reconcile obsolete managed files without deleting consumer-owned files,
+- [x] Reconcile obsolete managed files without deleting consumer-owned files,
   and roll back partial mutations when deployment fails.
-- [ ] Test `init`, `sync`, `status`, dry-run, protected-repository behavior,
+- [x] Test `init`, `sync`, `status`, dry-run, protected-repository behavior,
   uninstall/reconciliation, authentication failures, and private-scope
   rejection.
 

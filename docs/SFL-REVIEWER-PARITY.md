@@ -63,3 +63,21 @@ contract-diff note are deliberately reviewed together. A future Relias baseline
 update must record both the release tag commit and the exact reviewed commit;
 never move the recorded commit to a mutable branch name. HemSoft release bumps
 change only `distribution.version`; they do not rewrite the reviewer baseline.
+
+## CLI source ownership
+
+The private HemSoft distribution owns its adapted `gh sfl` Go source in
+`gh-sfl/`. The initial import is pinned in `gh-sfl/PROVENANCE.md` to Relias
+release `v6.5.7` at commit
+`8d5e30714fa6cc61a89189266f8eb463132abde9`. Repository builds, tests, and
+installation consume only that version-controlled HemSoft tree; the optional
+local Relias checkout above is used solely by the read-only reviewer parity
+audit.
+
+The CLI preserves the reviewer rollout capabilities while enforcing
+HemSoft-specific boundaries: reviewer-only and pull-request-first defaults,
+immutable private HemSoft release reads, `HemSoft` CLI identity, private
+`HemSoft/*` targets, protected mother-repository rejection, and source-path
+routing for the four-file reviewer package. `.github/workflows/validate-gh-sfl.yml`
+keeps the source formatted, vetted, tested, and cross-buildable for Windows and
+Linux.

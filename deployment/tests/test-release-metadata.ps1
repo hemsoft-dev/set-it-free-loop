@@ -32,6 +32,15 @@ foreach ($property in @('releaseCommit', 'reviewedCommit')) {
         $failures.Add("reviewerBaseline.$property is not an immutable full commit SHA.")
     }
 }
+if ($release.cliSource.repository -ne 'HemSoft/set-it-free-loop' -or
+    $release.cliSource.path -ne 'gh-sfl' -or
+    $release.cliSource.module -ne 'github.com/HemSoft/set-it-free-loop/gh-sfl' -or
+    $release.cliSource.upstreamRepository -ne 'relias-engineering/set-it-free-loop' -or
+    $release.cliSource.upstreamRelease -ne 'v6.5.7' -or
+    [string] $release.cliSource.upstreamCommit -notmatch '^[0-9a-f]{40}$' -or
+    $release.cliSource.buildScript -ne 'deployment/scripts/install-gh-sfl-hemsoft.ps1') {
+    $failures.Add('Repository-owned CLI source provenance is incomplete or inconsistent.')
+}
 
 $requiredWorkflowPatterns = @(
     "- 'deployment/release-metadata.json'",

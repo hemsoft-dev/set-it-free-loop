@@ -1,0 +1,135 @@
+# gh-sfl — GitHub CLI Extension for Set it Free Loop
+
+Deploy and manage the **SFL PR Reviewer** in GitHub repositories from the command line.
+
+## Installation
+
+From a private `HemSoft/set-it-free-loop` checkout:
+
+```powershell
+.\deployment\scripts\install-gh-sfl-hemsoft.ps1
+```
+
+The installer builds the version-controlled `gh-sfl/` source and installs the
+binary into the GitHub CLI extension directory. Update the private source
+checkout and rerun the same command to upgrade. No separate `HemSoft/gh-sfl`
+repository or local Relias checkout is used.
+
+## Commands
+
+### `gh sfl init`
+
+Deploy the latest synchronized SFL PR Reviewer release to a repository through
+a pull request.
+
+```bash
+gh sfl init --repo owner/repo              # Latest reviewer → deployment PR
+gh sfl init                                # Latest reviewer → current repo PR
+gh sfl init --direct                       # Explicit direct deployment
+gh sfl init --tier standard                # Advanced legacy suite deployment
+gh sfl init --slack-webhook "https://hooks.slack.com/..."  # Enable Slack notifications
+```
+
+**Tiers:**
+
+| Tier | Workflows | Description |
+|------|-----------|-------------|
+| `reviewer` | PR Reviewer source, runtime, trigger/gate, recovery | Default reviewer-only package |
+| `minimal` | Dispatcher | Legacy label routing only |
+| `standard` | Dispatcher, Processor, Review Reactor | Full quality loop |
+| `full` | Standard + Repo Audit, Simplisticate Audit, Simplisticate PR | Everything |
+
+### `gh sfl sync`
+
+Update deployed SFL workflows from the motherrepo to the latest version.
+
+```bash
+gh sfl sync                                # Open a PR for the current repo
+gh sfl sync --repo owner/repo              # Open a PR for a specific repo
+gh sfl sync --repo owner/repo --direct     # Explicit direct update
+gh sfl sync --dry-run                      # Preview without changes
+```
+
+### `gh sfl gate`
+
+Reviewer deployments are advisory-only by default. After merging the deployment
+pull request, explicitly require its trusted default-branch workflow:
+
+```bash
+gh sfl gate --repo owner/repo
+```
+
+The command is idempotent. It automatically replaces a dedicated legacy
+`SFL Reviewer Approval` status-check ruleset; if that check shares a ruleset with
+other requirements, it stops rather than modifying unrelated policy. Required
+workflows are organization rulesets, so creating or removing a gate requires an
+organization owner authenticated with the `admin:org` scope.
+
+### `gh sfl uninstall`
+
+Remove SFL workflows and governance files from a repository.
+The file-removal commit is prepared before dedicated reviewer gate rulesets are
+removed. If its push fails, the original dedicated rulesets are restored. Shared
+organization gate rulesets must be separated by an administrator before
+uninstall proceeds. When `--force` is used without a valid manifest, uninstall
+removes the union of every known managed SFL path so legacy suite files are not
+left behind.
+
+```bash
+gh sfl uninstall --dry-run                 # Preview what would be removed
+gh sfl uninstall --force                   # Uninstall from current repo
+gh sfl uninstall --force --repo owner/repo # Uninstall from specific repo
+gh sfl uninstall --force --keep-labels     # Keep SFL labels
+```
+
+### `gh sfl list`
+
+Show recent SFL workflow runs with color-coded status.
+
+```bash
+gh sfl list                                # Current repo, last 20 runs
+gh sfl list --repo owner/repo              # Specific repo
+gh sfl list --limit 10                     # Fewer results
+```
+
+### `gh sfl status`
+
+Show SFL health dashboard: installation status, version, labels, and active PRs.
+
+```bash
+gh sfl status                              # Current repo
+gh sfl status --repo owner/repo            # Specific repo
+```
+
+### `gh sfl version`
+
+Show version, build date, and check for updates.
+
+```bash
+gh sfl version
+```
+
+## How It Works
+
+`gh sfl init` resolves the latest synchronized release of
+`HemSoft/set-it-free-loop`, pins every source read to that release's
+commit, and opens a deployment pull request. A `.sfl/sfl.json` manifest tracks
+the immutable version, source commit, tier, and installed components.
+`gh sfl sync` preserves the installed tier while updating it to the latest
+synchronized release.
+
+`init` and `sync` create deployment pull requests by default. The extension
+creates the deployment commit through GitHub,
+opens a pull request against the default branch, and reuses an existing open
+SFL deployment pull request by updating its branch instead of creating duplicates.
+
+## Building
+
+```powershell
+cd gh-sfl
+.\build.ps1 -NoInstall
+```
+
+This checks formatting, runs `go vet` and `go test`, then builds with version
+metadata. Omit `-NoInstall` to install the result into the `gh` extensions
+directory.

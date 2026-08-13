@@ -150,16 +150,33 @@ Assert-PatternSet 'deployment\scripts\set-sfl-review-gate.ps1' @(
 )
 
 Assert-PatternSet 'deployment\scripts\install-gh-sfl-hemsoft.ps1' @(
+    'Join-Path \$repoRoot ''gh-sfl''',
+    'gofmt -l \.',
+    'go vet \./\.\.\.',
+    'go test \./\.\.\.',
+    'go build -trimpath -buildvcs=false',
+    'GitHub CLI\\extensions\\gh-sfl'
+)
+
+Assert-PatternSet 'gh-sfl\github.go' @(
+    'outside the private HemSoft repository scope',
+    'GitHub CLI must be authenticated as HemSoft',
+    'must be private; visibility is'
+)
+
+Assert-PatternSet 'gh-sfl\init.go' @(
     '"reviewer": \{',
     'sfl-pr-review\.lock\.yml',
     'sfl-pr-review-auto\.yml',
     'sfl-pr-review-recovery\.yml',
-    'outside the private HemSoft repository scope',
-    'GitHub CLI must be authenticated as HemSoft',
-    'must be private; visibility is',
-    'git@github-personal1:',
-    'case "sfl-pr-review\.lock\.yml"',
-    "go test \./\.\.\. -run '\^\$'"
+    'opts\.tier = "reviewer"',
+    'opts\.pr = true'
+)
+
+Assert-PatternSet 'gh-sfl\sync.go' @(
+    'opts := syncOptions\{pr: true\}',
+    'resolveDeploymentRelease\(opts\.sourceRef\)',
+    'sourceRef := release\.SHA'
 )
 
 foreach ($manifestPath in @('deployment\sfl-manifest.schema.json', 'sfl.json')) {

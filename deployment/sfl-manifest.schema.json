@@ -17,7 +17,7 @@
     },
     "tier": {
       "type": "string",
-      "enum": ["review", "minimal", "standard", "full", "custom"],
+      "enum": ["reviewer", "minimal", "standard", "full"],
       "description": "The deployment tier selected during installation."
     },
     "source": {
@@ -29,6 +29,18 @@
       "type": "string",
       "description": "The git SHA of the source repo at deployment time. Use 'self' when the SFL repo dogfoods its own loop.",
       "pattern": "^([0-9a-f]{40}|self)$"
+    },
+    "deployedBy": {
+      "type": "string",
+      "description": "GitHub login that initiated the deployment."
+    },
+    "addons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Optional SFL add-ons included in the deployment."
     },
     "components": {
       "type": "array",

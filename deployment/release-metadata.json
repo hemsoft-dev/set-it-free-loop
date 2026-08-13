@@ -16,6 +16,15 @@
       "TODO.md"
     ]
   },
+  "cliSource": {
+    "repository": "HemSoft/set-it-free-loop",
+    "path": "gh-sfl",
+    "module": "github.com/HemSoft/set-it-free-loop/gh-sfl",
+    "upstreamRepository": "relias-engineering/set-it-free-loop",
+    "upstreamRelease": "v6.5.7",
+    "upstreamCommit": "8d5e30714fa6cc61a89189266f8eb463132abde9",
+    "buildScript": "deployment/scripts/install-gh-sfl-hemsoft.ps1"
+  },
   "allowedDifferenceClasses": [
     "provider-configuration",
     "private-distribution-boundary",

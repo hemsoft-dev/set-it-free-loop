@@ -1,23 +1,23 @@
-# Graph Report - issue-57-line-endings  (2026-08-13)
+# Graph Report - issue-59-own-gh-sfl  (2026-08-13)
 
 ## Corpus Check
-- 66 files · ~160,184 words
+- 96 files · ~190,959 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 776 nodes · 768 edges · 58 communities (57 shown, 1 thin omitted)
-- Extraction: 100% EXTRACTED · 0% INFERRED · 0% AMBIGUOUS · INFERRED: 3 edges (avg confidence: 0.8)
+- 1189 nodes · 1755 edges · 93 communities (90 shown, 3 thin omitted)
+- Extraction: 89% EXTRACTED · 11% INFERRED · 0% AMBIGUOUS · INFERRED: 191 edges (avg confidence: 0.8)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `2df7132a`
+- Built from commit: `d5952ebc`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
 ## Community Hubs (Navigation)
 - Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀
-- properties
-- properties
+- required
+- sfl-manifest.schema.json
 - properties
 - Set it Free — Governance Policy
 - environment
@@ -45,7 +45,7 @@
 - HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.
 - HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.
 - enum
-- CATALOG.md
+- HemSoft SFL Pull Request Reviewer
 - Issue Processor
 - Daily Simplisticate Audit
 - engine-policy.schema.json
@@ -59,43 +59,80 @@
 - Test-NormalizedTextEqual
 - AGENTS.md
 - Issue Processor
+- deployment_test.go
+- status.go
+- hemsoft.go
+- renderRunTable
+- github.go
+- review.go
+- main.go
+- runInit
+- conditionalRESTClient
+- Commands
+- sflManifest
+- addons
+- runAdd
+- parseMutationTarget
+- reviewerFixtureBash
+- properties
+- requiredSecretsAnyOf
+- properties
+- properties
+- enum
+- sfl: Frontmatter Spec
+- changelog.go
+- enum
+- Daily Repo Status
+- Repo Audit
+- github.com/HemSoft/set-it-free-loop/gh-sfl
+- SFL reviewer parity baseline
+- fetchFileRaw
+- source
+- sourceSha
+- version
+- review_recovery_fixture_test.go
+- PROVENANCE.md
 
 ## God Nodes (most connected - your core abstractions)
-1. `PR Promoter` - 20 edges
-2. `PR Promoter` - 20 edges
-3. `enum` - 18 edges
-4. `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` - 16 edges
-5. `SFL Auditor` - 14 edges
-6. `PR Fixer — Authority` - 13 edges
-7. `PR Fixer — Authority` - 13 edges
-8. `SFL Auditor` - 13 edges
-9. `Workflow Details` - 12 edges
-10. `Set it Free Loop™ — Vision` - 11 edges
+1. `deployViaPullRequest()` - 24 edges
+2. `repositoryRuleset` - 24 edges
+3. `runInit()` - 21 edges
+4. `PR Promoter` - 20 edges
+5. `PR Promoter` - 20 edges
+6. `restAPI` - 19 edges
+7. `enum` - 18 edges
+8. `runSync()` - 18 edges
+9. `reviewerWorkflowRuleset()` - 16 edges
+10. `renderRunTable()` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `Deploy-ToRepo()` --calls--> `Add-SflSourcePin()`  [INFERRED]
   deployment/scripts/deploy-workflow.ps1 → deployment/scripts/add-sfl-source-pin.ps1
 - `Deploy-ToRepo()` --calls--> `Merge-SflManifest()`  [INFERRED]
   deployment/scripts/deploy-workflow.ps1 → deployment/scripts/merge-sfl-manifest.ps1
-- `Assert-ExactPair()` --calls--> `Test-NormalizedTextEqual()`  [INFERRED]
-  deployment/tests/test-sfl-review-platform.ps1 → deployment/tests/line-ending-test-helpers.ps1
+- `runAdd()` --calls--> `deployViaGit()`  [INFERRED]
+  gh-sfl/add.go → gh-sfl/github.go
+- `runAdd()` --calls--> `fetchFileRaw()`  [INFERRED]
+  gh-sfl/add.go → gh-sfl/github.go
+- `runAdd()` --calls--> `getDefaultBranch()`  [INFERRED]
+  gh-sfl/add.go → gh-sfl/github.go
 
 ## Import Cycles
 - None detected.
 
-## Communities (58 total, 1 thin omitted)
+## Communities (93 total, 3 thin omitted)
 
 ### Community 0 - "Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀"
 Cohesion: 0.04
 Nodes (47): 10) Cost Predictions at Scale (Hundreds of Repos), 11) Rollout Strategy (0 → 100+ Repos), 12) KPIs That Prove Value, 13) Final Thesis, 1) Core Thesis, 2) What We Built Here (Concrete, Not Hypothetical), 3) The Set it Free Loop Pattern, 4) Architecture Layers (+39 more)
 
-### Community 1 - "properties"
-Cohesion: 0.05
-Nodes (45): additionalProperties, minLength, properties, required, type, items, type, minLength (+37 more)
+### Community 1 - "required"
+Cohesion: 0.16
+Nodes (14): additionalProperties, minLength, required, type, additionalProperties, type, model, profile (+6 more)
 
-### Community 3 - "properties"
-Cohesion: 0.05
-Nodes (37): additionalProperties, description, format, type, description, properties, deployedAt, source (+29 more)
+### Community 3 - "sfl-manifest.schema.json"
+Cohesion: 0.17
+Nodes (11): additionalProperties, description, required, $schema, title, type, components, deployedAt (+3 more)
 
 ### Community 4 - "properties"
 Cohesion: 0.06
@@ -110,15 +147,15 @@ Cohesion: 0.08
 Nodes (24): effort, model, provider, requiredSecretsAnyOf, defaultProfile, COPILOT_MODEL, COPILOT_PROVIDER_API_KEY, COPILOT_PROVIDER_BASE_URL (+16 more)
 
 ### Community 7 - "enum"
-Cohesion: 0.08
-Nodes (24): description, items, type, uniqueItems, enum, type, components, daily-repo-status (+16 more)
+Cohesion: 0.11
+Nodes (18): enum, daily-repo-status, governance, issue-processor, labels, pr-analyzer-general, pr-analyzer-quality, pr-analyzer-security (+10 more)
 
 ### Community 8 - "PR Fixer — Authority"
 Cohesion: 0.09
 Nodes (21): After all fixes, Blocking Issues, Fix priorities, Guardrails, Handling rebase conflicts, Implementation rules, Non-Blocking Suggestions, PR Fixer — Authority (+13 more)
 
 ### Community 9 - "PR Fixer — Authority"
-Cohesion: 0.09
+Cohesion: 0.10
 Nodes (21): After all fixes, Blocking Issues, Fix priorities, Guardrails, Handling rebase conflicts, Implementation rules, Non-Blocking Suggestions, PR Fixer — Authority (+13 more)
 
 ### Community 10 - "PR Promoter"
@@ -205,9 +242,9 @@ Nodes (13): Conditional Evidence Checks, Full-Spectrum PR Review, HemSoft runs t
 Cohesion: 0.20
 Nodes (10): provider, enum, type, claude, codex, copilot, crush, gemini (+2 more)
 
-### Community 31 - "CATALOG.md"
-Cohesion: 0.06
-Nodes (29): Daily Repo Status, Process, Step 0 — Close previous daily status reports, Style, What to include, Audit Scope, Goals, Output Requirements (+21 more)
+### Community 31 - "HemSoft SFL Pull Request Reviewer"
+Cohesion: 0.22
+Nodes (9): Advisory and gated operation, Automatic and explicit review, Deployment, Distribution boundary, Evidence and approval, HemSoft SFL Pull Request Reviewer, Package, Recovery (+1 more)
 
 ### Community 32 - "Issue Processor"
 Cohesion: 0.20
@@ -254,28 +291,152 @@ Cohesion: 0.43
 Nodes (5): ConvertTo-NormalizedLineEnding(), Test-NormalizedTextEqual(), Assert-ExactPair(), Assert-PatternSet(), Read-RepoFile()
 
 ### Community 54 - "Issue Processor"
-Cohesion: 0.18
+Cohesion: 0.20
 Nodes (10): Guardrails, Issue Processor, Known Limitation: Label Delivery, Step 1 — Find the oldest claimable issue, Step 2 — Claim the issue, Step 3 — Validate the issue body, Step 4 — Inspect the codebase, Step 5 — Implement the fix (+2 more)
 
+### Community 57 - "deployment_test.go"
+Cohesion: 0.05
+Nodes (81): appInstallation, decodeTestResponse(), findAddition(), Reader, T, installDeploymentFakes(), legacyReviewerRuleset(), reviewerWorkflowRuleset() (+73 more)
+
+### Community 58 - "status.go"
+Cohesion: 0.09
+Nodes (57): TestClassifyReviewerGate(), collectStaleReviewerRulesets(), createReviewerRuleset(), Writer, isDedicatedLegacyReviewerGate(), mergeReviewerFreshnessRule(), parseGateOptions(), removeDedicatedLegacyReviewerGate() (+49 more)
+
+### Community 60 - "hemsoft.go"
+Cohesion: 0.09
+Nodes (43): T, TestReviewTriggerConcurrencyGroups(), validateDeploymentTarget(), applyHemSoftEnginePolicy(), applyHemSoftEnginePolicyToWorkflow(), applyHemSoftOwnership(), cloneHemSoftEnvironment(), hemSoftEngineBlock() (+35 more)
+
+### Community 61 - "renderRunTable"
+Cohesion: 0.12
+Nodes (26): ANSIColor, fetchWorkflowRuns(), tableStyler, Time, Writer, parseListOptions(), renderRunTable(), resolveRunStatus() (+18 more)
+
+### Community 62 - "github.go"
+Cohesion: 0.13
+Nodes (22): ClientOptions, fileDeletion, apiBaseURL(), checkGhAwInstalled(), deploymentFileContent(), deploymentFilesState(), deploymentManifestContentsMatch(), deployViaGit() (+14 more)
+
+### Community 63 - "review.go"
+Cohesion: 0.19
+Nodes (17): dispatchCapabilities, getDefaultBranch(), pullRequestShas, detectDispatchInputs(), fetchPullRequestShas(), Time, Writer, isNotFoundError() (+9 more)
+
+### Community 64 - "main.go"
+Cohesion: 0.23
+Nodes (14): Duration, asyncUpdateCheck(), formatVersion(), Writer, main(), printBanner(), resolveCommand(), run() (+6 more)
+
+### Community 65 - "runInit"
+Cohesion: 0.21
+Nodes (14): deploymentRelease, setRepoSecret(), getCommitSHA(), getCurrentUser(), getLatestCommitSHA(), Writer, parseInitOptions(), resolveDeploymentRelease() (+6 more)
+
+### Community 66 - "conditionalRESTClient"
+Cohesion: 0.24
+Nodes (5): Client, conditionalRESTClient, Reader, updateDeploymentPRTitle(), RESTClient
+
+### Community 67 - "Commands"
+Cohesion: 0.15
+Nodes (12): Building, Commands, `gh sfl gate`, gh-sfl — GitHub CLI Extension for Set it Free Loop, `gh sfl init`, `gh sfl list`, `gh sfl status`, `gh sfl sync` (+4 more)
+
+### Community 68 - "sflManifest"
+Cohesion: 0.18
+Nodes (14): addonWorkflowFiles(), TestForceUninstallRemovesEveryManagedDeploymentPath(), TestReviewerHealthUsesManifestPackageAndVersionMarkers(), managedDeploymentPaths(), renderWorkflow(), Time, marshalManifest(), readLocalManifest() (+6 more)
+
+### Community 69 - "addons"
+Cohesion: 0.18
+Nodes (11): description, items, type, uniqueItems, description, items, type, uniqueItems (+3 more)
+
+### Community 70 - "runAdd"
+Cohesion: 0.39
+Nodes (7): Writer, parseAddOptions(), runAdd(), writeAddUsage(), knownAddonNames(), validAddon(), addOptions
+
+### Community 71 - "parseMutationTarget"
+Cohesion: 0.35
+Nodes (10): currentRepo(), ensureRepoVariable(), parseMutationTarget(), parseRepoFlag(), Writer, parseToggleOptions(), runStart(), runStop() (+2 more)
+
+### Community 72 - "reviewerFixtureBash"
+Cohesion: 0.24
+Nodes (7): T, TestDispatchDedupFixtures(), T, TestReviewEffortResolutionFixtures(), T, reviewerFixtureBash(), TestAutoGateRunValidationFixtures()
+
+### Community 73 - "properties"
+Cohesion: 0.22
+Nodes (9): properties, type, minLength, type, minLength, type, arguments, model (+1 more)
+
+### Community 74 - "requiredSecretsAnyOf"
+Cohesion: 0.33
+Nodes (7): items, minLength, type, requiredSecretsAnyOf, items, type, uniqueItems
+
+### Community 75 - "properties"
+Cohesion: 0.22
+Nodes (9): minLength, type, minProperties, type, properties, defaultProfile, profiles, $schema (+1 more)
+
+### Community 77 - "properties"
+Cohesion: 0.25
+Nodes (8): description, format, type, description, type, properties, deployedAt, deployedBy
+
+### Community 78 - "enum"
+Cohesion: 0.25
+Nodes (8): tier, description, enum, type, full, minimal, reviewer, standard
+
+### Community 79 - "sfl: Frontmatter Spec"
+Cohesion: 0.29
+Nodes (7): Field Matrix, Full Field Reference, Future-Proofing, Minimal Example, Overview, sfl: Frontmatter Spec, What NOT to add to sfl:
+
+### Community 80 - "changelog.go"
+Cohesion: 0.57
+Nodes (6): extractVersion(), Writer, parseChangelogOptions(), runChangelog(), writeChangelogUsage(), changelogOptions
+
+### Community 81 - "enum"
+Cohesion: 0.33
+Nodes (6): enum, type, effort, high, low, medium
+
+### Community 82 - "Daily Repo Status"
+Cohesion: 0.33
+Nodes (5): Daily Repo Status, Process, Step 0 — Close previous daily status reports, Style, What to include
+
+### Community 83 - "Repo Audit"
+Cohesion: 0.33
+Nodes (5): Audit Scope, Goals, Output Requirements, Process, Repo Audit
+
+### Community 85 - "SFL reviewer parity baseline"
+Cohesion: 0.40
+Nodes (4): CLI source ownership, Intentional differences, Running the audit, SFL reviewer parity baseline
+
+### Community 86 - "fetchFileRaw"
+Cohesion: 0.36
+Nodes (7): TestSourceReadClientUsesSeparateTokenOnlyForCentralRepositories(), dirEntry, fetchDirListing(), fetchFileContent(), fetchFileRaw(), sourceReadClient(), fetchLatestRelease()
+
+### Community 87 - "source"
+Cohesion: 0.50
+Nodes (4): source, default, description, type
+
+### Community 88 - "sourceSha"
+Cohesion: 0.50
+Nodes (4): sourceSha, description, pattern, type
+
+### Community 89 - "version"
+Cohesion: 0.50
+Nodes (4): version, description, pattern, type
+
+### Community 90 - "review_recovery_fixture_test.go"
+Cohesion: 0.67
+Nodes (3): T, TestNewerRunSuppressionFixtures(), TestReviewRecoveryPolicyFixtures()
+
 ## Knowledge Gaps
-- **550 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+545 more)
+- **568 isolated node(s):** `$schema`, `defaultProfile`, `provider`, `model`, `effort` (+563 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **1 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **3 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` connect `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` to `CATALOG.md`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
-- **Why does `Set it Free — Governance Policy` connect `Set it Free — Governance Policy` to `CATALOG.md`?**
-  _High betweenness centrality (0.028) - this node is a cross-community bridge._
+- **Why does `readContractFile()` connect `hemsoft.go` to `deployment_test.go`?**
+  _High betweenness centrality (0.017) - this node is a cross-community bridge._
+- **Why does `deployViaPullRequest()` connect `deployment_test.go` to `runInit`, `conditionalRESTClient`, `fetchFileRaw`, `status.go`, `hemsoft.go`, `github.go`?**
+  _High betweenness centrality (0.014) - this node is a cross-community bridge._
+- **Why does `runStatus()` connect `status.go` to `runInit`, `sflManifest`, `parseMutationTarget`, `renderRunTable`, `github.go`?**
+  _High betweenness centrality (0.013) - this node is a cross-community bridge._
+- **Are the 12 inferred relationships involving `deployViaPullRequest()` (e.g. with `TestDeployViaPullRequest()` and `TestDeployViaPullRequestIgnoresOpenPRForOldBase()`) actually correct?**
+  _`deployViaPullRequest()` has 12 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 15 inferred relationships involving `runInit()` (e.g. with `addonWorkflowFiles()` and `deployViaGit()`) actually correct?**
+  _`runInit()` has 15 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `$schema`, `defaultProfile`, `provider` to the rest of the system?**
-  _550 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _568 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀` be split into smaller, more focused modules?**
   _Cohesion score 0.0425531914893617 - nodes in this community are weakly interconnected._
-- **Should `properties` be split into smaller, more focused modules?**
-  _Cohesion score 0.051515151515151514 - nodes in this community are weakly interconnected._
-- **Should `properties` be split into smaller, more focused modules?**
-  _Cohesion score 0.05263157894736842 - nodes in this community are weakly interconnected._
-- **Should `properties` be split into smaller, more focused modules?**
-  _Cohesion score 0.06451612903225806 - nodes in this community are weakly interconnected._
