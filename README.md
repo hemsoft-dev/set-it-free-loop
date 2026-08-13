@@ -84,7 +84,11 @@ Reviewer installation, recovery, and optional gating are documented in
 
 ## Versioning
 
-The SFL uses [Semantic Versioning](https://semver.org/). The single source of truth is the [`VERSION`](VERSION) file in this repo.
+The SFL uses [Semantic Versioning](https://semver.org/). The single source of
+truth is the [`VERSION`](VERSION) file in this repo. The synchronized
+[`deployment/release-metadata.json`](deployment/release-metadata.json) keeps
+that HemSoft distribution version separate from the pinned Relias reviewer
+release and immutable reviewed commit.
 
 ### Automatic versioning
 
@@ -100,8 +104,9 @@ to `main` based on [Conventional Commits](https://www.conventionalcommits.org/):
 | `feat!:` or `BREAKING CHANGE` | **major** (2.1.1 → 3.0.0) | `feat!: rename sfl.json schema` |
 | `docs:`, `chore:`, `ci:`, `test:` | *no bump* | `docs: update README` |
 
-When enabled, the workflow updates `VERSION`, stamps `sfl.json`, creates a git
-tag (`v2.1.0`), and publishes a GitHub release. Leave the variable unset until
+When enabled, the workflow updates `VERSION`, stamps `sfl.json` and the HemSoft
+version in `deployment/release-metadata.json`, creates a git tag (`v2.1.0`),
+and publishes a GitHub release. Leave the variable unset until
 the release metadata, artifact checksums, tag protection, prerelease, and
 clean-machine installation checks in [`TODO.md`](TODO.md) are complete.
 

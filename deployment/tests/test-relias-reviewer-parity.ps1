@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
-$baselinePath = Join-Path $repoRoot 'deployment\reviewer-parity-baseline.json'
+$baselinePath = Join-Path $repoRoot 'deployment\release-metadata.json'
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Get-NormalizedSha256([string] $Text) {
@@ -73,12 +73,12 @@ $expectedClasses = @(
 if ($baseline.schemaVersion -ne 1) {
     $failures.Add("Unsupported schemaVersion '$($baseline.schemaVersion)'.")
 }
-if ($baseline.upstream.repository -ne 'relias-engineering/set-it-free-loop') {
+if ($baseline.reviewerBaseline.repository -ne 'relias-engineering/set-it-free-loop') {
     $failures.Add('The upstream repository is not relias-engineering/set-it-free-loop.')
 }
 foreach ($property in @('releaseCommit', 'reviewedCommit')) {
-    if ([string] $baseline.upstream.$property -notmatch '^[0-9a-f]{40}$') {
-        $failures.Add("upstream.$property is not a full lowercase Git commit SHA.")
+    if ([string] $baseline.reviewerBaseline.$property -notmatch '^[0-9a-f]{40}$') {
+        $failures.Add("reviewerBaseline.$property is not a full lowercase Git commit SHA.")
     }
 }
 
@@ -149,20 +149,20 @@ if ($ReliasCheckout) {
             $failures.Add("Relias checkout origin is unexpected: $origin")
         }
 
-        $tagExpression = "$($baseline.upstream.releaseTag)^{commit}"
+        $tagExpression = "$($baseline.reviewerBaseline.releaseTag)^{commit}"
         $tagCommit = (Invoke-GitText $resolvedReliasCheckout @('rev-parse', $tagExpression)).Trim()
-        if ($tagCommit -ne $baseline.upstream.releaseCommit) {
-            $failures.Add("$($baseline.upstream.releaseTag) resolves to $tagCommit, not $($baseline.upstream.releaseCommit).")
+        if ($tagCommit -ne $baseline.reviewerBaseline.releaseCommit) {
+            $failures.Add("$($baseline.reviewerBaseline.releaseTag) resolves to $tagCommit, not $($baseline.reviewerBaseline.releaseCommit).")
         }
 
-        [void] (Invoke-GitText $resolvedReliasCheckout @('cat-file', '-e', "$($baseline.upstream.reviewedCommit)^{commit}"))
+        [void] (Invoke-GitText $resolvedReliasCheckout @('cat-file', '-e', "$($baseline.reviewerBaseline.reviewedCommit)^{commit}"))
         $changedPathsText = Invoke-GitText $resolvedReliasCheckout @(
             'diff', '--name-only',
-            $baseline.upstream.releaseCommit,
-            $baseline.upstream.reviewedCommit
+            $baseline.reviewerBaseline.releaseCommit,
+            $baseline.reviewerBaseline.reviewedCommit
         )
         $changedPaths = @($changedPathsText -split '\r?\n' | Where-Object { $_ } | Sort-Object)
-        $expectedChangedPaths = @($baseline.upstream.postReleaseChanges | Sort-Object)
+        $expectedChangedPaths = @($baseline.reviewerBaseline.postReleaseChanges | Sort-Object)
         if (Compare-Object $expectedChangedPaths $changedPaths) {
             $failures.Add('Relias post-release changed paths differ from the recorded baseline.')
         }
@@ -170,7 +170,7 @@ if ($ReliasCheckout) {
         foreach ($artifact in @($baseline.artifacts)) {
             $reviewedText = Invoke-GitText $resolvedReliasCheckout @(
                 'show',
-                "$($baseline.upstream.reviewedCommit):$($artifact.upstreamPath)"
+                "$($baseline.reviewerBaseline.reviewedCommit):$($artifact.upstreamPath)"
             )
             $reviewedHash = Get-NormalizedSha256 $reviewedText
             if ($reviewedHash -ne $artifact.upstreamSha256) {
@@ -179,7 +179,7 @@ if ($ReliasCheckout) {
 
             $releaseText = Invoke-GitText $resolvedReliasCheckout @(
                 'show',
-                "$($baseline.upstream.releaseCommit):$($artifact.upstreamPath)"
+                "$($baseline.reviewerBaseline.releaseCommit):$($artifact.upstreamPath)"
             )
             $releaseHash = Get-NormalizedSha256 $releaseText
             if ($releaseHash -ne $reviewedHash) {
@@ -197,7 +197,7 @@ if ($failures.Count -gt 0) {
 }
 
 if ($ReliasCheckout) {
-    Write-Output "Relias reviewer parity baseline and HemSoft artifacts passed at $($baseline.upstream.reviewedCommit)."
+    Write-Output "Relias reviewer parity baseline and HemSoft artifacts passed at $($baseline.reviewerBaseline.reviewedCommit)."
 }
 else {
     Write-Output 'HemSoft reviewer parity metadata and artifact hashes passed (Relias checkout not supplied).'
