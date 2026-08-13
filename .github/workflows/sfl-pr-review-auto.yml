@@ -210,7 +210,7 @@ jobs:
             --paginate --jq '.[].name')
           REVIEW_EFFORT=$(resolve_review_effort "$PR_LABELS")
 
-          # Dedup: never dispatch a second review for the same sealed
+          # Dedup: never dispatch a second standard review for the same sealed
           # base/head. Rapid event flurries (labeled/edited/synchronize
           # bursts) and recovery workflow dispatches otherwise race into
           # duplicate paid runs; review-side concurrency cancels the loser
@@ -223,10 +223,13 @@ jobs:
           # residual check-then-dispatch window is sub-second, and its worst
           # case is one duplicate run that sealed provenance rejects.
           EXPECTED_TITLE="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="
-          # Bounded lookup: only active statuses, single page — never paginate
-          # the workflow's full run history on every pull request event.
+          # Bounded lookup: active statuses plus successful completions, one
+          # page each — never paginate the workflow's full run history on every
+          # pull request event. Reusing a successful exact-state run also
+          # closes the queue-delay window where an edited event starts after
+          # the original reviewer has already completed.
           # BEGIN TESTABLE DISPATCH DEDUP
-          find_active_review_run() {
+          find_reusable_review_run() {
             local expected_title="$1"
             local event_action="${2:-}"
             local review_label_present="${3:-false}"
@@ -243,7 +246,7 @@ jobs:
             '
           }
           # END TESTABLE DISPATCH DEDUP
-          ACTIVE_RUN_ID=""
+          REUSABLE_RUN_ID=""
           REVIEW_LABEL_PRESENT="false"
           if grep -Fxq "sfl-review" <<< "$PR_LABELS"; then
             REVIEW_LABEL_PRESENT="true"
@@ -252,20 +255,20 @@ jobs:
           # selected at request time, even if another effort is already active.
           # A stale queued labeled event whose trigger was already consumed
           # uses ordinary deduplication instead.
-          for STATUS in queued in_progress; do
+          for STATUS in queued in_progress success; do
             MATCHING_RUN_ID=$(gh api \
               "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?status=${STATUS}&per_page=100" \
-              | find_active_review_run \
+              | find_reusable_review_run \
                 "${EXPECTED_TITLE}" "$EVENT_ACTION" "$REVIEW_LABEL_PRESENT")
             if [[ "$MATCHING_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
-              ACTIVE_RUN_ID="$MATCHING_RUN_ID"
+              REUSABLE_RUN_ID="$MATCHING_RUN_ID"
               break
             fi
           done
-          if [ -n "$ACTIVE_RUN_ID" ]; then
+          if [ -n "$REUSABLE_RUN_ID" ]; then
             consume_review_label "$PR_LABELS"
-            echo "Current-state review already active for ${BASE_SHA}:${HEAD_SHA} — skipping duplicate dispatch"
-            echo "review-run-id=${ACTIVE_RUN_ID}" >> "$GITHUB_OUTPUT"
+            echo "Current-state review already active or successfully completed for ${BASE_SHA}:${HEAD_SHA} — skipping duplicate dispatch"
+            echo "review-run-id=${REUSABLE_RUN_ID}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
