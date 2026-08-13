@@ -219,14 +219,24 @@ produce a duplicate review.
 
 ## Advisory and gated operation
 
-Deployment is advisory until repository rules require the reviewer workflow and
-its native `SFL Reviewer Approval` freshness check. After the deployment PR is
-merged, enable strict gating with:
+Deployment is advisory until a repository rule requires the native
+`SFL Reviewer Approval` check. After the deployment PR is merged, enable strict
+gating with:
 
 ```powershell
 gh sfl gate --repo HemSoft/private-repository
 ```
 
-The command preserves unrelated rules, binds the required workflow to the
-consumer's default branch and repository ID, and requires a fresh native check
-from the SFL App. It intentionally refuses public or non-HemSoft repositories.
+The command creates a dedicated repository ruleset on the consumer's default
+branch. The rule requires `SFL Reviewer Approval` from GitHub Actions App ID
+`15368` and uses strict base freshness, so a base update needs a new sealed
+review. This differs from Relias because `HemSoft` is a personal GitHub account
+and cannot create organization required-workflow rulesets.
+
+An already-correct gate is a write-free no-op. A stale dedicated gate is read
+with its entity tag, updated conditionally, and checked again. If GitHub applies
+an invalid or ambiguous update, the command restores the exact pre-write rule.
+It refuses stale shared or inherited rules instead of changing unrelated
+policy. Gate creation, status, and uninstall use repository endpoints and do
+not require `admin:org`. The command still rejects public or non-HemSoft
+repositories.
