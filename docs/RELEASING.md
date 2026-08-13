@@ -9,9 +9,9 @@ Start from an issue branch and synchronize all version-bearing metadata with one
 command:
 
 ```powershell
-.\deployment\scripts\set-release-version.ps1 -Version 2.1.0-rc.2
+.\deployment\scripts\set-release-version.ps1 -Version 2.1.0-rc.3
 .\deployment\tests\test-release-metadata.ps1 `
-  -ExpectedVersion 2.1.0-rc.2 -RequirePrerelease
+  -ExpectedVersion 2.1.0-rc.3 -RequirePrerelease
 ```
 
 The command updates `VERSION`, `sfl.json`, and the distribution version, tag,
@@ -40,6 +40,11 @@ per-asset attestations remain the authoritative post-publish proof. If GitHub
 reports a published release as mutable, the workflow deletes that release and
 its tag, verifies both are gone, and fails before installation.
 
+The workflow grants its ephemeral `GITHUB_TOKEN` only `contents: write` for
+draft publication and `attestations: read` for the post-publication proof.
+Without the latter, `gh release verify` reports no attestations even when an
+authorized HemSoft user can verify the same immutable private release.
+
 ## Publish a prerelease
 
 The version metadata and tag ruleset must already be on `main`:
@@ -48,7 +53,7 @@ The version metadata and tag ruleset must already be on `main`:
 gh workflow run publish-private-prerelease.yml `
   --repo HemSoft/set-it-free-loop `
   --ref main `
-  -f version=2.1.0-rc.2
+  -f version=2.1.0-rc.3
 ```
 
 The workflow verifies clean immutable `main`, rejects existing tags/releases,
@@ -71,7 +76,7 @@ With GitHub CLI authenticated to an account that can read the private release:
 
 ```powershell
 .\deployment\scripts\install-gh-sfl-hemsoft.ps1 `
-  -ReleaseVersion 2.1.0-rc.2
+  -ReleaseVersion 2.1.0-rc.3
 gh sfl version
 ```
 

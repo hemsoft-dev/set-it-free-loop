@@ -1,7 +1,7 @@
-# Graph Report - issue-63-release-evidence  (2026-08-13)
+# Graph Report - issue-63-attestation-permission  (2026-08-13)
 
 ## Corpus Check
-- 105 files · ~196,380 words
+- 105 files · ~196,436 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `16e327ee`
+- Built from commit: `9d25331e`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -77,7 +77,7 @@
 - properties
 - requiredSecretsAnyOf
 - properties
-- deployedAt
+- version
 - enum
 - sfl: Frontmatter Spec
 - changelog.go
@@ -308,7 +308,7 @@ Nodes (63): appInstallation, TestClassifyReviewerGate(), collectStaleReviewerRul
 
 ### Community 60 - "properties"
 Cohesion: 0.25
-Nodes (8): description, type, properties, deployedBy, version, description, pattern, type
+Nodes (8): description, format, type, description, type, properties, deployedAt, deployedBy
 
 ### Community 61 - "renderRunTable"
 Cohesion: 0.12
@@ -370,9 +370,9 @@ Nodes (7): items, minLength, type, requiredSecretsAnyOf, items, type, uniqueItem
 Cohesion: 0.22
 Nodes (9): minLength, type, minProperties, type, properties, defaultProfile, profiles, $schema (+1 more)
 
-### Community 77 - "deployedAt"
+### Community 77 - "version"
 Cohesion: 0.50
-Nodes (4): description, format, type, deployedAt
+Nodes (4): version, description, pattern, type
 
 ### Community 78 - "enum"
 Cohesion: 0.20
