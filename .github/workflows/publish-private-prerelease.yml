@@ -83,7 +83,8 @@ jobs:
           test -f "gh-sfl_${RELEASE_VERSION}_windows_amd64.exe"
           test -f install-gh-sfl-hemsoft.ps1
           chmod 755 "gh-sfl_${RELEASE_VERSION}_linux_amd64"
-          first_line=$("./gh-sfl_${RELEASE_VERSION}_linux_amd64" --version | head -n 1)
+          version_output=$("./gh-sfl_${RELEASE_VERSION}_linux_amd64" --version)
+          first_line=${version_output%%$'\n'*}
           [[ "$first_line" == "gh-sfl ${RELEASE_VERSION} "* ]]
 
       - name: Create draft private prerelease with all assets
@@ -165,7 +166,8 @@ jobs:
           $binary = Join-Path $smokeDir "gh-sfl_$($env:RELEASE_VERSION)_linux_amd64"
           & chmod 755 $binary
           if ($LASTEXITCODE -ne 0) { throw 'chmod failed for smoke-test binary.' }
-          $firstLine = (& $binary --version | Select-Object -First 1)
+          $versionOutput = @(& $binary --version)
+          $firstLine = $versionOutput[0]
           if ($LASTEXITCODE -ne 0 -or $firstLine -notlike "gh-sfl $($env:RELEASE_VERSION) *") {
             throw "Downloaded binary version proof failed: $firstLine"
           }
