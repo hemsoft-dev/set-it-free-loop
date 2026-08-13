@@ -69,6 +69,7 @@ $requiredWorkflowPatterns = @(
     'repos/${GITHUB_REPOSITORY}/commits/main',
     'test "$(git rev-parse HEAD)" = "$remote_main_sha"',
     'IMMUTABLE_RELEASES_ATTESTED: ${{ vars.SFL_IMMUTABLE_RELEASES_ENABLED }}',
+    'attestations: read',
     'test "$IMMUTABLE_RELEASES_ATTESTED" = "true"',
     'build-release-artifacts.ps1',
     'sha256sum --check SHA256SUMS',

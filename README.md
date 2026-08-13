@@ -119,7 +119,7 @@ Stable publication remains disabled until the prerelease and pilot evidence in
 When you deploy to a consumer repo, the deploy script reads `VERSION`, stamps it into the consumer's `sfl.json`, and SHA-pins the source. To check if a consumer is current:
 
 ```
-SFL VERSION file:  2.1.0-rc.2 ← selected release
+SFL VERSION file:  2.1.0-rc.3 ← selected release
 Consumer sfl.json: 2.0.0      ← deployed version (behind)
 ```
 

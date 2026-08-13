@@ -57,11 +57,13 @@ Known gaps:
 
 - [x] HemSoft validates GitHub's `isOutdated` flag before resolving an
   obsolete SFL review thread, matching Relias v6.5.7.
-- [x] Release metadata distinguishes HemSoft distribution `2.1.0-rc.2` from the
+- [x] Release metadata distinguishes HemSoft distribution `2.1.0-rc.3` from the
   pinned Relias reviewer release and immutable reviewed commit.
 - [x] Private prerelease `v2.1.0-rc.1` is an immutable GitHub release at commit
   `16e327eeef57fc7be025d6734238ea020fe5a0b9`; its publication probe exposed an
-  attestation-propagation delay, so `v2.1.0-rc.2` remains the end-to-end proof.
+  attestation verification failure. `v2.1.0-rc.2` proved that the workflow's
+  `GITHUB_TOKEN` needs explicit `attestations: read`, so `v2.1.0-rc.3` remains
+  the end-to-end proof.
 - [x] `.github/workflows/publish-private-prerelease.yml` parses and has a
   checksum-pinned actionlint gate; publication is manual and prerelease-only.
 - [x] The HemSoft CLI source is version-controlled under `gh-sfl/`; its build,

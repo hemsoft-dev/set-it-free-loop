@@ -9,6 +9,7 @@ on:
         type: string
 
 permissions:
+  attestations: read
   contents: write
 
 concurrency:
