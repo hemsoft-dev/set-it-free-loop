@@ -773,7 +773,3 @@ Examples:
   gh sfl status                        # Status for current repo
   gh sfl status --repo owner/repo      # Status for a different repo
 `
-
-func writeCodespaceUsage(_ io.Writer) {
-	// no-op: unused but needed for build
-}

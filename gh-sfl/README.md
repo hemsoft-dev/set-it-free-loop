@@ -50,6 +50,18 @@ gh sfl sync --repo owner/repo --direct     # Explicit direct update
 gh sfl sync --dry-run                      # Preview without changes
 ```
 
+### `gh sfl add`
+
+Add the reviewer package to an existing minimal or standard installation. The
+workflow sources remain pinned to the installation manifest's immutable source
+commit, and the command opens a pull request by default.
+
+```bash
+gh sfl add pr-review                       # Open an add-on PR for the current repo
+gh sfl add pr-review --repo owner/repo     # Open an add-on PR for a specific repo
+gh sfl add pr-review --direct              # Explicit direct deployment
+```
+
 ### `gh sfl gate`
 
 Reviewer deployments are advisory-only by default. After merging the deployment
@@ -71,15 +83,16 @@ Remove SFL workflows and governance files from a repository.
 The file-removal commit is prepared before dedicated reviewer gate rulesets are
 removed. If its push fails, the original dedicated rulesets are restored. Shared
 organization gate rulesets must be separated by an administrator before
-uninstall proceeds. When `--force` is used without a valid manifest, uninstall
-removes the union of every known managed SFL path so legacy suite files are not
-left behind.
+uninstall proceeds. When a manifest is missing,
+`--allow-manifest-fallback` explicitly selects the union of every known managed
+SFL path; `--force` remains solely the destructive-operation confirmation.
 
 ```bash
 gh sfl uninstall --dry-run                 # Preview what would be removed
 gh sfl uninstall --force                   # Uninstall from current repo
 gh sfl uninstall --force --repo owner/repo # Uninstall from specific repo
 gh sfl uninstall --force --keep-labels     # Keep SFL labels
+gh sfl uninstall --dry-run --allow-manifest-fallback # Preview without a manifest
 ```
 
 ### `gh sfl list`
@@ -118,7 +131,7 @@ the immutable version, source commit, tier, and installed components.
 `gh sfl sync` preserves the installed tier while updating it to the latest
 synchronized release.
 
-`init` and `sync` create deployment pull requests by default. The extension
+`init`, `sync`, and `add` create deployment pull requests by default. The extension
 creates the deployment commit through GitHub,
 opens a pull request against the default branch, and reuses an existing open
 SFL deployment pull request by updating its branch instead of creating duplicates.

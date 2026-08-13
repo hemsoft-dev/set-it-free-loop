@@ -12,6 +12,7 @@ import (
 type addOptions struct {
 	repo  string
 	addon string
+	pr    bool
 }
 
 func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
@@ -35,6 +36,9 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	manifest, err := readRemoteManifest(owner, repo)
 	if err != nil {
 		return fmt.Errorf("reading manifest from %s/%s: %w\nHint: run 'gh sfl init' first", owner, repo, err)
+	}
+	if !fullCommitSHAPattern.MatchString(manifest.SourceSHA) {
+		return fmt.Errorf("manifest in %s/%s does not contain an immutable 40-character sourceSha; run 'gh sfl sync --repo %s/%s' before adding workflows", owner, repo, owner, repo)
 	}
 
 	// Check if addon is already installed
@@ -84,11 +88,15 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "  Fetching %d workflow file(s)...\n", len(workflows))
 	for _, wf := range workflows {
 		srcPath := sourceWorkflowPath(wf)
-		content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, "")
+		content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, manifest.SourceSHA)
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
-		fileMap[".github/workflows/"+wf] = content
+		rendered, renderErr := renderHemSoftWorkflow(wf, content, manifest.Version)
+		if renderErr != nil {
+			return fmt.Errorf("applying HemSoft engine policy to %s: %w", wf, renderErr)
+		}
+		fileMap[".github/workflows/"+wf] = rendered
 		fmt.Fprintf(stdout, "    %s ✓\n", wf)
 	}
 
@@ -96,7 +104,10 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	manifest.Addons = append(manifest.Addons, opts.addon)
 	manifest.DeployedAt = time.Now().UTC()
 	manifest.DeployedBy = getCurrentUser()
-	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
+	manifest.EnginePolicy = mergeHemSoftEnginePolicyManifest(
+		manifest.EnginePolicy,
+		hemSoftEnginePolicyManifestForFileMap(fileMap),
+	)
 	manifestJSON, err := marshalManifest(manifest)
 	if err != nil {
 		return fmt.Errorf("marshaling manifest: %w", err)
@@ -111,8 +122,18 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	commitMsg := fmt.Sprintf("chore: add SFL add-on %q\n\nDeployed by gh-sfl add", opts.addon)
 	fmt.Fprintf(stdout, "\n")
-	if err := deployViaGit(owner, repo, defaultBranch, fileMap, commitMsg, false, stdout); err != nil {
+	var prURL string
+	if opts.pr {
+		prURL, err = deployViaPullRequest(owner, repo, defaultBranch, "add", fileMap, commitMsg, stdout)
+	} else {
+		err = deployViaGit(owner, repo, defaultBranch, fileMap, commitMsg, false, stdout)
+	}
+	if err != nil {
 		return fmt.Errorf("deploying add-on: %w", err)
+	}
+	if prURL != "" {
+		fmt.Fprintf(stdout, "\n✅ Add-on %q pull request ready for %s/%s: %s\n", opts.addon, owner, repo, prURL)
+		return nil
 	}
 
 	fmt.Fprintf(stdout, "\n✅ Add-on %q deployed to %s/%s\n", opts.addon, owner, repo)
@@ -134,7 +155,8 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func parseAddOptions(args []string, stderr io.Writer) (addOptions, error) {
-	var opts addOptions
+	opts := addOptions{pr: true}
+	var direct bool
 
 	flags := flag.NewFlagSet("add", flag.ContinueOnError)
 	flags.SetOutput(stderr)
@@ -142,6 +164,8 @@ func parseAddOptions(args []string, stderr io.Writer) (addOptions, error) {
 
 	flags.StringVar(&opts.repo, "repo", "", "Target repository (OWNER/REPO)")
 	flags.StringVar(&opts.repo, "R", "", "Target repository (OWNER/REPO)")
+	flags.BoolVar(&opts.pr, "pr", true, "Create a pull request (default)")
+	flags.BoolVar(&direct, "direct", false, "Push directly to the default branch instead of opening a pull request")
 
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -163,6 +187,9 @@ func parseAddOptions(args []string, stderr io.Writer) (addOptions, error) {
 
 	// Strip leading -- if user passes --policy-manager style
 	opts.addon = strings.TrimPrefix(opts.addon, "--")
+	if direct {
+		opts.pr = false
+	}
 
 	return opts, nil
 }
@@ -186,6 +213,8 @@ Available Add-ons:
 
 Flags:
   -R, --repo string    Target repository (OWNER/REPO). Defaults to current repo.
+      --pr             Create a pull request (default)
+      --direct         Push directly to the default branch instead
 
 Examples:
   gh sfl add pr-review

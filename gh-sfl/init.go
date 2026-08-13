@@ -131,6 +131,7 @@ var governanceFiles = []string{
 const sflVersionPlaceholder = "__SFL_VERSION__"
 
 var semanticVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+var fullCommitSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 func renderWorkflow(content, sflVersion string) string {
 	return strings.ReplaceAll(content, sflVersionPlaceholder, sflVersion)

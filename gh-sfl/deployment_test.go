@@ -436,6 +436,57 @@ func TestParseInitOptionsRegistersAndDeduplicatesAddons(t *testing.T) {
 	}
 }
 
+func TestParseAddOptionsDefaultsToPullRequest(t *testing.T) {
+	opts, err := parseAddOptions([]string{"pr-review"}, io.Discard)
+	if err != nil {
+		t.Fatalf("parseAddOptions() unexpected error: %v", err)
+	}
+	if !opts.pr {
+		t.Fatal("parseAddOptions() pr = false, want PR-first default")
+	}
+	opts, err = parseAddOptions([]string{"--direct", "pr-review"}, io.Discard)
+	if err != nil || opts.pr {
+		t.Fatalf("parseAddOptions(--direct) opts=%+v err=%v", opts, err)
+	}
+}
+
+func TestAddUsesPinnedSourceAndMergesEnginePolicy(t *testing.T) {
+	source := string(readContractFile(t, "add.go"))
+	for _, required := range []string{
+		"fullCommitSHAPattern.MatchString(manifest.SourceSHA)",
+		"srcPath, manifest.SourceSHA",
+		"renderHemSoftWorkflow(wf, content, manifest.Version)",
+		"mergeHemSoftEnginePolicyManifest(",
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("add.go missing pinned add-on contract %q", required)
+		}
+	}
+	if strings.Contains(source, `srcPath, ""`) {
+		t.Error("add.go still reads add-on workflow sources from the mutable default branch")
+	}
+
+	existing := &sflEnginePolicyManifest{
+		DefaultProfile: "old-default",
+		Workflows:      []sflEngineWorkflowProfile{{Name: "repo-audit", Profile: "old"}},
+	}
+	additional := &sflEnginePolicyManifest{
+		DefaultProfile: "new-default",
+		Workflows: []sflEngineWorkflowProfile{
+			{Name: "repo-audit", Profile: "updated"},
+			{Name: "sfl-pr-review", Profile: "reviewer"},
+		},
+	}
+	merged := mergeHemSoftEnginePolicyManifest(existing, additional)
+	if merged.DefaultProfile != "new-default" || len(merged.Workflows) != 2 {
+		t.Fatalf("merged engine policy = %+v", merged)
+	}
+	if merged.Workflows[0].Name != "repo-audit" || merged.Workflows[0].Profile != "updated" ||
+		merged.Workflows[1].Name != "sfl-pr-review" {
+		t.Fatalf("merged engine policy workflows = %+v", merged.Workflows)
+	}
+}
+
 func TestTrimTextPreservesUTF8AndDisplayWidth(t *testing.T) {
 	got := trimText("🚀 deployment ready", 10)
 	if !utf8.ValidString(got) {

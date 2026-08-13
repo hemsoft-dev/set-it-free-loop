@@ -320,6 +320,42 @@ func hemSoftEnginePolicyManifestForFileMap(fileMap map[string]string) *sflEngine
 	}
 }
 
+func mergeHemSoftEnginePolicyManifest(
+	existing, additional *sflEnginePolicyManifest,
+) *sflEnginePolicyManifest {
+	if existing == nil {
+		return additional
+	}
+	if additional == nil {
+		return existing
+	}
+
+	byName := make(map[string]sflEngineWorkflowProfile, len(existing.Workflows)+len(additional.Workflows))
+	for _, workflow := range existing.Workflows {
+		byName[workflow.Name] = workflow
+	}
+	for _, workflow := range additional.Workflows {
+		byName[workflow.Name] = workflow
+	}
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	workflows := make([]sflEngineWorkflowProfile, 0, len(names))
+	for _, name := range names {
+		workflows = append(workflows, byName[name])
+	}
+	defaultProfile := additional.DefaultProfile
+	if defaultProfile == "" {
+		defaultProfile = existing.DefaultProfile
+	}
+	return &sflEnginePolicyManifest{
+		DefaultProfile: defaultProfile,
+		Workflows:      workflows,
+	}
+}
+
 func sourceWorkflowPath(name string) string {
 	switch name {
 	case "sfl-dispatcher.yml", "sfl-auditor.yml", "sfl-pr-review-auto.yml", "sfl-pr-review-recovery.yml":

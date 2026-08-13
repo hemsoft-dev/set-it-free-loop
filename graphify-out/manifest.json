@@ -450,8 +450,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/add.go": {
-    "mtime": 1786611855.503999,
-    "ast_hash": "ae8ced68b29154787109d1a93ce7c711",
+    "mtime": 1786613484.165709,
+    "ast_hash": "0331a68bc190408ed2cd582444473f6b",
     "semantic_hash": ""
   },
   "gh-sfl/addons.go": {
@@ -475,8 +475,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/deployment_test.go": {
-    "mtime": 1786611994.6190572,
-    "ast_hash": "39c298bf237d13d92774311d57cc8bd2",
+    "mtime": 1786613490.073701,
+    "ast_hash": "ca344f2fedc37d6db60a68745ccf5764",
     "semantic_hash": ""
   },
   "gh-sfl/dispatch_dedup_fixture_test.go": {
@@ -490,8 +490,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/github.go": {
-    "mtime": 1786611871.099957,
-    "ast_hash": "59a1e92a121d8ec51f4939941f2190e8",
+    "mtime": 1786613305.1200569,
+    "ast_hash": "2b073b8a95e26313bca1042cccbcb242",
     "semantic_hash": ""
   },
   "gh-sfl/go.mod": {
@@ -500,8 +500,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/hemsoft.go": {
-    "mtime": 1786611850.6768086,
-    "ast_hash": "505c91dc6d16874ae64afec872aa8862",
+    "mtime": 1786613305.1210556,
+    "ast_hash": "d0d983d4df41ef097c4083a169622331",
     "semantic_hash": ""
   },
   "gh-sfl/hemsoft_test.go": {
@@ -510,8 +510,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/init.go": {
-    "mtime": 1786611850.6758027,
-    "ast_hash": "06431e858e3c2c354337e7a886cbb3a1",
+    "mtime": 1786613484.164704,
+    "ast_hash": "a7322c041bb67594c8d802c9d417257e",
     "semantic_hash": ""
   },
   "gh-sfl/list.go": {
@@ -560,8 +560,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/status.go": {
-    "mtime": 1786610292.033345,
-    "ast_hash": "b29f7e83c432c8f8ae5de3f277b236ad",
+    "mtime": 1786613305.1200569,
+    "ast_hash": "dc12333043fb5787bf65d3711a628834",
     "semantic_hash": ""
   },
   "gh-sfl/sync.go": {
@@ -600,8 +600,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/README.md": {
-    "mtime": 1786608907.5336955,
-    "ast_hash": "62aa59982c1578043b5b566e91331985",
+    "mtime": 1786613395.7249963,
+    "ast_hash": "1d4061ca5c921d7139a2fb1c57634abe",
     "semantic_hash": ""
   }
 }

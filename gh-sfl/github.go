@@ -24,43 +24,6 @@ import (
 
 var ghExec = gh.Exec
 
-// checkGhAwInstalled verifies that gh-aw is available (required for lock file compilation).
-func checkGhAwInstalled(stdout io.Writer) error {
-	_, _, err := gh.Exec("aw", "--version")
-	if err != nil {
-		return fmt.Errorf("gh-aw is not installed (required for workflow compilation).\n  Install: gh extension install github/gh-aw")
-	}
-	fmt.Fprintf(stdout, "  ✓ gh-aw detected\n\n")
-	return nil
-}
-
-// fetchFileContent retrieves a file's content from the motherrepo via the GitHub API.
-func fetchFileContent(owner, repo, path, ref string) (string, error) {
-	apiPath := fmt.Sprintf("repos/%s/%s/contents/%s", owner, repo, path)
-	if ref != "" {
-		apiPath += "?ref=" + url.QueryEscape(ref)
-	}
-	if client, ok, err := sourceReadClient(owner, repo); err != nil {
-		return "", err
-	} else if ok {
-		var response struct {
-			Content string `json:"content"`
-		}
-		if err := client.Get(apiPath, &response); err != nil {
-			return "", fmt.Errorf("fetching %s: %w", path, err)
-		}
-		return strings.TrimSpace(response.Content), nil
-	}
-
-	args := []string{"api", apiPath, "--jq", ".content"}
-
-	stdoutBuf, stderrBuf, err := gh.Exec(args...)
-	if err != nil {
-		return "", fmt.Errorf("fetching %s: %s: %w", path, stderrBuf.String(), err)
-	}
-	return strings.TrimSpace(stdoutBuf.String()), nil
-}
-
 // fetchFileRaw retrieves a file's raw content from the motherrepo.
 func fetchFileRaw(owner, repo, path, ref string) (string, error) {
 	apiPath := fmt.Sprintf("repos/%s/%s/contents/%s", owner, repo, path)
