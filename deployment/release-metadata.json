@@ -3,9 +3,9 @@
   "reviewedAt": "2026-08-13",
   "distribution": {
     "repository": "HemSoft/set-it-free-loop",
-    "version": "2.1.0-rc.1",
+    "version": "2.1.0-rc.2",
     "visibility": "private",
-    "tag": "v2.1.0-rc.1",
+    "tag": "v2.1.0-rc.2",
     "prerelease": true
   },
   "reviewerBaseline": {

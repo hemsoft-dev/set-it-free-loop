@@ -82,6 +82,8 @@ $requiredWorkflowPatterns = @(
     'Mutable release and tag rollback verified.',
     'gh release verify "$tag"',
     'gh release verify-asset "$tag"',
+    'for attempt in {1..30}',
+    'Immutable release attestation was not available after five minutes',
     '--prerelease',
     'install-gh-sfl-hemsoft.ps1',
     '-ReleaseVersion $env:RELEASE_VERSION'
