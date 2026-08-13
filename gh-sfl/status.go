@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -288,20 +289,8 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 			styler.colored("✓", termenv.ANSIGreen).styled)
 	}
 
-	fmt.Fprintf(stdout, "\n  Reviewer App:\n")
-	appIssues, err := reviewerAppIssues(owner, repo)
-	if err != nil {
-		fmt.Fprintf(stdout, "    %s Could not inspect organization App installation: %v\n",
-			styler.colored("!", termenv.ANSIYellow).styled, err)
-	} else if len(appIssues) > 0 {
-		for _, issue := range appIssues {
-			fmt.Fprintf(stdout, "    %s %s\n",
-				styler.colored("✗", termenv.ANSIRed).styled, issue)
-		}
-	} else {
-		fmt.Fprintf(stdout, "    %s Selected-repository installation uses the reviewer permission contract\n",
-			styler.colored("✓", termenv.ANSIGreen).styled)
-	}
+	health, healthErr := inspectReviewerRollout(owner, repo)
+	printReviewerPrerequisites(stdout, styler, health, healthErr)
 
 	mode, ruleset, err := reviewerGatePosture(owner, repo)
 	fmt.Fprintf(stdout, "\n  Merge posture:\n")
@@ -324,8 +313,8 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 			fmt.Fprintf(stdout, "    %s Legacy SFL Reviewer Approval status check (%s); migrate to required workflow\n",
 				styler.colored("!", termenv.ANSIYellow).styled, ruleset)
 		default:
-			fmt.Fprintf(stdout, "    %s Advisory-only (default)\n",
-				styler.colored("✓", termenv.ANSIGreen).styled)
+			fmt.Fprintf(stdout, "    %s Advisory-only; required reviewer gate is missing\n",
+				styler.colored("✗", termenv.ANSIRed).styled)
 		}
 	}
 
@@ -350,11 +339,80 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 	}
 }
 
+func printReviewerPrerequisites(
+	stdout io.Writer,
+	styler tableStyler,
+	health reviewerRolloutHealth,
+	healthErr error,
+) {
+	fmt.Fprintf(stdout, "\n  Reviewer App:\n")
+	if healthErr != nil {
+		fmt.Fprintf(stdout, "    %s Could not inspect reviewer rollout prerequisites: %v\n",
+			styler.colored("!", termenv.ANSIYellow).styled, healthErr)
+	} else if len(health.AppIssues) > 0 {
+		for _, issue := range health.AppIssues {
+			fmt.Fprintf(stdout, "    %s %s\n",
+				styler.colored("✗", termenv.ANSIRed).styled, issue)
+		}
+	} else {
+		fmt.Fprintf(stdout, "    %s Selected-repository installation uses the reviewer permission contract\n",
+			styler.colored("✓", termenv.ANSIGreen).styled)
+	}
+
+	fmt.Fprintf(stdout, "\n  Reviewer credentials and Actions:\n")
+	if healthErr != nil {
+		fmt.Fprintf(stdout, "    %s Could not inspect credential metadata or Actions state\n",
+			styler.colored("!", termenv.ANSIYellow).styled)
+	} else {
+		if health.DefaultBranch == "" {
+			fmt.Fprintf(stdout, "    %s Repository has no default branch\n",
+				styler.colored("✗", termenv.ANSIRed).styled)
+		} else {
+			fmt.Fprintf(stdout, "    %s Default branch: %s\n",
+				styler.colored("✓", termenv.ANSIGreen).styled, health.DefaultBranch)
+		}
+		if health.ActionsEnabled {
+			fmt.Fprintf(stdout, "    %s GitHub Actions enabled\n",
+				styler.colored("✓", termenv.ANSIGreen).styled)
+		} else {
+			fmt.Fprintf(stdout, "    %s GitHub Actions disabled\n",
+				styler.colored("✗", termenv.ANSIRed).styled)
+		}
+		for _, issue := range health.ActionsIssues {
+			fmt.Fprintf(stdout, "    %s %s\n",
+				styler.colored("✗", termenv.ANSIRed).styled, issue)
+		}
+		for _, name := range reviewerRequiredVariables {
+			if slices.Contains(health.MissingVariables, name) {
+				fmt.Fprintf(stdout, "    %s Missing Actions variable %s\n",
+					styler.colored("✗", termenv.ANSIRed).styled, name)
+			} else {
+				fmt.Fprintf(stdout, "    %s Actions variable %s present\n",
+					styler.colored("✓", termenv.ANSIGreen).styled, name)
+			}
+		}
+		for _, name := range reviewerRequiredSecrets {
+			if slices.Contains(health.MissingSecrets, name) {
+				fmt.Fprintf(stdout, "    %s Missing Actions secret %s\n",
+					styler.colored("✗", termenv.ANSIRed).styled, name)
+			} else {
+				fmt.Fprintf(stdout, "    %s Actions secret %s present\n",
+					styler.colored("✓", termenv.ANSIGreen).styled, name)
+			}
+		}
+	}
+
+}
+
 func reviewerAppIssues(owner, repo string) ([]string, error) {
 	client, err := newRESTClient()
 	if err != nil {
 		return nil, err
 	}
+	return reviewerAppIssuesWithClient(client, owner, repo)
+}
+
+func reviewerAppIssuesWithClient(client restAPI, owner, repo string) ([]string, error) {
 	for pageNumber := 1; ; pageNumber++ {
 		var response struct {
 			Installations []appInstallation `json:"installations"`

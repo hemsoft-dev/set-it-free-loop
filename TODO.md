@@ -143,7 +143,7 @@ green CLI tests, and an immutable-source deployment PR.
 
 ### P1 — Make review gating part of the rollout contract
 
-- [ ] Preflight the required App installation, `SFL_APP_CLIENT_ID`,
+- [x] Preflight the required App installation, `SFL_APP_CLIENT_ID`,
   `SFL_APP_PRIVATE_KEY`, OpenRouter credential, Actions permissions, and default
   branch before opening a deployment PR.
 - [ ] After the deployment PR merges, configure the native
@@ -151,10 +151,10 @@ green CLI tests, and an immutable-source deployment PR.
   protection settings.
 - [ ] Make gate setup idempotent and restore the previous protection state if
   an update fails.
-- [ ] Have `gh sfl status` report missing credentials, missing required gate,
+- [x] Have `gh sfl status` report missing credentials, missing required gate,
   stale manifest, file drift, and absence of a successful reviewer run as
   distinct failures.
-- [ ] Document the trusted boundary: maintainers who can change workflows on the
+- [x] Document the trusted boundary: maintainers who can change workflows on the
   protected default branch are trusted in this first HemSoft model.
 
 Evidence required: before/after protection snapshots, idempotent rerun, rollback

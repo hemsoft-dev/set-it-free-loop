@@ -195,6 +195,12 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 
 	fmt.Fprintf(stdout, "Deploying SFL (%s tier) to %s/%s\n\n", opts.tier, owner, repo)
+	workflows := tierWorkflows[opts.tier]
+	if workflowsIncludeReviewer(workflows) {
+		if err := assertReviewerRolloutReady(owner, repo, stdout); err != nil {
+			return err
+		}
+	}
 
 	fmt.Fprintf(stdout, "  Resolving synchronized SFL release...\n")
 	release, err := resolveDeploymentRelease(opts.sourceRef)
@@ -214,7 +220,6 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	fileMap := make(map[string]string)
 
-	workflows := tierWorkflows[opts.tier]
 	fmt.Fprintf(stdout, "  Fetching %d workflow files...\n", len(workflows))
 	for _, wf := range workflows {
 		srcPath := sourceWorkflowPath(wf)

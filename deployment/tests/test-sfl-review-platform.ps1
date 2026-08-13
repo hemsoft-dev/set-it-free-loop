@@ -190,7 +190,7 @@ Assert-PatternSet 'docs\SFL-REVIEWER.md' @(
     'OPENROUTER_API_KEY',
     'retries exactly once',
     'SFL Reviewer Approval',
-    'set-sfl-review-gate\.ps1'
+    'gh sfl gate --repo'
 )
 
 $sensitivePatterns = @(
