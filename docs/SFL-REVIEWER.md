@@ -69,12 +69,29 @@ For local dogfood materialization:
 ```
 
 The HemSoft `gh sfl` adapter exposes the equivalent package as the `reviewer`
-tier and writes the CLI-compatible `.sfl/sfl.json` manifest:
+tier and writes the CLI-compatible `.sfl/sfl.json` manifest. Its Go source is
+owned in this repository under `gh-sfl/`; building or installing it does not
+read from a Relias checkout. The provenance of the initial source import is
+recorded in `gh-sfl/PROVENANCE.md`.
+
+Validate and build without changing the installed extension:
+
+```powershell
+.\gh-sfl\build.ps1 -NoInstall
+```
+
+Install the local build, then open the default reviewer deployment PR:
 
 ```powershell
 .\deployment\scripts\install-gh-sfl-hemsoft.ps1
-gh sfl init --repo HemSoft/private-repository --tier reviewer
+gh sfl init --repo HemSoft/private-repository
 ```
+
+`init` defaults to the `reviewer` tier and both `init` and `sync` default to a
+signed deployment pull request. `--direct` is an explicit opt-in for direct
+default-branch mutation. Workflow reads are pinned to the SHA behind the
+selected private HemSoft release, and `.sfl/sfl.json` records both its version
+and source SHA.
 
 Both deployment paths reject non-HemSoft or non-private mutation targets. The
 CLI also requires the active GitHub CLI identity to be `HemSoft`; direct Git

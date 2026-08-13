@@ -14,8 +14,9 @@ concurrency:
 jobs:
   dispatch:
     if: >-
-      github.event.action != 'labeled'
-      || github.event.label.name == 'sfl-review'
+      vars.SFL_ENABLED != 'false' &&
+      (github.event.action != 'labeled'
+      || github.event.label.name == 'sfl-review')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -352,7 +353,7 @@ jobs:
   approval:
     name: SFL Reviewer Gate Runner
     needs: dispatch
-    if: always()
+    if: always() && vars.SFL_ENABLED != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:

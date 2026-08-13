@@ -23,8 +23,8 @@ those commits; all four reviewer artifacts are identical at both points.
 | Reviewer source and compiled lock | Private distribution boundary | Uses HemSoft source identity, repository-scoped App configuration, and no hard-coded App installation identity. | `test-sfl-pr-review.ps1`, `test-sfl-review-platform.ps1` |
 | Reviewer source and compiled lock | Tested HemSoft hardening | Resolves only already-resolved or GitHub-outdated SFL threads and refuses to resolve a live unresolved thread. | `test-sfl-pr-review.ps1`, `test-sfl-verdict-validator.ps1` |
 | Auto trigger and gate | Private distribution boundary | Supports bootstrap deployment before the compatible reviewer lock reaches the default branch and mints a repository-scoped App token with pull-request write permission only where label mutation requires it. | `test-sfl-review-platform.ps1` |
-| Auto trigger and gate | Tested HemSoft hardening | Reuses successful exact-head reviews after delayed ordinary events, preserves explicit-label reruns, and publishes the native immutable-head `SFL Reviewer Approval` check only after authenticating the exact reviewer run. | `test-sfl-dispatch-dedup.ps1`, `test-sfl-review-platform.ps1`; issues #46 and #49 runtime evidence |
-| Recovery | Tested HemSoft hardening | Fails closed when agent output is absent or malformed and rechecks immutable PR state plus newer-run ownership immediately before retry dispatch. | `test-sfl-review-platform.ps1` |
+| Auto trigger and gate | Tested HemSoft hardening | Reuses successful exact-head reviews after delayed ordinary events, preserves explicit-label reruns, publishes the native immutable-head `SFL Reviewer Approval` check only after authenticating the exact reviewer run, and honors maintenance mode before dispatch or gate execution. | `test-sfl-dispatch-dedup.ps1`, `test-sfl-review-platform.ps1`; issues #46 and #49 runtime evidence |
+| Recovery | Tested HemSoft hardening | Fails closed when agent output is absent or malformed, rechecks immutable PR state plus newer-run ownership immediately before retry dispatch, and suppresses retry while maintenance mode is active. | `test-sfl-review-platform.ps1` |
 
 The generated lock is not independently allowlisted: its differences must be
 the compiled representation of the documented reviewer-source differences.
@@ -63,3 +63,21 @@ contract-diff note are deliberately reviewed together. A future Relias baseline
 update must record both the release tag commit and the exact reviewed commit;
 never move the recorded commit to a mutable branch name. HemSoft release bumps
 change only `distribution.version`; they do not rewrite the reviewer baseline.
+
+## CLI source ownership
+
+The private HemSoft distribution owns its adapted `gh sfl` Go source in
+`gh-sfl/`. The initial import is pinned in `gh-sfl/PROVENANCE.md` to Relias
+release `v6.5.7` at commit
+`8d5e30714fa6cc61a89189266f8eb463132abde9`. Repository builds, tests, and
+installation consume only that version-controlled HemSoft tree; the optional
+local Relias checkout above is used solely by the read-only reviewer parity
+audit.
+
+The CLI preserves the reviewer rollout capabilities while enforcing
+HemSoft-specific boundaries: reviewer-only and pull-request-first defaults,
+immutable private HemSoft release reads, `HemSoft` CLI identity, private
+`HemSoft/*` targets, protected mother-repository rejection, and source-path
+routing for the four-file reviewer package. `.github/workflows/validate-gh-sfl.yml`
+keeps the source formatted, vetted, tested, and cross-buildable for Windows and
+Linux.

@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - '.github/workflows/auto-version.yml'
+      - '.github/workflows/validate-gh-sfl.yml'
       - '.github/workflows/validate-release-workflow.yml'
   push:
     branches: [main]
     paths:
       - '.github/workflows/auto-version.yml'
+      - '.github/workflows/validate-gh-sfl.yml'
       - '.github/workflows/validate-release-workflow.yml'
 
 permissions:
@@ -45,4 +47,5 @@ jobs:
         run: |
           "${{ steps.actionlint.outputs.executable }}" -color \
             .github/workflows/auto-version.yml \
+            .github/workflows/validate-gh-sfl.yml \
             .github/workflows/validate-release-workflow.yml

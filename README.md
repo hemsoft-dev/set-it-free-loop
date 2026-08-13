@@ -80,6 +80,12 @@ See [CATALOG.md](CATALOG.md) for all available workflows, tiers, and expected ou
 Reviewer installation, recovery, and optional gating are documented in
 [docs/SFL-REVIEWER.md](docs/SFL-REVIEWER.md).
 
+For the private HemSoft CLI path, build the repository-owned source with
+`.\gh-sfl\build.ps1 -NoInstall` or install it with
+`.\deployment\scripts\install-gh-sfl-hemsoft.ps1`. No local Relias checkout is
+required. `gh sfl init --repo HemSoft/private-repository` defaults to the
+reviewer-only tier and opens a deployment pull request.
+
 ---
 
 ## Versioning
