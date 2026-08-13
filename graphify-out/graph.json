@@ -538,8 +538,8 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_provider",
-      "community": 73,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "provider"
     },
     {
@@ -549,8 +549,8 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_provider_type",
-      "community": 73,
-      "community_name": "properties",
+      "community": 30,
+      "community_name": "enum",
       "norm_label": "type"
     },
     {
@@ -813,8 +813,8 @@
       "source_location": "L60",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_arguments",
-      "community": 74,
-      "community_name": "requiredSecretsAnyOf",
+      "community": 73,
+      "community_name": "properties",
       "norm_label": "arguments"
     },
     {
@@ -824,8 +824,8 @@
       "source_location": "L61",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_arguments_type",
-      "community": 74,
-      "community_name": "requiredSecretsAnyOf",
+      "community": 73,
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -13154,7 +13154,7 @@
       "label": "Publish a prerelease",
       "file_type": "document",
       "source_file": "docs/RELEASING.md",
-      "source_location": "L41",
+      "source_location": "L43",
       "_origin": "ast",
       "id": "docs_releasing_publish_a_prerelease",
       "community": 95,
@@ -13165,7 +13165,7 @@
       "label": "Install and verify",
       "file_type": "document",
       "source_file": "docs/RELEASING.md",
-      "source_location": "L65",
+      "source_location": "L67",
       "_origin": "ast",
       "id": "docs_releasing_install_and_verify",
       "community": 95,
@@ -34570,7 +34570,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "docs/RELEASING.md",
-      "source_location": "L65",
+      "source_location": "L67",
       "weight": 1.0,
       "_origin": "ast",
       "source": "docs_releasing_private_hemsoft_release_contract",
@@ -34603,7 +34603,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "docs/RELEASING.md",
-      "source_location": "L41",
+      "source_location": "L43",
       "weight": 1.0,
       "_origin": "ast",
       "source": "docs_releasing_private_hemsoft_release_contract",
@@ -34986,5 +34986,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "1ebb9c1aa02ecc2ebc22d6af097d4a3ebabd2d96"
+  "built_at_commit": "6454d3bb1129cd6e792f0b6b84b030c6793ec77f"
 }

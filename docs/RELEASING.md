@@ -35,8 +35,10 @@ a tag-only ruleset because the checksum file and binaries become immutable too.
 After verifying the admin-only setting, the script records
 `SFL_IMMUTABLE_RELEASES_ENABLED=true` as the workflow's preflight bridge. The
 workflow token cannot read GitHub's repository Administration endpoint; the
-signed release and per-asset attestations remain the authoritative post-publish
-proof.
+published release object's `immutable` state, signed release attestation, and
+per-asset attestations remain the authoritative post-publish proof. If GitHub
+reports a published release as mutable, the workflow deletes that release and
+its tag, verifies both are gone, and fails before installation.
 
 ## Publish a prerelease
 

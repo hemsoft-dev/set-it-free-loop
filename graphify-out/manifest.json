@@ -430,8 +430,8 @@
     "semantic_hash": ""
   },
   "deployment/tests/test-release-metadata.ps1": {
-    "mtime": 1786623984.546645,
-    "ast_hash": "3ce555c9f51182a1b5b6f5e3ea6a40cc",
+    "mtime": 1786624315.5396473,
+    "ast_hash": "10ed91f5d9ed5f7fd01eb404239aa4fe",
     "semantic_hash": ""
   },
   "deployment/tests/line-ending-test-helpers.ps1": {
@@ -640,13 +640,13 @@
     "semantic_hash": ""
   },
   ".github/workflows/publish-private-prerelease.yml": {
-    "mtime": 1786623984.5461242,
-    "ast_hash": "db3d63faf4540d7d62020d45caf0b4f8",
+    "mtime": 1786624315.5386481,
+    "ast_hash": "cc30879b0c37d04f5baa09ad854dce3d",
     "semantic_hash": ""
   },
   "docs/RELEASING.md": {
-    "mtime": 1786623984.5471752,
-    "ast_hash": "e23371b9305783db99b6c97cfa2ac771",
+    "mtime": 1786624315.5396473,
+    "ast_hash": "409dc2c72ca9451e8f6e9313e2512ce3",
     "semantic_hash": ""
   }
 }

@@ -1,7 +1,7 @@
 # Graph Report - issue-63-release-preflight  (2026-08-13)
 
 ## Corpus Check
-- 105 files · ~196,195 words
+- 105 files · ~196,343 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1ebb9c1a`
+- Built from commit: `6454d3bb`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -243,8 +243,8 @@ Cohesion: 0.14
 Nodes (13): Conditional Evidence Checks, Full-Spectrum PR Review, HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route., HemSoft SFL reviewer platform v2, Pass 1: 🔒 Security Review, Pass 2: ✅ Accuracy & Reliability Review, Pass 3: 🧰 Quality & Maintainability Review, Required Configuration (+5 more)
 
 ### Community 30 - "enum"
-Cohesion: 0.25
-Nodes (8): enum, claude, codex, copilot, crush, gemini, opencode, pi
+Cohesion: 0.20
+Nodes (10): provider, enum, type, claude, codex, copilot, crush, gemini (+2 more)
 
 ### Community 31 - "HemSoft SFL Pull Request Reviewer"
 Cohesion: 0.22
@@ -360,11 +360,11 @@ Nodes (7): T, TestDispatchDedupFixtures(), T, TestReviewEffortResolutionFixtures
 
 ### Community 73 - "properties"
 Cohesion: 0.22
-Nodes (9): properties, minLength, type, minLength, type, model, profile, provider (+1 more)
+Nodes (9): properties, type, minLength, type, minLength, type, arguments, model (+1 more)
 
 ### Community 74 - "requiredSecretsAnyOf"
-Cohesion: 0.25
-Nodes (9): items, type, minLength, type, arguments, requiredSecretsAnyOf, items, type (+1 more)
+Cohesion: 0.33
+Nodes (7): items, minLength, type, requiredSecretsAnyOf, items, type, uniqueItems
 
 ### Community 75 - "properties"
 Cohesion: 0.22
