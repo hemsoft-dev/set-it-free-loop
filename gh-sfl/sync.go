@@ -51,13 +51,21 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		shortLatestSHA = shortLatestSHA[:12]
 	}
 
-	if manifest.SourceSHA == latestSHA {
-		fmt.Fprintf(stdout, "  ✓ Already up to date (version %s, SHA %s)\n", latestVersion, shortLatestSHA)
-		return nil
+	workflows, err := workflowsForInstalledManifest(manifest)
+	if err != nil {
+		return fmt.Errorf("resolving installed workflows: %w", err)
 	}
-
-	fmt.Fprintf(stdout, "  Updating: %s → %s\n", manifest.Version, release.Version)
-	if manifest.SourceSHA != "" && latestSHA != "" {
+	installedTier := canonicalDeploymentTier(manifest.Tier)
+	if manifest.SourceSHA == latestSHA {
+		if opts.dryRun {
+			fmt.Fprintf(stdout, "  ✓ Source revision is current (version %s, SHA %s)\n", latestVersion, shortLatestSHA)
+		} else {
+			fmt.Fprintf(stdout, "  ✓ Source revision is current (version %s, SHA %s); verifying managed files for drift\n\n", latestVersion, shortLatestSHA)
+		}
+	} else {
+		fmt.Fprintf(stdout, "  Updating: %s → %s\n", manifest.Version, release.Version)
+	}
+	if manifest.SourceSHA != latestSHA && manifest.SourceSHA != "" && latestSHA != "" {
 		currentSHA := manifest.SourceSHA
 		if len(currentSHA) > 12 {
 			currentSHA = currentSHA[:12]
@@ -77,11 +85,6 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	// Collect all files to deploy
 	fileMap := make(map[string]string)
-
-	workflows := tierWorkflows[manifest.Tier]
-	if workflows == nil {
-		workflows = tierWorkflows["full"]
-	}
 
 	// Include add-on workflows from manifest
 	addonFiles := addonWorkflowFiles(manifest.Addons)
@@ -115,7 +118,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "    %s ✓ (add-on)\n", wf)
 	}
 
-	if manifest.Tier != "reviewer" {
+	if installedTier != "reviewer" {
 		fmt.Fprintf(stdout, "\n  Fetching governance files...\n")
 		for _, gf := range governanceFiles {
 			content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, gf, sourceRef)
@@ -131,6 +134,10 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Update manifest
 	manifest.Version = release.Version
 	manifest.SourceSHA = latestSHA
+	if manifest.Tier == "review" {
+		manifest.Tier = "reviewer"
+		manifest.Components = tierComponents["reviewer"]
+	}
 	manifest.DeployedAt = time.Now().UTC()
 	manifest.DeployedBy = getCurrentUser()
 	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
@@ -160,7 +167,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 
 	// Sync labels
-	if manifest.Tier != "reviewer" {
+	if installedTier != "reviewer" {
 		fmt.Fprintf(stdout, "\n  Syncing labels...\n")
 		labelsJSON, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, "deployment/governance/labels.json", sourceRef)
 		if fetchErr == nil {

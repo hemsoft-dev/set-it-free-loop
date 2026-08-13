@@ -119,7 +119,7 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) error {
 			styler.colored("!", termenv.ANSIYellow).styled)
 	} else if manifest.Version != release.Version || manifest.SourceSHA != release.SHA {
 		updateCommand := "gh sfl sync"
-		if manifest.Tier == "reviewer" {
+		if canonicalDeploymentTier(manifest.Tier) == "reviewer" {
 			updateCommand = "gh sfl init"
 		}
 		fmt.Fprintf(stdout, "  %s Update available — run '%s --repo %s/%s'\n",
@@ -129,7 +129,7 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) error {
 			styler.colored("✓", termenv.ANSIGreen).styled, release.Ref)
 	}
 
-	if manifest.Tier == "reviewer" {
+	if canonicalDeploymentTier(manifest.Tier) == "reviewer" {
 		printReviewerHealth(stdout, styler, owner, repo, manifest)
 		fmt.Fprintln(stdout)
 		return nil
@@ -269,7 +269,8 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) error {
 func expectedWorkflowFiles(manifest *sflManifest) []string {
 	seen := make(map[string]struct{})
 	var files []string
-	for _, workflow := range append(tierWorkflows[manifest.Tier], addonWorkflowFiles(manifest.Addons)...) {
+	workflows, _ := workflowsForInstalledManifest(manifest)
+	for _, workflow := range append(workflows, addonWorkflowFiles(manifest.Addons)...) {
 		if _, exists := seen[workflow]; exists {
 			continue
 		}

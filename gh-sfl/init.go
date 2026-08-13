@@ -89,6 +89,40 @@ var tierComponents = map[string][]string{
 	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security", "pr-analyzer-testing", "pr-fixer", "pr-promoter", "sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
 }
 
+func canonicalDeploymentTier(tier string) string {
+	if tier == "review" {
+		return "reviewer"
+	}
+	return tier
+}
+
+func workflowsForInstalledManifest(manifest *sflManifest) ([]string, error) {
+	tier := canonicalDeploymentTier(manifest.Tier)
+	if workflows, ok := tierWorkflows[tier]; ok {
+		return workflows, nil
+	}
+	if tier != "custom" {
+		return nil, fmt.Errorf("unsupported installed SFL tier %q", manifest.Tier)
+	}
+
+	components := make(map[string]struct{}, len(manifest.Components))
+	for _, component := range manifest.Components {
+		components[component] = struct{}{}
+	}
+	var workflows []string
+	for _, workflow := range tierWorkflows["full"] {
+		component := strings.TrimSuffix(strings.TrimSuffix(workflow, ".yml"), ".md")
+		component = strings.TrimSuffix(component, ".lock")
+		if _, ok := components[component]; ok {
+			workflows = append(workflows, workflow)
+		}
+	}
+	if len(workflows) == 0 {
+		return nil, fmt.Errorf("custom SFL manifest has no recognized workflow components")
+	}
+	return workflows, nil
+}
+
 var governanceFiles = []string{
 	"deployment/governance/policy.md",
 	"deployment/governance/labels.json",
@@ -155,7 +189,7 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil && !isNotFoundError(err) {
 		return fmt.Errorf("checking existing SFL deployment in %s/%s: %w", owner, repo, err)
 	}
-	if err := validateInitTierTransition(existingManifest, opts); err != nil {
+	if err := validateInitTierTransition(existingManifest, opts, owner+"/"+repo); err != nil {
 		return err
 	}
 
@@ -317,13 +351,13 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	return nil
 }
 
-func validateInitTierTransition(existing *sflManifest, opts initOptions) error {
-	if existing == nil || existing.Tier == "reviewer" || opts.tierExplicit {
+func validateInitTierTransition(existing *sflManifest, opts initOptions, target string) error {
+	if existing == nil || canonicalDeploymentTier(existing.Tier) == "reviewer" || opts.tierExplicit {
 		return nil
 	}
 	return fmt.Errorf(
 		"%s has an existing manifest with tier %q; use 'gh sfl sync' to preserve it or rerun init with '--tier reviewer' to migrate it explicitly",
-		opts.repo,
+		target,
 		existing.Tier,
 	)
 }

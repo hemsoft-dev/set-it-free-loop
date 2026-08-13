@@ -196,41 +196,6 @@ func validateDeploymentTarget(owner, repo string) error {
 	return nil
 }
 
-// pushFileToRepo creates or updates a file in a repo via the Contents API.
-// sha should be empty for new files, or the blob SHA for updates.
-func pushFileToRepo(owner, repo, path, content, message, branch, sha string) error {
-	args := []string{
-		"api", fmt.Sprintf("repos/%s/%s/contents/%s", owner, repo, path),
-		"--method", "PUT",
-		"-f", "message=" + message,
-		"-f", "content=" + content,
-	}
-	if branch != "" {
-		args = append(args, "-f", "branch="+branch)
-	}
-	if sha != "" {
-		args = append(args, "-f", "sha="+sha)
-	}
-
-	_, stderrBuf, err := gh.Exec(args...)
-	if err != nil {
-		return fmt.Errorf("pushing %s: %s: %w", path, stderrBuf.String(), err)
-	}
-	return nil
-}
-
-// getFileSHA retrieves the blob SHA for a file, or empty string if not found.
-func getFileSHA(owner, repo, path string) string {
-	stdoutBuf, _, err := gh.Exec(
-		"api", fmt.Sprintf("repos/%s/%s/contents/%s", owner, repo, path),
-		"--jq", ".sha",
-	)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(stdoutBuf.String())
-}
-
 // ensureRepoVariable creates or updates a repository Actions variable.
 func ensureRepoVariable(owner, repo, name, value string) error {
 	// Try PATCH first (update existing)

@@ -139,7 +139,7 @@ func applyHemSoftOwnership(fileMap map[string]string) error {
 		if err := json.Unmarshal([]byte(manifestJSON), &manifest); err != nil {
 			return fmt.Errorf("parsing deployment manifest: %w", err)
 		}
-		if manifest.Tier == "reviewer" {
+		if canonicalDeploymentTier(manifest.Tier) == "reviewer" {
 			return nil
 		}
 	}

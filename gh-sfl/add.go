@@ -48,28 +48,30 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Check if addon workflows are already present via tier.
 	// Require ALL addon workflow files to be in the tier before short-circuiting,
 	// since partial overlap means the addon isn't fully covered by the tier.
-	if tierWFs, ok := tierWorkflows[manifest.Tier]; ok {
-		addonWFs := addonWorkflows[opts.addon]
-		if len(addonWFs) > 0 {
-			allIncluded := true
-			for _, awf := range addonWFs {
-				found := false
-				for _, twf := range tierWFs {
-					if twf == awf {
-						found = true
-						break
-					}
-				}
-				if !found {
-					allIncluded = false
+	tierWFs, err := workflowsForInstalledManifest(manifest)
+	if err != nil {
+		return fmt.Errorf("resolving installed workflows: %w", err)
+	}
+	addonWFs := addonWorkflows[opts.addon]
+	if len(addonWFs) > 0 {
+		allIncluded := true
+		for _, awf := range addonWFs {
+			found := false
+			for _, twf := range tierWFs {
+				if twf == awf {
+					found = true
 					break
 				}
 			}
-			if allIncluded {
-				fmt.Fprintf(stdout, "  ✓ Add-on %q is already included in the %q tier for %s/%s\n", opts.addon, manifest.Tier, owner, repo)
-				fmt.Fprintf(stdout, "    Hint: run 'gh sfl sync --repo %s/%s' to ensure tier workflows are up to date\n", owner, repo)
-				return nil
+			if !found {
+				allIncluded = false
+				break
 			}
+		}
+		if allIncluded {
+			fmt.Fprintf(stdout, "  ✓ Add-on %q is already included in the %q tier for %s/%s\n", opts.addon, manifest.Tier, owner, repo)
+			fmt.Fprintf(stdout, "    Hint: run 'gh sfl sync --repo %s/%s' to ensure tier workflows are up to date\n", owner, repo)
+			return nil
 		}
 	}
 

@@ -17,7 +17,7 @@
     },
     "tier": {
       "type": "string",
-      "enum": ["reviewer", "minimal", "standard", "full"],
+      "enum": ["reviewer", "review", "minimal", "standard", "full", "custom"],
       "description": "The deployment tier selected during installation."
     },
     "source": {

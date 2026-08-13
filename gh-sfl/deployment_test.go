@@ -415,14 +415,74 @@ func TestInitRequiresExplicitReviewerMigrationFromLegacyTier(t *testing.T) {
 	opts := initOptions{repo: "owner/repo", tier: "reviewer"}
 	for _, tier := range []string{"full", "", "unknown"} {
 		existing := &sflManifest{Tier: tier}
-		if err := validateInitTierTransition(existing, opts); err == nil ||
+		if err := validateInitTierTransition(existing, opts, "owner/repo"); err == nil ||
 			!strings.Contains(err.Error(), "--tier reviewer") {
 			t.Fatalf("validateInitTierTransition(tier=%q) = %v, want explicit migration error", tier, err)
 		}
 	}
 	opts.tierExplicit = true
-	if err := validateInitTierTransition(&sflManifest{Tier: "full"}, opts); err != nil {
+	if err := validateInitTierTransition(&sflManifest{Tier: "full"}, opts, "owner/repo"); err != nil {
 		t.Fatalf("explicit reviewer migration rejected: %v", err)
+	}
+	if err := validateInitTierTransition(&sflManifest{Tier: "review"}, opts, "owner/repo"); err != nil {
+		t.Fatalf("legacy review tier was not recognized as reviewer: %v", err)
+	}
+	if err := validateInitTierTransition(&sflManifest{Tier: "full"}, initOptions{tier: "reviewer"}, "HemSoft/consumer"); err == nil ||
+		!strings.Contains(err.Error(), "HemSoft/consumer") {
+		t.Fatalf("tier transition error does not identify resolved target: %v", err)
+	}
+}
+
+func TestInstalledManifestWorkflowResolutionFailsClosed(t *testing.T) {
+	reviewer := tierWorkflows["reviewer"]
+	for _, tier := range []string{"reviewer", "review"} {
+		got, err := workflowsForInstalledManifest(&sflManifest{Tier: tier})
+		if err != nil {
+			t.Fatalf("workflowsForInstalledManifest(tier=%q): %v", tier, err)
+		}
+		if !slices.Equal(got, reviewer) {
+			t.Errorf("workflowsForInstalledManifest(tier=%q) = %v, want %v", tier, got, reviewer)
+		}
+	}
+
+	custom, err := workflowsForInstalledManifest(&sflManifest{
+		Tier:       "custom",
+		Components: []string{"repo-audit", "sfl-pr-review"},
+	})
+	if err != nil {
+		t.Fatalf("custom workflow resolution: %v", err)
+	}
+	for _, want := range []string{"repo-audit.md", "sfl-pr-review.md", "sfl-pr-review.lock.yml"} {
+		if !slices.Contains(custom, want) {
+			t.Errorf("custom workflows missing %q: %v", want, custom)
+		}
+	}
+
+	for _, manifest := range []*sflManifest{
+		{Tier: "unknown"},
+		{Tier: "custom", Components: []string{"not-a-managed-workflow"}},
+	} {
+		if _, err := workflowsForInstalledManifest(manifest); err == nil {
+			t.Errorf("workflowsForInstalledManifest(%+v) unexpectedly succeeded", manifest)
+		}
+	}
+}
+
+func TestSyncChecksManagedFilesWhenSourceRevisionIsCurrent(t *testing.T) {
+	source := string(readContractFile(t, "sync.go"))
+	if !strings.Contains(source, "verifying managed files for drift") {
+		t.Error("sync does not report drift verification for a current source revision")
+	}
+	blockStart := strings.Index(source, "if manifest.SourceSHA == latestSHA {")
+	if blockStart < 0 {
+		t.Fatal("sync does not branch on a current source revision")
+	}
+	blockEnd := strings.Index(source[blockStart:], "\n\t}")
+	if blockEnd < 0 {
+		t.Fatal("could not find the end of the current source revision branch")
+	}
+	if strings.Contains(source[blockStart:blockStart+blockEnd], "return nil") {
+		t.Error("sync still returns before checking managed file drift")
 	}
 }
 
@@ -918,7 +978,10 @@ func TestReviewerAppIssuesReportsRepositoryOutsideSelection(t *testing.T) {
 }
 
 func TestForceUninstallRemovesEveryManagedDeploymentPath(t *testing.T) {
-	files := uninstallFiles(nil, true)
+	files, err := uninstallFiles(nil, true)
+	if err != nil {
+		t.Fatalf("uninstallFiles(force): %v", err)
+	}
 	for _, want := range []string{
 		".github/workflows/sfl-pr-review-auto.yml",
 		".sfl/governance/policy.md",
@@ -933,6 +996,22 @@ func TestForceUninstallRemovesEveryManagedDeploymentPath(t *testing.T) {
 		if !slices.Contains(files, managed) {
 			t.Errorf("force uninstall files missing managed path %q", managed)
 		}
+	}
+}
+
+func TestUninstallUsesManifestTierWithoutExpandingUnknownTiers(t *testing.T) {
+	legacyReview, err := uninstallFiles(&sflManifest{Tier: "review"}, false)
+	if err != nil {
+		t.Fatalf("uninstallFiles(review): %v", err)
+	}
+	if !slices.Contains(legacyReview, ".github/workflows/sfl-pr-review.md") {
+		t.Errorf("legacy review uninstall is missing reviewer workflow: %v", legacyReview)
+	}
+	if slices.Contains(legacyReview, ".github/workflows/pr-fixer.md") {
+		t.Errorf("legacy review uninstall expanded to full tier: %v", legacyReview)
+	}
+	if _, err := uninstallFiles(&sflManifest{Tier: "unknown"}, false); err == nil {
+		t.Error("unknown uninstall tier unexpectedly succeeded")
 	}
 }
 
@@ -1442,6 +1521,17 @@ func TestManifestUsesCanonicalSchemaAndReadsLegacyFields(t *testing.T) {
 	for _, property := range []string{"source", "sourceSha", "deployedBy", "addons"} {
 		if _, ok := schema.Properties[property]; !ok {
 			t.Errorf("manifest schema missing canonical property %q", property)
+		}
+	}
+	var tierProperty struct {
+		Enum []string `json:"enum"`
+	}
+	if err := json.Unmarshal(schema.Properties["tier"], &tierProperty); err != nil {
+		t.Fatalf("parse manifest tier schema: %v", err)
+	}
+	for _, tier := range []string{"reviewer", "review", "minimal", "standard", "full", "custom"} {
+		if !slices.Contains(tierProperty.Enum, tier) {
+			t.Errorf("manifest tier schema missing supported tier %q: %v", tier, tierProperty.Enum)
 		}
 	}
 }

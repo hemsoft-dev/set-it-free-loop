@@ -53,7 +53,10 @@ func runUninstall(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "Uninstalling SFL from %s/%s (tier: %s)\n\n", owner, repo, tier)
 
-	filesToRemove := uninstallFiles(manifest, forceFallback)
+	filesToRemove, err := uninstallFiles(manifest, forceFallback)
+	if err != nil {
+		return fmt.Errorf("resolving installed files: %w", err)
+	}
 
 	// Show what will be removed
 	fmt.Fprintf(stdout, "  Files to remove:\n")
@@ -162,7 +165,7 @@ func runUninstall(args []string, stdout io.Writer, stderr io.Writer) error {
 	return nil
 }
 
-func uninstallFiles(manifest *sflManifest, forceFallback bool) []string {
+func uninstallFiles(manifest *sflManifest, forceFallback bool) ([]string, error) {
 	paths := make(map[string]struct{})
 	add := func(path string) {
 		paths[path] = struct{}{}
@@ -175,9 +178,9 @@ func uninstallFiles(manifest *sflManifest, forceFallback bool) []string {
 		add(".sfl/sfl.json")
 		add(".sfl/sfl-config.yml")
 	} else {
-		workflows := tierWorkflows[manifest.Tier]
-		if workflows == nil {
-			workflows = tierWorkflows["full"]
+		workflows, err := workflowsForInstalledManifest(manifest)
+		if err != nil {
+			return nil, err
 		}
 		for _, workflow := range workflows {
 			add(".github/workflows/" + workflow)
@@ -186,7 +189,7 @@ func uninstallFiles(manifest *sflManifest, forceFallback bool) []string {
 			add(".github/workflows/" + workflow)
 		}
 		add(".sfl/sfl.json")
-		if manifest.Tier != "reviewer" {
+		if canonicalDeploymentTier(manifest.Tier) != "reviewer" {
 			add(".sfl/sfl-config.yml")
 			add(".sfl/governance/policy.md")
 			add(".sfl/governance/labels.json")
@@ -198,7 +201,7 @@ func uninstallFiles(manifest *sflManifest, forceFallback bool) []string {
 		result = append(result, path)
 	}
 	sort.Strings(result)
-	return result
+	return result, nil
 }
 
 func removeReviewerGatesForUninstall(
