@@ -47,6 +47,21 @@ needs Actions read/write, Contents read, Issues read/write, and Pull requests
 read/write for automatic dispatch, label handling, recovery, and SFL-owned
 review-thread management. It does not need repository administration.
 
+`gh sfl init`, `gh sfl sync`, and `gh sfl add pr-review` inspect only repository
+metadata and credential names; they never read secret values. Before preparing
+a reviewer deployment pull request, including a `pr-review` add-on deployment,
+they require a default branch, enabled GitHub Actions, the variable above, and
+both secrets above. A normal GitHub CLI OAuth token cannot inspect
+GitHub App installations owned by the `HemSoft` personal account, so App scope
+and permission-ceiling validation belongs to the App-authenticated credential
+bootstrap and remains a required rollout step.
+Repositories with a selected-actions policy must enable the policy's
+GitHub-owned-actions option; exact allowlist patterns are intentionally not a
+supported rollout policy because the compiled reviewer uses a changing set of
+SHA-pinned `actions/*` and `github/gh-aw-actions/*` actions.
+`gh sfl status` reports each missing prerequisite separately from package drift,
+gate posture, and reviewer-run health.
+
 ## Deployment
 
 Deploy through a reviewable pull request:
@@ -103,6 +118,22 @@ default branch. The wrapper detects that state, does not mint or dispatch, and
 reports a successful bootstrap gate. This exception ends as soon as the lock
 with exact `dispatch_id` correlation reaches the default branch. Configure
 branch protection only after that deployment is merged.
+
+The supported rollout order is:
+
+1. Install the App for the explicitly approved private repository and set the
+   required variable and secrets. The credential bootstrap must verify the
+   selected-repository scope and permission ceiling with App authentication.
+2. Run `gh sfl init` or `gh sfl sync` and merge its reviewed deployment PR.
+3. Run `gh sfl gate` to require the reviewer without replacing unrelated
+   repository rules.
+4. Open a smoke PR and require `gh sfl status` to show a successful reviewer
+   run, current manifest/files, healthy credentials/App, and the required gate.
+
+Maintainers who can change workflow files on the protected default branch are
+trusted in this first HemSoft rollout model. The reviewer prevents unreviewed
+pull-request heads from satisfying its gate; it does not attempt to defend
+against an authorized maintainer changing the trusted default-branch workflow.
 
 ## Automatic and explicit review
 
@@ -169,17 +200,14 @@ produce a duplicate review.
 
 ## Advisory and gated operation
 
-Deployment is advisory until branch protection requires the native
-`SFL Reviewer Approval` check. After the deployment PR is merged, enable strict
-gating with:
+Deployment is advisory until repository rules require the reviewer workflow and
+its native `SFL Reviewer Approval` freshness check. After the deployment PR is
+merged, enable strict gating with:
 
 ```powershell
-.\deployment\scripts\set-sfl-review-gate.ps1 `
-  -Repo HemSoft/private-repository
+gh sfl gate --repo HemSoft/private-repository
 ```
 
-Use `-DryRun` to inspect the payload. The helper preserves existing required
-checks when protection already exists, creates a minimal protection policy when
-it does not, pins the SFL context to GitHub Actions, and sets strict mode so the
-pull request must be current with the base branch. It intentionally refuses
-public or non-HemSoft repositories and does not manage organization rulesets.
+The command preserves unrelated rules, binds the required workflow to the
+consumer's default branch and repository ID, and requires a fresh native check
+from the SFL App. It intentionally refuses public or non-HemSoft repositories.

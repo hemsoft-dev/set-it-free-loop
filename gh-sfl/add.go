@@ -83,6 +83,11 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	// Fetch addon workflow files
 	workflows := addonWorkflows[opts.addon]
+	if workflowsIncludeReviewer(workflows) {
+		if err := assertReviewerRolloutReady(owner, repo, stdout); err != nil {
+			return err
+		}
+	}
 	fileMap := make(map[string]string)
 
 	fmt.Fprintf(stdout, "  Fetching %d workflow file(s)...\n", len(workflows))

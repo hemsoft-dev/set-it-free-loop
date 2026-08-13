@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 
@@ -50,13 +51,6 @@ type workflowRunSummary struct {
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	URL        string `json:"html_url"`
-}
-
-type appInstallation struct {
-	ID                  int64             `json:"id"`
-	AppSlug             string            `json:"app_slug"`
-	RepositorySelection string            `json:"repository_selection"`
-	Permissions         map[string]string `json:"permissions"`
 }
 
 // SFL state labels in priority order
@@ -129,8 +123,10 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) error {
 			styler.colored("✓", termenv.ANSIGreen).styled, release.Ref)
 	}
 
-	if canonicalDeploymentTier(manifest.Tier) == "reviewer" {
+	if manifestIncludesReviewer(manifest) {
 		printReviewerHealth(stdout, styler, owner, repo, manifest)
+	}
+	if canonicalDeploymentTier(manifest.Tier) == "reviewer" {
 		fmt.Fprintln(stdout)
 		return nil
 	}
@@ -247,6 +243,21 @@ func expectedWorkflowFiles(manifest *sflManifest) []string {
 	return files
 }
 
+func manifestIncludesReviewer(manifest *sflManifest) bool {
+	workflows, err := workflowsForInstalledManifest(manifest)
+	return err == nil && workflowsIncludeReviewer(workflows, addonWorkflowFiles(manifest.Addons))
+}
+
+func expectedReviewerWorkflowFiles(manifest *sflManifest) []string {
+	var files []string
+	for _, workflow := range expectedWorkflowFiles(manifest) {
+		if strings.HasPrefix(workflow, "sfl-pr-review") {
+			files = append(files, workflow)
+		}
+	}
+	return files
+}
+
 func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo string, manifest *sflManifest) {
 	fmt.Fprintf(stdout, "\n  Reviewer package:\n")
 	missing := 0
@@ -256,7 +267,7 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 		fmt.Fprintf(stdout, "    %s Manifest is missing immutable sourceSha\n",
 			styler.colored("✗", termenv.ANSIRed).styled)
 	}
-	for _, workflow := range expectedWorkflowFiles(manifest) {
+	for _, workflow := range expectedReviewerWorkflowFiles(manifest) {
 		path := ".github/workflows/" + workflow
 		content, err := fetchFileRaw(owner, repo, path, "")
 		switch {
@@ -288,20 +299,8 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 			styler.colored("✓", termenv.ANSIGreen).styled)
 	}
 
-	fmt.Fprintf(stdout, "\n  Reviewer App:\n")
-	appIssues, err := reviewerAppIssues(owner, repo)
-	if err != nil {
-		fmt.Fprintf(stdout, "    %s Could not inspect organization App installation: %v\n",
-			styler.colored("!", termenv.ANSIYellow).styled, err)
-	} else if len(appIssues) > 0 {
-		for _, issue := range appIssues {
-			fmt.Fprintf(stdout, "    %s %s\n",
-				styler.colored("✗", termenv.ANSIRed).styled, issue)
-		}
-	} else {
-		fmt.Fprintf(stdout, "    %s Selected-repository installation uses the reviewer permission contract\n",
-			styler.colored("✓", termenv.ANSIGreen).styled)
-	}
+	health, healthErr := inspectReviewerRollout(owner, repo)
+	printReviewerPrerequisites(stdout, styler, health, healthErr)
 
 	mode, ruleset, err := reviewerGatePosture(owner, repo)
 	fmt.Fprintf(stdout, "\n  Merge posture:\n")
@@ -324,8 +323,8 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 			fmt.Fprintf(stdout, "    %s Legacy SFL Reviewer Approval status check (%s); migrate to required workflow\n",
 				styler.colored("!", termenv.ANSIYellow).styled, ruleset)
 		default:
-			fmt.Fprintf(stdout, "    %s Advisory-only (default)\n",
-				styler.colored("✓", termenv.ANSIGreen).styled)
+			fmt.Fprintf(stdout, "    %s Advisory-only; required reviewer gate is missing\n",
+				styler.colored("✗", termenv.ANSIRed).styled)
 		}
 	}
 
@@ -350,118 +349,64 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 	}
 }
 
-func reviewerAppIssues(owner, repo string) ([]string, error) {
-	client, err := newRESTClient()
-	if err != nil {
-		return nil, err
+func printReviewerPrerequisites(
+	stdout io.Writer,
+	styler tableStyler,
+	health reviewerRolloutHealth,
+	healthErr error,
+) {
+	fmt.Fprintf(stdout, "\n  Reviewer App:\n")
+	if healthErr != nil {
+		fmt.Fprintf(stdout, "    %s Could not inspect reviewer rollout prerequisites: %v\n",
+			styler.colored("!", termenv.ANSIYellow).styled, healthErr)
+	} else if health.AppNotice != "" {
+		fmt.Fprintf(stdout, "    %s %s\n",
+			styler.colored("!", termenv.ANSIYellow).styled, health.AppNotice)
 	}
-	for pageNumber := 1; ; pageNumber++ {
-		var response struct {
-			Installations []appInstallation `json:"installations"`
+
+	fmt.Fprintf(stdout, "\n  Reviewer credentials and Actions:\n")
+	if healthErr != nil {
+		fmt.Fprintf(stdout, "    %s Could not inspect credential metadata or Actions state\n",
+			styler.colored("!", termenv.ANSIYellow).styled)
+	} else {
+		if health.DefaultBranch == "" {
+			fmt.Fprintf(stdout, "    %s Repository has no default branch\n",
+				styler.colored("✗", termenv.ANSIRed).styled)
+		} else {
+			fmt.Fprintf(stdout, "    %s Default branch: %s\n",
+				styler.colored("✓", termenv.ANSIGreen).styled, health.DefaultBranch)
 		}
-		requestPath := fmt.Sprintf("orgs/%s/installations?per_page=100&page=%d", owner, pageNumber)
-		if err := client.Get(requestPath, &response); err != nil {
-			return nil, err
+		if health.ActionsEnabled {
+			fmt.Fprintf(stdout, "    %s GitHub Actions enabled\n",
+				styler.colored("✓", termenv.ANSIGreen).styled)
+		} else {
+			fmt.Fprintf(stdout, "    %s GitHub Actions disabled\n",
+				styler.colored("✗", termenv.ANSIRed).styled)
 		}
-		for _, installation := range response.Installations {
-			if installation.AppSlug == "set-it-free-loop" {
-				issues := evaluateReviewerApp(installation)
-				if installation.RepositorySelection == "selected" {
-					included, includeErr := reviewerInstallationIncludesRepository(
-						client,
-						installation.ID,
-						owner,
-						repo,
-					)
-					if includeErr != nil {
-						return nil, includeErr
-					}
-					if !included {
-						issues = append(issues, fmt.Sprintf(
-							"App installation does not include %s/%s",
-							owner,
-							repo,
-						))
-					}
-				}
-				sort.Strings(issues)
-				return issues, nil
+		for _, issue := range health.ActionsIssues {
+			fmt.Fprintf(stdout, "    %s %s\n",
+				styler.colored("✗", termenv.ANSIRed).styled, issue)
+		}
+		for _, name := range reviewerRequiredVariables {
+			if slices.Contains(health.MissingVariables, name) {
+				fmt.Fprintf(stdout, "    %s Missing Actions variable %s\n",
+					styler.colored("✗", termenv.ANSIRed).styled, name)
+			} else {
+				fmt.Fprintf(stdout, "    %s Actions variable %s present\n",
+					styler.colored("✓", termenv.ANSIGreen).styled, name)
 			}
 		}
-		if len(response.Installations) < 100 {
-			break
-		}
-	}
-	return []string{"set-it-free-loop App is not installed for this organization"}, nil
-}
-
-func reviewerInstallationIncludesRepository(
-	client restAPI,
-	installationID int64,
-	owner, repo string,
-) (bool, error) {
-	if installationID <= 0 {
-		return false, fmt.Errorf("set-it-free-loop App installation has no ID")
-	}
-	for pageNumber := 1; ; pageNumber++ {
-		var response struct {
-			Repositories []struct {
-				Name     string `json:"name"`
-				FullName string `json:"full_name"`
-			} `json:"repositories"`
-		}
-		requestPath := fmt.Sprintf(
-			"user/installations/%d/repositories?per_page=100&page=%d",
-			installationID,
-			pageNumber,
-		)
-		if err := client.Get(requestPath, &response); err != nil {
-			return false, fmt.Errorf("listing repositories for reviewer App installation: %w", err)
-		}
-		for _, repository := range response.Repositories {
-			if strings.EqualFold(repository.Name, repo) ||
-				strings.EqualFold(repository.FullName, owner+"/"+repo) {
-				return true, nil
+		for _, name := range reviewerRequiredSecrets {
+			if slices.Contains(health.MissingSecrets, name) {
+				fmt.Fprintf(stdout, "    %s Missing Actions secret %s\n",
+					styler.colored("✗", termenv.ANSIRed).styled, name)
+			} else {
+				fmt.Fprintf(stdout, "    %s Actions secret %s present\n",
+					styler.colored("✓", termenv.ANSIGreen).styled, name)
 			}
 		}
-		if len(response.Repositories) < 100 {
-			return false, nil
-		}
-	}
-}
-
-func evaluateReviewerApp(installation appInstallation) []string {
-	var issues []string
-	if installation.RepositorySelection != "selected" {
-		issues = append(issues, "App must use selected repositories, not "+installation.RepositorySelection)
 	}
 
-	allowed := map[string]string{
-		"actions":       "write",
-		"checks":        "read",
-		"contents":      "read",
-		"issues":        "write",
-		"metadata":      "read",
-		"pull_requests": "write",
-	}
-	for permission, access := range installation.Permissions {
-		maximum, ok := allowed[permission]
-		if !ok {
-			issues = append(issues, fmt.Sprintf("unexpected %s permission (%s)", permission, access))
-			continue
-		}
-		if maximum == "read" && access == "write" {
-			issues = append(issues, fmt.Sprintf("%s permission exceeds reviewer maximum (%s)", permission, access))
-		}
-	}
-	for permission, required := range allowed {
-		actual := installation.Permissions[permission]
-		if actual == "" || (required == "write" && actual != "write") {
-			issues = append(issues, fmt.Sprintf("%s permission is %q, reviewer requires %s", permission, actual, required))
-		}
-	}
-	sort.Strings(issues)
-	return issues
 }
 
 func reviewerGatePosture(owner, repo string) (mode, rulesetName string, err error) {

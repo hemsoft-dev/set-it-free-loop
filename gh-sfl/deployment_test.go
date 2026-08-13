@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -24,38 +23,79 @@ import (
 )
 
 type fakeREST struct {
-	openPRURL                   string
-	openPRPage                  int
-	openPRBranch                string
-	openPRBase                  string
-	manifestContent             string
-	fileContents                map[string]string
-	base64LineBreaks            bool
-	commitSHA                   string
-	installationPages           [][]appInstallation
-	installationRepositoryPages [][]string
-	rulesetPages                [][]repositoryRuleset
-	rulesetDetails              map[int64]repositoryRuleset
-	rulesetDetailSequences      map[int64][]repositoryRuleset
-	rulesetDetailReads          map[int64]int
-	deleteErrors                map[string]error
-	postErrors                  map[string]error
-	variableExists              bool
-	variableGetError            error
-	labelExists                 map[string]bool
-	labelGetErrors              map[string]error
-	gets                        []string
-	posts                       []string
-	puts                        []string
-	putETags                    []string
-	patches                     []string
-	deletes                     []string
-	deleteETags                 []string
+	openPRURL                 string
+	openPRPage                int
+	openPRBranch              string
+	openPRBase                string
+	manifestContent           string
+	fileContents              map[string]string
+	base64LineBreaks          bool
+	commitSHA                 string
+	repositoryDefaultBranch   string
+	actionsEnabled            bool
+	actionsAllowed            string
+	githubOwnedActionsAllowed bool
+	actionVariablePages       [][]string
+	actionSecretPages         [][]string
+	rulesetPages              [][]repositoryRuleset
+	rulesetDetails            map[int64]repositoryRuleset
+	rulesetDetailSequences    map[int64][]repositoryRuleset
+	rulesetDetailReads        map[int64]int
+	deleteErrors              map[string]error
+	postErrors                map[string]error
+	variableExists            bool
+	variableGetError          error
+	labelExists               map[string]bool
+	labelGetErrors            map[string]error
+	gets                      []string
+	posts                     []string
+	puts                      []string
+	putETags                  []string
+	patches                   []string
+	deletes                   []string
+	deleteETags               []string
 }
 
 func (f *fakeREST) Get(path string, response interface{}) error {
 	f.gets = append(f.gets, path)
 	switch {
+	case strings.HasSuffix(path, "/actions/permissions/selected-actions"):
+		return decodeTestResponse(response, map[string]any{
+			"github_owned_allowed": f.githubOwnedActionsAllowed,
+		})
+	case strings.HasSuffix(path, "/actions/permissions"):
+		return decodeTestResponse(response, map[string]any{
+			"enabled":         f.actionsEnabled,
+			"allowed_actions": f.actionsAllowed,
+		})
+	case strings.Contains(path, "/actions/variables?"):
+		page := 0
+		if strings.Contains(path, "page=2") {
+			page = 1
+		}
+		var names []string
+		if page < len(f.actionVariablePages) {
+			names = f.actionVariablePages[page]
+		}
+		variables := make([]map[string]string, 0, len(names))
+		for _, name := range names {
+			variables = append(variables, map[string]string{"name": name})
+		}
+		return decodeTestResponse(response, map[string]any{"variables": variables})
+	case strings.Contains(path, "/actions/secrets?"):
+		page := 0
+		if strings.Contains(path, "page=2") {
+			page = 1
+		}
+		var names []string
+		if page < len(f.actionSecretPages) {
+			names = f.actionSecretPages[page]
+		}
+		secrets := make([]map[string]string, 0, len(names))
+		for _, name := range names {
+			secrets = append(secrets, map[string]string{"name": name})
+		}
+		return decodeTestResponse(response, map[string]any{"secrets": secrets})
 	case strings.Contains(path, "/labels/"):
 		if err := f.labelGetErrors[path]; err != nil {
 			return err
@@ -72,33 +112,6 @@ func (f *fakeREST) Get(path string, response interface{}) error {
 			return &api.HTTPError{StatusCode: http.StatusNotFound}
 		}
 		return decodeTestResponse(response, map[string]string{"name": "SFL_ENABLED"})
-	case strings.Contains(path, "/repositories?") && strings.Contains(path, "user/installations/"):
-		page := 0
-		if strings.Contains(path, "page=2") {
-			page = 1
-		}
-		var names []string
-		if page < len(f.installationRepositoryPages) {
-			names = f.installationRepositoryPages[page]
-		}
-		repositories := make([]map[string]string, 0, len(names))
-		for _, name := range names {
-			repositories = append(repositories, map[string]string{
-				"name":      name,
-				"full_name": "owner/" + name,
-			})
-		}
-		return decodeTestResponse(response, map[string]any{"repositories": repositories})
-	case strings.Contains(path, "/installations?"):
-		page := 0
-		if strings.Contains(path, "page=2") {
-			page = 1
-		}
-		var installations []appInstallation
-		if page < len(f.installationPages) {
-			installations = f.installationPages[page]
-		}
-		return decodeTestResponse(response, map[string]any{"installations": installations})
 	case strings.Contains(path, "/rulesets?"):
 		page := 0
 		if strings.Contains(path, "page=2") {
@@ -192,6 +205,10 @@ func (f *fakeREST) Get(path string, response interface{}) error {
 	case strings.Contains(path, "/git/ref/heads/"):
 		return decodeTestResponse(response, map[string]any{
 			"object": map[string]string{"sha": "base-sha"},
+		})
+	case strings.HasPrefix(path, "repos/") && strings.Count(path, "/") == 2:
+		return decodeTestResponse(response, map[string]string{
+			"default_branch": f.repositoryDefaultBranch,
 		})
 	default:
 		return fmt.Errorf("unexpected GET %s", path)
@@ -517,6 +534,8 @@ func TestAddUsesPinnedSourceAndMergesEnginePolicy(t *testing.T) {
 		"fullCommitSHAPattern.MatchString(manifest.SourceSHA)",
 		"srcPath, manifest.SourceSHA",
 		"renderHemSoftWorkflow(wf, content, manifest.Version)",
+		"workflowsIncludeReviewer(workflows)",
+		"assertReviewerRolloutReady(owner, repo, stdout)",
 		"mergeHemSoftEnginePolicyManifest(",
 		`deployViaPullRequest(owner, repo, defaultBranch, "add", fileMap, commitMsg, false, stdout)`,
 	} {
@@ -769,6 +788,49 @@ func TestReviewerHealthUsesManifestPackageAndVersionMarkers(t *testing.T) {
 	source := "SFL_CLI_VERSION: " + sflVersionPlaceholder
 	if got := renderWorkflow(source, manifest.Version); !strings.Contains(got, "6.5.1") {
 		t.Errorf("renderWorkflow() did not stamp manifest version: %q", got)
+	}
+}
+
+func TestReviewerHealthCoversEveryTierContainingReviewer(t *testing.T) {
+	custom := &sflManifest{
+		Tier:       "custom",
+		Components: []string{"labels", "sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
+	}
+	for name, manifest := range map[string]*sflManifest{
+		"reviewer": {Tier: "reviewer"},
+		"full":     {Tier: "full"},
+		"custom":   custom,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if !manifestIncludesReviewer(manifest) {
+				t.Fatalf("manifestIncludesReviewer(%s) = false", name)
+			}
+			want := []string{
+				"sfl-pr-review-auto.yml",
+				"sfl-pr-review-recovery.yml",
+				"sfl-pr-review.lock.yml",
+				"sfl-pr-review.md",
+			}
+			if got := expectedReviewerWorkflowFiles(manifest); !slices.Equal(got, want) {
+				t.Fatalf("expectedReviewerWorkflowFiles(%s) = %v, want %v", name, got, want)
+			}
+		})
+	}
+	if manifestIncludesReviewer(&sflManifest{Tier: "minimal"}) {
+		t.Fatal("minimal tier unexpectedly includes reviewer health")
+	}
+	addonManifest := &sflManifest{Tier: "standard", Addons: []string{"pr-review"}}
+	if !manifestIncludesReviewer(addonManifest) {
+		t.Fatal("pr-review add-on did not enable reviewer health")
+	}
+	wantAddon := []string{
+		"sfl-pr-review-auto.yml",
+		"sfl-pr-review-recovery.yml",
+		"sfl-pr-review.lock.yml",
+		"sfl-pr-review.md",
+	}
+	if got := expectedReviewerWorkflowFiles(addonManifest); !slices.Equal(got, wantAddon) {
+		t.Fatalf("reviewer add-on files = %v, want %v", got, wantAddon)
 	}
 }
 
@@ -1123,106 +1185,213 @@ func legacyReviewerRuleset(id int64, name string) repositoryRuleset {
 	return ruleset
 }
 
-func TestEvaluateReviewerApp(t *testing.T) {
-	healthy := appInstallation{
-		AppSlug:             "set-it-free-loop",
-		RepositorySelection: "selected",
-		Permissions: map[string]string{
-			"actions":       "write",
-			"checks":        "read",
-			"contents":      "read",
-			"issues":        "write",
-			"metadata":      "read",
-			"pull_requests": "write",
-		},
+func TestInspectReviewerRolloutAcceptsHealthyPrivateConsumer(t *testing.T) {
+	client := &fakeREST{
+		repositoryDefaultBranch: "main",
+		actionsEnabled:          true,
+		actionsAllowed:          "all",
+		actionVariablePages:     [][]string{{"SFL_APP_CLIENT_ID"}},
+		actionSecretPages:       [][]string{{"SFL_APP_PRIVATE_KEY", "OPENROUTER_API_KEY"}},
 	}
-	if issues := evaluateReviewerApp(healthy); len(issues) != 0 {
-		t.Errorf("healthy reviewer App issues = %v", issues)
+	health, err := inspectReviewerRolloutWithClient(client, "owner", "repo")
+	if err != nil {
+		t.Fatalf("inspectReviewerRolloutWithClient() unexpected error: %v", err)
 	}
+	if issues := health.issues(); len(issues) != 0 {
+		t.Fatalf("healthy rollout issues = %v", issues)
+	}
+	if len(client.posts)+len(client.puts)+len(client.patches)+len(client.deletes) != 0 {
+		t.Fatalf("read-only preflight mutated repository: %+v", client)
+	}
+}
 
-	unsafe := healthy
-	unsafe.RepositorySelection = "all"
-	unsafe.Permissions = maps.Clone(healthy.Permissions)
-	unsafe.Permissions["checks"] = "write"
-	unsafe.Permissions["workflows"] = "write"
-	issues := evaluateReviewerApp(unsafe)
-	joined := strings.Join(issues, "\n")
+func TestInspectReviewerRolloutReportsEveryDistinctFault(t *testing.T) {
+	client := &fakeREST{
+		actionsAllowed:      "local_only",
+		actionVariablePages: [][]string{{}},
+		actionSecretPages:   [][]string{{}},
+	}
+	health, err := inspectReviewerRolloutWithClient(client, "owner", "repo")
+	if err != nil {
+		t.Fatalf("inspectReviewerRolloutWithClient() unexpected error: %v", err)
+	}
+	joined := strings.Join(health.issues(), "\n")
 	for _, want := range []string{
-		"App must use selected repositories",
-		"checks permission exceeds reviewer maximum",
-		"unexpected workflows permission",
+		"repository has no default branch",
+		"GitHub Actions is disabled",
+		"Actions policy allows only local actions",
+		"missing Actions variable SFL_APP_CLIENT_ID",
+		"missing Actions secret SFL_APP_PRIVATE_KEY",
+		"missing Actions secret OPENROUTER_API_KEY",
 	} {
 		if !strings.Contains(joined, want) {
-			t.Errorf("unsafe reviewer App issues missing %q: %v", want, issues)
+			t.Errorf("rollout issues missing %q:\n%s", want, joined)
 		}
 	}
 }
 
-func TestReviewerAppIssuesPaginatesInstallations(t *testing.T) {
-	firstPage := make([]appInstallation, 100)
-	for index := range firstPage {
-		firstPage[index].AppSlug = fmt.Sprintf("app-%d", index)
-	}
-	reviewer := appInstallation{
-		ID:                  42,
-		AppSlug:             "set-it-free-loop",
-		RepositorySelection: "selected",
-		Permissions: map[string]string{
-			"actions":       "write",
-			"checks":        "read",
-			"contents":      "read",
-			"issues":        "write",
-			"metadata":      "read",
-			"pull_requests": "write",
-		},
+func TestReviewerCredentialMetadataPaginatesWithoutReadingValues(t *testing.T) {
+	firstVariables := make([]string, 100)
+	firstSecrets := make([]string, 100)
+	for index := range firstVariables {
+		firstVariables[index] = fmt.Sprintf("VARIABLE_%03d", index)
+		firstSecrets[index] = fmt.Sprintf("SECRET_%03d", index)
 	}
 	client := &fakeREST{
-		installationPages:           [][]appInstallation{firstPage, {reviewer}},
-		installationRepositoryPages: [][]string{{"repo"}},
+		repositoryDefaultBranch: "main",
+		actionsEnabled:          true,
+		actionsAllowed:          "all",
+		actionVariablePages:     [][]string{firstVariables, {"SFL_APP_CLIENT_ID"}},
+		actionSecretPages:       [][]string{firstSecrets, {"SFL_APP_PRIVATE_KEY", "OPENROUTER_API_KEY"}},
 	}
-	oldClient := newRESTClient
-	newRESTClient = func() (restAPI, error) { return client, nil }
-	t.Cleanup(func() { newRESTClient = oldClient })
-
-	issues, err := reviewerAppIssues("owner", "repo")
-	if err != nil || len(issues) != 0 {
-		t.Fatalf("reviewerAppIssues() issues=%v err=%v", issues, err)
+	health, err := inspectReviewerRolloutWithClient(client, "owner", "repo")
+	if err != nil || len(health.issues()) != 0 {
+		t.Fatalf("paginated rollout health = %+v, %v", health, err)
 	}
-	if len(client.gets) != 3 ||
-		!strings.Contains(client.gets[1], "page=2") ||
-		!strings.Contains(client.gets[2], "user/installations/42/repositories") {
-		t.Errorf("installation requests = %v", client.gets)
+	joinedRequests := strings.Join(client.gets, "\n")
+	for _, want := range []string{
+		"actions/variables?per_page=100&page=2",
+		"actions/secrets?per_page=100&page=2",
+	} {
+		if !strings.Contains(joinedRequests, want) {
+			t.Errorf("metadata requests missing %q: %v", want, client.gets)
+		}
+	}
+	if strings.Contains(joinedRequests, "values") {
+		t.Errorf("preflight requested credential values: %v", client.gets)
 	}
 }
 
-func TestReviewerAppIssuesReportsRepositoryOutsideSelection(t *testing.T) {
-	reviewer := appInstallation{
-		ID:                  42,
-		AppSlug:             "set-it-free-loop",
-		RepositorySelection: "selected",
-		Permissions: map[string]string{
-			"actions":       "write",
-			"checks":        "read",
-			"contents":      "read",
-			"issues":        "write",
-			"metadata":      "read",
-			"pull_requests": "write",
-		},
+func TestReviewerActionsSelectedPolicyRequiresGitHubOwnedActions(t *testing.T) {
+	cases := map[string]struct {
+		githubOwned bool
+		wantHealthy bool
+	}{
+		"GitHub owned": {githubOwned: true, wantHealthy: true},
+		"exact patterns are deliberately unsupported": {},
 	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			client := &fakeREST{
+				githubOwnedActionsAllowed: tc.githubOwned,
+			}
+			issues, err := reviewerActionsPolicyIssues(client, "owner", "repo", "selected")
+			if err != nil {
+				t.Fatalf("reviewerActionsPolicyIssues() unexpected error: %v", err)
+			}
+			if tc.wantHealthy && len(issues) != 0 {
+				t.Fatalf("healthy selected policy issues = %v", issues)
+			}
+			if !tc.wantHealthy && !slices.Contains(
+				issues,
+				"selected Actions policy must allow GitHub-owned actions required by the reviewer; exact action patterns are not a supported rollout policy",
+			) {
+				t.Fatalf("blocked selected policy issues = %v", issues)
+			}
+		})
+	}
+}
+
+func TestAssertReviewerRolloutReadyFailsBeforeAnyWrite(t *testing.T) {
 	client := &fakeREST{
-		installationPages:           [][]appInstallation{{reviewer}},
-		installationRepositoryPages: [][]string{{"different-repo"}},
+		repositoryDefaultBranch: "main",
+		actionsEnabled:          true,
+		actionsAllowed:          "all",
+		actionVariablePages:     [][]string{{}},
+		actionSecretPages:       [][]string{{}},
 	}
 	oldClient := newRESTClient
 	newRESTClient = func() (restAPI, error) { return client, nil }
 	t.Cleanup(func() { newRESTClient = oldClient })
 
-	issues, err := reviewerAppIssues("owner", "repo")
-	if err != nil {
-		t.Fatalf("reviewerAppIssues() unexpected error: %v", err)
+	err := assertReviewerRolloutReady("owner", "repo", io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "missing Actions variable SFL_APP_CLIENT_ID") {
+		t.Fatalf("assertReviewerRolloutReady() error = %v", err)
 	}
-	if !slices.Contains(issues, "App installation does not include owner/repo") {
-		t.Errorf("reviewerAppIssues() issues = %v", issues)
+	if len(client.posts)+len(client.puts)+len(client.patches)+len(client.deletes) != 0 {
+		t.Fatalf("failed preflight mutated repository: %+v", client)
+	}
+}
+
+func TestAssertReviewerRolloutReadyDoesNotClaimAppVerification(t *testing.T) {
+	client := &fakeREST{
+		repositoryDefaultBranch: "main",
+		actionsEnabled:          true,
+		actionsAllowed:          "all",
+		actionVariablePages:     [][]string{{"SFL_APP_CLIENT_ID"}},
+		actionSecretPages:       [][]string{{"OPENROUTER_API_KEY", "SFL_APP_PRIVATE_KEY"}},
+	}
+	oldClient := newRESTClient
+	newRESTClient = func() (restAPI, error) { return client, nil }
+	t.Cleanup(func() { newRESTClient = oldClient })
+
+	var output bytes.Buffer
+	if err := assertReviewerRolloutReady("owner", "repo", &output); err != nil {
+		t.Fatalf("assertReviewerRolloutReady() unexpected error: %v", err)
+	}
+	if strings.Contains(output.String(), "App, variables, and secrets ready") {
+		t.Fatalf("preflight falsely reported App verification:\n%s", output.String())
+	}
+	for _, want := range []string{
+		"Actions policy, variable, and secret metadata ready",
+		"rely on the App-authenticated credential bootstrap check",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("preflight output missing %q:\n%s", want, output.String())
+		}
+	}
+}
+
+func TestPrintReviewerPrerequisitesSeparatesCredentialFaults(t *testing.T) {
+	health := reviewerRolloutHealth{
+		DefaultBranch:    "main",
+		ActionsEnabled:   false,
+		ActionsIssues:    []string{"Actions policy allows only local actions; reviewer requires pinned GitHub-owned actions"},
+		AppNotice:        "App scope requires App-authenticated credential bootstrap verification",
+		MissingVariables: []string{"SFL_APP_CLIENT_ID"},
+		MissingSecrets:   []string{"OPENROUTER_API_KEY", "SFL_APP_PRIVATE_KEY"},
+	}
+	var output bytes.Buffer
+	printReviewerPrerequisites(&output, newTableStyler(&output, false), health, nil)
+	for _, want := range []string{
+		"Reviewer App:",
+		"App scope requires App-authenticated credential bootstrap verification",
+		"Reviewer credentials and Actions:",
+		"Default branch: main",
+		"GitHub Actions disabled",
+		"Actions policy allows only local actions",
+		"Missing Actions variable SFL_APP_CLIENT_ID",
+		"Missing Actions secret SFL_APP_PRIVATE_KEY",
+		"Missing Actions secret OPENROUTER_API_KEY",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("status output missing %q:\n%s", want, output.String())
+		}
+	}
+	if strings.Contains(output.String(), "Selected-repository installation uses the reviewer permission contract") {
+		t.Fatalf("status falsely reported App verification:\n%s", output.String())
+	}
+}
+
+func TestWorkflowsIncludeReviewer(t *testing.T) {
+	if !workflowsIncludeReviewer(tierWorkflows["reviewer"]) ||
+		!workflowsIncludeReviewer(tierWorkflows["full"]) ||
+		!workflowsIncludeReviewer(tierWorkflows["standard"], addonWorkflowFiles([]string{"pr-review"})) ||
+		workflowsIncludeReviewer(tierWorkflows["minimal"]) {
+		t.Fatal("workflowsIncludeReviewer() did not follow tier definitions")
+	}
+}
+
+func TestDryRunSyncSkipsReviewerPreflight(t *testing.T) {
+	reviewer := tierWorkflows["reviewer"]
+	if shouldPreflightReviewerSync(true, reviewer) {
+		t.Fatal("dry-run sync unexpectedly enforced reviewer rollout prerequisites")
+	}
+	if !shouldPreflightReviewerSync(false, reviewer) {
+		t.Fatal("write-capable sync skipped reviewer rollout prerequisites")
+	}
+	if shouldPreflightReviewerSync(false, tierWorkflows["minimal"]) {
+		t.Fatal("non-reviewer sync unexpectedly enforced reviewer rollout prerequisites")
 	}
 }
 

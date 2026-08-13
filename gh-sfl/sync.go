@@ -60,6 +60,11 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("resolving installed workflows: %w", err)
 	}
+	if shouldPreflightReviewerSync(opts.dryRun, workflows, addonWorkflowFiles(manifest.Addons)) {
+		if err := assertReviewerRolloutReady(owner, repo, stdout); err != nil {
+			return err
+		}
+	}
 	installedTier := canonicalDeploymentTier(manifest.Tier)
 	if manifest.SourceSHA == latestSHA {
 		if opts.dryRun {
@@ -214,6 +219,10 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	updateAgentPRBranches(owner, repo, stdout)
 
 	return nil
+}
+
+func shouldPreflightReviewerSync(dryRun bool, workflowSets ...[]string) bool {
+	return !dryRun && workflowsIncludeReviewer(workflowSets...)
 }
 
 func parseSyncOptions(args []string, stderr io.Writer) (syncOptions, error) {
