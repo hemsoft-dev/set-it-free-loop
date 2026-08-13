@@ -60,7 +60,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("resolving installed workflows: %w", err)
 	}
-	if workflowsIncludeReviewer(workflows) {
+	if workflowsIncludeReviewer(workflows, addonWorkflowFiles(manifest.Addons)) {
 		if err := assertReviewerRolloutReady(owner, repo, stdout); err != nil {
 			return err
 		}

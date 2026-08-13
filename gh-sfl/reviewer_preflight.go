@@ -193,10 +193,12 @@ func assertReviewerRolloutReady(owner, repo string, stdout io.Writer) error {
 	return nil
 }
 
-func workflowsIncludeReviewer(workflows []string) bool {
-	for _, workflow := range workflows {
-		if strings.HasPrefix(workflow, "sfl-pr-review") {
-			return true
+func workflowsIncludeReviewer(workflowSets ...[]string) bool {
+	for _, workflows := range workflowSets {
+		for _, workflow := range workflows {
+			if strings.HasPrefix(workflow, "sfl-pr-review") {
+				return true
+			}
 		}
 	}
 	return false

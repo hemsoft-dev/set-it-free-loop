@@ -47,10 +47,11 @@ needs Actions read/write, Contents read, Issues read/write, and Pull requests
 read/write for automatic dispatch, label handling, recovery, and SFL-owned
 review-thread management. It does not need repository administration.
 
-`gh sfl init` and `gh sfl sync` inspect only repository metadata and credential
-names; they never read secret values. Before preparing a reviewer deployment
-pull request they require a default branch, enabled GitHub Actions, the variable
-above, and both secrets above. A normal GitHub CLI OAuth token cannot inspect
+`gh sfl init`, `gh sfl sync`, and `gh sfl add pr-review` inspect only repository
+metadata and credential names; they never read secret values. Before preparing
+a reviewer deployment pull request, including a `pr-review` add-on deployment,
+they require a default branch, enabled GitHub Actions, the variable above, and
+both secrets above. A normal GitHub CLI OAuth token cannot inspect
 GitHub App installations owned by the `HemSoft` personal account, so App scope
 and permission-ceiling validation belongs to the App-authenticated credential
 bootstrap and remains a required rollout step.

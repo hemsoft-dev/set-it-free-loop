@@ -196,7 +196,7 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	fmt.Fprintf(stdout, "Deploying SFL (%s tier) to %s/%s\n\n", opts.tier, owner, repo)
 	workflows := tierWorkflows[opts.tier]
-	if workflowsIncludeReviewer(workflows) {
+	if workflowsIncludeReviewer(workflows, addonWorkflowFiles(opts.addons)) {
 		if err := assertReviewerRolloutReady(owner, repo, stdout); err != nil {
 			return err
 		}

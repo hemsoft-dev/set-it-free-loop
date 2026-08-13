@@ -245,7 +245,7 @@ func expectedWorkflowFiles(manifest *sflManifest) []string {
 
 func manifestIncludesReviewer(manifest *sflManifest) bool {
 	workflows, err := workflowsForInstalledManifest(manifest)
-	return err == nil && workflowsIncludeReviewer(workflows)
+	return err == nil && workflowsIncludeReviewer(workflows, addonWorkflowFiles(manifest.Addons))
 }
 
 func expectedReviewerWorkflowFiles(manifest *sflManifest) []string {

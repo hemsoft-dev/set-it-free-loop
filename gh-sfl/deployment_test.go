@@ -534,6 +534,8 @@ func TestAddUsesPinnedSourceAndMergesEnginePolicy(t *testing.T) {
 		"fullCommitSHAPattern.MatchString(manifest.SourceSHA)",
 		"srcPath, manifest.SourceSHA",
 		"renderHemSoftWorkflow(wf, content, manifest.Version)",
+		"workflowsIncludeReviewer(workflows)",
+		"assertReviewerRolloutReady(owner, repo, stdout)",
 		"mergeHemSoftEnginePolicyManifest(",
 		`deployViaPullRequest(owner, repo, defaultBranch, "add", fileMap, commitMsg, false, stdout)`,
 	} {
@@ -816,6 +818,19 @@ func TestReviewerHealthCoversEveryTierContainingReviewer(t *testing.T) {
 	}
 	if manifestIncludesReviewer(&sflManifest{Tier: "minimal"}) {
 		t.Fatal("minimal tier unexpectedly includes reviewer health")
+	}
+	addonManifest := &sflManifest{Tier: "standard", Addons: []string{"pr-review"}}
+	if !manifestIncludesReviewer(addonManifest) {
+		t.Fatal("pr-review add-on did not enable reviewer health")
+	}
+	wantAddon := []string{
+		"sfl-pr-review-auto.yml",
+		"sfl-pr-review-recovery.yml",
+		"sfl-pr-review.lock.yml",
+		"sfl-pr-review.md",
+	}
+	if got := expectedReviewerWorkflowFiles(addonManifest); !slices.Equal(got, wantAddon) {
+		t.Fatalf("reviewer add-on files = %v, want %v", got, wantAddon)
 	}
 }
 
@@ -1332,6 +1347,7 @@ func TestPrintReviewerPrerequisitesSeparatesCredentialFaults(t *testing.T) {
 func TestWorkflowsIncludeReviewer(t *testing.T) {
 	if !workflowsIncludeReviewer(tierWorkflows["reviewer"]) ||
 		!workflowsIncludeReviewer(tierWorkflows["full"]) ||
+		!workflowsIncludeReviewer(tierWorkflows["standard"], addonWorkflowFiles([]string{"pr-review"})) ||
 		workflowsIncludeReviewer(tierWorkflows["minimal"]) {
 		t.Fatal("workflowsIncludeReviewer() did not follow tier definitions")
 	}
