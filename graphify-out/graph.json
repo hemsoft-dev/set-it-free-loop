@@ -681,8 +681,8 @@
       "source_location": "L44",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_effort",
-      "community": 73,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "enum",
       "norm_label": "effort"
     },
     {
@@ -692,8 +692,8 @@
       "source_location": "L45",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_effort_type",
-      "community": 73,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "enum",
       "norm_label": "type"
     },
     {
@@ -703,8 +703,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_effort_enum",
-      "community": 73,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "enum",
       "norm_label": "enum"
     },
     {
@@ -714,8 +714,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "ref_low",
-      "community": 73,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "enum",
       "norm_label": "low"
     },
     {
@@ -725,8 +725,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "ref_medium",
-      "community": 73,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "enum",
       "norm_label": "medium"
     },
     {
@@ -736,8 +736,8 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "ref_high",
-      "community": 73,
-      "community_name": "properties",
+      "community": 77,
+      "community_name": "enum",
       "norm_label": "high"
     },
     {
@@ -813,8 +813,8 @@
       "source_location": "L60",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_properties_arguments",
-      "community": 74,
-      "community_name": "requiredSecretsAnyOf",
+      "community": 73,
+      "community_name": "properties",
       "norm_label": "arguments"
     },
     {
@@ -824,8 +824,8 @@
       "source_location": "L61",
       "_origin": "ast",
       "id": "deployment_engine_policy_schema_arguments_type",
-      "community": 74,
-      "community_name": "requiredSecretsAnyOf",
+      "community": 73,
+      "community_name": "properties",
       "norm_label": "type"
     },
     {
@@ -2640,7 +2640,7 @@
       "_origin": "ast",
       "id": "gh_sfl_add",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "add.go"
     },
     {
@@ -2651,7 +2651,7 @@
       "_origin": "ast",
       "id": "gh_sfl_addoptions",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "addoptions"
     },
     {
@@ -2662,7 +2662,7 @@
       "_origin": "ast",
       "id": "gh_sfl_add_runadd",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "runadd()"
     },
     {
@@ -2673,7 +2673,7 @@
       "_origin": "ast",
       "id": "gh_sfl_add_go_writer",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "writer"
     },
     {
@@ -2684,7 +2684,7 @@
       "_origin": "ast",
       "id": "gh_sfl_add_parseaddoptions",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "parseaddoptions()"
     },
     {
@@ -2695,7 +2695,7 @@
       "_origin": "ast",
       "id": "gh_sfl_add_writeaddusage",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "writeaddusage()"
     },
     {
@@ -2706,7 +2706,7 @@
       "_origin": "ast",
       "id": "gh_sfl_addons",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "addons.go"
     },
     {
@@ -2717,7 +2717,7 @@
       "_origin": "ast",
       "id": "gh_sfl_addons_validaddon",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "validaddon()"
     },
     {
@@ -2727,8 +2727,8 @@
       "source_location": "L23",
       "_origin": "ast",
       "id": "gh_sfl_addons_knownaddonnames",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 57,
+      "community_name": "deployment_test.go",
       "norm_label": "knownaddonnames()"
     },
     {
@@ -2739,7 +2739,7 @@
       "_origin": "ast",
       "id": "gh_sfl_addons_addonworkflowfiles",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "addonworkflowfiles()"
     },
     {
@@ -2838,7 +2838,7 @@
       "_origin": "ast",
       "id": "gh_sfl_concurrency_group_fixture_test",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "concurrency_group_fixture_test.go"
     },
     {
@@ -2849,7 +2849,7 @@
       "_origin": "ast",
       "id": "gh_sfl_concurrency_group_fixture_test_testreviewtriggerconcurrencygroups",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "testreviewtriggerconcurrencygroups()"
     },
     {
@@ -2860,7 +2860,7 @@
       "_origin": "ast",
       "id": "gh_sfl_concurrency_group_fixture_test_go_t",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "t"
     },
     {
@@ -3399,7 +3399,7 @@
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testforceuninstallremoveseverymanageddeploymentpath",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "testforceuninstallremoveseverymanageddeploymentpath()"
     },
     {
@@ -3706,8 +3706,8 @@
       "source_location": "L1718",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testsourcereadclientusesseparatetokenonlyforcentralrepositories",
-      "community": 57,
-      "community_name": "deployment_test.go",
+      "community": 65,
+      "community_name": "github.go",
       "norm_label": "testsourcereadclientusesseparatetokenonlyforcentralrepositories()"
     },
     {
@@ -3777,10 +3777,21 @@
       "norm_label": "testdeployviapullrequest()"
     },
     {
+      "label": "TestDeployViaPullRequestAddDoesNotDeleteInstalledWorkflows()",
+      "file_type": "code",
+      "source_file": "gh-sfl/deployment_test.go",
+      "source_location": "L1927",
+      "_origin": "ast",
+      "id": "gh_sfl_deployment_test_testdeployviapullrequestadddoesnotdeleteinstalledworkflows",
+      "community": 57,
+      "community_name": "deployment_test.go",
+      "norm_label": "testdeployviapullrequestadddoesnotdeleteinstalledworkflows()"
+    },
+    {
       "label": "findAddition()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1926",
+      "source_location": "L1961",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_findaddition",
       "community": 57,
@@ -3791,7 +3802,7 @@
       "label": "TestDeployViaPullRequestUpdatesOpenPR()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1935",
+      "source_location": "L1970",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeployviapullrequestupdatesopenpr",
       "community": 57,
@@ -3802,7 +3813,7 @@
       "label": "TestDeployViaPullRequestIgnoresOpenPRForOldBase()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1971",
+      "source_location": "L2006",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeployviapullrequestignoresopenprforoldbase",
       "community": 57,
@@ -3813,7 +3824,7 @@
       "label": "TestDeployViaPullRequestSkipsCurrentOpenPR()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1996",
+      "source_location": "L2031",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentopenpr",
       "community": 57,
@@ -3824,7 +3835,7 @@
       "label": "TestDeployViaPullRequestSkipsCurrentDefaultBranch()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2055",
+      "source_location": "L2091",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentdefaultbranch",
       "community": 57,
@@ -3835,7 +3846,7 @@
       "label": "TestDeploymentFileContentAcceptsWrappedBase64()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2128",
+      "source_location": "L2165",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeploymentfilecontentacceptswrappedbase64",
       "community": 57,
@@ -3846,7 +3857,7 @@
       "label": "TestDeployViaPullRequestRepairsDriftOutsideManifest()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2144",
+      "source_location": "L2181",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeployviapullrequestrepairsdriftoutsidemanifest",
       "community": 57,
@@ -3857,7 +3868,7 @@
       "label": "TestDeploymentManifestContentsMatchRepairsMalformedCurrent()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2181",
+      "source_location": "L2219",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeploymentmanifestcontentsmatchrepairsmalformedcurrent",
       "community": 57,
@@ -3868,7 +3879,7 @@
       "label": "TestDeployViaPullRequestRemovesStaleManagedWorkflows()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2197",
+      "source_location": "L2235",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeployviapullrequestremovesstalemanagedworkflows",
       "community": 57,
@@ -3879,7 +3890,7 @@
       "label": "TestDeployViaPullRequestRemovesLegacyGovernanceFromReviewerInstall()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2240",
+      "source_location": "L2279",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeployviapullrequestremoveslegacygovernancefromreviewerinstall",
       "community": 57,
@@ -3890,7 +3901,7 @@
       "label": "TestDeployViaPullRequestRemovesRetiredWorkflowTombstone()",
       "file_type": "code",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2286",
+      "source_location": "L2326",
       "_origin": "ast",
       "id": "gh_sfl_deployment_test_testdeployviapullrequestremovesretiredworkflowtombstone",
       "community": 57,
@@ -4124,7 +4135,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "gh_sfl_github",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "github.go"
     },
@@ -4136,7 +4147,7 @@
       "_origin": "ast",
       "id": "gh_sfl_github_fetchfileraw",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "fetchfileraw()"
     },
     {
@@ -4146,7 +4157,7 @@
       "source_location": "L63",
       "_origin": "ast",
       "id": "gh_sfl_github_fetchdirlisting",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "fetchdirlisting()"
     },
@@ -4157,7 +4168,7 @@
       "source_location": "L87",
       "_origin": "ast",
       "id": "gh_sfl_direntry",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "direntry"
     },
@@ -4168,7 +4179,7 @@
       "source_location": "L95",
       "_origin": "ast",
       "id": "gh_sfl_github_currentrepo",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "currentrepo()"
     },
@@ -4179,7 +4190,7 @@
       "source_location": "L108",
       "_origin": "ast",
       "id": "gh_sfl_github_parserepoflag",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "parserepoflag()"
     },
@@ -4190,7 +4201,7 @@
       "source_location": "L119",
       "_origin": "ast",
       "id": "gh_sfl_github_parsemutationtarget",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "parsemutationtarget()"
     },
@@ -4201,8 +4212,8 @@
       "source_location": "L130",
       "_origin": "ast",
       "id": "gh_sfl_github_validatedeploymenttarget",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "validatedeploymenttarget()"
     },
     {
@@ -4212,7 +4223,7 @@
       "source_location": "L163",
       "_origin": "ast",
       "id": "gh_sfl_github_ensurerepovariable",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "ensurerepovariable()"
     },
@@ -4234,7 +4245,7 @@
       "source_location": "L199",
       "_origin": "ast",
       "id": "gh_sfl_github_setreposecret",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "setreposecret()"
     },
@@ -4245,7 +4256,7 @@
       "source_location": "L210",
       "_origin": "ast",
       "id": "gh_sfl_github_ensurelabels",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "ensurelabels()"
     },
@@ -4256,7 +4267,7 @@
       "source_location": "L246",
       "_origin": "ast",
       "id": "gh_sfl_github_escapedlabelpath",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "escapedlabelpath()"
     },
@@ -4267,7 +4278,7 @@
       "source_location": "L250",
       "_origin": "ast",
       "id": "gh_sfl_labeldef",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "labeldef"
     },
@@ -4279,7 +4290,7 @@
       "_origin": "ast",
       "id": "gh_sfl_github_getdefaultbranch",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "getdefaultbranch()"
     },
     {
@@ -4289,8 +4300,8 @@
       "source_location": "L269",
       "_origin": "ast",
       "id": "gh_sfl_github_fetchworkflowruns",
-      "community": 63,
-      "community_name": "review.go",
+      "community": 61,
+      "community_name": "renderRunTable",
       "norm_label": "fetchworkflowruns()"
     },
     {
@@ -4300,7 +4311,7 @@
       "source_location": "L299",
       "_origin": "ast",
       "id": "gh_sfl_github_fetchprsbylabel",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "fetchprsbylabel()"
     },
@@ -4311,7 +4322,7 @@
       "source_location": "L318",
       "_origin": "ast",
       "id": "gh_sfl_prinfo",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "prinfo"
     },
@@ -4322,7 +4333,7 @@
       "source_location": "L326",
       "_origin": "ast",
       "id": "gh_sfl_prlabel",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "prlabel"
     },
@@ -4333,7 +4344,7 @@
       "source_location": "L331",
       "_origin": "ast",
       "id": "gh_sfl_github_fetchrepolabels",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "fetchrepolabels()"
     },
@@ -4344,7 +4355,7 @@
       "source_location": "L349",
       "_origin": "ast",
       "id": "gh_sfl_github_deployviagit",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "deployviagit()"
     },
@@ -4355,7 +4366,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "gh_sfl_github_go_writer",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "writer"
     },
@@ -4377,7 +4388,7 @@
       "source_location": "L427",
       "_origin": "ast",
       "id": "gh_sfl_filedeletion",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "filedeletion"
     },
@@ -4400,7 +4411,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": "conditionalrestclient"
     },
     {
@@ -4411,7 +4422,7 @@
       "_origin": "ast",
       "id": "restclient",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": "restclient"
     },
     {
@@ -4422,7 +4433,7 @@
       "_origin": "ast",
       "id": "client",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": "client"
     },
     {
@@ -4433,7 +4444,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient_get",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": ".get()"
     },
     {
@@ -4444,7 +4455,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient_post",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": ".post()"
     },
     {
@@ -4455,7 +4466,7 @@
       "_origin": "ast",
       "id": "gh_sfl_github_go_reader",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": "reader"
     },
     {
@@ -4466,7 +4477,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient_put",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": ".put()"
     },
     {
@@ -4488,7 +4499,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient_delete",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": ".delete()"
     },
     {
@@ -4499,7 +4510,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient_getwithetag",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": ".getwithetag()"
     },
     {
@@ -4510,7 +4521,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient_putifmatch",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": ".putifmatch()"
     },
     {
@@ -4521,7 +4532,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient_deleteifmatch",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": ".deleteifmatch()"
     },
     {
@@ -4532,7 +4543,7 @@
       "_origin": "ast",
       "id": "gh_sfl_conditionalrestclient_requestwithetag",
       "community": 62,
-      "community_name": "github.go",
+      "community_name": "conditionalRESTClient",
       "norm_label": ".requestwithetag()"
     },
     {
@@ -4542,7 +4553,7 @@
       "source_location": "L528",
       "_origin": "ast",
       "id": "gh_sfl_github_apibaseurl",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "apibaseurl()"
     },
@@ -4553,7 +4564,7 @@
       "source_location": "L538",
       "_origin": "ast",
       "id": "gh_sfl_github_newconditionalrestclient",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "newconditionalrestclient()"
     },
@@ -4564,7 +4575,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "clientoptions",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "clientoptions"
     },
@@ -4575,7 +4586,7 @@
       "source_location": "L557",
       "_origin": "ast",
       "id": "gh_sfl_graphqlapi",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "graphqlapi"
     },
@@ -4586,7 +4597,7 @@
       "source_location": "L574",
       "_origin": "ast",
       "id": "gh_sfl_github_sourcereadclient",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "sourcereadclient()"
     },
@@ -4663,7 +4674,7 @@
       "source_location": "L662",
       "_origin": "ast",
       "id": "gh_sfl_opendeploymentpr",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "opendeploymentpr"
     },
@@ -4674,7 +4685,7 @@
       "source_location": "L669",
       "_origin": "ast",
       "id": "gh_sfl_github_findopendeploymentpr",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "findopendeploymentpr()"
     },
@@ -4685,7 +4696,7 @@
       "source_location": "L708",
       "_origin": "ast",
       "id": "gh_sfl_github_deploymentfilecontent",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "deploymentfilecontent()"
     },
@@ -4708,7 +4719,7 @@
       "_origin": "ast",
       "id": "gh_sfl_github_manageddeploymentpaths",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "manageddeploymentpaths()"
     },
     {
@@ -4718,7 +4729,7 @@
       "source_location": "L788",
       "_origin": "ast",
       "id": "gh_sfl_github_obsoletemanagedpaths",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "obsoletemanagedpaths()"
     },
@@ -4729,7 +4740,7 @@
       "source_location": "L801",
       "_origin": "ast",
       "id": "gh_sfl_github_deploymentfilesstate",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "deploymentfilesstate()"
     },
@@ -4751,7 +4762,7 @@
       "source_location": "L1016",
       "_origin": "ast",
       "id": "gh_sfl_github_updateagentprbranches",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "updateagentprbranches()"
     },
@@ -4775,8 +4786,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoft.go"
     },
     {
@@ -4786,8 +4797,8 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "gh_sfl_hemsoftenginepolicy",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoftenginepolicy"
     },
     {
@@ -4797,8 +4808,8 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "gh_sfl_hemsoftengineprofile",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoftengineprofile"
     },
     {
@@ -4808,8 +4819,8 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "gh_sfl_hemsoftworkflowengineref",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoftworkflowengineref"
     },
     {
@@ -4819,8 +4830,8 @@
       "source_location": "L32",
       "_origin": "ast",
       "id": "gh_sfl_hemsoftengineconfig",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoftengineconfig"
     },
     {
@@ -4830,8 +4841,8 @@
       "source_location": "L49",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_hemsoftenginepolicyconfig",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoftenginepolicyconfig()"
     },
     {
@@ -4841,8 +4852,8 @@
       "source_location": "L67",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_hemsoftengineconfigforworkflow",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoftengineconfigforworkflow()"
     },
     {
@@ -4852,8 +4863,8 @@
       "source_location": "L119",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_clonehemsoftenvironment",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "clonehemsoftenvironment()"
     },
     {
@@ -4863,8 +4874,8 @@
       "source_location": "L131",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_applyhemsoftownership",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "applyhemsoftownership()"
     },
     {
@@ -4874,8 +4885,8 @@
       "source_location": "L135",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_applyhemsoftenginepolicy",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "applyhemsoftenginepolicy()"
     },
     {
@@ -4885,8 +4896,8 @@
       "source_location": "L153",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_applyhemsoftenginepolicytoworkflow",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "applyhemsoftenginepolicytoworkflow()"
     },
     {
@@ -4896,8 +4907,8 @@
       "source_location": "L184",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_removetoplevelyamlentry",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "removetoplevelyamlentry()"
     },
     {
@@ -4907,8 +4918,8 @@
       "source_location": "L219",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_inserttoplevelengineblock",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "inserttoplevelengineblock()"
     },
     {
@@ -4918,8 +4929,8 @@
       "source_location": "L246",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_istoplevelyamlkey",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "istoplevelyamlkey()"
     },
     {
@@ -4929,8 +4940,8 @@
       "source_location": "L255",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_hemsoftengineblock",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoftengineblock()"
     },
     {
@@ -4940,8 +4951,8 @@
       "source_location": "L278",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_hemsoftenginepolicymanifestforfilemap",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoftenginepolicymanifestforfilemap()"
     },
     {
@@ -4952,7 +4963,7 @@
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_mergehemsoftenginepolicymanifest",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "mergehemsoftenginepolicymanifest()"
     },
     {
@@ -4963,7 +4974,7 @@
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_sourceworkflowpath",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "sourceworkflowpath()"
     },
     {
@@ -4973,8 +4984,8 @@
       "source_location": "L370",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_renderhemsoftworkflow",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "renderhemsoftworkflow()"
     },
     {
@@ -4984,8 +4995,8 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "hemsoft_test.go"
     },
     {
@@ -4995,8 +5006,8 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testhemsoftenginepolicyrewriteisidempotent",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testhemsoftenginepolicyrewriteisidempotent()"
     },
     {
@@ -5006,8 +5017,8 @@
       "source_location": "",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_go_t",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "t"
     },
     {
@@ -5017,8 +5028,8 @@
       "source_location": "L39",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testrenderhemsoftworkflowmatchesdeploymentandstatus",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testrenderhemsoftworkflowmatchesdeploymentandstatus()"
     },
     {
@@ -5028,8 +5039,8 @@
       "source_location": "L60",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testhemsoftreviewerusesprivateopenrouterprofile",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testhemsoftreviewerusesprivateopenrouterprofile()"
     },
     {
@@ -5039,8 +5050,8 @@
       "source_location": "L76",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testhemsoftownershippreservesconsumercodeowners",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testhemsoftownershippreservesconsumercodeowners()"
     },
     {
@@ -5050,8 +5061,8 @@
       "source_location": "L90",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testvalidatedeploymenttargetenforcesidentityandprivacy",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testvalidatedeploymenttargetenforcesidentityandprivacy()"
     },
     {
@@ -5061,8 +5072,8 @@
       "source_location": "L132",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testvalidatedeploymenttargetrejectsscopebeforegithubaccess",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testvalidatedeploymenttargetrejectsscopebeforegithubaccess()"
     },
     {
@@ -5072,8 +5083,8 @@
       "source_location": "L154",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testhemsoftworkflowsourcerouting",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testhemsoftworkflowsourcerouting()"
     },
     {
@@ -5083,8 +5094,8 @@
       "source_location": "L168",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testescapedlabelpathencodespathsensitivecharacters",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testescapedlabelpathencodespathsensitivecharacters()"
     },
     {
@@ -5094,8 +5105,8 @@
       "source_location": "L174",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testreviewerstatusreadspinnedfilesthroughhemsoftrouting",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testreviewerstatusreadspinnedfilesthroughhemsoftrouting()"
     },
     {
@@ -5105,8 +5116,8 @@
       "source_location": "L187",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testupdatechecksuseprivatesetitfreelooprelease",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testupdatechecksuseprivatesetitfreelooprelease()"
     },
     {
@@ -5116,8 +5127,8 @@
       "source_location": "L199",
       "_origin": "ast",
       "id": "gh_sfl_hemsoft_test_testdirectmutationsusehemsoftsshprofilewithouttokenurls",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 71,
+      "community_name": "hemsoft.go",
       "norm_label": "testdirectmutationsusehemsoftsshprofilewithouttokenurls()"
     },
     {
@@ -5128,7 +5139,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "init.go"
     },
     {
@@ -5139,7 +5150,7 @@
       "_origin": "ast",
       "id": "gh_sfl_initoptions",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "initoptions"
     },
     {
@@ -5150,7 +5161,7 @@
       "_origin": "ast",
       "id": "gh_sfl_stringsliceflag",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "stringsliceflag"
     },
     {
@@ -5161,7 +5172,7 @@
       "_origin": "ast",
       "id": "gh_sfl_stringsliceflag_string",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": ".string()"
     },
     {
@@ -5172,7 +5183,7 @@
       "_origin": "ast",
       "id": "gh_sfl_stringsliceflag_set",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": ".set()"
     },
     {
@@ -5183,7 +5194,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_canonicaldeploymenttier",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "canonicaldeploymenttier()"
     },
     {
@@ -5194,7 +5205,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_workflowsforinstalledmanifest",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "workflowsforinstalledmanifest()"
     },
     {
@@ -5216,7 +5227,7 @@
       "_origin": "ast",
       "id": "gh_sfl_deploymentrelease",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "deploymentrelease"
     },
     {
@@ -5227,7 +5238,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_resolvedeploymentrelease",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "resolvedeploymentrelease()"
     },
     {
@@ -5238,7 +5249,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_runinit",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "runinit()"
     },
     {
@@ -5249,7 +5260,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_go_writer",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "writer"
     },
     {
@@ -5260,7 +5271,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_validateinittiertransition",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "validateinittiertransition()"
     },
     {
@@ -5270,8 +5281,8 @@
       "source_location": "L370",
       "_origin": "ast",
       "id": "gh_sfl_init_parseinitoptions",
-      "community": 65,
-      "community_name": "runInit",
+      "community": 57,
+      "community_name": "deployment_test.go",
       "norm_label": "parseinitoptions()"
     },
     {
@@ -5282,7 +5293,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_getlatestcommitsha",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "getlatestcommitsha()"
     },
     {
@@ -5293,7 +5304,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_getcommitsha",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "getcommitsha()"
     },
     {
@@ -5304,7 +5315,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_getcurrentuser",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "getcurrentuser()"
     },
     {
@@ -5315,7 +5326,7 @@
       "_origin": "ast",
       "id": "gh_sfl_init_writeinitusage",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "writeinitusage()"
     },
     {
@@ -5600,7 +5611,7 @@
       "source_location": "L154",
       "_origin": "ast",
       "id": "gh_sfl_main_fetchlatestrelease",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "fetchlatestrelease()"
     },
@@ -5623,7 +5634,7 @@
       "_origin": "ast",
       "id": "gh_sfl_manifest",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "manifest.go"
     },
     {
@@ -5634,7 +5645,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sflmanifest",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "sflmanifest"
     },
     {
@@ -5645,7 +5656,7 @@
       "_origin": "ast",
       "id": "gh_sfl_manifest_go_time",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "time"
     },
     {
@@ -5656,7 +5667,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sflenginepolicymanifest",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "sflenginepolicymanifest"
     },
     {
@@ -5667,7 +5678,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sflengineworkflowprofile",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "sflengineworkflowprofile"
     },
     {
@@ -5678,7 +5689,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sflmanifest_unmarshaljson",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": ".unmarshaljson()"
     },
     {
@@ -5689,7 +5700,7 @@
       "_origin": "ast",
       "id": "gh_sfl_manifest_readlocalmanifest",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "readlocalmanifest()"
     },
     {
@@ -5700,7 +5711,7 @@
       "_origin": "ast",
       "id": "gh_sfl_manifest_readremotemanifest",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "readremotemanifest()"
     },
     {
@@ -5711,7 +5722,7 @@
       "_origin": "ast",
       "id": "gh_sfl_manifest_marshalmanifest",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "marshalmanifest()"
     },
     {
@@ -5997,7 +6008,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "reviewer_contract_test.go"
     },
     {
@@ -6008,7 +6019,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_testreviewerdeploymentcontract",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "testreviewerdeploymentcontract()"
     },
     {
@@ -6019,7 +6030,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_go_t",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "t"
     },
     {
@@ -6030,7 +6041,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_testresolvertokenseparation",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "testresolvertokenseparation()"
     },
     {
@@ -6041,7 +6052,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_testautotriggertokenpermissions",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "testautotriggertokenpermissions()"
     },
     {
@@ -6052,7 +6063,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_testcompiledevidencepublisheswithrepositorytoken",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "testcompiledevidencepublisheswithrepositorytoken()"
     },
     {
@@ -6063,7 +6074,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_testissuebranchcorrelationpattern",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "testissuebranchcorrelationpattern()"
     },
     {
@@ -6074,7 +6085,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_assertrunblockswithinlimit",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "assertrunblockswithinlimit()"
     },
     {
@@ -6085,7 +6096,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_testreviewertemplateplaceholderdetection",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "testreviewertemplateplaceholderdetection()"
     },
     {
@@ -6096,7 +6107,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_unresolvedreviewertemplateplaceholder",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "unresolvedreviewertemplateplaceholder()"
     },
     {
@@ -6107,7 +6118,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_assertfilesequal",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "assertfilesequal()"
     },
     {
@@ -6117,8 +6128,8 @@
       "source_location": "L748",
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_readcontractfile",
-      "community": 70,
-      "community_name": "readContractFile",
+      "community": 57,
+      "community_name": "deployment_test.go",
       "norm_label": "readcontractfile()"
     },
     {
@@ -6129,7 +6140,7 @@
       "_origin": "ast",
       "id": "gh_sfl_reviewer_contract_test_normalizelineendings",
       "community": 70,
-      "community_name": "readContractFile",
+      "community_name": "reviewer_contract_test.go",
       "norm_label": "normalizelineendings()"
     },
     {
@@ -6481,7 +6492,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sync",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "sync.go"
     },
     {
@@ -6492,7 +6503,7 @@
       "_origin": "ast",
       "id": "gh_sfl_syncoptions",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "syncoptions"
     },
     {
@@ -6503,7 +6514,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sync_runsync",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "runsync()"
     },
     {
@@ -6514,7 +6525,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sync_go_writer",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "writer"
     },
     {
@@ -6525,7 +6536,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sync_parsesyncoptions",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "parsesyncoptions()"
     },
     {
@@ -6536,7 +6547,7 @@
       "_origin": "ast",
       "id": "gh_sfl_sync_writesyncusage",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "writesyncusage()"
     },
     {
@@ -6777,7 +6788,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "gh_sfl_toggle",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "toggle.go"
     },
@@ -6788,7 +6799,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "gh_sfl_toggleoptions",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "toggleoptions"
     },
@@ -6799,7 +6810,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "gh_sfl_toggle_runstop",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "runstop()"
     },
@@ -6810,7 +6821,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "gh_sfl_toggle_go_writer",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "writer"
     },
@@ -6821,7 +6832,7 @@
       "source_location": "L32",
       "_origin": "ast",
       "id": "gh_sfl_toggle_runstart",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "runstart()"
     },
@@ -6832,7 +6843,7 @@
       "source_location": "L49",
       "_origin": "ast",
       "id": "gh_sfl_toggle_setrepovariable",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "setrepovariable()"
     },
@@ -6843,7 +6854,7 @@
       "source_location": "L62",
       "_origin": "ast",
       "id": "gh_sfl_toggle_parsetoggleoptions",
-      "community": 62,
+      "community": 65,
       "community_name": "github.go",
       "norm_label": "parsetoggleoptions()"
     },
@@ -6899,7 +6910,7 @@
       "_origin": "ast",
       "id": "gh_sfl_uninstall_uninstallfiles",
       "community": 65,
-      "community_name": "runInit",
+      "community_name": "github.go",
       "norm_label": "uninstallfiles()"
     },
     {
@@ -16650,7 +16661,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1926",
+      "source_location": "L1961",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16782,7 +16793,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2128",
+      "source_location": "L2165",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16793,7 +16804,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2181",
+      "source_location": "L2219",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16815,7 +16826,18 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1971",
+      "source_location": "L1927",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "gh_sfl_deployment_test",
+      "target": "gh_sfl_deployment_test_testdeployviapullrequestadddoesnotdeleteinstalledworkflows",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "source_file": "gh-sfl/deployment_test.go",
+      "source_location": "L2006",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16826,7 +16848,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2240",
+      "source_location": "L2279",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16837,7 +16859,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2286",
+      "source_location": "L2326",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16848,7 +16870,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2197",
+      "source_location": "L2235",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16859,7 +16881,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2144",
+      "source_location": "L2181",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16870,7 +16892,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2055",
+      "source_location": "L2091",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16881,7 +16903,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1996",
+      "source_location": "L2031",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -16892,7 +16914,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1935",
+      "source_location": "L1970",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test",
@@ -17941,7 +17963,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2128",
+      "source_location": "L2165",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -17953,7 +17975,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2181",
+      "source_location": "L2219",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -17977,7 +17999,19 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1971",
+      "source_location": "L1927",
+      "weight": 1.0,
+      "context": "parameter_type",
+      "_origin": "ast",
+      "source": "gh_sfl_deployment_test_testdeployviapullrequestadddoesnotdeleteinstalledworkflows",
+      "target": "gh_sfl_deployment_test_go_t",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "source_file": "gh-sfl/deployment_test.go",
+      "source_location": "L2006",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -17989,7 +18023,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2240",
+      "source_location": "L2279",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -18001,7 +18035,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2286",
+      "source_location": "L2326",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -18013,7 +18047,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2197",
+      "source_location": "L2235",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -18025,7 +18059,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2144",
+      "source_location": "L2181",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -18037,7 +18071,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2055",
+      "source_location": "L2091",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -18049,7 +18083,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1996",
+      "source_location": "L2031",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -18061,7 +18095,7 @@
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1935",
+      "source_location": "L1970",
       "weight": 1.0,
       "context": "parameter_type",
       "_origin": "ast",
@@ -18805,7 +18839,19 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1977",
+      "source_location": "L1935",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "gh_sfl_deployment_test_testdeployviapullrequestadddoesnotdeleteinstalledworkflows",
+      "target": "gh_sfl_deployment_test_installdeploymentfakes",
+      "confidence_score": 1.0
+    },
+    {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "EXTRACTED",
+      "source_file": "gh-sfl/deployment_test.go",
+      "source_location": "L2012",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestignoresopenprforoldbase",
@@ -18817,7 +18863,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2260",
+      "source_location": "L2299",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestremoveslegacygovernancefromreviewerinstall",
@@ -18829,7 +18875,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2303",
+      "source_location": "L2343",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestremovesretiredworkflowtombstone",
@@ -18841,7 +18887,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2215",
+      "source_location": "L2253",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestremovesstalemanagedworkflows",
@@ -18853,7 +18899,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2159",
+      "source_location": "L2196",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestrepairsdriftoutsidemanifest",
@@ -18865,7 +18911,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2099",
+      "source_location": "L2135",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentdefaultbranch",
@@ -18877,7 +18923,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2023",
+      "source_location": "L2058",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentopenpr",
@@ -18889,7 +18935,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1941",
+      "source_location": "L1976",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestupdatesopenpr",
@@ -19933,7 +19979,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1910",
+      "source_location": "L1911",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequest",
@@ -19953,10 +19999,22 @@
       "target": "gh_sfl_github_deployviapullrequest"
     },
     {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "gh-sfl/deployment_test.go",
+      "source_location": "L1937",
+      "weight": 1.0,
+      "_origin": "ast",
+      "source": "gh_sfl_deployment_test_testdeployviapullrequestadddoesnotdeleteinstalledworkflows",
+      "target": "gh_sfl_github_deployviapullrequest"
+    },
+    {
       "relation": "references",
       "confidence": "EXTRACTED",
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1926",
+      "source_location": "L1961",
       "weight": 1.0,
       "context": "return_type",
       "_origin": "ast",
@@ -19970,7 +20028,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1943",
+      "source_location": "L1978",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestupdatesopenpr",
@@ -19982,7 +20040,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L1979",
+      "source_location": "L2014",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestignoresopenprforoldbase",
@@ -19994,7 +20052,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2026",
+      "source_location": "L2061",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentopenpr",
@@ -20006,7 +20064,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2088",
+      "source_location": "L2124",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentdefaultbranch",
@@ -20018,7 +20076,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2102",
+      "source_location": "L2138",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentdefaultbranch",
@@ -20030,7 +20088,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2056",
+      "source_location": "L2092",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentdefaultbranch",
@@ -20042,7 +20100,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2057",
+      "source_location": "L2093",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestskipscurrentdefaultbranch",
@@ -20054,7 +20112,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2135",
+      "source_location": "L2172",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeploymentfilecontentacceptswrappedbase64",
@@ -20066,7 +20124,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2161",
+      "source_location": "L2198",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestrepairsdriftoutsidemanifest",
@@ -20078,7 +20136,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2188",
+      "source_location": "L2226",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeploymentmanifestcontentsmatchrepairsmalformedcurrent",
@@ -20090,7 +20148,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2217",
+      "source_location": "L2255",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestremovesstalemanagedworkflows",
@@ -20102,7 +20160,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2262",
+      "source_location": "L2301",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestremoveslegacygovernancefromreviewerinstall",
@@ -20114,7 +20172,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2241",
+      "source_location": "L2280",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestremoveslegacygovernancefromreviewerinstall",
@@ -20126,7 +20184,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "gh-sfl/deployment_test.go",
-      "source_location": "L2305",
+      "source_location": "L2345",
       "weight": 1.0,
       "_origin": "ast",
       "source": "gh_sfl_deployment_test_testdeployviapullrequestremovesretiredworkflowtombstone",
@@ -34007,5 +34065,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "4731c5ffb2deece367f294300b8166f1268ba661"
+  "built_at_commit": "122b929867fb12f582f3050d53d655e762e78922"
 }

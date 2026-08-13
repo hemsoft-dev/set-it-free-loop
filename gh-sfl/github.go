@@ -798,7 +798,7 @@ func obsoleteManagedPaths(desired map[string]string, reconcile bool) []string {
 	return result
 }
 
-func deploymentFilesState(client restAPI, owner, repo, branch string, desired map[string]string) (bool, []fileDeletion, error) {
+func deploymentFilesState(client restAPI, owner, repo, branch string, desired map[string]string, reconcile bool) (bool, []fileDeletion, error) {
 	paths := make([]string, 0, len(desired))
 	for path := range desired {
 		paths = append(paths, path)
@@ -829,7 +829,7 @@ func deploymentFilesState(client restAPI, owner, repo, branch string, desired ma
 	}
 
 	var deletions []fileDeletion
-	for _, path := range obsoleteManagedPaths(desired, true) {
+	for _, path := range obsoleteManagedPaths(desired, reconcile) {
 		_, exists, err := deploymentFileContent(client, owner, repo, branch, path)
 		if err != nil {
 			return false, nil, err
@@ -843,7 +843,7 @@ func deploymentFilesState(client restAPI, owner, repo, branch string, desired ma
 
 // deployViaPullRequest creates a GitHub-authored commit so repositories that
 // require signed commits can still receive SFL updates through normal review.
-func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map[string]string, commitMsg string, w io.Writer) (string, error) {
+func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map[string]string, commitMsg string, reconcile bool, w io.Writer) (string, error) {
 	if err := applyHemSoftOwnership(fileMap); err != nil {
 		return "", fmt.Errorf("applying HemSoft deployment policy: %w", err)
 	}
@@ -862,7 +862,7 @@ func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map
 	expectedHeadSHA := existingPR.HeadSHA
 	createdBranch := false
 	if existingPR.URL == "" {
-		matches, _, stateErr := deploymentFilesState(restClient, owner, repo, baseBranch, fileMap)
+		matches, _, stateErr := deploymentFilesState(restClient, owner, repo, baseBranch, fileMap, reconcile)
 		if stateErr != nil {
 			return "", stateErr
 		}
@@ -909,7 +909,7 @@ func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map
 		return restClient.Delete(deletePath, nil)
 	}
 
-	matches, deletions, err := deploymentFilesState(restClient, owner, repo, branch, fileMap)
+	matches, deletions, err := deploymentFilesState(restClient, owner, repo, branch, fileMap, reconcile)
 	if err != nil {
 		_ = cleanupBranch()
 		return "", err

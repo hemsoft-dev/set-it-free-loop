@@ -158,7 +158,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "\n")
 	var prURL string
 	if opts.pr {
-		prURL, err = deployViaPullRequest(owner, repo, defaultBranch, "sync", fileMap, commitMsg, stdout)
+		prURL, err = deployViaPullRequest(owner, repo, defaultBranch, "sync", fileMap, commitMsg, true, stdout)
 	} else {
 		err = deployViaGit(owner, repo, defaultBranch, fileMap, commitMsg, true, stdout)
 	}

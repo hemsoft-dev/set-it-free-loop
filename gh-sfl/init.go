@@ -299,7 +299,7 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "\n")
 	var prURL string
 	if opts.pr {
-		prURL, err = deployViaPullRequest(owner, repo, defaultBranch, "init", fileMap, commitMsg, stdout)
+		prURL, err = deployViaPullRequest(owner, repo, defaultBranch, "init", fileMap, commitMsg, true, stdout)
 	} else {
 		err = deployViaGit(owner, repo, defaultBranch, fileMap, commitMsg, true, stdout)
 	}

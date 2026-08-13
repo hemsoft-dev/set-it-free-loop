@@ -450,8 +450,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/add.go": {
-    "mtime": 1786613484.165709,
-    "ast_hash": "0331a68bc190408ed2cd582444473f6b",
+    "mtime": 1786617378.5685914,
+    "ast_hash": "527046c26022b051d143db4f14afb19a",
     "semantic_hash": ""
   },
   "gh-sfl/addons.go": {
@@ -475,8 +475,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/deployment_test.go": {
-    "mtime": 1786615033.035172,
-    "ast_hash": "63dc02206f447be3a3801b94ed60a61a",
+    "mtime": 1786617416.3319087,
+    "ast_hash": "b7f408123400d2e0e2e33bf9911224a4",
     "semantic_hash": ""
   },
   "gh-sfl/dispatch_dedup_fixture_test.go": {
@@ -490,8 +490,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/github.go": {
-    "mtime": 1786613305.1200569,
-    "ast_hash": "2b073b8a95e26313bca1042cccbcb242",
+    "mtime": 1786617378.5685914,
+    "ast_hash": "3f3c7223e76f54a0acccea388fe5739d",
     "semantic_hash": ""
   },
   "gh-sfl/go.mod": {
@@ -510,8 +510,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/init.go": {
-    "mtime": 1786613484.164704,
-    "ast_hash": "a7322c041bb67594c8d802c9d417257e",
+    "mtime": 1786617378.569592,
+    "ast_hash": "be9995eeadcbedac6a8f5fc050b3faa8",
     "semantic_hash": ""
   },
   "gh-sfl/list.go": {
@@ -565,8 +565,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/sync.go": {
-    "mtime": 1786614216.912215,
-    "ast_hash": "c2b8d981a062c9439865ad4f985af2aa",
+    "mtime": 1786617378.5705914,
+    "ast_hash": "c978cbd3c8a4ad9f3f075aa048f07655",
     "semantic_hash": ""
   },
   "gh-sfl/table.go": {
