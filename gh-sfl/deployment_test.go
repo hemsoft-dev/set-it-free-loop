@@ -1313,6 +1313,35 @@ func TestAssertReviewerRolloutReadyFailsBeforeAnyWrite(t *testing.T) {
 	}
 }
 
+func TestAssertReviewerRolloutReadyDoesNotClaimAppVerification(t *testing.T) {
+	client := &fakeREST{
+		repositoryDefaultBranch: "main",
+		actionsEnabled:          true,
+		actionsAllowed:          "all",
+		actionVariablePages:     [][]string{{"SFL_APP_CLIENT_ID"}},
+		actionSecretPages:       [][]string{{"OPENROUTER_API_KEY", "SFL_APP_PRIVATE_KEY"}},
+	}
+	oldClient := newRESTClient
+	newRESTClient = func() (restAPI, error) { return client, nil }
+	t.Cleanup(func() { newRESTClient = oldClient })
+
+	var output bytes.Buffer
+	if err := assertReviewerRolloutReady("owner", "repo", &output); err != nil {
+		t.Fatalf("assertReviewerRolloutReady() unexpected error: %v", err)
+	}
+	if strings.Contains(output.String(), "App, variables, and secrets ready") {
+		t.Fatalf("preflight falsely reported App verification:\n%s", output.String())
+	}
+	for _, want := range []string{
+		"Actions policy, variable, and secret metadata ready",
+		"rely on the App-authenticated credential bootstrap check",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("preflight output missing %q:\n%s", want, output.String())
+		}
+	}
+}
+
 func TestPrintReviewerPrerequisitesSeparatesCredentialFaults(t *testing.T) {
 	health := reviewerRolloutHealth{
 		DefaultBranch:    "main",

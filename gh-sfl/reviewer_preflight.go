@@ -85,7 +85,7 @@ func inspectReviewerRolloutWithClient(
 		DefaultBranch:  repository.DefaultBranch,
 		ActionsEnabled: actionsPermissions.Enabled,
 		ActionsIssues:  actionsIssues,
-		AppNotice: "GitHub CLI OAuth cannot inspect App installations for the HemSoft personal account; " +
+		AppNotice: "GitHub CLI OAuth cannot inspect App installation permissions in this path; " +
 			"verify scope and permissions with the App-authenticated credential bootstrap",
 		MissingVariables: missingNames(reviewerRequiredVariables, variables),
 		MissingSecrets:   missingNames(reviewerRequiredSecrets, secrets),
@@ -189,7 +189,9 @@ func assertReviewerRolloutReady(owner, repo string, stdout io.Writer) error {
 	if len(issues) > 0 {
 		return fmt.Errorf("reviewer rollout preflight failed for %s/%s:\n - %s", owner, repo, strings.Join(issues, "\n - "))
 	}
-	fmt.Fprintf(stdout, "  Reviewer rollout preflight: default branch %s, Actions, App, variables, and secrets ready ✓\n\n", health.DefaultBranch)
+	fmt.Fprintf(stdout, "  Reviewer rollout preflight: default branch %s, Actions policy, variable, and secret metadata ready ✓\n", health.DefaultBranch)
+	fmt.Fprintln(stdout, "  Reviewer App installation: rely on the App-authenticated credential bootstrap check")
+	fmt.Fprintln(stdout)
 	return nil
 }
 
