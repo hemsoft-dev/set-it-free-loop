@@ -58,8 +58,9 @@ Known gaps:
 - [ ] `VERSION` and `sfl.json` still report `2.0.0`; there is no recorded Relias
   baseline in release metadata.
 - [ ] The repository has no Git tags or GitHub releases.
-- [ ] `.github/workflows/auto-version.yml` is invalid YAML at the literal
-  `${FIRST_LINE}` line, and current release runs fail before jobs start.
+- [x] `.github/workflows/auto-version.yml` parses and has a checksum-pinned
+  actionlint gate; publication remains opt-in until the release contract below
+  is complete.
 - [ ] The HemSoft CLI installer transforms source from a local
   `D:\github\Relias\set-it-free-loop\gh-sfl` checkout, so installation is not
   reproducible on a fresh machine.
@@ -97,7 +98,7 @@ and checksum, and canonical/runtime artifact parity.
 
 ### P0 — Restore a trustworthy release pipeline
 
-- [ ] Repair `.github/workflows/auto-version.yml` and add a YAML/actionlint gate
+- [x] Repair `.github/workflows/auto-version.yml` and add a YAML/actionlint gate
   that would catch the current parse failure.
 - [ ] Make release metadata distinguish the HemSoft distribution version from
   the Relias reviewer baseline version and immutable baseline commit.

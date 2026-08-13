@@ -88,7 +88,10 @@ The SFL uses [Semantic Versioning](https://semver.org/). The single source of tr
 
 ### Automatic versioning
 
-Versions bump automatically on every push to `main` based on [Conventional Commits](https://www.conventionalcommits.org/):
+Automatic publication is currently safety-gated while the first HemSoft release
+contract is completed. When the repository variable
+`SFL_AUTO_VERSION_ENABLED` is explicitly set to `true`, versions bump on pushes
+to `main` based on [Conventional Commits](https://www.conventionalcommits.org/):
 
 | Commit prefix | Bump | Example |
 |---------------|------|---------|
@@ -97,7 +100,10 @@ Versions bump automatically on every push to `main` based on [Conventional Commi
 | `feat!:` or `BREAKING CHANGE` | **major** (2.1.1 → 3.0.0) | `feat!: rename sfl.json schema` |
 | `docs:`, `chore:`, `ci:`, `test:` | *no bump* | `docs: update README` |
 
-The workflow updates `VERSION`, stamps `sfl.json`, creates a git tag (`v2.1.0`), and publishes a GitHub release.
+When enabled, the workflow updates `VERSION`, stamps `sfl.json`, creates a git
+tag (`v2.1.0`), and publishes a GitHub release. Leave the variable unset until
+the release metadata, artifact checksums, tag protection, prerelease, and
+clean-machine installation checks in [`TODO.md`](TODO.md) are complete.
 
 ### How it works
 

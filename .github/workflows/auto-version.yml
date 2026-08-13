@@ -17,24 +17,28 @@ concurrency:
 jobs:
   bump:
     runs-on: ubuntu-latest
-    # Skip commits made by this workflow (prevent infinite loop)
-    if: "!contains(github.event.head_commit.message, '[auto-version]')"
+    # Publishing stays opt-in until release metadata, artifacts, tag protection,
+    # and clean-machine installation have passed the release contract.
+    if: >-
+      vars.SFL_AUTO_VERSION_ENABLED == 'true' &&
+      !contains(github.event.head_commit.message, '[auto-version]')
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine bump type from commit message
         id: bump
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          MSG="${{ github.event.head_commit.message }}"
-          FIRST_LINE=$(echo "$MSG" | head -n 1)
+          FIRST_LINE=$(printf '%s\n' "$COMMIT_MSG" | head -n 1)
 
           # Check for breaking change (major bump)
-          if echo "$FIRST_LINE" | grep -qE '^[a-z]+!(\(.+\))?:' || echo "$MSG" | grep -q 'BREAKING CHANGE'; then
+          if echo "$FIRST_LINE" | grep -qE '^[a-z]+!(\(.+\))?:' || echo "$COMMIT_MSG" | grep -q 'BREAKING CHANGE'; then
             echo "type=major" >> "$GITHUB_OUTPUT"
           # Check for feat (minor bump)
           elif echo "$FIRST_LINE" | grep -qE '^feat(\(.+\))?:'; then
@@ -106,23 +110,17 @@ jobs:
         if: steps.bump.outputs.type != 'none'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          NEW_VERSION: ${{ steps.next.outputs.version }}
+          PREV_VERSION: ${{ steps.current.outputs.version }}
+          BUMP_TYPE: ${{ steps.bump.outputs.type }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
-          NEW_VERSION="${{ steps.next.outputs.version }}"
-          PREV_VERSION="${{ steps.current.outputs.version }}"
-          COMMIT_MSG="${{ github.event.head_commit.message }}"
-          FIRST_LINE=$(echo "$COMMIT_MSG" | head -n 1)
+          FIRST_LINE=$(printf '%s\n' "$COMMIT_MSG" | head -n 1)
+          RELEASE_NOTES=$(printf '## Changes\n\n%s\n\n**Bump**: %s → %s (%s)\n**Commit**: %s\n\n---\n\nSee [CATALOG.md](CATALOG.md) for the full workflow library.\nTo upgrade a consumer repo, re-run deploy-workflow.ps1 at this version.' \
+            "$FIRST_LINE" "$PREV_VERSION" "$NEW_VERSION" "$BUMP_TYPE" "$SOURCE_SHA")
 
           gh release create "v${NEW_VERSION}" \
             --title "v${NEW_VERSION}" \
-            --notes "## Changes
-
-${FIRST_LINE}
-
-**Bump**: \`${PREV_VERSION}\` → \`${NEW_VERSION}\` (${{ steps.bump.outputs.type }})
-**Commit**: ${{ github.sha }}
-
----
-
-See [CATALOG.md](CATALOG.md) for the full workflow library.
-To upgrade a consumer repo, re-run \`deploy-workflow.ps1\` at this version." \
+            --notes "$RELEASE_NOTES" \
             --latest
