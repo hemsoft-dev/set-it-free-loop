@@ -7,8 +7,8 @@
   "properties": {
     "version": {
       "type": "string",
-      "description": "The SFL version that was deployed (e.g., '2.0.0').",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+      "description": "The SFL semantic version that was deployed (for example, '2.0.0' or '2.1.0-rc.1').",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$"
     },
     "deployedAt": {
       "type": "string",

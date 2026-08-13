@@ -130,7 +130,7 @@ var governanceFiles = []string{
 
 const sflVersionPlaceholder = "__SFL_VERSION__"
 
-var semanticVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+var semanticVersionPattern = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$`)
 var fullCommitSHAPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 func renderWorkflow(content, sflVersion string) string {
@@ -155,7 +155,7 @@ func resolveDeploymentRelease(sourceRef string) (deploymentRelease, error) {
 
 	version := strings.TrimPrefix(ref, "v")
 	if !strings.HasPrefix(ref, "v") || !semanticVersionPattern.MatchString(version) {
-		return deploymentRelease{}, fmt.Errorf("invalid SFL release ref %q (expected vMAJOR.MINOR.PATCH)", ref)
+		return deploymentRelease{}, fmt.Errorf("invalid SFL release ref %q (expected a v-prefixed semantic version)", ref)
 	}
 
 	sha, err := getCommitSHA(motherRepoOwner, motherRepoName, ref)

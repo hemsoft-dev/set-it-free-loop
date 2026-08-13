@@ -1923,6 +1923,40 @@ func TestResolveDeploymentReleaseUsesLatestTagAndPinnedVersion(t *testing.T) {
 	}
 }
 
+func TestSemanticVersionPatternAcceptsPrereleaseAndRejectsMalformedVersions(t *testing.T) {
+	valid := []string{"2.0.0", "2.1.0-rc.1", "2.1.0-rc.1+build.7"}
+	for _, version := range valid {
+		if !semanticVersionPattern.MatchString(version) {
+			t.Errorf("semanticVersionPattern rejected %q", version)
+		}
+	}
+	invalid := []string{"v2.0.0", "2.0", "2.0.0-", "2.0.0+", "2.0.0 rc.1"}
+	for _, version := range invalid {
+		if semanticVersionPattern.MatchString(version) {
+			t.Errorf("semanticVersionPattern accepted %q", version)
+		}
+	}
+}
+
+func TestResolveDeploymentReleaseAcceptsExplicitPrerelease(t *testing.T) {
+	t.Setenv("SFL_SOURCE_TOKEN", "source-read-token")
+	oldSourceClient := newSourceRESTClient
+	sourceClient := &fakeREST{
+		commitSHA:    "0123456789012345678901234567890123456789",
+		fileContents: map[string]string{"VERSION": "2.1.0-rc.1\n"},
+	}
+	newSourceRESTClient = func(string) (restAPI, error) { return sourceClient, nil }
+	t.Cleanup(func() { newSourceRESTClient = oldSourceClient })
+
+	release, err := resolveDeploymentRelease("v2.1.0-rc.1")
+	if err != nil {
+		t.Fatalf("resolveDeploymentRelease() prerelease error: %v", err)
+	}
+	if release.Ref != "v2.1.0-rc.1" || release.Version != "2.1.0-rc.1" {
+		t.Errorf("resolveDeploymentRelease() = %+v", release)
+	}
+}
+
 func TestDeploymentBranchName(t *testing.T) {
 	now := time.Date(2026, time.August, 9, 12, 34, 56, 123456789, time.FixedZone("local", -4*60*60))
 	got := deploymentBranchName("Sync SFL!", now)

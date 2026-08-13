@@ -1,3 +1,9 @@
+[CmdletBinding()]
+param(
+    [string] $ExpectedVersion,
+    [switch] $RequirePrerelease
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -6,17 +12,31 @@ $version = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Raw).Trim(
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'sfl.json') -Raw | ConvertFrom-Json
 $release = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\release-metadata.json') -Raw |
     ConvertFrom-Json
-$autoVersion = Get-Content -LiteralPath (Join-Path $repoRoot '.github\workflows\auto-version.yml') -Raw
+$workflow = Get-Content -LiteralPath (Join-Path $repoRoot '.github\workflows\publish-private-prerelease.yml') -Raw
 $failures = [System.Collections.Generic.List[string]]::new()
+$semanticVersionPattern = '^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?(?:\+[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$'
 
-if ($version -notmatch '^\d+\.\d+\.\d+$') {
+if ($version -notmatch $semanticVersionPattern) {
     $failures.Add("VERSION is not semantic version metadata: '$version'.")
+}
+if (-not [string]::IsNullOrWhiteSpace($ExpectedVersion) -and $version -ne $ExpectedVersion) {
+    $failures.Add("VERSION '$version' differs from requested release '$ExpectedVersion'.")
 }
 if ($manifest.version -ne $version) {
     $failures.Add("sfl.json version '$($manifest.version)' differs from VERSION '$version'.")
 }
 if ($release.distribution.version -ne $version) {
     $failures.Add("Release distribution version '$($release.distribution.version)' differs from VERSION '$version'.")
+}
+if ($release.distribution.tag -ne "v$version") {
+    $failures.Add("Release distribution tag '$($release.distribution.tag)' differs from v$version.")
+}
+$isPrerelease = $version.Split('+', 2)[0].Contains('-')
+if ([bool] $release.distribution.prerelease -ne $isPrerelease) {
+    $failures.Add("Release prerelease metadata does not match version '$version'.")
+}
+if ($RequirePrerelease -and -not $isPrerelease) {
+    $failures.Add("Release workflow only publishes prereleases, but '$version' is stable.")
 }
 if ($release.distribution.repository -ne 'HemSoft/set-it-free-loop' -or
     $release.distribution.visibility -ne 'private') {
@@ -43,13 +63,106 @@ if ($release.cliSource.repository -ne 'HemSoft/set-it-free-loop' -or
 }
 
 $requiredWorkflowPatterns = @(
-    "- 'deployment/release-metadata.json'",
-    'jq --arg v "$NEW_VERSION" ''.distribution.version = $v'' deployment/release-metadata.json',
-    'git add VERSION sfl.json deployment/release-metadata.json'
+    "github.repository == 'HemSoft/set-it-free-loop'",
+    "github.ref == 'refs/heads/main'",
+    'test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -RequirePrerelease',
+    'git rev-parse origin/main',
+    'immutable-releases',
+    'build-release-artifacts.ps1',
+    'sha256sum --check SHA256SUMS',
+    'gh release create "$tag"',
+    'gh release verify "$tag"',
+    'gh release verify-asset "$tag"',
+    '--prerelease',
+    'install-gh-sfl-hemsoft.ps1',
+    '-ReleaseVersion $env:RELEASE_VERSION'
 )
 foreach ($pattern in $requiredWorkflowPatterns) {
-    if (-not $autoVersion.Contains($pattern)) {
-        $failures.Add("Auto Version does not synchronize release metadata with: $pattern")
+    if (-not $workflow.Contains($pattern)) {
+        $failures.Add("Private prerelease workflow is missing contract fragment: $pattern")
+    }
+}
+
+$scriptPaths = @(
+    'deployment\scripts\set-release-version.ps1',
+    'deployment\scripts\build-release-artifacts.ps1',
+    'deployment\scripts\install-gh-sfl-hemsoft.ps1',
+    'deployment\scripts\set-release-protection.ps1',
+    'deployment\tests\test-release-metadata.ps1',
+    'deployment\tests\test-release-installer.ps1'
+)
+foreach ($relativePath in $scriptPaths) {
+    $tokens = $null
+    $parseErrors = $null
+    [void] [System.Management.Automation.Language.Parser]::ParseFile(
+        (Join-Path $repoRoot $relativePath),
+        [ref] $tokens,
+        [ref] $parseErrors
+    )
+    if ($parseErrors.Count -gt 0) {
+        $failures.Add("$relativePath has PowerShell parse errors: $($parseErrors.Message -join '; ')")
+    }
+}
+
+$installer = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\scripts\install-gh-sfl-hemsoft.ps1') -Raw
+foreach ($pattern in @('release download', 'SHA256SUMS', 'Get-FileHash', 'Checksum mismatch')) {
+    if (-not $installer.Contains($pattern)) {
+        $failures.Add("Release installer is missing checksum contract fragment: $pattern")
+    }
+}
+
+$fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "sfl-release-contract-$([guid]::NewGuid().ToString('N'))"
+try {
+    New-Item -ItemType Directory -Path (Join-Path $fixtureRoot 'deployment') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $fixtureRoot 'VERSION')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'sfl.json') -Destination (Join-Path $fixtureRoot 'sfl.json')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'deployment\release-metadata.json') `
+        -Destination (Join-Path $fixtureRoot 'deployment\release-metadata.json')
+    & (Join-Path $repoRoot 'deployment\scripts\set-release-version.ps1') `
+        -Version '9.8.7-rc.2+contract' -RepositoryRoot $fixtureRoot | Out-Null
+    $fixtureVersion = (Get-Content -LiteralPath (Join-Path $fixtureRoot 'VERSION') -Raw).Trim()
+    $fixtureManifest = Get-Content -LiteralPath (Join-Path $fixtureRoot 'sfl.json') -Raw | ConvertFrom-Json
+    $fixtureMetadata = Get-Content -LiteralPath (Join-Path $fixtureRoot 'deployment\release-metadata.json') -Raw |
+        ConvertFrom-Json
+    if ($fixtureVersion -ne '9.8.7-rc.2+contract' -or
+        $fixtureManifest.version -ne $fixtureVersion -or
+        $fixtureMetadata.distribution.version -ne $fixtureVersion -or
+        $fixtureMetadata.distribution.tag -ne "v$fixtureVersion" -or
+        -not $fixtureMetadata.distribution.prerelease) {
+        $failures.Add('set-release-version.ps1 did not synchronize the fixture metadata.')
+    }
+
+    $invalidVersionFailure = $null
+    try {
+        & (Join-Path $repoRoot 'deployment\scripts\set-release-version.ps1') `
+            -Version '9.8' -RepositoryRoot $fixtureRoot | Out-Null
+    }
+    catch {
+        $invalidVersionFailure = $_.Exception.Message
+    }
+    if ($invalidVersionFailure -notlike 'Invalid semantic version*') {
+        $failures.Add("set-release-version.ps1 did not reject a malformed version: $invalidVersionFailure")
+    }
+
+    $nonEmptyOutput = Join-Path $fixtureRoot 'non-empty-output'
+    New-Item -ItemType Directory -Path $nonEmptyOutput -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $nonEmptyOutput 'sentinel.txt') -Value 'must remain'
+    $nonEmptyFailure = $null
+    try {
+        & (Join-Path $repoRoot 'deployment\scripts\build-release-artifacts.ps1') `
+            -Version '9.8.7-rc.2' -OutputDirectory $nonEmptyOutput | Out-Null
+    }
+    catch {
+        $nonEmptyFailure = $_.Exception.Message
+    }
+    if ($nonEmptyFailure -notlike 'Release output directory must be empty*' -or
+        -not (Test-Path -LiteralPath (Join-Path $nonEmptyOutput 'sentinel.txt') -PathType Leaf)) {
+        $failures.Add("Release artifact builder did not preserve a non-empty output directory: $nonEmptyFailure")
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $fixtureRoot) {
+        Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
     }
 }
 

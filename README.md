@@ -1,6 +1,6 @@
 # Set it Free Loop™
 
-[![SFL](https://img.shields.io/badge/SFL-2.0.0-FFD700?style=flat-square)](CATALOG.md)
+[![SFL](https://img.shields.io/badge/SFL-2.1.0--rc.1-FFD700?style=flat-square)](CATALOG.md)
 [![Tier](https://img.shields.io/badge/tier-full-0e8a16?style=flat-square)](CATALOG.md)
 [![Workflows](https://img.shields.io/badge/workflows-9-blue?style=flat-square)](CATALOG.md)
 
@@ -80,11 +80,11 @@ See [CATALOG.md](CATALOG.md) for all available workflows, tiers, and expected ou
 Reviewer installation, recovery, and optional gating are documented in
 [docs/SFL-REVIEWER.md](docs/SFL-REVIEWER.md).
 
-For the private HemSoft CLI path, build the repository-owned source with
-`.\gh-sfl\build.ps1 -NoInstall` or install it with
-`.\deployment\scripts\install-gh-sfl-hemsoft.ps1`. No local Relias checkout is
-required. `gh sfl init --repo HemSoft/private-repository` defaults to the
-reviewer-only tier and opens a deployment pull request.
+For the private HemSoft CLI path, install a checksum-verified release with
+`.\deployment\scripts\install-gh-sfl-hemsoft.ps1 -ReleaseVersion <version>` or
+build repository-owned source with `.\gh-sfl\build.ps1 -NoInstall`. No local
+Relias checkout is required. `gh sfl init --repo HemSoft/private-repository`
+defaults to the reviewer-only tier and opens a deployment pull request.
 
 ---
 
@@ -96,25 +96,18 @@ truth is the [`VERSION`](VERSION) file in this repo. The synchronized
 that HemSoft distribution version separate from the pinned Relias reviewer
 release and immutable reviewed commit.
 
-### Automatic versioning
+### Private release contract
 
-Automatic publication is currently safety-gated while the first HemSoft release
-contract is completed. When the repository variable
-`SFL_AUTO_VERSION_ENABLED` is explicitly set to `true`, versions bump on pushes
-to `main` based on [Conventional Commits](https://www.conventionalcommits.org/):
+Releases are deliberately manual. A version change is prepared on a branch with
+`deployment/scripts/set-release-version.ps1`, reviewed through a pull request,
+and merged before `Publish Private Prerelease` may run on `main`. The workflow
+fails closed unless `VERSION`, `sfl.json`, release metadata, the requested tag,
+the default branch, and the immutable tag ruleset agree. It builds Windows and
+Linux amd64 binaries, publishes `SHA256SUMS`, and proves a fresh authenticated
+download through the installer. See [docs/RELEASING.md](docs/RELEASING.md).
 
-| Commit prefix | Bump | Example |
-|---------------|------|---------|
-| `feat:` | **minor** (2.0.0 → 2.1.0) | `feat: add cost reporter workflow` |
-| `fix:`, `perf:`, `refactor:` | **patch** (2.1.0 → 2.1.1) | `fix: dispatcher skips empty repos` |
-| `feat!:` or `BREAKING CHANGE` | **major** (2.1.1 → 3.0.0) | `feat!: rename sfl.json schema` |
-| `docs:`, `chore:`, `ci:`, `test:` | *no bump* | `docs: update README` |
-
-When enabled, the workflow updates `VERSION`, stamps `sfl.json` and the HemSoft
-version in `deployment/release-metadata.json`, creates a git tag (`v2.1.0`),
-and publishes a GitHub release. Leave the variable unset until
-the release metadata, artifact checksums, tag protection, prerelease, and
-clean-machine installation checks in [`TODO.md`](TODO.md) are complete.
+Stable publication remains disabled until the prerelease and pilot evidence in
+[`TODO.md`](TODO.md) is complete.
 
 ### How it works
 
@@ -126,8 +119,8 @@ clean-machine installation checks in [`TODO.md`](TODO.md) are complete.
 When you deploy to a consumer repo, the deploy script reads `VERSION`, stamps it into the consumer's `sfl.json`, and SHA-pins the source. To check if a consumer is current:
 
 ```
-SFL VERSION file:  2.1.0    ← latest
-Consumer sfl.json: 2.0.0    ← deployed version (behind)
+SFL VERSION file:  2.1.0-rc.1 ← selected release
+Consumer sfl.json: 2.0.0      ← deployed version (behind)
 ```
 
 ### Adding the badge to a consumer repo
