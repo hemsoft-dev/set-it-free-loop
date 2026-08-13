@@ -75,6 +75,7 @@ Assert-Patterns $auto @(
     'reviewer-installed: \$\{\{ steps\.reviewer-contract\.outputs\.installed \}\}',
     "steps\.reviewer-contract\.outputs\.installed == 'true'",
     'Reviewer bootstrap deployment detected',
+    'permission-pull-requests: write',
     'consume_review_label',
     'resolve_review_effort',
     'for STATUS in queued in_progress',
@@ -90,6 +91,14 @@ Assert-Patterns $auto @(
     'WAIT_OUTCOME: \$\{\{ steps\.wait-review\.outcome \}\}',
     'validate_review_run'
 )
+
+$autoContent = Read-RepoFile $auto
+if ($autoContent -match 'permission-pull-requests:\s*read') {
+    $failures.Add('Auto-review dispatcher cannot consume pull-request labels with a read-only pull-request token.')
+}
+if ($autoContent -match 'permission-issues:\s*write') {
+    $failures.Add('Auto-review dispatcher should not retain issue-wide write access when pull-request write covers its label mutations.')
+}
 
 Assert-Patterns $recovery @(
     "github\.event\.workflow_run\.path == '\.github/workflows/sfl-pr-review\.lock\.yml'",
