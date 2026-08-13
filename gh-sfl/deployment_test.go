@@ -42,6 +42,8 @@ type fakeREST struct {
 	postErrors                  map[string]error
 	variableExists              bool
 	variableGetError            error
+	labelExists                 map[string]bool
+	labelGetErrors              map[string]error
 	gets                        []string
 	posts                       []string
 	puts                        []string
@@ -54,6 +56,14 @@ type fakeREST struct {
 func (f *fakeREST) Get(path string, response interface{}) error {
 	f.gets = append(f.gets, path)
 	switch {
+	case strings.Contains(path, "/labels/"):
+		if err := f.labelGetErrors[path]; err != nil {
+			return err
+		}
+		if !f.labelExists[path] {
+			return &api.HTTPError{StatusCode: http.StatusNotFound}
+		}
+		return decodeTestResponse(response, map[string]string{"name": filepath.Base(path)})
 	case strings.Contains(path, "/actions/variables/"):
 		if f.variableGetError != nil {
 			return f.variableGetError
@@ -591,6 +601,50 @@ func TestEnsureRepoVariableOnlyCreatesOnNotFound(t *testing.T) {
 				t.Fatalf("patches=%v posts=%v", test.client.patches, test.client.posts)
 			}
 		})
+	}
+}
+
+func TestEnsureLabelsOnlyCreatesOnNotFound(t *testing.T) {
+	label := labelDef{Name: "risk:high", Color: "e11d48", Description: "High risk"}
+	path := "repos/owner/repo/labels/risk%3Ahigh"
+
+	for _, test := range []struct {
+		name      string
+		client    *fakeREST
+		wantPost  int
+		wantPatch int
+		wantError bool
+	}{
+		{name: "create missing", client: &fakeREST{}, wantPost: 1},
+		{name: "update existing", client: &fakeREST{labelExists: map[string]bool{path: true}}, wantPatch: 1},
+		{name: "preserve server error", client: &fakeREST{labelGetErrors: map[string]error{path: &api.HTTPError{StatusCode: http.StatusInternalServerError}}}, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			created, updated, err := ensureLabelsWithClient(test.client, "owner", "repo", []labelDef{label})
+			if (err != nil) != test.wantError {
+				t.Fatalf("ensureLabelsWithClient() error = %v, wantError=%v", err, test.wantError)
+			}
+			if len(test.client.posts) != test.wantPost || len(test.client.patches) != test.wantPatch {
+				t.Fatalf("created=%d updated=%d posts=%v patches=%v", created, updated, test.client.posts, test.client.patches)
+			}
+		})
+	}
+}
+
+func TestRemoveLabelsReportsPartialFailureAndIgnoresMissing(t *testing.T) {
+	failedPath := "repos/owner/repo/labels/risk%3Ahigh"
+	missingPath := "repos/owner/repo/labels/missing"
+	client := &fakeREST{deleteErrors: map[string]error{
+		failedPath:  &api.HTTPError{StatusCode: http.StatusForbidden},
+		missingPath: &api.HTTPError{StatusCode: http.StatusNotFound},
+	}}
+	var output bytes.Buffer
+	removed, err := removeLabelsWithClient(client, "owner", "repo", []string{"risk:low", "risk:high", "missing"}, &output)
+	if removed != 1 || err == nil || !strings.Contains(err.Error(), "risk:high") {
+		t.Fatalf("removeLabelsWithClient() removed=%d err=%v", removed, err)
+	}
+	if !strings.Contains(output.String(), "✓ risk:low") || strings.Contains(output.String(), "risk:high") {
+		t.Fatalf("removeLabelsWithClient() output = %q", output.String())
 	}
 }
 

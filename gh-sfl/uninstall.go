@@ -5,13 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	gh "github.com/cli/go-gh/v2"
 	"github.com/cli/go-gh/v2/pkg/api"
 )
 
@@ -151,22 +151,34 @@ func runUninstall(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Remove labels
 	if !opts.keepLabels {
 		fmt.Fprintf(stdout, "\n  Removing labels...\n")
-		removed := 0
-		for _, label := range sflLabels {
-			_, _, delErr := gh.Exec(
-				"api", fmt.Sprintf("repos/%s/%s/labels/%s", owner, repo, escapedLabelPath(label)),
-				"--method", "DELETE",
-			)
-			if delErr == nil {
-				removed++
-				fmt.Fprintf(stdout, "    ✓ %s\n", label)
-			}
+		removed, removeErr := removeLabelsWithClient(client, owner, repo, sflLabels, stdout)
+		if removeErr != nil {
+			return fmt.Errorf("removing labels after workflow uninstall (%d removed): %w", removed, removeErr)
 		}
 		fmt.Fprintf(stdout, "    %d labels removed\n", removed)
 	}
 
 	fmt.Fprintf(stdout, "\n✅ SFL uninstalled from %s/%s\n", owner, repo)
 	return nil
+}
+
+func removeLabelsWithClient(client restAPI, owner, repo string, labels []string, stdout io.Writer) (int, error) {
+	removed := 0
+	var failures []error
+	for _, label := range labels {
+		path := fmt.Sprintf("repos/%s/%s/labels/%s", owner, repo, escapedLabelPath(label))
+		if err := client.Delete(path, nil); err != nil {
+			var httpErr *api.HTTPError
+			if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
+				continue
+			}
+			failures = append(failures, fmt.Errorf("%s: %w", label, err))
+			continue
+		}
+		removed++
+		fmt.Fprintf(stdout, "    ✓ %s\n", label)
+	}
+	return removed, errors.Join(failures...)
 }
 
 func uninstallFiles(manifest *sflManifest, forceFallback bool) ([]string, error) {

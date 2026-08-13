@@ -208,37 +208,46 @@ func setRepoSecret(owner, repo, name, value string) error {
 	return nil
 }
 func ensureLabels(owner, repo string, labels []labelDef) (created, updated int, err error) {
+	client, err := newRESTClient()
+	if err != nil {
+		return 0, 0, fmt.Errorf("creating GitHub REST client: %w", err)
+	}
+	return ensureLabelsWithClient(client, owner, repo, labels)
+}
+
+func ensureLabelsWithClient(client restAPI, owner, repo string, labels []labelDef) (created, updated int, err error) {
 	for _, l := range labels {
-		_, _, checkErr := gh.Exec(
-			"api", fmt.Sprintf("repos/%s/%s/labels/%s", owner, repo, escapedLabelPath(l.Name)),
-			"--jq", ".name",
-		)
-		if checkErr != nil {
-			// Label doesn't exist — create it
-			_, stderrBuf, createErr := gh.Exec(
-				"api", fmt.Sprintf("repos/%s/%s/labels", owner, repo),
-				"--method", "POST",
-				"-f", "name="+l.Name,
-				"-f", "color="+l.Color,
-				"-f", "description="+l.Description,
-			)
-			if createErr != nil {
-				return created, updated, fmt.Errorf("creating label %s: %s: %w", l.Name, stderrBuf.String(), createErr)
+		labelPath := fmt.Sprintf("repos/%s/%s/labels/%s", owner, repo, escapedLabelPath(l.Name))
+		var existing labelDef
+		checkErr := client.Get(labelPath, &existing)
+		if checkErr == nil {
+			payload, payloadErr := jsonBody(map[string]string{
+				"new_name":    l.Name,
+				"color":       l.Color,
+				"description": l.Description,
+			})
+			if payloadErr != nil {
+				return created, updated, fmt.Errorf("encoding label %s update: %w", l.Name, payloadErr)
 			}
-			created++
-		} else {
-			// Label exists — update it
-			_, stderrBuf, updateErr := gh.Exec(
-				"api", fmt.Sprintf("repos/%s/%s/labels/%s", owner, repo, escapedLabelPath(l.Name)),
-				"--method", "PATCH",
-				"-f", "color="+l.Color,
-				"-f", "description="+l.Description,
-			)
-			if updateErr != nil {
-				return created, updated, fmt.Errorf("updating label %s: %s: %w", l.Name, stderrBuf.String(), updateErr)
+			if updateErr := client.Patch(labelPath, payload, nil); updateErr != nil {
+				return created, updated, fmt.Errorf("updating label %s: %w", l.Name, updateErr)
 			}
 			updated++
+			continue
 		}
+
+		var httpErr *api.HTTPError
+		if !errors.As(checkErr, &httpErr) || httpErr.StatusCode != http.StatusNotFound {
+			return created, updated, fmt.Errorf("checking label %s: %w", l.Name, checkErr)
+		}
+		payload, payloadErr := jsonBody(l)
+		if payloadErr != nil {
+			return created, updated, fmt.Errorf("encoding label %s creation: %w", l.Name, payloadErr)
+		}
+		if createErr := client.Post(fmt.Sprintf("repos/%s/%s/labels", owner, repo), payload, nil); createErr != nil {
+			return created, updated, fmt.Errorf("creating label %s: %w", l.Name, createErr)
+		}
+		created++
 	}
 	return created, updated, nil
 }

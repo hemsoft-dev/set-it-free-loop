@@ -475,8 +475,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/deployment_test.go": {
-    "mtime": 1786618871.1271868,
-    "ast_hash": "22a4dd5d0ab3430d76e3566138e4493e",
+    "mtime": 1786620372.1547656,
+    "ast_hash": "2c5189320a9024ea8035531be06a7525",
     "semantic_hash": ""
   },
   "gh-sfl/dispatch_dedup_fixture_test.go": {
@@ -490,8 +490,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/github.go": {
-    "mtime": 1786617378.5685914,
-    "ast_hash": "3f3c7223e76f54a0acccea388fe5739d",
+    "mtime": 1786620383.747809,
+    "ast_hash": "f333c0ee922619d8fc1ddda9a899c590",
     "semantic_hash": ""
   },
   "gh-sfl/go.mod": {
@@ -580,8 +580,8 @@
     "semantic_hash": ""
   },
   "gh-sfl/uninstall.go": {
-    "mtime": 1786618785.8233418,
-    "ast_hash": "6534cb1476f9c0f5b384181256b24c9a",
+    "mtime": 1786620372.1537654,
+    "ast_hash": "a520d0a23b8265cde597985abaab892b",
     "semantic_hash": ""
   },
   "gh-sfl/version.go": {

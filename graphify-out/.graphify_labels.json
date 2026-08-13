@@ -70,7 +70,7 @@
   "68": "version",
   "69": "addons",
   "70": "generatelabels/main.go",
-  "71": "hemsoft.go",
+  "71": "reviewer_contract_test.go",
   "72": "reviewerFixtureBash",
   "73": "properties",
   "74": "requiredSecretsAnyOf",
@@ -88,7 +88,13 @@
   "86": "labels_generated.go",
   "87": "source",
   "88": "sourceSha",
+  "89": "deployViaPullRequest",
   "90": "review_recovery_fixture_test.go",
   "91": "PROVENANCE.md",
-  "92": "build.ps1"
+  "92": "build.ps1",
+  "93": "reviewerWorkflowRuleset",
+  "94": "hemsoft_test.go",
+  "95": "readContractFile",
+  "96": "parseInitOptions",
+  "97": "deploymentBranchName"
 }
