@@ -59,7 +59,9 @@ The system is recursive but **bounded** by explicit governance controls.
 1. **Reusable Workflow Library** — A versioned catalog of `gh aw`-compatible workflows deployable to any repo
 2. **Governed Automation** — Label taxonomy, retry policy, merge authority matrix as code in `deployment/governance/`
 3. **Staging Gate** — Nothing enters the production library without running on this repo first
-4. **Structured Intake** — `CATALOG.md` for what's ready; `TODO.md` for the ideas pipeline; `/new-workflow` prompt for authoring
+4. **Structured Intake** — `CATALOG.md` for what's ready, GitHub Issues for
+   proposed work, `TODO.md` for the active implementation backlog, and
+   `/new-workflow` for authoring
 5. **Fleet Deployment** — A single PowerShell script deploys any workflow to N repos via PRs
 6. **Consumer Independence** — Consumer repos reference workflow files by SHA pin; upgrades are explicit
 7. **Operating Model, Not a CLI** — The value is the governance standard and workflow library, not a wrapper around `gh aw`
@@ -81,7 +83,7 @@ HemSoft/set-it-free-loop/
 │   └── scripts/            ← fleet deployment tooling
 ├── docs/                   ← maintainer reference
 ├── CATALOG.md              ← graduated, deployable workflows
-├── TODO.md                 ← ideas pipeline
+├── TODO.md                 ← active implementation backlog
 ├── VISION.md               ← this file
 ├── SOLVING-SOFTWARE-ENGINEERING.md
 └── README.md
@@ -90,8 +92,8 @@ HemSoft/set-it-free-loop/
 ### Workflow Lifecycle
 
 ```
-TODO.md (idea)
-    ↓  /new-workflow prompt
+/new-workflow prompt
+    ↓
 .github/workflows/{name}.md   ← STAGING
     ↓  acceptance criteria pass
 deployment/workflows/{name}.md ← PRODUCTION (CATALOG entry created)

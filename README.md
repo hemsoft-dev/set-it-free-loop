@@ -139,8 +139,8 @@ The deploy script reads the current `VERSION`, creates a PR with updated workflo
 ## Workflow lifecycle
 
 ```
-TODO.md (idea)
-    ↓  /new-workflow prompt in VS Code
+/new-workflow prompt in VS Code
+    ↓
 .github/workflows/{name}.md   ← STAGING (runs on this repo, verified here)
     ↓  acceptance criteria pass
 deployment/workflows/{name}.md ← PRODUCTION (CATALOG.md entry, deployable)
@@ -163,7 +163,7 @@ Nothing enters `deployment/` without having run successfully in staging first.
 ## References
 
 - [CATALOG.md](CATALOG.md) — ready-to-deploy workflow registry
-- [TODO.md](TODO.md) — ideas pipeline
+- [TODO.md](TODO.md) — active reviewer parity backlog
 - [VISION.md](VISION.md) — strategic vision
 - [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) — operating model playbook
 - [deployment/governance/policy.md](deployment/governance/policy.md) — governance policy

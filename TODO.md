@@ -1,182 +1,238 @@
-# TODO.md — Set it Free Loop™ Ideas Pipeline
+# HemSoft SFL Reviewer Parity TODO
 
-These are workflows we want to build and graduate to [CATALOG.md](CATALOG.md).
+This is the active backlog for bringing the private HemSoft distribution of the
+SFL pull request reviewer to operational parity with
+`relias-engineering/set-it-free-loop` while preserving HemSoft's intentionally
+different model provider and private-repository boundary.
 
-Items move from here → `.github/workflows/` (staging) → `deployment/workflows/` (production) → CATALOG.md entry.
+The comparison baseline is Relias SFL `v6.5.7` at commit
+`669d4d84ef37ebab107c5931d6727846626062e5`. Recheck the Relias default branch
+before starting each parity item because that baseline can move.
 
----
+## Definition of parity
 
-## Resume Work — Quick Start
+Parity is complete when all of the following are true:
 
-When switching back to this repo, follow these steps to verify everything works and continue where you left off.
+- Reviewer safety, evidence, approval, recovery, and finding-lifecycle
+  contracts match the current Relias reviewer unless an intentional HemSoft
+  difference is documented and tested.
+- A fresh machine can install a versioned, checksum-verified HemSoft `gh sfl`
+  CLI without depending on a local Relias checkout.
+- `gh sfl init`, `sync`, and `status` operate against immutable HemSoft releases
+  and default to deployment pull requests.
+- Every approved private HemSoft consumer can be inventoried, upgraded, and
+  checked for drift from one documented rollout path.
+- One private pilot repository passes a complete review, recovery, finding
+  resolution, and required-gate smoke test.
 
-### 1. Verify the repo is up-to-date
+Model identity is not a parity requirement. HemSoft intentionally uses Kimi K3
+through its private OpenRouter route; Relias uses its organization Copilot
+configuration. The review and security contracts must remain equivalent even
+when provider-specific configuration differs.
 
-```powershell
-cd D:\github\HemSoft\set-it-free-loop
-git pull origin main
-```
+## Verified baseline — 2026-08-12
 
-### 2. Verify workflows are running on GitHub
+Already present:
 
-Check that the SFL Dispatcher and SFL Auditor are active on the **set-it-free-loop** repo itself (dogfooding):
+- [x] Private distribution source at `HemSoft/set-it-free-loop`.
+- [x] Deployment mutations reject repositories outside private `HemSoft/*`
+  scope.
+- [x] Reviewer source, compiled lock, automatic trigger/gate, and recovery
+  workflow are maintained in the source repository.
+- [x] Deployment through a pull request is supported by
+  `deployment/scripts/deploy-workflow.ps1`.
+- [x] Consumer manifests retain an immutable source commit and preserve
+  components from an existing larger SFL installation.
+- [x] Repository-scoped GitHub App credential and review-gate setup helpers
+  exist.
+- [x] Issue #40 / PR #41 brought most reviewer behavior to the Relias v6.5.7
+  contract.
 
-```powershell
-# Check recent workflow runs
-gh run list --repo HemSoft/set-it-free-loop --limit 10
+Known gaps:
 
-# Check specific infrastructure workflows
-gh run list --repo HemSoft/set-it-free-loop --workflow "SFL Dispatcher" --limit 5
-gh run list --repo HemSoft/set-it-free-loop --workflow "SFL Auditor" --limit 5
-```
+- [ ] HemSoft does not validate GitHub's `isOutdated` flag before resolving an
+  obsolete SFL review thread, unlike Relias v6.5.7.
+- [ ] `VERSION` and `sfl.json` still report `2.0.0`; there is no recorded Relias
+  baseline in release metadata.
+- [ ] The repository has no Git tags or GitHub releases.
+- [ ] `.github/workflows/auto-version.yml` is invalid YAML at the literal
+  `${FIRST_LINE}` line, and current release runs fail before jobs start.
+- [ ] The HemSoft CLI installer transforms source from a local
+  `D:\github\Relias\set-it-free-loop\gh-sfl` checkout, so installation is not
+  reproducible on a fresh machine.
+- [ ] No private consumer currently has the complete current reviewer package
+  and current manifest.
+- [ ] Historical reviewer artifacts exist in public HemSoft repositories even
+  though the supported distribution boundary is now private-only.
+- [ ] `deployment/tests/test-sfl-pr-review.ps1` has line-ending-sensitive source
+  assertions and fails against a CRLF checkout.
 
-If no runs appear, the workflows may not have been triggered yet (cron-based). Trigger them manually:
+## Required work
 
-```powershell
-gh workflow run sfl-dispatcher.yml --repo HemSoft/set-it-free-loop
-gh workflow run sfl-auditor.yml --repo HemSoft/set-it-free-loop
-```
+Work top to bottom. Do not declare rollout parity from source-only tests; each
+phase has evidence that must exist before it is complete.
 
-### 3. Verify the SFL GitHub App credentials exist
+### P0 — Close reviewer contract drift
 
-Both `sfl-dispatcher.yml` and `sfl-auditor.yml` mint a short-lived
-installation token from the SFL GitHub App. Because `HemSoft` is a user account
-rather than a GitHub organization, configure these per repository:
+- [ ] Port Relias's obsolete-thread guard: query `isOutdated` and refuse to
+  resolve a live unresolved thread.
+- [ ] Add regression cases proving that an outdated SFL thread may be resolved,
+  an already resolved thread is idempotent, and a live unresolved thread is
+  rejected.
+- [ ] Compare all reviewer source/runtime artifacts with current Relias `main`.
+  Document every remaining difference as one of:
+  - HemSoft OpenRouter/Kimi configuration;
+  - private HemSoft repository enforcement;
+  - a tested HemSoft hardening that is at least as strict as Relias.
+- [ ] Regenerate the reviewer lock with the repository's checksum-verified
+  `gh-aw` compiler; never edit the generated lock directly.
+- [ ] Pass the reviewer platform, verdict, recovery, and workflow contract
+  suites plus `actionlint` for the generated and wrapper workflows.
 
-```powershell
-gh variable list --repo HemSoft/set-it-free-loop
-gh secret list --repo HemSoft/set-it-free-loop --app actions
-```
+Evidence required: a contract-diff note, green focused tests, compiler version
+and checksum, and canonical/runtime artifact parity.
 
-Required entries:
+### P0 — Restore a trustworthy release pipeline
 
-- Variable: `SFL_APP_ID`
-- Secret: `SFL_APP_PRIVATE_KEY`
+- [ ] Repair `.github/workflows/auto-version.yml` and add a YAML/actionlint gate
+  that would catch the current parse failure.
+- [ ] Make release metadata distinguish the HemSoft distribution version from
+  the Relias reviewer baseline version and immutable baseline commit.
+- [ ] Keep `VERSION`, `sfl.json`, tags, release notes, and CLI artifacts in sync
+  from one release command or workflow.
+- [ ] Generate SHA-256 checksums for every published CLI artifact and verify
+  them during installation.
+- [ ] Protect release tags from movement or replacement using the strongest
+  repository-level control available to the HemSoft account.
+- [ ] Publish one private prerelease and prove installation from its immutable
+  tag before publishing the first stable release.
 
-For gh-aw safe outputs, also configure:
+Evidence required: green release workflow, immutable tag, private GitHub
+release, checksums, and a clean-machine install log.
 
-- Variable: `SFL_APP_CLIENT_ID`
+### P0 — Make `gh sfl` independently distributable
 
-To set these entries for HemSoft repositories after creating the GitHub App:
+- [ ] Remove the runtime/build dependency on a local Relias checkout. Maintain
+  the HemSoft adaptation from version-controlled source or an immutable,
+  checksum-verified upstream input.
+- [ ] Preserve the hard gates for active GitHub identity `HemSoft`, owner
+  `HemSoft`, and repository visibility `PRIVATE` on every mutating command.
+- [ ] Make reviewer-only installation the default tier; require an explicit
+  option for the legacy full suite.
+- [ ] Resolve workflow content from an immutable HemSoft release and record its
+  version and source SHA in `.sfl/sfl.json`.
+- [ ] Default `init` and `sync` to a deployment PR. Keep direct mutation an
+  explicit opt-in and reject it for protected targets where it is unsafe.
+- [ ] Ensure `status` compares the installed manifest and managed files with the
+  latest synchronized HemSoft release, not merely with a mutable branch.
+- [ ] Reconcile obsolete managed files without deleting consumer-owned files,
+  and roll back partial mutations when deployment fails.
+- [ ] Test `init`, `sync`, `status`, dry-run, protected-repository behavior,
+  uninstall/reconciliation, authentication failures, and private-scope
+  rejection.
 
-```powershell
-.\deployment\scripts\set-sfl-github-app-credentials.ps1 `
-  -Repos HemSoft/set-it-free-loop,HemSoft/hs-buddy `
-  -AppId <app-id> `
-  -ClientId <client-id> `
-  -PrivateKeyPath <path-to-private-key.pem>
-```
+Evidence required: installation on a machine without the Relias source tree,
+green CLI tests, and an immutable-source deployment PR.
 
-### 4. Verify governance labels are set up
+### P1 — Make review gating part of the rollout contract
 
-```powershell
-# Run the label setup script against THIS repo (safe to re-run — idempotent)
-.\deployment\governance\setup-labels.ps1 -Owner HemSoft -Repo set-it-free-loop
-```
+- [ ] Preflight the required App installation, `SFL_APP_CLIENT_ID`,
+  `SFL_APP_PRIVATE_KEY`, OpenRouter credential, Actions permissions, and default
+  branch before opening a deployment PR.
+- [ ] After the deployment PR merges, configure the native
+  `SFL Reviewer Approval` required check without replacing unrelated branch
+  protection settings.
+- [ ] Make gate setup idempotent and restore the previous protection state if
+  an update fails.
+- [ ] Have `gh sfl status` report missing credentials, missing required gate,
+  stale manifest, file drift, and absence of a successful reviewer run as
+  distinct failures.
+- [ ] Document the trusted boundary: maintainers who can change workflows on the
+  protected default branch are trusted in this first HemSoft model.
 
-### 5. Test the deploy script (dry run)
+Evidence required: before/after protection snapshots, idempotent rerun, rollback
+test, and a status report that detects each deliberate fault.
 
-Confirm the deployment tool works against hs-buddy (or any consumer repo) without making changes:
+### P1 — Converge approved private consumers
 
-```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "HemSoft/hs-buddy" -DryRun
-```
+- [ ] Create an explicit allowlist of approved private HemSoft consumers. Do not
+  infer approval from every repository visible to the account.
+- [ ] Inventory each approved consumer's manifest, managed files, source SHA,
+  credentials, required gate, and latest successful reviewer run.
+- [ ] Select one private pilot repository and deploy the complete current
+  reviewer package through a PR.
+- [ ] Smoke-test automatic review, explicit rerun, immutable base/head checks,
+  inline findings at every severity, recovery retry limits, obsolete-thread
+  resolution, and the zero-finding approval gate.
+- [ ] Roll the same release to the remaining allowlisted repositories in bounded
+  batches, stopping on the first failed repository.
+- [ ] Produce a convergence report showing release, source SHA, managed-file
+  parity, gate state, and smoke-test state per consumer.
+- [ ] Audit public HemSoft repositories and remove obsolete SFL reviewer
+  artifacts through ordinary reviewed PRs. Never deploy the private HemSoft
+  reviewer package or its credentials to a public repository.
 
-### 6. Verify gh-aw workflow compilation (if touching .md workflows)
+Evidence required: one successful private pilot, a reviewed PR per mutation,
+and a zero-drift convergence report for all approved consumers.
 
-Each `.md` workflow in `.github/workflows/` and `deployment/workflows/` compiles via `gh aw`:
+### P1 — Prevent future Relias drift
 
-```powershell
-# Test a single workflow
-gh aw compile .github/workflows/repo-audit.md
+- [ ] Record the last reviewed Relias tag and commit in machine-readable
+  metadata.
+- [ ] Add a read-only parity audit that compares the HemSoft reviewer package
+  with the recorded Relias baseline and permits only documented differences.
+- [ ] Require a deliberate baseline update when Relias changes reviewer safety,
+  recovery, gate, CLI, or release behavior.
+- [ ] Make parity audit failures create one deduplicated tracking issue rather
+  than silently changing HemSoft workflows.
+- [ ] Keep Windows and Linux contract tests line-ending independent.
 
-# Test all .md workflows in the repo
-Get-ChildItem .github\workflows\*.md | ForEach-Object {
-    Write-Host "Compiling $($_.Name)..."
-    gh aw compile $_.FullName
-    if ($LASTEXITCODE -ne 0) { Write-Host "FAILED: $($_.Name)" -ForegroundColor Red }
-    else { Write-Host "OK" -ForegroundColor Green }
-}
-```
+Evidence required: a fixture proving an unapproved upstream safety change fails
+the audit and an approved provider-only difference passes.
 
-### 7. Check for open issues / PRs in the pipeline
+## Definition of done
 
-```powershell
-# Any agent:fixable issues waiting for processing?
-gh issue list --repo HemSoft/set-it-free-loop --label "agent:fixable" --state open
+All required work above is complete, and:
 
-# Any agent:in-progress issues with open PRs?
-gh issue list --repo HemSoft/set-it-free-loop --label "agent:in-progress" --state open
+- [ ] The HemSoft source checkout and GitHub default branch are clean and at the
+  same commit.
+- [ ] The release, CLI, workflow, security, and contract-test suites pass from a
+  clean checkout.
+- [ ] The latest private HemSoft release can be installed without local Relias
+  files and verifies all checksums.
+- [ ] Every allowlisted private consumer is on that immutable release with no
+  managed-file drift and a required `SFL Reviewer Approval` gate.
+- [ ] At least one current consumer has end-to-end smoke evidence for review,
+  recovery, finding lifecycle, and approval.
+- [ ] Documentation describes the supported install, update, status, rollback,
+  and removal paths.
 
-# Any open agent PRs?
-gh pr list --repo HemSoft/set-it-free-loop --state open --head "agent-fix/"
-```
+## Deferred until required parity is complete
 
-### 8. What to work on next
+These are useful scale or product improvements, but they are not required to
+match Relias's supported manual `gh sfl init` rollout and must not block the
+first strong HemSoft release:
 
-See the [Ideas Pipeline](#ideas-pipeline) below for upcoming workflows to build.
+- An unattended central deployment broker.
+- A second publisher/deployer GitHub App or OIDC-based publisher boundary.
+- Automatic rollout to every private HemSoft repository.
+- Full-suite workflow expansion, feature-intake normalization, cost reporting,
+  and onboarding-health workflows unrelated to reviewer parity.
 
-Key priorities:
-- **feature-intake-normalizer** (medium) — normalize external requests into GitHub Issues
-- **loop-cost-reporter** (medium) — monthly telemetry on SFL run costs / budget burn
-- **onboarding-health-check** (low) — verify consumer repos have governance artifacts
+Any proposal to add a broker, another App, or broader repository scope requires
+an explicit design decision before implementation.
 
-Also consider:
-- Adding more consumer repos via `deploy-workflow.ps1 -Tier standard -Repos "org/repo"`
-- Reviewing and improving existing workflow prompts based on real-world run results
-- Publishing 30-day pilot metrics from hs-buddy back to this repo
+## Reference implementation
 
----
+- Relias reviewer source: `D:\github\Relias\set-it-free-loop\workflows`
+- Relias CLI source: `D:\github\Relias\set-it-free-loop\gh-sfl`
+- Relias rollout documentation:
+  `D:\github\Relias\set-it-free-loop\docs\SFL-REVIEWER-APP.md`
+- HemSoft reviewer contract: [docs/SFL-REVIEWER.md](docs/SFL-REVIEWER.md)
+- HemSoft deployment script:
+  [deployment/scripts/deploy-workflow.ps1](deployment/scripts/deploy-workflow.ps1)
+- HemSoft gate script:
+  [deployment/scripts/set-sfl-review-gate.ps1](deployment/scripts/set-sfl-review-gate.ps1)
 
-## Graduated ✅
-
-These items have been built, proven in hs-buddy, and graduated to the deployment library.
-
-| Name | Graduated As | Version | Status |
-|------|-------------|---------|--------|
-| issue-to-pr-fixer | [issue-processor](deployment/workflows/issue-processor.md) | 1.0.0 | Active — in CATALOG |
-| pr-quality-analyzer | [pr-analyzer-general](deployment/workflows/pr-analyzer-general.md), [pr-analyzer-quality](deployment/workflows/pr-analyzer-quality.md), [pr-analyzer-security](deployment/workflows/pr-analyzer-security.md), [pr-analyzer-testing](deployment/workflows/pr-analyzer-testing.md) | 1.1.0 | Active — in CATALOG |
-| *(new)* | [pr-fixer](deployment/workflows/pr-fixer.md) | 1.0.0 | Active — in CATALOG |
-| *(new)* | [pr-promoter](deployment/workflows/pr-promoter.md) | 1.0.0 | Active — in CATALOG |
-| *(new)* | [simplisticate](deployment/workflows/simplisticate.md) | 1.0.0 | Active — in CATALOG |
-
----
-
-## Ideas Pipeline
-
-| Priority | Name | Category | Trigger | Outcome Goal | Notes |
-|----------|------|----------|---------|-------------|-------|
-| 🟡 Medium | feature-intake-normalizer | intake | Schedule — daily | Normalize Jira/GitHub → labeled `type:action-item` issues | Builds on `convex/featureIntakes.ts` pattern |
-| 🟡 Medium | loop-cost-reporter | telemetry | Schedule — monthly | Issue with run counts, p50/p90 cost, monthly budget burn | KPI visibility for portfolio-level SFL adoption |
-| 🟢 Low | onboarding-health-check | quality | Schedule — weekly | Report flagging missing governance artifacts (labels, opt-out file, CATALOG reference) | Consumer repo readiness gate |
-
----
-
-## Backlog Detail
-
-### feature-intake-normalizer
-
-**Goal**: Pull unprocessed requests from external systems (Jira, GitHub Issues) and normalize them into labeled `type:action-item` issues with acceptance criteria and risk class.
-
-**Design constraints**:
-- Idempotency key per source+externalId (no duplicates)
-- Requires acceptance criteria before auto-implementation eligibility
-- Auto-routes ambiguous requests to `agent:human-required`
-
-**Acceptance criteria**:
-- [ ] Deduplicates by canonical key (no double-creation on re-run)
-- [ ] Normalized issue body includes all required fields (problem, outcome, AC, risk class)
-- [ ] Fan-out cap: max 5 new issues per run
-
----
-
-## Graduation Checklist
-
-Before moving a workflow from staging to `deployment/`:
-
-- [ ] Ran successfully at least 3 times on this repo without errors
-- [ ] Created correct output type (issue/PR/comment) with correct labels
-- [ ] `sfl.status` updated from `staging` → `active`
-- [ ] `sfl.acceptance-criteria` all checked off
-- [ ] Entry added to CATALOG.md
-- [ ] `_TEMPLATE.md` used as starting point (no manual frontmatter inconsistencies)
+The local Relias paths are comparison conveniences only. HemSoft build,
+installation, and deployment must not depend on those paths.
