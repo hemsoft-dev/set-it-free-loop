@@ -105,7 +105,7 @@ func runUninstall(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err := client.Get(fmt.Sprintf("repos/%s/%s", owner, repo), &repository); err != nil {
 		return fmt.Errorf("reading repository metadata before uninstall: %w", err)
 	}
-	requiredWorkflows, legacyStatusChecks := findAllReviewerGates(
+	requiredWorkflows, reviewerStatusChecks := findAllReviewerGates(
 		rulesets,
 		defaultBranch,
 		repository.ID,
@@ -114,10 +114,9 @@ func runUninstall(args []string, stdout io.Writer, stderr io.Writer) error {
 		client,
 		owner,
 		repo,
-		repository.ID,
 		defaultBranch,
 		requiredWorkflows,
-		legacyStatusChecks,
+		reviewerStatusChecks,
 	)
 	if err != nil {
 		return err
@@ -283,33 +282,23 @@ func removeReviewerGatesForUninstall(
 func prepareReviewerGatesForUninstall(
 	client restAPI,
 	owner, repo string,
-	repositoryID int64,
 	defaultBranch string,
-	requiredWorkflows, legacyStatusChecks []repositoryRuleset,
+	requiredWorkflows, reviewerStatusChecks []repositoryRuleset,
 ) ([]repositoryRuleset, error) {
 	var gates []repositoryRuleset
-	for _, requiredWorkflow := range requiredWorkflows {
-		detail, err := getRulesetForMutation(client, owner, repo, requiredWorkflow)
-		if err != nil {
-			return nil, fmt.Errorf("reading organization reviewer gate before uninstall: %w", err)
-		}
-		if err := validateDedicatedReviewerWorkflowGate(
-			detail,
+	if len(requiredWorkflows) > 0 {
+		return nil, fmt.Errorf(
+			"an inherited required-workflow gate applies to %s/%s; remove it through its owning organization before uninstall",
 			owner,
 			repo,
-			repositoryID,
-			defaultBranch,
-		); err != nil {
-			return nil, err
-		}
-		gates = append(gates, detail)
+		)
 	}
-	for _, legacyStatusCheck := range legacyStatusChecks {
-		detail, err := getRulesetForMutation(client, owner, repo, legacyStatusCheck)
+	for _, statusCheck := range reviewerStatusChecks {
+		detail, err := getRepositoryRulesetForMutation(client, owner, repo, statusCheck)
 		if err != nil {
-			return nil, fmt.Errorf("reading legacy reviewer gate before uninstall: %w", err)
+			return nil, fmt.Errorf("reading reviewer gate before uninstall: %w", err)
 		}
-		if err := validateDedicatedLegacyReviewerGate(detail); err != nil {
+		if err := validateDedicatedRepositoryReviewerGate(detail, defaultBranch); err != nil {
 			return nil, err
 		}
 		gates = append(gates, detail)
@@ -359,107 +348,13 @@ func restoreReviewerGates(
 	return errors.Join(restoreErrors...)
 }
 
-func validateDedicatedReviewerWorkflowGate(
-	ruleset repositoryRuleset,
-	owner, repo string,
-	repositoryID int64,
-	defaultBranch string,
-) error {
-	if ruleset.SourceType != "Organization" ||
-		(ruleset.Source != "" && !strings.EqualFold(ruleset.Source, owner)) {
-		return fmt.Errorf(
-			"reviewer workflow ruleset %q is not managed by organization %q",
-			ruleset.Name,
-			owner,
-		)
-	}
-	targetsRepository := ruleset.Conditions.RepositoryID != nil &&
-		len(ruleset.Conditions.RepositoryID.RepositoryIDs) == 1 &&
-		ruleset.Conditions.RepositoryID.RepositoryIDs[0] == repositoryID
-	if !targetsRepository && ruleset.Conditions.RepositoryName != nil {
-		target := ruleset.Conditions.RepositoryName.Include
-		targetsRepository = len(ruleset.Conditions.RepositoryName.Include) == 1 &&
-			(strings.EqualFold(target[0], repo) ||
-				strings.EqualFold(target[0], owner+"/"+repo)) &&
-			len(ruleset.Conditions.RepositoryName.Exclude) == 0
-	}
-	if !targetsRepository {
-		return fmt.Errorf(
-			"reviewer workflow ruleset %q targets multiple repositories; separate %s/%s before uninstall",
-			ruleset.Name,
-			owner,
-			repo,
-		)
-	}
-	if !isDedicatedReviewerWorkflowGate(ruleset) {
-		return fmt.Errorf(
-			"reviewer workflow ruleset %q contains other requirements; separate them before uninstall",
-			ruleset.Name,
-		)
-	}
-	workflowBound := false
-	for _, rule := range ruleset.Rules {
-		if rule.Type == "workflows" &&
-			hasRequiredReviewerWorkflow(rule.Parameters, defaultBranch, repositoryID) {
-			workflowBound = true
-			break
-		}
-	}
-	if !workflowBound {
-		return fmt.Errorf(
-			"reviewer workflow ruleset %q is not bound to %s/%s default branch %q",
-			ruleset.Name,
-			owner,
-			repo,
-			defaultBranch,
-		)
-	}
-	return nil
-}
-
-func getRulesetForMutation(
-	client restAPI,
-	owner, repo string,
-	ruleset repositoryRuleset,
-) (repositoryRuleset, error) {
-	collectionPath, err := rulesetCollectionPath(owner, repo, ruleset)
-	if err != nil {
-		return repositoryRuleset{}, err
-	}
-	var detail repositoryRuleset
-	etag, err := client.GetWithETag(
-		fmt.Sprintf("%s/%d", collectionPath, ruleset.ID),
-		&detail,
-	)
-	if err != nil {
-		return repositoryRuleset{}, fmt.Errorf(
-			"reading ruleset %q before mutation: %w",
-			ruleset.Name,
-			err,
-		)
-	}
-	if etag == "" {
-		return repositoryRuleset{}, fmt.Errorf(
-			"ruleset %q did not return an entity tag; refusing an unsafe mutation",
-			ruleset.Name,
-		)
-	}
-	detail.ETag = etag
-	return detail, nil
-}
-
 func rulesetCollectionPath(owner, repo string, ruleset repositoryRuleset) (string, error) {
 	switch ruleset.SourceType {
 	case "Organization":
-		if ruleset.Source != "" && !strings.EqualFold(ruleset.Source, owner) {
-			return "", fmt.Errorf(
-				"ruleset %q belongs to organization %q, not %q",
-				ruleset.Name,
-				ruleset.Source,
-				owner,
-			)
-		}
-		return fmt.Sprintf("orgs/%s/rulesets", owner), nil
+		return "", fmt.Errorf(
+			"ruleset %q is organization-managed; HemSoft uninstall only mutates repository rulesets",
+			ruleset.Name,
+		)
 	case "", "Repository":
 		return fmt.Sprintf("repos/%s/%s/rulesets", owner, repo), nil
 	default:
@@ -469,33 +364,6 @@ func rulesetCollectionPath(owner, repo string, ruleset repositoryRuleset) (strin
 			ruleset.SourceType,
 		)
 	}
-}
-
-func isDedicatedReviewerWorkflowGate(ruleset repositoryRuleset) bool {
-	workflowCount := 0
-	freshnessCount := 0
-	for _, rule := range ruleset.Rules {
-		switch rule.Type {
-		case "workflows":
-			workflows, ok := rule.Parameters["workflows"].([]any)
-			if !ok || len(workflows) != 1 {
-				return false
-			}
-			workflow, ok := workflows[0].(map[string]any)
-			if !ok || workflow["path"] != ".github/workflows/sfl-pr-review-auto.yml" {
-				return false
-			}
-			workflowCount++
-		case "required_status_checks":
-			if !isDedicatedReviewerFreshnessRule(rule.Parameters) {
-				return false
-			}
-			freshnessCount++
-		default:
-			return false
-		}
-	}
-	return workflowCount == 1 && freshnessCount <= 1
 }
 
 // removeViaGit prepares the removal commit before mutating reviewer gates.

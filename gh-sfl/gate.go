@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
+
+	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 type gateOptions struct {
@@ -52,292 +57,436 @@ func runGate(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("inspecting reviewer gate: %w", err)
 	}
-	requiredWorkflows, legacyStatusChecks := findAllReviewerGates(
+	requiredWorkflows, reviewerStatusChecks := findAllReviewerGates(
 		rulesets,
 		repository.DefaultBranch,
 		repository.ID,
 	)
-	legacyStatusDetails := make([]repositoryRuleset, 0, len(legacyStatusChecks))
-	for _, legacyStatusCheck := range legacyStatusChecks {
-		detail, detailErr := getRulesetForMutation(
+	for _, workflow := range requiredWorkflows {
+		if isRepositoryManagedRuleset(workflow) && hasReviewerFreshnessInterlock(workflow) {
+			fmt.Fprintf(stdout, "✓ SFL reviewer approval is already required by %q\n", workflow.Name)
+			return nil
+		}
+	}
+	return ensureRepositoryReviewerGate(
+		client,
+		owner,
+		repo,
+		repository.DefaultBranch,
+		rulesets,
+		reviewerStatusChecks,
+		stdout,
+	)
+}
+
+func ensureRepositoryReviewerGate(
+	client restAPI,
+	owner, repo, defaultBranch string,
+	allRulesets, reviewerStatusChecks []repositoryRuleset,
+	stdout io.Writer,
+) error {
+	for _, ruleset := range reviewerStatusChecks {
+		if isRepositoryManagedRuleset(ruleset) && hasReviewerFreshnessInterlock(ruleset) {
+			fmt.Fprintf(stdout, "✓ SFL reviewer approval is already required by %q\n", ruleset.Name)
+			return nil
+		}
+	}
+	if len(reviewerStatusChecks) > 1 {
+		return fmt.Errorf(
+			"found %d stale SFL reviewer status-check rulesets; consolidate them before enabling the gate",
+			len(reviewerStatusChecks),
+		)
+	}
+	if len(reviewerStatusChecks) == 1 {
+		name, err := updateRepositoryReviewerGate(
 			client,
 			owner,
 			repo,
-			legacyStatusCheck,
+			defaultBranch,
+			reviewerStatusChecks[0],
 		)
-		if detailErr != nil {
-			return detailErr
-		}
-		if err := validateDedicatedLegacyReviewerGate(detail); err != nil {
+		if err != nil {
 			return err
 		}
-		legacyStatusDetails = append(legacyStatusDetails, detail)
-	}
-	legacyStatusChecks = legacyStatusDetails
-	upgradedWorkflowDetails, err := upgradeStaleReviewerRulesets(
-		client,
-		owner,
-		repo,
-		requiredWorkflows,
-		repository.ID,
-		repository.DefaultBranch,
-	)
-	if err != nil {
-		return err
-	}
-	for _, detail := range upgradedWorkflowDetails {
-		for index := range requiredWorkflows {
-			if requiredWorkflows[index].ID == detail.ID {
-				requiredWorkflows[index].Name = detail.Name
-			}
-		}
-	}
-	freshnessUpgraded := len(upgradedWorkflowDetails) > 0
-	if len(legacyStatusChecks) > 0 {
-		var requiredWorkflow *repositoryRuleset
-		if len(requiredWorkflows) > 0 {
-			requiredWorkflow = &requiredWorkflows[0]
-		} else {
-			createdName, createErr := createReviewerRuleset(
-				client,
-				owner,
-				repo,
-				repository.ID,
-				repository.DefaultBranch,
-			)
-			if createErr != nil {
-				return createErr
-			}
-			requiredWorkflow = &repositoryRuleset{Name: createdName}
-		}
-		for _, legacyStatusCheck := range legacyStatusChecks {
-			if err := removeDedicatedLegacyReviewerGate(
-				client,
-				owner,
-				repo,
-				legacyStatusCheck,
-			); err != nil {
-				return err
-			}
-		}
-		fmt.Fprintf(stdout, "✓ Replaced %d legacy status-check ruleset(s) with required workflow %q\n",
-			len(legacyStatusChecks), requiredWorkflow.Name)
-		return nil
-	}
-	if len(requiredWorkflows) > 0 {
-		if freshnessUpgraded {
-			fmt.Fprintf(
-				stdout,
-				"✓ Added strict base freshness to %d required SFL reviewer workflow ruleset(s)\n",
-				len(upgradedWorkflowDetails),
-			)
-			return nil
-		}
-		fmt.Fprintf(stdout, "✓ SFL reviewer workflow is already required by %q\n", requiredWorkflows[0].Name)
+		fmt.Fprintf(stdout, "✓ Updated strict SFL reviewer approval gate %q\n", name)
 		return nil
 	}
 
-	created, err := createReviewerRuleset(
+	name, err := createRepositoryReviewerGate(
 		client,
 		owner,
 		repo,
-		repository.ID,
-		repository.DefaultBranch,
+		defaultBranch,
+		allRulesets,
 	)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "✓ Required SFL reviewer workflow enabled for %s/%s (%s)\n", owner, repo, created)
+	fmt.Fprintf(stdout, "✓ Required SFL reviewer approval enabled for %s/%s (%s)\n", owner, repo, name)
 	return nil
 }
 
-func upgradeStaleReviewerRulesets(
+func updateRepositoryReviewerGate(
 	client restAPI,
-	owner, repo string,
-	requiredWorkflows []repositoryRuleset,
-	repositoryID int64,
-	defaultBranch string,
-) ([]repositoryRuleset, error) {
-	staleWorkflowDetails, err := collectStaleReviewerRulesets(
-		client,
-		owner,
-		repo,
-		requiredWorkflows,
-		repositoryID,
-		defaultBranch,
-	)
-	if err != nil {
-		return nil, err
-	}
-	// Re-fetch and validate the complete candidate set before the first write.
-	// This is intentionally separate from discovery: it prevents partial
-	// mutation when any ruleset became shared, retargeted, or already current.
-	// Each subsequent PUT is also protected by the freshly read ETag.
-	staleWorkflowDetails, err = collectStaleReviewerRulesets(
-		client,
-		owner,
-		repo,
-		staleWorkflowDetails,
-		repositoryID,
-		defaultBranch,
-	)
-	if err != nil {
-		return nil, err
-	}
-	for index := range staleWorkflowDetails {
-		updatedName, updateErr := updateReviewerRuleset(
-			client,
-			owner,
-			staleWorkflowDetails[index],
+	owner, repo, defaultBranch string,
+	summary repositoryRuleset,
+) (string, error) {
+	if summary.SourceType != "" && summary.SourceType != "Repository" {
+		return "", fmt.Errorf(
+			"reviewer status-check ruleset %q is inherited from %s and cannot be changed at repository scope",
+			summary.Name,
+			summary.SourceType,
 		)
-		if updateErr != nil {
-			return nil, updateErr
-		}
-		staleWorkflowDetails[index].Name = updatedName
 	}
-	return staleWorkflowDetails, nil
+	snapshot, err := getRepositoryRulesetForMutation(client, owner, repo, summary)
+	if err != nil {
+		return "", err
+	}
+	if isDesiredRepositoryReviewerGate(snapshot, defaultBranch) {
+		return snapshot.Name, nil
+	}
+	if err := validateDedicatedRepositoryReviewerGate(snapshot, defaultBranch); err != nil {
+		return "", err
+	}
+	desired, err := cloneRepositoryRuleset(snapshot)
+	if err != nil {
+		return "", fmt.Errorf("copying reviewer gate before update: %w", err)
+	}
+	desired.Rules[0].Parameters = mergeReviewerFreshnessRule(desired.Rules[0].Parameters)
+	body, err := jsonBody(repositoryRulesetMutationPayload(desired))
+	if err != nil {
+		return "", fmt.Errorf("encoding reviewer gate update: %w", err)
+	}
+	path := fmt.Sprintf("repos/%s/%s/rulesets/%d", owner, repo, snapshot.ID)
+	var updated repositoryRuleset
+	updateErr := client.PutIfMatch(path, body, snapshot.ETag, &updated)
+
+	current, currentETag, readErr := readRepositoryRulesetWithETag(client, path, snapshot.Name)
+	if readErr != nil {
+		failures := []error{fmt.Errorf("could not verify the gate after the update: %w", readErr)}
+		if updateErr != nil {
+			failures = append(failures, fmt.Errorf("updating repository reviewer gate %q: %w", snapshot.Name, updateErr))
+		}
+		return "", errors.Join(failures...)
+	}
+	if isDesiredRepositoryReviewerGate(current, defaultBranch) {
+		return current.Name, nil
+	}
+	if isPreconditionFailure(updateErr) {
+		return "", fmt.Errorf(
+			"reviewer gate %q changed concurrently; GitHub rejected the stale update and no rollback was attempted: %w",
+			snapshot.Name,
+			updateErr,
+		)
+	}
+	if repositoryRulesetStateEqual(current, snapshot) {
+		if updateErr != nil {
+			return "", fmt.Errorf("updating repository reviewer gate %q: %w", snapshot.Name, updateErr)
+		}
+		return "", fmt.Errorf("GitHub accepted the update but reviewer gate %q remained unchanged", snapshot.Name)
+	}
+
+	rollbackErr := restoreRepositoryReviewerGate(
+		client,
+		path,
+		currentETag,
+		snapshot,
+	)
+	if rollbackErr != nil {
+		return "", errors.Join(
+			fmt.Errorf("reviewer gate %q did not reach the required state", snapshot.Name),
+			updateErr,
+			fmt.Errorf("restoring the prior reviewer gate: %w", rollbackErr),
+		)
+	}
+	return "", errors.Join(
+		fmt.Errorf("reviewer gate %q did not reach the required state; restored its prior state", snapshot.Name),
+		updateErr,
+	)
 }
 
-func collectStaleReviewerRulesets(
+func createRepositoryReviewerGate(
 	client restAPI,
-	owner, repo string,
-	requiredWorkflows []repositoryRuleset,
-	repositoryID int64,
-	defaultBranch string,
-) ([]repositoryRuleset, error) {
-	staleWorkflowDetails := make([]repositoryRuleset, 0, len(requiredWorkflows))
-	for _, requiredWorkflow := range requiredWorkflows {
-		detail, detailErr := getRulesetForMutation(
-			client,
-			owner,
-			repo,
-			requiredWorkflow,
-		)
-		if detailErr != nil {
-			return nil, detailErr
+	owner, repo, defaultBranch string,
+	before []repositoryRuleset,
+) (string, error) {
+	payload := repositoryReviewerGatePayload(repo)
+	body, err := jsonBody(payload)
+	if err != nil {
+		return "", fmt.Errorf("encoding reviewer gate: %w", err)
+	}
+	collectionPath := fmt.Sprintf("repos/%s/%s/rulesets", owner, repo)
+	var created repositoryRuleset
+	createErr := client.Post(collectionPath, body, &created)
+	if createErr == nil && created.ID != 0 {
+		path := fmt.Sprintf("%s/%d", collectionPath, created.ID)
+		current, _, readErr := readRepositoryRulesetWithETag(client, path, created.Name)
+		if readErr == nil && isDesiredRepositoryReviewerGate(current, defaultBranch) {
+			return current.Name, nil
 		}
-		if hasReviewerFreshnessInterlock(detail) {
+		verificationErr := readErr
+		if verificationErr == nil {
+			verificationErr = fmt.Errorf("created ruleset does not enforce the strict Actions-owned approval check")
+		}
+		rollbackErr := removeCreatedRepositoryReviewerGate(client, path, created.Name)
+		return "", errors.Join(
+			fmt.Errorf("GitHub created reviewer gate %q but post-write verification failed: %w", created.Name, verificationErr),
+			rollbackErr,
+		)
+	}
+	if createErr == nil {
+		createErr = fmt.Errorf("GitHub did not return the created ruleset ID")
+	}
+
+	after, inspectErr := getRepositoryRulesets(client, owner, repo)
+	if inspectErr != nil {
+		return "", errors.Join(
+			fmt.Errorf("creating repository reviewer gate: %w", createErr),
+			fmt.Errorf("could not inspect the repository after the create attempt: %w", inspectErr),
+		)
+	}
+	newRulesets := newRepositoryRulesets(before, after)
+	expectedName := reviewerGateName(repo)
+	var desired []repositoryRuleset
+	var rollbackCandidates []repositoryRuleset
+	var unattributed []repositoryRuleset
+	var verificationErrors []error
+	for _, candidate := range newRulesets {
+		path := fmt.Sprintf("%s/%d", collectionPath, candidate.ID)
+		detail, _, detailErr := readRepositoryRulesetWithETag(client, path, candidate.Name)
+		if detailErr == nil && isDesiredRepositoryReviewerGate(detail, defaultBranch) {
+			desired = append(desired, detail)
 			continue
 		}
-		if validateErr := validateDedicatedReviewerWorkflowGate(
-			detail,
-			owner,
-			repo,
-			repositoryID,
-			defaultBranch,
-		); validateErr != nil {
-			return nil, fmt.Errorf(
-				"cannot add strict base freshness to reviewer gate: %w",
-				validateErr,
+		if detailErr != nil {
+			verificationErrors = append(
+				verificationErrors,
+				fmt.Errorf("verifying newly created reviewer gate %q: %w", candidate.Name, detailErr),
+			)
+		} else {
+			verificationErrors = append(
+				verificationErrors,
+				fmt.Errorf("newly created reviewer gate %q does not enforce the strict Actions-owned approval check", candidate.Name),
 			)
 		}
-		staleWorkflowDetails = append(staleWorkflowDetails, detail)
+		if candidate.Name == expectedName {
+			rollbackCandidates = append(rollbackCandidates, candidate)
+		} else {
+			unattributed = append(unattributed, candidate)
+		}
 	}
-	return staleWorkflowDetails, nil
-}
-
-func createReviewerRuleset(
-	client restAPI,
-	owner, repo string,
-	repositoryID int64,
-	defaultBranch string,
-) (string, error) {
-	body, err := jsonBody(reviewerRulesetPayload(repo, repositoryID, defaultBranch))
-	if err != nil {
-		return "", fmt.Errorf("encoding reviewer ruleset: %w", err)
+	var rollbackErrors []error
+	for _, ruleset := range rollbackCandidates {
+		path := fmt.Sprintf("%s/%d", collectionPath, ruleset.ID)
+		if rollbackErr := removeCreatedRepositoryReviewerGate(client, path, ruleset.Name); rollbackErr != nil {
+			rollbackErrors = append(rollbackErrors, rollbackErr)
+		}
 	}
-	var created repositoryRuleset
-	if err := client.Post(fmt.Sprintf("orgs/%s/rulesets", owner), body, &created); err != nil {
-		return "", fmt.Errorf(
-			"creating organization reviewer ruleset (requires organization-owner access and an admin:org token): %w",
-			err,
+	for _, ruleset := range unattributed {
+		verificationErrors = append(
+			verificationErrors,
+			fmt.Errorf(
+				"new repository ruleset %q (ID %d) appeared during the ambiguous create and was not modified because it no longer has the expected name %q",
+				ruleset.Name,
+				ruleset.ID,
+				expectedName,
+			),
 		)
 	}
-	return created.Name, nil
+	if len(desired) == 1 && len(unattributed) == 0 && len(rollbackErrors) == 0 {
+		return desired[0].Name, nil
+	}
+	if len(desired) > 1 {
+		verificationErrors = append(
+			verificationErrors,
+			fmt.Errorf("ambiguous create produced %d strict repository reviewer gates", len(desired)),
+		)
+	}
+	return "", errors.Join(
+		fmt.Errorf("creating repository reviewer gate: %w", createErr),
+		errors.Join(verificationErrors...),
+		errors.Join(rollbackErrors...),
+	)
 }
 
-func updateReviewerRuleset(
+func restoreRepositoryReviewerGate(
 	client restAPI,
-	owner string,
-	ruleset repositoryRuleset,
-) (string, error) {
-	if ruleset.ID == 0 {
-		return "", fmt.Errorf("required reviewer workflow ruleset is missing its ID")
-	}
-	body, err := jsonBody(reviewerRulesetUpdatePayload(ruleset))
+	path, currentETag string,
+	snapshot repositoryRuleset,
+) error {
+	body, err := jsonBody(repositoryRulesetMutationPayload(snapshot))
 	if err != nil {
-		return "", fmt.Errorf("encoding reviewer ruleset update: %w", err)
+		return err
 	}
-	var updated repositoryRuleset
-	if ruleset.ETag == "" {
-		return "", fmt.Errorf(
-			"required reviewer workflow ruleset %q has no entity tag; refusing an unsafe update",
+	var restored repositoryRuleset
+	if err := client.PutIfMatch(path, body, currentETag, &restored); err != nil {
+		return err
+	}
+	current, _, err := readRepositoryRulesetWithETag(client, path, snapshot.Name)
+	if err != nil {
+		return err
+	}
+	if !repositoryRulesetStateEqual(current, snapshot) {
+		return fmt.Errorf("GitHub accepted the rollback but did not restore the prior ruleset")
+	}
+	return nil
+}
+
+func removeCreatedRepositoryReviewerGate(client restAPI, path, name string) error {
+	_, etag, err := readRepositoryRulesetWithETag(client, path, name)
+	if err != nil {
+		if isNotFoundError(err) {
+			return nil
+		}
+		return fmt.Errorf("reading newly created reviewer gate %q before rollback: %w", name, err)
+	}
+	deleteErr := client.DeleteIfMatch(path, etag, nil)
+	var current repositoryRuleset
+	lookupErr := client.Get(path, &current)
+	if isNotFoundError(lookupErr) {
+		return nil
+	}
+	if lookupErr != nil {
+		return errors.Join(
+			fmt.Errorf("removing newly created reviewer gate %q: %w", name, deleteErr),
+			fmt.Errorf("could not verify rollback: %w", lookupErr),
+		)
+	}
+	if deleteErr != nil {
+		return fmt.Errorf("removing newly created reviewer gate %q: %w", name, deleteErr)
+	}
+	return fmt.Errorf("GitHub accepted deletion of newly created reviewer gate %q but it still exists", name)
+}
+
+func readRepositoryRulesetWithETag(
+	client restAPI,
+	path, name string,
+) (repositoryRuleset, string, error) {
+	var ruleset repositoryRuleset
+	etag, err := client.GetWithETag(path, &ruleset)
+	if err != nil {
+		return repositoryRuleset{}, "", err
+	}
+	if etag == "" {
+		return repositoryRuleset{}, "", fmt.Errorf("ruleset %q did not return an entity tag", name)
+	}
+	ruleset.ETag = etag
+	return ruleset, etag, nil
+}
+
+func getRepositoryRulesetForMutation(
+	client restAPI,
+	owner, repo string,
+	summary repositoryRuleset,
+) (repositoryRuleset, error) {
+	path := fmt.Sprintf("repos/%s/%s/rulesets/%d", owner, repo, summary.ID)
+	detail, _, err := readRepositoryRulesetWithETag(client, path, summary.Name)
+	if err != nil {
+		return repositoryRuleset{}, fmt.Errorf("reading reviewer gate %q before mutation: %w", summary.Name, err)
+	}
+	return detail, nil
+}
+
+func validateDedicatedRepositoryReviewerGate(ruleset repositoryRuleset, defaultBranch string) error {
+	if ruleset.SourceType != "" && ruleset.SourceType != "Repository" {
+		return fmt.Errorf("reviewer status-check ruleset %q is not repository-managed", ruleset.Name)
+	}
+	if !rulesetAppliesToDefaultBranch(ruleset, defaultBranch) {
+		return fmt.Errorf("reviewer status-check ruleset %q does not target the active default branch", ruleset.Name)
+	}
+	if ruleset.Target != "" && ruleset.Target != "branch" {
+		return fmt.Errorf("reviewer status-check ruleset %q does not target branches", ruleset.Name)
+	}
+	if ruleset.Conditions.RepositoryID != nil || ruleset.Conditions.RepositoryName != nil {
+		return fmt.Errorf("reviewer status-check ruleset %q has organization-only repository conditions", ruleset.Name)
+	}
+	if len(ruleset.Rules) != 1 || ruleset.Rules[0].Type != "required_status_checks" ||
+		!isSingleReviewerStatusCheck(ruleset.Rules[0].Parameters) {
+		return fmt.Errorf(
+			"reviewer status-check ruleset %q contains unrelated requirements; separate the SFL check before updating it",
 			ruleset.Name,
 		)
 	}
-	if err := client.PutIfMatch(
-		fmt.Sprintf("orgs/%s/rulesets/%d", owner, ruleset.ID),
-		body,
-		ruleset.ETag,
-		&updated,
-	); err != nil {
-		return "", fmt.Errorf(
-			"updating organization reviewer ruleset (requires organization-owner access and an admin:org token): %w",
-			err,
-		)
-	}
-	if updated.Name == "" {
-		return ruleset.Name, nil
-	}
-	return updated.Name, nil
+	return nil
 }
 
-func reviewerRulesetUpdatePayload(ruleset repositoryRuleset) map[string]any {
-	conditions := map[string]any{
-		"ref_name": map[string]any{
-			"include": ruleset.Conditions.RefName.Include,
-			"exclude": ruleset.Conditions.RefName.Exclude,
-		},
+func isSingleReviewerStatusCheck(parameters map[string]any) bool {
+	checks, ok := parameters["required_status_checks"].([]any)
+	if !ok || len(checks) != 1 {
+		return false
 	}
-	if ruleset.Conditions.RepositoryID != nil {
-		conditions["repository_id"] = map[string]any{
-			"repository_ids": ruleset.Conditions.RepositoryID.RepositoryIDs,
+	check, ok := checks[0].(map[string]any)
+	return ok && check["context"] == "SFL Reviewer Approval"
+}
+
+func isDesiredRepositoryReviewerGate(ruleset repositoryRuleset, defaultBranch string) bool {
+	return validateDedicatedRepositoryReviewerGate(ruleset, defaultBranch) == nil &&
+		hasReviewerFreshnessInterlock(ruleset)
+}
+
+func repositoryRulesetMutationPayload(ruleset repositoryRuleset) map[string]any {
+	payload := map[string]any{
+		"name":        ruleset.Name,
+		"target":      ruleset.Target,
+		"enforcement": ruleset.Enforcement,
+		"conditions":  ruleset.Conditions,
+		"rules":       ruleset.Rules,
+	}
+	if ruleset.BypassActors != nil {
+		payload["bypass_actors"] = ruleset.BypassActors
+	}
+	return payload
+}
+
+func repositoryRulesetStateEqual(first, second repositoryRuleset) bool {
+	firstJSON, firstErr := jsonBody(repositoryRulesetMutationPayload(first))
+	secondJSON, secondErr := jsonBody(repositoryRulesetMutationPayload(second))
+	if firstErr != nil || secondErr != nil {
+		return false
+	}
+	firstBytes, firstErr := io.ReadAll(firstJSON)
+	secondBytes, secondErr := io.ReadAll(secondJSON)
+	return firstErr == nil && secondErr == nil && bytes.Equal(firstBytes, secondBytes)
+}
+
+func cloneRepositoryRuleset(ruleset repositoryRuleset) (repositoryRuleset, error) {
+	body, err := jsonBody(ruleset)
+	if err != nil {
+		return repositoryRuleset{}, err
+	}
+	var clone repositoryRuleset
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return repositoryRuleset{}, err
+	}
+	if err := json.Unmarshal(data, &clone); err != nil {
+		return repositoryRuleset{}, err
+	}
+	clone.ETag = ruleset.ETag
+	return clone, nil
+}
+
+func newRepositoryRulesets(before, after []repositoryRuleset) []repositoryRuleset {
+	existingIDs := make(map[int64]struct{}, len(before))
+	for _, ruleset := range before {
+		existingIDs[ruleset.ID] = struct{}{}
+	}
+	var result []repositoryRuleset
+	for _, ruleset := range after {
+		if _, existed := existingIDs[ruleset.ID]; !existed {
+			result = append(result, ruleset)
 		}
 	}
-	if ruleset.Conditions.RepositoryName != nil {
-		conditions["repository_name"] = map[string]any{
-			"include":   ruleset.Conditions.RepositoryName.Include,
-			"exclude":   ruleset.Conditions.RepositoryName.Exclude,
-			"protected": ruleset.Conditions.RepositoryName.Protected,
-		}
-	}
-	rules := make([]any, 0, len(ruleset.Rules)+1)
-	freshnessMerged := false
-	for _, rule := range ruleset.Rules {
-		if rule.Type == "required_status_checks" {
-			rules = append(rules, map[string]any{
-				"type":       rule.Type,
-				"parameters": mergeReviewerFreshnessRule(rule.Parameters),
-			})
-			freshnessMerged = true
-			continue
-		}
-		rules = append(rules, map[string]any{
-			"type":       rule.Type,
-			"parameters": rule.Parameters,
-		})
-	}
-	if !freshnessMerged {
-		rules = append(rules, reviewerFreshnessRule())
-	}
-	return map[string]any{
-		"name":          ruleset.Name,
-		"target":        ruleset.Target,
-		"enforcement":   ruleset.Enforcement,
-		"bypass_actors": ruleset.BypassActors,
-		"conditions":    conditions,
-		"rules":         rules,
-	}
+	return result
+}
+
+func isRepositoryManagedRuleset(ruleset repositoryRuleset) bool {
+	return ruleset.SourceType == "" || ruleset.SourceType == "Repository"
+}
+
+func isPreconditionFailure(err error) bool {
+	var httpErr *api.HTTPError
+	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusPreconditionFailed
 }
 
 func reviewerFreshnessRule() map[string]any {
@@ -362,16 +511,21 @@ func mergeReviewerFreshnessRule(parameters map[string]any) map[string]any {
 		merged[key] = value
 	}
 	checks, _ := parameters["required_status_checks"].([]any)
-	mergedChecks := append([]any(nil), checks...)
+	mergedChecks := make([]any, 0, len(checks)+1)
 	hasReviewerCheck := false
-	for _, value := range mergedChecks {
+	for _, value := range checks {
 		check, ok := value.(map[string]any)
-		if ok &&
-			check["context"] == "SFL Reviewer Approval" &&
-			numericIDEquals(check["integration_id"], 15368) {
+		if ok && check["context"] == "SFL Reviewer Approval" {
+			updatedCheck := make(map[string]any, len(check)+1)
+			for key, checkValue := range check {
+				updatedCheck[key] = checkValue
+			}
+			updatedCheck["integration_id"] = 15368
+			mergedChecks = append(mergedChecks, updatedCheck)
 			hasReviewerCheck = true
-			break
+			continue
 		}
+		mergedChecks = append(mergedChecks, value)
 	}
 	if !hasReviewerCheck {
 		mergedChecks = append(mergedChecks, map[string]any{
@@ -385,61 +539,13 @@ func mergeReviewerFreshnessRule(parameters map[string]any) map[string]any {
 	return merged
 }
 
-func removeDedicatedLegacyReviewerGate(
-	client restAPI,
-	owner, repo string,
-	ruleset repositoryRuleset,
-) error {
-	if err := validateDedicatedLegacyReviewerGate(ruleset); err != nil {
-		return err
-	}
-	if ruleset.ETag == "" {
-		return fmt.Errorf(
-			"legacy reviewer ruleset %q has no entity tag; refusing an unsafe deletion",
-			ruleset.Name,
-		)
-	}
-	if err := client.DeleteIfMatch(
-		fmt.Sprintf("repos/%s/%s/rulesets/%d", owner, repo, ruleset.ID),
-		ruleset.ETag,
-		nil,
-	); err != nil {
-		return fmt.Errorf("removing legacy reviewer ruleset %q: %w", ruleset.Name, err)
-	}
-	return nil
+func reviewerGateName(repo string) string {
+	return fmt.Sprintf("Require SFL Reviewer Approval (%s)", repo)
 }
 
-func validateDedicatedLegacyReviewerGate(ruleset repositoryRuleset) error {
-	if ruleset.SourceType != "" && ruleset.SourceType != "Repository" {
-		return fmt.Errorf(
-			"ruleset %q is inherited and cannot be migrated at repository scope",
-			ruleset.Name,
-		)
-	}
-	if !isDedicatedLegacyReviewerGate(ruleset) {
-		return fmt.Errorf(
-			"ruleset %q combines the legacy SFL status check with other requirements; remove only that status check before enabling the required workflow",
-			ruleset.Name,
-		)
-	}
-	return nil
-}
-
-func isDedicatedLegacyReviewerGate(ruleset repositoryRuleset) bool {
-	if len(ruleset.Rules) != 1 || ruleset.Rules[0].Type != "required_status_checks" {
-		return false
-	}
-	checks, ok := ruleset.Rules[0].Parameters["required_status_checks"].([]any)
-	if !ok || len(checks) != 1 {
-		return false
-	}
-	check, ok := checks[0].(map[string]any)
-	return ok && check["context"] == "SFL Reviewer Approval"
-}
-
-func reviewerRulesetPayload(repo string, repositoryID int64, defaultBranch string) map[string]any {
+func repositoryReviewerGatePayload(repo string) map[string]any {
 	return map[string]any{
-		"name":        fmt.Sprintf("Require SFL Reviewer Approval (%s)", repo),
+		"name":        reviewerGateName(repo),
 		"target":      "branch",
 		"enforcement": "active",
 		"conditions": map[string]any{
@@ -447,24 +553,8 @@ func reviewerRulesetPayload(repo string, repositoryID int64, defaultBranch strin
 				"include": []string{"~DEFAULT_BRANCH"},
 				"exclude": []string{},
 			},
-			"repository_id": map[string]any{
-				"repository_ids": []int64{repositoryID},
-			},
 		},
 		"rules": []any{
-			map[string]any{
-				"type": "workflows",
-				"parameters": map[string]any{
-					"do_not_enforce_on_create": false,
-					"workflows": []any{
-						map[string]any{
-							"path":          ".github/workflows/sfl-pr-review-auto.yml",
-							"ref":           "refs/heads/" + defaultBranch,
-							"repository_id": repositoryID,
-						},
-					},
-				},
-			},
 			reviewerFreshnessRule(),
 		},
 	}
@@ -490,7 +580,7 @@ func parseGateOptions(args []string, stderr io.Writer) (gateOptions, error) {
 }
 
 func writeGateUsage(w io.Writer) {
-	fmt.Fprint(w, `Require the trusted SFL reviewer workflow before pull requests can merge.
+	fmt.Fprint(w, `Require the strict Actions-owned SFL approval check before pull requests can merge.
 
 The reviewer deployment must already be merged. New repositories remain
 advisory-only unless this command is run explicitly.

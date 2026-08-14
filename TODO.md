@@ -153,7 +153,8 @@ green CLI tests, and an immutable-source deployment PR.
   `SFL Reviewer Approval` required check without replacing unrelated branch
   protection settings.
 - [ ] Make gate setup idempotent and restore the previous protection state if
-  an update fails.
+  an update fails. Issue #73 tracks the repository-scoped HemSoft gate and its
+  required pilot evidence.
 - [x] Have `gh sfl status` report missing credentials, missing required gate,
   stale manifest, file drift, and absence of a successful reviewer run as
   distinct failures.
@@ -241,8 +242,7 @@ an explicit design decision before implementation.
 - HemSoft reviewer contract: [docs/SFL-REVIEWER.md](docs/SFL-REVIEWER.md)
 - HemSoft deployment script:
   [deployment/scripts/deploy-workflow.ps1](deployment/scripts/deploy-workflow.ps1)
-- HemSoft gate script:
-  [deployment/scripts/set-sfl-review-gate.ps1](deployment/scripts/set-sfl-review-gate.ps1)
+- HemSoft gate command: `gh sfl gate --repo HemSoft/private-repository`
 - Latest private release proof:
   [docs/release-evidence/v2.1.0-rc.3.md](docs/release-evidence/v2.1.0-rc.3.md)
 

@@ -312,6 +312,9 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 		case "required-workflow":
 			fmt.Fprintf(stdout, "    %s Gated by required reviewer workflow (%s)\n",
 				styler.colored("✓", termenv.ANSIGreen).styled, ruleset)
+		case "required-status-check":
+			fmt.Fprintf(stdout, "    %s Gated by strict SFL reviewer approval check (%s)\n",
+				styler.colored("✓", termenv.ANSIGreen).styled, ruleset)
 		case "stale-required-workflow":
 			fmt.Fprintf(
 				stdout,
@@ -319,8 +322,8 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 				styler.colored("!", termenv.ANSIYellow).styled,
 				ruleset,
 			)
-		case "legacy-status-check":
-			fmt.Fprintf(stdout, "    %s Legacy SFL Reviewer Approval status check (%s); migrate to required workflow\n",
+		case "stale-status-check":
+			fmt.Fprintf(stdout, "    %s SFL Reviewer Approval check lacks strict Actions ownership (%s); rerun gh sfl gate\n",
 				styler.colored("!", termenv.ANSIYellow).styled, ruleset)
 		default:
 			fmt.Fprintf(stdout, "    %s Advisory-only; required reviewer gate is missing\n",
@@ -463,7 +466,7 @@ func classifyReviewerGate(
 	defaultBranch string,
 	repositoryID int64,
 ) (mode, rulesetName string) {
-	requiredWorkflows, legacyStatusChecks := findAllReviewerGates(
+	requiredWorkflows, reviewerStatusChecks := findAllReviewerGates(
 		rulesets,
 		defaultBranch,
 		repositoryID,
@@ -473,11 +476,16 @@ func classifyReviewerGate(
 			return "required-workflow", requiredWorkflow.Name
 		}
 	}
+	for _, statusCheck := range reviewerStatusChecks {
+		if hasReviewerFreshnessInterlock(statusCheck) {
+			return "required-status-check", statusCheck.Name
+		}
+	}
 	if len(requiredWorkflows) > 0 {
 		return "stale-required-workflow", requiredWorkflows[0].Name
 	}
-	if len(legacyStatusChecks) > 0 {
-		return "legacy-status-check", legacyStatusChecks[0].Name
+	if len(reviewerStatusChecks) > 0 {
+		return "stale-status-check", reviewerStatusChecks[0].Name
 	}
 	return "advisory", ""
 }
@@ -486,7 +494,7 @@ func findAllReviewerGates(
 	rulesets []repositoryRuleset,
 	defaultBranch string,
 	repositoryID int64,
-) (requiredWorkflows, legacyStatusChecks []repositoryRuleset) {
+) (requiredWorkflows, reviewerStatusChecks []repositoryRuleset) {
 	for index := range rulesets {
 		ruleset := rulesets[index]
 		if !rulesetAppliesToDefaultBranch(ruleset, defaultBranch) {
@@ -500,17 +508,17 @@ func findAllReviewerGates(
 				hasWorkflow = true
 			}
 			if rule.Type == "required_status_checks" &&
-				hasLegacyReviewerStatusCheck(rule.Parameters) {
+				hasReviewerStatusCheck(rule.Parameters) {
 				hasReviewerStatus = true
 			}
 		}
 		if hasWorkflow {
 			requiredWorkflows = append(requiredWorkflows, ruleset)
 		} else if hasReviewerStatus {
-			legacyStatusChecks = append(legacyStatusChecks, ruleset)
+			reviewerStatusChecks = append(reviewerStatusChecks, ruleset)
 		}
 	}
-	return requiredWorkflows, legacyStatusChecks
+	return requiredWorkflows, reviewerStatusChecks
 }
 
 func hasRequiredReviewerWorkflow(parameters map[string]any, defaultBranch string, repositoryID int64) bool {
@@ -532,7 +540,7 @@ func hasRequiredReviewerWorkflow(parameters map[string]any, defaultBranch string
 	return false
 }
 
-func hasLegacyReviewerStatusCheck(parameters map[string]any) bool {
+func hasReviewerStatusCheck(parameters map[string]any) bool {
 	checks, ok := parameters["required_status_checks"].([]any)
 	if !ok {
 		return false
@@ -569,17 +577,6 @@ func hasReviewerFreshnessInterlock(ruleset repositoryRuleset) bool {
 		}
 	}
 	return false
-}
-
-func isDedicatedReviewerFreshnessRule(parameters map[string]any) bool {
-	checks, ok := parameters["required_status_checks"].([]any)
-	if !ok || len(checks) != 1 {
-		return false
-	}
-	check, ok := checks[0].(map[string]any)
-	return ok &&
-		check["context"] == "SFL Reviewer Approval" &&
-		numericIDEquals(check["integration_id"], 15368)
 }
 
 func numericIDEquals(value any, expected int64) bool {

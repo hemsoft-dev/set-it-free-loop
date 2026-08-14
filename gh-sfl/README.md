@@ -66,24 +66,26 @@ gh sfl add pr-review --direct              # Explicit direct deployment
 ### `gh sfl gate`
 
 Reviewer deployments are advisory-only by default. After merging the deployment
-pull request, explicitly require its trusted default-branch workflow:
+pull request, explicitly require its native approval check:
 
 ```bash
 gh sfl gate --repo owner/repo
 ```
 
-The command is idempotent. It automatically replaces a dedicated legacy
-`SFL Reviewer Approval` status-check ruleset; if that check shares a ruleset with
-other requirements, it stops rather than modifying unrelated policy. Required
-workflows are organization rulesets, so creating or removing a gate requires an
-organization owner authenticated with the `admin:org` scope.
+The command creates one repository ruleset for the default branch. It requires
+`SFL Reviewer Approval` from GitHub Actions App ID `15368` and enables strict
+base freshness. An already-correct gate causes no write. A stale dedicated SFL
+gate is updated with its current entity tag, verified after the write, and
+restored from the pre-write snapshot if verification fails. The command refuses
+to rewrite a shared or inherited rule. It does not use organization endpoints
+or require the `admin:org` scope.
 
 ### `gh sfl uninstall`
 
 Remove SFL workflows and governance files from a repository.
 The file-removal commit is prepared before dedicated reviewer gate rulesets are
 removed. If its push fails, the original dedicated rulesets are restored. Shared
-organization gate rulesets must be separated by an administrator before
+or inherited gate rulesets must be separated by an administrator before
 uninstall proceeds. When a manifest is missing,
 `--allow-manifest-fallback` explicitly selects the union of every known managed
 SFL path; `--force` remains solely the destructive-operation confirmation.
