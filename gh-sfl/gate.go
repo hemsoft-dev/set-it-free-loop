@@ -63,7 +63,7 @@ func runGate(args []string, stdout io.Writer, stderr io.Writer) error {
 		repository.ID,
 	)
 	for _, workflow := range requiredWorkflows {
-		if hasReviewerFreshnessInterlock(workflow) {
+		if isRepositoryManagedRuleset(workflow) && hasReviewerFreshnessInterlock(workflow) {
 			fmt.Fprintf(stdout, "✓ SFL reviewer approval is already required by %q\n", workflow.Name)
 			return nil
 		}
@@ -86,7 +86,7 @@ func ensureRepositoryReviewerGate(
 	stdout io.Writer,
 ) error {
 	for _, ruleset := range reviewerStatusChecks {
-		if hasReviewerFreshnessInterlock(ruleset) {
+		if isRepositoryManagedRuleset(ruleset) && hasReviewerFreshnessInterlock(ruleset) {
 			fmt.Fprintf(stdout, "✓ SFL reviewer approval is already required by %q\n", ruleset.Name)
 			return nil
 		}
@@ -245,14 +245,18 @@ func createRepositoryReviewerGate(
 			fmt.Errorf("could not inspect the repository after the create attempt: %w", inspectErr),
 		)
 	}
-	newManaged := newManagedReviewerGates(before, after, reviewerGateName(repo))
+	newRulesets := newRepositoryRulesets(before, after)
+	expectedName := reviewerGateName(repo)
+	var desired []repositoryRuleset
+	var rollbackCandidates []repositoryRuleset
+	var unattributed []repositoryRuleset
 	var verificationErrors []error
-	if len(newManaged) == 1 {
-		candidate := newManaged[0]
+	for _, candidate := range newRulesets {
 		path := fmt.Sprintf("%s/%d", collectionPath, candidate.ID)
 		detail, _, detailErr := readRepositoryRulesetWithETag(client, path, candidate.Name)
 		if detailErr == nil && isDesiredRepositoryReviewerGate(detail, defaultBranch) {
-			return detail.Name, nil
+			desired = append(desired, detail)
+			continue
 		}
 		if detailErr != nil {
 			verificationErrors = append(
@@ -265,13 +269,38 @@ func createRepositoryReviewerGate(
 				fmt.Errorf("newly created reviewer gate %q does not enforce the strict Actions-owned approval check", candidate.Name),
 			)
 		}
+		if candidate.Name == expectedName {
+			rollbackCandidates = append(rollbackCandidates, candidate)
+		} else {
+			unattributed = append(unattributed, candidate)
+		}
 	}
 	var rollbackErrors []error
-	for _, ruleset := range newManaged {
+	for _, ruleset := range rollbackCandidates {
 		path := fmt.Sprintf("%s/%d", collectionPath, ruleset.ID)
 		if rollbackErr := removeCreatedRepositoryReviewerGate(client, path, ruleset.Name); rollbackErr != nil {
 			rollbackErrors = append(rollbackErrors, rollbackErr)
 		}
+	}
+	for _, ruleset := range unattributed {
+		verificationErrors = append(
+			verificationErrors,
+			fmt.Errorf(
+				"new repository ruleset %q (ID %d) appeared during the ambiguous create and was not modified because it no longer has the expected name %q",
+				ruleset.Name,
+				ruleset.ID,
+				expectedName,
+			),
+		)
+	}
+	if len(desired) == 1 && len(unattributed) == 0 && len(rollbackErrors) == 0 {
+		return desired[0].Name, nil
+	}
+	if len(desired) > 1 {
+		verificationErrors = append(
+			verificationErrors,
+			fmt.Errorf("ambiguous create produced %d strict repository reviewer gates", len(desired)),
+		)
 	}
 	return "", errors.Join(
 		fmt.Errorf("creating repository reviewer gate: %w", createErr),
@@ -437,21 +466,22 @@ func cloneRepositoryRuleset(ruleset repositoryRuleset) (repositoryRuleset, error
 	return clone, nil
 }
 
-func newManagedReviewerGates(
-	before, after []repositoryRuleset,
-	name string,
-) []repositoryRuleset {
+func newRepositoryRulesets(before, after []repositoryRuleset) []repositoryRuleset {
 	existingIDs := make(map[int64]struct{}, len(before))
 	for _, ruleset := range before {
 		existingIDs[ruleset.ID] = struct{}{}
 	}
 	var result []repositoryRuleset
 	for _, ruleset := range after {
-		if _, existed := existingIDs[ruleset.ID]; !existed && ruleset.Name == name {
+		if _, existed := existingIDs[ruleset.ID]; !existed {
 			result = append(result, ruleset)
 		}
 	}
 	return result
+}
+
+func isRepositoryManagedRuleset(ruleset repositoryRuleset) bool {
+	return ruleset.SourceType == "" || ruleset.SourceType == "Repository"
 }
 
 func isPreconditionFailure(err error) bool {

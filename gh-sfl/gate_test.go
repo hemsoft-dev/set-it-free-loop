@@ -280,6 +280,27 @@ func TestEnsureRepositoryReviewerGateRefusesInheritedRuleWithoutWriting(t *testi
 	}
 }
 
+func TestEnsureRepositoryReviewerGateDoesNotTrustStrictInheritedRule(t *testing.T) {
+	ruleset := strictReviewerStatusRuleset(21, "Inherited reviewer")
+	ruleset.SourceType = "Organization"
+	client := newGateREST(ruleset)
+	err := ensureRepositoryReviewerGate(
+		client,
+		"owner",
+		"repo",
+		"main",
+		[]repositoryRuleset{ruleset},
+		[]repositoryRuleset{ruleset},
+		io.Discard,
+	)
+	if err == nil || !strings.Contains(err.Error(), "inherited from Organization") {
+		t.Fatalf("ensureRepositoryReviewerGate() error = %v", err)
+	}
+	if len(client.posts)+len(client.puts)+len(client.deletes) != 0 {
+		t.Fatalf("strict inherited rule was trusted or mutated: %+v", client)
+	}
+}
+
 func TestUpdateRepositoryReviewerGateRechecksFreshStateBeforeWriting(t *testing.T) {
 	summary := legacyReviewerRuleset(21, "Required reviewer")
 	current := strictReviewerStatusRuleset(21, summary.Name)
@@ -366,6 +387,41 @@ func TestCreateRepositoryReviewerGateAcceptsAppliedResponseError(t *testing.T) {
 	}
 	if name != reviewerGateName("repo") || len(client.rulesets) != 1 {
 		t.Fatalf("ambiguous create result = %q, %+v", name, client.rulesets)
+	}
+}
+
+func TestCreateRepositoryReviewerGateAcceptsRenamedAppliedResponseError(t *testing.T) {
+	client := newGateREST()
+	client.postErr = errors.New("connection reset after create")
+	client.postMutate = func(ruleset *repositoryRuleset) {
+		ruleset.Name = "Renamed while create response was lost"
+	}
+	name, err := createRepositoryReviewerGate(client, "owner", "repo", "main", nil)
+	if err != nil {
+		t.Fatalf("createRepositoryReviewerGate() unexpected error: %v", err)
+	}
+	if name != "Renamed while create response was lost" || len(client.rulesets) != 1 {
+		t.Fatalf("renamed ambiguous create result = %q, %+v", name, client.rulesets)
+	}
+	if len(client.deletes) != 0 {
+		t.Fatalf("verified renamed gate was deleted: %+v", client.deletes)
+	}
+}
+
+func TestCreateRepositoryReviewerGateReportsUnattributedRenamedMalformedRule(t *testing.T) {
+	client := newGateREST()
+	client.postErr = errors.New("connection reset after create")
+	client.postMutate = func(ruleset *repositoryRuleset) {
+		ruleset.Name = "Renamed malformed rule"
+		ruleset.Conditions.RefName.Include = []string{"refs/heads/release"}
+	}
+	_, err := createRepositoryReviewerGate(client, "owner", "repo", "main", nil)
+	if err == nil || !strings.Contains(err.Error(), "was not modified") ||
+		!strings.Contains(err.Error(), "Renamed malformed rule") {
+		t.Fatalf("createRepositoryReviewerGate() error = %v", err)
+	}
+	if len(client.rulesets) != 1 || len(client.deletes) != 0 {
+		t.Fatalf("unattributed renamed rule was modified: %+v", client)
 	}
 }
 
