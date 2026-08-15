@@ -414,7 +414,7 @@ function Write-Status([string]$Emoji, [string]$Message, [ConsoleColor]$Color = "
     Write-Host "$Emoji  $Message" -ForegroundColor $Color
 }
 
-function Assert-HemSoftPrivateRepository([string] $TargetRepo) {
+function Assert-HemSoftRepository([string] $TargetRepo) {
     if ($DryRun) {
         return
     }
@@ -422,12 +422,12 @@ function Assert-HemSoftPrivateRepository([string] $TargetRepo) {
     if ($LASTEXITCODE -ne 0 -or $activeLogin -ne 'HemSoft') {
         throw "GitHub CLI must be authenticated as HemSoft; active login is '$activeLogin'."
     }
-    $metadata = gh repo view $TargetRepo --json 'owner,visibility' | ConvertFrom-Json
+    $metadata = gh repo view $TargetRepo --json 'owner' | ConvertFrom-Json
     if ($LASTEXITCODE -ne 0) {
-        throw "Could not read repository visibility for $TargetRepo."
+        throw "Could not read repository owner for $TargetRepo."
     }
-    if ($metadata.owner.login -ne 'HemSoft' -or $metadata.visibility -ne 'PRIVATE') {
-        throw 'This SFL distribution is restricted to private HemSoft repositories.'
+    if ($metadata.owner.login -ne 'HemSoft') {
+        throw 'This SFL distribution is restricted to HemSoft-owned repositories.'
     }
 }
 
@@ -512,7 +512,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
     $RepoName    = $TargetRepo.Split("/")[-1]
     $BranchLabel = if ($Tier) { "tier-$Tier" } else { "add-$Workflow" }
     $CanonicalBranchName = "sfl/$BranchLabel"
-    Assert-HemSoftPrivateRepository $TargetRepo
+    Assert-HemSoftRepository $TargetRepo
     $BaseBranch = gh repo view $TargetRepo --json defaultBranchRef --jq '.defaultBranchRef.name'
     if (-not $BaseBranch) {
         throw "Repository $TargetRepo has no default branch."

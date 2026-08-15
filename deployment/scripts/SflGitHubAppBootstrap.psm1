@@ -178,7 +178,7 @@ function Assert-SflGitHubAppInstallation {
 
     $requiredPermissions = [ordered]@{
         actions       = 'write'
-        checks        = 'read'
+        checks        = 'write'
         contents      = 'read'
         issues        = 'write'
         metadata      = 'read'
@@ -192,8 +192,9 @@ function Assert-SflGitHubAppInstallation {
     if ([string](Get-SflObjectPropertyValue -Object $Installation -Name 'client_id') -cne $ExpectedClientId) {
         $problems.Add('installation client ID does not match')
     }
-    if ([string](Get-SflObjectPropertyValue -Object $Installation -Name 'repository_selection') -cne 'selected') {
-        $problems.Add('installation is not limited to selected repositories')
+    $repositorySelection = [string](Get-SflObjectPropertyValue -Object $Installation -Name 'repository_selection')
+    if ($repositorySelection -notin @('selected', 'all')) {
+        $problems.Add("installation repository selection '$repositorySelection' is invalid")
     }
     if ([string](Get-SflObjectPropertyValue -Object $Installation -Name 'target_type') -cne 'User') {
         $problems.Add('installation target type is not User')

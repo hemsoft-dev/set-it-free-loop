@@ -5,8 +5,8 @@ Sets per-repository SFL GitHub App credentials for HemSoft-owned repositories.
 .DESCRIPTION
 HemSoft is a GitHub user account, not an organization, so Actions credentials
 must be configured on each repository. Before writing anything, this script
-authenticates as the App and proves that every target is a selected private
-HemSoft repository with the exact reviewer permission contract. It then sets
+authenticates as the App and proves that every target is a HemSoft repository
+covered by the App's exact reviewer permission contract. It then sets
 the SFL GitHub App Actions variables and stores the app private key as an
 Actions secret without echoing the key value.
 
@@ -90,7 +90,7 @@ $validatedRepos = [Collections.Generic.List[string]]::new()
 foreach ($repo in $Repos) {
     $repositoryJson = Invoke-GhCommand -Arguments @(
         'repo', 'view', $repo,
-        '--json', 'nameWithOwner,owner,visibility'
+        '--json', 'nameWithOwner,owner'
     )
     $repository = $repositoryJson | ConvertFrom-Json
     if ($repository.nameWithOwner -cne $repo) {
@@ -98,9 +98,6 @@ foreach ($repo in $Repos) {
     }
     if ($repository.owner.login -cne $ExpectedLogin) {
         throw "Repository '$repo' is not owned by '$ExpectedLogin'."
-    }
-    if ($repository.visibility -cne 'PRIVATE') {
-        throw "Repository '$repo' must be private; visibility is '$($repository.visibility)'."
     }
     $validatedRepos.Add($repo)
 }
@@ -122,7 +119,7 @@ foreach ($repo in $validatedRepos) {
         -ExpectedAppId $AppId `
         -ExpectedClientId $ClientId `
         -ExpectedOwner $ExpectedLogin
-    Write-Information "Verified selected-repository SFL App installation and permission ceiling on $repo"
+    Write-Information "Verified SFL App installation and permission ceiling on $repo"
 }
 
 foreach ($repo in $validatedRepos) {

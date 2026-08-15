@@ -87,19 +87,17 @@ func TestHemSoftOwnershipPreservesConsumerCodeowners(t *testing.T) {
 	}
 }
 
-func TestValidateDeploymentTargetEnforcesIdentityAndPrivacy(t *testing.T) {
+func TestValidateDeploymentTargetEnforcesIdentity(t *testing.T) {
 	oldGHExec := ghExec
 	t.Cleanup(func() { ghExec = oldGHExec })
 
 	for _, test := range []struct {
-		name       string
-		login      string
-		visibility string
-		wantError  string
+		name      string
+		login     string
+		wantError string
 	}{
-		{name: "wrong identity", login: "fhemmerrelias", visibility: "PRIVATE", wantError: "authenticated as HemSoft"},
-		{name: "public repository", login: "HemSoft", visibility: "PUBLIC", wantError: "must be private"},
-		{name: "private HemSoft repository", login: "HemSoft", visibility: "PRIVATE"},
+		{name: "wrong identity", login: "fhemmerrelias", wantError: "authenticated as HemSoft"},
+		{name: "HemSoft identity", login: "HemSoft"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
@@ -107,8 +105,6 @@ func TestValidateDeploymentTargetEnforcesIdentityAndPrivacy(t *testing.T) {
 				switch strings.Join(args, " ") {
 				case "api user --jq .login":
 					fmt.Fprintln(&stdout, test.login)
-				case "repo view HemSoft/consumer --json visibility --jq .visibility":
-					fmt.Fprintln(&stdout, test.visibility)
 				default:
 					return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected gh arguments: %v", args)
 				}
@@ -141,7 +137,7 @@ func TestValidateDeploymentTargetRejectsScopeBeforeGitHubAccess(t *testing.T) {
 		repo      string
 		wantError string
 	}{
-		{owner: "relias-engineering", repo: "consumer", wantError: "outside the private HemSoft repository scope"},
+		{owner: "relias-engineering", repo: "consumer", wantError: "outside the HemSoft repository scope"},
 		{owner: "HemSoft", repo: "set-it-free-loop", wantError: "is protected"},
 	} {
 		err := validateDeploymentTarget(test.owner, test.repo)

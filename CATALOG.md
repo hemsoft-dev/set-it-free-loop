@@ -11,7 +11,7 @@ Workflows listed here have graduated from staging (`.github/workflows/`) and are
 **To deploy a tier**:
 
 ```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Tier <review|minimal|standard|full> -Repos "HemSoft/private-repository"
+.\deployment\scripts\deploy-workflow.ps1 -Tier <review|minimal|standard|full> -Repos "HemSoft/repository"
 ```
 
 ---

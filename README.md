@@ -62,10 +62,10 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 
 ```powershell
 # Deploy the full autonomous loop
-.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "HemSoft/private-repository"
+.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "HemSoft/repository"
 
 # Or deploy the automatic, recoverable SFL pull request reviewer
-.\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "HemSoft/private-repository"
+.\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "HemSoft/repository"
 
 # Or start with hygiene-only
 .\deployment\scripts\deploy-workflow.ps1 -Tier minimal -Repos "org/repo"
@@ -83,7 +83,7 @@ Reviewer installation, recovery, and optional gating are documented in
 For the private HemSoft CLI path, install a checksum-verified release with
 `.\deployment\scripts\install-gh-sfl-hemsoft.ps1 -ReleaseVersion <version>` or
 build repository-owned source with `.\gh-sfl\build.ps1 -NoInstall`. No local
-Relias checkout is required. `gh sfl init --repo HemSoft/private-repository`
+Relias checkout is required. `gh sfl init --repo HemSoft/repository`
 defaults to the reviewer-only tier and opens a deployment pull request.
 
 ---

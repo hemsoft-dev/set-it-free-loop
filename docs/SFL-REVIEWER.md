@@ -1,16 +1,16 @@
 # HemSoft SFL Pull Request Reviewer
 
-The HemSoft reviewer is a private-repository package that performs three
+The HemSoft reviewer is a HemSoft-owned repository package that performs three
 evidence-based passes over eligible pull requests, publishes native inline
 findings, and exposes a current-head approval check suitable for branch
 protection.
 
 ## Distribution boundary
 
-The deployment scripts fail closed unless the target is owned by `HemSoft` and
-has `PRIVATE` visibility. Do not publish the source repository, reviewer
-workflows, generated locks, credentials, or deployment pull requests outside
-private HemSoft repositories.
+The deployment scripts fail closed unless the target is owned by `HemSoft`.
+The source repository, release assets, and credentials remain private. Reviewer
+workflow deployments may target public or private HemSoft repositories, but
+must not be published outside HemSoft-owned repositories.
 
 ## Package
 
@@ -42,11 +42,11 @@ The target repository needs the following Actions configuration:
 | Secret | `SFL_APP_PRIVATE_KEY` | App installation private key |
 | Secret | `OPENROUTER_API_KEY` | Private Kimi K3 route |
 
-The App installation must be limited to selected intended private repositories.
-Its exact repository permission contract is Actions read/write, Checks read,
-Contents read, Issues read/write, Metadata read, and Pull requests read/write.
-It must not have Checks write, Contents write, Workflows write, an
-all-repositories installation, or unrelated repository permissions. Review
+The App installation may cover all HemSoft repositories or selected intended
+repositories. Its exact repository permission contract is Actions read/write,
+Checks read/write, Contents read, Issues read/write, Metadata read, and Pull
+requests read/write. It must not have Contents write, Workflows write, or
+unrelated repository permissions. Review
 evidence and obsolete-thread mutations use the repository-scoped `GITHUB_TOKEN`
 instead of expanding the shared App's permission ceiling.
 
@@ -54,17 +54,17 @@ Configure App credentials only through the fail-closed bootstrap:
 
 ```powershell
 .\deployment\scripts\set-sfl-github-app-credentials.ps1 `
-  -Repos HemSoft/private-repository `
+  -Repos HemSoft/repository `
   -AppId 123456 `
   -ClientId Iv1.example `
   -PrivateKeyPath C:\secure\sfl-app.private-key.pem
 ```
 
 Before its first variable or secret write, the bootstrap uses a locally signed
-App JWT to verify the App ID, client ID, HemSoft ownership, exact target
-installation, selected-repository scope, and permission ceiling for every
-requested repository. It also independently verifies each target is a private
-`HemSoft/*` repository. If any target fails, none of the targets are mutated.
+App JWT to verify the App ID, client ID, HemSoft ownership, target access, and
+permission ceiling for every requested repository. It also independently
+verifies each target is a `HemSoft/*` repository. If any target fails, none of
+the targets are mutated.
 
 `gh sfl init`, `gh sfl sync`, and `gh sfl add pr-review` inspect only repository
 metadata and credential names; they never read secret values. Before preparing
@@ -88,7 +88,7 @@ Deploy through a reviewable pull request:
 ```powershell
 .\deployment\scripts\deploy-workflow.ps1 `
   -Tier review `
-  -Repos "HemSoft/private-repository"
+  -Repos "HemSoft/repository"
 ```
 
 The deployer stamps the exact source commit into the reviewer Markdown and the
@@ -118,7 +118,7 @@ Install the local build, then open the default reviewer deployment PR:
 
 ```powershell
 .\deployment\scripts\install-gh-sfl-hemsoft.ps1
-gh sfl init --repo HemSoft/private-repository
+gh sfl init --repo HemSoft/repository
 ```
 
 `init` defaults to the `reviewer` tier and both `init` and `sync` default to a
@@ -140,9 +140,9 @@ branch protection only after that deployment is merged.
 
 The supported rollout order is:
 
-1. Install the App for the explicitly approved private repository and run the
-   credential bootstrap above. It verifies the selected-repository scope and
-   permission ceiling with App authentication before setting credentials.
+1. Ensure the App installation covers the repository and run the credential
+   bootstrap above. It verifies target access and the permission ceiling with
+   App authentication before setting credentials.
 2. Run `gh sfl init` or `gh sfl sync` and merge its reviewed deployment PR.
 3. Run `gh sfl gate` to require the reviewer without replacing unrelated
    repository rules.
@@ -224,7 +224,7 @@ Deployment is advisory until a repository rule requires the native
 gating with:
 
 ```powershell
-gh sfl gate --repo HemSoft/private-repository
+gh sfl gate --repo HemSoft/repository
 ```
 
 The command creates a dedicated repository ruleset on the consumer's default
