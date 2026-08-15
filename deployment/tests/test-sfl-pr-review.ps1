@@ -57,6 +57,7 @@ if ($failures.Count -eq 0) {
             $failures.Add('PowerShell engine-policy rendering changes the canonical reviewer and invalidates its generated lock.')
         }
 
+        # Go uses sort.Strings, so PowerShell must preserve the same ordinal order.
         $mixedCaseProfile = [pscustomobject]@{
             Provider = 'copilot'
             Arguments = @()
