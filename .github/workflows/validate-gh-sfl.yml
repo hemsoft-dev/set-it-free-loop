@@ -57,6 +57,11 @@ jobs:
         working-directory: .
         run: ./deployment/tests/test-sfl-github-app-bootstrap.ps1
 
+      - name: Test SFL Auditor behavior
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-auditor.ps1
+
   cross-build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
