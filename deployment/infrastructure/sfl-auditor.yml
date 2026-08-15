@@ -285,7 +285,7 @@ jobs:
             # created before the stable marker was introduced.
             COMMENTS=$(echo "$ROW" | jq -r '.comments[].body // ""')
             if echo "$COMMENTS" | grep -Eq \
-              '<!-- sfl-auditor:stalled-pr-missing-analyzers -->|missing (one or more )?(required )?analyzer markers'; then
+              '<!-- sfl-auditor:stalled-pr-missing-analyzers -->|\*\*SFL Auditor\*\*: Draft PR #[0-9]+ .*missing (one or more )?(required )?analyzer markers'; then
               continue
             fi
 
