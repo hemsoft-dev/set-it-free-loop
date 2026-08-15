@@ -111,6 +111,9 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		"make exactly one successful `submit_pull_request_review` call",
 		"call `missing_data` with the specific blocker",
 		"`noop` and never silently stop",
+		"Run the embedded Unslop pass on every user-facing sentence",
+		"Protocol literals override the Unslop rules",
+		`Ask, "What makes this obviously AI generated?"`,
 		"immutable-head `SFL Reviewer Approval` check",
 	} {
 		if !strings.Contains(sourceText, required) {
