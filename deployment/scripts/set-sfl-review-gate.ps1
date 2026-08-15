@@ -9,15 +9,14 @@
     policy is strict so a base-branch update requires a fresh review of the new
     pull-request head.
 
-    This HemSoft deployment helper intentionally supports only private
-    HemSoft-owned repositories. It does not create or modify organization
-    rulesets.
+    This HemSoft deployment helper supports HemSoft-owned repositories. It
+    does not create or modify organization rulesets.
 
 .EXAMPLE
-    .\set-sfl-review-gate.ps1 -Repo HemSoft/my-private-repo
+    .\set-sfl-review-gate.ps1 -Repo HemSoft/my-repo
 
 .EXAMPLE
-    .\set-sfl-review-gate.ps1 -Repo HemSoft/my-private-repo -DryRun
+    .\set-sfl-review-gate.ps1 -Repo HemSoft/my-repo -DryRun
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -46,13 +45,13 @@ if ($LASTEXITCODE -ne 0 -or $activeLogin -ne 'HemSoft') {
     throw "GitHub CLI must be authenticated as HemSoft; active login is '$activeLogin'."
 }
 
-$repoInfo = gh repo view $Repo --json 'owner,visibility,defaultBranchRef' |
+$repoInfo = gh repo view $Repo --json 'owner,defaultBranchRef' |
     ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) {
     throw "Could not read repository metadata for $Repo."
 }
-if ($repoInfo.owner.login -ne 'HemSoft' -or $repoInfo.visibility -ne 'PRIVATE') {
-    throw 'SFL reviewer gates may be configured only on private HemSoft repositories.'
+if ($repoInfo.owner.login -ne 'HemSoft') {
+    throw 'SFL reviewer gates may be configured only on HemSoft-owned repositories.'
 }
 if ([string]::IsNullOrWhiteSpace($Branch)) {
     $Branch = [string] $repoInfo.defaultBranchRef.name

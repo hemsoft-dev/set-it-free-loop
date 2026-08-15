@@ -77,8 +77,8 @@ audit.
 
 The CLI preserves the reviewer rollout capabilities while enforcing
 HemSoft-specific boundaries: reviewer-only and pull-request-first defaults,
-immutable private HemSoft release reads, `HemSoft` CLI identity, private
-`HemSoft/*` targets, protected mother-repository rejection, and source-path
+immutable private HemSoft release reads, `HemSoft` CLI identity, HemSoft-owned
+consumer targets, protected mother-repository rejection, and source-path
 routing for the four-file reviewer package. `.github/workflows/validate-gh-sfl.yml`
 keeps the source formatted, vetted, tested, and cross-buildable for Windows and
 Linux.

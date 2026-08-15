@@ -129,15 +129,15 @@ Assert-PatternSet $recovery @(
 Assert-PatternSet 'deployment\scripts\deploy-workflow.ps1' @(
     'sfl-pr-review-auto',
     'sfl-pr-review-recovery',
-    'Assert-HemSoftPrivateRepository',
-    "visibility -ne 'PRIVATE'",
+    'Assert-HemSoftRepository',
+    "owner.login -ne 'HemSoft'",
     'Add-SflYamlSourcePin',
     'deployment/infrastructure/\$inf\.yml@\$CurrentSha'
 )
 
 Assert-PatternSet 'deployment\scripts\set-sfl-review-gate.ps1' @(
     "ValidatePattern\('\^HemSoft/",
-    "visibility -ne 'PRIVATE'",
+    "owner.login -ne 'HemSoft'",
     "reviewContext = 'SFL Reviewer Approval'",
     'githubActionsAppId = 15368',
     "activeLogin -ne 'HemSoft'",
@@ -161,9 +161,9 @@ Assert-PatternSet 'deployment\scripts\install-gh-sfl-hemsoft.ps1' @(
 )
 
 Assert-PatternSet 'gh-sfl\github.go' @(
-    'outside the private HemSoft repository scope',
+    'outside the HemSoft repository scope',
     'GitHub CLI must be authenticated as HemSoft',
-    'must be private; visibility is'
+    'is protected and cannot be targeted'
 )
 
 Assert-PatternSet 'gh-sfl\init.go' @(
@@ -186,7 +186,7 @@ foreach ($manifestPath in @('deployment\sfl-manifest.schema.json', 'sfl.json')) 
 }
 
 Assert-PatternSet 'docs\SFL-REVIEWER.md' @(
-    'private HemSoft repositories',
+    'HemSoft-owned repositories',
     'OPENROUTER_API_KEY',
     'retries exactly once',
     'SFL Reviewer Approval',

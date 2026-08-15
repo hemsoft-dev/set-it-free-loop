@@ -3,7 +3,7 @@
 This is the active backlog for bringing the private HemSoft distribution of the
 SFL pull request reviewer to operational parity with
 `relias-engineering/set-it-free-loop` while preserving HemSoft's intentionally
-different model provider and private-repository boundary.
+different model provider and HemSoft-owner boundary.
 
 The comparison baseline is Relias SFL `v6.5.7` at tag commit
 `8d5e30714fa6cc61a89189266f8eb463132abde9`, reviewed through default-branch
@@ -22,9 +22,9 @@ Parity is complete when all of the following are true:
   CLI without depending on a local Relias checkout.
 - `gh sfl init`, `sync`, and `status` operate against immutable HemSoft releases
   and default to deployment pull requests.
-- Every approved private HemSoft consumer can be inventoried, upgraded, and
+- Every approved HemSoft consumer can be inventoried, upgraded, and
   checked for drift from one documented rollout path.
-- One private pilot repository passes a complete review, recovery, finding
+- One pilot repository passes a complete review, recovery, finding
   resolution, and required-gate smoke test.
 
 Model identity is not a parity requirement. HemSoft intentionally uses Kimi K3
@@ -89,7 +89,7 @@ phase has evidence that must exist before it is complete.
 - [x] Compare all reviewer source/runtime artifacts with current Relias `main`.
   Document every remaining difference as one of:
   - HemSoft OpenRouter/Kimi configuration;
-  - private HemSoft repository enforcement;
+  - HemSoft owner and CLI identity enforcement;
   - a tested HemSoft hardening that is at least as strict as Relias.
 - [x] Regenerate the reviewer lock with the repository's checksum-verified
   `gh-aw` compiler; never edit the generated lock directly.
@@ -123,7 +123,8 @@ release, checksums, and a clean-machine install log.
   the HemSoft adaptation from version-controlled source or an immutable,
   checksum-verified upstream input.
 - [x] Preserve the hard gates for active GitHub identity `HemSoft`, owner
-  `HemSoft`, and repository visibility `PRIVATE` on every mutating command.
+  `HemSoft`, and protected mother-repository rejection on every mutating
+  command. Public and private HemSoft consumers are supported.
 - [x] Make reviewer-only installation the default tier; require an explicit
   option for the legacy full suite.
 - [x] Resolve workflow content from an immutable HemSoft release and record its
@@ -135,8 +136,8 @@ release, checksums, and a clean-machine install log.
 - [x] Reconcile obsolete managed files without deleting consumer-owned files,
   and roll back partial mutations when deployment fails.
 - [x] Test `init`, `sync`, `status`, dry-run, protected-repository behavior,
-  uninstall/reconciliation, authentication failures, and private-scope
-  rejection.
+  uninstall/reconciliation, authentication failures, public consumers, and
+  non-HemSoft scope rejection.
 
 Evidence required: installation on a machine without the Relias source tree,
 green CLI tests, and an immutable-source deployment PR.
@@ -146,9 +147,9 @@ green CLI tests, and an immutable-source deployment PR.
 - [x] Preflight `SFL_APP_CLIENT_ID`, `SFL_APP_PRIVATE_KEY`, the OpenRouter
   credential, Actions permissions, and the default branch before opening a
   deployment PR.
-- [x] Verify the App's selected-repository scope and permission ceiling in the
-  App-authenticated credential bootstrap. Normal GitHub CLI OAuth cannot inspect
-  installations owned by the `HemSoft` personal account.
+- [x] Verify the App's target access and permission ceiling in the
+  App-authenticated credential bootstrap. Both all-repository and selected
+  installations are supported.
 - [ ] After the deployment PR merges, configure the native
   `SFL Reviewer Approval` required check without replacing unrelated branch
   protection settings.
@@ -164,14 +165,15 @@ green CLI tests, and an immutable-source deployment PR.
 Evidence required: before/after protection snapshots, idempotent rerun, rollback
 test, and a status report that detects each deliberate fault.
 
-### P1 — Converge approved private consumers
+### P1 — Converge approved consumers
 
-- [ ] Create an explicit allowlist of approved private HemSoft consumers. Do not
-  infer approval from every repository visible to the account.
-- [ ] Inventory each approved consumer's manifest, managed files, source SHA,
+- [x] Treat an explicit `gh sfl init` or `gh sfl sync --repo` command as the
+  consumer approval. Do not maintain a second allowlist for this personal
+  account.
+- [ ] Inventory each targeted consumer's manifest, managed files, source SHA,
   credentials, required gate, and latest successful reviewer run.
-- [ ] Select one private pilot repository and deploy the complete current
-  reviewer package through a PR.
+- [ ] Deploy the complete current reviewer package to `HemSoft/hs-buddy`
+  through a PR as the first public pilot.
 - [ ] Smoke-test automatic review, explicit rerun, immutable base/head checks,
   inline findings at every severity, recovery retry limits, obsolete-thread
   resolution, and the zero-finding approval gate.
@@ -179,11 +181,11 @@ test, and a status report that detects each deliberate fault.
   batches, stopping on the first failed repository.
 - [ ] Produce a convergence report showing release, source SHA, managed-file
   parity, gate state, and smoke-test state per consumer.
-- [ ] Audit public HemSoft repositories and remove obsolete SFL reviewer
-  artifacts through ordinary reviewed PRs. Never deploy the private HemSoft
-  reviewer package or its credentials to a public repository.
+- [ ] Verify the private source repository, release assets, and credentials
+  remain private while the public consumer contains only the deployed workflow
+  package and manifest.
 
-Evidence required: one successful private pilot, a reviewed PR per mutation,
+Evidence required: one successful pilot, a reviewed PR per mutation,
 and a zero-drift convergence report for all approved consumers.
 
 ### P1 — Prevent future Relias drift
@@ -211,7 +213,7 @@ All required work above is complete, and:
   clean checkout.
 - [x] The latest private HemSoft release can be installed without local Relias
   files and verifies all checksums.
-- [ ] Every allowlisted private consumer is on that immutable release with no
+- [ ] Every targeted consumer is on that immutable release with no
   managed-file drift and a required `SFL Reviewer Approval` gate.
 - [ ] At least one current consumer has end-to-end smoke evidence for review,
   recovery, finding lifecycle, and approval.
@@ -226,12 +228,12 @@ first strong HemSoft release:
 
 - An unattended central deployment broker.
 - A second publisher/deployer GitHub App or OIDC-based publisher boundary.
-- Automatic rollout to every private HemSoft repository.
+- Automatic rollout to every HemSoft repository.
 - Full-suite workflow expansion, feature-intake normalization, cost reporting,
   and onboarding-health workflows unrelated to reviewer parity.
 
-Any proposal to add a broker, another App, or broader repository scope requires
-an explicit design decision before implementation.
+Any proposal to add a broker or another App requires an explicit design
+decision before implementation.
 
 ## Reference implementation
 
@@ -242,7 +244,7 @@ an explicit design decision before implementation.
 - HemSoft reviewer contract: [docs/SFL-REVIEWER.md](docs/SFL-REVIEWER.md)
 - HemSoft deployment script:
   [deployment/scripts/deploy-workflow.ps1](deployment/scripts/deploy-workflow.ps1)
-- HemSoft gate command: `gh sfl gate --repo HemSoft/private-repository`
+- HemSoft gate command: `gh sfl gate --repo HemSoft/repository`
 - Latest private release proof:
   [docs/release-evidence/v2.1.0-rc.3.md](docs/release-evidence/v2.1.0-rc.3.md)
 

@@ -129,7 +129,7 @@ func parseMutationTarget(repoFlag string) (string, string, error) {
 
 func validateDeploymentTarget(owner, repo string) error {
 	if !strings.EqualFold(owner, "HemSoft") {
-		return fmt.Errorf("%s/%s is outside the private HemSoft repository scope", owner, repo)
+		return fmt.Errorf("%s/%s is outside the HemSoft repository scope", owner, repo)
 	}
 	if strings.EqualFold(repo, motherRepoName) {
 		return fmt.Errorf("%s/%s is protected and cannot be targeted by SFL deployment operations", owner, repo)
@@ -144,18 +144,6 @@ func validateDeploymentTarget(owner, repo string) error {
 		return fmt.Errorf("GitHub CLI must be authenticated as HemSoft; active login is %q", login)
 	}
 
-	visibilityOut, visibilityErr, err := ghExec(
-		"repo", "view", owner+"/"+repo,
-		"--json", "visibility",
-		"--jq", ".visibility",
-	)
-	if err != nil {
-		return fmt.Errorf("checking repository visibility: %s: %w", visibilityErr.String(), err)
-	}
-	visibility := strings.TrimSpace(visibilityOut.String())
-	if visibility != "PRIVATE" {
-		return fmt.Errorf("%s/%s must be private; visibility is %q", owner, repo, visibility)
-	}
 	return nil
 }
 

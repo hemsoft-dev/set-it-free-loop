@@ -9,5 +9,5 @@ its private-scope adaptations as ordinary Go source. Builds and tests must use
 this directory and must not require a Relias checkout.
 
 The intentional HemSoft changes include repository identity, deployment tiers,
-workflow path routing, manifest engine metadata, private target authorization,
+workflow path routing, manifest engine metadata, HemSoft target authorization,
 the `github-personal1` SSH transport, label policy, and engine configuration.

@@ -68,7 +68,7 @@ function Get-HealthyInstallation {
         account              = [pscustomobject]@{ login = 'HemSoft' }
         permissions          = [pscustomobject]@{
             actions       = 'write'
-            checks        = 'read'
+            checks        = 'write'
             contents      = 'read'
             issues        = 'write'
             metadata      = 'read'
@@ -132,10 +132,19 @@ Assert-SflGitHubAppInstallation `
 
 $allRepositories = Get-HealthyInstallation
 $allRepositories.repository_selection = 'all'
+Assert-SflGitHubAppInstallation `
+    -Installation $allRepositories `
+    -Repository 'HemSoft/example' `
+    -ExpectedAppId '123456' `
+    -ExpectedClientId 'Iv1.testclient' `
+    -ExpectedOwner 'HemSoft'
+
+$invalidSelection = Get-HealthyInstallation
+$invalidSelection.repository_selection = 'unknown'
 Assert-Throw {
-    Assert-SflGitHubAppInstallation -Installation $allRepositories -Repository 'HemSoft/example' `
+    Assert-SflGitHubAppInstallation -Installation $invalidSelection -Repository 'HemSoft/example' `
         -ExpectedAppId '123456' -ExpectedClientId 'Iv1.testclient' -ExpectedOwner 'HemSoft'
-} 'not limited to selected repositories' 'All-repository installation'
+} 'repository selection.*invalid' 'Invalid repository selection'
 
 $overprivileged = Get-HealthyInstallation
 $overprivileged.permissions.contents = 'write'
@@ -177,7 +186,7 @@ try {
             return 'HemSoft'
         }
         if ($call -match '^repo view HemSoft/example ') {
-            return '{"nameWithOwner":"HemSoft/example","owner":{"login":"HemSoft"},"visibility":"PRIVATE"}'
+            return '{"nameWithOwner":"HemSoft/example","owner":{"login":"HemSoft"},"visibility":"PUBLIC"}'
         }
         return ''
     }
@@ -192,7 +201,7 @@ try {
         }
         if ($Uri -eq 'https://api.github.com/repos/HemSoft/example/installation') {
             $installation = Get-HealthyInstallation
-            $installation.permissions.checks = 'write'
+            $installation.permissions.checks = 'read'
             return $installation
         }
         throw "Unexpected API URI: $Uri"
@@ -201,7 +210,7 @@ try {
     Assert-Throw {
         & $scriptPath -Repos 'HemSoft/example' -AppId '123456' -ClientId 'Iv1.testclient' `
             -PrivateKeyPath $scriptPrivateKeyPath
-    } "permission 'checks' is 'write'; expected 'read'" 'Bootstrap permission preflight'
+    } "permission 'checks' is 'read'; expected 'write'" 'Bootstrap permission preflight'
 
     $mutationCalls = @($scriptGhCalls | Where-Object { $_ -match '^(variable|secret) set ' })
     Assert-Equal $mutationCalls.Count 0 'Mutation count after failed App preflight'
