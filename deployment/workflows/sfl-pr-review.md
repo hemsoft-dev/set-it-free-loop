@@ -101,16 +101,6 @@ pre-steps:
       fi
 
 # HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.
-engine:
-  id: copilot
-  env:
-    COPILOT_PROVIDER_BASE_URL: https://openrouter.ai/api/v1
-    COPILOT_PROVIDER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-    COPILOT_PROVIDER_TYPE: openai
-    COPILOT_PROVIDER_WIRE_API: responses
-    COPILOT_MODEL: moonshotai/kimi-k3
-
-model: moonshotai/kimi-k3
 
 models:
   providers:
@@ -120,6 +110,17 @@ models:
           cost:
             input: "3e-06"
             output: "1.5e-05"
+
+engine:
+  id: copilot
+  env:
+    COPILOT_MODEL: moonshotai/kimi-k3
+    COPILOT_PROVIDER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+    COPILOT_PROVIDER_BASE_URL: https://openrouter.ai/api/v1
+    COPILOT_PROVIDER_TYPE: openai
+    COPILOT_PROVIDER_WIRE_API: responses
+
+model: moonshotai/kimi-k3
 
 network:
   allowed:

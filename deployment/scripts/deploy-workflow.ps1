@@ -248,7 +248,7 @@ function ConvertTo-SflWorkflowWithEnginePolicy([string]$Content, [pscustomobject
     }
     if ($null -ne $EngineProfile.Environment) {
         $engineLines += "  env:"
-        foreach ($property in $EngineProfile.Environment.PSObject.Properties) {
+        foreach ($property in @($EngineProfile.Environment.PSObject.Properties) | Sort-Object Name) {
             $engineLines += "    $($property.Name): $($property.Value)"
         }
     }

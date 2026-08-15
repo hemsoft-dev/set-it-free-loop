@@ -36,6 +36,30 @@ func TestHemSoftEnginePolicyRewriteIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestCanonicalReviewerEnginePolicyIsDeploymentStable(t *testing.T) {
+	canonical := normalizeLineEndings(readContractFile(
+		t,
+		filepath.Join("..", "deployment", "workflows", "sfl-pr-review.md"),
+	))
+
+	rendered, err := applyHemSoftEnginePolicyToWorkflow(canonical, "sfl-pr-review")
+	if err != nil {
+		t.Fatalf("render canonical reviewer workflow: %v", err)
+	}
+	if rendered != canonical {
+		firstDifference := 0
+		for firstDifference < len(canonical) && firstDifference < len(rendered) && canonical[firstDifference] == rendered[firstDifference] {
+			firstDifference++
+		}
+		t.Fatalf(
+			"canonical reviewer workflow changes during consumer deployment, which invalidates its generated lock: canonical bytes=%d, rendered bytes=%d, first difference=%d",
+			len(canonical),
+			len(rendered),
+			firstDifference,
+		)
+	}
+}
+
 func TestRenderHemSoftWorkflowMatchesDeploymentAndStatus(t *testing.T) {
 	markdown := "---\nname: Example\nmodel: legacy\nnetwork: defaults\n---\nVersion " + sflVersionPlaceholder + "\n"
 	rendered, err := renderHemSoftWorkflow("example.md", markdown, "2.0.0")
