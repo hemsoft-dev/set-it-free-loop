@@ -148,6 +148,18 @@ try {
     Assert-True ($secondOutput -match 'stalled_prs_found=0') 'Stalled-PR warning was counted twice.'
     Assert-True ([string]::IsNullOrEmpty($secondComment)) 'Stalled-PR warning was posted twice.'
 
+    $draftPr.comments = @([ordered]@{ body = 'Review note: this test discusses missing analyzer markers.' })
+    ConvertTo-Json -InputObject @($draftPr) -Depth 8 | Set-Content -LiteralPath $fixturePath
+    Remove-Item -LiteralPath $outputPath, $commentsPath -Force -ErrorAction SilentlyContinue
+
+    $unrelatedCommentRun = Invoke-BashScript -Script "$mockGh`n$stalledScript" -Environment $environment
+    $unrelatedCommentOutput = if (Test-Path -LiteralPath $outputPath) { Get-Content -Raw -LiteralPath $outputPath } else { '' }
+    $unrelatedCommentWarning = if (Test-Path -LiteralPath $commentsPath) { Get-Content -Raw -LiteralPath $commentsPath } else { '' }
+
+    Assert-True ($unrelatedCommentRun.ExitCode -eq 0) "Stalled-PR unrelated-comment run failed: $($unrelatedCommentRun.Output)"
+    Assert-True ($unrelatedCommentOutput -match 'stalled_prs_found=1') 'Unrelated review text suppressed the Auditor warning.'
+    Assert-True ($unrelatedCommentWarning -match '<!-- sfl-auditor:stalled-pr-missing-analyzers -->') 'Auditor warning was not posted after unrelated review text.'
+
     $summaryScript = Get-WorkflowStepScript "      - name: Summary`n"
     $summaryExpressions = @(
         '${{ steps.orphaned-labels.outputs.orphaned_labels_fixed }}',
