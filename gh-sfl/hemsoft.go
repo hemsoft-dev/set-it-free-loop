@@ -226,6 +226,9 @@ func insertTopLevelEngineBlock(frontmatter, engineBlock string) string {
 			for len(output) > 0 && strings.TrimSpace(output[len(output)-1]) == "" {
 				output = output[:len(output)-1]
 			}
+			if len(output) > 0 {
+				output = append(output, "")
+			}
 			output = append(output, strings.Split(engineBlock, "\n")...)
 			output = append(output, "")
 			inserted = true

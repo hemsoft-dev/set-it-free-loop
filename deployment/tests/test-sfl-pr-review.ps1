@@ -28,6 +28,60 @@ if ($failures.Count -eq 0) {
         $failures.Add('Canonical and staged reviewer Markdown differ.')
     }
 
+    $deployScriptPath = Join-Path $repoRoot 'deployment\scripts\deploy-workflow.ps1'
+    $deployScript = Get-Content -LiteralPath $deployScriptPath -Raw
+    $rendererStart = $deployScript.IndexOf('function ConvertTo-SflWorkflowWithEnginePolicy')
+    $rendererEnd = $deployScript.IndexOf('function New-SflEnginePolicyManifest', $rendererStart)
+    if ($rendererStart -lt 0 -or $rendererEnd -le $rendererStart) {
+        $failures.Add('Could not load the PowerShell engine-policy renderer for behavioral testing.')
+    } else {
+        Invoke-Expression $deployScript.Substring($rendererStart, $rendererEnd - $rendererStart)
+
+        $reviewerProfile = [pscustomobject]@{
+            Provider = 'copilot'
+            Arguments = @()
+            Environment = [pscustomobject][ordered]@{
+                COPILOT_PROVIDER_WIRE_API = 'responses'
+                COPILOT_PROVIDER_TYPE = 'openai'
+                COPILOT_PROVIDER_BASE_URL = 'https://openrouter.ai/api/v1'
+                COPILOT_PROVIDER_API_KEY = '${{ secrets.OPENROUTER_API_KEY }}'
+                COPILOT_MODEL = 'moonshotai/kimi-k3'
+            }
+            RenderedModel = 'moonshotai/kimi-k3'
+        }
+        $renderedReviewer = ConvertTo-SflWorkflowWithEnginePolicy `
+            -Content $source `
+            -EngineProfile $reviewerProfile `
+            -WorkflowName 'sfl-pr-review'
+        if (-not (Test-NormalizedTextEqual $source $renderedReviewer)) {
+            $failures.Add('PowerShell engine-policy rendering changes the canonical reviewer and invalidates its generated lock.')
+        }
+
+        # Go uses sort.Strings, so PowerShell must preserve the same ordinal order.
+        $mixedCaseProfile = [pscustomobject]@{
+            Provider = 'copilot'
+            Arguments = @()
+            Environment = [pscustomobject][ordered]@{
+                dKey = 'lower-d'
+                aKey = 'lower-a'
+                CKey = 'upper-c'
+                BKey = 'upper-b'
+            }
+            RenderedModel = 'example'
+        }
+        $mixedCaseRendered = ConvertTo-SflWorkflowWithEnginePolicy `
+            -Content "---`nname: Mixed case`nnetwork: defaults`n---`n" `
+            -EngineProfile $mixedCaseProfile `
+            -WorkflowName 'mixed-case'
+        $renderedEnvironmentNames = @(
+            [regex]::Matches($mixedCaseRendered, '(?m)^    (?<name>[A-Za-z]+):') |
+                ForEach-Object { $_.Groups['name'].Value }
+        )
+        if (($renderedEnvironmentNames -join ',') -cne 'BKey,CKey,aKey,dKey') {
+            $failures.Add("PowerShell engine environment order is not ordinal: $($renderedEnvironmentNames -join ',')")
+        }
+    }
+
     $requiredSourcePatterns = @(
         '(?m)^source: HemSoft/set-it-free-loop/deployment/workflows/sfl-pr-review\.md@main\r?$',
         '(?m)^  workflow_dispatch:\r?$',
