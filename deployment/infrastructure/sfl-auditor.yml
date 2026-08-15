@@ -248,8 +248,7 @@ jobs:
           gh pr list --repo "$REPO" --state open --draft \
             --json number,headRefName,createdAt,body,comments,labels --limit 100 > /tmp/draft_prs.json
 
-          jq -c '[.[] | select(.headRefName | startswith("agent-fix/issue-"))] | .[]' \
-            /tmp/draft_prs.json | while IFS= read -r ROW; do
+          while IFS= read -r ROW; do
             PR_NUM=$(echo "$ROW" | jq '.number')
             CREATED=$(echo "$ROW" | jq -r '.createdAt')
 
@@ -282,20 +281,25 @@ jobs:
               continue
             fi
 
-            # Check if already flagged (in comments)
+            # Check if already flagged. Keep the text fallbacks for comments
+            # created before the stable marker was introduced.
             COMMENTS=$(echo "$ROW" | jq -r '.comments[].body // ""')
-            ALREADY_FLAGGED=$(echo "$COMMENTS" | grep -c 'missing required analyzer markers' || echo 0)
-            if [ "$ALREADY_FLAGGED" -gt 0 ]; then
+            if echo "$COMMENTS" | grep -Eq \
+              '<!-- sfl-auditor:stalled-pr-missing-analyzers -->|missing (one or more )?(required )?analyzer markers'; then
               continue
             fi
 
             echo "Draft PR #$PR_NUM is older than 2 hours and missing required analyzer markers: $MISSING_MARKERS"
 
             gh pr comment "$PR_NUM" --repo "$REPO" \
-              --body "⏰ **SFL Auditor**: Draft PR #$PR_NUM has been open for over 2 hours and is missing one or more required analyzer markers ($MISSING_MARKERS). The PR Analyzers may not be dispatching for this PR. A human should investigate."
+              --body "<!-- sfl-auditor:stalled-pr-missing-analyzers -->
+          ⏰ **SFL Auditor**: Draft PR #$PR_NUM has been open for over 2 hours and is missing one or more required analyzer markers ($MISSING_MARKERS). The PR Analyzers may not be dispatching for this PR. A human should investigate."
 
             FOUND=$((FOUND + 1))
-          done
+          done < <(
+            jq -c '[.[] | select(.headRefName | startswith("agent-fix/issue-"))] | .[]' \
+              /tmp/draft_prs.json
+          )
 
           echo "stalled_prs_found=$FOUND" >> "$GITHUB_OUTPUT"
           echo "Found $FOUND stalled draft PRs"
@@ -427,21 +431,23 @@ jobs:
 
           TOTAL=$((ORPHANED_LABELS + CONFLICTING + ORPHANED_PRS + STALE_UNCLAIMED + STALLED_PRS + PAUSED + SFL_REVIEW_PREREQUISITES))
 
-          echo "## SFL Auditor Summary"
-          echo ""
-          echo "| Check | Count |"
-          echo "|-------|-------|"
-          echo "| Orphaned in-progress labels fixed | $ORPHANED_LABELS |"
-          echo "| Conflicting labels fixed | $CONFLICTING |"
-          echo "| Orphaned agent PRs flagged | $ORPHANED_PRS |"
-          echo "| Stale unclaimed issues flagged | $STALE_UNCLAIMED |"
-          echo "| Stalled draft PRs flagged | $STALLED_PRS |"
-          echo "| Unexplained pauses flagged | $PAUSED |"
-          echo "| Missing SFL review prerequisites | $SFL_REVIEW_PREREQUISITES |"
-          echo ""
+          {
+            echo "## SFL Auditor Summary"
+            echo ""
+            echo "| Check | Count |"
+            echo "|-------|-------|"
+            echo "| Orphaned in-progress labels fixed | $ORPHANED_LABELS |"
+            echo "| Conflicting labels fixed | $CONFLICTING |"
+            echo "| Orphaned agent PRs flagged | $ORPHANED_PRS |"
+            echo "| Stale unclaimed issues flagged | $STALE_UNCLAIMED |"
+            echo "| Stalled draft PRs flagged | $STALLED_PRS |"
+            echo "| Unexplained pauses flagged | $PAUSED |"
+            echo "| Missing SFL review prerequisites | $SFL_REVIEW_PREREQUISITES |"
+            echo ""
 
-          if [ "$TOTAL" -eq 0 ]; then
-            echo "All checks passed — no discrepancies found."
-          else
-            echo "Found or addressed $TOTAL discrepancies."
-          fi
+            if [ "$TOTAL" -eq 0 ]; then
+              echo "All checks passed — no discrepancies found."
+            else
+              echo "Found or addressed $TOTAL discrepancies."
+            fi
+          } | tee -a "$GITHUB_STEP_SUMMARY"
