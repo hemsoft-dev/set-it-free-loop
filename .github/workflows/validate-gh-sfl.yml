@@ -62,6 +62,11 @@ jobs:
         working-directory: .
         run: ./deployment/tests/test-sfl-auditor.ps1
 
+      - name: Test SFL reviewer source and lock parity
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-pr-review.ps1
+
   cross-build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
