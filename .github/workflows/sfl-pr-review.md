@@ -1451,10 +1451,10 @@ After all 3 passes, submit a **pull request review** using
 
 - **Event**:
   - Use `APPROVE` when the verdict is `APPROVE` and the pull request author is
-    not `set-it-free-loop[bot]`.
+    not `sfl-app[bot]`.
   - Use `COMMENT` when the verdict is `NEEDS WORK`.
   - Use `COMMENT` when the verdict is `APPROVE` but the pull request was authored
-    by `set-it-free-loop[bot]`, because GitHub does not allow an app to approve
+    by `sfl-app[bot]`, because GitHub does not allow an app to approve
     its own pull request. Explain this exception in the verdict reason.
 - **Body**: A structured summary:
 

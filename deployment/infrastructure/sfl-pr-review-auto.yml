@@ -187,7 +187,7 @@ jobs:
 
           if [ "$EVENT_NAME" = "pull_request_review" ]; then
             REVIEW_RUN_ID=""
-            if [ "$(normalize_login "$REVIEW_AUTHOR")" = "set-it-free-loop" ]; then
+            if [ "$(normalize_login "$REVIEW_AUTHOR")" = "sfl-app" ]; then
               REVIEW_RUN_ID=$(printf '%s' "$REVIEW_BODY" \
                 | sed -nE 's#.*actions/runs/([0-9]+).*#\1#p' \
                 | tail -n 1)
@@ -201,7 +201,7 @@ jobs:
           fi
 
           if [ "$EVENT_ACTION" = "review_requested" ] \
-            && [ "$(normalize_login "$REQUESTED_REVIEWER")" != "set-it-free-loop" ]; then
+            && [ "$(normalize_login "$REQUESTED_REVIEWER")" != "sfl-app" ]; then
             echo "review-run-id=" >> "$GITHUB_OUTPUT"
             exit 0
           fi

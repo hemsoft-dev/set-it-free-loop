@@ -3,9 +3,9 @@
   "reviewedAt": "2026-08-15",
   "distribution": {
     "repository": "HemSoft/set-it-free-loop",
-    "version": "2.1.0-rc.8",
+    "version": "2.1.0-rc.9",
     "visibility": "private",
-    "tag": "v2.1.0-rc.8",
+    "tag": "v2.1.0-rc.9",
     "prerelease": true
   },
   "reviewerBaseline": {
@@ -38,7 +38,7 @@
       "upstreamPath": "workflows/sfl-pr-review.md",
       "upstreamSha256": "35b1d066abd0df5498a9ece6937be0c92c8dbfc04f3adf1c43b22dc7d2dc3a5a",
       "hemsoftPath": "deployment/workflows/sfl-pr-review.md",
-      "hemsoftSha256": "edcfb1989c0e27e5d04e200b6e80f9d92744dd67386c1ed9595ce7451bac2acc",
+      "hemsoftSha256": "95f2e38489939ed78157b63db51c62a7f1068358299fa3f91141079718eddea8",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review.md"
       ],
@@ -73,7 +73,7 @@
       "upstreamPath": "workflows/sfl-pr-review-auto.yml",
       "upstreamSha256": "abbb6615ec2c598e42ef242596c0e6f05e3b616641da7c656d74b7bbb5487bf6",
       "hemsoftPath": "deployment/infrastructure/sfl-pr-review-auto.yml",
-      "hemsoftSha256": "27f71dce9f12648b54bfd2210b5020315ee7c4d5ccd872e2000925dedf4c0280",
+      "hemsoftSha256": "908237a9cc2f52718457f20010391e5a2cc39f74da424de1d6c9a0d6d1a71c90",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review-auto.yml"
       ],
