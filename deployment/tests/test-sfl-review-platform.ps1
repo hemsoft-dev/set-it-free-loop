@@ -29,6 +29,16 @@ function Assert-PatternSet(
     }
 }
 
+function Assert-PatternAbsent(
+    [string] $RelativePath,
+    [string] $Pattern
+) {
+    $content = Read-RepoFile $RelativePath
+    if ($content -match $Pattern) {
+        $failures.Add("$RelativePath contains forbidden pattern: $Pattern")
+    }
+}
+
 function Assert-ExactPair(
     [string] $CanonicalPath,
     [string] $StagedPath
@@ -68,6 +78,8 @@ Assert-PatternSet $reviewer @(
 Assert-PatternSet $auto @(
     "vars.SFL_ENABLED != 'false'",
     'types: \[opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled\]',
+    '\$\(normalize_login "\$REVIEW_AUTHOR"\)" = "sfl-app"',
+    '\$\(normalize_login "\$REQUESTED_REVIEWER"\)" != "sfl-app"',
     'pull_request_review:\s*\r?\n\s+types: \[submitted\]',
     "github\.event\.label\.name == 'sfl-review'",
     'HEAD_REPOSITORY: \$\{\{ github\.event\.pull_request\.head\.repo\.full_name \}\}',
@@ -97,6 +109,7 @@ Assert-PatternSet $auto @(
     'WAIT_OUTCOME: \$\{\{ steps\.wait-review\.outcome \}\}',
     'validate_review_run'
 )
+Assert-PatternAbsent $auto 'normalize_login[^\r\n]+set-it-free-loop'
 
 $autoContent = Read-RepoFile $auto
 if ($autoContent -match 'permission-pull-requests:\s*read') {
