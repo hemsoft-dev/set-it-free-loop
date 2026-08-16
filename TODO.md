@@ -51,21 +51,57 @@ parity gaps.
   `SFL Review Evidence` checks.
 
 When those six boxes are complete, replace this required checklist with a short
-statement that the current rollout is complete. Keep the optional checklist
-until each item is deliberately implemented or declined.
+statement that the current rollout is complete. Keep the product experience
+backlog until each item is deliberately implemented or declined.
 
-## Optional future improvements
+## Product experience parity snapshot — 2026-08-16
 
-These are product or scale enhancements, not parity blockers:
+SFL already matches the core GitHub review behavior that matters for this
+personal rollout: automatic current-head reviews, native inline findings, a
+real App-authored approval, immutable review evidence, a required merge gate,
+bounded recovery, and obsolete-thread cleanup.
 
-- [ ] Allow users to request SFL through GitHub's native bot-reviewer
-  interface.
-- [ ] Schedule the existing read-only comparison against current Relias
-  `main`; when it detects unapproved reviewer safety, recovery, or gate drift,
-  open one deduplicated tracking issue rather than changing workflows.
-- [ ] Add unattended central rollout or a deployment broker.
-- [ ] Expand beyond repositories explicitly approved through `gh sfl init` or
-  `gh sfl sync`.
+Commercial products are still smoother around installation and interaction.
+CodeRabbit supports automatic and incremental reviews, comment commands, PR
+conversation, and one-click fixes. Greptile adds persistent repository indexing,
+feedback-based learning, comment commands, and agent fix handoffs. Macroscope
+posts a real GitHub approval after its correctness and eligibility checks.
 
-None of these optional items requires another GitHub App or new repository
-authorization for the current personal-account rollout.
+GitHub supports requesting installed bots as reviewers through the GraphQL
+`requestReviews` mutations. The HemSoft wrapper already listens for the
+`review_requested` event, but it still checks for the Relias
+`set-it-free-loop[bot]` identity. The installed HemSoft reviewer is
+`sfl-app[bot]`. This is an account-specific wiring bug, not a reason to create
+another App or ask for new repository authorization.
+
+### Next product experience work
+
+- [ ] Replace the hard-coded Relias reviewer login with the deployed App login,
+  retain the unrelated-reviewer no-op, and add contract tests for
+  `sfl-app[bot]` review requests.
+- [ ] On one `hs-buddy` pilot PR, request `sfl-app[bot]` through GitHub's native
+  reviewer request path and prove that the existing wrapper dispatches one
+  current-head SFL review.
+- [ ] Add an `@sfl-app review` PR comment command that routes to the existing
+  `gh sfl review` exact-head dispatch and reports the resulting run link.
+- [ ] Decide from pilot usage whether incremental-only re-review is worth its
+  extra state. Full current-head re-review remains the safer default.
+
+### Deliberately deferred
+
+Persistent code-graph indexing, a hosted dashboard, feedback learning,
+one-click fix handoffs, and an unattended deployment broker are commercial
+scale features. Do not build them for the personal rollout without a concrete
+need. Continue to limit consumers to repositories explicitly approved through
+`gh sfl init` or `gh sfl sync`.
+
+The existing read-only comparison against current Relias `main` may be
+scheduled later. If it detects unapproved reviewer safety, recovery, or gate
+drift, it should open one deduplicated issue rather than changing workflows.
+
+Reference snapshot:
+
+- [GitHub bot reviewer request inputs](https://docs.github.com/en/enterprise-cloud@latest/graphql/reference/pulls#requestreviewsbylogininput)
+- [CodeRabbit automatic reviews](https://docs.coderabbit.ai/configuration/auto-review)
+- [Greptile overview](https://www.greptile.com/docs/introduction)
+- [Macroscope Approvability](https://macroscope.com/approvability)
