@@ -142,7 +142,7 @@ write-capable test must use only the approved validation repositories:
 
 | App | Registration owner, supplied context | Installation target to verify | Bot login to verify |
 | --- | --- | --- | --- |
-| HemSoft `sfl-app` | Personal account `HemSoft` | Personal account `HemSoft`, including `HemSoft/hs-buddy` | `sfl-app[bot]` |
+| HemSoft `sfl-app` | Personal account `HemSoft` | Personal account `HemSoft`; all repositories is owner-confirmed but not independently captured in this audit | `sfl-app[bot]` |
 | Relias `set-it-free-loop` | Organization `relias-engineering` | Organization `relias-engineering`, including `relias-engineering/relias-assistant` | `set-it-free-loop[bot]` |
 
 The owner types above come from the project context. Record the live App settings
@@ -236,6 +236,8 @@ The following checks were run on 2026-08-16 after the documentation review.
 - The signed-in HemSoft Developer settings page lists `SFL App` at
   `/settings/apps/sfl-app`, which confirms that the registration belongs to the
   HemSoft personal account.
+- The account owner confirms that the installation selects all repositories.
+  This audit did not independently capture that repository-selection setting.
 - The registration detail page required GitHub sudo-mode reauthentication, so
   this audit did not claim live visibility, event-subscription, or requested
   permission values from that page.

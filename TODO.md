@@ -25,9 +25,10 @@ boundary; those are supported differences from the Relias implementation.
   shipped in PR #74. Its CLI contract still refers to
   `SFL Reviewer Approval`, while the working pilot ruleset requires
   `SFL Reviewer Gate Runner`; issue #73 tracks that contract mismatch.
-- The GitHub App is registered to the personal `HemSoft` account and installed
-  for all repositories. That ownership and installation model is working and
-  is not itself a migration task.
+- The GitHub App is registered to the personal `HemSoft` account. The account
+  owner confirms that its installation selects all repositories. That working,
+  owner-confirmed model is not itself a migration task; independently capture
+  the installation record before proposing scope hardening.
 
 ## Guardrails
 
