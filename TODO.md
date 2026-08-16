@@ -29,6 +29,9 @@ boundary; those are supported differences from the Relias implementation.
   owner confirms that its installation selects all repositories. That working,
   owner-confirmed model is not itself a migration task; independently capture
   the installation record before proposing scope hardening.
+- The 41 obsolete `v2.0.0` deployment pull requests left by the August 1
+  account-wide rollout are closed, and their `sfl/tier-review` branches are
+  removed. They were never part of the approved `hs-buddy` validation path.
 
 ## Guardrails
 
@@ -36,6 +39,9 @@ boundary; those are supported differences from the Relias implementation.
   release until a narrowly scoped change has its own evidence and rollback.
 - Run any HemSoft SFL lifecycle, recovery, assignment, or command test only on
   `HemSoft/hs-buddy`, using a controlled PR.
+- Run `gh sfl init` and `gh sfl sync` only for an explicitly approved
+  repository. Do not fan them out across the HemSoft account. If approval for a
+  pending rollout is withdrawn, close its deployment PR and delete its branch.
 - Do not add another App, user authorization flow, deployment broker, or App
   transfer to solve native reviewer assignment without new evidence.
 
