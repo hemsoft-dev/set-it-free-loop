@@ -72,8 +72,10 @@ Assert-PatternSet $reviewer @(
     'Thread \$\{threadId\} is not an obsolete SFL finding',
     'Could not enumerate unresolved SFL findings',
     'Critical, High, Medium, or Low',
-    'SFL Reviewer Approval'
+    'SFL Reviewer Approval',
+    'sfl-app\[bot\]'
 )
+Assert-PatternAbsent $reviewer 'set-it-free-loop\[bot\]'
 
 Assert-PatternSet $auto @(
     "vars.SFL_ENABLED != 'false'",

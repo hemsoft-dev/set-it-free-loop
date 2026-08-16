@@ -38,7 +38,7 @@
       "upstreamPath": "workflows/sfl-pr-review.md",
       "upstreamSha256": "35b1d066abd0df5498a9ece6937be0c92c8dbfc04f3adf1c43b22dc7d2dc3a5a",
       "hemsoftPath": "deployment/workflows/sfl-pr-review.md",
-      "hemsoftSha256": "edcfb1989c0e27e5d04e200b6e80f9d92744dd67386c1ed9595ce7451bac2acc",
+      "hemsoftSha256": "95f2e38489939ed78157b63db51c62a7f1068358299fa3f91141079718eddea8",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review.md"
       ],
