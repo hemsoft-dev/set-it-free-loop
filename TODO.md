@@ -82,8 +82,8 @@ another App or ask for new repository authorization.
 - [ ] On one `hs-buddy` pilot PR, request `sfl-app[bot]` through GitHub's native
   reviewer request path and prove that the existing wrapper dispatches one
   current-head SFL review.
-- [ ] Add one simple manual rerun path, preferably `@sfl-app review` or
-  `gh sfl review`, with the same exact-head deduplication and visible run link.
+- [ ] Add an `@sfl-app review` PR comment command that routes to the existing
+  `gh sfl review` exact-head dispatch and reports the resulting run link.
 - [ ] Decide from pilot usage whether incremental-only re-review is worth its
   extra state. Full current-head re-review remains the safer default.
 
