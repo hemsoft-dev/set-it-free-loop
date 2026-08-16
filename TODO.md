@@ -41,21 +41,30 @@ parity gaps.
   embedded Unslop pass from PR #85 and the corrected gate contract.
 - [ ] Synchronize `HemSoft/hs-buddy` to that release and verify its manifest
   records the new immutable version and source commit.
+- [ ] Exercise the deployed recovery and finding lifecycle in the pilot: carry
+  one inline finding through resolution, verify obsolete-thread cleanup, and
+  prove a failed review uses the bounded recovery path. Retain automated
+  contract coverage for every severity mapping and the recovery retry limit.
 - [ ] Confirm the deployed reviewer contains the embedded Unslop pass, then
   complete one current-head pilot review with an `sfl-app` approval and green
   `SFL Reviewer Gate Runner`, `SFL Reviewer Approval`, and
   `SFL Review Evidence` checks.
 
-When those five boxes are complete, replace this checklist with a short
-statement that no open parity work remains.
+When those six boxes are complete, replace this required checklist with a short
+statement that the current rollout is complete. Keep the optional checklist
+until each item is deliberately implemented or declined.
 
 ## Optional future improvements
 
 These are product or scale enhancements, not parity blockers:
 
-- Allow users to request SFL through GitHub's native bot-reviewer interface.
-- Add unattended central rollout or a deployment broker.
-- Expand beyond repositories explicitly approved through `gh sfl init` or
+- [ ] Allow users to request SFL through GitHub's native bot-reviewer
+  interface.
+- [ ] Schedule the existing read-only comparison against current Relias
+  `main`; when it detects unapproved reviewer safety, recovery, or gate drift,
+  open one deduplicated tracking issue rather than changing workflows.
+- [ ] Add unattended central rollout or a deployment broker.
+- [ ] Expand beyond repositories explicitly approved through `gh sfl init` or
   `gh sfl sync`.
 
 None of these optional items requires another GitHub App or new repository
