@@ -23,6 +23,7 @@ jobs:
       github.event.comment.body == '@sfl-app review' &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -170,6 +171,7 @@ jobs:
             "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
             | find_command_run "$COMMAND_CREATED_AT" "$EXPECTED_TITLE")
           if ! [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            LABEL_WAS_PRESENT=false
             PR_LABELS=$(gh api \
               "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" \
               --paginate --jq '.[].name')
@@ -179,20 +181,44 @@ jobs:
                 -f "labels[]=sfl-review" > /dev/null
               echo "Requested SFL review for PR #${PR_NUMBER} at ${HEAD_SHA}"
             else
+              LABEL_WAS_PRESENT=true
               echo "A pending SFL review request already covers PR #${PR_NUMBER}"
             fi
 
-            for ATTEMPT in $(seq 1 30); do
+            for ATTEMPT in $(seq 1 120); do
               REVIEW_RUN_ID=$(gh api \
                 "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
                 | find_command_run "$COMMAND_CREATED_AT" "$EXPECTED_TITLE")
               if [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
                 break
               fi
+              if [ "$ATTEMPT" = "30" ] && [ "$LABEL_WAS_PRESENT" = "true" ]; then
+                LIVE_LABELS=$(gh api \
+                  "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" \
+                  --paginate --jq '.[].name')
+                if grep -Fxq "sfl-review" <<< "$LIVE_LABELS"; then
+                  gh api --method DELETE \
+                    "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels/sfl-review" \
+                    > /dev/null
+                  gh api --method POST \
+                    "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels" \
+                    -f "labels[]=sfl-review" > /dev/null
+                  echo "Retriggered stale SFL review label for PR #${PR_NUMBER}"
+                else
+                  echo "The pending SFL request was consumed; continuing run correlation"
+                fi
+              fi
               sleep 2
             done
           fi
           if ! [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            COMMAND_RUN_URL="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            FAILURE_BODY=$(printf '%s\nSFL review was requested for `%s`, but its Actions run could not be correlated. [Command run](%s)' \
+              "$MARKER" "$HEAD_SHA" "$COMMAND_RUN_URL")
+            jq -nc --arg body "$FAILURE_BODY" '{body: $body}' \
+              | gh api --method PATCH \
+                  "repos/${REPOSITORY}/issues/comments/${ACKNOWLEDGEMENT_ID}" \
+                  --input - > /dev/null
             echo "::error::Could not resolve the SFL review run requested by comment ${COMMAND_COMMENT_ID}"
             exit 1
           fi
