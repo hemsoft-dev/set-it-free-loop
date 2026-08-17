@@ -67,6 +67,11 @@ jobs:
         working-directory: .
         run: ./deployment/tests/test-sfl-pr-review.ps1
 
+      - name: Test SFL reviewer platform contract
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-review-platform.ps1
+
   cross-build:
     runs-on: ubuntu-latest
     timeout-minutes: 10
