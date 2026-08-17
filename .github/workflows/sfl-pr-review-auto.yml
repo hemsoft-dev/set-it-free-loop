@@ -707,6 +707,7 @@ jobs:
         continue-on-error: true
         env:
           BASE_SHA: ${{ steps.approval-context.outputs.base-sha }}
+          COMMENT_COMMAND_RESULT: ${{ needs.comment-command.result }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           EVENT_NAME: ${{ github.event_name }}
           EXPECTED_REVIEW_RUN_ID: ${{ needs.dispatch.outputs.expected-review-run-id || needs.comment-command.outputs.expected-review-run-id }}
@@ -720,6 +721,11 @@ jobs:
           set -euo pipefail
           if [ "$SFL_ENABLED" = "false" ]; then
             echo "::error::SFL reviewer maintenance mode is active; required reviewer gate fails closed"
+            exit 1
+          fi
+          if [ "$EVENT_NAME" = "issue_comment" ] \
+            && [ "$COMMENT_COMMAND_RESULT" != "success" ]; then
+            echo "::error::SFL comment command job concluded ${COMMENT_COMMAND_RESULT}; refusing to bootstrap"
             exit 1
           fi
           if [ "$REVIEWER_INSTALLED" != "true" ]; then
