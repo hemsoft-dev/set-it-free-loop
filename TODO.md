@@ -67,7 +67,8 @@ that transaction with the deployed runner and GitHub's live ruleset API.
 - [ ] Merge [issue #103](https://github.com/HemSoft/set-it-free-loop/issues/103)
   via PR #104, using a command-specific dispatch ID, an exact final
   acknowledgement marker, the trusted approval gate, and the selected review
-  effort.
+  effort while preserving the gate's explicit fail-closed maintenance-mode
+  behavior.
 - [ ] Publish the corrected immutable prerelease and update `hs-buddy` PR #438
   from that release.
 - [ ] With explicit approval, replace `hs-buddy`'s rejected OpenRouter secret;

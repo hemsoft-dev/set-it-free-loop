@@ -608,6 +608,7 @@ jobs:
       actions: read
       checks: write
       contents: read
+      pull-requests: read
     steps:
       - name: Configure GH_HOST for enterprise compatibility
         shell: bash
@@ -616,13 +617,40 @@ jobs:
           GH_HOST="${GH_HOST#http://}"
           echo "GH_HOST=${GH_HOST}" >> "$GITHUB_ENV"
 
+      - name: Resolve immutable approval context
+        id: approval-context
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || needs.comment-command.outputs.base-sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || needs.comment-command.outputs.head-sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || needs.comment-command.outputs.pr-number || github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "issue_comment" ] \
+            && { [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; }; then
+            PR=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")
+            BASE_SHA=$(jq -r '.base.sha // ""' <<< "$PR")
+            HEAD_SHA=$(jq -r '.head.sha // ""' <<< "$PR")
+          fi
+          if ! [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]] \
+            || ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] \
+            || ! [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Could not resolve immutable SFL approval context"
+            exit 1
+          fi
+          echo "base-sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "head-sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+          echo "pr-number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
       - name: Initialize head approval check
         id: approval-check
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || needs.comment-command.outputs.base-sha }}
+          BASE_SHA: ${{ steps.approval-context.outputs.base-sha }}
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || needs.comment-command.outputs.head-sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number || needs.comment-command.outputs.pr-number }}
+          HEAD_SHA: ${{ steps.approval-context.outputs.head-sha }}
+          PR_NUMBER: ${{ steps.approval-context.outputs.pr-number }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -658,13 +686,13 @@ jobs:
         id: wait-review
         continue-on-error: true
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || needs.comment-command.outputs.base-sha }}
+          BASE_SHA: ${{ steps.approval-context.outputs.base-sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           EVENT_NAME: ${{ github.event_name }}
           EXPECTED_REVIEW_RUN_ID: ${{ needs.dispatch.outputs.expected-review-run-id || needs.comment-command.outputs.expected-review-run-id }}
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || needs.comment-command.outputs.head-sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number || needs.comment-command.outputs.pr-number }}
+          HEAD_SHA: ${{ steps.approval-context.outputs.head-sha }}
+          PR_NUMBER: ${{ steps.approval-context.outputs.pr-number }}
           REPOSITORY: ${{ github.repository }}
           REVIEWER_INSTALLED: ${{ needs.dispatch.outputs.reviewer-installed || needs.comment-command.outputs.reviewer-installed }}
           SFL_ENABLED: ${{ vars.SFL_ENABLED }}
@@ -760,8 +788,8 @@ jobs:
         env:
           APPROVAL_CHECK_ID: ${{ steps.approval-check.outputs.check-run-id }}
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha || needs.comment-command.outputs.head-sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number || needs.comment-command.outputs.pr-number }}
+          HEAD_SHA: ${{ steps.approval-context.outputs.head-sha }}
+          PR_NUMBER: ${{ steps.approval-context.outputs.pr-number }}
           REPOSITORY: ${{ github.repository }}
           WAIT_OUTCOME: ${{ steps.wait-review.outcome }}
         run: |
