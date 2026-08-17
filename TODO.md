@@ -26,6 +26,9 @@ cleans up obsolete threads, and filters reviewer communication through Unslop.
 - The personal-account App installation currently selects all repositories and
   works. Do not change its authentication, permissions, ownership, or scope as
   part of the current milestone.
+- Run `gh sfl init` or `gh sfl sync` only for an explicitly approved repository.
+  Never fan either command out across the account. If approval is withdrawn,
+  close the pending deployment PR and delete its branch.
 
 ## Current milestone: close issue #73
 
