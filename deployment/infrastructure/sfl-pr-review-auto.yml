@@ -24,6 +24,12 @@ jobs:
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      base-sha: ${{ steps.pull-request.outputs.base-sha }}
+      expected-review-run-id: ${{ steps.request-review.outputs.review-run-id }}
+      head-sha: ${{ steps.pull-request.outputs.head-sha }}
+      pr-number: ${{ github.event.issue.number }}
+      reviewer-installed: 'true'
     permissions:
       contents: read
       pull-requests: read
@@ -54,6 +60,10 @@ jobs:
             echo "::error::The installed reviewer does not support exact dispatch correlation"
             exit 1
           fi
+          if ! grep -qE '^\s+review_effort:\s*$' <<< "$REVIEWER_WORKFLOW"; then
+            echo "::error::The installed reviewer does not support selected review effort"
+            exit 1
+          fi
 
           PR=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")
           BASE_REF=$(jq -r '.base.ref // ""' <<< "$PR")
@@ -61,6 +71,13 @@ jobs:
           DRAFT=$(jq -r '.draft // true' <<< "$PR")
           HEAD_REPOSITORY=$(jq -r '.head.repo.full_name // ""' <<< "$PR")
           HEAD_SHA=$(jq -r '.head.sha // ""' <<< "$PR")
+          REVIEW_EFFORT=$(jq -r '
+            [.labels[]?.name] as $labels
+            | if ($labels | index("sfl-effort:high")) then "high"
+              elif ($labels | index("sfl-effort:medium")) then "medium"
+              else "low"
+              end
+          ' <<< "$PR")
           STATE=$(jq -r '.state // ""' <<< "$PR")
 
           if [ "$STATE" != "open" ] || [ "$DRAFT" = "true" ]; then
@@ -82,6 +99,7 @@ jobs:
 
           echo "base-sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
           echo "head-sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+          echo "review-effort=${REVIEW_EFFORT}" >> "$GITHUB_OUTPUT"
 
       - name: Mint SFL GitHub App token
         id: app-token
@@ -96,6 +114,7 @@ jobs:
           permission-pull-requests: write
 
       - name: Request review and acknowledge the exact run
+        id: request-review
         env:
           BASE_SHA: ${{ steps.pull-request.outputs.base-sha }}
           COMMAND_COMMENT_ID: ${{ github.event.comment.id }}
@@ -103,6 +122,7 @@ jobs:
           HEAD_SHA: ${{ steps.pull-request.outputs.head-sha }}
           PR_NUMBER: ${{ github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
+          REVIEW_EFFORT: ${{ steps.pull-request.outputs.review-effort }}
           TRUSTED_REF: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
@@ -143,6 +163,10 @@ jobs:
           command_acknowledgement_complete() {
             jq -e '.body | test("\\[Actions run [1-9][0-9]*\\]\\(")' > /dev/null
           }
+
+          command_acknowledgement_run_id() {
+            jq -r '.body | capture("\\[Actions run (?<id>[1-9][0-9]*)\\]\\(")?.id // empty'
+          }
           # END TESTABLE COMMENT COMMAND LOOKUP
 
           ACKNOWLEDGEMENT=$(gh api \
@@ -154,6 +178,12 @@ jobs:
             ACKNOWLEDGEMENT_JSON=$(base64 --decode <<< "$ACKNOWLEDGEMENT")
             ACKNOWLEDGEMENT_ID=$(jq -r '.id // empty' <<< "$ACKNOWLEDGEMENT_JSON")
             if command_acknowledgement_complete <<< "$ACKNOWLEDGEMENT_JSON"; then
+              ACKNOWLEDGED_RUN_ID=$(command_acknowledgement_run_id <<< "$ACKNOWLEDGEMENT_JSON")
+              if ! [[ "$ACKNOWLEDGED_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+                echo "::error::Completed SFL acknowledgement does not identify its exact run"
+                exit 1
+              fi
+              echo "review-run-id=${ACKNOWLEDGED_RUN_ID}" >> "$GITHUB_OUTPUT"
               echo "Command comment ${COMMAND_COMMENT_ID} was already acknowledged"
               exit 0
             fi
@@ -188,6 +218,7 @@ jobs:
               -f "inputs[base_sha]=${BASE_SHA}" \
               -f "inputs[head_sha]=${HEAD_SHA}" \
               -f "inputs[retry_count]=0" \
+              -f "inputs[review_effort]=${REVIEW_EFFORT}" \
               -f "inputs[dispatch_id]=${DISPATCH_ID}"
             echo "Requested SFL review for PR #${PR_NUMBER} at ${HEAD_SHA} with dispatch ${DISPATCH_ID}"
 
@@ -212,6 +243,7 @@ jobs:
             echo "::error::Could not resolve the SFL review run requested by comment ${COMMAND_COMMENT_ID}"
             exit 1
           fi
+          echo "review-run-id=${REVIEW_RUN_ID}" >> "$GITHUB_OUTPUT"
 
           RUN_URL="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${REVIEW_RUN_ID}"
           FINAL_BODY=$(printf '%s\nSFL review requested for `%s`: [Actions run %s](%s)' \
@@ -562,8 +594,14 @@ jobs:
 
   approval:
     name: SFL Reviewer Gate Runner
-    needs: dispatch
-    if: always() && github.event_name != 'issue_comment'
+    needs: [comment-command, dispatch]
+    if: >-
+      always() &&
+      (github.event_name != 'issue_comment' ||
+      (github.event.action == 'created' &&
+      github.event.issue.pull_request &&
+      github.event.comment.body == '@sfl-app review' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)))
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -581,10 +619,10 @@ jobs:
       - name: Initialize head approval check
         id: approval-check
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || needs.comment-command.outputs.base-sha }}
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || needs.comment-command.outputs.head-sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || needs.comment-command.outputs.pr-number }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -620,14 +658,15 @@ jobs:
         id: wait-review
         continue-on-error: true
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || needs.comment-command.outputs.base-sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-          EXPECTED_REVIEW_RUN_ID: ${{ needs.dispatch.outputs.expected-review-run-id }}
+          EVENT_NAME: ${{ github.event_name }}
+          EXPECTED_REVIEW_RUN_ID: ${{ needs.dispatch.outputs.expected-review-run-id || needs.comment-command.outputs.expected-review-run-id }}
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || needs.comment-command.outputs.head-sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || needs.comment-command.outputs.pr-number }}
           REPOSITORY: ${{ github.repository }}
-          REVIEWER_INSTALLED: ${{ needs.dispatch.outputs.reviewer-installed }}
+          REVIEWER_INSTALLED: ${{ needs.dispatch.outputs.reviewer-installed || needs.comment-command.outputs.reviewer-installed }}
           SFL_ENABLED: ${{ vars.SFL_ENABLED }}
         run: |
           set -euo pipefail
@@ -661,6 +700,10 @@ jobs:
           # END TESTABLE AUTO GATE RUN VALIDATION
 
           if [ -z "$EXPECTED_REVIEW_RUN_ID" ]; then
+            if [ "$EVENT_NAME" = "issue_comment" ]; then
+              echo "::error::Could not resolve the exact comment-dispatched SFL review run"
+              exit 1
+            fi
             EXPECTED_REVIEW_RUN_ID=$(gh api \
               "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
               --paginate --jq '.workflow_runs[]' \
@@ -717,8 +760,8 @@ jobs:
         env:
           APPROVAL_CHECK_ID: ${{ steps.approval-check.outputs.check-run-id }}
           GH_TOKEN: ${{ github.token }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || needs.comment-command.outputs.head-sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || needs.comment-command.outputs.pr-number }}
           REPOSITORY: ${{ github.repository }}
           WAIT_OUTCOME: ${{ steps.wait-review.outcome }}
         run: |

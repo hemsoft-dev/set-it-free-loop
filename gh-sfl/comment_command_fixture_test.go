@@ -34,6 +34,7 @@ set -euo pipefail
 case "$1" in
   acknowledgement) find_command_acknowledgement "$2" ;;
   acknowledgement-complete) command_acknowledgement_complete ;;
+  acknowledgement-run-id) command_acknowledgement_run_id ;;
   run) find_command_run "$2" "$3" ;;
   *) exit 2 ;;
 esac
@@ -113,6 +114,20 @@ esac
 					t.Fatalf("complete=%t, want %t (err=%v)", got, test.want, err)
 				}
 			})
+		}
+	})
+
+	t.Run("final acknowledgement preserves exact run id", func(t *testing.T) {
+		cmd := exec.Command(bash, scriptArgument, "acknowledgement-run-id")
+		cmd.Stdin = strings.NewReader(
+			`{"body":"<!-- sfl-review-command:1234 --> [Actions run 456](https://github.com/acme/repo/actions/runs/456)"}`,
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("extract acknowledgement run id: %v\n%s", err, output)
+		}
+		if got := strings.TrimSpace(string(output)); got != "456" {
+			t.Fatalf("acknowledgement run id=%q, want 456", got)
 		}
 	})
 

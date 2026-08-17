@@ -59,12 +59,15 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   link.
 - [x] Preserve automatic and `sfl-review` label triggers, and prove command
   authorization and duplicate-delivery behavior with focused tests.
-- [x] Publish rc.10 and open `hs-buddy` deployment PR #438. Its review exposed
-  two source defects before merge: ambiguous run correlation and a timeout
-  acknowledgement that incorrectly suppresses retry.
+- [x] Publish rc.10 and open `hs-buddy` deployment PR #438. Review of the
+  rollout exposed four source defects before merge: ambiguous run correlation,
+  a timeout acknowledgement that incorrectly suppresses retry, a
+  comment-triggered review that bypasses the trusted approval gate, and loss of
+  the selected review-effort label.
 - [ ] Merge [issue #103](https://github.com/HemSoft/set-it-free-loop/issues/103)
-  via PR #104, using a command-specific dispatch ID and an exact final
-  acknowledgement marker.
+  via PR #104, using a command-specific dispatch ID, an exact final
+  acknowledgement marker, the trusted approval gate, and the selected review
+  effort.
 - [ ] Publish the corrected immutable prerelease and update `hs-buddy` PR #438
   from that release.
 - [ ] With explicit approval, replace `hs-buddy`'s rejected OpenRouter secret;
