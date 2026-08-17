@@ -14,9 +14,9 @@ cleans up obsolete threads, and filters reviewer communication through Unslop.
 - SFL is working on `HemSoft/hs-buddy`. It is the only repository approved for
   live HemSoft validation.
 - `v2.1.0-rc.11` is the current immutable private release at
-  `a1e8119999145be450403297df6dc29736e07ea5`. `hs-buddy` PR #438 is pinned to
-  that release but remains unmerged while the comment-command gate hotfix is
-  validated and released. HemSoft
+  `a1e8119999145be450403297df6dc29736e07ea5`. The corrected rc.12 release is
+  prepared from `3556f3fc6775eb4c3bd5824a8a183caf7652b5b0`. `hs-buddy` PR #438 remains
+  unmerged until it is updated from rc.12. HemSoft
   intentionally uses Kimi K3 through its private OpenRouter route.
 - `hs-buddy` PR #415 proved the full finding lifecycle on 2026-08-16. SFL found
   real issues, approved the fixes on the current head, recovered automatically
@@ -77,8 +77,10 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   metadata-triggered run then exposed a fail-open edge case: when the
   `comment-command` job fails before emitting outputs, the approval job can
   mistake the empty reviewer state for a bootstrap deployment.
-- [ ] Make the comment-command path fail closed, publish the corrected
-  immutable prerelease, and update `hs-buddy` PR #438 from that release.
+- [x] Make the comment-command path fail closed via
+  [PR #107](https://github.com/HemSoft/set-it-free-loop/pull/107), and run its
+  platform contract test in CI.
+- [ ] Publish rc.12 and update `hs-buddy` PR #438 from that immutable release.
 - [x] Raise the reviewer's consecutive cache-miss allowance from the `gh-aw`
   default of 5 to 10. The OpenRouter key and Kimi route succeeded for five
   requests; the proxy rejected request six with HTTP 403 and Copilot reported
