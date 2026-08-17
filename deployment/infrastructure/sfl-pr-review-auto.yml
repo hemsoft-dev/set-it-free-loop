@@ -99,13 +99,14 @@ jobs:
         env:
           BASE_SHA: ${{ steps.pull-request.outputs.base-sha }}
           COMMAND_COMMENT_ID: ${{ github.event.comment.id }}
-          COMMAND_CREATED_AT: ${{ github.event.comment.created_at }}
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           HEAD_SHA: ${{ steps.pull-request.outputs.head-sha }}
           PR_NUMBER: ${{ github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
+          TRUSTED_REF: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
+          DISPATCH_ID="command-${COMMAND_COMMENT_ID}"
           MARKER="<!-- sfl-review-command:${COMMAND_COMMENT_ID} -->"
           EXPECTED_TITLE="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="
 
@@ -125,18 +126,22 @@ jobs:
           }
 
           find_command_run() {
-            local command_created_at="$1"
-            local expected_title="$2"
+            local expected_title="$1"
+            local dispatch_id="$2"
             jq -r \
-              --arg command_created_at "$command_created_at" \
+              --arg dispatch_id "$dispatch_id" \
               --arg title "$expected_title" '
                 [.workflow_runs[]
                   | select(.display_title | startswith($title))
-                  | select(.created_at >= $command_created_at)]
+                  | select(.display_title | endswith(" dispatch=" + $dispatch_id))]
                 | sort_by(.id)
-                | first
+                | last
                 | .id // empty
               '
+          }
+
+          command_acknowledgement_complete() {
+            jq -e '.body | test("\\[Actions run [1-9][0-9]*\\]\\(")' > /dev/null
           }
           # END TESTABLE COMMENT COMMAND LOOKUP
 
@@ -148,8 +153,7 @@ jobs:
           if [ -n "$ACKNOWLEDGEMENT" ]; then
             ACKNOWLEDGEMENT_JSON=$(base64 --decode <<< "$ACKNOWLEDGEMENT")
             ACKNOWLEDGEMENT_ID=$(jq -r '.id // empty' <<< "$ACKNOWLEDGEMENT_JSON")
-            if jq -e '.body | test("/actions/runs/[1-9][0-9]*")' \
-              <<< "$ACKNOWLEDGEMENT_JSON" > /dev/null; then
+            if command_acknowledgement_complete <<< "$ACKNOWLEDGEMENT_JSON"; then
               echo "Command comment ${COMMAND_COMMENT_ID} was already acknowledged"
               exit 0
             fi
@@ -169,44 +173,30 @@ jobs:
 
           REVIEW_RUN_ID=$(gh api \
             "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
-            | find_command_run "$COMMAND_CREATED_AT" "$EXPECTED_TITLE")
+            | find_command_run "$EXPECTED_TITLE" "$DISPATCH_ID")
           if ! [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
-            LABEL_WAS_PRESENT=false
-            PR_LABELS=$(gh api \
-              "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" \
-              --paginate --jq '.[].name')
-            if ! grep -Fxq "sfl-review" <<< "$PR_LABELS"; then
-              gh api --method POST \
-                "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels" \
-                -f "labels[]=sfl-review" > /dev/null
-              echo "Requested SFL review for PR #${PR_NUMBER} at ${HEAD_SHA}"
-            else
-              LABEL_WAS_PRESENT=true
-              echo "A pending SFL review request already covers PR #${PR_NUMBER}"
-            fi
+            AW_CONTEXT=$(jq -cn \
+              --arg base_sha "${BASE_SHA}" \
+              --arg head_sha "${HEAD_SHA}" \
+              --argjson item_number "${PR_NUMBER}" \
+              '{item_type: "pull_request", item_number: $item_number, base_sha: $base_sha, head_sha: $head_sha}')
+            gh api --method POST \
+              "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/dispatches" \
+              -f "ref=${TRUSTED_REF}" \
+              -f "inputs[item_number]=${PR_NUMBER}" \
+              -f "inputs[aw_context]=${AW_CONTEXT}" \
+              -f "inputs[base_sha]=${BASE_SHA}" \
+              -f "inputs[head_sha]=${HEAD_SHA}" \
+              -f "inputs[retry_count]=0" \
+              -f "inputs[dispatch_id]=${DISPATCH_ID}"
+            echo "Requested SFL review for PR #${PR_NUMBER} at ${HEAD_SHA} with dispatch ${DISPATCH_ID}"
 
             for ATTEMPT in $(seq 1 120); do
               REVIEW_RUN_ID=$(gh api \
                 "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
-                | find_command_run "$COMMAND_CREATED_AT" "$EXPECTED_TITLE")
+                | find_command_run "$EXPECTED_TITLE" "$DISPATCH_ID")
               if [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
                 break
-              fi
-              if [ "$ATTEMPT" = "30" ] && [ "$LABEL_WAS_PRESENT" = "true" ]; then
-                LIVE_LABELS=$(gh api \
-                  "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" \
-                  --paginate --jq '.[].name')
-                if grep -Fxq "sfl-review" <<< "$LIVE_LABELS"; then
-                  gh api --method DELETE \
-                    "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels/sfl-review" \
-                    > /dev/null
-                  gh api --method POST \
-                    "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels" \
-                    -f "labels[]=sfl-review" > /dev/null
-                  echo "Retriggered stale SFL review label for PR #${PR_NUMBER}"
-                else
-                  echo "The pending SFL request was consumed; continuing run correlation"
-                fi
               fi
               sleep 2
             done
