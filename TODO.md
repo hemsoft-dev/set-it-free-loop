@@ -32,17 +32,19 @@ cleans up obsolete threads, and filters reviewer communication through Unslop.
 
 ## Current milestone: close issue #73
 
-PR #74 already delivered the transactional repository-scoped gate, including
-idempotency, preservation of unrelated policy, and rollback. The only remaining
-gap is that the CLI contract still names `SFL Reviewer Approval` while the
-working repository rule requires `SFL Reviewer Gate Runner`.
+PR #74 delivered the transactional repository-scoped gate. Issue #73 aligns
+that transaction with the deployed runner and GitHub's live ruleset API.
 
-- [ ] Update `gh sfl gate`, `status`, `uninstall`, tests, and documentation to
+- [x] Update `gh sfl gate`, `status`, `uninstall`, tests, and documentation to
   use the deployed `SFL Reviewer Gate Runner` contract.
-- [ ] Preserve PR #74's transaction, idempotency, unrelated-policy, and rollback
-  protections.
-- [ ] Prove the change on one controlled `hs-buddy` PR without changing the
-  working App installation or reviewer workflow.
+- [x] Preserve idempotency, unrelated-policy protection, drift detection,
+  verification, and bounded rollback. GitHub rejects conditional headers on
+  repository ruleset updates and deletes, so the CLI rechecks the entity tag
+  and complete state immediately before each mutation and aborts on drift.
+- [x] Prove the change against `hs-buddy` PR #415 without changing the App or
+  reviewer workflow. The first gate run changed strict freshness from `false`
+  to `true`; the second run made no write; `status` recognized the strict gate;
+  and the PR retained green approval, evidence, and gate-runner checks.
 - [ ] Close [issue #73](https://github.com/HemSoft/set-it-free-loop/issues/73).
 
 ## Next milestone

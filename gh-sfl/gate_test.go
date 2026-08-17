@@ -15,26 +15,26 @@ import (
 )
 
 type gatePutPlan struct {
-	apply      bool
-	err        error
-	mutate     func(*repositoryRuleset)
-	concurrent *repositoryRuleset
+	apply  bool
+	err    error
+	mutate func(*repositoryRuleset)
 }
 
 type gateREST struct {
-	rulesets   map[int64]repositoryRuleset
-	etags      map[int64]string
-	nextID     int64
-	postErr    error
-	postApply  bool
-	postMutate func(*repositoryRuleset)
-	putPlans   []gatePutPlan
-	putIndex   int
-	posts      []string
-	puts       []string
-	putETags   []string
-	deletes    []string
-	deleteTags []string
+	rulesets         map[int64]repositoryRuleset
+	etags            map[int64]string
+	nextID           int64
+	postErr          error
+	postApply        bool
+	postMutate       func(*repositoryRuleset)
+	putPlans         []gatePutPlan
+	putIndex         int
+	posts            []string
+	puts             []string
+	deletes          []string
+	etagReads        int
+	mutateAtETagRead int
+	etagReadMutation *repositoryRuleset
 }
 
 func newGateREST(rulesets ...repositoryRuleset) *gateREST {
@@ -77,6 +77,14 @@ func (c *gateREST) Get(path string, response interface{}) error {
 }
 
 func (c *gateREST) GetWithETag(path string, response interface{}) (string, error) {
+	c.etagReads++
+	if c.etagReadMutation != nil && c.etagReads == c.mutateAtETagRead {
+		id, _ := rulesetIDFromPath(path)
+		concurrent := *c.etagReadMutation
+		concurrent.ID = id
+		c.rulesets[id] = concurrent
+		c.etags[id] = fmt.Sprintf(`"v%d"`, c.etagReads)
+	}
 	if err := c.Get(path, response); err != nil {
 		return "", err
 	}
@@ -111,15 +119,6 @@ func (c *gateREST) Post(path string, body io.Reader, response interface{}) error
 }
 
 func (c *gateREST) Put(path string, body io.Reader, response interface{}) error {
-	return c.put(path, body, "", response)
-}
-
-func (c *gateREST) PutIfMatch(path string, body io.Reader, etag string, response interface{}) error {
-	c.putETags = append(c.putETags, etag)
-	return c.put(path, body, etag, response)
-}
-
-func (c *gateREST) put(path string, body io.Reader, etag string, response interface{}) error {
 	data, err := io.ReadAll(body)
 	if err != nil {
 		return err
@@ -134,16 +133,6 @@ func (c *gateREST) put(path string, body io.Reader, etag string, response interf
 		plan = c.putPlans[c.putIndex]
 	}
 	c.putIndex++
-	if plan.concurrent != nil {
-		concurrent := *plan.concurrent
-		concurrent.ID = id
-		c.rulesets[id] = concurrent
-		c.etags[id] = fmt.Sprintf(`"v%d"`, c.putIndex+1)
-		return &api.HTTPError{StatusCode: http.StatusPreconditionFailed}
-	}
-	if etag != "" && etag != c.etags[id] {
-		return &api.HTTPError{StatusCode: http.StatusPreconditionFailed}
-	}
 	var ruleset repositoryRuleset
 	if err := json.Unmarshal(data, &ruleset); err != nil {
 		return err
@@ -168,18 +157,10 @@ func (c *gateREST) Patch(string, io.Reader, interface{}) error {
 }
 
 func (c *gateREST) Delete(path string, response interface{}) error {
-	return c.DeleteIfMatch(path, "", response)
-}
-
-func (c *gateREST) DeleteIfMatch(path, etag string, _ interface{}) error {
 	c.deletes = append(c.deletes, path)
-	c.deleteTags = append(c.deleteTags, etag)
 	id, ok := rulesetIDFromPath(path)
 	if !ok {
 		return fmt.Errorf("unexpected DELETE %s", path)
-	}
-	if etag != "" && etag != c.etags[id] {
-		return &api.HTTPError{StatusCode: http.StatusPreconditionFailed}
 	}
 	delete(c.rulesets, id)
 	delete(c.etags, id)
@@ -323,12 +304,13 @@ func TestUpdateRepositoryReviewerGatePreservesConcurrentChange(t *testing.T) {
 	concurrent.Name = "Administrator changed this rule"
 	concurrent.BypassActors = []any{map[string]any{"actor_id": 99}}
 	client := newGateREST(snapshot)
-	client.putPlans = []gatePutPlan{{concurrent: &concurrent}}
+	client.mutateAtETagRead = 2
+	client.etagReadMutation = &concurrent
 	_, err := updateRepositoryReviewerGate(client, "owner", "repo", "main", snapshot)
 	if err == nil || !strings.Contains(err.Error(), "changed concurrently") {
 		t.Fatalf("updateRepositoryReviewerGate() error = %v", err)
 	}
-	if len(client.puts) != 1 || !repositoryRulesetStateEqual(client.rulesets[21], concurrent) {
+	if len(client.puts) != 0 || !repositoryRulesetStateEqual(client.rulesets[21], concurrent) {
 		t.Fatalf("concurrent state was overwritten: %+v", client.rulesets[21])
 	}
 }
@@ -339,7 +321,6 @@ func TestUpdateRepositoryReviewerGateRestoresAfterAmbiguousFailure(t *testing.T)
 	client.putPlans = []gatePutPlan{
 		{
 			apply: true,
-			err:   errors.New("connection reset after write"),
 			mutate: func(ruleset *repositoryRuleset) {
 				ruleset.Conditions.RefName.Include = []string{"refs/heads/release"}
 			},
@@ -361,7 +342,6 @@ func TestUpdateRepositoryReviewerGateReportsRollbackFailure(t *testing.T) {
 	client.putPlans = []gatePutPlan{
 		{
 			apply: true,
-			err:   errors.New("connection reset after write"),
 			mutate: func(ruleset *repositoryRuleset) {
 				ruleset.Conditions.RefName.Include = []string{"refs/heads/release"}
 			},
@@ -375,6 +355,22 @@ func TestUpdateRepositoryReviewerGateReportsRollbackFailure(t *testing.T) {
 	}
 	if len(client.puts) != 2 || repositoryRulesetStateEqual(client.rulesets[21], snapshot) {
 		t.Fatalf("rollback failure was not retained for diagnosis: %+v", client.rulesets[21])
+	}
+}
+
+func TestUpdateRepositoryReviewerGateAcceptsAppliedResponseError(t *testing.T) {
+	snapshot := legacyReviewerRuleset(21, "Required reviewer")
+	client := newGateREST(snapshot)
+	client.putPlans = []gatePutPlan{{
+		apply: true,
+		err:   errors.New("connection reset after write"),
+	}}
+	name, err := updateRepositoryReviewerGate(client, "owner", "repo", "main", snapshot)
+	if err != nil {
+		t.Fatalf("updateRepositoryReviewerGate() unexpected error: %v", err)
+	}
+	if name != snapshot.Name || !isDesiredRepositoryReviewerGate(client.rulesets[21], "main") {
+		t.Fatalf("ambiguous applied update = %q, %+v", name, client.rulesets[21])
 	}
 }
 
@@ -435,7 +431,7 @@ func TestCreateRepositoryReviewerGateRollsBackMalformedAmbiguousCreate(t *testin
 	if err == nil || !strings.Contains(err.Error(), "connection reset after create") {
 		t.Fatalf("createRepositoryReviewerGate() error = %v", err)
 	}
-	if len(client.rulesets) != 0 || len(client.deletes) != 1 || len(client.deleteTags) != 1 {
+	if len(client.rulesets) != 0 || len(client.deletes) != 1 {
 		t.Fatalf("malformed create was not rolled back: %+v", client)
 	}
 }

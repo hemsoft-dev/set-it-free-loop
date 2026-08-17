@@ -42,6 +42,7 @@ type fakeREST struct {
 	rulesetDetailSequences    map[int64][]repositoryRuleset
 	rulesetDetailReads        map[int64]int
 	deleteErrors              map[string]error
+	deleteApplies             map[string]bool
 	postErrors                map[string]error
 	variableExists            bool
 	variableGetError          error
@@ -50,10 +51,8 @@ type fakeREST struct {
 	gets                      []string
 	posts                     []string
 	puts                      []string
-	putETags                  []string
 	patches                   []string
 	deletes                   []string
-	deleteETags               []string
 }
 
 func (f *fakeREST) Get(path string, response interface{}) error {
@@ -253,16 +252,6 @@ func (f *fakeREST) Put(path string, body io.Reader, response interface{}) error 
 	})
 }
 
-func (f *fakeREST) PutIfMatch(
-	path string,
-	body io.Reader,
-	etag string,
-	response interface{},
-) error {
-	f.putETags = append(f.putETags, etag)
-	return f.Put(path, body, response)
-}
-
 func (f *fakeREST) Patch(path string, body io.Reader, _ interface{}) error {
 	data, err := io.ReadAll(body)
 	if err != nil {
@@ -274,39 +263,27 @@ func (f *fakeREST) Patch(path string, body io.Reader, _ interface{}) error {
 
 func (f *fakeREST) Delete(path string, _ interface{}) error {
 	f.deletes = append(f.deletes, path)
+	if f.deleteApplies[path] {
+		for id := range f.rulesetDetails {
+			if strings.HasSuffix(path, fmt.Sprintf("/rulesets/%d", id)) {
+				delete(f.rulesetDetails, id)
+			}
+		}
+	}
 	if err := f.deleteErrors[path]; err != nil {
 		return err
 	}
 	return nil
 }
 
-func (f *fakeREST) DeleteIfMatch(path, etag string, response interface{}) error {
-	f.deleteETags = append(f.deleteETags, etag)
-	return f.Delete(path, response)
-}
-
-func TestConditionalRESTClientUsesEntityTags(t *testing.T) {
+func TestConditionalRESTClientReadsEntityTags(t *testing.T) {
 	const etag = `"ruleset-v1"`
-	var methods []string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		methods = append(methods, request.Method)
-		switch request.Method {
-		case http.MethodGet:
-			writer.Header().Set("ETag", etag)
-			fmt.Fprint(writer, `{"id":42,"name":"Reviewer gate"}`)
-		case http.MethodPut:
-			if got := request.Header.Get("If-Match"); got != etag {
-				t.Errorf("PUT If-Match = %q, want %q", got, etag)
-			}
-			fmt.Fprint(writer, `{"id":42,"name":"Reviewer gate"}`)
-		case http.MethodDelete:
-			if got := request.Header.Get("If-Match"); got != etag {
-				t.Errorf("DELETE If-Match = %q, want %q", got, etag)
-			}
-			writer.WriteHeader(http.StatusNoContent)
-		default:
+		if request.Method != http.MethodGet {
 			t.Fatalf("unexpected method %s", request.Method)
 		}
+		writer.Header().Set("ETag", etag)
+		fmt.Fprint(writer, `{"id":42,"name":"Reviewer gate"}`)
 	}))
 	defer server.Close()
 
@@ -315,36 +292,6 @@ func TestConditionalRESTClientUsesEntityTags(t *testing.T) {
 	gotETag, err := client.GetWithETag("rulesets/42", &ruleset)
 	if err != nil || gotETag != etag || ruleset.ID != 42 {
 		t.Fatalf("GetWithETag() = %q, %+v, %v", gotETag, ruleset, err)
-	}
-	if err := client.PutIfMatch(
-		"rulesets/42",
-		strings.NewReader(`{"name":"Reviewer gate"}`),
-		gotETag,
-		&ruleset,
-	); err != nil {
-		t.Fatalf("PutIfMatch() unexpected error: %v", err)
-	}
-	if err := client.DeleteIfMatch("rulesets/42", gotETag, nil); err != nil {
-		t.Fatalf("DeleteIfMatch() unexpected error: %v", err)
-	}
-	if got := strings.Join(methods, ","); got != "GET,PUT,DELETE" {
-		t.Fatalf("conditional methods = %q", got)
-	}
-}
-
-func TestConditionalRESTClientSurfacesPreconditionFailure(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		writer.Header().Set("Content-Type", "application/json")
-		writer.WriteHeader(http.StatusPreconditionFailed)
-		fmt.Fprint(writer, `{"message":"Precondition Failed"}`)
-	}))
-	defer server.Close()
-
-	client := &conditionalRESTClient{http: server.Client(), baseURL: server.URL + "/"}
-	err := client.PutIfMatch("rulesets/42", strings.NewReader(`{}`), `"stale"`, nil)
-	var httpErr *api.HTTPError
-	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusPreconditionFailed {
-		t.Fatalf("PutIfMatch() error = %v", err)
 	}
 }
 
@@ -871,7 +818,7 @@ func TestClassifyReviewerGate(t *testing.T) {
 		Parameters: map[string]any{
 			"strict_required_status_checks_policy": true,
 			"required_status_checks": []any{map[string]any{
-				"context":        "SFL Reviewer Approval",
+				"context":        reviewerGateCheckContext,
 				"integration_id": 15368,
 			}},
 		},
@@ -905,7 +852,7 @@ func TestClassifyReviewerGate(t *testing.T) {
 		"strict_required_status_checks_policy": true,
 		"required_status_checks": []any{
 			map[string]any{
-				"context":        "SFL Reviewer Approval",
+				"context":        reviewerGateCheckContext,
 				"integration_id": 15368,
 			},
 			map[string]any{"context": "Existing CI"},
@@ -916,7 +863,11 @@ func TestClassifyReviewerGate(t *testing.T) {
 	}
 
 	mode, _ = classifyReviewerGate([]repositoryRuleset{rule("required_status_checks", map[string]any{
-		"required_status_checks": []any{map[string]any{"context": "SFL Reviewer Approval"}},
+		"strict_required_status_checks_policy": true,
+		"required_status_checks": []any{map[string]any{
+			"context":        legacyReviewerGateCheckContext,
+			"integration_id": githubActionsAppID,
+		}},
 	})}, "main", 123)
 	if mode != "stale-status-check" {
 		t.Errorf("stale status-check classifyReviewerGate() = %q", mode)
@@ -925,7 +876,7 @@ func TestClassifyReviewerGate(t *testing.T) {
 	mode, _ = classifyReviewerGate([]repositoryRuleset{rule("required_status_checks", map[string]any{
 		"strict_required_status_checks_policy": true,
 		"required_status_checks": []any{map[string]any{
-			"context":        "SFL Reviewer Approval",
+			"context":        reviewerGateCheckContext,
 			"integration_id": 15368,
 		}},
 	})}, "main", 123)
@@ -974,7 +925,7 @@ func TestClassifyReviewerGate(t *testing.T) {
 
 func TestRemoveReviewerGatesForUninstallDeletesDedicatedRulesets(t *testing.T) {
 	required := strictReviewerStatusRuleset(21, "Required reviewer")
-	client := &fakeREST{}
+	client := &fakeREST{rulesetDetails: map[int64]repositoryRuleset{21: required}}
 	if err := removeReviewerGatesForUninstall(
 		client,
 		"owner",
@@ -987,9 +938,6 @@ func TestRemoveReviewerGatesForUninstallDeletesDedicatedRulesets(t *testing.T) {
 	if !slices.Equal(client.deletes, []string{"repos/owner/repo/rulesets/21"}) {
 		t.Errorf("uninstall ruleset deletions = %v", client.deletes)
 	}
-	if !slices.Equal(client.deleteETags, []string{`"test-etag"`}) {
-		t.Errorf("uninstall ruleset entity tags = %v", client.deleteETags)
-	}
 }
 
 func TestRemoveReviewerGatesTreatsDeleteErrorWithNotFoundAsSuccess(t *testing.T) {
@@ -998,6 +946,10 @@ func TestRemoveReviewerGatesTreatsDeleteErrorWithNotFoundAsSuccess(t *testing.T)
 		deleteErrors: map[string]error{
 			"repos/owner/repo/rulesets/22": errors.New("delete failed"),
 		},
+		deleteApplies: map[string]bool{
+			"repos/owner/repo/rulesets/22": true,
+		},
+		rulesetDetails: map[int64]repositoryRuleset{22: required},
 	}
 
 	err := removeReviewerGatesForUninstall(
@@ -1023,6 +975,7 @@ func TestRemoveReviewerGatesDoesNotDuplicateFailedDeletion(t *testing.T) {
 			"repos/owner/repo/rulesets/22": errors.New("delete failed"),
 		},
 		rulesetDetails: map[int64]repositoryRuleset{
+			21: first,
 			22: second,
 		},
 	}
@@ -1471,10 +1424,10 @@ func TestRepositoryReviewerGatePayloadRequiresStrictActionsCheck(t *testing.T) {
 	text := string(data)
 	for _, want := range []string{
 		`"include":["~DEFAULT_BRANCH"]`,
-		`"name":"Require SFL Reviewer Approval (repo)"`,
+		`"name":"Require SFL Reviewer Gate Runner (repo)"`,
 		`"type":"required_status_checks"`,
 		`"strict_required_status_checks_policy":true`,
-		`"context":"SFL Reviewer Approval"`,
+		`"context":"SFL Reviewer Gate Runner"`,
 		`"integration_id":15368`,
 	} {
 		if !strings.Contains(text, want) {
@@ -1495,7 +1448,7 @@ func TestUpdateRepositoryReviewerGateUsesConditionalRepositoryEndpoint(t *testin
 	desired.BypassActors = ruleset.BypassActors
 	desired.Conditions.RefName = ruleset.Conditions.RefName
 	client := &fakeREST{rulesetDetailSequences: map[int64][]repositoryRuleset{
-		42: {ruleset, desired},
+		42: {ruleset, ruleset, desired},
 	}}
 	name, err := updateRepositoryReviewerGate(client, "owner", "repo", "main", ruleset)
 	if err != nil {
@@ -1503,14 +1456,14 @@ func TestUpdateRepositoryReviewerGateUsesConditionalRepositoryEndpoint(t *testin
 	}
 	if name != "Existing reviewer gate" ||
 		len(client.puts) != 1 ||
-		!slices.Equal(client.putETags, []string{`"test-etag"`}) ||
 		!strings.HasPrefix(client.puts[0], "repos/owner/repo/rulesets/42\n") ||
 		!strings.Contains(client.puts[0], `"strict_required_status_checks_policy":true`) ||
 		!strings.Contains(client.puts[0], `"include":["~ALL"]`) ||
 		!strings.Contains(client.puts[0], `"exclude":["refs/heads/archive"]`) ||
 		!strings.Contains(client.puts[0], `"actor_id":7`) ||
 		!strings.Contains(client.puts[0], `"name":"Existing reviewer gate"`) ||
-		!strings.Contains(client.puts[0], `"context":"SFL Reviewer Approval"`) ||
+		!strings.Contains(client.puts[0], `"context":"SFL Reviewer Gate Runner"`) ||
+		strings.Contains(client.puts[0], `"context":"SFL Reviewer Approval"`) ||
 		strings.Count(client.puts[0], `"type":"required_status_checks"`) != 1 {
 		t.Errorf("repository ruleset update = %q, requests %v", name, client.puts)
 	}

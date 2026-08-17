@@ -238,11 +238,14 @@ func removeReviewerGatesForUninstall(
 				gate.Name,
 			)
 		}
-		if err := client.DeleteIfMatch(
-			rulesetPath,
-			gate.ETag,
-			nil,
-		); err != nil {
+		if err := ensureRepositoryRulesetUnchanged(client, rulesetPath, gate); err != nil {
+			restoreErr := restoreReviewerGates(client, owner, repo, removed, stdout)
+			return errors.Join(
+				fmt.Errorf("reviewer ruleset %q changed before deletion: %w", gate.Name, err),
+				restoreErr,
+			)
+		}
+		if err := client.Delete(rulesetPath, nil); err != nil {
 			var current repositoryRuleset
 			lookupErr := client.Get(rulesetPath, &current)
 			var httpErr *api.HTTPError

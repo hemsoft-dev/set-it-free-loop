@@ -430,10 +430,8 @@ type restAPI interface {
 	GetWithETag(path string, response interface{}) (string, error)
 	Post(path string, body io.Reader, response interface{}) error
 	Put(path string, body io.Reader, response interface{}) error
-	PutIfMatch(path string, body io.Reader, etag string, response interface{}) error
 	Patch(path string, body io.Reader, response interface{}) error
 	Delete(path string, response interface{}) error
-	DeleteIfMatch(path, etag string, response interface{}) error
 }
 
 type conditionalRESTClient struct {
@@ -466,45 +464,19 @@ func (c *conditionalRESTClient) GetWithETag(
 	path string,
 	response interface{},
 ) (string, error) {
-	return c.requestWithETag(http.MethodGet, path, nil, "", response)
-}
-
-func (c *conditionalRESTClient) PutIfMatch(
-	path string,
-	body io.Reader,
-	etag string,
-	response interface{},
-) error {
-	_, err := c.requestWithETag(http.MethodPut, path, body, etag, response)
-	return err
-}
-
-func (c *conditionalRESTClient) DeleteIfMatch(
-	path, etag string,
-	response interface{},
-) error {
-	_, err := c.requestWithETag(http.MethodDelete, path, nil, etag, response)
-	return err
+	return c.requestWithETag(path, response)
 }
 
 func (c *conditionalRESTClient) requestWithETag(
-	method, path string,
-	body io.Reader,
-	etag string,
+	path string,
 	response interface{},
 ) (string, error) {
-	request, err := http.NewRequest(method, c.baseURL+strings.TrimPrefix(path, "/"), body)
+	request, err := http.NewRequest(http.MethodGet, c.baseURL+strings.TrimPrefix(path, "/"), nil)
 	if err != nil {
 		return "", err
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if body != nil {
-		request.Header.Set("Content-Type", "application/json")
-	}
-	if etag != "" {
-		request.Header.Set("If-Match", etag)
-	}
 	httpResponse, err := c.http.Do(request)
 	if err != nil {
 		return "", err

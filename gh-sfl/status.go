@@ -313,7 +313,7 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 			fmt.Fprintf(stdout, "    %s Gated by required reviewer workflow (%s)\n",
 				styler.colored("✓", termenv.ANSIGreen).styled, ruleset)
 		case "required-status-check":
-			fmt.Fprintf(stdout, "    %s Gated by strict SFL reviewer approval check (%s)\n",
+			fmt.Fprintf(stdout, "    %s Gated by strict SFL reviewer gate runner check (%s)\n",
 				styler.colored("✓", termenv.ANSIGreen).styled, ruleset)
 		case "stale-required-workflow":
 			fmt.Fprintf(
@@ -323,7 +323,7 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 				ruleset,
 			)
 		case "stale-status-check":
-			fmt.Fprintf(stdout, "    %s SFL Reviewer Approval check lacks strict Actions ownership (%s); rerun gh sfl gate\n",
+			fmt.Fprintf(stdout, "    %s SFL Reviewer Gate Runner check is missing or lacks strict Actions ownership (%s); rerun gh sfl gate\n",
 				styler.colored("!", termenv.ANSIYellow).styled, ruleset)
 		default:
 			fmt.Fprintf(stdout, "    %s Advisory-only; required reviewer gate is missing\n",
@@ -547,7 +547,7 @@ func hasReviewerStatusCheck(parameters map[string]any) bool {
 	}
 	for _, value := range checks {
 		check, ok := value.(map[string]any)
-		if ok && check["context"] == "SFL Reviewer Approval" {
+		if ok && isKnownReviewerGateCheckContext(check["context"]) {
 			return true
 		}
 	}
@@ -570,8 +570,8 @@ func hasReviewerFreshnessInterlock(ruleset repositoryRuleset) bool {
 		for _, value := range checks {
 			check, ok := value.(map[string]any)
 			if ok &&
-				check["context"] == "SFL Reviewer Approval" &&
-				numericIDEquals(check["integration_id"], 15368) {
+				check["context"] == reviewerGateCheckContext &&
+				numericIDEquals(check["integration_id"], githubActionsAppID) {
 				return true
 			}
 		}
