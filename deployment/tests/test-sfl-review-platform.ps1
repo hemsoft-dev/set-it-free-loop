@@ -92,7 +92,7 @@ Assert-PatternSet $auto @(
     'command_acknowledgement_complete',
     'command_acknowledgement_run_id',
     'test\("\\\\\[Actions run \[1-9\]\[0-9\]\*\\\\\]\\\\\("\)',
-    'capture\("\\\\\[Actions run \(\?<id>\[1-9\]\[0-9\]\*\)\\\\\]\\\\\("\)',
+    '\(capture\("\\\\\[Actions run \(\?<id>\[1-9\]\[0-9\]\*\)\\\\\]\\\\\("\)\? \| \.id\) // empty',
     'Command comment \$\{COMMAND_COMMENT_ID\} was already acknowledged',
     'for ATTEMPT in \$\(seq 1 120\); do',
     'inputs\[dispatch_id\]=\$\{DISPATCH_ID\}',

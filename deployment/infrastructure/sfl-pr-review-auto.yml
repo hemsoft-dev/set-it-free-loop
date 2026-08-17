@@ -165,7 +165,7 @@ jobs:
           }
 
           command_acknowledgement_run_id() {
-            jq -r '.body | capture("\\[Actions run (?<id>[1-9][0-9]*)\\]\\(")?.id // empty'
+            jq -r '.body | (capture("\\[Actions run (?<id>[1-9][0-9]*)\\]\\(")? | .id) // empty'
           }
           # END TESTABLE COMMENT COMMAND LOOKUP
 
