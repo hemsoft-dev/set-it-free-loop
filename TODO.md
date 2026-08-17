@@ -13,9 +13,10 @@ cleans up obsolete threads, and filters reviewer communication through Unslop.
 
 - SFL is working on `HemSoft/hs-buddy`. It is the only repository approved for
   live HemSoft validation.
-- The deployed source is `v2.1.0-rc.9` at
-  `77aa2059d98bad34a9bd5026e196820da8fb3725`. HemSoft intentionally uses Kimi
-  K3 through its private OpenRouter route.
+- `v2.1.0-rc.10` is the current immutable private release at
+  `3920ff6c0c5718cafc0edbebff623527eff4d453`. `hs-buddy` remains on rc.9 until
+  its deployment PR #438 is corrected and merged. HemSoft intentionally uses
+  Kimi K3 through its private OpenRouter route.
 - `hs-buddy` PR #415 proved the full finding lifecycle on 2026-08-16. SFL found
   real issues, approved the fixes on the current head, recovered automatically
   from one failed evidence attempt, and finished with zero unresolved threads
@@ -58,8 +59,19 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   link.
 - [x] Preserve automatic and `sfl-review` label triggers, and prove command
   authorization and duplicate-delivery behavior with focused tests.
-- [ ] After this workflow reaches a deployable release, validate the command
-  end to end only on `HemSoft/hs-buddy`.
+- [x] Publish rc.10 and open `hs-buddy` deployment PR #438. Its review exposed
+  two source defects before merge: ambiguous run correlation and a timeout
+  acknowledgement that incorrectly suppresses retry.
+- [ ] Merge [issue #103](https://github.com/HemSoft/set-it-free-loop/issues/103)
+  via PR #104, using a command-specific dispatch ID and an exact final
+  acknowledgement marker.
+- [ ] Publish the corrected immutable prerelease and update `hs-buddy` PR #438
+  from that release.
+- [ ] With explicit approval, replace `hs-buddy`'s rejected OpenRouter secret;
+  both the initial SFL review and its bounded retry ended with HTTP 403.
+- [ ] Validate the command end to end only on `HemSoft/hs-buddy`, then record
+  the exact command acknowledgement, Actions run, App review, evidence, and
+  required-gate links here.
 
 Do not add a separate full-review command unless normal usage shows a need for
 it.
