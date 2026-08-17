@@ -111,6 +111,8 @@ models:
             input: "3e-06"
             output: "1.5e-05"
 
+max-turn-cache-misses: 10
+
 engine:
   id: copilot
   env:

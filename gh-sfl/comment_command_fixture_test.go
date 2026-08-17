@@ -33,7 +33,10 @@ set -euo pipefail
 ` + helper + `
 case "$1" in
   acknowledgement) find_command_acknowledgement "$2" ;;
-  run) find_command_run "$2" "$3" ;;
+	  acknowledgement-complete) command_acknowledgement_complete ;;
+	  acknowledgement-run-id) command_acknowledgement_run_id ;;
+	  run-matches) command_run_matches "$2" "$3" ;;
+	  run) find_command_run "$2" "$3" ;;
   *) exit 2 ;;
 esac
 `
@@ -84,13 +87,90 @@ esac
 		}
 	})
 
-	t.Run("run lookup seals title and command time", func(t *testing.T) {
+	t.Run("only final actions run marker completes acknowledgement", func(t *testing.T) {
+		for _, test := range []struct {
+			name string
+			body string
+			want bool
+		}{
+			{
+				name: "pending acknowledgement",
+				body: `{"body":"<!-- sfl-review-command:1234 --> pending"}`,
+			},
+			{
+				name: "timeout command run link",
+				body: `{"body":"<!-- sfl-review-command:1234 --> [Command run](https://github.com/acme/repo/actions/runs/123)"}`,
+			},
+			{
+				name: "final actions run marker",
+				body: `{"body":"<!-- sfl-review-command:1234 --> [Actions run 456](https://github.com/acme/repo/actions/runs/456)"}`,
+				want: true,
+			},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				cmd := exec.Command(bash, scriptArgument, "acknowledgement-complete")
+				cmd.Stdin = strings.NewReader(test.body)
+				err := cmd.Run()
+				if got := err == nil; got != test.want {
+					t.Fatalf("complete=%t, want %t (err=%v)", got, test.want, err)
+				}
+			})
+		}
+	})
+
+	t.Run("final acknowledgement preserves exact run id", func(t *testing.T) {
+		cmd := exec.Command(bash, scriptArgument, "acknowledgement-run-id")
+		cmd.Stdin = strings.NewReader(
+			`{"body":"<!-- sfl-review-command:1234 --> [Actions run 456](https://github.com/acme/repo/actions/runs/456)"}`,
+		)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("extract acknowledgement run id: %v\n%s", err, output)
+		}
+		if got := strings.TrimSpace(string(output)); got != "456" {
+			t.Fatalf("acknowledgement run id=%q, want 456", got)
+		}
+	})
+
+	t.Run("acknowledged run must match sealed base and head", func(t *testing.T) {
+		const title = "SFL PR Review #42 aaa111:bbb222 retry="
+		for _, test := range []struct {
+			name string
+			run  string
+			want bool
+		}{
+			{
+				name: "matching command run",
+				run:  `{"path":".github/workflows/sfl-pr-review.lock.yml","event":"workflow_dispatch","display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=command-1234"}`,
+				want: true,
+			},
+			{
+				name: "stale head",
+				run:  `{"path":".github/workflows/sfl-pr-review.lock.yml","event":"workflow_dispatch","display_title":"SFL PR Review #42 aaa111:old999 retry=0 dispatch=command-1234"}`,
+			},
+			{
+				name: "wrong dispatch",
+				run:  `{"path":".github/workflows/sfl-pr-review.lock.yml","event":"workflow_dispatch","display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=auto-100"}`,
+			},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				cmd := exec.Command(bash, scriptArgument, "run-matches", title, "command-1234")
+				cmd.Stdin = strings.NewReader(test.run)
+				err := cmd.Run()
+				if got := err == nil; got != test.want {
+					t.Fatalf("matches=%t, want %t (err=%v)", got, test.want, err)
+				}
+			})
+		}
+	})
+
+	t.Run("run lookup seals command dispatch id", func(t *testing.T) {
 		const title = "SFL PR Review #42 aaa111:bbb222 retry="
 		input := `{"workflow_runs":[` +
-			`{"id":100,"created_at":"2026-08-17T01:59:59Z","display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=old"},` +
-			`{"id":102,"created_at":"2026-08-17T02:00:02Z","display_title":"SFL PR Review #99 aaa111:bbb222 retry=0 dispatch=other"},` +
-			`{"id":101,"created_at":"2026-08-17T02:00:01Z","display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=command"}]}`
-		cmd := exec.Command(bash, scriptArgument, "run", "2026-08-17T02:00:00Z", title)
+			`{"id":100,"display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=auto-100"},` +
+			`{"id":102,"display_title":"SFL PR Review #42 aaa111:bbb222 retry=1 dispatch=recovery-102"},` +
+			`{"id":101,"display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=command-1234"}]}`
+		cmd := exec.Command(bash, scriptArgument, "run", title, "command-1234")
 		cmd.Stdin = strings.NewReader(input)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -98,6 +178,22 @@ esac
 		}
 		if got := strings.TrimSpace(string(output)); got != "101" {
 			t.Fatalf("run=%q, want 101", got)
+		}
+	})
+
+	t.Run("unrelated same-head runs remain unmatched", func(t *testing.T) {
+		const title = "SFL PR Review #42 aaa111:bbb222 retry="
+		input := `{"workflow_runs":[` +
+			`{"id":100,"display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=auto-100"},` +
+			`{"id":102,"display_title":"SFL PR Review #42 aaa111:bbb222 retry=1 dispatch=recovery-102"}]}`
+		cmd := exec.Command(bash, scriptArgument, "run", title, "command-1234")
+		cmd.Stdin = strings.NewReader(input)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("execute unmatched run fixture: %v\n%s", err, output)
+		}
+		if got := strings.TrimSpace(string(output)); got != "" {
+			t.Fatalf("run=%q, want empty", got)
 		}
 	})
 }
