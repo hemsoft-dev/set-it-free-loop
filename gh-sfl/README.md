@@ -84,6 +84,10 @@ does not support conditional headers on repository ruleset updates or deletes.
 The command refuses to rewrite a shared or inherited rule. It does not use
 organization endpoints or require the `admin:org` scope.
 
+When `gh sfl stop` enables maintenance mode, automatic review dispatch pauses
+but the required gate runner still executes and fails closed. New pull request
+heads cannot pass the gate until `gh sfl start` re-enables reviews.
+
 ### `gh sfl uninstall`
 
 Remove SFL workflows and governance files from a repository.

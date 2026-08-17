@@ -41,6 +41,9 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   verification, and bounded rollback. GitHub rejects conditional headers on
   repository ruleset updates and deletes, so the CLI rechecks the entity tag
   and complete state immediately before each mutation and aborts on drift.
+- [x] Keep maintenance mode fail closed. It pauses dispatch and recovery while
+  the required `SFL Reviewer Gate Runner` continues to execute and block new
+  unreviewed heads.
 - [x] Prove the change against `hs-buddy` PR #415 without changing the App or
   reviewer workflow. The first gate run changed strict freshness from `false`
   to `true`; the second run made no write; `status` recognized the strict gate;

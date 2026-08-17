@@ -103,10 +103,13 @@ Assert-PatternSet $auto @(
     'inputs\[base_sha\]',
     'inputs\[head_sha\]',
     'name: SFL Reviewer Gate Runner',
+    'if: always\(\)',
     'checks: write',
     '--arg name "SFL Reviewer Approval"',
     'head_sha: \$head_sha',
     'continue-on-error: true',
+    'SFL_ENABLED: \$\{\{ vars\.SFL_ENABLED \}\}',
+    'required reviewer gate fails closed',
     'name: Finalize head approval check',
     'WAIT_OUTCOME: \$\{\{ steps\.wait-review\.outcome \}\}',
     'validate_review_run'

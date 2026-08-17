@@ -244,3 +244,7 @@ The command refuses stale shared or inherited rules instead of changing
 unrelated policy. Gate creation, status, and uninstall use repository endpoints
 and do not require `admin:org`. The command still rejects public or non-HemSoft
 repositories.
+
+`gh sfl stop` pauses review dispatch and recovery, but the required gate runner
+continues to execute and fails closed. New pull request heads remain blocked
+until `gh sfl start` re-enables reviews.
