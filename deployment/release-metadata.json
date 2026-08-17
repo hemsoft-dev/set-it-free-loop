@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-08-15",
+  "reviewedAt": "2026-08-17",
   "distribution": {
     "repository": "HemSoft/set-it-free-loop",
-    "version": "2.1.0-rc.9",
+    "version": "2.1.0-rc.10",
     "visibility": "private",
-    "tag": "v2.1.0-rc.9",
+    "tag": "v2.1.0-rc.10",
     "prerelease": true
   },
   "reviewerBaseline": {
@@ -73,7 +73,7 @@
       "upstreamPath": "workflows/sfl-pr-review-auto.yml",
       "upstreamSha256": "abbb6615ec2c598e42ef242596c0e6f05e3b616641da7c656d74b7bbb5487bf6",
       "hemsoftPath": "deployment/infrastructure/sfl-pr-review-auto.yml",
-      "hemsoftSha256": "908237a9cc2f52718457f20010391e5a2cc39f74da424de1d6c9a0d6d1a71c90",
+      "hemsoftSha256": "f8647fe194f9a2293f5a992c86541f145ef791552e2d28e8919fb755f39d3baf",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review-auto.yml"
       ],
