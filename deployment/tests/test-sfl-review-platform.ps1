@@ -79,6 +79,17 @@ Assert-PatternAbsent $reviewer 'set-it-free-loop\[bot\]'
 
 Assert-PatternSet $auto @(
     "vars.SFL_ENABLED != 'false'",
+    'issue_comment:\s*\r?\n\s+types: \[created\]',
+    "github\.event\.comment\.body == '@sfl-app review'",
+    '\["OWNER","MEMBER","COLLABORATOR"\]',
+    "github\.event_name != 'issue_comment'",
+    'name: Validate command and seal pull request state',
+    'sfl-review-command:\$\{COMMAND_COMMENT_ID\}',
+    'find_command_acknowledgement',
+    'find_command_run',
+    'select\(\.created_at >= \$command_created_at\)',
+    'Command comment \$\{COMMAND_COMMENT_ID\} was already acknowledged',
+    'SFL review requested for `%s`: \[Actions run %s\]\(%s\)',
     'types: \[opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled\]',
     '\$\(normalize_login "\$REVIEW_AUTHOR"\)" = "sfl-app"',
     '\$\(normalize_login "\$REQUESTED_REVIEWER"\)" != "sfl-app"',

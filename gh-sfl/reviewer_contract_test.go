@@ -219,6 +219,8 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		t.Fatalf("parse automatic reviewer workflow: %v", err)
 	}
 	for _, required := range []string{
+		"issue_comment:",
+		"types: [created]",
 		"pull_request_target:",
 		"pull_request_review:",
 		"BASE_SHA: ${{ github.event.pull_request.base.sha }}",
@@ -227,6 +229,18 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		"types: [opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled]",
 		"github.event.action != 'labeled'",
 		"github.event.label.name == 'sfl-review'",
+		"github.event.comment.body == '@sfl-app review'",
+		`contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)`,
+		"github.event_name != 'issue_comment'",
+		"Validate command and seal pull request state",
+		"sfl-review-command:${COMMAND_COMMENT_ID}",
+		"find_command_acknowledgement",
+		"find_command_run",
+		`select(.created_at >= $command_created_at)`,
+		`test("^sfl-app\\[bot\\]$"; "i")`,
+		"Command comment ${COMMAND_COMMENT_ID} was already acknowledged",
+		`-f "labels[]=sfl-review"`,
+		"SFL review requested for `%s`: [Actions run %s](%s)",
 		"vars.SFL_ENABLED != 'false'",
 		"cancel-in-progress: false",
 		"name: SFL Reviewer Gate Runner",
