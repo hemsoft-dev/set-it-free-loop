@@ -73,7 +73,7 @@
       "upstreamPath": "workflows/sfl-pr-review-auto.yml",
       "upstreamSha256": "abbb6615ec2c598e42ef242596c0e6f05e3b616641da7c656d74b7bbb5487bf6",
       "hemsoftPath": "deployment/infrastructure/sfl-pr-review-auto.yml",
-      "hemsoftSha256": "408e7280008e18b38df7cfed2ec9c3e410181553fa33f1e678a3c829615db599",
+      "hemsoftSha256": "60ccdbd28c31192ab4626da5df08a323176accdbf4ec491fe4b1df84bdd2fc2e",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review-auto.yml"
       ],

@@ -60,10 +60,11 @@ that transaction with the deployed runner and GitHub's live ruleset API.
 - [x] Preserve automatic and `sfl-review` label triggers, and prove command
   authorization and duplicate-delivery behavior with focused tests.
 - [x] Publish rc.10 and open `hs-buddy` deployment PR #438. Review of the
-  rollout exposed four source defects before merge: ambiguous run correlation,
+  rollout exposed five source defects before merge: ambiguous run correlation,
   a timeout acknowledgement that incorrectly suppresses retry, a
   comment-triggered review that bypasses the trusted approval gate, and loss of
-  the selected review-effort label.
+  the selected review-effort label, plus stale acknowledgement reuse after the
+  pull request head changes.
 - [ ] Merge [issue #103](https://github.com/HemSoft/set-it-free-loop/issues/103)
   via PR #104, using a command-specific dispatch ID, an exact final
   acknowledgement marker, the trusted approval gate, and the selected review
@@ -71,11 +72,12 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   behavior.
 - [ ] Publish the corrected immutable prerelease and update `hs-buddy` PR #438
   from that release.
-- [ ] Raise the reviewer's consecutive cache-miss allowance from the `gh-aw`
+- [x] Raise the reviewer's consecutive cache-miss allowance from the `gh-aw`
   default of 5 to 10. The OpenRouter key and Kimi route succeeded for five
   requests; the proxy rejected request six with HTTP 403 and Copilot reported
-  that proxy limit as an authentication failure. Do not rotate the working
-  secret for this failure.
+  that proxy limit as an authentication failure. PR #104's current-head SFL
+  run completed successfully after the fix. Do not rotate the working secret
+  for this failure.
 - [ ] Validate the command end to end only on `HemSoft/hs-buddy`, then record
   the exact command acknowledgement, Actions run, App review, evidence, and
   required-gate links here.

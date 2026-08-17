@@ -167,6 +167,19 @@ jobs:
           command_acknowledgement_run_id() {
             jq -r '.body | (capture("\\[Actions run (?<id>[1-9][0-9]*)\\]\\(")? | .id) // empty'
           }
+
+          command_run_matches() {
+            local expected_title="$1"
+            local dispatch_id="$2"
+            jq -e \
+              --arg dispatch_id "$dispatch_id" \
+              --arg title "$expected_title" '
+                .path == ".github/workflows/sfl-pr-review.lock.yml"
+                and .event == "workflow_dispatch"
+                and ((.display_title // "") | startswith($title))
+                and ((.display_title // "") | endswith(" dispatch=" + $dispatch_id))
+              ' > /dev/null
+          }
           # END TESTABLE COMMENT COMMAND LOOKUP
 
           ACKNOWLEDGEMENT=$(gh api \
@@ -183,9 +196,16 @@ jobs:
                 echo "::error::Completed SFL acknowledgement does not identify its exact run"
                 exit 1
               fi
-              echo "review-run-id=${ACKNOWLEDGED_RUN_ID}" >> "$GITHUB_OUTPUT"
-              echo "Command comment ${COMMAND_COMMENT_ID} was already acknowledged"
-              exit 0
+              if ACKNOWLEDGED_RUN=$(gh api \
+                "repos/${REPOSITORY}/actions/runs/${ACKNOWLEDGED_RUN_ID}") \
+                && command_run_matches \
+                  "$EXPECTED_TITLE" \
+                  "$DISPATCH_ID" <<< "$ACKNOWLEDGED_RUN"; then
+                echo "review-run-id=${ACKNOWLEDGED_RUN_ID}" >> "$GITHUB_OUTPUT"
+                echo "Command comment ${COMMAND_COMMENT_ID} was already acknowledged for ${HEAD_SHA}"
+                exit 0
+              fi
+              echo "Ignoring stale SFL acknowledgement run ${ACKNOWLEDGED_RUN_ID}; it does not match ${BASE_SHA}:${HEAD_SHA}"
             fi
           else
             PENDING_BODY=$(printf '%s\nSFL review request accepted for `%s`. Resolving the Actions run…' \

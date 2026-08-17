@@ -33,9 +33,10 @@ set -euo pipefail
 ` + helper + `
 case "$1" in
   acknowledgement) find_command_acknowledgement "$2" ;;
-  acknowledgement-complete) command_acknowledgement_complete ;;
-  acknowledgement-run-id) command_acknowledgement_run_id ;;
-  run) find_command_run "$2" "$3" ;;
+	  acknowledgement-complete) command_acknowledgement_complete ;;
+	  acknowledgement-run-id) command_acknowledgement_run_id ;;
+	  run-matches) command_run_matches "$2" "$3" ;;
+	  run) find_command_run "$2" "$3" ;;
   *) exit 2 ;;
 esac
 `
@@ -128,6 +129,38 @@ esac
 		}
 		if got := strings.TrimSpace(string(output)); got != "456" {
 			t.Fatalf("acknowledgement run id=%q, want 456", got)
+		}
+	})
+
+	t.Run("acknowledged run must match sealed base and head", func(t *testing.T) {
+		const title = "SFL PR Review #42 aaa111:bbb222 retry="
+		for _, test := range []struct {
+			name string
+			run  string
+			want bool
+		}{
+			{
+				name: "matching command run",
+				run:  `{"path":".github/workflows/sfl-pr-review.lock.yml","event":"workflow_dispatch","display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=command-1234"}`,
+				want: true,
+			},
+			{
+				name: "stale head",
+				run:  `{"path":".github/workflows/sfl-pr-review.lock.yml","event":"workflow_dispatch","display_title":"SFL PR Review #42 aaa111:old999 retry=0 dispatch=command-1234"}`,
+			},
+			{
+				name: "wrong dispatch",
+				run:  `{"path":".github/workflows/sfl-pr-review.lock.yml","event":"workflow_dispatch","display_title":"SFL PR Review #42 aaa111:bbb222 retry=0 dispatch=auto-100"}`,
+			},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				cmd := exec.Command(bash, scriptArgument, "run-matches", title, "command-1234")
+				cmd.Stdin = strings.NewReader(test.run)
+				err := cmd.Run()
+				if got := err == nil; got != test.want {
+					t.Fatalf("matches=%t, want %t (err=%v)", got, test.want, err)
+				}
+			})
 		}
 	})
 
