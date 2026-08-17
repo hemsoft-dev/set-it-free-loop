@@ -30,7 +30,7 @@ cleans up obsolete threads, and filters reviewer communication through Unslop.
   Never fan either command out across the account. If approval is withdrawn,
   close the pending deployment PR and delete its branch.
 
-## Current milestone: close issue #73
+## Completed milestone: issue #73
 
 PR #74 delivered the transactional repository-scoped gate. Issue #73 aligns
 that transaction with the deployed runner and GitHub's live ruleset API.
@@ -48,14 +48,21 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   reviewer workflow. The first gate run changed strict freshness from `false`
   to `true`; the second run made no write; `status` recognized the strict gate;
   and the PR retained green approval, evidence, and gate-runner checks.
-- [ ] Close [issue #73](https://github.com/HemSoft/set-it-free-loop/issues/73).
+- [x] Close [issue #73](https://github.com/HemSoft/set-it-free-loop/issues/73).
 
-## Next milestone
+## Current milestone: comment-command rollout
 
-After issue #73 closes, add one comment-triggered entry point:
-`@sfl-app review`. It must dispatch the existing exact-head review path and
-reply with the run link. Add a separate full-review command only if normal
-usage shows a need for it.
+- [x] Implement [issue #98](https://github.com/HemSoft/set-it-free-loop/issues/98):
+  add one comment-triggered entry point, `@sfl-app review`.
+- [x] Reuse the existing exact-head review path and reply once with its run
+  link.
+- [x] Preserve automatic and `sfl-review` label triggers, and prove command
+  authorization and duplicate-delivery behavior with focused tests.
+- [ ] After this workflow reaches a deployable release, validate the command
+  end to end only on `HemSoft/hs-buddy`.
+
+Do not add a separate full-review command unless normal usage shows a need for
+it.
 
 ## Not active work
 

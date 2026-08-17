@@ -2,18 +2,238 @@
 name: SFL PR Review Auto Trigger
 
 on:
+  issue_comment:
+    types: [created]
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled]
   pull_request_review:
     types: [submitted]
 
 concurrency:
-  group: sfl-pr-review-auto-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}-${{ github.event_name }}-${{ github.event.action }}-${{ github.event.action == 'labeled' && github.event.label.name == 'sfl-review' && 'explicit' || 'standard' }}
+  group: sfl-pr-review-auto-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event.pull_request.head.sha || github.event.comment.id }}-${{ github.event_name }}-${{ github.event.action }}-${{ github.event.action == 'labeled' && github.event.label.name == 'sfl-review' && 'explicit' || 'standard' }}
   cancel-in-progress: false
 
 jobs:
+  comment-command:
+    if: >-
+      vars.SFL_ENABLED != 'false' &&
+      github.event_name == 'issue_comment' &&
+      github.event.action == 'created' &&
+      github.event.issue.pull_request &&
+      github.event.comment.body == '@sfl-app review' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Configure GH_HOST for enterprise compatibility
+        shell: bash
+        run: |
+          GH_HOST="${GITHUB_SERVER_URL#https://}"
+          GH_HOST="${GH_HOST#http://}"
+          echo "GH_HOST=${GH_HOST}" >> "$GITHUB_ENV"
+
+      - name: Validate command and seal pull request state
+        id: pull-request
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+          TRUSTED_REF: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          REVIEWER_WORKFLOW=$(gh api \
+            --method GET \
+            "repos/${REPOSITORY}/contents/.github/workflows/sfl-pr-review.lock.yml" \
+            -f "ref=${TRUSTED_REF}" \
+            -H "Accept: application/vnd.github.raw+json")
+          if ! grep -qE '^\s+dispatch_id:\s*$' <<< "$REVIEWER_WORKFLOW"; then
+            echo "::error::The installed reviewer does not support exact dispatch correlation"
+            exit 1
+          fi
+
+          PR=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")
+          BASE_REF=$(jq -r '.base.ref // ""' <<< "$PR")
+          BASE_SHA=$(jq -r '.base.sha // ""' <<< "$PR")
+          DRAFT=$(jq -r '.draft // true' <<< "$PR")
+          HEAD_REPOSITORY=$(jq -r '.head.repo.full_name // ""' <<< "$PR")
+          HEAD_SHA=$(jq -r '.head.sha // ""' <<< "$PR")
+          STATE=$(jq -r '.state // ""' <<< "$PR")
+
+          if [ "$STATE" != "open" ] || [ "$DRAFT" = "true" ]; then
+            echo "::error::SFL comment review requires an open, ready pull request"
+            exit 1
+          fi
+          if [ "$HEAD_REPOSITORY" != "$REPOSITORY" ]; then
+            echo "::error::SFL comment review does not execute untrusted fork code"
+            exit 1
+          fi
+          if [ "$BASE_REF" != "$DEFAULT_BRANCH" ]; then
+            echo "::error::SFL comment review only validates the default branch"
+            exit 1
+          fi
+          if ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || ! [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::GitHub returned an invalid pull request commit"
+            exit 1
+          fi
+
+          echo "base-sha=${BASE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "head-sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Mint SFL GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.SFL_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SFL_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-actions: write
+          permission-contents: read
+          permission-pull-requests: write
+
+      - name: Request review and acknowledge the exact run
+        env:
+          BASE_SHA: ${{ steps.pull-request.outputs.base-sha }}
+          COMMAND_COMMENT_ID: ${{ github.event.comment.id }}
+          COMMAND_CREATED_AT: ${{ github.event.comment.created_at }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          HEAD_SHA: ${{ steps.pull-request.outputs.head-sha }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          MARKER="<!-- sfl-review-command:${COMMAND_COMMENT_ID} -->"
+          EXPECTED_TITLE="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="
+
+          # BEGIN TESTABLE COMMENT COMMAND LOOKUP
+          find_command_acknowledgement() {
+            local marker="$1"
+            jq -s -r \
+              --arg marker "$marker" '
+                [add[]
+                  | select((.user.login // "") | test("^sfl-app\\[bot\\]$"; "i"))
+                  | select((.body // "") | contains($marker))]
+                | sort_by(.id)
+                | last
+                | select(. != null)
+                | @base64
+              '
+          }
+
+          find_command_run() {
+            local command_created_at="$1"
+            local expected_title="$2"
+            jq -r \
+              --arg command_created_at "$command_created_at" \
+              --arg title "$expected_title" '
+                [.workflow_runs[]
+                  | select(.display_title | startswith($title))
+                  | select(.created_at >= $command_created_at)]
+                | sort_by(.id)
+                | first
+                | .id // empty
+              '
+          }
+          # END TESTABLE COMMENT COMMAND LOOKUP
+
+          ACKNOWLEDGEMENT=$(gh api \
+            "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+            --paginate \
+            | find_command_acknowledgement "$MARKER")
+          ACKNOWLEDGEMENT_ID=""
+          if [ -n "$ACKNOWLEDGEMENT" ]; then
+            ACKNOWLEDGEMENT_JSON=$(base64 --decode <<< "$ACKNOWLEDGEMENT")
+            ACKNOWLEDGEMENT_ID=$(jq -r '.id // empty' <<< "$ACKNOWLEDGEMENT_JSON")
+            if jq -e '.body | test("/actions/runs/[1-9][0-9]*")' \
+              <<< "$ACKNOWLEDGEMENT_JSON" > /dev/null; then
+              echo "Command comment ${COMMAND_COMMENT_ID} was already acknowledged"
+              exit 0
+            fi
+          else
+            PENDING_BODY=$(printf '%s\nSFL review request accepted for `%s`. Resolving the Actions run…' \
+              "$MARKER" "$HEAD_SHA")
+            ACKNOWLEDGEMENT_ID=$(jq -nc --arg body "$PENDING_BODY" '{body: $body}' \
+              | gh api --method POST \
+                  "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
+                  --input - \
+              | jq -r '.id // empty')
+          fi
+          if ! [[ "$ACKNOWLEDGEMENT_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::GitHub did not return the SFL acknowledgement comment ID"
+            exit 1
+          fi
+
+          REVIEW_RUN_ID=$(gh api \
+            "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
+            | find_command_run "$COMMAND_CREATED_AT" "$EXPECTED_TITLE")
+          if ! [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            LABEL_WAS_PRESENT=false
+            PR_LABELS=$(gh api \
+              "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" \
+              --paginate --jq '.[].name')
+            if ! grep -Fxq "sfl-review" <<< "$PR_LABELS"; then
+              gh api --method POST \
+                "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels" \
+                -f "labels[]=sfl-review" > /dev/null
+              echo "Requested SFL review for PR #${PR_NUMBER} at ${HEAD_SHA}"
+            else
+              LABEL_WAS_PRESENT=true
+              echo "A pending SFL review request already covers PR #${PR_NUMBER}"
+            fi
+
+            for ATTEMPT in $(seq 1 120); do
+              REVIEW_RUN_ID=$(gh api \
+                "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
+                | find_command_run "$COMMAND_CREATED_AT" "$EXPECTED_TITLE")
+              if [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+                break
+              fi
+              if [ "$ATTEMPT" = "30" ] && [ "$LABEL_WAS_PRESENT" = "true" ]; then
+                LIVE_LABELS=$(gh api \
+                  "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels?per_page=100" \
+                  --paginate --jq '.[].name')
+                if grep -Fxq "sfl-review" <<< "$LIVE_LABELS"; then
+                  gh api --method DELETE \
+                    "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels/sfl-review" \
+                    > /dev/null
+                  gh api --method POST \
+                    "repos/${REPOSITORY}/issues/${PR_NUMBER}/labels" \
+                    -f "labels[]=sfl-review" > /dev/null
+                  echo "Retriggered stale SFL review label for PR #${PR_NUMBER}"
+                else
+                  echo "The pending SFL request was consumed; continuing run correlation"
+                fi
+              fi
+              sleep 2
+            done
+          fi
+          if ! [[ "$REVIEW_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            COMMAND_RUN_URL="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            FAILURE_BODY=$(printf '%s\nSFL review was requested for `%s`, but its Actions run could not be correlated. [Command run](%s)' \
+              "$MARKER" "$HEAD_SHA" "$COMMAND_RUN_URL")
+            jq -nc --arg body "$FAILURE_BODY" '{body: $body}' \
+              | gh api --method PATCH \
+                  "repos/${REPOSITORY}/issues/comments/${ACKNOWLEDGEMENT_ID}" \
+                  --input - > /dev/null
+            echo "::error::Could not resolve the SFL review run requested by comment ${COMMAND_COMMENT_ID}"
+            exit 1
+          fi
+
+          RUN_URL="${GITHUB_SERVER_URL}/${REPOSITORY}/actions/runs/${REVIEW_RUN_ID}"
+          FINAL_BODY=$(printf '%s\nSFL review requested for `%s`: [Actions run %s](%s)' \
+            "$MARKER" "$HEAD_SHA" "$REVIEW_RUN_ID" "$RUN_URL")
+          jq -nc --arg body "$FINAL_BODY" '{body: $body}' \
+            | gh api --method PATCH \
+                "repos/${REPOSITORY}/issues/comments/${ACKNOWLEDGEMENT_ID}" \
+                --input - > /dev/null
+
   dispatch:
     if: >-
+      github.event_name != 'issue_comment' &&
       vars.SFL_ENABLED != 'false' &&
       (github.event.action != 'labeled'
       || github.event.label.name == 'sfl-review')
@@ -353,7 +573,7 @@ jobs:
   approval:
     name: SFL Reviewer Gate Runner
     needs: dispatch
-    if: always()
+    if: always() && github.event_name != 'issue_comment'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:

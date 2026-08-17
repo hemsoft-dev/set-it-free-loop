@@ -16,7 +16,7 @@ func TestReviewTriggerConcurrencyGroups(t *testing.T) {
 		t.Fatalf("read review auto trigger workflow: %v", err)
 	}
 
-	const group = "group: sfl-pr-review-auto-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}-${{ github.event_name }}-${{ github.event.action }}-${{ github.event.action == 'labeled' && github.event.label.name == 'sfl-review' && 'explicit' || 'standard' }}"
+	const group = "group: sfl-pr-review-auto-${{ github.event.pull_request.number || github.event.issue.number }}-${{ github.event.pull_request.head.sha || github.event.comment.id }}-${{ github.event_name }}-${{ github.event.action }}-${{ github.event.action == 'labeled' && github.event.label.name == 'sfl-review' && 'explicit' || 'standard' }}"
 	if !strings.Contains(normalizeLineEndings(source), group) {
 		t.Fatal("automatic reviewer does not isolate required runs, callbacks, heads, and explicit labels")
 	}
@@ -47,5 +47,15 @@ func TestReviewTriggerConcurrencyGroups(t *testing.T) {
 	}
 	if duplicate := groupFor("78", "head-a", "pull_request_target", "synchronize", ""); duplicate != required {
 		t.Fatalf("duplicate required group=%q, want %q", duplicate, required)
+	}
+	commentGroupFor := func(issue, commentID string) string {
+		return fmt.Sprintf("sfl-pr-review-auto-%s-%s-issue_comment-created-standard", issue, commentID)
+	}
+	command := commentGroupFor("78", "1234")
+	if duplicate := commentGroupFor("78", "1234"); duplicate != command {
+		t.Fatalf("duplicate command group=%q, want %q", duplicate, command)
+	}
+	if anotherComment := commentGroupFor("78", "1235"); anotherComment == command {
+		t.Fatal("distinct comment commands share a concurrency group")
 	}
 }

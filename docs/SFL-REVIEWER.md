@@ -166,6 +166,19 @@ label after validating the pull request and passes immutable PR number, base
 SHA, and head SHA inputs to the executable workflow. Duplicate runs for the
 same sealed context are suppressed.
 
+An owner, organization member, or repository collaborator can make the same
+request by adding this exact standalone comment to an eligible pull request:
+
+```text
+@sfl-app review
+```
+
+SFL acknowledges the command once and replaces the acknowledgement with a link
+to the exact Actions run. Duplicate delivery of one comment is coalesced, and
+edited comments do not trigger the command. The command uses the existing
+`sfl-review` label path, so automatic review, immutable-head validation, and the
+required gate keep their established behavior.
+
 The optional `review_effort` input is an audit marker retained in provenance
 and forwarded by recovery. The HemSoft Kimi route does not currently map it to
 a provider-specific reasoning control.
