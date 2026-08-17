@@ -71,8 +71,11 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   behavior.
 - [ ] Publish the corrected immutable prerelease and update `hs-buddy` PR #438
   from that release.
-- [ ] With explicit approval, replace `hs-buddy`'s rejected OpenRouter secret;
-  both the initial SFL review and its bounded retry ended with HTTP 403.
+- [ ] Raise the reviewer's consecutive cache-miss allowance from the `gh-aw`
+  default of 5 to 10. The OpenRouter key and Kimi route succeeded for five
+  requests; the proxy rejected request six with HTTP 403 and Copilot reported
+  that proxy limit as an authentication failure. Do not rotate the working
+  secret for this failure.
 - [ ] Validate the command end to end only on `HemSoft/hs-buddy`, then record
   the exact command acknowledgement, Actions run, App review, evidence, and
   required-gate links here.
