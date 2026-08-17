@@ -1,105 +1,60 @@
-# HemSoft SFL Reviewer Roadmap
+# SFL roadmap
 
-SFL is working in the HemSoft account. Treat the successful operation observed
-on 2026-08-15 as the runtime baseline and preserve it. HemSoft intentionally
-uses Kimi K3 through its private OpenRouter route and enforces the HemSoft owner
-boundary; those are supported differences from the Relias implementation.
+## Goal
 
-## Verified current state — 2026-08-16
+Keep the HemSoft reviewer reliable and finish one milestone at a time.
 
-- `v2.1.0-rc.9` contains the embedded Unslop communication pass and the
-  corrected `sfl-app[bot]` reviewer identity.
-- `HemSoft/hs-buddy` is the only approved HemSoft validation repository. Its
-  manifest records `v2.1.0-rc.9` and source commit
-  `77aa2059d98bad34a9bd5026e196820da8fb3725` after PR #417.
-- Pilot PRs
-  [#380](https://github.com/HemSoft/hs-buddy/pull/380),
-  [#381](https://github.com/HemSoft/hs-buddy/pull/381), and
-  [#417](https://github.com/HemSoft/hs-buddy/pull/417) received current-head
-  App reviews, successful evidence and approval checks, and the required gate.
-- The active `hs-buddy` default-branch ruleset requires
-  `SFL Reviewer Gate Runner`. The runner verifies the App-authored
-  `SFL Reviewer Approval` and `SFL Review Evidence` checks without replacing
-  unrelated repository rules.
-- Repository-scoped gate transactions, idempotency, and rollback support
-  shipped in PR #74. Its CLI contract still refers to
-  `SFL Reviewer Approval`, while the working pilot ruleset requires
-  `SFL Reviewer Gate Runner`; issue #73 tracks that contract mismatch.
-- The GitHub App is registered to the personal `HemSoft` account. The account
-  owner confirms that its installation selects all repositories. That working,
-  owner-confirmed model is not itself a migration task; independently capture
-  the installation record before proposing scope hardening.
-- The 41 obsolete `v2.0.0` deployment pull requests left by the August 1
-  account-wide rollout are closed, and their `sfl/tier-review` branches are
-  removed. They were never part of the approved `hs-buddy` validation path.
+Core reviewer parity is complete. SFL automatically reviews the current head,
+creates inline findings, submits App-authored reviews, publishes immutable
+evidence, enforces a required gate, retries bounded operational failures,
+cleans up obsolete threads, and filters reviewer communication through Unslop.
 
-## Guardrails
+## Working baseline
 
-- Preserve the working App installation, authentication, workflow, gate, and
-  release until a narrowly scoped change has its own evidence and rollback.
-- Run any HemSoft SFL lifecycle, recovery, assignment, or command test only on
-  `HemSoft/hs-buddy`, using a controlled PR.
-- Run `gh sfl init` and `gh sfl sync` only for an explicitly approved
-  repository. Do not fan them out across the HemSoft account. If approval for a
-  pending rollout is withdrawn, close its deployment PR and delete its branch.
-- Do not add another App, user authorization flow, deployment broker, or App
-  transfer to solve native reviewer assignment without new evidence.
+- SFL is working on `HemSoft/hs-buddy`. It is the only repository approved for
+  live HemSoft validation.
+- The deployed source is `v2.1.0-rc.9` at
+  `77aa2059d98bad34a9bd5026e196820da8fb3725`. HemSoft intentionally uses Kimi
+  K3 through its private OpenRouter route.
+- `hs-buddy` PR #415 proved the full finding lifecycle on 2026-08-16. SFL found
+  real issues, approved the fixes on the current head, recovered automatically
+  from one failed evidence attempt, and finished with zero unresolved threads
+  and a green required gate.
+- The working repository rule requires `SFL Reviewer Gate Runner`. That runner
+  authenticates the App review plus `SFL Reviewer Approval` and
+  `SFL Review Evidence`.
+- The personal-account App installation currently selects all repositories and
+  works. Do not change its authentication, permissions, ownership, or scope as
+  part of the current milestone.
 
-## Remaining required work
+## Current milestone: close issue #73
 
-- [ ] Align `gh sfl gate`, `status`, `uninstall`, tests, and documentation with
-  the working `SFL Reviewer Gate Runner` contract while preserving PR #74's
-  transactional and unrelated-policy protections; then close issue #73.
-- [ ] On `hs-buddy`, carry one inline finding through resolution, verify
-  obsolete-thread cleanup, and prove a failed review uses the bounded recovery
-  path. Retain automated coverage for severity mapping and the retry limit.
-- [ ] Before changing App scope or permissions, document the current working
-  installation, the exact intended delta, and a rollback. Treat narrowing the
-  all-repository personal installation as optional hardening, not a runtime
-  repair.
+PR #74 already delivered the transactional repository-scoped gate, including
+idempotency, preservation of unrelated policy, and rollback. The only remaining
+gap is that the CLI contract still names `SFL Reviewer Approval` while the
+working repository rule requires `SFL Reviewer Gate Runner`.
 
-## Product experience parity
+- [ ] Update `gh sfl gate`, `status`, `uninstall`, tests, and documentation to
+  use the deployed `SFL Reviewer Gate Runner` contract.
+- [ ] Preserve PR #74's transaction, idempotency, unrelated-policy, and rollback
+  protections.
+- [ ] Prove the change on one controlled `hs-buddy` PR without changing the
+  working App installation or reviewer workflow.
+- [ ] Close [issue #73](https://github.com/HemSoft/set-it-free-loop/issues/73).
 
-Already working:
+## Next milestone
 
-- [x] Automatic current-head reviews.
-- [x] Native inline findings and App-authored approval.
-- [x] Immutable review evidence and a required merge gate.
-- [x] Bounded recovery and obsolete-thread cleanup.
-- [x] Unslop filtering for user-facing reviewer communication.
+After issue #73 closes, add one comment-triggered entry point:
+`@sfl-app review`. It must dispatch the existing exact-head review path and
+reply with the run link. Add a separate full-review command only if normal
+usage shows a need for it.
 
-Next interaction work:
+## Not active work
 
-- [ ] Add `@sfl-app review` and `@sfl-app full review` comment commands that
-  dispatch the existing exact-head review path and report the run link.
-- [ ] After real use, decide whether pause/resume controls or incremental-only
-  re-review are worth their extra state. Full current-head review remains the
-  safe default.
-- [ ] Add PR conversation or fix handoff only after a concrete need appears.
+Native reviewer-picker assignment, App transfer, another App or authorization
+flow, installation-scope hardening, pause/resume controls, incremental-only
+reviews, fix agents, dashboards, code graphs, feedback learning, and a deployment
+broker are not current goals.
 
-Native reviewer-picker assignment is a separate platform investigation, not a
-rollout or commercial-parity blocker. GitHub documents bot review-request APIs
-but only explicitly documents reviewer assignment for Copilot. The three
-reviewed commercial vendors document App installation, automatic review, and
-comment commands as their standard flow. HemSoft PR #385 proved that three SFL
-request mutations created no review request, event, or run; it did not prove
-the cause. If this investigation resumes, use only a controlled `hs-buddy` PR
-and the evidence matrix in
-[the research note](docs/research/github-app-reviewer-eligibility.md) before
-contacting GitHub Support.
-
-## Deliberately deferred
-
-Persistent code-graph indexing, a hosted dashboard, feedback learning,
-one-click fix handoffs, and an unattended deployment broker are commercial
-scale features. Do not build them for this personal rollout without a concrete
-need.
-
-Reference snapshot:
-
-- [GitHub bot reviewer request inputs](https://docs.github.com/en/graphql/reference/pulls#requestreviewsbylogininput)
-- [GitHub GraphQL 2026 changelog](https://docs.github.com/en/graphql/overview/changelog/2026#schema-changes-for-2026-01-22)
-- [GitHub Copilot code review](https://docs.github.com/en/copilot/how-tos/copilot-on-github/use-copilot-agents/copilot-code-review)
-- [CodeRabbit automatic reviews](https://docs.coderabbit.ai/configuration/auto-review)
-- [Greptile quickstart](https://www.greptile.com/docs/quickstart)
-- [Macroscope code review](https://docs.macroscope.com/bug-detection-and-fixes)
+If reviewer-picker research resumes, use only `hs-buddy` and start with
+[the existing evidence note](docs/research/github-app-reviewer-eligibility.md).
