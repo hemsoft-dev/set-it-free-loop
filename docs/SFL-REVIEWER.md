@@ -219,8 +219,8 @@ produce a duplicate review.
 
 ## Advisory and gated operation
 
-Deployment is advisory until a repository rule requires the native
-`SFL Reviewer Approval` check. After the deployment PR is merged, enable strict
+Deployment is advisory until a repository rule requires
+`SFL Reviewer Gate Runner`. After the deployment PR is merged, enable strict
 gating with:
 
 ```powershell
@@ -228,15 +228,23 @@ gh sfl gate --repo HemSoft/repository
 ```
 
 The command creates a dedicated repository ruleset on the consumer's default
-branch. The rule requires `SFL Reviewer Approval` from GitHub Actions App ID
+branch. The rule requires `SFL Reviewer Gate Runner` from GitHub Actions App ID
 `15368` and uses strict base freshness, so a base update needs a new sealed
-review. This differs from Relias because `HemSoft` is a personal GitHub account
-and cannot create organization required-workflow rulesets.
+review. The runner authenticates the exact App review plus the inner
+`SFL Reviewer Approval` and `SFL Review Evidence` checks. This differs from
+Relias because `HemSoft` is a personal GitHub account and cannot create
+organization required-workflow rulesets.
 
-An already-correct gate is a write-free no-op. A stale dedicated gate is read
-with its entity tag, updated conditionally, and checked again. If GitHub applies
-an invalid or ambiguous update, the command restores the exact pre-write rule.
-It refuses stale shared or inherited rules instead of changing unrelated
-policy. Gate creation, status, and uninstall use repository endpoints and do
-not require `admin:org`. The command still rejects public or non-HemSoft
+An already-correct gate is a write-free no-op. Before changing a stale dedicated
+gate, the command rechecks its entity tag and complete state, then aborts if
+either changed. It verifies the write and restores the exact pre-write rule if
+GitHub accepts an invalid update that remains unchanged before rollback. GitHub
+does not support conditional headers on repository ruleset updates or deletes.
+The command refuses stale shared or inherited rules instead of changing
+unrelated policy. Gate creation, status, and uninstall use repository endpoints
+and do not require `admin:org`. The command still rejects public or non-HemSoft
 repositories.
+
+`gh sfl stop` pauses review dispatch and recovery, but the required gate runner
+continues to execute and fails closed. New pull request heads remain blocked
+until `gh sfl start` re-enables reviews.

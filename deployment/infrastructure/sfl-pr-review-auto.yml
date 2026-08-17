@@ -353,7 +353,7 @@ jobs:
   approval:
     name: SFL Reviewer Gate Runner
     needs: dispatch
-    if: always() && vars.SFL_ENABLED != 'false'
+    if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -418,8 +418,13 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPOSITORY: ${{ github.repository }}
           REVIEWER_INSTALLED: ${{ needs.dispatch.outputs.reviewer-installed }}
+          SFL_ENABLED: ${{ vars.SFL_ENABLED }}
         run: |
           set -euo pipefail
+          if [ "$SFL_ENABLED" = "false" ]; then
+            echo "::error::SFL reviewer maintenance mode is active; required reviewer gate fails closed"
+            exit 1
+          fi
           if [ "$REVIEWER_INSTALLED" != "true" ]; then
             echo "Reviewer bootstrap deployment detected; gate activates after the compatible lock reaches the default branch"
             exit 0

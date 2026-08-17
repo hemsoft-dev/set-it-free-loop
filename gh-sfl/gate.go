@@ -7,15 +7,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
-
-	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 type gateOptions struct {
 	repo string
 }
+
+const (
+	reviewerGateCheckContext             = "SFL Reviewer Gate Runner"
+	legacyReviewerGateCheckContext       = "SFL Reviewer Approval"
+	githubActionsAppID             int64 = 15368
+)
 
 func runGate(args []string, stdout io.Writer, stderr io.Writer) error {
 	opts, err := parseGateOptions(args, stderr)
@@ -64,7 +67,7 @@ func runGate(args []string, stdout io.Writer, stderr io.Writer) error {
 	)
 	for _, workflow := range requiredWorkflows {
 		if isRepositoryManagedRuleset(workflow) && hasReviewerFreshnessInterlock(workflow) {
-			fmt.Fprintf(stdout, "✓ SFL reviewer approval is already required by %q\n", workflow.Name)
+			fmt.Fprintf(stdout, "✓ SFL reviewer gate is already required by %q\n", workflow.Name)
 			return nil
 		}
 	}
@@ -87,7 +90,7 @@ func ensureRepositoryReviewerGate(
 ) error {
 	for _, ruleset := range reviewerStatusChecks {
 		if isRepositoryManagedRuleset(ruleset) && hasReviewerFreshnessInterlock(ruleset) {
-			fmt.Fprintf(stdout, "✓ SFL reviewer approval is already required by %q\n", ruleset.Name)
+			fmt.Fprintf(stdout, "✓ SFL reviewer gate is already required by %q\n", ruleset.Name)
 			return nil
 		}
 	}
@@ -108,7 +111,7 @@ func ensureRepositoryReviewerGate(
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "✓ Updated strict SFL reviewer approval gate %q\n", name)
+		fmt.Fprintf(stdout, "✓ Updated strict SFL reviewer gate %q\n", name)
 		return nil
 	}
 
@@ -122,7 +125,7 @@ func ensureRepositoryReviewerGate(
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "✓ Required SFL reviewer approval enabled for %s/%s (%s)\n", owner, repo, name)
+	fmt.Fprintf(stdout, "✓ Required SFL reviewer gate enabled for %s/%s (%s)\n", owner, repo, name)
 	return nil
 }
 
@@ -153,15 +156,18 @@ func updateRepositoryReviewerGate(
 		return "", fmt.Errorf("copying reviewer gate before update: %w", err)
 	}
 	desired.Rules[0].Parameters = mergeReviewerFreshnessRule(desired.Rules[0].Parameters)
+	path := fmt.Sprintf("repos/%s/%s/rulesets/%d", owner, repo, snapshot.ID)
+	if err := ensureRepositoryRulesetUnchanged(client, path, snapshot); err != nil {
+		return "", fmt.Errorf("reviewer gate %q changed before update: %w", snapshot.Name, err)
+	}
 	body, err := jsonBody(repositoryRulesetMutationPayload(desired))
 	if err != nil {
 		return "", fmt.Errorf("encoding reviewer gate update: %w", err)
 	}
-	path := fmt.Sprintf("repos/%s/%s/rulesets/%d", owner, repo, snapshot.ID)
 	var updated repositoryRuleset
-	updateErr := client.PutIfMatch(path, body, snapshot.ETag, &updated)
+	updateErr := client.Put(path, body, &updated)
 
-	current, currentETag, readErr := readRepositoryRulesetWithETag(client, path, snapshot.Name)
+	current, _, readErr := readRepositoryRulesetWithETag(client, path, snapshot.Name)
 	if readErr != nil {
 		failures := []error{fmt.Errorf("could not verify the gate after the update: %w", readErr)}
 		if updateErr != nil {
@@ -172,13 +178,6 @@ func updateRepositoryReviewerGate(
 	if isDesiredRepositoryReviewerGate(current, defaultBranch) {
 		return current.Name, nil
 	}
-	if isPreconditionFailure(updateErr) {
-		return "", fmt.Errorf(
-			"reviewer gate %q changed concurrently; GitHub rejected the stale update and no rollback was attempted: %w",
-			snapshot.Name,
-			updateErr,
-		)
-	}
 	if repositoryRulesetStateEqual(current, snapshot) {
 		if updateErr != nil {
 			return "", fmt.Errorf("updating repository reviewer gate %q: %w", snapshot.Name, updateErr)
@@ -186,12 +185,14 @@ func updateRepositoryReviewerGate(
 		return "", fmt.Errorf("GitHub accepted the update but reviewer gate %q remained unchanged", snapshot.Name)
 	}
 
-	rollbackErr := restoreRepositoryReviewerGate(
-		client,
-		path,
-		currentETag,
-		snapshot,
-	)
+	if updated.ID == 0 || !repositoryRulesetStateEqual(current, updated) {
+		return "", errors.Join(
+			fmt.Errorf("reviewer gate %q changed during update; no rollback was attempted", snapshot.Name),
+			updateErr,
+		)
+	}
+
+	rollbackErr := restoreRepositoryReviewerGate(client, path, current, snapshot)
 	if rollbackErr != nil {
 		return "", errors.Join(
 			fmt.Errorf("reviewer gate %q did not reach the required state", snapshot.Name),
@@ -311,15 +312,19 @@ func createRepositoryReviewerGate(
 
 func restoreRepositoryReviewerGate(
 	client restAPI,
-	path, currentETag string,
+	path string,
+	expectedCurrent repositoryRuleset,
 	snapshot repositoryRuleset,
 ) error {
+	if err := ensureRepositoryRulesetUnchanged(client, path, expectedCurrent); err != nil {
+		return fmt.Errorf("reviewer gate changed before rollback: %w", err)
+	}
 	body, err := jsonBody(repositoryRulesetMutationPayload(snapshot))
 	if err != nil {
 		return err
 	}
 	var restored repositoryRuleset
-	if err := client.PutIfMatch(path, body, currentETag, &restored); err != nil {
+	if err := client.Put(path, body, &restored); err != nil {
 		return err
 	}
 	current, _, err := readRepositoryRulesetWithETag(client, path, snapshot.Name)
@@ -333,14 +338,17 @@ func restoreRepositoryReviewerGate(
 }
 
 func removeCreatedRepositoryReviewerGate(client restAPI, path, name string) error {
-	_, etag, err := readRepositoryRulesetWithETag(client, path, name)
+	created, _, err := readRepositoryRulesetWithETag(client, path, name)
 	if err != nil {
 		if isNotFoundError(err) {
 			return nil
 		}
 		return fmt.Errorf("reading newly created reviewer gate %q before rollback: %w", name, err)
 	}
-	deleteErr := client.DeleteIfMatch(path, etag, nil)
+	if err := ensureRepositoryRulesetUnchanged(client, path, created); err != nil {
+		return fmt.Errorf("newly created reviewer gate %q changed before rollback: %w", name, err)
+	}
+	deleteErr := client.Delete(path, nil)
 	var current repositoryRuleset
 	lookupErr := client.Get(path, &current)
 	if isNotFoundError(lookupErr) {
@@ -372,6 +380,21 @@ func readRepositoryRulesetWithETag(
 	}
 	ruleset.ETag = etag
 	return ruleset, etag, nil
+}
+
+func ensureRepositoryRulesetUnchanged(
+	client restAPI,
+	path string,
+	expected repositoryRuleset,
+) error {
+	current, _, err := readRepositoryRulesetWithETag(client, path, expected.Name)
+	if err != nil {
+		return err
+	}
+	if current.ETag != expected.ETag || !repositoryRulesetStateEqual(current, expected) {
+		return fmt.Errorf("repository ruleset changed concurrently")
+	}
+	return nil
 }
 
 func getRepositoryRulesetForMutation(
@@ -416,7 +439,12 @@ func isSingleReviewerStatusCheck(parameters map[string]any) bool {
 		return false
 	}
 	check, ok := checks[0].(map[string]any)
-	return ok && check["context"] == "SFL Reviewer Approval"
+	return ok && isKnownReviewerGateCheckContext(check["context"])
+}
+
+func isKnownReviewerGateCheckContext(value any) bool {
+	context, ok := value.(string)
+	return ok && (context == reviewerGateCheckContext || context == legacyReviewerGateCheckContext)
 }
 
 func isDesiredRepositoryReviewerGate(ruleset repositoryRuleset, defaultBranch string) bool {
@@ -484,11 +512,6 @@ func isRepositoryManagedRuleset(ruleset repositoryRuleset) bool {
 	return ruleset.SourceType == "" || ruleset.SourceType == "Repository"
 }
 
-func isPreconditionFailure(err error) bool {
-	var httpErr *api.HTTPError
-	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusPreconditionFailed
-}
-
 func reviewerFreshnessRule() map[string]any {
 	return map[string]any{
 		"type": "required_status_checks",
@@ -497,8 +520,8 @@ func reviewerFreshnessRule() map[string]any {
 			"strict_required_status_checks_policy": true,
 			"required_status_checks": []any{
 				map[string]any{
-					"context":        "SFL Reviewer Approval",
-					"integration_id": 15368,
+					"context":        reviewerGateCheckContext,
+					"integration_id": githubActionsAppID,
 				},
 			},
 		},
@@ -515,12 +538,13 @@ func mergeReviewerFreshnessRule(parameters map[string]any) map[string]any {
 	hasReviewerCheck := false
 	for _, value := range checks {
 		check, ok := value.(map[string]any)
-		if ok && check["context"] == "SFL Reviewer Approval" {
+		if ok && isKnownReviewerGateCheckContext(check["context"]) {
 			updatedCheck := make(map[string]any, len(check)+1)
 			for key, checkValue := range check {
 				updatedCheck[key] = checkValue
 			}
-			updatedCheck["integration_id"] = 15368
+			updatedCheck["context"] = reviewerGateCheckContext
+			updatedCheck["integration_id"] = githubActionsAppID
 			mergedChecks = append(mergedChecks, updatedCheck)
 			hasReviewerCheck = true
 			continue
@@ -529,8 +553,8 @@ func mergeReviewerFreshnessRule(parameters map[string]any) map[string]any {
 	}
 	if !hasReviewerCheck {
 		mergedChecks = append(mergedChecks, map[string]any{
-			"context":        "SFL Reviewer Approval",
-			"integration_id": 15368,
+			"context":        reviewerGateCheckContext,
+			"integration_id": githubActionsAppID,
 		})
 	}
 	merged["do_not_enforce_on_create"] = false
@@ -540,7 +564,7 @@ func mergeReviewerFreshnessRule(parameters map[string]any) map[string]any {
 }
 
 func reviewerGateName(repo string) string {
-	return fmt.Sprintf("Require SFL Reviewer Approval (%s)", repo)
+	return fmt.Sprintf("Require SFL Reviewer Gate Runner (%s)", repo)
 }
 
 func repositoryReviewerGatePayload(repo string) map[string]any {

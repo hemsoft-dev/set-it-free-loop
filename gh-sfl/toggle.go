@@ -67,7 +67,7 @@ func parseToggleOptions(cmd string, args []string, errw io.Writer) (toggleOption
 
 	fs.Usage = func() {
 		action := "Stop"
-		desc := "Pauses automatic SFL dispatch and recovery by setting SFL_ENABLED=false."
+		desc := "Pauses automatic SFL dispatch and recovery while the required reviewer gate fails closed."
 		if cmd == "start" {
 			action = "Start"
 			desc = "Re-enables automatic SFL dispatch and recovery by setting SFL_ENABLED=true."
