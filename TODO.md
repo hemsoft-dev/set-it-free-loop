@@ -14,9 +14,10 @@ cleans up obsolete threads, and filters reviewer communication through Unslop.
 - SFL is working on `HemSoft/hs-buddy`. It is the only repository approved for
   live HemSoft validation.
 - `v2.1.0-rc.10` is the current immutable private release at
-  `3920ff6c0c5718cafc0edbebff623527eff4d453`. `hs-buddy` remains on rc.9 until
-  its deployment PR #438 is corrected and merged. HemSoft intentionally uses
-  Kimi K3 through its private OpenRouter route.
+  `3920ff6c0c5718cafc0edbebff623527eff4d453`. The corrected rc.11 release is
+  prepared from `00f5ae1d5ec82bdf3e72e12171da73b199ffe6ab`. `hs-buddy` remains on
+  rc.9 until its deployment PR #438 is corrected and merged. HemSoft
+  intentionally uses Kimi K3 through its private OpenRouter route.
 - `hs-buddy` PR #415 proved the full finding lifecycle on 2026-08-16. SFL found
   real issues, approved the fixes on the current head, recovered automatically
   from one failed evidence attempt, and finished with zero unresolved threads
@@ -65,8 +66,9 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   comment-triggered review that bypasses the trusted approval gate, and loss of
   the selected review-effort label, plus stale acknowledgement reuse after the
   pull request head changes.
-- [ ] Merge [issue #103](https://github.com/HemSoft/set-it-free-loop/issues/103)
-  via PR #104, using a command-specific dispatch ID, an exact final
+- [x] Merge [issue #103](https://github.com/HemSoft/set-it-free-loop/issues/103)
+  via [PR #104](https://github.com/HemSoft/set-it-free-loop/pull/104), using a
+  command-specific dispatch ID, an exact final
   acknowledgement marker, the trusted approval gate, and the selected review
   effort while preserving the gate's explicit fail-closed maintenance-mode
   behavior.
@@ -75,9 +77,11 @@ that transaction with the deployed runner and GitHub's live ruleset API.
 - [x] Raise the reviewer's consecutive cache-miss allowance from the `gh-aw`
   default of 5 to 10. The OpenRouter key and Kimi route succeeded for five
   requests; the proxy rejected request six with HTTP 403 and Copilot reported
-  that proxy limit as an authentication failure. PR #104's current-head SFL
-  run completed successfully after the fix. Do not rotate the working secret
-  for this failure.
+  that proxy limit as an authentication failure. A pre-final PR #104 head
+  completed successfully after the source change, but the final head still
+  dispatched the reviewer definition from `main` and exhausted the old
+  five-miss limit. The rc.11 release activates the new ceiling for consumers.
+  Do not rotate the working secret for this failure.
 - [ ] Validate the command end to end only on `HemSoft/hs-buddy`, then record
   the exact command acknowledgement, Actions run, App review, evidence, and
   required-gate links here.
