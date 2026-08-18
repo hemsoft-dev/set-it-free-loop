@@ -13,9 +13,9 @@ cleans up obsolete threads, and filters reviewer communication through Unslop.
 
 - SFL is working on `HemSoft/hs-buddy`. It is the only repository approved for
   live HemSoft validation.
-- `v2.1.0-rc.12` is the current immutable private release at
-  `2259bb2fda3d7244a5dce7dd2e0ec0adba7119ff`. It is deployed to `hs-buddy`
-  through [PR #438](https://github.com/HemSoft/hs-buddy/pull/438). HemSoft
+- `v2.1.0-rc.13` is the current immutable private release at
+  `076325cd78119442dd0922abab2023451cff5189`. It is deployed to `hs-buddy`
+  through [PR #454](https://github.com/HemSoft/hs-buddy/pull/454). HemSoft
   intentionally uses Kimi K3 through its private OpenRouter route.
 - `hs-buddy` PR #415 proved the full finding lifecycle on 2026-08-16. SFL found
   real issues, approved the fixes on the current head, recovered automatically
@@ -85,7 +85,8 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   proof on `hs-buddy` PR #415 failed closed because `.draft // true` converts a
   valid `draft: false` response to `true`. The fix now accepts only the literal
   boolean `false` and keeps missing, null, and malformed values fail-closed.
-- [ ] Publish rc.13, update `hs-buddy`, and repeat the command proof.
+- [x] Publish rc.13 and update `hs-buddy` through
+  [PR #454](https://github.com/HemSoft/hs-buddy/pull/454).
 - [x] Raise the reviewer's consecutive cache-miss allowance from the `gh-aw`
   default of 5 to 10. The OpenRouter key and Kimi route succeeded for five
   requests; the proxy rejected request six with HTTP 403 and Copilot reported
@@ -94,9 +95,19 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   dispatched the reviewer definition from `main` and exhausted the old
   five-miss limit. The rc.11 release activates the new ceiling for consumers.
   Do not rotate the working secret for this failure.
-- [ ] Validate the command end to end only on `HemSoft/hs-buddy`, then record
-  the exact command acknowledgement, Actions run, App review, evidence, and
-  required-gate links here.
+- [x] Validate the command end to end on `HemSoft/hs-buddy` PR #430. The
+  [owner command](https://github.com/HemSoft/hs-buddy/pull/430#issuecomment-5322099781)
+  produced an
+  [SFL App acknowledgement](https://github.com/HemSoft/hs-buddy/pull/430#issuecomment-5322101120)
+  linked to exact
+  [review run 32086489284](https://github.com/HemSoft/hs-buddy/actions/runs/32086489284).
+  The App submitted a current-head
+  [zero-finding approval](https://github.com/HemSoft/hs-buddy/pull/430#pullrequestreview-4956123968),
+  and the rerun after resolving one fixed historical finding produced green
+  [review evidence](https://github.com/HemSoft/hs-buddy/runs/95560069528),
+  [reviewer approval](https://github.com/HemSoft/hs-buddy/runs/95561565685),
+  and the required
+  [command gate](https://github.com/HemSoft/hs-buddy/actions/runs/32086477350).
 
 Do not add a separate full-review command unless normal usage shows a need for
 it.
