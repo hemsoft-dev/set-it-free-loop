@@ -80,10 +80,12 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   [PR #107](https://github.com/HemSoft/set-it-free-loop/pull/107), and run its
   platform contract test in CI.
 - [x] Publish rc.12 and deploy it to `hs-buddy` through PR #438.
-- [ ] Correct the command validator's jq boolean default. The rc.12 proof on
-  `hs-buddy` PR #415 failed closed because `.draft // true` converts a valid
-  `draft: false` response to `true`. Publish the corrected immutable release,
-  update `hs-buddy`, and repeat the command proof.
+- [x] Correct the command validator's jq boolean default via
+  [PR #110](https://github.com/HemSoft/set-it-free-loop/pull/110). The rc.12
+  proof on `hs-buddy` PR #415 failed closed because `.draft // true` converts a
+  valid `draft: false` response to `true`. The fix now accepts only the literal
+  boolean `false` and keeps missing, null, and malformed values fail-closed.
+- [ ] Publish rc.13, update `hs-buddy`, and repeat the command proof.
 - [x] Raise the reviewer's consecutive cache-miss allowance from the `gh-aw`
   default of 5 to 10. The OpenRouter key and Kimi route succeeded for five
   requests; the proxy rejected request six with HTTP 403 and Copilot reported
