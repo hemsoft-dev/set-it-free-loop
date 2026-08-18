@@ -51,7 +51,7 @@ that transaction with the deployed runner and GitHub's live ruleset API.
   and the PR retained green approval, evidence, and gate-runner checks.
 - [x] Close [issue #73](https://github.com/HemSoft/set-it-free-loop/issues/73).
 
-## Current milestone: comment-command rollout
+## Completed milestone: comment-command rollout
 
 - [x] Implement [issue #98](https://github.com/HemSoft/set-it-free-loop/issues/98):
   add one comment-triggered entry point, `@sfl-app review`.
