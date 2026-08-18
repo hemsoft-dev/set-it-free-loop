@@ -168,7 +168,7 @@ func TestNewerRunSuppressionFixtures(t *testing.T) {
 	script := `#!/usr/bin/env bash
 set -u
 ` + helper + `
-newer_run_suppresses_retry "$1" "$2" "$3" "$4"
+newer_run_suppresses_retry "$1" "$2" "$3" "$4" "${5:-}"
 `
 	scriptPath := filepath.Join(t.TempDir(), "newer-run-suppression.sh")
 	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
@@ -214,6 +214,16 @@ newer_run_suppresses_retry "$1" "$2" "$3" "$4"
 		{
 			name:   "completed unavailable provenance with title match allows",
 			args:   []string{"completed", "false", "false", "true"},
+			output: "allow",
+		},
+		{
+			name:   "cancelled unavailable provenance with title match suppresses",
+			args:   []string{"completed", "false", "false", "true", "cancelled"},
+			output: "suppress",
+		},
+		{
+			name:   "cancelled unavailable provenance without title match allows",
+			args:   []string{"completed", "false", "false", "false", "cancelled"},
 			output: "allow",
 		},
 		{
