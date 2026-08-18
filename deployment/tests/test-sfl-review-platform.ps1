@@ -97,6 +97,7 @@ Assert-PatternSet $auto @(
     'test\("\\\\\[Actions run \[1-9\]\[0-9\]\*\\\\\]\\\\\("\)',
     '\(capture\("\\\\\[Actions run \(\?<id>\[1-9\]\[0-9\]\*\)\\\\\]\\\\\("\)\? \| \.id\) // empty',
     'Command comment \$\{COMMAND_COMMENT_ID\} was already acknowledged',
+    'DRAFT=\$\(jq -r ''if \.draft == false then false else true end'' <<< "\$PR"\)',
     'for ATTEMPT in \$\(seq 1 120\); do',
     'inputs\[dispatch_id\]=\$\{DISPATCH_ID\}',
     'inputs\[review_effort\]=\$\{REVIEW_EFFORT\}',
@@ -153,6 +154,8 @@ Assert-PatternSet $auto @(
     'validate_review_run'
 )
 Assert-PatternAbsent $auto 'normalize_login[^\r\n]+set-it-free-loop'
+Assert-PatternAbsent $auto '\.draft // true'
+Assert-PatternAbsent $auto 'has\("draft"\) then \.draft'
 
 $autoContent = Read-RepoFile $auto
 if ($autoContent -match 'permission-pull-requests:\s*read') {

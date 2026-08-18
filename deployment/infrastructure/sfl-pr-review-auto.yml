@@ -68,7 +68,7 @@ jobs:
           PR=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")
           BASE_REF=$(jq -r '.base.ref // ""' <<< "$PR")
           BASE_SHA=$(jq -r '.base.sha // ""' <<< "$PR")
-          DRAFT=$(jq -r '.draft // true' <<< "$PR")
+          DRAFT=$(jq -r 'if .draft == false then false else true end' <<< "$PR")
           HEAD_REPOSITORY=$(jq -r '.head.repo.full_name // ""' <<< "$PR")
           HEAD_SHA=$(jq -r '.head.sha // ""' <<< "$PR")
           REVIEW_EFFORT=$(jq -r '

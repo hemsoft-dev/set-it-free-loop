@@ -13,10 +13,9 @@ cleans up obsolete threads, and filters reviewer communication through Unslop.
 
 - SFL is working on `HemSoft/hs-buddy`. It is the only repository approved for
   live HemSoft validation.
-- `v2.1.0-rc.11` is the current immutable private release at
-  `a1e8119999145be450403297df6dc29736e07ea5`. The corrected rc.12 release is
-  prepared from `3556f3fc6775eb4c3bd5824a8a183caf7652b5b0`. `hs-buddy` PR #438 remains
-  unmerged until it is updated from rc.12. HemSoft
+- `v2.1.0-rc.12` is the current immutable private release at
+  `2259bb2fda3d7244a5dce7dd2e0ec0adba7119ff`. It is deployed to `hs-buddy`
+  through [PR #438](https://github.com/HemSoft/hs-buddy/pull/438). HemSoft
   intentionally uses Kimi K3 through its private OpenRouter route.
 - `hs-buddy` PR #415 proved the full finding lifecycle on 2026-08-16. SFL found
   real issues, approved the fixes on the current head, recovered automatically
@@ -80,7 +79,11 @@ that transaction with the deployed runner and GitHub's live ruleset API.
 - [x] Make the comment-command path fail closed via
   [PR #107](https://github.com/HemSoft/set-it-free-loop/pull/107), and run its
   platform contract test in CI.
-- [ ] Publish rc.12 and update `hs-buddy` PR #438 from that immutable release.
+- [x] Publish rc.12 and deploy it to `hs-buddy` through PR #438.
+- [ ] Correct the command validator's jq boolean default. The rc.12 proof on
+  `hs-buddy` PR #415 failed closed because `.draft // true` converts a valid
+  `draft: false` response to `true`. Publish the corrected immutable release,
+  update `hs-buddy`, and repeat the command proof.
 - [x] Raise the reviewer's consecutive cache-miss allowance from the `gh-aw`
   default of 5 to 10. The OpenRouter key and Kimi route succeeded for five
   requests; the proxy rejected request six with HTTP 403 and Copilot reported
