@@ -38,7 +38,7 @@
       "upstreamPath": "workflows/sfl-pr-review.md",
       "upstreamSha256": "35b1d066abd0df5498a9ece6937be0c92c8dbfc04f3adf1c43b22dc7d2dc3a5a",
       "hemsoftPath": "deployment/workflows/sfl-pr-review.md",
-      "hemsoftSha256": "a55ac4c952eef16a0721dd6ac5ce0a4797a9ad1b01e0cd82fbb5050b9b9522e9",
+      "hemsoftSha256": "4c096f82ab8a3f60848fae9bc5cdcd0b26b9a67f915ad389dc1a2fd354fbd499",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review.md"
       ],
@@ -57,7 +57,7 @@
       "upstreamPath": "workflows/sfl-pr-review.lock.yml",
       "upstreamSha256": "b232c552c59b17edef1bfe3326a9b0eb6d29d379be44a33e861f33a6ae47af02",
       "hemsoftPath": ".github/workflows/sfl-pr-review.lock.yml",
-      "hemsoftSha256": "dc9759bbb9820b553d35300b2b36e6ca05da01affc26605694cbbdcfe4bcae6b",
+      "hemsoftSha256": "9940c4476977b18f185d2dc861dc240f2299b42175603ad6cc96dca40efcaa84",
       "stagedPaths": [],
       "differenceClasses": [
         "provider-configuration",
