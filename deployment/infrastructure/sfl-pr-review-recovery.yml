@@ -188,10 +188,14 @@ jobs:
             local run_conclusion="${5:-}"
             local run_retry_count="${6:-}"
 
-            # GitHub reports both maintainer cancellations and automatic
-            # concurrency replacement as "cancelled". A cancelled run cannot
-            # own recovery because this workflow does not retry cancelled runs.
+            # Serialized same-PR reviewer runs cannot be cancelled by
+            # concurrency replacement. A matching cancelled successor is
+            # therefore an explicit stop and owns the recovery decision.
             if [ "$run_conclusion" = "cancelled" ]; then
+              if [ "$title_match" = "true" ]; then
+                echo "suppress"
+                return 0
+              fi
               echo "allow"
               return 0
             fi

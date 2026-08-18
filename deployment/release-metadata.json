@@ -91,7 +91,7 @@
       "upstreamPath": "workflows/sfl-pr-review-recovery.yml",
       "upstreamSha256": "d94fb4a788a0f4c39ed45a24d14e44ec6f0a8bcd2027c3357edae2167ae33a25",
       "hemsoftPath": "deployment/infrastructure/sfl-pr-review-recovery.yml",
-      "hemsoftSha256": "a1916febab7ee2097357510df160af63650aa404aaa3c2767d14b7b66ae3ad75",
+      "hemsoftSha256": "ef18e3007fcd55692c88ddcd42b2bec9964f03c151e97f24cc1345a59a7bf8e7",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review-recovery.yml"
       ],

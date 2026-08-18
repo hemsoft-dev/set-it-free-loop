@@ -213,6 +213,7 @@ Assert-PatternSet $recovery @(
     "if: github\.event\.workflow_run\.conclusion != 'cancelled'",
     'decide_review_recovery',
     'newer_run_suppresses_retry',
+    'Serialized same-PR reviewer runs cannot be cancelled by',
     'sealed_title_retry_count',
     'NEWER_RETRY_COUNT=',
     'FINAL_NEWER_RETRY_COUNT=',
