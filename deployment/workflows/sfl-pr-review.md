@@ -100,6 +100,53 @@ pre-steps:
         exit 1
       fi
 
+  - name: Install ripgrep with bounded diagnostics
+    id: sfl-ripgrep
+    shell: bash
+    run: |
+      set -euo pipefail
+      log_path="${RUNNER_TEMP}/sfl-ripgrep-install.log"
+      : > "$log_path"
+      if command -v rg > /dev/null 2>&1; then
+        rg --version | tee -a "$log_path"
+        exit 0
+      fi
+
+      set +e
+      timeout --signal=TERM --kill-after=15s 180s bash -c '
+        set -euo pipefail
+        sudo apt-get update \
+          -o Acquire::Retries=3 \
+          -o Acquire::http::Timeout=30 \
+          -o Acquire::https::Timeout=30
+        sudo apt-get install --no-install-recommends -y ripgrep
+      ' 2>&1 | tee -a "$log_path"
+      install_status=${PIPESTATUS[0]}
+      set -e
+
+      if [ "$install_status" -eq 124 ] || [ "$install_status" -eq 137 ]; then
+        echo "::error::ripgrep installation exceeded the 180-second setup limit"
+        exit 1
+      fi
+      if [ "$install_status" -ne 0 ]; then
+        echo "::error::ripgrep installation failed with exit code ${install_status}"
+        exit "$install_status"
+      fi
+      if ! command -v rg > /dev/null 2>&1; then
+        echo "::error::ripgrep installation completed without making rg available"
+        exit 1
+      fi
+      rg --version | tee -a "$log_path"
+
+  - name: Retain ripgrep setup diagnostics
+    if: always()
+    uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+    with:
+      name: sfl-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}
+      path: ${{ runner.temp }}/sfl-ripgrep-install.log
+      if-no-files-found: ignore
+      retention-days: 1
+
 # HemSoft runs the reviewer through Kimi K3 on its private OpenRouter route.
 
 models:
@@ -136,6 +183,52 @@ tools:
 safe-outputs:
   threat-detection:
     continue-on-error: false
+    steps:
+      - name: Install threat-detection ripgrep with bounded diagnostics
+        id: sfl-threat-detection-ripgrep
+        shell: bash
+        run: |
+          set -euo pipefail
+          log_path="${RUNNER_TEMP}/sfl-threat-detection-ripgrep-install.log"
+          : > "$log_path"
+          if command -v rg > /dev/null 2>&1; then
+            rg --version | tee -a "$log_path"
+            exit 0
+          fi
+
+          set +e
+          timeout --signal=TERM --kill-after=15s 180s bash -c '
+            set -euo pipefail
+            sudo apt-get update \
+              -o Acquire::Retries=3 \
+              -o Acquire::http::Timeout=30 \
+              -o Acquire::https::Timeout=30
+            sudo apt-get install --no-install-recommends -y ripgrep
+          ' 2>&1 | tee -a "$log_path"
+          install_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$install_status" -eq 124 ] || [ "$install_status" -eq 137 ]; then
+            echo "::error::threat-detection ripgrep installation exceeded the 180-second setup limit"
+            exit 1
+          fi
+          if [ "$install_status" -ne 0 ]; then
+            echo "::error::threat-detection ripgrep installation failed with exit code ${install_status}"
+            exit "$install_status"
+          fi
+          if ! command -v rg > /dev/null 2>&1; then
+            echo "::error::threat-detection ripgrep installation completed without making rg available"
+            exit 1
+          fi
+          rg --version | tee -a "$log_path"
+      - name: Retain threat-detection ripgrep setup diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sfl-threat-detection-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sfl-threat-detection-ripgrep-install.log
+          if-no-files-found: ignore
+          retention-days: 1
     post-steps:
       - name: Generate SFL App token for final head verification
         id: sfl-final-head-token

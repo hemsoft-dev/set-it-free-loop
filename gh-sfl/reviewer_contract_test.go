@@ -41,6 +41,13 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		"SFL_REVIEW_EFFORT: ${{ inputs.review_effort || 'low' }}",
 		"pre-steps:",
 		"Validate trusted review context",
+		"Install ripgrep with bounded diagnostics",
+		"timeout --signal=TERM --kill-after=15s 180s",
+		"Retain ripgrep setup diagnostics",
+		"sfl-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}",
+		"Install threat-detection ripgrep with bounded diagnostics",
+		"Retain threat-detection ripgrep setup diagnostics",
+		"sfl-threat-detection-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}",
 		`--argjson item_number "$ITEM_NUMBER"`,
 		`item_type: "pull_request"`,
 		`item_number: $item_number`,
@@ -141,6 +148,13 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		"SFL_REVIEW_EFFORT: ${{ inputs.review_effort || 'low' }}",
 		"Validate trusted review context",
 		"Untrusted or inconsistent review context",
+		"Install ripgrep with bounded diagnostics",
+		"timeout --signal=TERM --kill-after=15s 180s",
+		"Retain ripgrep setup diagnostics",
+		"sfl-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}",
+		"Install threat-detection ripgrep with bounded diagnostics",
+		"Retain threat-detection ripgrep setup diagnostics",
+		"sfl-threat-detection-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}",
 		`run-name: "SFL PR Review #${{ inputs.item_number }} ${{ inputs.base_sha }}:${{ inputs.head_sha }} retry=${{ inputs.retry_count }} dispatch=${{ inputs.dispatch_id }}"`,
 		"{{#runtime-import .github/workflows/sfl-pr-review.md}}",
 		"publish_review_provenance:",
@@ -210,6 +224,38 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		} else if validationIndex > stepIndex {
 			t.Errorf("trusted review context validation runs after %q", laterStep)
 		}
+	}
+	agentIndex := strings.Index(compiledText, "\n  agent:\n")
+	detectionIndex := strings.Index(compiledText, "\n  detection:\n")
+	if agentIndex < 0 {
+		t.Fatal("compiled reviewer is missing the agent job")
+	}
+	if detectionIndex < 0 {
+		t.Fatal("compiled reviewer is missing the threat-detection job")
+	}
+	agentText := compiledText[agentIndex:detectionIndex]
+	boundedAgentSetupIndex := strings.Index(
+		agentText,
+		"name: Install ripgrep with bounded diagnostics",
+	)
+	generatedAgentSetupIndex := strings.Index(agentText, "name: Install ripgrep\n")
+	if boundedAgentSetupIndex < 0 || generatedAgentSetupIndex < 0 {
+		t.Fatal("compiled agent job is missing bounded or generated ripgrep setup")
+	}
+	if boundedAgentSetupIndex > generatedAgentSetupIndex {
+		t.Error("bounded agent ripgrep setup runs after the generated installer")
+	}
+	detectionText := compiledText[detectionIndex:]
+	boundedDetectionSetupIndex := strings.Index(
+		detectionText,
+		"name: Install threat-detection ripgrep with bounded diagnostics",
+	)
+	generatedDetectionSetupIndex := strings.Index(detectionText, "name: Install ripgrep\n")
+	if boundedDetectionSetupIndex < 0 || generatedDetectionSetupIndex < 0 {
+		t.Fatal("compiled threat-detection job is missing bounded or generated ripgrep setup")
+	}
+	if boundedDetectionSetupIndex > generatedDetectionSetupIndex {
+		t.Error("bounded threat-detection ripgrep setup runs after the generated installer")
 	}
 
 	trigger := readContractFile(t, filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-auto.yml"))
@@ -350,10 +396,17 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		"vars.SFL_ENABLED != 'false'",
 		"github.event.workflow_run.conclusion == 'failure'",
 		"github.event.workflow_run.conclusion == 'timed_out'",
+		"github.event.workflow_run.conclusion == 'cancelled'",
 		"github.event.workflow_run.path == '.github/workflows/sfl-pr-review.lock.yml'",
 		"github.event.workflow_run.event == 'workflow_dispatch'",
 		"github.event.workflow_run.head_repository.full_name == github.repository",
 		"github.event.workflow_run.head_branch == github.event.repository.default_branch",
+		"Finalize interrupted review evidence",
+		"FAILED_RUN_TITLE: ${{ github.event.workflow_run.display_title }}",
+		"check.external_id === externalId && check.app?.id === 15368",
+		"status: 'completed'",
+		"conclusion: 'failure'",
+		"if: github.event.workflow_run.conclusion != 'cancelled'",
 		"--name sfl-review-run-provenance",
 		"--name safe-outputs-items",
 		"--name agent",
