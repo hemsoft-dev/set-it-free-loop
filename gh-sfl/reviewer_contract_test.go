@@ -257,6 +257,20 @@ func TestReviewerDeploymentContract(t *testing.T) {
 	if boundedDetectionSetupIndex > generatedDetectionSetupIndex {
 		t.Error("bounded threat-detection ripgrep setup runs after the generated installer")
 	}
+	boundedDetectionStepEnd := strings.Index(
+		detectionText,
+		"name: Retain threat-detection ripgrep setup diagnostics",
+	)
+	if boundedDetectionStepEnd < 0 || boundedDetectionStepEnd <= boundedDetectionSetupIndex {
+		t.Fatal("compiled threat-detection job is missing the bounded setup diagnostics step")
+	}
+	boundedDetectionStep := detectionText[boundedDetectionSetupIndex:boundedDetectionStepEnd]
+	if !strings.Contains(boundedDetectionStep, "if: always()") {
+		t.Error("bounded threat-detection ripgrep setup is skipped before the unconditional generated installer")
+	}
+	if strings.Contains(boundedDetectionStep, "run_detection") {
+		t.Error("bounded threat-detection ripgrep setup still inherits the detection guard")
+	}
 
 	trigger := readContractFile(t, filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-auto.yml"))
 	triggerText := normalizeLineEndings(trigger)
@@ -381,8 +395,11 @@ func TestReviewerDeploymentContract(t *testing.T) {
 	if strings.Contains(triggerText, "created_at >= $dispatched_at") {
 		t.Error("automatic reviewer trigger still trusts the runner clock to resolve a dispatched run")
 	}
-	if count := strings.Count(triggerText, "github.event.label.name == 'sfl-review'"); count != 2 {
-		t.Errorf("sfl-review label gate appears %d times, want concurrency and dispatch guards", count)
+	if count := strings.Count(triggerText, "github.event.label.name == 'sfl-review'"); count != 3 {
+		t.Errorf("sfl-review label gate appears %d times, want concurrency, dispatch, and approval guards", count)
+	}
+	if count := strings.Count(triggerText, "github.event.action != 'labeled'"); count != 2 {
+		t.Errorf("unrelated-label guard appears %d times, want dispatch and approval guards", count)
 	}
 	if count := strings.Count(triggerText, "consume_review_label"); count != 3 {
 		t.Errorf("sfl-review label consumer appears %d times, want definition plus active and new dispatch paths", count)
@@ -442,12 +459,15 @@ func TestReviewerDeploymentContract(t *testing.T) {
 		"The sealed title is computed first",
 		`EXPECTED_REVIEW_TITLE_PREFIX="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="`,
 		`NEWER_TITLE_MATCH`,
-		`A newer in-progress review for PR #${PR_NUMBER} at ${BASE_SHA}:${HEAD_SHA} has unavailable provenance`,
+		`A newer matching review for PR #${PR_NUMBER} at ${BASE_SHA}:${HEAD_SHA} suppresses duplicate retry`,
 		`PR #${PR_NUMBER} is no longer eligible`,
 	} {
 		if !strings.Contains(recovery, required) {
 			t.Errorf("review recovery workflow is missing contract text %q", required)
 		}
+	}
+	if strings.Contains(recovery, `.conclusion != "cancelled"`) {
+		t.Error("recovery ignores newer cancelled reviews and can dispatch an unwanted replacement")
 	}
 
 }

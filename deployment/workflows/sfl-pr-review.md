@@ -186,6 +186,7 @@ safe-outputs:
     steps:
       - name: Install threat-detection ripgrep with bounded diagnostics
         id: sfl-threat-detection-ripgrep
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
