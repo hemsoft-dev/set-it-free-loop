@@ -73,9 +73,30 @@ Assert-PatternSet $reviewer @(
     'Could not enumerate unresolved SFL findings',
     'Critical, High, Medium, or Low',
     'SFL Reviewer Approval',
-    'sfl-app\[bot\]'
+    'sfl-app\[bot\]',
+    'cancel-in-progress: false',
+    'pre_activation:',
+    'recovery_allowed:',
+    'Revalidate queued recovery ownership',
+    'github\.paginate\(',
+    'SFL_REVIEWER_LOGIN: sfl-app',
+    "inputs\.retry_count != '1' \|\| needs\.pre_activation\.outputs\.recovery_allowed == 'true'",
+    "inputs\.retry_count != '1' \|\| needs\.publish_review_provenance\.outputs\.recovery_allowed == 'true'",
+    "needs\.activation\.result == 'success' && \(inputs\.retry_count != '1' \|\| needs\.pre_activation\.outputs\.recovery_allowed == 'true'\)",
+    "needs\.pre_activation\.outputs\.recovery_allowed == 'true' && needs\.activation\.result == 'success'"
 )
 Assert-PatternAbsent $reviewer 'set-it-free-loop\[bot\]'
+
+Assert-PatternSet '.github\workflows\sfl-pr-review.lock.yml' @(
+    'cancel-in-progress: false',
+    'pre_activation:',
+    'recovery_allowed: \$\{\{ steps\.recovery_owner\.outputs\.recovery_allowed \}\}',
+    'Revalidate queued recovery ownership',
+    'github\.paginate\(',
+    'SFL_REVIEWER_LOGIN: sfl-app',
+    "inputs\.retry_count != '1' \|\| needs\.pre_activation\.outputs\.recovery_allowed == 'true'",
+    "inputs\.retry_count != '1' \|\| needs\.publish_review_provenance\.outputs\.recovery_allowed == 'true'"
+)
 
 Assert-PatternSet $auto @(
     "vars.SFL_ENABLED != 'false'",

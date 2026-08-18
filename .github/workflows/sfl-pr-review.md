@@ -46,12 +46,20 @@ on:
           - low
           - medium
           - high
+  permissions:
+    pull-requests: read
+  # gh-aw v0.86.2 only materializes pre_activation when on.steps is non-empty.
+  steps:
+    - name: Materialize queued recovery acquisition
+      run: ":"
 
 run-name: "SFL PR Review #${{ inputs.item_number }} ${{ inputs.base_sha }}:${{ inputs.head_sha }} retry=${{ inputs.retry_count }} dispatch=${{ inputs.dispatch_id }}"
 
 concurrency:
   group: sfl-pr-review-${{ inputs.item_number }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+if: inputs.retry_count != '1' || needs.publish_review_provenance.outputs.recovery_allowed == 'true'
 
 permissions:
   contents: read
@@ -508,11 +516,91 @@ safe-outputs:
               }
 
 jobs:
+  pre_activation:
+    outputs:
+      recovery_allowed: ${{ steps.recovery_owner.outputs.recovery_allowed }}
+    steps:
+      - name: Revalidate queued recovery ownership
+        id: recovery_owner
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          EXPECTED_BASE_SHA: ${{ inputs.base_sha }}
+          EXPECTED_HEAD_SHA: ${{ inputs.head_sha }}
+          PR_NUMBER: ${{ inputs.item_number }}
+          RETRY_COUNT: ${{ inputs.retry_count }}
+          SFL_REVIEWER_LOGIN: sfl-app
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const allow = value =>
+              core.setOutput('recovery_allowed', value ? 'true' : 'false');
+            if (process.env.RETRY_COUNT !== '1') {
+              allow(true);
+              return;
+            }
+            const pullNumber = Number(process.env.PR_NUMBER);
+            const expectedBase = process.env.EXPECTED_BASE_SHA;
+            const expectedHead = process.env.EXPECTED_HEAD_SHA;
+            const normalizeLogin = login =>
+              String(login || '').replace(/\[bot\]$/i, '').toLowerCase();
+            if (
+              !Number.isSafeInteger(pullNumber) ||
+              pullNumber <= 0 ||
+              !/^[0-9a-f]{40}$/.test(expectedBase || '') ||
+              !/^[0-9a-f]{40}$/.test(expectedHead || '')
+            ) {
+              core.setFailed('Recovery acquisition received invalid sealed pull request state');
+              return;
+            }
+            const { data: pullRequest } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pullNumber,
+            });
+            if (
+              pullRequest.state !== 'open' ||
+              pullRequest.draft ||
+              pullRequest.base.sha !== expectedBase ||
+              pullRequest.head.sha !== expectedHead
+            ) {
+              core.notice('Queued recovery is stale; suppressing agent execution');
+              allow(false);
+              return;
+            }
+            const reviews = await github.paginate(
+              github.rest.pulls.listReviews,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pullNumber,
+                per_page: 100,
+              }
+            );
+            const reviewerLogin = normalizeLogin(process.env.SFL_REVIEWER_LOGIN);
+            const existingReview = reviews.find(review =>
+              normalizeLogin(review.user?.login) === reviewerLogin &&
+              review.commit_id === expectedHead &&
+              review.state !== 'DISMISSED'
+            );
+            if (existingReview) {
+              core.notice(
+                `Queued recovery suppressed by current-head SFL review ${existingReview.id}`
+              );
+              allow(false);
+              return;
+            }
+            allow(true);
+
+  agent:
+    needs: [publish_review_provenance]
+
   publish_review_provenance:
-    if: always()
+    needs: [pre_activation, activation]
+    if: needs.activation.result == 'success' && (inputs.retry_count != '1' || needs.pre_activation.outputs.recovery_allowed == 'true')
     runs-on: ubuntu-slim
     outputs:
       evidence-check-run-id: ${{ steps.initialize-evidence.outputs.check-run-id }}
+      recovery_allowed: ${{ needs.pre_activation.outputs.recovery_allowed }}
     permissions:
       checks: write
       contents: read
@@ -630,8 +718,8 @@ jobs:
           retention-days: 1
 
   review_metadata:
-    needs: [agent, publish_review_provenance, safe_outputs, resolve_sfl_review_thread]
-    if: always()
+    needs: [pre_activation, activation, agent, publish_review_provenance, safe_outputs, resolve_sfl_review_thread]
+    if: always() && (inputs.retry_count != '1' || (needs.pre_activation.outputs.recovery_allowed == 'true' && needs.activation.result == 'success'))
     runs-on: ubuntu-slim
     permissions:
       checks: write
