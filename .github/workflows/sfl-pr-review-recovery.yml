@@ -58,15 +58,18 @@ jobs:
             const headSha = match[3];
             const externalId =
               `sfl-review:${pullNumber}:${baseSha}:${headSha}:${runId}`;
-            const { data } = await github.rest.checks.listForRef({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              ref: headSha,
-              check_name: 'SFL Review Evidence',
-              filter: 'all',
-              per_page: 100,
-            });
-            const matches = data.check_runs.filter(check =>
+            const checkRuns = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: headSha,
+                check_name: 'SFL Review Evidence',
+                filter: 'all',
+                per_page: 100,
+              }
+            );
+            const matches = checkRuns.filter(check =>
               check.external_id === externalId && check.app?.id === 15368
             );
             if (matches.length === 0) {
@@ -354,18 +357,23 @@ jobs:
           fi
           if ! TERMINAL_SIGNAL_COUNT=$(jq -r \
             '
-              if (.items | type) != "array" then
-                error("agent output items must be an array")
-              else
+              (
+                if type == "array" then
+                  .
+                elif type == "object" and (.items | type) == "array" then
+                  .items
+                else
+                  error("agent output must be an array or contain an items array")
+                end
+              ) as $items |
                 [
-                  .items[] |
+                  $items[] |
                   select(
                     .type == "missing_data" or
                     .type == "missing_tool" or
                     .type == "report_incomplete"
                   )
                 ] | length
-              end
             ' "$AGENT_OUTPUT"); then
             echo "::error::Review agent output is malformed; refusing an unproven retry"
             exit 1
