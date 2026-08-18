@@ -146,9 +146,13 @@ Assert-PatternSet $auto @(
     'SFL_ENABLED: \$\{\{ vars\.SFL_ENABLED \}\}',
     'required reviewer gate fails closed',
     'COMMENT_COMMAND_RESULT: \$\{\{ needs\.comment-command\.result \}\}',
+    'DISPATCH_RESULT: \$\{\{ needs\.dispatch\.result \}\}',
     'if \[ "\$EVENT_NAME" = "issue_comment" \].*\\',
     '&& \[ "\$COMMENT_COMMAND_RESULT" != "success" \]',
     'SFL comment command job concluded \$\{COMMENT_COMMAND_RESULT\}; refusing to bootstrap',
+    'if \[ "\$EVENT_NAME" != "issue_comment" \].*\\',
+    '&& \[ "\$DISPATCH_RESULT" != "success" \]',
+    'SFL dispatch job concluded \$\{DISPATCH_RESULT\}; refusing to bootstrap',
     'name: Finalize head approval check',
     'WAIT_OUTCOME: \$\{\{ steps\.wait-review\.outcome \}\}',
     'validate_review_run'
