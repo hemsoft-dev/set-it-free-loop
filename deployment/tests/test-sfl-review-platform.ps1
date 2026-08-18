@@ -192,6 +192,9 @@ Assert-PatternSet $recovery @(
     "if: github\.event\.workflow_run\.conclusion != 'cancelled'",
     'decide_review_recovery',
     'newer_run_suppresses_retry',
+    'sealed_title_retry_count',
+    'NEWER_RETRY_COUNT=',
+    'FINAL_NEWER_RETRY_COUNT=',
     'missing_data',
     'missing_tool',
     'report_incomplete',
@@ -209,7 +212,7 @@ Assert-PatternSet $recovery @(
     'FINAL_NEWER_PROVENANCE_ATTEMPTS=3',
     'for FINAL_NEWER_PROVENANCE_ATTEMPT in \$\(seq 1 "\$FINAL_NEWER_PROVENANCE_ATTEMPTS"\)',
     'FINAL_NEWER_PROVENANCE_MATCH=',
-    'while IFS=\$''\\t'' read -r FINAL_NEWER_RUN_ID FINAL_NEWER_RUN_STATUS FINAL_NEWER_RUN_CONCLUSION',
+    'while IFS=\$''\\t'' read -r FINAL_NEWER_RUN_ID FINAL_NEWER_RUN_STATUS FINAL_NEWER_RUN_TITLE FINAL_NEWER_RUN_CONCLUSION',
     'done <<< "\$FINAL_NEWER_RUNS"',
     'changed before recovery dispatch; suppressing stale retry'
 )

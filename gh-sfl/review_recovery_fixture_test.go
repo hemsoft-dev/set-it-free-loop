@@ -168,7 +168,11 @@ func TestNewerRunSuppressionFixtures(t *testing.T) {
 	script := `#!/usr/bin/env bash
 set -u
 ` + helper + `
-newer_run_suppresses_retry "$1" "$2" "$3" "$4" "${5:-}"
+if [ "${1:-}" = "--parse-title" ]; then
+  sealed_title_retry_count "$2" "$3"
+else
+  newer_run_suppresses_retry "$1" "$2" "$3" "$4" "${5:-}" "${6:-}"
+fi
 `
 	scriptPath := filepath.Join(t.TempDir(), "newer-run-suppression.sh")
 	if err := os.WriteFile(scriptPath, []byte(script), 0o700); err != nil {
@@ -222,6 +226,11 @@ newer_run_suppresses_retry "$1" "$2" "$3" "$4" "${5:-}"
 			output: "allow",
 		},
 		{
+			name:   "completed retry one without provenance suppresses",
+			args:   []string{"completed", "false", "false", "true", "failure", "1"},
+			output: "suppress",
+		},
+		{
 			name:   "cancelled unavailable provenance with title match allows",
 			args:   []string{"completed", "false", "false", "true", "cancelled"},
 			output: "allow",
@@ -261,6 +270,29 @@ newer_run_suppresses_retry "$1" "$2" "$3" "$4" "${5:-}"
 			}
 			if got := strings.TrimSpace(string(output)); got != fixture.output {
 				t.Fatalf("suppression=%q, want %q", got, fixture.output)
+			}
+		})
+	}
+
+	const titlePrefix = "SFL PR Review #126 base:head retry="
+	for _, fixture := range []struct {
+		name   string
+		title  string
+		output string
+	}{
+		{name: "retry zero", title: titlePrefix + "0 dispatch=auto-1", output: "0"},
+		{name: "retry one", title: titlePrefix + "1 dispatch=recovery-2", output: "1"},
+		{name: "unsupported retry", title: titlePrefix + "2 dispatch=manual", output: ""},
+		{name: "unrelated title", title: "SFL PR Review #127 base:head retry=1", output: ""},
+	} {
+		t.Run("sealed title "+fixture.name, func(t *testing.T) {
+			cmd := exec.Command(bash, scriptArgument, "--parse-title", fixture.title, titlePrefix)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("parse sealed retry title: %v\n%s", err, output)
+			}
+			if got := strings.TrimSpace(string(output)); got != fixture.output {
+				t.Fatalf("retry count=%q, want %q", got, fixture.output)
 			}
 		})
 	}

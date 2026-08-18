@@ -186,12 +186,22 @@ jobs:
             local provenance_match="$3"
             local title_match="$4"
             local run_conclusion="${5:-}"
+            local run_retry_count="${6:-}"
 
             # GitHub reports both maintainer cancellations and automatic
             # concurrency replacement as "cancelled". A cancelled run cannot
             # own recovery because this workflow does not retry cancelled runs.
             if [ "$run_conclusion" = "cancelled" ]; then
               echo "allow"
+              return 0
+            fi
+            # A completed retry=1 run is terminal for this sealed state even
+            # when it failed before provenance upload. Allowing another retry
+            # would exceed the one-retry recovery budget.
+            if [ "$run_status" = "completed" ] \
+              && [ "$title_match" = "true" ] \
+              && [ "$run_retry_count" = "1" ]; then
+              echo "suppress"
               return 0
             fi
             # An active newer run whose provenance has not materialized yet
@@ -213,6 +223,23 @@ jobs:
             fi
             echo "allow"
             return 0
+          }
+
+          sealed_title_retry_count() {
+            local title="$1"
+            local prefix="$2"
+            local suffix
+            local retry_count
+
+            case "$title" in
+              "$prefix"*) suffix="${title#"$prefix"}" ;;
+              *) echo ""; return 0 ;;
+            esac
+            retry_count="${suffix%% *}"
+            case "$retry_count" in
+              0|1) echo "$retry_count" ;;
+              *) echo "" ;;
+            esac
           }
           # END TESTABLE REVIEW RECOVERY POLICY
 
@@ -454,10 +481,12 @@ jobs:
             # polling window — 12 attempts (~330s) per unrelated run could
             # outlast the recovery grace and hand the failed PR
             # a premature sfl-human-required escalation.
+            NEWER_RETRY_COUNT=$(sealed_title_retry_count \
+              "$NEWER_RUN_TITLE" "$EXPECTED_REVIEW_TITLE_PREFIX")
             NEWER_TITLE_MATCH="false"
-            case "$NEWER_RUN_TITLE" in
-              "$EXPECTED_REVIEW_TITLE_PREFIX"*) NEWER_TITLE_MATCH="true" ;;
-            esac
+            if [ -n "$NEWER_RETRY_COUNT" ]; then
+              NEWER_TITLE_MATCH="true"
+            fi
             NEWER_PROVENANCE_ATTEMPTS=1
             if [ "$NEWER_RUN_STATUS" != "completed" ] \
               && [ "$NEWER_TITLE_MATCH" = "true" ]; then
@@ -497,7 +526,8 @@ jobs:
               "$NEWER_PROVENANCE_LOADED" \
               "$NEWER_PROVENANCE_MATCH" \
               "$NEWER_TITLE_MATCH" \
-              "$NEWER_RUN_CONCLUSION")" != "suppress" ]; then
+              "$NEWER_RUN_CONCLUSION" \
+              "$NEWER_RETRY_COUNT")" != "suppress" ]; then
               continue
             fi
             if [ "$NEWER_PROVENANCE_MATCH" = "true" ]; then
@@ -571,11 +601,17 @@ jobs:
               ] |
               sort_by(.id) |
               .[] |
-              [.id, .status, (.conclusion // "")] |
+              [.id, .status, (.display_title // ""), (.conclusion // "")] |
               @tsv
             ' <<< "$FINAL_WORKFLOW_RUN_PAGES")
-          while IFS=$'\t' read -r FINAL_NEWER_RUN_ID FINAL_NEWER_RUN_STATUS FINAL_NEWER_RUN_CONCLUSION; do
+          while IFS=$'\t' read -r FINAL_NEWER_RUN_ID FINAL_NEWER_RUN_STATUS FINAL_NEWER_RUN_TITLE FINAL_NEWER_RUN_CONCLUSION; do
             [ -n "$FINAL_NEWER_RUN_ID" ] || continue
+            FINAL_NEWER_RETRY_COUNT=$(sealed_title_retry_count \
+              "$FINAL_NEWER_RUN_TITLE" "$EXPECTED_REVIEW_TITLE_PREFIX")
+            FINAL_NEWER_TITLE_MATCH="false"
+            if [ -n "$FINAL_NEWER_RETRY_COUNT" ]; then
+              FINAL_NEWER_TITLE_MATCH="true"
+            fi
             FINAL_NEWER_PROVENANCE_DIR="$ARTIFACT_DIR/final-newer-${FINAL_NEWER_RUN_ID}"
             FINAL_NEWER_PROVENANCE_LOADED="false"
             FINAL_NEWER_PROVENANCE_MATCH="false"
@@ -615,8 +651,9 @@ jobs:
               "$FINAL_NEWER_RUN_STATUS" \
               "$FINAL_NEWER_PROVENANCE_LOADED" \
               "$FINAL_NEWER_PROVENANCE_MATCH" \
-              "true" \
-              "$FINAL_NEWER_RUN_CONCLUSION")" = "suppress" ]; then
+              "$FINAL_NEWER_TITLE_MATCH" \
+              "$FINAL_NEWER_RUN_CONCLUSION" \
+              "$FINAL_NEWER_RETRY_COUNT")" = "suppress" ]; then
               echo "Newer review run ${FINAL_NEWER_RUN_ID} acquired PR #${PR_NUMBER} before recovery dispatch; suppressing duplicate retry"
               exit 0
             fi
