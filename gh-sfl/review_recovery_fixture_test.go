@@ -231,14 +231,14 @@ fi
 			output: "suppress",
 		},
 		{
-			name:   "cancelled unavailable provenance with title match allows",
+			name:   "cancelled unavailable provenance with title match suppresses",
 			args:   []string{"completed", "false", "false", "true", "cancelled"},
-			output: "allow",
+			output: "suppress",
 		},
 		{
-			name:   "cancelled matching provenance allows",
+			name:   "cancelled matching provenance suppresses",
 			args:   []string{"completed", "true", "true", "true", "cancelled"},
-			output: "allow",
+			output: "suppress",
 		},
 		{
 			name:   "cancelled unavailable provenance without title match allows",
