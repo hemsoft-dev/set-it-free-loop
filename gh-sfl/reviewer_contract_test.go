@@ -381,8 +381,11 @@ func TestReviewerDeploymentContract(t *testing.T) {
 	if strings.Contains(triggerText, "created_at >= $dispatched_at") {
 		t.Error("automatic reviewer trigger still trusts the runner clock to resolve a dispatched run")
 	}
-	if count := strings.Count(triggerText, "github.event.label.name == 'sfl-review'"); count != 2 {
-		t.Errorf("sfl-review label gate appears %d times, want concurrency and dispatch guards", count)
+	if count := strings.Count(triggerText, "github.event.label.name == 'sfl-review'"); count != 3 {
+		t.Errorf("sfl-review label gate appears %d times, want concurrency, dispatch, and approval guards", count)
+	}
+	if count := strings.Count(triggerText, "github.event.action != 'labeled'"); count != 2 {
+		t.Errorf("unrelated-label guard appears %d times, want dispatch and approval guards", count)
 	}
 	if count := strings.Count(triggerText, "consume_review_label"); count != 3 {
 		t.Errorf("sfl-review label consumer appears %d times, want definition plus active and new dispatch paths", count)

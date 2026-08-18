@@ -158,6 +158,15 @@ Assert-PatternAbsent $auto '\.draft // true'
 Assert-PatternAbsent $auto 'has\("draft"\) then \.draft'
 
 $autoContent = Read-RepoFile $auto
+$labelGuardCount = ([regex]::Matches(
+        $autoContent,
+        [regex]::Escape("github.event.action != 'labeled'")
+    )).Count
+if ($labelGuardCount -ne 2) {
+    $failures.Add(
+        "Auto-review dispatch and approval jobs must both reject unrelated label events; found $labelGuardCount guards."
+    )
+}
 if ($autoContent -match 'permission-pull-requests:\s*read') {
     $failures.Add('Auto-review dispatcher cannot consume pull-request labels with a read-only pull-request token.')
 }
