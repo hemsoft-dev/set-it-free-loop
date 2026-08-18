@@ -556,21 +556,24 @@ jobs:
             echo "PR #${PR_NUMBER} changed before recovery dispatch; suppressing stale retry"
             exit 0
           fi
-          FINAL_NEWER_RUNS=$(gh api \
+          FINAL_WORKFLOW_RUN_PAGES=$(gh api \
             "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
-            | jq -r \
-              --arg expected_title "$EXPECTED_REVIEW_TITLE_PREFIX" \
-              --argjson failed_run_id "$FAILED_RUN_ID" '
-                .workflow_runs
-                | map(
-                    select(.id > $failed_run_id)
-                    | select((.display_title // "") | startswith($expected_title))
-                  )
-                | sort_by(.id)
-                | .[]
-                | [.id, .status, (.conclusion // "")]
-                | @tsv
-              ')
+            --paginate \
+            --slurp)
+          FINAL_NEWER_RUNS=$(jq -r \
+            --arg expected_title "$EXPECTED_REVIEW_TITLE_PREFIX" \
+            --argjson failed_run_id "$FAILED_RUN_ID" '
+              [
+                .[] |
+                .workflow_runs[] |
+                select(.id > $failed_run_id) |
+                select((.display_title // "") | startswith($expected_title))
+              ] |
+              sort_by(.id) |
+              .[] |
+              [.id, .status, (.conclusion // "")] |
+              @tsv
+            ' <<< "$FINAL_WORKFLOW_RUN_PAGES")
           while IFS=$'\t' read -r FINAL_NEWER_RUN_ID FINAL_NEWER_RUN_STATUS FINAL_NEWER_RUN_CONCLUSION; do
             [ -n "$FINAL_NEWER_RUN_ID" ] || continue
             FINAL_NEWER_PROVENANCE_DIR="$ARTIFACT_DIR/final-newer-${FINAL_NEWER_RUN_ID}"
