@@ -187,8 +187,13 @@ newer_run_suppresses_retry "$1" "$2" "$3" "$4" "${5:-}"
 		output string
 	}{
 		{
-			name:   "provenance match suppresses",
-			args:   []string{"completed", "true", "true", "false"},
+			name:   "completed successful provenance match suppresses",
+			args:   []string{"completed", "true", "true", "false", "success"},
+			output: "suppress",
+		},
+		{
+			name:   "completed failed provenance match suppresses",
+			args:   []string{"completed", "true", "true", "false", "failure"},
 			output: "suppress",
 		},
 		{
@@ -217,9 +222,14 @@ newer_run_suppresses_retry "$1" "$2" "$3" "$4" "${5:-}"
 			output: "allow",
 		},
 		{
-			name:   "cancelled unavailable provenance with title match suppresses",
+			name:   "cancelled unavailable provenance with title match allows",
 			args:   []string{"completed", "false", "false", "true", "cancelled"},
-			output: "suppress",
+			output: "allow",
+		},
+		{
+			name:   "cancelled matching provenance allows",
+			args:   []string{"completed", "true", "true", "true", "cancelled"},
+			output: "allow",
 		},
 		{
 			name:   "cancelled unavailable provenance without title match allows",

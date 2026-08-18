@@ -204,6 +204,8 @@ Assert-PatternSet $recovery @(
     'Last-moment interlock',
     'FINAL_PULL_REQUEST=',
     'FINAL_NEWER_RUN_ID=',
+    'FINAL_NEWER_RUN_STATUS=',
+    'FINAL_NEWER_PROVENANCE_MATCH=',
     'changed before recovery dispatch; suppressing stale retry'
 )
 
