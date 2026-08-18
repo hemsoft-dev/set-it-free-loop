@@ -556,27 +556,23 @@ jobs:
             echo "PR #${PR_NUMBER} changed before recovery dispatch; suppressing stale retry"
             exit 0
           fi
-          FINAL_NEWER_RUN=$(gh api \
+          FINAL_NEWER_RUNS=$(gh api \
             "repos/${REPOSITORY}/actions/workflows/sfl-pr-review.lock.yml/runs?event=workflow_dispatch&per_page=100" \
-            | jq -c \
+            | jq -r \
               --arg expected_title "$EXPECTED_REVIEW_TITLE_PREFIX" \
               --argjson failed_run_id "$FAILED_RUN_ID" '
-                [.workflow_runs[]
-                  | select(.id > $failed_run_id)
-                  | select((.display_title // "") | startswith($expected_title))]
+                .workflow_runs
+                | map(
+                    select(.id > $failed_run_id)
+                    | select((.display_title // "") | startswith($expected_title))
+                  )
                 | sort_by(.id)
-                | last
-                | if . == null then empty else {
-                    id,
-                    status,
-                    conclusion,
-                    display_title
-                  } end
+                | .[]
+                | [.id, .status, (.conclusion // "")]
+                | @tsv
               ')
-          if [ -n "$FINAL_NEWER_RUN" ]; then
-            FINAL_NEWER_RUN_ID=$(jq -r '.id' <<< "$FINAL_NEWER_RUN")
-            FINAL_NEWER_RUN_STATUS=$(jq -r '.status' <<< "$FINAL_NEWER_RUN")
-            FINAL_NEWER_RUN_CONCLUSION=$(jq -r '.conclusion // ""' <<< "$FINAL_NEWER_RUN")
+          while IFS=$'\t' read -r FINAL_NEWER_RUN_ID FINAL_NEWER_RUN_STATUS FINAL_NEWER_RUN_CONCLUSION; do
+            [ -n "$FINAL_NEWER_RUN_ID" ] || continue
             FINAL_NEWER_PROVENANCE_DIR="$ARTIFACT_DIR/final-newer-${FINAL_NEWER_RUN_ID}"
             FINAL_NEWER_PROVENANCE_LOADED="false"
             FINAL_NEWER_PROVENANCE_MATCH="false"
@@ -609,6 +605,6 @@ jobs:
               echo "Newer review run ${FINAL_NEWER_RUN_ID} acquired PR #${PR_NUMBER} before recovery dispatch; suppressing duplicate retry"
               exit 0
             fi
-          fi
+          done <<< "$FINAL_NEWER_RUNS"
           gh api "${dispatch_args[@]}"
           echo "Dispatched one trusted missing-output retry for PR #${PR_NUMBER} at ${HEAD_SHA}"

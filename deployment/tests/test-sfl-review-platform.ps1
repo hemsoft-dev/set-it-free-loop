@@ -203,9 +203,10 @@ Assert-PatternSet $recovery @(
     'Review agent output is malformed; refusing an unproven retry',
     'Last-moment interlock',
     'FINAL_PULL_REQUEST=',
-    'FINAL_NEWER_RUN_ID=',
-    'FINAL_NEWER_RUN_STATUS=',
+    'FINAL_NEWER_RUNS=',
     'FINAL_NEWER_PROVENANCE_MATCH=',
+    'while IFS=\$''\\t'' read -r FINAL_NEWER_RUN_ID FINAL_NEWER_RUN_STATUS FINAL_NEWER_RUN_CONCLUSION',
+    'done <<< "\$FINAL_NEWER_RUNS"',
     'changed before recovery dispatch; suppressing stale retry'
 )
 
