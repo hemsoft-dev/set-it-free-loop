@@ -48,9 +48,16 @@ type repositoryRuleset struct {
 }
 
 type workflowRunSummary struct {
+	ID         int64  `json:"id"`
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	URL        string `json:"html_url"`
+}
+
+type workflowJobSummary struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
 }
 
 // SFL state labels in priority order
@@ -622,21 +629,44 @@ func latestReviewerRun(owner, repo string) (workflowRunSummary, error) {
 	if err != nil {
 		return workflowRunSummary{}, err
 	}
+	return latestReviewerRunWithClient(client, owner, repo)
+}
+
+func latestReviewerRunWithClient(client restAPI, owner, repo string) (workflowRunSummary, error) {
 	var response struct {
 		Runs []workflowRunSummary `json:"workflow_runs"`
 	}
 	path := fmt.Sprintf(
-		"repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml/runs?per_page=1",
+		"repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml/runs?actor=chatgpt-codex-connector%%5Bbot%%5D&per_page=20",
 		owner,
 		repo,
 	)
 	if err := client.Get(path, &response); err != nil {
 		return workflowRunSummary{}, err
 	}
-	if len(response.Runs) == 0 {
-		return workflowRunSummary{}, nil
+	for _, run := range response.Runs {
+		if run.Status != "completed" {
+			return run, nil
+		}
+		var jobs struct {
+			Jobs []workflowJobSummary `json:"jobs"`
+		}
+		jobsPath := fmt.Sprintf(
+			"repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=100",
+			owner,
+			repo,
+			run.ID,
+		)
+		if err := client.Get(jobsPath, &jobs); err != nil {
+			return workflowRunSummary{}, err
+		}
+		for _, job := range jobs.Jobs {
+			if job.Name == "Observe authenticated Codex review" && job.Conclusion != "skipped" {
+				return run, nil
+			}
+		}
 	}
-	return response.Runs[0], nil
+	return workflowRunSummary{}, nil
 }
 
 func parseStatusOptions(args []string, stderr io.Writer) (statusOptions, error) {

@@ -219,9 +219,18 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func normalizeManifestForSync(manifest *sflManifest, installedTier string) {
+	components := manifest.Components[:0]
+	for _, component := range manifest.Components {
+		if component != "sfl-pr-review-recovery" {
+			components = append(components, component)
+		}
+	}
+	manifest.Components = components
+
 	if installedTier != "reviewer" {
 		return
 	}
+
 	manifest.Tier = "reviewer"
 	manifest.Components = append([]string(nil), tierComponents["reviewer"]...)
 }
