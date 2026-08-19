@@ -144,6 +144,25 @@ func TestValidateDeploymentTargetRejectsScopeBeforeGitHubAccess(t *testing.T) {
 	}
 }
 
+func TestValidateReviewTargetAllowsSourceRepository(t *testing.T) {
+	oldGHExec := ghExec
+	t.Cleanup(func() { ghExec = oldGHExec })
+	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
+		if strings.Join(args, " ") != "api user --jq .login" {
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected gh arguments: %v", args)
+		}
+		return *bytes.NewBufferString("HemSoft\n"), bytes.Buffer{}, nil
+	}
+
+	if err := validateHemSoftTarget("HemSoft", motherRepoName); err != nil {
+		t.Fatalf("validateHemSoftTarget() rejected source review: %v", err)
+	}
+	if err := validateDeploymentTarget("HemSoft", motherRepoName); err == nil ||
+		!strings.Contains(err.Error(), "is protected") {
+		t.Fatalf("validateDeploymentTarget() source error = %v, want deployment protection", err)
+	}
+}
+
 func TestHemSoftWorkflowSourceRouting(t *testing.T) {
 	for name, want := range map[string]string{
 		"sfl-pr-review-auto.yml": "deployment/infrastructure/sfl-pr-review-auto.yml",

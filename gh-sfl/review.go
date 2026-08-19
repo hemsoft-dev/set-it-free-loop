@@ -113,7 +113,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return err
 	}
 
-	owner, repo, err := parseMutationTarget(opts.repo)
+	owner, repo, err := parseReviewTarget(opts.repo)
 	if err != nil {
 		return err
 	}

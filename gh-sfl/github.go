@@ -138,6 +138,17 @@ func parseMutationTarget(repoFlag string) (string, string, error) {
 	return owner, repo, nil
 }
 
+func parseReviewTarget(repoFlag string) (string, string, error) {
+	owner, repo, err := parseRepoFlag(repoFlag)
+	if err != nil {
+		return "", "", err
+	}
+	if err := validateHemSoftTarget(owner, repo); err != nil {
+		return "", "", err
+	}
+	return owner, repo, nil
+}
+
 func validateDeploymentTarget(owner, repo string) error {
 	if !strings.EqualFold(owner, "HemSoft") {
 		return fmt.Errorf("%s/%s is outside the HemSoft repository scope", owner, repo)
@@ -145,7 +156,13 @@ func validateDeploymentTarget(owner, repo string) error {
 	if strings.EqualFold(repo, motherRepoName) {
 		return fmt.Errorf("%s/%s is protected and cannot be targeted by SFL deployment operations", owner, repo)
 	}
+	return validateHemSoftTarget(owner, repo)
+}
 
+func validateHemSoftTarget(owner, repo string) error {
+	if !strings.EqualFold(owner, "HemSoft") {
+		return fmt.Errorf("%s/%s is outside the HemSoft repository scope", owner, repo)
+	}
 	loginOut, loginErr, err := ghExec("api", "user", "--jq", ".login")
 	if err != nil {
 		return fmt.Errorf("checking GitHub CLI identity: %s: %w", loginErr.String(), err)

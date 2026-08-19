@@ -1615,7 +1615,6 @@ func TestMutatingCommandsRejectProtectedRepositoryBeforeAccess(t *testing.T) {
 		{name: "sync", run: runSync, args: func(target string) []string { return []string{"--repo", target} }},
 		{name: "gate", run: runGate, args: func(target string) []string { return []string{"--repo", target} }},
 		{name: "add", run: runAdd, args: func(target string) []string { return []string{"--repo", target, "policy-manager"} }},
-		{name: "review", run: runReview, args: func(target string) []string { return []string{"--repo", target, "1"} }},
 		{name: "uninstall", run: runUninstall, args: func(target string) []string { return []string{"--repo", target, "--force"} }},
 		{name: "start", run: runStart, args: func(target string) []string { return []string{"--repo", target} }},
 		{name: "stop", run: runStop, args: func(target string) []string { return []string{"--repo", target} }},
