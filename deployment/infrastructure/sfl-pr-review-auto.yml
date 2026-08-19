@@ -39,7 +39,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
-      statuses: read
+      statuses: write
     steps:
       - name: Fail the gate while a registered Codex review is pending
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -155,6 +155,15 @@ jobs:
               details_url: comment.data.html_url,
               external_id: externalId,
               output: {title: "SFL Codex review pending", summary: reason},
+            });
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: currentHead,
+              state: "pending",
+              context: "SFL Reviewer Gate Runner",
+              target_url: comment.data.html_url,
+              description: "Waiting for the registered Codex review result",
             });
             core.setFailed(reason);
 
@@ -321,6 +330,11 @@ jobs:
             }
             const currentBase = pull.data.base.sha;
             const currentHead = pull.data.head.sha;
+            // BEGIN TESTABLE REQUIRED GATE TARGET
+            function requiredGateTarget(pull) {
+              return pull.head.sha.toLowerCase();
+            }
+            // END TESTABLE REQUIRED GATE TARGET
             const configuredBaseBranch = process.env.SFL_REVIEW_BASE_BRANCH || "";
             if (!configuredBaseBranch) throw new Error("The deployed SFL review base branch is empty");
             if (defaultBranch !== configuredBaseBranch) {
@@ -336,6 +350,15 @@ jobs:
                 details_url: artifact.html_url || pull.data.html_url,
                 external_id: `sfl-codex-review:default-branch-mismatch:${encodeURIComponent(configuredBaseBranch)}:${encodeURIComponent(defaultBranch)}`,
                 output: {title: "SFL Codex review blocked", summary: reason},
+              });
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: currentHead,
+                state: "failure",
+                context: "SFL Reviewer Gate Runner",
+                target_url: artifact.html_url || pull.data.html_url,
+                description: "The configured review base no longer matches the default branch",
               });
               core.setFailed(reason);
               return;
@@ -377,8 +400,7 @@ jobs:
                 (check.external_id || "").endsWith(artifactSuffix),
             );
             if (artifactAlreadyConsumed) {
-              core.info("This exact Codex artifact already completed a review request");
-              return;
+              core.info("This exact Codex artifact already completed a review request; verifying its required status");
             }
             const artifactTime = Date.parse(artifact.created_at || artifact.submitted_at || "");
             const isOwnerRequest = comment =>
@@ -510,8 +532,7 @@ jobs:
                    (check.external_id || "").startsWith(`${pendingRequestPrefix}:artifact:`)),
               );
               if (pendingRequestAlreadyTerminal) {
-                core.info("This Codex review request already has a terminal SFL gate");
-                return;
+                core.info("This Codex review request already has a terminal SFL audit; verifying its required status");
               }
             }
             const activeInvalidationRuns = async () => {
@@ -564,6 +585,15 @@ jobs:
                 details_url: artifact.html_url || pull.data.html_url,
                 external_id: externalId,
                 output: {title: "SFL Codex review blocked", summary: reason},
+              });
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: currentHead,
+                state: "failure",
+                context: "SFL Reviewer Gate Runner",
+                target_url: artifact.html_url || pull.data.html_url,
+                description: "An invalidation is still active for this pull request",
               });
               core.setFailed(reason);
             };
@@ -698,6 +728,21 @@ jobs:
                    (candidate.requestTime === requestTime &&
                     candidate.comment.id > request.comment.id)),
               );
+            // BEGIN TESTABLE REQUIRED GATE REPAIR
+            function requiredGateRepair(check, statuses) {
+              if (!check || check.status !== "completed" ||
+                  (check.conclusion !== "success" && check.conclusion !== "failure")) {
+                return null;
+              }
+              const expectedState = check.conclusion;
+              const latestGateStatus = statuses.find(status =>
+                status.context === "SFL Reviewer Gate Runner" &&
+                ((status.creator && status.creator.login) || "").toLowerCase() === "github-actions[bot]");
+              return latestGateStatus && latestGateStatus.state === expectedState
+                ? null
+                : {state: expectedState};
+            }
+            // END TESTABLE REQUIRED GATE REPAIR
             if (reviewContextToken(checks) !== contextToken) {
               core.info("The matching Codex request is not bound to the latest pull context");
               return;
@@ -745,6 +790,21 @@ jobs:
                  (check.external_id || "").startsWith(`${externalIdPrefix}:artifact:`)),
             );
             if (existing) {
+              const repair = requiredGateRepair(existing, latestRequestStatuses);
+              if (repair) {
+                await github.rest.repos.createCommitStatus({
+                  owner,
+                  repo,
+                  sha: currentHead,
+                  state: repair.state,
+                  context: "SFL Reviewer Gate Runner",
+                  target_url: existing.details_url || artifact.html_url || pull.data.html_url,
+                  description: repair.state === "success"
+                    ? "Restored the required status for the completed Codex review"
+                    : "Restored the blocking status for the failed Codex review",
+                });
+                core.info(`Restored the ${repair.state} required status from the terminal SFL audit`);
+              }
               core.info("This Codex review request already has a terminal SFL gate");
               return;
             }
@@ -762,6 +822,15 @@ jobs:
                 details_url: detailsURL,
                 external_id: externalId,
                 output: {title, summary: result.reason},
+              });
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: currentHead,
+                state: "failure",
+                context: "SFL Reviewer Gate Runner",
+                target_url: detailsURL,
+                description: "Codex review did not satisfy the required gate",
               });
               core.setFailed(result.reason);
               return;
@@ -820,10 +889,9 @@ jobs:
                 invalidationRuns,
               };
             };
-            const publicationChanged = (state, mergeSha = "") => state.pull.state !== "open" ||
+            const publicationChanged = state => state.pull.state !== "open" ||
               state.pull.head.sha !== currentHead ||
               state.pull.base.sha !== currentBase ||
-              (mergeSha && state.pull.merge_commit_sha !== mergeSha) ||
               state.openPulls.length !== 1 ||
               state.openPulls[0].number !== pullNumber ||
               state.supersededRequest ||
@@ -854,7 +922,7 @@ jobs:
                 await github.rest.repos.createCommitStatus({
                   owner,
                   repo,
-                  sha: currentMerge,
+                  sha: requiredGateSha,
                   state: "failure",
                   context: "SFL Reviewer Gate Runner",
                   target_url: detailsURL,
@@ -868,19 +936,15 @@ jobs:
               await failPublishedSuccess(publicationChangeReason(confirmedState));
               return;
             }
-            const currentMerge = confirmedState.pull.merge_commit_sha;
-            if (!currentMerge) {
-              await failPublishedSuccess("GitHub has not prepared the pull request merge commit; rerun the review after mergeability is computed");
-              return;
-            }
+            const requiredGateSha = requiredGateTarget(confirmedState.pull);
             requiredPublished = await github.rest.repos.createCommitStatus({
               owner,
               repo,
-              sha: currentMerge,
+              sha: requiredGateSha,
               state: "pending",
               context: "SFL Reviewer Gate Runner",
               target_url: detailsURL,
-              description: "Validating Codex review for the pull request merge commit",
+              description: "Validating Codex review for the immutable pull request head",
             });
             await github.rest.checks.update({
               owner,
@@ -896,14 +960,14 @@ jobs:
             await github.rest.repos.createCommitStatus({
               owner,
               repo,
-              sha: currentMerge,
+              sha: requiredGateSha,
               state: "success",
               context: "SFL Reviewer Gate Runner",
               target_url: detailsURL,
               description: "Codex found no major issues on the reviewed pull request head",
             });
             const postSuccessState = await publicationState();
-            if (publicationChanged(postSuccessState, currentMerge)) {
+            if (publicationChanged(postSuccessState)) {
               await failPublishedSuccess(publicationChangeReason(postSuccessState));
             }
 
@@ -925,6 +989,7 @@ jobs:
       checks: write
       contents: read
       pull-requests: read
+      statuses: write
     steps:
       - name: Publish the blocking gate until the new diff is reviewed
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -1047,6 +1112,15 @@ jobs:
               external_id: invalidationId,
               output: {title: "SFL Codex review invalidated", summary: reason},
             });
+            await github.rest.repos.createCommitStatus({
+              owner,
+              repo,
+              sha: pull.head.sha,
+              state: "failure",
+              context: "SFL Reviewer Gate Runner",
+              target_url: pull.html_url,
+              description: "The pull request context changed after review",
+            });
             core.info(reason);
 
   invalidate-base-advance:
@@ -1062,6 +1136,7 @@ jobs:
       checks: write
       contents: read
       pull-requests: read
+      statuses: write
     steps:
       - name: Fail gates for pull requests whose base branch advanced
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -1186,6 +1261,15 @@ jobs:
                 details_url: pull.html_url,
                 external_id: invalidationId,
                 output: {title: "SFL Codex review invalidated", summary: reason},
+              });
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: pull.head.sha,
+                state: "failure",
+                context: "SFL Reviewer Gate Runner",
+                target_url: pull.html_url,
+                description: "The reviewed base branch advanced after review",
               });
             };
             const failures = [];

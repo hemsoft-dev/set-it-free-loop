@@ -76,9 +76,11 @@ foreach ($pattern in @(
     'lifecycleToken !== initialLifecycleToken',
     'state.invalidationRuns.length > 0',
     'const publicationState = async () =>',
-    'const currentMerge = confirmedState.pull.merge_commit_sha',
+    'function requiredGateTarget(pull)',
+    'function requiredGateRepair(check, statuses)',
+    'const requiredGateSha = requiredGateTarget(confirmedState.pull)',
     'requiredPublished = await github.rest.repos.createCommitStatus({',
-    'sha: currentMerge',
+    'sha: requiredGateSha',
     'context: "SFL Reviewer Gate Runner"',
     'state: "pending"',
     'state: "success"',
@@ -161,6 +163,77 @@ foreach ($pattern in @(
 
 if ($canonical -match [regex]::Escape('requiredPublished.data.sha')) {
     throw 'Merge-gate invalidation relies on a SHA absent from commit-status responses.'
+}
+if ($canonical -match [regex]::Escape('merge_commit_sha') -or
+    $canonical -match [regex]::Escape('sha: currentMerge')) {
+    throw 'The required reviewer gate still depends on GitHub''s regenerable synthetic merge commit.'
+}
+$statusWritePermissions = [regex]::Matches($canonical, '(?m)^\s+statuses: write\s*$')
+if ($statusWritePermissions.Count -ne 4) {
+    throw "Expected status-write permission on all four gate jobs, found $($statusWritePermissions.Count)."
+}
+$requiredStatusWrites = [regex]::Matches(
+    $canonical,
+    '(?s)github\.rest\.repos\.createCommitStatus\(\{(.*?)\}\);'
+)
+if ($requiredStatusWrites.Count -ne 10) {
+    throw "Expected ten required-gate status transitions, found $($requiredStatusWrites.Count)."
+}
+foreach ($statusWrite in $requiredStatusWrites) {
+    if ($statusWrite.Groups[1].Value -notmatch '(?m)^\s+sha: (currentHead|requiredGateSha|pull\.head\.sha),\s*$') {
+        throw 'A required-gate status transition does not target the immutable pull request head.'
+    }
+}
+
+$gateTargetMatch = [regex]::Match(
+    $canonical,
+    '(?s)// BEGIN TESTABLE REQUIRED GATE TARGET\s*(.*?)\s*// END TESTABLE REQUIRED GATE TARGET'
+)
+if (-not $gateTargetMatch.Success) {
+    throw 'Could not locate the testable required-gate target helper.'
+}
+$gateTargetTest = @"
+$($gateTargetMatch.Groups[1].Value)
+const head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const before = {head: {sha: head}, merge_commit_sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"};
+const after = {head: {sha: head}, merge_commit_sha: "cccccccccccccccccccccccccccccccccccccccc"};
+if (requiredGateTarget(before) !== head || requiredGateTarget(after) !== head) {
+  throw new Error("Required gate target changed when only the synthetic merge SHA changed");
+}
+"@
+$gateTargetTest | node -
+if ($LASTEXITCODE -ne 0) {
+    throw 'Required-gate target fixture tests failed.'
+}
+
+$gateRepairMatch = [regex]::Match(
+    $canonical,
+    '(?s)// BEGIN TESTABLE REQUIRED GATE REPAIR\s*(.*?)\s*// END TESTABLE REQUIRED GATE REPAIR'
+)
+if (-not $gateRepairMatch.Success) {
+    throw 'Could not locate the testable required-gate repair helper.'
+}
+$gateRepairTest = @"
+$($gateRepairMatch.Groups[1].Value)
+const actions = state => ({context: "SFL Reviewer Gate Runner", state, creator: {login: "github-actions[bot]"}});
+const successCheck = {status: "completed", conclusion: "success"};
+const failureCheck = {status: "completed", conclusion: "failure"};
+const cases = [
+  ["partial success publication", successCheck, [actions("pending")], "success"],
+  ["already repaired success", successCheck, [actions("success")], null],
+  ["partial failure publication", failureCheck, [actions("pending")], "failure"],
+  ["manual status cannot suppress repair", successCheck, [{...actions("success"), creator: {login: "HemSoft"}}], "success"],
+  ["in-progress audit is not terminal", {status: "in_progress", conclusion: null}, [actions("pending")], null],
+];
+for (const [name, check, statuses, expected] of cases) {
+  const repair = requiredGateRepair(check, statuses);
+  const actual = repair && repair.state;
+  if (actual !== expected) throw new Error(name + ": got " + actual + ", want " + expected);
+}
+"@
+$gateRepairTest | node -
+if ($LASTEXITCODE -ne 0) {
+    throw 'Required-gate repair fixture tests failed.'
 }
 
 if ($canonical -match [regex]::Escape('if (context.payload.deleted) return;')) {
