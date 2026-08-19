@@ -29,6 +29,10 @@ type reviewREST struct {
 	updatedAt            string
 	workflowRunResponses [][]map[string]any
 	workflowRunGets      int
+	lifecycleResponses   [][]reviewLifecycleEvent
+	lifecycleGets        int
+	reviewerEnabled      []string
+	reviewerEnabledGets  int
 	pullResponses        []map[string]any
 	pullGets             int
 	posts                int
@@ -74,7 +78,16 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 		}
 		return decodeTestResponse(response, map[string]any{"state": state})
 	case strings.Contains(path, "/actions/variables/SFL_ENABLED"):
-		return decodeTestResponse(response, map[string]any{"value": "true"})
+		f.reviewerEnabledGets++
+		value := "true"
+		if len(f.reviewerEnabled) > 0 {
+			index := f.reviewerEnabledGets - 1
+			if index >= len(f.reviewerEnabled) {
+				index = len(f.reviewerEnabled) - 1
+			}
+			value = f.reviewerEnabled[index]
+		}
+		return decodeTestResponse(response, map[string]any{"value": value})
 	case path == "repos/HemSoft/consumer":
 		defaultBranch := f.defaultBranch
 		if defaultBranch == "" {
@@ -90,6 +103,16 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 		return decodeTestResponse(response, map[string]any{"check_runs": f.checkRuns})
 	case strings.Contains(path, "/statuses?"):
 		return decodeTestResponse(response, f.statuses)
+	case strings.Contains(path, "/issues/94/events?"):
+		f.lifecycleGets++
+		if len(f.lifecycleResponses) == 0 {
+			return decodeTestResponse(response, []reviewLifecycleEvent{})
+		}
+		index := f.lifecycleGets - 1
+		if index >= len(f.lifecycleResponses) {
+			index = len(f.lifecycleResponses) - 1
+		}
+		return decodeTestResponse(response, f.lifecycleResponses[index])
 	case strings.Contains(path, "/pulls/"):
 		f.pullGets++
 		if len(f.pullResponses) > 0 {
@@ -337,6 +360,61 @@ func TestRunReviewRevalidatesPullAfterRetryWait(t *testing.T) {
 	}
 	if rest.posts != 0 {
 		t.Fatalf("post-wait context change posts = %d, want 0", rest.posts)
+	}
+}
+
+func TestRunReviewRechecksMaintenanceModeBeforePosting(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	rest := &reviewREST{
+		reviewerEnabled: []string{"true", "false"},
+		comments: []reviewTriggerComment{{
+			ID:        123,
+			Body:      bodyForReviewRequest(codexReviewMarker(head, base, "none")),
+			HTMLURL:   "https://github.test/retry-before-stop",
+			CreatedAt: "2026-08-19T00:00:00Z",
+			User: struct {
+				Login string `json:"login"`
+			}{Login: "HemSoft"},
+		}},
+	}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "SFL is stopped") {
+		t.Fatalf("runReview() post-wait maintenance error = %v", err)
+	}
+	if rest.posts != 0 || rest.reviewerEnabledGets != 2 {
+		t.Fatalf("post-wait maintenance posts/enabled GETs = %d/%d, want 0/2", rest.posts, rest.reviewerEnabledGets)
+	}
+}
+
+func TestRunReviewRejectsCloseReopenDuringRetryWait(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	rest := &reviewREST{
+		lifecycleResponses: [][]reviewLifecycleEvent{
+			{{ID: 10, Event: "reopened"}},
+			{{ID: 10, Event: "reopened"}, {ID: 11, Event: "closed"}, {ID: 12, Event: "reopened"}},
+		},
+		comments: []reviewTriggerComment{{
+			ID:        123,
+			Body:      bodyForReviewRequest(codexReviewMarker(head, base, "none")),
+			HTMLURL:   "https://github.test/retry-before-reopen",
+			CreatedAt: "2026-08-19T00:00:00Z",
+			User: struct {
+				Login string `json:"login"`
+			}{Login: "HemSoft"},
+		}},
+	}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "was closed or reopened") {
+		t.Fatalf("runReview() lifecycle error = %v", err)
+	}
+	if rest.posts != 0 || rest.lifecycleGets != 2 {
+		t.Fatalf("close/reopen posts/lifecycle GETs = %d/%d, want 0/2", rest.posts, rest.lifecycleGets)
 	}
 }
 

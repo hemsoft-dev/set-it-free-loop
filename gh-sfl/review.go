@@ -79,6 +79,11 @@ type reviewTriggerComment struct {
 	} `json:"user"`
 }
 
+type reviewLifecycleEvent struct {
+	ID    int64  `json:"id"`
+	Event string `json:"event"`
+}
+
 type reviewCommentReaction struct {
 	Content string `json:"content"`
 	User    struct {
@@ -190,6 +195,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	untrackedExisting := false
 	retryNeedsCompletionWait := false
 	retryNeedsReactionMaterialization := false
+	var retryLifecycleToken int64
 	if len(requests) > 0 {
 		existing = requests[len(requests)-1]
 	}
@@ -252,6 +258,10 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		retryNeedsCompletionWait = true
 	}
 	if retryNeedsCompletionWait {
+		retryLifecycleToken, err = fetchPullRequestLifecycleToken(client, owner, repo, opts.pr)
+		if err != nil {
+			return fmt.Errorf("reading the pull request lifecycle before retrying: %w", err)
+		}
 		if err := waitForCodexRequestCompletion(
 			client, owner, repo, existing.ID, retryNeedsReactionMaterialization,
 		); err != nil {
@@ -280,6 +290,18 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		!strings.EqualFold(finalPR.HeadRepo, owner+"/"+repo) ||
 		finalContextToken != contextToken {
 		return fmt.Errorf("pull request #%d context changed before the Codex review request could be posted — rerun gh sfl review for the current head and base", opts.pr)
+	}
+	if retryNeedsCompletionWait {
+		finalLifecycleToken, lifecycleErr := fetchPullRequestLifecycleToken(client, owner, repo, opts.pr)
+		if lifecycleErr != nil {
+			return fmt.Errorf("revalidating the pull request lifecycle: %w", lifecycleErr)
+		}
+		if finalLifecycleToken != retryLifecycleToken {
+			return fmt.Errorf("pull request #%d was closed or reopened while the prior Codex review was settling — rerun gh sfl review after SFL invalidations finish", opts.pr)
+		}
+	}
+	if err := requireReviewerEnabled(client, owner, repo); err != nil {
+		return err
 	}
 
 	body := bodyForReviewRequest(marker)
@@ -417,6 +439,25 @@ func waitForReviewInvalidations(
 		}
 	}
 	return errors.New("an applicable SFL invalidation workflow is still active")
+}
+
+func fetchPullRequestLifecycleToken(client restAPI, owner, repo string, prNumber int) (int64, error) {
+	var latestID int64
+	for page := 1; ; page++ {
+		var events []reviewLifecycleEvent
+		path := fmt.Sprintf("repos/%s/%s/issues/%d/events?per_page=100&page=%d", owner, repo, prNumber, page)
+		if err := client.Get(path, &events); err != nil {
+			return 0, err
+		}
+		for _, event := range events {
+			if (event.Event == "closed" || event.Event == "reopened") && event.ID > latestID {
+				latestID = event.ID
+			}
+		}
+		if len(events) < 100 {
+			return latestID, nil
+		}
+	}
 }
 
 func fetchActiveReviewWorkflowRuns(client restAPI, owner, repo string) ([]reviewWorkflowRun, error) {
