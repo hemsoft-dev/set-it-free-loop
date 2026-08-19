@@ -371,14 +371,15 @@ jobs:
             OBSERVER=$(echo "$OBSERVER_B64" | base64 --decode)
           fi
           DEFAULT_BRANCH=$(gh api "repos/$REPO" --jq '.default_branch' 2>/dev/null || true)
+          DEFAULT_BRANCH_YAML=$(printf '%s' "$DEFAULT_BRANCH" | sed "s/'/''/g")
           PUSH_FILTER_VALID=0
           BASE_ENV_VALID=0
           if [ -n "$OBSERVER" ] && [ -n "$DEFAULT_BRANCH" ]; then
-            if grep -Fqx "    branches: ['$DEFAULT_BRANCH']" <<< "$OBSERVER" || \
+            if grep -Fqx "    branches: ['$DEFAULT_BRANCH_YAML']" <<< "$OBSERVER" || \
               grep -Fqx "    branches: [$DEFAULT_BRANCH]" <<< "$OBSERVER"; then
               PUSH_FILTER_VALID=1
             fi
-            if grep -Fqx "  SFL_REVIEW_BASE_BRANCH: '$DEFAULT_BRANCH'" <<< "$OBSERVER" || \
+            if grep -Fqx "  SFL_REVIEW_BASE_BRANCH: '$DEFAULT_BRANCH_YAML'" <<< "$OBSERVER" || \
               grep -Fqx "  SFL_REVIEW_BASE_BRANCH: $DEFAULT_BRANCH" <<< "$OBSERVER"; then
               BASE_ENV_VALID=1
             fi

@@ -195,7 +195,7 @@ gh() {
         return
         ;;
       repos/HemSoft/example)
-        printf 'main\n'
+        printf '%s\n' "$DEFAULT_BRANCH_FIXTURE"
         return
         ;;
     esac
@@ -217,6 +217,7 @@ gh() {
 '@
     $reviewEnvironment = @{
         GITHUB_OUTPUT = $reviewOutputPath
+        DEFAULT_BRANCH_FIXTURE = 'main'
         ISSUE_LOG = $issueLogPath
         MANIFEST_FIXTURE = $manifestPath
         OBSERVER_FIXTURE = $observerPath
@@ -256,6 +257,25 @@ name: "SFL Reviewer Gate Runner"
     Assert-True ($currentBaseRun.ExitCode -eq 0) "Current-base prerequisite script failed: $($currentBaseRun.Output)"
     Assert-True ($currentBaseOutput -match 'sfl_review_prerequisites_missing=0') 'Auditor rejected an observer deployed for the current default branch.'
     Assert-True ([string]::IsNullOrEmpty($currentBaseIssue)) 'Auditor opened or closed an issue for a valid observer base branch.'
+
+    Remove-Item -LiteralPath $reviewOutputPath -Force
+    $reviewEnvironment.DEFAULT_BRANCH_FIXTURE = "release/o'brien"
+    @'
+name: SFL Codex Review Observer
+on:
+  push:
+    branches: ['release/o''brien']
+env:
+  SFL_REVIEW_BASE_BRANCH: 'release/o''brien'
+github.event.sender.id == 199175422
+name: "SFL Reviewer Gate Runner"
+'@ | Set-Content -LiteralPath $observerPath
+    $quotedBaseRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    $quotedBaseOutput = Get-Content -Raw -LiteralPath $reviewOutputPath
+    $quotedBaseIssue = if (Test-Path -LiteralPath $issueLogPath) { Get-Content -Raw -LiteralPath $issueLogPath } else { '' }
+    Assert-True ($quotedBaseRun.ExitCode -eq 0) "Quoted-base prerequisite script failed: $($quotedBaseRun.Output)"
+    Assert-True ($quotedBaseOutput -match 'sfl_review_prerequisites_missing=0') 'Auditor rejected a correctly YAML-escaped default branch.'
+    Assert-True ([string]::IsNullOrEmpty($quotedBaseIssue)) 'Auditor opened or closed an issue for a correctly YAML-escaped default branch.'
 
     $summaryScript = Get-WorkflowStepScript "      - name: Summary`n"
     $summaryExpressions = @(
