@@ -342,10 +342,14 @@ jobs:
 
           EXPECTED=0
           MANIFEST=""
+          MANIFEST_JSON=""
           if ! MANIFEST=$(gh api "repos/$REPO/contents/.sfl/sfl.json" --jq '.content' 2>/dev/null); then
             MANIFEST=$(gh api "repos/$REPO/contents/sfl.json" --jq '.content' 2>/dev/null || true)
           fi
-          if [ -n "$MANIFEST" ] && echo "$MANIFEST" | base64 --decode | jq -e \
+          if [ -n "$MANIFEST" ]; then
+            MANIFEST_JSON=$(echo "$MANIFEST" | base64 --decode)
+          fi
+          if [ -n "$MANIFEST_JSON" ] && echo "$MANIFEST_JSON" | jq -e \
             '(.components | index("sfl-pr-review-auto") != null) or
              ((.addons // []) | any(. == "pr-review"))' >/dev/null; then
             EXPECTED=1
@@ -370,6 +374,9 @@ jobs:
           if OBSERVER_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review-auto.yml" --jq '.content' 2>/dev/null); then
             OBSERVER=$(echo "$OBSERVER_B64" | base64 --decode)
           fi
+          EXPECTED_SOURCE_SHA=$(jq -r '.sourceSha // empty' <<< "$MANIFEST_JSON")
+          OBSERVER_SOURCE_SHA=$(grep -F '# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@' \
+            <<< "$OBSERVER" | head -n 1 | cut -d@ -f2)
           DEFAULT_BRANCH=$(gh api "repos/$REPO" --jq '.default_branch' 2>/dev/null || true)
           DEFAULT_BRANCH_YAML=$(printf '%s' "$DEFAULT_BRANCH" | sed "s/'/''/g")
           PUSH_FILTER_VALID=0
@@ -388,6 +395,8 @@ jobs:
             ! grep -q 'name: SFL Codex Review Observer' <<< "$OBSERVER" || \
             ! grep -q 'github.event.sender.id == 199175422' <<< "$OBSERVER" || \
             ! grep -q 'name: "SFL Reviewer Gate Runner"' <<< "$OBSERVER" || \
+            [ -z "$EXPECTED_SOURCE_SHA" ] || \
+            [ "$OBSERVER_SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ] || \
             [ "$PUSH_FILTER_VALID" -ne 1 ] || \
             [ "$BASE_ENV_VALID" -ne 1 ]; \
           }; then

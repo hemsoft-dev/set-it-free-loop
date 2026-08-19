@@ -93,6 +93,9 @@ Assert-True ($workflowContent -match 'OBSERVER_STATE" != "active"') 'Auditor doe
 Assert-True ($workflowContent -match "DEFAULT_BRANCH=.*\.default_branch") 'Auditor does not read the repository default branch.'
 Assert-True ($workflowContent -match 'PUSH_FILTER_VALID') 'Auditor does not validate the observer push branch.'
 Assert-True ($workflowContent -match 'BASE_ENV_VALID') 'Auditor does not validate the observer base-branch environment.'
+Assert-True ($workflowContent -match 'EXPECTED_SOURCE_SHA') 'Auditor does not read the canonical manifest source SHA.'
+Assert-True ($workflowContent -match 'OBSERVER_SOURCE_SHA') 'Auditor does not read the observer source pin.'
+Assert-True ($workflowContent -match 'OBSERVER_SOURCE_SHA" != "\$EXPECTED_SOURCE_SHA') 'Auditor does not reject an observer source-pin mismatch.'
 
 $mockGh = @'
 gh() {
@@ -180,8 +183,9 @@ try {
     $observerPath = Join-Path $temporaryDirectory 'observer.yml'
     $reviewOutputPath = Join-Path $temporaryDirectory 'review-output'
     $issueLogPath = Join-Path $temporaryDirectory 'issue-log'
-    '{"components":["sfl-pr-review-auto"]}' | Set-Content -LiteralPath $manifestPath
-    '{"components":["sfl-pr-review-auto"]}' | Set-Content -LiteralPath $rootManifestPath
+    $sourceSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    "{`"components`": [`"sfl-pr-review-auto`"], `"sourceSha`": `"$sourceSha`"}" | Set-Content -LiteralPath $manifestPath
+    "{`"components`": [`"sfl-pr-review-auto`"], `"sourceSha`": `"$sourceSha`"}" | Set-Content -LiteralPath $rootManifestPath
     $reviewMock = @'
 gh() {
   if [ "$1" = "api" ]; then
@@ -236,6 +240,7 @@ gh() {
         ROOT_MANIFEST_FIXTURE = $rootManifestPath
     }
     @'
+# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 name: SFL Codex Review Observer
 on:
   push:
@@ -254,6 +259,7 @@ name: "SFL Reviewer Gate Runner"
 
     Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force
     @'
+# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 name: SFL Codex Review Observer
 on:
   push:
@@ -270,9 +276,20 @@ name: "SFL Reviewer Gate Runner"
     Assert-True ($currentBaseOutput -match 'sfl_review_prerequisites_missing=0') 'Auditor rejected an observer deployed for the current default branch.'
     Assert-True ([string]::IsNullOrEmpty($currentBaseIssue)) 'Auditor opened or closed an issue for a valid observer base branch.'
 
-    Remove-Item -LiteralPath $reviewOutputPath -Force
+    Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
+    (Get-Content -Raw -LiteralPath $observerPath).Replace($sourceSha, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb') |
+        Set-Content -LiteralPath $observerPath
+    $stalePinRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    $stalePinOutput = Get-Content -Raw -LiteralPath $reviewOutputPath
+    $stalePinIssue = Get-Content -Raw -LiteralPath $issueLogPath
+    Assert-True ($stalePinRun.ExitCode -eq 0) "Stale-pin prerequisite script failed: $($stalePinRun.Output)"
+    Assert-True ($stalePinOutput -match 'sfl_review_prerequisites_missing=1') 'Auditor accepted an observer with a stale source pin.'
+    Assert-True ($stalePinIssue -match 'created') 'Auditor did not create an issue for a stale observer source pin.'
+
+    Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
     $reviewEnvironment.DEFAULT_BRANCH_FIXTURE = "release/o'brien"
     @'
+# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 name: SFL Codex Review Observer
 on:
   push:
