@@ -8,11 +8,12 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 type reviewREST struct {
 	comments            []reviewTriggerComment
-	reviews             []codexReviewArtifact
+	checkRuns           []map[string]any
 	headRepo            string
 	headRepoUnavailable bool
 	baseRef             string
@@ -44,8 +45,8 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 			defaultBranch = "main"
 		}
 		return decodeTestResponse(response, map[string]any{"default_branch": defaultBranch})
-	case strings.Contains(path, "/pulls/94/reviews?"):
-		return decodeTestResponse(response, f.reviews)
+	case strings.Contains(path, "/check-runs?"):
+		return decodeTestResponse(response, map[string]any{"check_runs": f.checkRuns})
 	case strings.Contains(path, "/pulls/"):
 		var headRepo any = map[string]string{"full_name": f.headRepo}
 		if f.headRepo == "" {
@@ -146,7 +147,7 @@ func TestRunReviewPostsOneHeadBoundCodexRequest(t *testing.T) {
 	if rest.posts != 1 {
 		t.Fatalf("Codex request posts = %d, want 1", rest.posts)
 	}
-	wantMarker := codexReviewMarker(strings.Repeat("b", 40), strings.Repeat("a", 40))
+	wantMarker := codexReviewMarker(strings.Repeat("b", 40), strings.Repeat("a", 40), "none")
 	if rest.postBody != codexReviewCommand+"\n\n"+wantMarker {
 		t.Fatalf("posted body = %q", rest.postBody)
 	}
@@ -214,7 +215,7 @@ func TestRunReviewRejectsDisabledObserver(t *testing.T) {
 func TestRunReviewRejectsSameHeadRequestedAgainstAnotherBase(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
-		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("c", 40)),
+		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("c", 40), "none"),
 		HTMLURL: "https://github.test/old-base-request",
 		User: struct {
 			Login string `json:"login"`
@@ -232,10 +233,29 @@ func TestRunReviewRejectsSameHeadRequestedAgainstAnotherBase(t *testing.T) {
 	}
 }
 
+func TestFetchReviewContextTokenUsesLatestInvalidation(t *testing.T) {
+	rest := &reviewREST{checkRuns: []map[string]any{{
+		"id":          2,
+		"external_id": "sfl-codex-review:pull-context:at:123:456",
+		"app":         map[string]any{"id": 15368},
+	}, {
+		"id":          1,
+		"external_id": "sfl-codex-review:base-advance:at:100:400:94",
+		"app":         map[string]any{"id": 15368},
+	}}}
+	token, err := fetchReviewContextToken(rest, "HemSoft", "consumer", strings.Repeat("b", 40))
+	if err != nil {
+		t.Fatalf("fetchReviewContextToken() error = %v", err)
+	}
+	if token != "sfl-codex-review:pull-context:at:123:456" {
+		t.Fatalf("context token = %q", token)
+	}
+}
+
 func TestRunReviewDeduplicatesCurrentHeadRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
-		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40)),
+		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40), "none"),
 		HTMLURL: "https://github.test/existing",
 		User: struct {
 			Login string `json:"login"`
@@ -259,19 +279,20 @@ func TestRunReviewDeduplicatesCurrentHeadRequest(t *testing.T) {
 
 func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
+	requestTime := "2026-08-19T00:00:00Z"
+	requestMillis := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC).UnixMilli()
 	rest := &reviewREST{comments: []reviewTriggerComment{{
-		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40)),
+		ID:        123,
+		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40), "none"),
 		HTMLURL:   "https://github.test/existing",
-		CreatedAt: "2026-08-19T00:00:00Z",
+		CreatedAt: requestTime,
 		User: struct {
 			Login string `json:"login"`
 		}{Login: "HemSoft"},
-	}, {
-		Body:      "Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** `bbbbbbbbbb`",
-		CreatedAt: "2026-08-19T00:01:00Z",
-		User: struct {
-			Login string `json:"login"`
-		}{Login: "chatgpt-codex-connector[bot]"},
+	}}, checkRuns: []map[string]any{{
+		"status":      "completed",
+		"external_id": fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d", strings.Repeat("a", 40), requestMillis),
+		"app":         map[string]any{"id": 15368},
 	}}}
 	installReviewFakes(t, rest)
 
@@ -282,7 +303,7 @@ func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 	if rest.posts != 1 {
 		t.Fatalf("Codex retry posts = %d, want 1", rest.posts)
 	}
-	if rest.postBody != codexReviewCommand+"\n\n"+codexReviewMarker(head, strings.Repeat("a", 40)) {
+	if rest.postBody != codexReviewCommand+"\n\n"+codexReviewMarker(head, strings.Repeat("a", 40), "none") {
 		t.Fatalf("posted retry body = %q", rest.postBody)
 	}
 }
@@ -290,7 +311,7 @@ func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 func TestRunReviewRetryRejectsOutstandingRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
-		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40)),
+		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40), "none"),
 		HTMLURL:   "https://github.test/existing",
 		CreatedAt: "2026-08-19T00:00:00Z",
 		User: struct {

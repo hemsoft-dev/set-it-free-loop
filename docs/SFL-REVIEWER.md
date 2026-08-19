@@ -61,8 +61,8 @@ The command:
 
 1. verifies the active GitHub identity is HemSoft;
 2. verifies the pull request is open and the observer is installed;
-3. posts @codex review with an invisible marker containing the full head and
-   base SHAs;
+3. posts @codex review with an invisible marker containing the full head SHA,
+   base SHA, and latest SFL invalidation context token;
 4. reuses the existing request URL instead of posting a duplicate for that
    head.
 
@@ -120,13 +120,12 @@ Native Codex owns review depth, severity, and presentation. SFL now verifies
 Codex provenance and head freshness and translates its clean/finding result
 into the existing branch gate. It does not promise three passes, all severity
 classes, SFL-authored approvals, obsolete-thread cleanup, or recovery retries.
-A rerun is an explicit new `gh sfl review` request. `--retry` is rejected while
-the latest request is still outstanding, preventing out-of-order results from
-competing for the same gate. If the current-head request already exists but its
-Codex result event was skipped while SFL was stopped, run
-`gh sfl review --repo HemSoft/repository --pr 42 --retry` after restarting SFL;
-the existing Codex artifact proves the prior request finished before the retry
-is posted.
+A rerun is an explicit new `gh sfl review` request. `--retry` is rejected until
+the latest request has a request-specific terminal SFL gate, preventing an
+older observer run from publishing after a newer verdict. If SFL was stopped
+and skipped the Codex result event, restart SFL and rerun that completed
+observer workflow from Actions; do not post a competing request while its gate
+is absent.
 
 Pilot deployments are limited to HemSoft/hs-buddy until the source change and
 smoke evidence are accepted. Do not deploy this migration to

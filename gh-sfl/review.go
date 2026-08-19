@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -43,13 +43,13 @@ type reviewTriggerComment struct {
 	} `json:"user"`
 }
 
-type codexReviewArtifact struct {
-	Body        string `json:"body"`
-	CommitID    string `json:"commit_id"`
-	SubmittedAt string `json:"submitted_at"`
-	User        struct {
-		Login string `json:"login"`
-	} `json:"user"`
+type reviewerCheckRun struct {
+	ID         int64  `json:"id"`
+	Status     string `json:"status"`
+	ExternalID string `json:"external_id"`
+	App        struct {
+		ID int64 `json:"id"`
+	} `json:"app"`
 }
 
 func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
@@ -98,8 +98,12 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("pull request #%d in %s/%s targets %s — subscription-backed SFL reviews support only the default branch %s", opts.pr, owner, repo, pr.BaseRef, defaultBranch)
 	}
 
-	marker := codexReviewMarker(pr.HeadSHA, pr.BaseSHA)
-	conflictingURL, conflictErr := findConflictingCodexBaseRequest(client, owner, repo, opts.pr, pr.HeadSHA, marker)
+	contextToken, err := fetchReviewContextToken(client, owner, repo, pr.HeadSHA)
+	if err != nil {
+		return fmt.Errorf("reading the current SFL review context: %w", err)
+	}
+	marker := codexReviewMarker(pr.HeadSHA, pr.BaseSHA, contextToken)
+	conflictingURL, conflictErr := findConflictingCodexBaseRequest(client, owner, repo, opts.pr, pr.HeadSHA, codexReviewBaseMarker(pr.HeadSHA, pr.BaseSHA))
 	if conflictErr != nil {
 		return fmt.Errorf("checking prior Codex review bases: %w", conflictErr)
 	}
@@ -116,7 +120,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 				owner, repo, opts.pr, pr.HeadSHA, existing.HTMLURL)
 			return nil
 		}
-		completed, completedErr := hasCodexResultAfterRequest(client, owner, repo, opts.pr, pr.HeadSHA, existing)
+		completed, completedErr := hasTerminalGateForRequest(client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing)
 		if completedErr != nil {
 			return fmt.Errorf("checking the prior Codex review result: %w", completedErr)
 		}
@@ -291,20 +295,24 @@ func fetchRepositoryDefaultBranchWithClient(client restAPI, owner, repo string) 
 	return response.DefaultBranch, nil
 }
 
-func codexReviewMarker(headSHA, baseSHA string) string {
+func codexReviewMarker(headSHA, baseSHA, contextToken string) string {
 	return "<!-- sfl-codex-review:head=" + strings.ToLower(headSHA) +
-		";base=" + strings.ToLower(baseSHA) + " -->"
+		";base=" + strings.ToLower(baseSHA) + ";context=" + contextToken + " -->"
 }
 
 func codexReviewHeadMarker(headSHA string) string {
 	return "<!-- sfl-codex-review:head=" + strings.ToLower(headSHA) + ";base="
 }
 
+func codexReviewBaseMarker(headSHA, baseSHA string) string {
+	return codexReviewHeadMarker(headSHA) + strings.ToLower(baseSHA) + ";"
+}
+
 func findConflictingCodexBaseRequest(
 	client restAPI,
 	owner, repo string,
 	prNumber int,
-	headSHA, currentMarker string,
+	headSHA, currentBaseMarker string,
 ) (string, error) {
 	headMarker := codexReviewHeadMarker(headSHA)
 	for page := 1; ; page++ {
@@ -317,7 +325,7 @@ func findConflictingCodexBaseRequest(
 		}
 		for _, comment := range comments {
 			if strings.EqualFold(comment.User.Login, owner) &&
-				strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentMarker) {
+				strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentBaseMarker) {
 				return comment.HTMLURL, nil
 			}
 		}
@@ -355,8 +363,6 @@ func findCodexReviewTrigger(
 	}
 }
 
-var reviewedCommitPattern = regexp.MustCompile(`(?i)\*\*Reviewed commit:\*\*\s+` + "`" + `([0-9a-f]{7,40})` + "`")
-
 func reviewCommentTime(comment reviewTriggerComment) time.Time {
 	value := comment.UpdatedAt
 	if value == "" {
@@ -366,59 +372,84 @@ func reviewCommentTime(comment reviewTriggerComment) time.Time {
 	return parsed
 }
 
-func artifactMatchesHead(body, commitID, headSHA string) bool {
-	if strings.EqualFold(commitID, headSHA) {
-		return true
+func fetchReviewContextToken(client restAPI, owner, repo, headSHA string) (string, error) {
+	var response struct {
+		CheckRuns []reviewerCheckRun `json:"check_runs"`
 	}
-	match := reviewedCommitPattern.FindStringSubmatch(body)
-	return len(match) == 2 && strings.HasPrefix(strings.ToLower(headSHA), strings.ToLower(match[1]))
+	if err := client.Get(
+		fmt.Sprintf("repos/%s/%s/commits/%s/check-runs?check_name=SFL%%20Reviewer%%20Gate%%20Runner&filter=all&per_page=100", owner, repo, headSHA),
+		&response,
+	); err != nil {
+		return "", err
+	}
+	latest := reviewerCheckRun{}
+	for _, check := range response.CheckRuns {
+		if check.App.ID == 15368 &&
+			(strings.HasPrefix(check.ExternalID, "sfl-codex-review:pull-context:") ||
+				strings.HasPrefix(check.ExternalID, "sfl-codex-review:base-advance:")) &&
+			check.ID > latest.ID {
+			latest = check
+		}
+	}
+	if latest.ExternalID != "" {
+		return latest.ExternalID, nil
+	}
+	return "none", nil
 }
 
-func hasCodexResultAfterRequest(
+func reviewContextTokenFromBody(body string) (string, bool) {
+	const prefix = ";context="
+	start := strings.Index(body, prefix)
+	if start < 0 {
+		return "", false
+	}
+	start += len(prefix)
+	end := strings.Index(body[start:], " -->")
+	if end < 1 {
+		return "", false
+	}
+	return body[start : start+end], true
+}
+
+func hasTerminalGateForRequest(
 	client restAPI,
 	owner, repo string,
 	prNumber int,
-	headSHA string,
+	headSHA, baseSHA string,
 	request reviewTriggerComment,
 ) (bool, error) {
 	requestTime := reviewCommentTime(request)
 	if requestTime.IsZero() {
 		return false, errors.New("latest Codex review request has no valid timestamp")
 	}
-	for page := 1; ; page++ {
-		var comments []reviewTriggerComment
-		if err := client.Get(
-			fmt.Sprintf("repos/%s/%s/issues/%d/comments?per_page=100&page=%d", owner, repo, prNumber, page),
-			&comments,
-		); err != nil {
-			return false, err
-		}
-		for _, comment := range comments {
-			if strings.EqualFold(comment.User.Login, "chatgpt-codex-connector[bot]") &&
-				reviewCommentTime(comment).After(requestTime) && artifactMatchesHead(comment.Body, "", headSHA) {
-				return true, nil
-			}
-		}
-		if len(comments) < 100 {
-			break
-		}
+	contextToken, ok := reviewContextTokenFromBody(request.Body)
+	if !ok {
+		return false, errors.New("latest Codex review request has no valid context token")
 	}
+	expected := fmt.Sprintf(
+		"sfl-codex-review:pull:%d:base:%s:context:%s:request:%d:at:%d",
+		prNumber,
+		strings.ToLower(baseSHA),
+		url.QueryEscape(contextToken),
+		request.ID,
+		requestTime.UnixMilli(),
+	)
 	for page := 1; ; page++ {
-		var reviews []codexReviewArtifact
+		var response struct {
+			CheckRuns []reviewerCheckRun `json:"check_runs"`
+		}
 		if err := client.Get(
-			fmt.Sprintf("repos/%s/%s/pulls/%d/reviews?per_page=100&page=%d", owner, repo, prNumber, page),
-			&reviews,
+			fmt.Sprintf("repos/%s/%s/commits/%s/check-runs?check_name=SFL%%20Reviewer%%20Gate%%20Runner&filter=all&per_page=100&page=%d", owner, repo, headSHA, page),
+			&response,
 		); err != nil {
 			return false, err
 		}
-		for _, review := range reviews {
-			submitted, _ := time.Parse(time.RFC3339, review.SubmittedAt)
-			if strings.EqualFold(review.User.Login, "chatgpt-codex-connector[bot]") &&
-				submitted.After(requestTime) && artifactMatchesHead(review.Body, review.CommitID, headSHA) {
+		for _, check := range response.CheckRuns {
+			if check.App.ID == 15368 && check.Status == "completed" && check.ExternalID == expected {
 				return true, nil
 			}
 		}
-		if len(reviews) < 100 {
+		if len(response.CheckRuns) < 100 {
 			return false, nil
 		}
 	}

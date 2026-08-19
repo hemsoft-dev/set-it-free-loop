@@ -154,6 +154,23 @@ jobs:
             }
             const currentBase = pull.data.base.sha;
             const currentHead = pull.data.head.sha;
+            const reviewContextToken = checkRuns => {
+              const invalidation = checkRuns.filter(
+                check => check.app && check.app.id === 15368 &&
+                  ((check.external_id || "").startsWith("sfl-codex-review:pull-context:") ||
+                   (check.external_id || "").startsWith("sfl-codex-review:base-advance:")),
+              ).sort((left, right) => right.id - left.id)[0];
+              return invalidation ? invalidation.external_id : "none";
+            };
+            const initialChecks = await github.rest.checks.listForRef({
+              owner,
+              repo,
+              ref: currentHead,
+              check_name: "SFL Reviewer Gate Runner",
+              filter: "all",
+              per_page: 100,
+            });
+            const contextToken = reviewContextToken(initialChecks.data.check_runs);
             const match = (artifact.body || "").match(
               /\*\*Reviewed commit:\*\*\s+`([0-9a-f]{7,40})`/i,
             );
@@ -170,7 +187,7 @@ jobs:
             }
 
             const artifactTime = Date.parse(artifact.created_at || artifact.submitted_at || "");
-            const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()} -->`;
+            const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
             const triggerComments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pullNumber, per_page: 100,
             });
@@ -242,17 +259,11 @@ jobs:
               per_page: 100,
             });
             const requestTime = request && request.requestTime;
-            const invalidatesRequest = check =>
-              check.app && check.app.id === 15368 &&
-                check.name === "SFL Reviewer Gate Runner" &&
-                (check.external_id || "").match(/^sfl-codex-review:(pull-context|base-advance):/) &&
-                Number(((check.external_id || "").match(/:at:(\d+)(?::|$)/) || [])[1]) >= requestTime;
-            const newerInvalidation = checks.data.check_runs.some(invalidatesRequest);
-            if (newerInvalidation) {
-              core.info("The matching Codex request predates a pull-context invalidation");
+            if (reviewContextToken(checks.data.check_runs) !== contextToken) {
+              core.info("The matching Codex request is not bound to the latest pull context");
               return;
             }
-            const externalId = `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:request:${request.comment.id}:at:${requestTime}`;
+            const externalId = `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${request.comment.id}:at:${requestTime}`;
             const existing = checks.data.check_runs.find(
               check => check.app && check.app.id === 15368 &&
                 check.external_id === externalId,
@@ -294,7 +305,7 @@ jobs:
                   confirmedPull.data.base.sha !== currentBase ||
                   confirmedOpenPulls.length !== 1 ||
                   confirmedOpenPulls[0].number !== pullNumber ||
-                  confirmedChecks.data.check_runs.some(invalidatesRequest)) {
+                  reviewContextToken(confirmedChecks.data.check_runs) !== contextToken) {
                 const changedReason = "The pull request context changed while the Codex result was being published";
                 await github.rest.checks.update({
                   owner,
@@ -343,6 +354,7 @@ jobs:
             if (!Number.isFinite(contextChangeTime)) {
               throw new Error("Could not determine the pull-context change event time");
             }
+            const invalidationId = `sfl-codex-review:pull-context:at:${contextChangeTime}:${context.runId}`;
             const reviewerChecks = await github.paginate(
               github.rest.checks.listForRef,
               {
@@ -361,9 +373,7 @@ jobs:
                 check.external_id && check.external_id.startsWith(
                   `sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}:`,
                 ) &&
-                Number((check.external_id.match(/:at:(\d+)(?::|$)/) || [])[1]) > contextChangeTime &&
-                Number.isFinite(Date.parse(check.completed_at || "")) &&
-                Date.parse(check.completed_at || "") > contextChangeTime,
+                check.external_id.includes(`:context:${encodeURIComponent(invalidationId)}:`),
             );
             if (newerSuccess) {
               core.info(`Pull request #${pull.number} already has a successful Codex gate completed after this context change`);
@@ -392,7 +402,7 @@ jobs:
               conclusion: "failure",
               completed_at: new Date().toISOString(),
               details_url: pull.html_url,
-              external_id: `sfl-codex-review:pull-context:at:${contextChangeTime}:${context.runId}`,
+              external_id: invalidationId,
               output: {title: "SFL Codex review invalidated", summary: reason},
             });
             core.setFailed(reason);
@@ -428,6 +438,7 @@ jobs:
             });
             for (const pull of openPulls) {
               if (pull.base.ref !== baseRef) continue;
+              const invalidationId = `sfl-codex-review:base-advance:at:${baseAdvanceTime}:${context.runId}:${pull.number}`;
               const reviewerChecks = await github.paginate(
                 github.rest.checks.listForRef,
                 {
@@ -446,9 +457,7 @@ jobs:
                   check.external_id && check.external_id.startsWith(
                     `sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}:`,
                   ) &&
-                  Number((check.external_id.match(/:at:(\d+)(?::|$)/) || [])[1]) > baseAdvanceTime &&
-                  Number.isFinite(Date.parse(check.completed_at || "")) &&
-                  Date.parse(check.completed_at || "") > baseAdvanceTime,
+                  check.external_id.includes(`:context:${encodeURIComponent(invalidationId)}:`),
               );
               if (newerSuccess) {
                 core.info(`Pull request #${pull.number} already has a successful Codex gate completed after this base advance`);
@@ -464,7 +473,7 @@ jobs:
                 conclusion: "failure",
                 completed_at: new Date().toISOString(),
                 details_url: pull.html_url,
-                external_id: `sfl-codex-review:base-advance:at:${baseAdvanceTime}:${context.runId}:${pull.number}`,
+                external_id: invalidationId,
                 output: {title: "SFL Codex review invalidated", summary: reason},
               });
             }
