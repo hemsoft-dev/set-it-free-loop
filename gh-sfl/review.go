@@ -428,6 +428,9 @@ func findConflictingCodexBaseRequest(
 			return "", err
 		}
 		for _, comment := range comments {
+			// GitHub does not expose the prior body after an edit. Retain every
+			// edited owner comment conservatively so a removed command or marker
+			// cannot bypass the Codex completion wait.
 			if strings.EqualFold(comment.User.Login, owner) &&
 				strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentBaseMarker) {
 				return comment.HTMLURL, nil
@@ -457,7 +460,8 @@ func findCodexReviewTriggers(
 		}
 		for _, comment := range comments {
 			if strings.EqualFold(comment.User.Login, owner) &&
-				strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) {
+				(strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) ||
+					reviewCommentWasEdited(comment)) {
 				ownerRequests = append(ownerRequests, comment)
 				if strings.Contains(comment.Body, marker) {
 					matches = append(matches, comment)

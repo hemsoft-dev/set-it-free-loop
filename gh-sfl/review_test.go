@@ -543,6 +543,30 @@ func TestRunReviewRetryRecoversAfterEditedMarkerIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRunReviewRetryRecoversAfterEditedCommandIsRemoved(t *testing.T) {
+	rest := &reviewREST{comments: []reviewTriggerComment{{
+		ID:        123,
+		Body:      "request edited beyond recognition",
+		HTMLURL:   "https://github.test/edited-without-command",
+		CreatedAt: "2026-08-19T00:00:00Z",
+		UpdatedAt: "2026-08-19T00:00:01Z",
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "HemSoft"},
+	}}}
+	installReviewFakes(t, rest)
+
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runReview() command-removed retry error = %v", err)
+	}
+	if rest.posts != 1 {
+		t.Fatalf("command-removed retry posts = %d, want 1", rest.posts)
+	}
+	if rest.reactionGets != 60 {
+		t.Fatalf("command-removed reaction GETs = %d, want 60", rest.reactionGets)
+	}
+}
+
 func TestReviewCommentTimeUsesImmutableCreatedAt(t *testing.T) {
 	created := "2026-08-19T00:00:00Z"
 	comment := reviewTriggerComment{
