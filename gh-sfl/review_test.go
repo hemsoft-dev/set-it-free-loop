@@ -820,6 +820,21 @@ func TestRunReviewRetryRecoversAfterEditedCommandIsRemoved(t *testing.T) {
 	}
 }
 
+func TestRunReviewRejectsDeletedRegisteredRequest(t *testing.T) {
+	rest := &reviewREST{statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)}}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "registered Codex review request comment 123") ||
+		!strings.Contains(err.Error(), "was deleted") ||
+		!strings.Contains(err.Error(), "push a new commit") {
+		t.Fatalf("runReview() deleted request error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("deleted request posts = %d, want 0", rest.posts)
+	}
+}
+
 func TestRunReviewIgnoresUnregisteredEditedDiscussionComment(t *testing.T) {
 	rest := &reviewREST{comments: []reviewTriggerComment{{
 		ID:        123,

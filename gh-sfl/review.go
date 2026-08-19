@@ -643,6 +643,7 @@ func findCodexReviewTriggers(
 	}
 	var matches []reviewTriggerComment
 	var ownerRequests []reviewTriggerComment
+	foundCommentIDs := map[int64]bool{}
 	headMarker := codexReviewHeadMarker(headSHA)
 	for page := 1; ; page++ {
 		var comments []reviewTriggerComment
@@ -653,6 +654,7 @@ func findCodexReviewTriggers(
 			return nil, nil, err
 		}
 		for _, comment := range comments {
+			foundCommentIDs[comment.ID] = true
 			if strings.EqualFold(comment.User.Login, owner) &&
 				((strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) &&
 					strings.Contains(comment.Body, headMarker)) ||
@@ -666,6 +668,18 @@ func findCodexReviewTriggers(
 		if len(comments) < 100 {
 			break
 		}
+	}
+	var deletedRegisteredIDs []int64
+	for id := range registeredIDs {
+		if !foundCommentIDs[id] {
+			deletedRegisteredIDs = append(deletedRegisteredIDs, id)
+		}
+	}
+	if len(deletedRegisteredIDs) > 0 {
+		sort.Slice(deletedRegisteredIDs, func(i, j int) bool {
+			return deletedRegisteredIDs[i] < deletedRegisteredIDs[j]
+		})
+		return nil, nil, fmt.Errorf("registered Codex review request comment %d for head %.10s was deleted — push a new commit before requesting another review", deletedRegisteredIDs[0], headSHA)
 	}
 	sort.SliceStable(matches, func(i, j int) bool {
 		left := reviewCommentTime(matches[i])
