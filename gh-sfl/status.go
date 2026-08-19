@@ -633,40 +633,50 @@ func latestReviewerRun(owner, repo string) (workflowRunSummary, error) {
 }
 
 func latestReviewerRunWithClient(client restAPI, owner, repo string) (workflowRunSummary, error) {
-	var response struct {
-		Runs []workflowRunSummary `json:"workflow_runs"`
-	}
-	path := fmt.Sprintf(
-		"repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml/runs?actor=chatgpt-codex-connector%%5Bbot%%5D&per_page=20",
-		owner,
-		repo,
-	)
-	if err := client.Get(path, &response); err != nil {
-		return workflowRunSummary{}, err
-	}
-	for _, run := range response.Runs {
-		if run.Status != "completed" {
-			return run, nil
+	return latestReviewerRunWithPageSize(client, owner, repo, 100)
+}
+
+func latestReviewerRunWithPageSize(client restAPI, owner, repo string, pageSize int) (workflowRunSummary, error) {
+	for page := 1; ; page++ {
+		var response struct {
+			Runs []workflowRunSummary `json:"workflow_runs"`
 		}
-		var jobs struct {
-			Jobs []workflowJobSummary `json:"jobs"`
-		}
-		jobsPath := fmt.Sprintf(
-			"repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=100",
+		path := fmt.Sprintf(
+			"repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml/runs?actor=chatgpt-codex-connector%%5Bbot%%5D&per_page=%d&page=%d",
 			owner,
 			repo,
-			run.ID,
+			pageSize,
+			page,
 		)
-		if err := client.Get(jobsPath, &jobs); err != nil {
+		if err := client.Get(path, &response); err != nil {
 			return workflowRunSummary{}, err
 		}
-		for _, job := range jobs.Jobs {
-			if job.Name == "Observe authenticated Codex review" && job.Conclusion != "skipped" {
+		for _, run := range response.Runs {
+			if run.Status != "completed" {
 				return run, nil
 			}
+			var jobs struct {
+				Jobs []workflowJobSummary `json:"jobs"`
+			}
+			jobsPath := fmt.Sprintf(
+				"repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=100",
+				owner,
+				repo,
+				run.ID,
+			)
+			if err := client.Get(jobsPath, &jobs); err != nil {
+				return workflowRunSummary{}, err
+			}
+			for _, job := range jobs.Jobs {
+				if job.Name == "Observe authenticated Codex review" && job.Conclusion != "skipped" {
+					return run, nil
+				}
+			}
+		}
+		if len(response.Runs) < pageSize {
+			return workflowRunSummary{}, nil
 		}
 	}
-	return workflowRunSummary{}, nil
 }
 
 func parseStatusOptions(args []string, stderr io.Writer) (statusOptions, error) {
