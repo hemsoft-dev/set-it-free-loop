@@ -343,7 +343,8 @@ jobs:
           EXPECTED=0
           if MANIFEST=$(gh api "repos/$REPO/contents/sfl.json" --jq '.content' 2>/dev/null); then
             if echo "$MANIFEST" | base64 --decode | jq -e \
-              '.components | index("sfl-pr-review-auto") != null' >/dev/null; then
+              '(.components | index("sfl-pr-review-auto") != null) or
+               ((.addons // []) | any(.name == "pr-review"))' >/dev/null; then
               EXPECTED=1
             fi
           fi
@@ -356,10 +357,11 @@ jobs:
 
           MISSING=0
           MISSING_ITEMS=""
-          if ! gh api "repos/$REPO/actions/workflows/sfl-pr-review-auto.yml" >/dev/null 2>&1; then
-            echo "::warning::Missing active workflow .github/workflows/sfl-pr-review-auto.yml"
+          OBSERVER_STATE=$(gh api "repos/$REPO/actions/workflows/sfl-pr-review-auto.yml" --jq '.state' 2>/dev/null || true)
+          if [ "$OBSERVER_STATE" != "active" ]; then
+            echo "::warning::Missing or disabled active workflow .github/workflows/sfl-pr-review-auto.yml (state: ${OBSERVER_STATE:-missing})"
             MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review-auto.yml\`"$'\n'
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy and enable \`.github/workflows/sfl-pr-review-auto.yml\`"$'\n'
           fi
 
           OBSERVER=""

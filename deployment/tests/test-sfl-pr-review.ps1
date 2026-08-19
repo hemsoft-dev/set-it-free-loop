@@ -41,6 +41,8 @@ foreach ($pattern in @(
     'pull-context:at:${contextChangeTime}',
     'base-advance:at:${baseAdvanceTime}',
     'conflictingBaseRequest',
+    'confirmedChecks.data.check_runs.some(invalidatesRequest)',
+    'skipping stale invalidation',
     'github.rest.actions.getWorkflowRun',
     'Date.parse(check.completed_at || "") > baseAdvanceTime',
     'successful Codex gate completed after this context change',
