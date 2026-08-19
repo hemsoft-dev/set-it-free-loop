@@ -59,6 +59,8 @@ foreach ($pattern in @(
     'event.event === "closed" || event.event === "reopened"',
     'confirmedLifecycleToken !== initialLifecycleToken',
     'confirmedInvalidationRuns.length > 0',
+    'const postSuccessOpenPulls = await openPullsForCurrentHead()',
+    'The pull request head became shared while Codex success was being published',
     'confirmedOpenPulls.length !== 1',
     'context=${contextToken}',
     'function requestGateExternalId(',
@@ -102,6 +104,9 @@ foreach ($pattern in @(
     'const finalInvalidationRuns = await activeInvalidationRuns()',
     'the Codex result cannot supersede its invalidation',
     'sfl-codex-review-base-advance-${{ github.repository }}-${{ github.ref }}',
+    'const batchSize = 10',
+    'Promise.allSettled(batch.map(invalidatePull))',
+    'Base-advance invalidation failed after attempting every pull request',
     'supersedesInvalidation(check.external_id, contextChangeTime, context.runId)',
     'supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId)',
     'already has this exact invalidation; skipping rerun',
@@ -132,6 +137,10 @@ if ($canonical -match [regex]::Escape('if (context.payload.deleted) return;')) {
 if ($canonical -match [regex]::Escape('events.flatMap(') -or
     $canonical -match [regex]::Escape('events.map(event => github.paginate(')) {
     throw 'Codex observer still multiplies or unboundedly paginates workflow-run queries by event.'
+}
+if ($canonical -notmatch '(?s)invalidate-base-advance:.*?timeout-minutes: 30' -or
+    $canonical -match [regex]::Escape('for (const pull of openPulls)')) {
+    throw 'Base-advance invalidation is still a short, serial repository-wide sweep.'
 }
 
 $artifactBindingIndex = $canonical.IndexOf('const artifactBindsCurrentHead')

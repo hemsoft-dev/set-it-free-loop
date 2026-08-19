@@ -800,6 +800,23 @@ jobs:
               external_id: externalId,
               output: {title, summary: result.reason},
             });
+            const postSuccessOpenPulls = await openPullsForCurrentHead();
+            if (postSuccessOpenPulls.length !== 1 ||
+                postSuccessOpenPulls[0].number !== pullNumber) {
+              const changedReason = "The pull request head became shared while Codex success was being published";
+              await github.rest.checks.update({
+                owner,
+                repo,
+                check_run_id: published.data.id,
+                status: "completed",
+                conclusion: "failure",
+                completed_at: new Date().toISOString(),
+                details_url: detailsURL,
+                external_id: externalId,
+                output: {title: "SFL Codex review invalidated", summary: changedReason},
+              });
+              core.setFailed(changedReason);
+            }
 
   invalidate-pull-context:
     name: Invalidate Codex review for changed pull context
@@ -947,7 +964,7 @@ jobs:
     name: Invalidate Codex reviews after base advance
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
     concurrency:
       group: sfl-codex-review-base-advance-${{ github.repository }}-${{ github.ref }}
       cancel-in-progress: true
@@ -995,8 +1012,8 @@ jobs:
             const openPulls = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: "open", base: baseRef, per_page: 100,
             });
-            for (const pull of openPulls) {
-              if (pull.base.ref !== baseRef) continue;
+            const invalidatePull = async pull => {
+              if (pull.base.ref !== baseRef) return;
               const invalidationId = `sfl-codex-review:base-advance:at:${baseAdvanceTime}:${context.runId}:${pull.number}`;
               const reviewerChecks = await github.paginate(
                 github.rest.checks.listForRef,
@@ -1015,7 +1032,7 @@ jobs:
               );
               if (existingInvalidation) {
                 core.info(`Pull request #${pull.number} already has this exact invalidation; skipping rerun`);
-                continue;
+                return;
               }
               const supersedingContext = reviewerChecks.find(
                 check => check.app && check.app.id === 15368 &&
@@ -1023,7 +1040,7 @@ jobs:
               );
               if (supersedingContext) {
                 core.info(`Pull request #${pull.number} has a newer invalidation context; skipping stale invalidation`);
-                continue;
+                return;
               }
               const newerSuccess = reviewerChecks.some(
                 check => check.app && check.app.id === 15368 &&
@@ -1035,7 +1052,7 @@ jobs:
               );
               if (newerSuccess) {
                 core.info(`Pull request #${pull.number} already has a successful Codex gate completed after this base advance`);
-                continue;
+                return;
               }
               const reason = renamedBase
                 ? `Repository default branch changed from deployed SFL review base ${configuredBaseBranch} to ${baseRef}; redeploy SFL before requesting a new Codex review.`
@@ -1067,7 +1084,7 @@ jobs:
               );
               if (finalContextExists || finalSuccess) {
                 core.info(`Pull request #${pull.number} received a newer context or successful Codex gate while invalidation was running`);
-                continue;
+                return;
               }
               await github.rest.checks.create({
                 owner,
@@ -1081,4 +1098,18 @@ jobs:
                 external_id: invalidationId,
                 output: {title: "SFL Codex review invalidated", summary: reason},
               });
+            };
+            const failures = [];
+            const batchSize = 10;
+            for (let offset = 0; offset < openPulls.length; offset += batchSize) {
+              const batch = openPulls.slice(offset, offset + batchSize);
+              const results = await Promise.allSettled(batch.map(invalidatePull));
+              results.forEach((result, index) => {
+                if (result.status === "rejected") {
+                  failures.push(`PR #${batch[index].number}: ${result.reason}`);
+                }
+              });
+            }
+            if (failures.length > 0) {
+              throw new Error(`Base-advance invalidation failed after attempting every pull request:\n${failures.join("\n")}`);
             }
