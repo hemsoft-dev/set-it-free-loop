@@ -43,6 +43,7 @@ foreach ($pattern in @(
     'The pull request context changed while the Codex result was being published',
     'Codex artifact and registered request have ambiguous same-second ordering',
     'invalidate-review-request:',
+    'statuses: read',
     "vars.SFL_ENABLED != 'false'",
     'SFL Codex Review Request Registry',
     'sfl-codex-review:request-pending:${commentId}',
