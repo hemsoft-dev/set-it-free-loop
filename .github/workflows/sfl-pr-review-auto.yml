@@ -820,9 +820,10 @@ jobs:
                 invalidationRuns,
               };
             };
-            const publicationChanged = state => state.pull.state !== "open" ||
+            const publicationChanged = (state, mergeSha = "") => state.pull.state !== "open" ||
               state.pull.head.sha !== currentHead ||
               state.pull.base.sha !== currentBase ||
+              (mergeSha && state.pull.merge_commit_sha !== mergeSha) ||
               state.openPulls.length !== 1 ||
               state.openPulls[0].number !== pullNumber ||
               state.supersededRequest ||
@@ -836,6 +837,7 @@ jobs:
                 : state.invalidationRuns.length > 0
                   ? "An SFL invalidation started while the Codex result was being published"
                   : "The pull request context changed while the Codex result was being published";
+            let requiredPublished = null;
             const failPublishedSuccess = async changedReason => {
               await github.rest.checks.update({
                 owner,
@@ -848,6 +850,19 @@ jobs:
                 external_id: externalId,
                 output: {title: "SFL Codex review invalidated", summary: changedReason},
               });
+              if (requiredPublished) {
+                await github.rest.checks.update({
+                  owner,
+                  repo,
+                  check_run_id: requiredPublished.data.id,
+                  status: "completed",
+                  conclusion: "failure",
+                  completed_at: new Date().toISOString(),
+                  details_url: detailsURL,
+                  external_id: requiredPublished.data.external_id,
+                  output: {title: "SFL Codex review invalidated", summary: changedReason},
+                });
+              }
               core.setFailed(changedReason);
             };
             const confirmedState = await publicationState();
@@ -855,6 +870,22 @@ jobs:
               await failPublishedSuccess(publicationChangeReason(confirmedState));
               return;
             }
+            const currentMerge = confirmedState.pull.merge_commit_sha;
+            if (!currentMerge) {
+              await failPublishedSuccess("GitHub has not prepared the pull request merge commit; rerun the review after mergeability is computed");
+              return;
+            }
+            requiredPublished = await github.rest.checks.create({
+              owner,
+              repo,
+              name: "SFL Reviewer Gate Runner",
+              head_sha: currentMerge,
+              status: "in_progress",
+              started_at: new Date().toISOString(),
+              details_url: detailsURL,
+              external_id: `${externalId}:merge:${currentMerge}`,
+              output: {title: "SFL Codex review validating", summary: result.reason},
+            });
             await github.rest.checks.update({
               owner,
               repo,
@@ -866,8 +897,19 @@ jobs:
               external_id: externalId,
               output: {title, summary: result.reason},
             });
+            await github.rest.checks.update({
+              owner,
+              repo,
+              check_run_id: requiredPublished.data.id,
+              status: "completed",
+              conclusion: "success",
+              completed_at: new Date().toISOString(),
+              details_url: detailsURL,
+              external_id: requiredPublished.data.external_id,
+              output: {title, summary: result.reason},
+            });
             const postSuccessState = await publicationState();
-            if (publicationChanged(postSuccessState)) {
+            if (publicationChanged(postSuccessState, currentMerge)) {
               await failPublishedSuccess(publicationChangeReason(postSuccessState));
             }
 

@@ -1005,8 +1005,9 @@ func writeReviewUsage(w io.Writer) {
 const reviewUsage = `Request a subscription-backed Codex review of a pull request.
 
 Posts one authenticated @codex review request for the exact current head. The
-deployed SFL observer validates the Codex result and publishes the required
-SFL Reviewer Gate Runner check on that head.
+deployed SFL observer validates the Codex result against that head and base,
+then publishes the required SFL Reviewer Gate Runner check on GitHub's current
+merge commit for the pull request.
 
 Usage:
   gh sfl review [flags] <pr-number>

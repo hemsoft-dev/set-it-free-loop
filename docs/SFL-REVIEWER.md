@@ -119,11 +119,13 @@ After deployment, enable the existing strict branch rule:
     gh sfl gate --repo HemSoft/repository
 
 The rule still requires SFL Reviewer Gate Runner from GitHub Actions App ID
-15368 with strict base freshness. The observer writes that exact check on the
-reviewed head:
+15368 with strict base freshness. The observer binds the review artifact to the
+reviewed head and base, keeps its terminal audit check on that head, and writes
+the required check on GitHub's current synthetic merge commit:
 
-- clean Codex result: success;
-- current-head Codex findings or malformed authenticated output: failure;
+- clean Codex result: success on the head audit and required merge checks;
+- current-head Codex findings or malformed authenticated output: failure on
+  the head audit check, leaving the required merge check unsatisfied;
 - stale or spoofed artifact: no check.
 
 ## Semantic change from the retired reviewer
