@@ -132,7 +132,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("checking existing Codex review requests: %w", findErr)
 	}
 	var existing reviewTriggerComment
-	retryAuthorizedByTerminal := false
+	retryNeedsCompletionWait := false
 	retryNeedsReactionMaterialization := false
 	if len(requests) > 0 {
 		existing = requests[len(requests)-1]
@@ -143,33 +143,37 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 				owner, repo, opts.pr, pr.HeadSHA, existing.HTMLURL)
 			return nil
 		}
-		completed, completedErr := hasTerminalGateForRequest(client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing)
-		if completedErr != nil {
-			return fmt.Errorf("checking the prior Codex review result: %w", completedErr)
-		}
-		if !completed {
-			recoverable, recoveryErr := canRecoverFromOverlappingRequest(
-				client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, requests,
-			)
-			if recoveryErr != nil {
-				return fmt.Errorf("checking overlapping Codex review requests: %w", recoveryErr)
-			}
-			if !recoverable {
-				return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
-			}
+		if reviewCommentWasEdited(existing) {
 			retryNeedsReactionMaterialization = true
+		} else {
+			completed, completedErr := hasTerminalGateForRequest(client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing)
+			if completedErr != nil {
+				return fmt.Errorf("checking the prior Codex review result: %w", completedErr)
+			}
+			if !completed {
+				recoverable, recoveryErr := canRecoverFromOverlappingRequest(
+					client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, requests,
+				)
+				if recoveryErr != nil {
+					return fmt.Errorf("checking overlapping Codex review requests: %w", recoveryErr)
+				}
+				if !recoverable {
+					return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
+				}
+				retryNeedsReactionMaterialization = true
+			}
 		}
-		retryAuthorizedByTerminal = true
+		retryNeedsCompletionWait = true
 	}
-	if retryAuthorizedByTerminal {
+	if retryNeedsCompletionWait {
 		if err := waitForCodexRequestCompletion(
 			client, owner, repo, existing.ID, retryNeedsReactionMaterialization,
 		); err != nil {
 			return fmt.Errorf("waiting for the prior Codex review to finish: %w", err)
 		}
 		// GitHub exposes request and gate timestamps at second resolution. Waiting
-		// past a full boundary keeps a retry strictly ordered after the terminal
-		// gate that authorized it, while the observer fails closed on equal times.
+		// past a full boundary keeps a retry strictly ordered after the prior
+		// request's completion evidence, while the observer fails closed on equal times.
 		waitForRetryOrdering()
 	}
 
@@ -465,6 +469,15 @@ func findCodexReviewTriggers(
 func reviewCommentTime(comment reviewTriggerComment) time.Time {
 	parsed, _ := time.Parse(time.RFC3339, comment.CreatedAt)
 	return parsed
+}
+
+func reviewCommentWasEdited(comment reviewTriggerComment) bool {
+	if strings.TrimSpace(comment.UpdatedAt) == "" {
+		return false
+	}
+	createdAt := reviewCommentTime(comment)
+	updatedAt, err := time.Parse(time.RFC3339Nano, comment.UpdatedAt)
+	return createdAt.IsZero() || err != nil || !updatedAt.Equal(createdAt)
 }
 
 func fetchReviewContextToken(client restAPI, owner, repo, headSHA string) (string, error) {
