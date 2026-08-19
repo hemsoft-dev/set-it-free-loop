@@ -329,6 +329,18 @@ func TestRunReviewRetryRejectsOutstandingRequest(t *testing.T) {
 	}
 }
 
+func TestReviewCommentTimeUsesImmutableCreatedAt(t *testing.T) {
+	created := "2026-08-19T00:00:00Z"
+	comment := reviewTriggerComment{
+		CreatedAt: created,
+		UpdatedAt: "2026-08-19T01:00:00Z",
+	}
+
+	if got := reviewCommentTime(comment); !got.Equal(time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("reviewCommentTime() = %s, want immutable created_at %s", got, created)
+	}
+}
+
 func installReviewFakes(t *testing.T, rest restAPI) {
 	t.Helper()
 	oldREST := newRESTClient

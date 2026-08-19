@@ -364,11 +364,7 @@ func findCodexReviewTrigger(
 }
 
 func reviewCommentTime(comment reviewTriggerComment) time.Time {
-	value := comment.UpdatedAt
-	if value == "" {
-		value = comment.CreatedAt
-	}
-	parsed, _ := time.Parse(time.RFC3339, value)
+	parsed, _ := time.Parse(time.RFC3339, comment.CreatedAt)
 	return parsed
 }
 

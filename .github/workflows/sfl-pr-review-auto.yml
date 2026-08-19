@@ -178,14 +178,22 @@ jobs:
               return;
             }
             const activeContextRuns = async () => {
-              const response = await github.rest.actions.listWorkflowRuns({
-                owner,
-                repo,
-                workflow_id: "sfl-pr-review-auto.yml",
-                event: "pull_request_target",
-                per_page: 100,
-              });
-              return response.data.workflow_runs.filter(
+              const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"];
+              const pages = await Promise.all(activeStatuses.map(
+                status => github.paginate(
+                  github.rest.actions.listWorkflowRuns,
+                  {
+                    owner,
+                    repo,
+                    workflow_id: "sfl-pr-review-auto.yml",
+                    event: "pull_request_target",
+                    status,
+                    per_page: 100,
+                  },
+                  response => response.data.workflow_runs,
+                ),
+              ));
+              return pages.flat().filter(
                 run => run.id !== context.runId && run.status !== "completed" &&
                   (run.pull_requests || []).some(candidate => candidate.number === pullNumber),
               );
@@ -272,7 +280,7 @@ jobs:
                 !(comment.body || "").includes(baseMarker),
             );
             const matchingRequests = Number.isFinite(artifactTime) ? triggerComments.map(
-              comment => ({comment, requestTime: Date.parse(comment.updated_at || comment.created_at || "")}),
+              comment => ({comment, requestTime: Date.parse(comment.created_at || "")}),
             ).filter(
               ({comment, requestTime}) => isOwnerRequest(comment) &&
                 (comment.body || "").startsWith("@codex review") &&
