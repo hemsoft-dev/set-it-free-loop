@@ -65,6 +65,7 @@ foreach ($pattern in @(
     'registeredRequestIdsFromStatuses(statuses)',
     'let latestPotentialRequestRegistered = false',
     'visibleRegistrations.has(latestPotentialRequest.comment.id)',
+    'if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 5000))',
     'No registered Codex review request materialized for this artifact',
     'context=${contextToken}',
     'function requestGateExternalId(',

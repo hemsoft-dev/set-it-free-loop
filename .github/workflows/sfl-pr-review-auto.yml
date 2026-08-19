@@ -427,7 +427,7 @@ jobs:
               latestPotentialRequestRegistered = Boolean(latestPotentialRequest) &&
                 visibleRegistrations.has(latestPotentialRequest.comment.id);
               if (latestPotentialRequestRegistered) break;
-              if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 500));
+              if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 5000));
             }
             if (!latestPotentialRequestRegistered) {
               core.info("No registered Codex review request materialized for this artifact");
