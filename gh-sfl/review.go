@@ -494,6 +494,7 @@ func findCodexReviewTriggers(
 	}
 	var matches []reviewTriggerComment
 	var ownerRequests []reviewTriggerComment
+	headMarker := codexReviewHeadMarker(headSHA)
 	for page := 1; ; page++ {
 		var comments []reviewTriggerComment
 		if err := client.Get(
@@ -504,7 +505,8 @@ func findCodexReviewTriggers(
 		}
 		for _, comment := range comments {
 			if strings.EqualFold(comment.User.Login, owner) &&
-				(strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) ||
+				((strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) &&
+					strings.Contains(comment.Body, headMarker)) ||
 					registeredIDs[comment.ID]) {
 				ownerRequests = append(ownerRequests, comment)
 				if strings.Contains(comment.Body, marker) {

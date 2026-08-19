@@ -547,7 +547,7 @@ func TestRunReviewRetryRecoversAfterEditedMarkerIsRemoved(t *testing.T) {
 		User: struct {
 			Login string `json:"login"`
 		}{Login: "HemSoft"},
-	}}}
+	}}, statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)}}
 	installReviewFakes(t, rest)
 
 	if err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard); err != nil {
@@ -558,6 +558,28 @@ func TestRunReviewRetryRecoversAfterEditedMarkerIsRemoved(t *testing.T) {
 	}
 	if rest.reactionGets != 60 {
 		t.Fatalf("marker-removed reaction GETs = %d, want 60", rest.reactionGets)
+	}
+}
+
+func TestRunReviewIgnoresPriorHeadRequest(t *testing.T) {
+	oldHead := strings.Repeat("c", 40)
+	rest := &reviewREST{comments: []reviewTriggerComment{{
+		ID:        123,
+		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(oldHead, strings.Repeat("a", 40), "none"),
+		HTMLURL:   "https://github.test/old-head",
+		CreatedAt: "2026-08-19T00:00:00Z",
+		UpdatedAt: "2026-08-19T00:00:00Z",
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "HemSoft"},
+	}}}
+	installReviewFakes(t, rest)
+
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runReview() prior-head request error = %v", err)
+	}
+	if rest.posts != 1 || rest.reactionGets != 0 {
+		t.Fatalf("prior-head request posts/reaction GETs = %d/%d, want 1/0", rest.posts, rest.reactionGets)
 	}
 }
 
