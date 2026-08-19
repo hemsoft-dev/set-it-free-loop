@@ -205,7 +205,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 				owner, repo, opts.pr, pr.HeadSHA, existing.HTMLURL)
 			return nil
 		}
-		if untrackedExisting || reviewCommentWasEdited(existing) {
+		if untrackedExisting || reviewCommentWasEdited(existing, bodyForReviewRequest(marker)) {
 			retryNeedsReactionMaterialization = true
 		} else {
 			terminal, completed, completedErr := findTerminalGateForRequest(
@@ -244,7 +244,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		waitForRetryOrdering()
 	}
 
-	body := codexReviewCommand + "\n\n" + marker
+	body := bodyForReviewRequest(marker)
 	payload, err := jsonBody(map[string]string{"body": body})
 	if err != nil {
 		return fmt.Errorf("encoding Codex review request: %w", err)
@@ -261,7 +261,11 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return errors.New("GitHub created the Codex review request without returning its ID and URL")
 	}
 	if err := registerCodexReviewRequest(client, owner, repo, opts.pr, pr.HeadSHA, created); err != nil {
-		return fmt.Errorf("registering the Codex review request: %w", err)
+		deletePath := fmt.Sprintf("repos/%s/%s/issues/comments/%d", owner, repo, created.ID)
+		if deleteErr := client.Delete(deletePath, nil); deleteErr != nil {
+			return fmt.Errorf("registering the Codex review request: %v; deleting unregistered request comment %d: %w", err, created.ID, deleteErr)
+		}
+		return fmt.Errorf("registering the Codex review request: %w (deleted unregistered request comment %d)", err, created.ID)
 	}
 
 	fmt.Fprintf(stdout, "Requested subscription-backed Codex review for %s/%s#%d at %.10s: %s\n",
@@ -584,6 +588,10 @@ func codexReviewMarker(headSHA, baseSHA, contextToken string) string {
 		";base=" + strings.ToLower(baseSHA) + ";context=" + contextToken + " -->"
 }
 
+func bodyForReviewRequest(marker string) string {
+	return codexReviewCommand + "\n\n" + marker
+}
+
 func codexReviewHeadMarker(headSHA string) string {
 	return "<!-- sfl-codex-review:head=" + strings.ToLower(headSHA) + ";base="
 }
@@ -721,7 +729,10 @@ func reviewCommentTime(comment reviewTriggerComment) time.Time {
 	return parsed
 }
 
-func reviewCommentWasEdited(comment reviewTriggerComment) bool {
+func reviewCommentWasEdited(comment reviewTriggerComment, expectedBody string) bool {
+	if comment.Body != expectedBody {
+		return true
+	}
 	if strings.TrimSpace(comment.UpdatedAt) == "" {
 		return false
 	}

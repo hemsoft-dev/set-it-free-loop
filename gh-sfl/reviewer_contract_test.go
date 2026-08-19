@@ -38,6 +38,7 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 
 	for _, required := range []string{
 		"name: SFL Codex Review Observer",
+		"format('SFL Codex review request #{0}', github.event.issue.number)",
 		"types: [opened, reopened, edited, synchronize]",
 		"invalidate-base-advance:",
 		"github.event.sender.id == 199175422",
@@ -292,10 +293,31 @@ func TestCodexObserverActiveInvalidationFixtures(t *testing.T) {
 			name: "active owner request invalidation blocks observation",
 			run: map[string]any{
 				"event": "issue_comment", "status": "in_progress",
-				"actor": map[string]any{"login": "HemSoft"},
+				"actor":         map[string]any{"login": "HemSoft"},
+				"display_title": "SFL Codex review request #42",
 			},
 			pullNumber: 42,
 			want:       true,
+		},
+		{
+			name: "owner request for another pull is irrelevant",
+			run: map[string]any{
+				"event": "issue_comment", "status": "in_progress",
+				"actor":         map[string]any{"login": "HemSoft"},
+				"display_title": "SFL Codex review request #41",
+			},
+			pullNumber: 42,
+			want:       false,
+		},
+		{
+			name: "ordinary owner comment is not an invalidation",
+			run: map[string]any{
+				"event": "issue_comment", "status": "queued",
+				"actor":         map[string]any{"login": "HemSoft"},
+				"display_title": "SFL issue_comment event",
+			},
+			pullNumber: 42,
+			want:       false,
 		},
 		{
 			name: "Codex result comment is not a request invalidation",

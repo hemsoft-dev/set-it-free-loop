@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -30,8 +31,12 @@ type reviewREST struct {
 	workflowRunGets      int
 	posts                int
 	statusPosts          int
+	statusPostErr        error
 	statusBody           map[string]string
 	postBody             string
+	deletes              int
+	deletePath           string
+	deleteErr            error
 }
 
 func (f *reviewREST) Get(path string, response interface{}) error {
@@ -124,7 +129,7 @@ func (f *reviewREST) Post(path string, body io.Reader, response interface{}) err
 		if err := json.NewDecoder(body).Decode(&f.statusBody); err != nil {
 			return err
 		}
-		return nil
+		return f.statusPostErr
 	}
 	if !strings.HasSuffix(path, "/issues/94/comments") {
 		return fmt.Errorf("unexpected POST %s", path)
@@ -147,8 +152,10 @@ func (f *reviewREST) Put(string, io.Reader, interface{}) error {
 func (f *reviewREST) Patch(string, io.Reader, interface{}) error {
 	return fmt.Errorf("unexpected PATCH")
 }
-func (f *reviewREST) Delete(string, interface{}) error {
-	return fmt.Errorf("unexpected DELETE")
+func (f *reviewREST) Delete(path string, _ interface{}) error {
+	f.deletes++
+	f.deletePath = path
+	return f.deleteErr
 }
 
 func TestParseReviewOptions(t *testing.T) {
@@ -210,6 +217,33 @@ func TestRunReviewPostsOneHeadBoundCodexRequest(t *testing.T) {
 	if !strings.Contains(stdout.String(), "subscription-backed Codex review") ||
 		!strings.Contains(stdout.String(), "#issuecomment-999") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunReviewDeletesRequestWhenRegistrationFails(t *testing.T) {
+	rest := &reviewREST{statusPostErr: errors.New("status unavailable")}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--pr", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "deleted unregistered request comment 999") {
+		t.Fatalf("runReview() registration error = %v", err)
+	}
+	if rest.deletes != 1 || rest.deletePath != "repos/HemSoft/consumer/issues/comments/999" {
+		t.Fatalf("request cleanup = deletes %d, path %q", rest.deletes, rest.deletePath)
+	}
+}
+
+func TestRunReviewReportsRequestCleanupFailure(t *testing.T) {
+	rest := &reviewREST{
+		statusPostErr: errors.New("status unavailable"),
+		deleteErr:     errors.New("delete unavailable"),
+	}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--pr", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "status unavailable") ||
+		!strings.Contains(err.Error(), "deleting unregistered request comment 999: delete unavailable") {
+		t.Fatalf("runReview() cleanup error = %v", err)
 	}
 }
 
@@ -689,6 +723,30 @@ func TestRunReviewRetryRecoversFromEditedRequest(t *testing.T) {
 	}
 	if rest.reactionGets != 60 {
 		t.Fatalf("edited-request reaction GETs = %d, want 60", rest.reactionGets)
+	}
+}
+
+func TestRunReviewRetryRecoversFromSameSecondBodyMutation(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	timestamp := "2026-08-19T00:00:00Z"
+	rest := &reviewREST{comments: []reviewTriggerComment{{
+		ID:        123,
+		Body:      "please " + codexReviewCommand + "\n\n" + codexReviewMarker(head, base, "none"),
+		HTMLURL:   "https://github.test/edited-same-second",
+		CreatedAt: timestamp,
+		UpdatedAt: timestamp,
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "HemSoft"},
+	}}, statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)}}
+	installReviewFakes(t, rest)
+
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runReview() same-second mutation retry error = %v", err)
+	}
+	if rest.posts != 1 || rest.reactionGets != 60 {
+		t.Fatalf("same-second mutation posts/reaction GETs = %d/%d, want 1/60", rest.posts, rest.reactionGets)
 	}
 }
 

@@ -23,6 +23,7 @@ if (-not (Test-NormalizedTextEqual $canonical $staged)) {
 
 foreach ($pattern in @(
     'name: SFL Codex Review Observer',
+    "format('SFL Codex review request #{0}', github.event.issue.number)",
     'github.event.sender.id == 199175422',
     'const appId = 1144995',
     'const appSlug = "chatgpt-codex-connector"',
@@ -78,7 +79,8 @@ foreach ($pattern in @(
     'const checks = await github.paginate(',
     'const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"]',
     'const events = ["pull_request_target", "push", "issue_comment"]',
-    'status => github.paginate(',
+    'activeStatuses.includes(run.status)',
+    'run.display_title === `SFL Codex review request #${pullNumber}`',
     'actions: read',
     'if (run.event === "push") return true',
     'run.actor && run.actor.login',
@@ -154,6 +156,7 @@ const otherContext = comment(3, "2026-08-19T00:00:02Z", "base-advance");
 const recoveredRetry = comment(4, "2026-08-19T00:00:04Z", "none");
 const unregistered = comment(5, "2026-08-19T00:00:05Z", "none");
 const editedSecond = {...second, updated_at: "2026-08-19T00:00:03Z"};
+const sameSecondBodyMutation = {...second, body: `please @codex review\n\n${baseMarker}context=none -->`};
 const firstTime = Date.parse(first.created_at);
 const firstPrefix = requestGateExternalIdPrefix(pullNumber, currentBase, "none", first.id, firstTime);
 const terminal = completed_at => ({
@@ -167,6 +170,7 @@ const cases = [
   {name: "terminal predecessor allows retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1, 2]},
   {name: "same-second terminal fails closed", comments: [first, second], checks: [terminal("2026-08-19T00:00:02Z")], want: [1]},
   {name: "edited marker is rejected", comments: [first, editedSecond], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
+  {name: "same-second body mutation is rejected", comments: [first, sameSecondBodyMutation], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
   {name: "late terminal does not authorize retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:02.500Z")], want: [1]},
   {name: "later retry recovers after overlap", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:03Z")], want: [1, 4]},
   {name: "different contexts are independent", comments: [first, otherContext], checks: [], want: [1, 3]},

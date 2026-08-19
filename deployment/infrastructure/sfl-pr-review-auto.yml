@@ -2,6 +2,11 @@
 # source pin with the immutable source SHA.
 # Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main
 name: SFL Codex Review Observer
+run-name: >-
+  ${{ github.event_name == 'issue_comment' &&
+      startsWith(github.event.comment.body, '@codex review') &&
+      format('SFL Codex review request #{0}', github.event.issue.number) ||
+      format('SFL {0} event', github.event_name) }}
 
 on:
   push:
@@ -239,7 +244,8 @@ jobs:
               if (!run || run.status === "completed") return false;
               if (run.event === "push") return true;
               if (run.event === "issue_comment") {
-                return ((run.actor && run.actor.login) || "").toLowerCase() === owner.toLowerCase();
+                return ((run.actor && run.actor.login) || "").toLowerCase() === owner.toLowerCase() &&
+                  run.display_title === `SFL Codex review request #${pullNumber}`;
               }
               return run.event === "pull_request_target" &&
                 (run.pull_requests || []).some(candidate => candidate.number === pullNumber);
@@ -402,8 +408,8 @@ jobs:
             ).filter(
               ({comment, requestTime, updatedTime}) => isOwnerRequest(comment) &&
                 registeredRequestIds.has(comment.id) &&
-                (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(baseMarker) &&
+                (comment.body || "") === `@codex review\n\n${baseMarker}context=${requestContextFromBody(comment.body)} -->` &&
                 Number.isFinite(requestTime) && requestTime < beforeTime &&
                 Number.isFinite(updatedTime) && updatedTime === requestTime,
             ).sort(requestOrder);
@@ -467,22 +473,19 @@ jobs:
             const activeInvalidationRuns = async () => {
               const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"];
               const events = ["pull_request_target", "push", "issue_comment"];
-              const pages = await Promise.all(events.flatMap(
-                event => activeStatuses.map(status => github.paginate(
-                  github.rest.actions.listWorkflowRuns,
-                  {
-                    owner,
-                    repo,
-                    workflow_id: "sfl-pr-review-auto.yml",
-                    event,
-                    status,
-                    per_page: 100,
-                  },
-                  response => response.data.workflow_runs,
-                )),
-              ));
+              const pages = await Promise.all(events.map(async event => {
+                const response = await github.rest.actions.listWorkflowRuns({
+                  owner,
+                  repo,
+                  workflow_id: "sfl-pr-review-auto.yml",
+                  event,
+                  per_page: 100,
+                });
+                return response.data.workflow_runs;
+              }));
               return pages.flat().filter(
-                run => run.id !== context.runId && isActiveInvalidationRun(run, pullNumber, owner),
+                run => run.id !== context.runId && activeStatuses.includes(run.status) &&
+                  isActiveInvalidationRun(run, pullNumber, owner),
               );
             };
             const failForPendingInvalidation = async pendingRun => {
