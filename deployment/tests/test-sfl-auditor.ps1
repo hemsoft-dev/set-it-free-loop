@@ -89,6 +89,9 @@ Assert-True ($workflowContent -notmatch 'any\(\.name == "pr-review"\)') 'Auditor
 Assert-True ($workflowContent -match 'for MANIFEST_PATH in \.sfl/sfl\.json sfl\.json') 'Auditor does not inspect both CLI and legacy manifest paths.'
 Assert-True ($workflowContent -match 'OBSERVER_STATE.*\.state') 'Auditor does not inspect the observer workflow state.'
 Assert-True ($workflowContent -match 'OBSERVER_STATE" != "active"') 'Auditor does not reject disabled observer workflows.'
+Assert-True ($workflowContent -match "DEFAULT_BRANCH=.*\.default_branch") 'Auditor does not read the repository default branch.'
+Assert-True ($workflowContent -match 'PUSH_FILTER_VALID') 'Auditor does not validate the observer push branch.'
+Assert-True ($workflowContent -match 'BASE_ENV_VALID') 'Auditor does not validate the observer base-branch environment.'
 
 $mockGh = @'
 gh() {
@@ -168,6 +171,91 @@ try {
     Assert-True ($unrelatedCommentRun.ExitCode -eq 0) "Stalled-PR unrelated-comment run failed: $($unrelatedCommentRun.Output)"
     Assert-True ($unrelatedCommentOutput -match 'stalled_prs_found=1') 'Unrelated review text suppressed the Auditor warning.'
     Assert-True ($unrelatedCommentWarning -match '<!-- sfl-auditor:stalled-pr-missing-analyzers -->') 'Auditor warning was not posted after unrelated review text.'
+
+    $reviewScript = Get-WorkflowStepScript "      - name: `"Check: SFL review prerequisites`"`n"
+    $manifestPath = Join-Path $temporaryDirectory 'sfl.json'
+    $observerPath = Join-Path $temporaryDirectory 'observer.yml'
+    $reviewOutputPath = Join-Path $temporaryDirectory 'review-output'
+    $issueLogPath = Join-Path $temporaryDirectory 'issue-log'
+    '{"components":["sfl-pr-review-auto"]}' | Set-Content -LiteralPath $manifestPath
+    $reviewMock = @'
+gh() {
+  if [ "$1" = "api" ]; then
+    case "$2" in
+      repos/HemSoft/example/contents/.sfl/sfl.json)
+        base64 "$MANIFEST_FIXTURE"
+        return
+        ;;
+      repos/HemSoft/example/actions/workflows/sfl-pr-review-auto.yml)
+        printf 'active\n'
+        return
+        ;;
+      repos/HemSoft/example/contents/.github/workflows/sfl-pr-review-auto.yml)
+        base64 "$OBSERVER_FIXTURE"
+        return
+        ;;
+      repos/HemSoft/example)
+        printf 'main\n'
+        return
+        ;;
+    esac
+    return 1
+  fi
+  if [ "$1 $2" = "issue list" ]; then
+    return
+  fi
+  if [ "$1 $2" = "issue create" ]; then
+    printf 'created\n' >> "$ISSUE_LOG"
+    return
+  fi
+  if [ "$1 $2" = "issue close" ]; then
+    printf 'closed\n' >> "$ISSUE_LOG"
+    return
+  fi
+  return 1
+}
+'@
+    $reviewEnvironment = @{
+        GITHUB_OUTPUT = $reviewOutputPath
+        ISSUE_LOG = $issueLogPath
+        MANIFEST_FIXTURE = $manifestPath
+        OBSERVER_FIXTURE = $observerPath
+        REPO = 'HemSoft/example'
+    }
+    @'
+name: SFL Codex Review Observer
+on:
+  push:
+    branches: ['trunk']
+env:
+  SFL_REVIEW_BASE_BRANCH: 'trunk'
+github.event.sender.id == 199175422
+name: "SFL Reviewer Gate Runner"
+'@ | Set-Content -LiteralPath $observerPath
+    $staleBaseRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    $staleBaseOutput = Get-Content -Raw -LiteralPath $reviewOutputPath
+    $staleBaseIssue = Get-Content -Raw -LiteralPath $issueLogPath
+    Assert-True ($staleBaseRun.ExitCode -eq 0) "Stale-base prerequisite script failed: $($staleBaseRun.Output)"
+    Assert-True ($staleBaseOutput -match 'sfl_review_prerequisites_missing=1') 'Auditor accepted a stale observer base branch.'
+    Assert-True ($staleBaseIssue -match 'created') 'Auditor did not create an issue for a stale observer base branch.'
+
+    Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force
+    @'
+name: SFL Codex Review Observer
+on:
+  push:
+    branches: ['main']
+env:
+  SFL_REVIEW_BASE_BRANCH: 'main'
+github.event.sender.id == 199175422
+name: "SFL Reviewer Gate Runner"
+'@ | Set-Content -LiteralPath $observerPath
+    $currentBaseRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    $currentBaseOutput = Get-Content -Raw -LiteralPath $reviewOutputPath
+    $currentBaseIssue = if (Test-Path -LiteralPath $issueLogPath) { Get-Content -Raw -LiteralPath $issueLogPath } else { '' }
+    Assert-True ($currentBaseRun.ExitCode -eq 0) "Current-base prerequisite script failed: $($currentBaseRun.Output)"
+    Assert-True ($currentBaseOutput -match 'sfl_review_prerequisites_missing=0') 'Auditor rejected an observer deployed for the current default branch.'
+    Assert-True ([string]::IsNullOrEmpty($currentBaseIssue)) 'Auditor opened or closed an issue for a valid observer base branch.'
 
     $summaryScript = Get-WorkflowStepScript "      - name: Summary`n"
     $summaryExpressions = @(

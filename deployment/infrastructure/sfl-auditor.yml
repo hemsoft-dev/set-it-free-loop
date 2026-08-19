@@ -370,12 +370,27 @@ jobs:
           if OBSERVER_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review-auto.yml" --jq '.content' 2>/dev/null); then
             OBSERVER=$(echo "$OBSERVER_B64" | base64 --decode)
           fi
+          DEFAULT_BRANCH=$(gh api "repos/$REPO" --jq '.default_branch' 2>/dev/null || true)
+          PUSH_FILTER_VALID=0
+          BASE_ENV_VALID=0
+          if [ -n "$OBSERVER" ] && [ -n "$DEFAULT_BRANCH" ]; then
+            if grep -Fqx "    branches: ['$DEFAULT_BRANCH']" <<< "$OBSERVER" || \
+              grep -Fqx "    branches: [$DEFAULT_BRANCH]" <<< "$OBSERVER"; then
+              PUSH_FILTER_VALID=1
+            fi
+            if grep -Fqx "  SFL_REVIEW_BASE_BRANCH: '$DEFAULT_BRANCH'" <<< "$OBSERVER" || \
+              grep -Fqx "  SFL_REVIEW_BASE_BRANCH: $DEFAULT_BRANCH" <<< "$OBSERVER"; then
+              BASE_ENV_VALID=1
+            fi
+          fi
           if [ -n "$OBSERVER" ] && { \
             ! grep -q 'name: SFL Codex Review Observer' <<< "$OBSERVER" || \
             ! grep -q 'github.event.sender.id == 199175422' <<< "$OBSERVER" || \
-            ! grep -q 'name: "SFL Reviewer Gate Runner"' <<< "$OBSERVER"; \
+            ! grep -q 'name: "SFL Reviewer Gate Runner"' <<< "$OBSERVER" || \
+            [ "$PUSH_FILTER_VALID" -ne 1 ] || \
+            [ "$BASE_ENV_VALID" -ne 1 ]; \
           }; then
-            echo "::warning::Malformed subscription-backed Codex observer"
+            echo "::warning::Malformed subscription-backed Codex observer or stale default-branch deployment"
             MISSING=$((MISSING + 1))
             MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review-auto.yml\` from the pinned SFL release"$'\n'
           fi
