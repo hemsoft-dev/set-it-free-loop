@@ -344,7 +344,7 @@ jobs:
           if MANIFEST=$(gh api "repos/$REPO/contents/sfl.json" --jq '.content' 2>/dev/null); then
             if echo "$MANIFEST" | base64 --decode | jq -e \
               '(.components | index("sfl-pr-review-auto") != null) or
-               ((.addons // []) | any(.name == "pr-review"))' >/dev/null; then
+               ((.addons // []) | any(. == "pr-review"))' >/dev/null; then
               EXPECTED=1
             fi
           fi

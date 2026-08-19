@@ -84,7 +84,8 @@ function Invoke-BashScript {
 $workflowContent = Get-Content -Raw -LiteralPath $workflowPath
 Assert-True ($workflowContent -match 'index\("sfl-pr-review-auto"\)') 'Auditor does not activate for the current reviewer component.'
 Assert-True ($workflowContent -notmatch 'index\("sfl-pr-review"\)') 'Auditor still activates on the retired reviewer component.'
-Assert-True ($workflowContent -match 'any\(\.name == "pr-review"\)') 'Auditor does not activate for the reviewer add-on.'
+Assert-True ($workflowContent -match 'any\(\. == "pr-review"\)') 'Auditor does not activate for the string-valued reviewer add-on.'
+Assert-True ($workflowContent -notmatch 'any\(\.name == "pr-review"\)') 'Auditor still treats string-valued add-ons as objects.'
 Assert-True ($workflowContent -match 'OBSERVER_STATE.*\.state') 'Auditor does not inspect the observer workflow state.'
 Assert-True ($workflowContent -match 'OBSERVER_STATE" != "active"') 'Auditor does not reject disabled observer workflows.'
 
