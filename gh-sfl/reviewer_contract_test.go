@@ -288,6 +288,24 @@ func TestCodexObserverActiveInvalidationFixtures(t *testing.T) {
 			pullNumber: 42,
 			want:       false,
 		},
+		{
+			name: "active owner request invalidation blocks observation",
+			run: map[string]any{
+				"event": "issue_comment", "status": "in_progress",
+				"actor": map[string]any{"login": "HemSoft"},
+			},
+			pullNumber: 42,
+			want:       true,
+		},
+		{
+			name: "Codex result comment is not a request invalidation",
+			run: map[string]any{
+				"event": "issue_comment", "status": "queued",
+				"actor": map[string]any{"login": "chatgpt-codex-connector[bot]"},
+			},
+			pullNumber: 42,
+			want:       false,
+		},
 	}
 
 	for _, tc := range tests {
@@ -352,7 +370,7 @@ func runActiveInvalidationFixture(t *testing.T, run map[string]any, pullNumber i
 		t.Fatal("could not locate testable Codex observer block")
 	}
 	source := workflow[start+len(startMarker) : end]
-	source += "\nconst fixture = JSON.parse(process.argv[2]); console.log(JSON.stringify(isActiveInvalidationRun(fixture.run, fixture.pullNumber)));\n"
+	source += "\nconst fixture = JSON.parse(process.argv[2]); console.log(JSON.stringify(isActiveInvalidationRun(fixture.run, fixture.pullNumber, \"HemSoft\")));\n"
 
 	temp := filepath.Join(t.TempDir(), "active-invalidation.js")
 	if err := os.WriteFile(temp, []byte(source), 0o600); err != nil {
