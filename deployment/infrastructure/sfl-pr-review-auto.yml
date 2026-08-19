@@ -175,6 +175,13 @@ jobs:
               owner, repo, issue_number: pullNumber, per_page: 100,
             });
             const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+            const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
+            const conflictingBaseRequest = triggerComments.some(
+              comment => trustedAssociations.has(comment.author_association) &&
+                (comment.body || "").startsWith("@codex review") &&
+                (comment.body || "").includes(headMarker) &&
+                !(comment.body || "").includes(marker),
+            );
             const matchingRequests = Number.isFinite(artifactTime) ? triggerComments.map(
               comment => ({comment, requestTime: Date.parse(comment.updated_at || comment.created_at || "")}),
             ).filter(
@@ -184,7 +191,7 @@ jobs:
                 Number.isFinite(requestTime) && requestTime < artifactTime,
             ).sort((left, right) => right.requestTime - left.requestTime) : [];
             const request = matchingRequests[0];
-            const requestMatchesCurrentBase = Boolean(request);
+            const requestMatchesCurrentBase = Boolean(request) && !conflictingBaseRequest;
             const openPullsForCurrentHead = async () => {
               const candidates = await github.paginate(github.rest.pulls.list, {
                 owner, repo, state: "open", per_page: 100,

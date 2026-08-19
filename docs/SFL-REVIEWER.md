@@ -67,6 +67,10 @@ The command:
    head.
 
 A new commit creates a new head and therefore permits one new request.
+If a base change or retarget would reuse a head that was already requested
+against another base SHA, update the pull request branch first. Native Codex
+artifacts identify the reviewed head but not the invoking base, so SFL rejects
+same-head cross-base reuse rather than guessing which request produced a result.
 
 ## Result contract
 

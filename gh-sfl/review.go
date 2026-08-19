@@ -99,6 +99,13 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 
 	marker := codexReviewMarker(pr.HeadSHA, pr.BaseSHA)
+	conflictingURL, conflictErr := findConflictingCodexBaseRequest(client, owner, repo, opts.pr, pr.HeadSHA, marker)
+	if conflictErr != nil {
+		return fmt.Errorf("checking prior Codex review bases: %w", conflictErr)
+	}
+	if conflictingURL != "" {
+		return fmt.Errorf("pull request #%d head %.10s was already requested against another base at %s — update the pull request branch to a new head before requesting review for the current base", opts.pr, pr.HeadSHA, conflictingURL)
+	}
 	existing, findErr := findCodexReviewTrigger(client, owner, repo, opts.pr, marker)
 	if findErr != nil {
 		return fmt.Errorf("checking existing Codex review requests: %w", findErr)
@@ -287,6 +294,37 @@ func fetchRepositoryDefaultBranchWithClient(client restAPI, owner, repo string) 
 func codexReviewMarker(headSHA, baseSHA string) string {
 	return "<!-- sfl-codex-review:head=" + strings.ToLower(headSHA) +
 		";base=" + strings.ToLower(baseSHA) + " -->"
+}
+
+func codexReviewHeadMarker(headSHA string) string {
+	return "<!-- sfl-codex-review:head=" + strings.ToLower(headSHA) + ";base="
+}
+
+func findConflictingCodexBaseRequest(
+	client restAPI,
+	owner, repo string,
+	prNumber int,
+	headSHA, currentMarker string,
+) (string, error) {
+	headMarker := codexReviewHeadMarker(headSHA)
+	for page := 1; ; page++ {
+		var comments []reviewTriggerComment
+		if err := client.Get(
+			fmt.Sprintf("repos/%s/%s/issues/%d/comments?per_page=100&page=%d", owner, repo, prNumber, page),
+			&comments,
+		); err != nil {
+			return "", err
+		}
+		for _, comment := range comments {
+			if strings.EqualFold(comment.User.Login, owner) &&
+				strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentMarker) {
+				return comment.HTMLURL, nil
+			}
+		}
+		if len(comments) < 100 {
+			return "", nil
+		}
+	}
 }
 
 func findCodexReviewTrigger(

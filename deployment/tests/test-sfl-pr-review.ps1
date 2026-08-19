@@ -40,6 +40,7 @@ foreach ($pattern in @(
     'This exact Codex request already has a terminal SFL gate',
     'pull-context:at:${contextChangeTime}',
     'base-advance:at:${baseAdvanceTime}',
+    'conflictingBaseRequest',
     'github.rest.actions.getWorkflowRun',
     'Date.parse(check.completed_at || "") > baseAdvanceTime',
     'successful Codex gate completed after this context change',

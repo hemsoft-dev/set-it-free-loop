@@ -211,6 +211,27 @@ func TestRunReviewRejectsDisabledObserver(t *testing.T) {
 	}
 }
 
+func TestRunReviewRejectsSameHeadRequestedAgainstAnotherBase(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	rest := &reviewREST{comments: []reviewTriggerComment{{
+		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("c", 40)),
+		HTMLURL: "https://github.test/old-base-request",
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "HemSoft"},
+	}}}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "already requested against another base") ||
+		!strings.Contains(err.Error(), "update the pull request branch to a new head") {
+		t.Fatalf("runReview() cross-base head reuse error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("cross-base head reuse posts = %d, want 0", rest.posts)
+	}
+}
+
 func TestRunReviewDeduplicatesCurrentHeadRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
