@@ -68,12 +68,13 @@ type reviewWorkflowRun struct {
 }
 
 type reviewTriggerComment struct {
-	ID        int64  `json:"id"`
-	Body      string `json:"body"`
-	HTMLURL   string `json:"html_url"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
-	User      struct {
+	ID         int64  `json:"id"`
+	Body       string `json:"body"`
+	HTMLURL    string `json:"html_url"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+	Registered bool   `json:"-"`
+	User       struct {
 		Login string `json:"login"`
 	} `json:"user"`
 }
@@ -196,39 +197,54 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		latestOwnerRequest := ownerRequests[len(ownerRequests)-1]
 		if existing.ID != latestOwnerRequest.ID {
 			existing = latestOwnerRequest
-			untrackedExisting = true
 		}
 	}
+	untrackedExisting = existing.HTMLURL != "" && !existing.Registered
 	if existing.HTMLURL != "" {
 		if !opts.retry {
 			fmt.Fprintf(stdout, "Codex review already requested for %s/%s#%d at %.10s: %s\nUse --retry if its result event was skipped.\n",
 				owner, repo, opts.pr, pr.HeadSHA, existing.HTMLURL)
 			return nil
 		}
-		if untrackedExisting || reviewCommentWasEdited(existing, bodyForReviewRequest(marker)) {
-			retryNeedsReactionMaterialization = true
-		} else {
-			terminal, completed, completedErr := findTerminalGateForRequest(
-				client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing,
-			)
-			if completedErr != nil {
-				return fmt.Errorf("checking the prior Codex review result: %w", completedErr)
-			}
-			if completed && strings.EqualFold(terminal.Conclusion, "success") {
-				return fmt.Errorf("the latest Codex review request for %s/%s#%d already passed — push a new commit before requesting another review so the successful gate cannot remain valid during a retry", owner, repo, opts.pr)
-			}
-			if !completed {
-				recoverable, recoveryErr := canRecoverFromOverlappingRequest(
-					client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, requests,
+		completed := false
+		edited := reviewCommentWasEdited(existing, bodyForReviewRequest(marker))
+		if !untrackedExisting {
+			if edited {
+				successful, successfulErr := findSuccessfulTerminalGateForRequestID(
+					client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing.ID,
 				)
-				if recoveryErr != nil {
-					return fmt.Errorf("checking overlapping Codex review requests: %w", recoveryErr)
+				if successfulErr != nil {
+					return fmt.Errorf("checking the edited Codex review result: %w", successfulErr)
 				}
-				if !recoverable {
-					return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
+				if successful {
+					return fmt.Errorf("the latest Codex review request for %s/%s#%d already passed — push a new commit before requesting another review so the successful gate cannot remain valid during a retry", owner, repo, opts.pr)
 				}
-				retryNeedsReactionMaterialization = true
+			} else {
+				terminal, gateCompleted, completedErr := findTerminalGateForRequest(
+					client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing,
+				)
+				if completedErr != nil {
+					return fmt.Errorf("checking the prior Codex review result: %w", completedErr)
+				}
+				completed = gateCompleted
+				if completed && strings.EqualFold(terminal.Conclusion, "success") {
+					return fmt.Errorf("the latest Codex review request for %s/%s#%d already passed — push a new commit before requesting another review so the successful gate cannot remain valid during a retry", owner, repo, opts.pr)
+				}
 			}
+		}
+		if untrackedExisting || edited {
+			retryNeedsReactionMaterialization = true
+		} else if !completed {
+			recoverable, recoveryErr := canRecoverFromOverlappingRequest(
+				client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, requests,
+			)
+			if recoveryErr != nil {
+				return fmt.Errorf("checking overlapping Codex review requests: %w", recoveryErr)
+			}
+			if !recoverable {
+				return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
+			}
+			retryNeedsReactionMaterialization = true
 		}
 		retryNeedsCompletionWait = true
 	}
@@ -655,6 +671,7 @@ func findCodexReviewTriggers(
 		}
 		for _, comment := range comments {
 			foundCommentIDs[comment.ID] = true
+			comment.Registered = registeredIDs[comment.ID]
 			if strings.EqualFold(comment.User.Login, owner) &&
 				((strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) &&
 					strings.Contains(comment.Body, headMarker)) ||
@@ -840,6 +857,43 @@ func findTerminalGateForRequest(
 		}
 		if len(response.CheckRuns) < 100 {
 			return reviewerCheckRun{}, false, nil
+		}
+	}
+}
+
+func findSuccessfulTerminalGateForRequestID(
+	client restAPI,
+	owner, repo string,
+	prNumber int,
+	headSHA, baseSHA string,
+	requestID int64,
+) (bool, error) {
+	prefix := fmt.Sprintf(
+		"sfl-codex-review:pull:%d:base:%s:context:",
+		prNumber,
+		strings.ToLower(baseSHA),
+	)
+	requestMarker := fmt.Sprintf(":request:%d:at:", requestID)
+	for page := 1; ; page++ {
+		var response struct {
+			CheckRuns []reviewerCheckRun `json:"check_runs"`
+		}
+		if err := client.Get(
+			fmt.Sprintf("repos/%s/%s/commits/%s/check-runs?check_name=SFL%%20Reviewer%%20Gate%%20Runner&filter=all&per_page=100&page=%d", owner, repo, headSHA, page),
+			&response,
+		); err != nil {
+			return false, err
+		}
+		for _, check := range response.CheckRuns {
+			if check.App.ID == 15368 && check.Status == "completed" &&
+				strings.EqualFold(check.Conclusion, "success") &&
+				strings.HasPrefix(check.ExternalID, prefix) &&
+				strings.Contains(check.ExternalID, requestMarker) {
+				return true, nil
+			}
+		}
+		if len(response.CheckRuns) < 100 {
+			return false, nil
 		}
 	}
 }

@@ -544,7 +544,7 @@ func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 		User: struct {
 			Login string `json:"login"`
 		}{Login: "HemSoft"},
-	}}, checkRuns: []map[string]any{{
+	}}, statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)}, checkRuns: []map[string]any{{
 		"status":      "completed",
 		"external_id": fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d:artifact:r456", strings.Repeat("a", 40), requestMillis),
 		"app":         map[string]any{"id": 15368},
@@ -576,7 +576,7 @@ func TestRunReviewRejectsRetryAfterSuccessfulGate(t *testing.T) {
 		User: struct {
 			Login string `json:"login"`
 		}{Login: "HemSoft"},
-	}}, checkRuns: []map[string]any{{
+	}}, statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)}, checkRuns: []map[string]any{{
 		"status":      "completed",
 		"conclusion":  "success",
 		"external_id": fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d:artifact:r456", base, requestMillis),
@@ -616,6 +616,10 @@ func TestRunReviewRetryRecoversFromOverlappingRequest(t *testing.T) {
 		comments: []reviewTriggerComment{
 			comment(123, firstCreated),
 			comment(124, secondCreated),
+		},
+		statuses: []reviewRequestStatus{
+			registeredReviewRequestStatus(123),
+			registeredReviewRequestStatus(124),
 		},
 		checkRuns: []map[string]any{{
 			"status":       "completed",
@@ -657,6 +661,10 @@ func TestRunReviewRetryRecoversFromSameSecondOverlap(t *testing.T) {
 			comment(123, firstCreated),
 			comment(124, secondCreated),
 		},
+		statuses: []reviewRequestStatus{
+			registeredReviewRequestStatus(123),
+			registeredReviewRequestStatus(124),
+		},
 		checkRuns: []map[string]any{{
 			"status":       "completed",
 			"completed_at": secondCreated,
@@ -682,13 +690,14 @@ func TestRunReviewRetryRecoversFromSameSecondOverlap(t *testing.T) {
 func TestRunReviewRetryRejectsOutstandingRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
+		ID:        123,
 		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40), "none"),
 		HTMLURL:   "https://github.test/existing",
 		CreatedAt: "2026-08-19T00:00:00Z",
 		User: struct {
 			Login string `json:"login"`
 		}{Login: "HemSoft"},
-	}}}
+	}}, statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)}}
 	installReviewFakes(t, rest)
 
 	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
@@ -747,6 +756,42 @@ func TestRunReviewRetryRecoversFromSameSecondBodyMutation(t *testing.T) {
 	}
 	if rest.posts != 1 || rest.reactionGets != 60 {
 		t.Fatalf("same-second mutation posts/reaction GETs = %d/%d, want 1/60", rest.posts, rest.reactionGets)
+	}
+}
+
+func TestRunReviewRejectsEditedRequestAfterSuccessfulGate(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	createdAt := "2026-08-19T00:00:00Z"
+	createdMillis := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC).UnixMilli()
+	rest := &reviewREST{
+		comments: []reviewTriggerComment{{
+			ID:        123,
+			Body:      "please " + codexReviewCommand + "\n\n" + codexReviewMarker(head, base, "none"),
+			HTMLURL:   "https://github.test/edited-after-success",
+			CreatedAt: createdAt,
+			UpdatedAt: createdAt,
+			User: struct {
+				Login string `json:"login"`
+			}{Login: "HemSoft"},
+		}},
+		statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)},
+		checkRuns: []map[string]any{{
+			"status":       "completed",
+			"conclusion":   "success",
+			"completed_at": "2026-08-19T00:00:01Z",
+			"external_id":  fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d:artifact:c456", base, createdMillis),
+			"app":          map[string]any{"id": 15368},
+		}},
+	}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "already passed") {
+		t.Fatalf("runReview() edited successful request error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("edited successful request posts = %d, want 0", rest.posts)
 	}
 }
 
