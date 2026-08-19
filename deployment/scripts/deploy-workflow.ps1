@@ -609,8 +609,14 @@ function Deploy-ToRepo([string]$TargetRepo) {
         }
 
         $manifestPath = Join-Path $ClonePath "sfl.json"
-        $existingManifest = if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
-            Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+        $canonicalManifestPath = Join-Path $ClonePath ".sfl/sfl.json"
+        $existingManifestPath = if (Test-Path -LiteralPath $canonicalManifestPath -PathType Leaf) {
+            $canonicalManifestPath
+        } else {
+            $manifestPath
+        }
+        $existingManifest = if (Test-Path -LiteralPath $existingManifestPath -PathType Leaf) {
+            Get-Content -LiteralPath $existingManifestPath -Raw | ConvertFrom-Json
         } else {
             $null
         }
@@ -619,6 +625,9 @@ function Deploy-ToRepo([string]$TargetRepo) {
             -IncomingManifest $incomingManifest
         $manifest = $manifestObject | ConvertTo-Json -Depth 6
         Set-Content $manifestPath $manifest
+        if (Test-Path -LiteralPath $canonicalManifestPath -PathType Leaf) {
+            Set-Content $canonicalManifestPath $manifest
+        }
         Write-Status "📋" "  sfl.json (v$SflVersion, tier: $($manifestObject.tier))"
 
         # 7. Inject/update SFL badge in README.md

@@ -40,6 +40,10 @@ foreach ($pattern in @(
     'const isOwnerRequest = comment =>',
     'comment.user && comment.user.login',
     'The pull request context changed while the Codex result was being published',
+    'invalidate-review-request:',
+    'SFL Codex Review Request Registry',
+    'sfl-codex-review:request-pending:${commentId}',
+    'registeredRequestIds.has(comment.id)',
     'const publishedCompletedAt = new Date().toISOString()',
     'completed_at: publishedCompletedAt',
     'confirmedOpenPulls.length !== 1',
@@ -63,7 +67,7 @@ foreach ($pattern in @(
     'A newer Codex review request superseded this artifact before publication',
     'supersededRequest',
     'This Codex review request already has a terminal SFL gate',
-    'sfl-codex-review-observe-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}',
+    'sfl-codex-review-serialize-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}',
     'const pendingRequestAlreadyTerminal = artifactChecks.some(',
     'const externalIdPrefix = requestGateExternalIdPrefix(',
     'pull-context:at:${contextChangeTime}',
@@ -131,6 +135,7 @@ const currentBase = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const baseMarker = `<!-- sfl-codex-review:head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;base=${currentBase};`;
 const isOwnerRequest = comment =>
   ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
+const registeredRequestIds = new Set([1, 2, 3, 4]);
 function requestGateExternalIdPrefix(pullNumber, currentBase, contextToken, requestId, requestTime) {
   return `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${requestId}:at:${requestTime}`;
 }
@@ -146,6 +151,7 @@ const first = comment(1, "2026-08-19T00:00:01Z", "none");
 const second = comment(2, "2026-08-19T00:00:02Z", "none");
 const otherContext = comment(3, "2026-08-19T00:00:02Z", "base-advance");
 const recoveredRetry = comment(4, "2026-08-19T00:00:04Z", "none");
+const unregistered = comment(5, "2026-08-19T00:00:05Z", "none");
 const editedSecond = {...second, updated_at: "2026-08-19T00:00:03Z"};
 const firstTime = Date.parse(first.created_at);
 const firstPrefix = requestGateExternalIdPrefix(pullNumber, currentBase, "none", first.id, firstTime);
@@ -163,6 +169,7 @@ const cases = [
   {name: "late terminal does not authorize retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:02.500Z")], want: [1]},
   {name: "later retry recovers after overlap", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:03Z")], want: [1, 4]},
   {name: "different contexts are independent", comments: [first, otherContext], checks: [], want: [1, 3]},
+  {name: "unregistered owner marker is rejected", comments: [first, unregistered], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
 ];
 for (const fixture of cases) {
   const got = eligibleReviewRequests(fixture.comments, fixture.checks, Number.POSITIVE_INFINITY)

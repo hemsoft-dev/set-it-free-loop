@@ -19,6 +19,133 @@ env:
   SFL_REVIEW_BASE_BRANCH: main
 
 jobs:
+  invalidate-review-request:
+    name: Invalidate prior gate for registered review request
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.sender.login == github.repository_owner &&
+      startsWith(github.event.comment.body, '@codex review')
+    concurrency:
+      group: sfl-codex-review-serialize-${{ github.repository }}-${{ github.event.issue.number }}
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: write
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - name: Fail the gate while a registered Codex review is pending
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const {owner, repo} = context.repo;
+            const pullNumber = context.payload.issue.number;
+            const commentId = context.payload.comment.id;
+            const comment = await github.rest.issues.getComment({
+              owner, repo, comment_id: commentId,
+            });
+            if (comment.data.updated_at !== comment.data.created_at) {
+              core.info("Edited Codex review requests are not accepted");
+              return;
+            }
+            const pull = await github.rest.pulls.get({
+              owner, repo, pull_number: pullNumber,
+            });
+            const defaultBranch = context.payload.repository.default_branch;
+            const headRepo = pull.data.head.repo && pull.data.head.repo.full_name;
+            if (pull.data.state !== "open" ||
+                pull.data.base.ref !== defaultBranch ||
+                !headRepo ||
+                headRepo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) {
+              core.info("Codex review request does not target a supported open pull request");
+              return;
+            }
+            const currentHead = pull.data.head.sha;
+            const currentBase = pull.data.base.sha;
+            const reviewerChecks = async () => github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner,
+                repo,
+                ref: currentHead,
+                check_name: "SFL Reviewer Gate Runner",
+                filter: "all",
+                per_page: 100,
+              },
+              response => response.data.check_runs,
+            );
+            const reviewContextToken = checks => {
+              const invalidation = checks.filter(
+                check => check.app && check.app.id === 15368 &&
+                  ((check.external_id || "").startsWith("sfl-codex-review:pull-context:") ||
+                   (check.external_id || "").startsWith("sfl-codex-review:base-advance:")),
+              ).sort((left, right) => right.id - left.id)[0];
+              return invalidation ? invalidation.external_id : "none";
+            };
+            const contextToken = reviewContextToken(await reviewerChecks());
+            const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
+            if ((comment.data.body || "").trim() !== `@codex review\n\n${marker}`) {
+              core.info("Codex review request does not contain the exact current SFL marker");
+              return;
+            }
+            const targetURL = (comment.data.html_url || "").toLowerCase();
+            let registered = false;
+            for (let attempt = 0; attempt < 12 && !registered; attempt += 1) {
+              const statuses = await github.paginate(
+                github.rest.repos.listCommitStatusesForRef,
+                {owner, repo, ref: currentHead, per_page: 100},
+              );
+              registered = statuses.some(status =>
+                status.context === "SFL Codex Review Request Registry" &&
+                ((status.creator && status.creator.login) || "").toLowerCase() === owner.toLowerCase() &&
+                (status.target_url || "").toLowerCase() === targetURL,
+              );
+              if (!registered && attempt < 11) {
+                await new Promise(resolve => setTimeout(resolve, 5000));
+              }
+            }
+            if (!registered) {
+              core.info("Codex review request was not registered by gh sfl review");
+              return;
+            }
+            const confirmedPull = await github.rest.pulls.get({
+              owner, repo, pull_number: pullNumber,
+            });
+            const confirmedChecks = await reviewerChecks();
+            if (confirmedPull.data.state !== "open" ||
+                confirmedPull.data.head.sha !== currentHead ||
+                confirmedPull.data.base.sha !== currentBase ||
+                reviewContextToken(confirmedChecks) !== contextToken) {
+              core.info("Pull request context changed before the review request could invalidate the gate");
+              return;
+            }
+            const externalId = `sfl-codex-review:request-pending:${commentId}`;
+            if (confirmedChecks.some(
+              check => check.app && check.app.id === 15368 && check.external_id === externalId,
+            )) {
+              core.info("This registered Codex review request already invalidated the prior gate");
+              return;
+            }
+            const reason = `Registered Codex review request ${commentId} is pending for pull request #${pullNumber}`;
+            await github.rest.checks.create({
+              owner,
+              repo,
+              name: "SFL Reviewer Gate Runner",
+              head_sha: currentHead,
+              status: "completed",
+              conclusion: "failure",
+              completed_at: new Date().toISOString(),
+              details_url: comment.data.html_url,
+              external_id: externalId,
+              output: {title: "SFL Codex review pending", summary: reason},
+            });
+            core.setFailed(reason);
+
+
   observe:
     name: Observe authenticated Codex review
     if: >-
@@ -27,7 +154,7 @@ jobs:
       ((github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
       github.event_name == 'pull_request_review')
     concurrency:
-      group: sfl-codex-review-observe-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}
+      group: sfl-codex-review-serialize-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -239,6 +366,22 @@ jobs:
             const triggerComments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pullNumber, per_page: 100,
             });
+            const requestStatuses = await github.paginate(
+              github.rest.repos.listCommitStatusesForRef,
+              {owner, repo, ref: currentHead, per_page: 100},
+            );
+            const requestTargetPrefix = `https://github.com/${owner}/${repo}/pull/${pullNumber}#issuecomment-`.toLowerCase();
+            const registeredRequestIds = new Set(requestStatuses.flatMap(status => {
+              if (status.context !== "SFL Codex Review Request Registry" ||
+                  ((status.creator && status.creator.login) || "").toLowerCase() !== owner.toLowerCase()) {
+                return [];
+              }
+              const targetURL = (status.target_url || "").toLowerCase();
+              if (!targetURL.startsWith(requestTargetPrefix)) return [];
+              const requestId = Number(targetURL.slice(requestTargetPrefix.length));
+              return Number.isSafeInteger(requestId) && requestId > 0 ? [requestId] : [];
+            }));
+
             const isOwnerRequest = comment =>
               ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
             const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
@@ -258,6 +401,7 @@ jobs:
               }),
             ).filter(
               ({comment, requestTime, updatedTime}) => isOwnerRequest(comment) &&
+                registeredRequestIds.has(comment.id) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(baseMarker) &&
                 Number.isFinite(requestTime) && requestTime < beforeTime &&

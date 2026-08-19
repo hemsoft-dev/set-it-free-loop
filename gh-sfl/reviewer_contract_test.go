@@ -52,6 +52,9 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 		"Codex reported review findings",
 		"SFL Codex review invalidated",
 		"requestMatchesCurrentBase",
+		"invalidate-review-request:",
+		"SFL Codex Review Request Registry",
+		"registeredRequestIds.has(comment.id)",
 		"openPullCount",
 		"if: github.event_name == 'push'",
 	} {

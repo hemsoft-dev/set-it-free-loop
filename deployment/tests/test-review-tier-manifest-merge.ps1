@@ -114,4 +114,15 @@ if ('sfl-pr-review' -in @($legacyMerged.components)) {
     throw 'Legacy manifest retained the retired Markdown reviewer component.'
 }
 
+$deployer = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\scripts\deploy-workflow.ps1') -Raw
+foreach ($required in @(
+    '$canonicalManifestPath = Join-Path $ClonePath ".sfl/sfl.json"',
+    '$existingManifestPath = if (Test-Path -LiteralPath $canonicalManifestPath',
+    'Set-Content $canonicalManifestPath $manifest'
+)) {
+    if ($deployer -notmatch [regex]::Escape($required)) {
+        throw "Review-tier deployment does not synchronize the canonical manifest: $required"
+    }
+}
+
 Write-Output 'Review-tier manifest merge tests passed.'

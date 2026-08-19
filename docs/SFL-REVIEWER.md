@@ -57,9 +57,9 @@ events, preventing reliable publication of the required check. Non-default base
 branches are rejected because base-advance invalidation is deliberately scoped
 to the trusted default branch.
 
-Only review requests posted by the repository owner are accepted. This HemSoft
-reviewer is owner-operated; member and collaborator comments cannot authorize a
-gate result.
+Only review requests posted by the repository owner and registered by
+`gh sfl review` are accepted. This HemSoft reviewer is owner-operated; member,
+collaborator, and hand-crafted owner comments cannot authorize a gate result.
 
 The command:
 
@@ -78,6 +78,9 @@ The registry preserves request identity if the owner later edits the comment.
 The observer rejects edited markers, while `--retry` waits for the registered
 request's Codex reaction lifecycle before posting an immutable replacement.
 Ordinary edited discussion comments are not review requests.
+Each registered request also publishes an immediate failing gate before its
+Codex result is observed, so an earlier success cannot remain merge-valid while
+a newer review is pending.
 
 A new commit creates a new head and therefore permits one new request.
 If a base change or retarget would reuse a head that was already requested
