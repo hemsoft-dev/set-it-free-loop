@@ -29,6 +29,8 @@ type reviewREST struct {
 	updatedAt            string
 	workflowRunResponses [][]map[string]any
 	workflowRunGets      int
+	pullResponses        []map[string]any
+	pullGets             int
 	posts                int
 	statusPosts          int
 	statusPostErr        error
@@ -89,6 +91,14 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 	case strings.Contains(path, "/statuses?"):
 		return decodeTestResponse(response, f.statuses)
 	case strings.Contains(path, "/pulls/"):
+		f.pullGets++
+		if len(f.pullResponses) > 0 {
+			index := f.pullGets - 1
+			if index >= len(f.pullResponses) {
+				index = len(f.pullResponses) - 1
+			}
+			return decodeTestResponse(response, f.pullResponses[index])
+		}
 		var headRepo any = map[string]string{"full_name": f.headRepo}
 		if f.headRepo == "" {
 			headRepo = map[string]string{"full_name": "HemSoft/consumer"}
@@ -293,6 +303,40 @@ func TestRunReviewWaitsForCurrentInvalidationBeforeReadingContext(t *testing.T) 
 	wantMarker := codexReviewMarker(head, base, contextToken)
 	if !strings.Contains(rest.postBody, wantMarker) {
 		t.Fatalf("posted body = %q, want current context marker %q", rest.postBody, wantMarker)
+	}
+}
+
+func TestRunReviewRevalidatesPullAfterRetryWait(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	changedBase := strings.Repeat("c", 40)
+	pull := func(baseSHA string) map[string]any {
+		return map[string]any{
+			"base":  map[string]any{"sha": baseSHA, "ref": "main", "repo": map[string]string{"full_name": "HemSoft/consumer"}},
+			"head":  map[string]any{"sha": head, "repo": map[string]string{"full_name": "HemSoft/consumer"}},
+			"state": "open",
+		}
+	}
+	rest := &reviewREST{
+		pullResponses: []map[string]any{pull(base), pull(base), pull(changedBase)},
+		comments: []reviewTriggerComment{{
+			ID:        123,
+			Body:      bodyForReviewRequest(codexReviewMarker(head, base, "none")),
+			HTMLURL:   "https://github.test/retry-before-base-change",
+			CreatedAt: "2026-08-19T00:00:00Z",
+			User: struct {
+				Login string `json:"login"`
+			}{Login: "HemSoft"},
+		}},
+	}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "context changed before the Codex review request could be posted") {
+		t.Fatalf("runReview() post-wait context error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("post-wait context change posts = %d, want 0", rest.posts)
 	}
 }
 

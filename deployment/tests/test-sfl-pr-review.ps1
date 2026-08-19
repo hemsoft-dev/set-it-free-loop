@@ -41,6 +41,7 @@ foreach ($pattern in @(
     'const isOwnerRequest = comment =>',
     'comment.user && comment.user.login',
     'The pull request context changed while the Codex result was being published',
+    'Codex artifact and registered request have ambiguous same-second ordering',
     'invalidate-review-request:',
     "vars.SFL_ENABLED != 'false'",
     'SFL Codex Review Request Registry',
@@ -184,6 +185,11 @@ const cases = [
   {name: "different contexts are independent", comments: [first, otherContext], checks: [], want: [1, 3]},
   {name: "unregistered owner marker is rejected", comments: [first, unregistered], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
 ];
+const sameSecondCandidates = eligibleReviewRequests([first], [], Date.parse(first.created_at))
+  .map(candidate => candidate.comment.id);
+if (JSON.stringify(sameSecondCandidates) !== JSON.stringify([1])) {
+  throw new Error(`same-second request lookup: got ${JSON.stringify(sameSecondCandidates)}, want [1]`);
+}
 for (const fixture of cases) {
   const got = eligibleReviewRequests(fixture.comments, fixture.checks, Number.POSITIVE_INFINITY)
     .map(candidate => candidate.comment.id);

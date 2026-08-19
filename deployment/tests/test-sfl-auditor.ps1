@@ -287,6 +287,15 @@ name: "SFL Reviewer Gate Runner"
     Assert-True ($stalePinIssue -match 'created') 'Auditor did not create an issue for a stale observer source pin.'
 
     Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
+    Set-Content -LiteralPath $observerPath -Value ''
+    $missingObserverRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    $missingObserverOutput = Get-Content -Raw -LiteralPath $reviewOutputPath
+    $missingObserverIssue = Get-Content -Raw -LiteralPath $issueLogPath
+    Assert-True ($missingObserverRun.ExitCode -eq 0) "Missing-observer prerequisite script failed: $($missingObserverRun.Output)"
+    Assert-True ($missingObserverOutput -match 'sfl_review_prerequisites_missing=1') 'Auditor did not report a missing observer file.'
+    Assert-True ($missingObserverIssue -match 'created') 'Auditor did not create an issue for a missing observer file.'
+
+    Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
     $reviewEnvironment.DEFAULT_BRANCH_FIXTURE = "release/o'brien"
     @'
 # Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

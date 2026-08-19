@@ -420,7 +420,7 @@ jobs:
                 registeredRequestIds.has(comment.id) &&
                 (comment.body || "").includes(baseMarker) &&
                 (comment.body || "") === `@codex review\n\n${baseMarker}context=${requestContextFromBody(comment.body)} -->` &&
-                Number.isFinite(requestTime) && requestTime < beforeTime &&
+                Number.isFinite(requestTime) && requestTime <= beforeTime &&
                 Number.isFinite(updatedTime) && updatedTime === requestTime,
             ).sort(requestOrder);
             const hasTerminalGateBefore = (request, contextToken, nextRequestTime, checkRuns) => {
@@ -595,7 +595,7 @@ jobs:
             const openPulls = await openPullsForCurrentHead();
             const openPullCount = openPulls.length;
 
-            const result = classifyCodexArtifact({
+            let result = classifyCodexArtifact({
               eventName,
               currentHead,
               resolvedSha,
@@ -605,6 +605,12 @@ jobs:
               inlineCount,
               artifact,
             });
+            if (request && request.requestTime === artifactTime) {
+              result = {
+                action: "failure",
+                reason: "Codex artifact and registered request have ambiguous same-second ordering; retry the review request",
+              };
+            }
             core.info(result.reason);
             if (result.action === "ignore") return;
 

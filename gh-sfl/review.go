@@ -262,6 +262,25 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		// request's completion evidence, while the observer fails closed on equal times.
 		waitForRetryOrdering()
 	}
+	finalDefaultBranch, err := fetchRepositoryDefaultBranchWithClient(client, owner, repo)
+	if err != nil {
+		return err
+	}
+	finalPR, err := fetchPullRequestShasWithClient(client, owner, repo, opts.pr)
+	if err != nil {
+		return err
+	}
+	finalContextToken, err := fetchReviewContextToken(client, owner, repo, pr.HeadSHA)
+	if err != nil {
+		return fmt.Errorf("revalidating the SFL review context: %w", err)
+	}
+	if finalDefaultBranch != defaultBranch || finalPR.State != "open" ||
+		finalPR.HeadSHA != pr.HeadSHA || finalPR.BaseSHA != pr.BaseSHA ||
+		finalPR.BaseRef != pr.BaseRef ||
+		!strings.EqualFold(finalPR.HeadRepo, owner+"/"+repo) ||
+		finalContextToken != contextToken {
+		return fmt.Errorf("pull request #%d context changed before the Codex review request could be posted — rerun gh sfl review for the current head and base", opts.pr)
+	}
 
 	body := bodyForReviewRequest(marker)
 	payload, err := jsonBody(map[string]string{"body": body})
