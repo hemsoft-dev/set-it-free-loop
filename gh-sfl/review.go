@@ -235,7 +235,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		if untrackedExisting || edited {
 			retryNeedsReactionMaterialization = true
 		} else if !completed {
-			recoverable, recoveryErr := canRecoverFromOverlappingRequest(
+			recovered, recoverable, recoveryErr := canRecoverFromOverlappingRequest(
 				client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, requests,
 			)
 			if recoveryErr != nil {
@@ -243,6 +243,9 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 			}
 			if !recoverable {
 				return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
+			}
+			if strings.EqualFold(recovered.Conclusion, "success") {
+				return fmt.Errorf("an overlapping Codex review request for %s/%s#%d already passed — push a new commit before requesting another review so the successful gate cannot remain valid during a retry", owner, repo, opts.pr)
 			}
 			retryNeedsReactionMaterialization = true
 		}
@@ -904,31 +907,31 @@ func canRecoverFromOverlappingRequest(
 	prNumber int,
 	headSHA, baseSHA string,
 	requests []reviewTriggerComment,
-) (bool, error) {
+) (reviewerCheckRun, bool, error) {
 	if len(requests) < 2 {
-		return false, nil
+		return reviewerCheckRun{}, false, nil
 	}
 	latestTime := reviewCommentTime(requests[len(requests)-1])
 	if latestTime.IsZero() {
-		return false, errors.New("latest Codex review request has no valid timestamp")
+		return reviewerCheckRun{}, false, errors.New("latest Codex review request has no valid timestamp")
 	}
 	for index := len(requests) - 2; index >= 0; index-- {
 		check, found, err := findTerminalGateForRequest(
 			client, owner, repo, prNumber, headSHA, baseSHA, requests[index],
 		)
 		if err != nil {
-			return false, err
+			return reviewerCheckRun{}, false, err
 		}
 		if !found {
 			continue
 		}
 		completedAt, err := time.Parse(time.RFC3339Nano, check.CompletedAt)
 		if err != nil {
-			return false, fmt.Errorf("terminal gate for prior request %d has invalid completed_at: %w", requests[index].ID, err)
+			return reviewerCheckRun{}, false, fmt.Errorf("terminal gate for prior request %d has invalid completed_at: %w", requests[index].ID, err)
 		}
-		return !completedAt.Before(latestTime), nil
+		return check, !completedAt.Before(latestTime), nil
 	}
-	return false, nil
+	return reviewerCheckRun{}, false, nil
 }
 
 func writeReviewUsage(w io.Writer) {

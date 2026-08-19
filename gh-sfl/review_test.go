@@ -638,6 +638,49 @@ func TestRunReviewRetryRecoversFromOverlappingRequest(t *testing.T) {
 	}
 }
 
+func TestRunReviewRejectsOverlapRecoveryFromSuccessfulGate(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	firstCreated := "2026-08-19T00:00:00Z"
+	secondCreated := "2026-08-19T00:00:01Z"
+	firstMillis := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC).UnixMilli()
+	request := func(id int64, createdAt string) reviewTriggerComment {
+		return reviewTriggerComment{
+			ID:        id,
+			Body:      bodyForReviewRequest(codexReviewMarker(head, base, "none")),
+			HTMLURL:   fmt.Sprintf("https://github.test/request/%d", id),
+			CreatedAt: createdAt,
+			User: struct {
+				Login string `json:"login"`
+			}{Login: "HemSoft"},
+		}
+	}
+	rest := &reviewREST{
+		comments: []reviewTriggerComment{request(123, firstCreated), request(124, secondCreated)},
+		statuses: []reviewRequestStatus{
+			registeredReviewRequestStatus(123),
+			registeredReviewRequestStatus(124),
+		},
+		checkRuns: []map[string]any{{
+			"status":       "completed",
+			"conclusion":   "success",
+			"completed_at": "2026-08-19T00:00:01.500Z",
+			"external_id":  fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d:artifact:r456", base, firstMillis),
+			"app":          map[string]any{"id": 15368},
+		}},
+	}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "overlapping Codex review request") ||
+		!strings.Contains(err.Error(), "already passed") {
+		t.Fatalf("runReview() successful overlap recovery error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("successful overlap recovery posts = %d, want 0", rest.posts)
+	}
+}
+
 func TestRunReviewRetryRecoversFromSameSecondOverlap(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	base := strings.Repeat("a", 40)
