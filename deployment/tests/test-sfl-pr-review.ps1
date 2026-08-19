@@ -33,6 +33,7 @@ foreach ($pattern in @(
     'sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}',
     'sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}',
     'The pull request context changed while the Codex result was being published',
+    'confirmedOpenPulls.length !== 1',
     'github.rest.actions.getWorkflowRun',
     'Date.parse(check.completed_at || "") > baseAdvanceTime',
     'successful Codex gate completed after this context change',

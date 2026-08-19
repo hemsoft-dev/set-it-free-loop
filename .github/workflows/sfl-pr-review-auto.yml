@@ -178,12 +178,16 @@ jobs:
                 Number.isFinite(Date.parse(comment.updated_at || comment.created_at || "")) &&
                 Date.parse(comment.updated_at || comment.created_at || "") < artifactTime,
             );
-            const openPulls = await github.paginate(github.rest.pulls.list, {
-              owner, repo, state: "open", per_page: 100,
-            });
-            const openPullCount = openPulls.filter(
-              candidate => candidate.head && candidate.head.sha === currentHead,
-            ).length;
+            const openPullsForCurrentHead = async () => {
+              const candidates = await github.paginate(github.rest.pulls.list, {
+                owner, repo, state: "open", per_page: 100,
+              });
+              return candidates.filter(
+                candidate => candidate.head && candidate.head.sha === currentHead,
+              );
+            };
+            const openPulls = await openPullsForCurrentHead();
+            const openPullCount = openPulls.length;
 
             const result = classifyCodexArtifact({
               eventName,
@@ -201,9 +205,12 @@ jobs:
             const publishPull = await github.rest.pulls.get({
               owner, repo, pull_number: pullNumber,
             });
+            const publishOpenPulls = await openPullsForCurrentHead();
             if (publishPull.data.state !== "open" ||
                 publishPull.data.head.sha !== currentHead ||
-                publishPull.data.base.sha !== currentBase) {
+                publishPull.data.base.sha !== currentBase ||
+                publishOpenPulls.length !== 1 ||
+                publishOpenPulls[0].number !== pullNumber) {
               core.info("The pull request context changed before the Codex result could be published");
               return;
             }
@@ -252,9 +259,12 @@ jobs:
               const confirmedPull = await github.rest.pulls.get({
                 owner, repo, pull_number: pullNumber,
               });
+              const confirmedOpenPulls = await openPullsForCurrentHead();
               if (confirmedPull.data.state !== "open" ||
                   confirmedPull.data.head.sha !== currentHead ||
-                  confirmedPull.data.base.sha !== currentBase) {
+                  confirmedPull.data.base.sha !== currentBase ||
+                  confirmedOpenPulls.length !== 1 ||
+                  confirmedOpenPulls[0].number !== pullNumber) {
                 const changedReason = "The pull request context changed while the Codex result was being published";
                 await github.rest.checks.update({
                   owner,
