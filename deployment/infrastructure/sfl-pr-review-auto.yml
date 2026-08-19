@@ -531,12 +531,13 @@ jobs:
               core.info("This Codex review request already has a terminal SFL gate");
               return;
             }
+            const publishedCompletedAt = new Date().toISOString();
             const common = {
               owner,
               repo,
               status: "completed",
               conclusion,
-              completed_at: new Date().toISOString(),
+              completed_at: publishedCompletedAt,
               details_url: artifact.html_url || pull.data.html_url,
               external_id: externalId,
               output: {title, summary: result.reason},
@@ -585,7 +586,7 @@ jobs:
                   check_run_id: published.data.id,
                   status: "completed",
                   conclusion: "failure",
-                  completed_at: new Date().toISOString(),
+                  completed_at: publishedCompletedAt,
                   details_url: artifact.html_url || pull.data.html_url,
                   external_id: externalId,
                   output: {title: "SFL Codex review invalidated", summary: changedReason},

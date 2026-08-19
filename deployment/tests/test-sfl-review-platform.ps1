@@ -13,7 +13,8 @@ $files = @{
 }
 
 foreach ($required in @(
-    'codexReviewCommand = "@codex review"',
+    'codexReviewCommand',
+    '"@codex review"',
     'sfl-codex-review:',
     'findCodexReviewTrigger',
     'sfl-pr-review-auto.yml'

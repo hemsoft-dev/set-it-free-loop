@@ -70,6 +70,10 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 			t.Errorf("Codex observer retained forbidden legacy reviewer text %q", forbidden)
 		}
 	}
+	if !strings.Contains(canonical, "const publishedCompletedAt = new Date().toISOString();") ||
+		strings.Count(canonical, "completed_at: publishedCompletedAt") != 2 {
+		t.Error("Codex observer does not preserve the original terminal completion time during late invalidation")
+	}
 }
 
 func TestCodexObserverClassificationFixtures(t *testing.T) {

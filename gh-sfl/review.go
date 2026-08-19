@@ -29,6 +29,10 @@ var waitForCodexReactionPoll = func() {
 	time.Sleep(2 * time.Second)
 }
 
+var waitForReviewInvalidationPoll = func() {
+	time.Sleep(time.Second)
+}
+
 type reviewOptions struct {
 	repo  string
 	pr    int
@@ -36,12 +40,31 @@ type reviewOptions struct {
 }
 
 type pullRequestShas struct {
-	BaseSHA  string
-	BaseRef  string
-	HeadSHA  string
-	BaseRepo string
-	HeadRepo string
-	State    string
+	BaseSHA   string
+	BaseRef   string
+	HeadSHA   string
+	BaseRepo  string
+	HeadRepo  string
+	State     string
+	UpdatedAt string `json:"updated_at"`
+}
+
+type reviewWorkflowRun struct {
+	ID           int64  `json:"id"`
+	Event        string `json:"event"`
+	Status       string `json:"status"`
+	HeadSHA      string `json:"head_sha"`
+	HeadBranch   string `json:"head_branch"`
+	CreatedAt    string `json:"created_at"`
+	PullRequests []struct {
+		Number int `json:"number"`
+		Head   struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+		Base struct {
+			SHA string `json:"sha"`
+		} `json:"base"`
+	} `json:"pull_requests"`
 }
 
 type reviewTriggerComment struct {
@@ -124,6 +147,22 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 	if !strings.EqualFold(pr.BaseRef, defaultBranch) {
 		return fmt.Errorf("pull request #%d in %s/%s targets %s — subscription-backed SFL reviews support only the default branch %s", opts.pr, owner, repo, pr.BaseRef, defaultBranch)
+	}
+	if err := waitForReviewInvalidations(client, owner, repo, opts.pr, defaultBranch, pr); err != nil {
+		return fmt.Errorf("waiting for SFL review invalidation: %w", err)
+	}
+	confirmedDefaultBranch, err := fetchRepositoryDefaultBranchWithClient(client, owner, repo)
+	if err != nil {
+		return err
+	}
+	confirmedPR, err := fetchPullRequestShasWithClient(client, owner, repo, opts.pr)
+	if err != nil {
+		return err
+	}
+	if confirmedDefaultBranch != defaultBranch || confirmedPR.State != "open" ||
+		confirmedPR.HeadSHA != pr.HeadSHA || confirmedPR.BaseSHA != pr.BaseSHA ||
+		confirmedPR.BaseRef != pr.BaseRef {
+		return fmt.Errorf("pull request #%d context changed while SFL invalidations were settling — rerun gh sfl review for the current head and base", opts.pr)
 	}
 
 	contextToken, err := fetchReviewContextToken(client, owner, repo, pr.HeadSHA)
@@ -288,6 +327,79 @@ func waitForCodexRequestCompletion(
 	return errors.New("Codex still has an active review reaction on the prior request")
 }
 
+func waitForReviewInvalidations(
+	client restAPI,
+	owner, repo string,
+	prNumber int,
+	defaultBranch string,
+	pr pullRequestShas,
+) error {
+	const (
+		materializationAttempts = 6
+		maximumAttempts         = 60
+	)
+	contextChangedAt, _ := time.Parse(time.RFC3339Nano, pr.UpdatedAt)
+	observedApplicableRun := false
+	for attempt := 0; attempt < maximumAttempts; attempt++ {
+		var response struct {
+			Runs []reviewWorkflowRun `json:"workflow_runs"`
+		}
+		path := fmt.Sprintf(
+			"repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml/runs?per_page=100&page=1",
+			owner,
+			repo,
+		)
+		if err := client.Get(path, &response); err != nil {
+			return err
+		}
+		applicable := false
+		active := false
+		for _, run := range response.Runs {
+			if !reviewWorkflowRunApplies(run, prNumber, defaultBranch, pr.HeadSHA, pr.BaseSHA, contextChangedAt) {
+				continue
+			}
+			applicable = true
+			if run.Status != "completed" {
+				active = true
+			}
+		}
+		observedApplicableRun = observedApplicableRun || applicable
+		if !active && (observedApplicableRun || contextChangedAt.IsZero() || attempt >= materializationAttempts-1) {
+			return nil
+		}
+		if attempt < maximumAttempts-1 {
+			waitForReviewInvalidationPoll()
+		}
+	}
+	return errors.New("an applicable SFL invalidation workflow is still active")
+}
+
+func reviewWorkflowRunApplies(
+	run reviewWorkflowRun,
+	prNumber int,
+	defaultBranch, headSHA, baseSHA string,
+	contextChangedAt time.Time,
+) bool {
+	createdAt, err := time.Parse(time.RFC3339Nano, run.CreatedAt)
+	if err != nil {
+		return false
+	}
+	if run.Event == "push" {
+		return strings.EqualFold(run.HeadBranch, defaultBranch) && strings.EqualFold(run.HeadSHA, baseSHA)
+	}
+	if run.Event != "pull_request_target" {
+		return false
+	}
+	for _, pull := range run.PullRequests {
+		if pull.Number == prNumber && strings.EqualFold(pull.Head.SHA, headSHA) &&
+			strings.EqualFold(pull.Base.SHA, baseSHA) {
+			return run.Status != "completed" || contextChangedAt.IsZero() ||
+				!createdAt.Before(contextChangedAt)
+		}
+	}
+	return false
+}
+
 func requireReviewerEnabled(client restAPI, owner, repo string) error {
 	var variable struct {
 		Value string `json:"value"`
@@ -405,7 +517,8 @@ func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number i
 				FullName string `json:"full_name"`
 			} `json:"repo"`
 		} `json:"head"`
-		State string `json:"state"`
+		State     string `json:"state"`
+		UpdatedAt string `json:"updated_at"`
 	}
 	err := client.Get(fmt.Sprintf("repos/%s/%s/pulls/%d", owner, repo, number), &response)
 	if err != nil {
@@ -416,12 +529,13 @@ func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number i
 		return pullRequestShas{}, fmt.Errorf("reading pull request #%d in %s/%s: %w", number, owner, repo, err)
 	}
 	return pullRequestShas{
-		BaseSHA:  response.Base.SHA,
-		BaseRef:  response.Base.Ref,
-		HeadSHA:  response.Head.SHA,
-		BaseRepo: response.Base.Repo.FullName,
-		HeadRepo: response.Head.Repo.FullName,
-		State:    response.State,
+		BaseSHA:   response.Base.SHA,
+		BaseRef:   response.Base.Ref,
+		HeadSHA:   response.Head.SHA,
+		BaseRepo:  response.Base.Repo.FullName,
+		HeadRepo:  response.Head.Repo.FullName,
+		State:     response.State,
+		UpdatedAt: response.UpdatedAt,
 	}, nil
 }
 

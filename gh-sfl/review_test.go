@@ -12,23 +12,26 @@ import (
 )
 
 type reviewREST struct {
-	comments            []reviewTriggerComment
-	reactions           []reviewCommentReaction
-	statuses            []reviewRequestStatus
-	reactionGets        int
-	clearReaction       bool
-	checkRuns           []map[string]any
-	checkRunPages       map[int][]map[string]any
-	headRepo            string
-	headRepoUnavailable bool
-	baseRef             string
-	defaultBranch       string
-	observerBranch      string
-	observerState       string
-	posts               int
-	statusPosts         int
-	statusBody          map[string]string
-	postBody            string
+	comments             []reviewTriggerComment
+	reactions            []reviewCommentReaction
+	statuses             []reviewRequestStatus
+	reactionGets         int
+	clearReaction        bool
+	checkRuns            []map[string]any
+	checkRunPages        map[int][]map[string]any
+	headRepo             string
+	headRepoUnavailable  bool
+	baseRef              string
+	defaultBranch        string
+	observerBranch       string
+	observerState        string
+	updatedAt            string
+	workflowRunResponses [][]map[string]any
+	workflowRunGets      int
+	posts                int
+	statusPosts          int
+	statusBody           map[string]string
+	postBody             string
 }
 
 func (f *reviewREST) Get(path string, response interface{}) error {
@@ -47,6 +50,16 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 			"content":  base64.StdEncoding.EncodeToString([]byte(content)),
 			"encoding": "base64",
 		})
+	case strings.Contains(path, "/actions/workflows/sfl-pr-review-auto.yml/runs?"):
+		f.workflowRunGets++
+		if len(f.workflowRunResponses) == 0 {
+			return decodeTestResponse(response, map[string]any{"workflow_runs": []map[string]any{}})
+		}
+		index := f.workflowRunGets - 1
+		if index >= len(f.workflowRunResponses) {
+			index = len(f.workflowRunResponses) - 1
+		}
+		return decodeTestResponse(response, map[string]any{"workflow_runs": f.workflowRunResponses[index]})
 	case strings.Contains(path, "/actions/workflows/sfl-pr-review-auto.yml"):
 		state := f.observerState
 		if state == "" {
@@ -83,9 +96,10 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 			baseRef = "main"
 		}
 		return decodeTestResponse(response, map[string]any{
-			"base":  map[string]any{"sha": strings.Repeat("a", 40), "ref": baseRef, "repo": map[string]string{"full_name": "HemSoft/consumer"}},
-			"head":  map[string]any{"sha": strings.Repeat("b", 40), "repo": headRepo},
-			"state": "open",
+			"base":       map[string]any{"sha": strings.Repeat("a", 40), "ref": baseRef, "repo": map[string]string{"full_name": "HemSoft/consumer"}},
+			"head":       map[string]any{"sha": strings.Repeat("b", 40), "repo": headRepo},
+			"state":      "open",
+			"updated_at": f.updatedAt,
 		})
 	case strings.Contains(path, "/comments?"):
 		return decodeTestResponse(response, f.comments)
@@ -196,6 +210,95 @@ func TestRunReviewPostsOneHeadBoundCodexRequest(t *testing.T) {
 	if !strings.Contains(stdout.String(), "subscription-backed Codex review") ||
 		!strings.Contains(stdout.String(), "#issuecomment-999") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunReviewWaitsForCurrentInvalidationBeforeReadingContext(t *testing.T) {
+	updatedAt := "2026-08-19T00:00:00Z"
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	run := func(status string) map[string]any {
+		return map[string]any{
+			"id":         77,
+			"event":      "pull_request_target",
+			"status":     status,
+			"created_at": updatedAt,
+			"pull_requests": []map[string]any{{
+				"number": 94,
+				"head":   map[string]string{"sha": head},
+				"base":   map[string]string{"sha": base},
+			}},
+		}
+	}
+	contextToken := "sfl-codex-review:pull-context:at:1787097600000:77"
+	rest := &reviewREST{
+		updatedAt: updatedAt,
+		workflowRunResponses: [][]map[string]any{
+			{},
+			{run("in_progress")},
+			{run("completed")},
+		},
+		checkRuns: []map[string]any{{
+			"id":          5,
+			"external_id": contextToken,
+			"app":         map[string]any{"id": 15368},
+		}},
+	}
+	installReviewFakes(t, rest)
+
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runReview() invalidation barrier error = %v", err)
+	}
+	if rest.workflowRunGets != 3 {
+		t.Fatalf("workflow run GETs = %d, want 3", rest.workflowRunGets)
+	}
+	wantMarker := codexReviewMarker(head, base, contextToken)
+	if !strings.Contains(rest.postBody, wantMarker) {
+		t.Fatalf("posted body = %q, want current context marker %q", rest.postBody, wantMarker)
+	}
+}
+
+func TestReviewWorkflowRunAppliesOnlyToExactContext(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	changedAt := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC)
+	run := reviewWorkflowRun{
+		Event:     "pull_request_target",
+		Status:    "in_progress",
+		CreatedAt: changedAt.Format(time.RFC3339),
+	}
+	run.PullRequests = append(run.PullRequests, struct {
+		Number int `json:"number"`
+		Head   struct {
+			SHA string `json:"sha"`
+		} `json:"head"`
+		Base struct {
+			SHA string `json:"sha"`
+		} `json:"base"`
+	}{Number: 94})
+	run.PullRequests[0].Head.SHA = head
+	run.PullRequests[0].Base.SHA = base
+
+	if !reviewWorkflowRunApplies(run, 94, "main", head, base, changedAt) {
+		t.Fatal("exact pull-request invalidation did not apply")
+	}
+	if reviewWorkflowRunApplies(run, 95, "main", head, base, changedAt) {
+		t.Fatal("another pull request invalidation applied")
+	}
+	run.Status = "completed"
+	run.CreatedAt = changedAt.Add(-time.Second).Format(time.RFC3339)
+	if reviewWorkflowRunApplies(run, 94, "main", head, base, changedAt) {
+		t.Fatal("stale completed pull-request invalidation applied to a newer context")
+	}
+	run.Status = "in_progress"
+	if !reviewWorkflowRunApplies(run, 94, "main", head, base, changedAt) {
+		t.Fatal("active exact-context invalidation was ignored after a later pull-request update")
+	}
+	run.Event = "push"
+	run.HeadBranch = "main"
+	run.HeadSHA = base
+	if !reviewWorkflowRunApplies(run, 94, "main", head, base, changedAt) {
+		t.Fatal("exact default-branch push invalidation did not apply")
 	}
 }
 
@@ -710,9 +813,11 @@ func installReviewFakes(t *testing.T, rest restAPI) {
 	oldGHExec := ghExec
 	oldWaitForRetryOrdering := waitForRetryOrdering
 	oldWaitForCodexReactionPoll := waitForCodexReactionPoll
+	oldWaitForReviewInvalidationPoll := waitForReviewInvalidationPoll
 	newRESTClient = func() (restAPI, error) { return rest, nil }
 	waitForRetryOrdering = func() {}
 	waitForCodexReactionPoll = func() {}
+	waitForReviewInvalidationPoll = func() {}
 	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
 		if strings.Join(args, " ") != "api user --jq .login" {
 			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected gh call: %v", args)
@@ -724,5 +829,6 @@ func installReviewFakes(t *testing.T, rest restAPI) {
 		ghExec = oldGHExec
 		waitForRetryOrdering = oldWaitForRetryOrdering
 		waitForCodexReactionPoll = oldWaitForCodexReactionPoll
+		waitForReviewInvalidationPoll = oldWaitForReviewInvalidationPoll
 	})
 }

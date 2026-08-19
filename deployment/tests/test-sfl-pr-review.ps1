@@ -40,6 +40,8 @@ foreach ($pattern in @(
     'const isOwnerRequest = comment =>',
     'comment.user && comment.user.login',
     'The pull request context changed while the Codex result was being published',
+    'const publishedCompletedAt = new Date().toISOString()',
+    'completed_at: publishedCompletedAt',
     'confirmedOpenPulls.length !== 1',
     'context=${contextToken}',
     'function requestGateExternalId(',

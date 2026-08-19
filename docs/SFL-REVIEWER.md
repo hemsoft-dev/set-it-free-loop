@@ -65,11 +65,13 @@ The command:
 
 1. verifies the active GitHub identity is HemSoft;
 2. verifies the pull request is open and the observer is installed;
-3. posts @codex review with an invisible marker containing the full head SHA,
+3. waits for applicable pull-context and default-branch invalidation workflows,
+   then revalidates the pull request head, base, and default branch;
+4. posts @codex review with an invisible marker containing the full head SHA,
    base SHA, and latest SFL invalidation context token;
-4. records the returned comment ID in the append-only
+5. records the returned comment ID in the append-only
    `SFL Codex Review Request Registry` commit-status context;
-5. reuses the existing request URL instead of posting a duplicate for that
+6. reuses the existing request URL instead of posting a duplicate for that
    head.
 
 The registry preserves request identity if the owner later edits the comment.
