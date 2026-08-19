@@ -4,12 +4,13 @@
 name: SFL Codex Review Observer
 
 on:
+  push:
   issue_comment:
     types: [created]
   pull_request_review:
     types: [submitted]
   pull_request_target:
-    types: [edited]
+    types: [opened, reopened, edited]
 
 permissions: {}
 
@@ -76,10 +77,19 @@ jobs:
                 return { action: "ignore", reason: "Codex artifact is stale for the current pull request head" };
               }
               if (!resolvedSha) {
+                if (input.eventName === "issue_comment") {
+                  return { action: "ignore", reason: "Codex comment cannot be bound to a reviewed commit" };
+                }
                 return { action: "failure", reason: "Codex artifact has a malformed or unresolvable reviewed commit" };
               }
               if (resolvedSha !== currentHead) {
                 return { action: "ignore", reason: "Codex artifact is stale for the current pull request head" };
+              }
+              if (!input.requestMatchesCurrentBase) {
+                return { action: "ignore", reason: "Codex artifact is not bound to a review request for the current head and base" };
+              }
+              if (input.openPullCount !== 1) {
+                return { action: "failure", reason: "The current head is shared by multiple open pull requests; use a separate branch before requesting review" };
               }
 
               if (input.eventName === "issue_comment" &&
@@ -133,6 +143,7 @@ jobs:
               core.info("Fork pull requests are unsupported; no SFL gate was published");
               return;
             }
+            const currentBase = pull.data.base.sha;
             const currentHead = pull.data.head.sha;
             const match = (artifact.body || "").match(
               /\*\*Reviewed commit:\*\*\s+`([0-9a-f]{7,40})`/i,
@@ -149,11 +160,32 @@ jobs:
               }
             }
 
+            const artifactTime = Date.parse(artifact.created_at || artifact.submitted_at || "");
+            const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()} -->`;
+            const triggerComments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pullNumber, per_page: 100,
+            });
+            const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+            const requestMatchesCurrentBase = Number.isFinite(artifactTime) && triggerComments.some(
+              comment => trustedAssociations.has(comment.author_association) &&
+                (comment.body || "").startsWith("@codex review") &&
+                (comment.body || "").includes(marker) &&
+                Date.parse(comment.created_at || "") <= artifactTime,
+            );
+            const openPulls = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: "open", per_page: 100,
+            });
+            const openPullCount = openPulls.filter(
+              candidate => candidate.head && candidate.head.sha === currentHead,
+            ).length;
+
             const result = classifyCodexArtifact({
               eventName,
               currentHead,
               resolvedSha,
               reviewCommit,
+              requestMatchesCurrentBase,
+              openPullCount,
               inlineCount,
               artifact,
             });
@@ -201,12 +233,14 @@ jobs:
             }
             if (result.action !== "success") core.setFailed(result.reason);
 
-  invalidate-base-change:
-    name: Invalidate Codex review after base change
+  invalidate-pull-context:
+    name: Invalidate Codex review for changed pull context
     if: >-
       vars.SFL_ENABLED != 'false' &&
       github.event_name == 'pull_request_target' &&
-      github.event.changes.base
+      (github.event.action == 'opened' ||
+      github.event.action == 'reopened' ||
+      github.event.changes.base)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -220,7 +254,9 @@ jobs:
           script: |
             const {owner, repo} = context.repo;
             const pull = context.payload.pull_request;
-            const reason = `Pull request base changed to ${pull.base.ref} at ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`;
+            const reason = context.payload.action === "edited"
+              ? `Pull request base changed to ${pull.base.ref} at ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`
+              : `Pull request #${pull.number} opened or reopened for ${pull.base.ref} at ${pull.base.sha}; request a Codex review for this exact pull request context.`;
             await github.rest.checks.create({
               owner,
               repo,
@@ -230,7 +266,45 @@ jobs:
               conclusion: "failure",
               completed_at: new Date().toISOString(),
               details_url: pull.html_url,
-              external_id: `sfl-codex-review:base-change:${context.runId}`,
+              external_id: `sfl-codex-review:pull-context:${context.runId}`,
               output: {title: "SFL Codex review invalidated", summary: reason},
             });
             core.setFailed(reason);
+
+  invalidate-base-advance:
+    name: Invalidate Codex reviews after base advance
+    if: vars.SFL_ENABLED != 'false' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: write
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Fail gates for pull requests whose base branch advanced
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            if (context.payload.deleted) return;
+            const {owner, repo} = context.repo;
+            const baseRef = context.ref.replace(/^refs\/heads\//, "");
+            const openPulls = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: "open", base: baseRef, per_page: 100,
+            });
+            for (const pull of openPulls) {
+              if (pull.base.ref !== baseRef) continue;
+              const reason = `Pull request base ${baseRef} advanced to ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`;
+              await github.rest.checks.create({
+                owner,
+                repo,
+                name: "SFL Reviewer Gate Runner",
+                head_sha: pull.head.sha,
+                status: "completed",
+                conclusion: "failure",
+                completed_at: new Date().toISOString(),
+                details_url: pull.html_url,
+                external_id: `sfl-codex-review:base-advance:${context.runId}:${pull.number}`,
+                output: {title: "SFL Codex review invalidated", summary: reason},
+              });
+            }

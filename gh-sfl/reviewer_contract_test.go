@@ -38,7 +38,8 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 
 	for _, required := range []string{
 		"name: SFL Codex Review Observer",
-		"pull_request_target:",
+		"types: [opened, reopened, edited]",
+		"invalidate-base-advance:",
 		"github.event.sender.id == 199175422",
 		"Fork pull requests are unsupported",
 		"appId = 1144995",
@@ -49,6 +50,8 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 		"Codex artifact is stale",
 		"Codex reported review findings",
 		"SFL Codex review invalidated",
+		"requestMatchesCurrentBase",
+		"openPullCount",
 	} {
 		if !strings.Contains(canonical, required) {
 			t.Errorf("Codex observer is missing %q", required)
@@ -146,7 +149,7 @@ func TestCodexObserverClassificationFixtures(t *testing.T) {
 			wantAction: "ignore",
 		},
 		{
-			name: "malformed authentic result fails closed",
+			name: "malformed comment without a commit binding is ignored",
 			input: map[string]any{
 				"eventName":   "issue_comment",
 				"currentHead": head,
@@ -156,6 +159,22 @@ func TestCodexObserverClassificationFixtures(t *testing.T) {
 					"user":                     userCopy(codexUser),
 					"performed_via_github_app": codexApp,
 					"body":                     "Codex Review returned an unexpected response.",
+				},
+			},
+			wantAction: "ignore",
+		},
+		{
+			name: "malformed current-head review fails closed",
+			input: map[string]any{
+				"eventName":    "pull_request_review",
+				"currentHead":  head,
+				"resolvedSha":  "",
+				"reviewCommit": head,
+				"inlineCount":  0,
+				"artifact": map[string]any{
+					"user":  userCopy(codexUser),
+					"state": "COMMENTED",
+					"body":  "Codex returned an unexpected review response.",
 				},
 			},
 			wantAction: "failure",
@@ -176,6 +195,39 @@ func TestCodexObserverClassificationFixtures(t *testing.T) {
 			},
 			wantAction: "ignore",
 		},
+		{
+			name: "current-head result for another base is ignored",
+			input: map[string]any{
+				"eventName":                 "pull_request_review",
+				"currentHead":               head,
+				"resolvedSha":               head,
+				"reviewCommit":              head,
+				"requestMatchesCurrentBase": false,
+				"inlineCount":               0,
+				"artifact": map[string]any{
+					"user":  userCopy(codexUser),
+					"state": "COMMENTED",
+					"body":  "Codex Review: Didn't find any major issues.",
+				},
+			},
+			wantAction: "ignore",
+		},
+		{
+			name: "shared current head fails closed",
+			input: map[string]any{
+				"eventName":     "issue_comment",
+				"currentHead":   head,
+				"resolvedSha":   head,
+				"openPullCount": 2,
+				"inlineCount":   0,
+				"artifact": map[string]any{
+					"user":                     userCopy(codexUser),
+					"performed_via_github_app": codexApp,
+					"body":                     "Codex Review: Didn't find any major issues.",
+				},
+			},
+			wantAction: "failure",
+		},
 	}
 
 	for _, tc := range tests {
@@ -194,6 +246,12 @@ func userCopy(user map[string]any) map[string]any {
 
 func runObserverFixture(t *testing.T, input map[string]any) observerResult {
 	t.Helper()
+	if _, ok := input["requestMatchesCurrentBase"]; !ok {
+		input["requestMatchesCurrentBase"] = true
+	}
+	if _, ok := input["openPullCount"]; !ok {
+		input["openPullCount"] = 1
+	}
 	workflow := string(readContractFile(t, filepath.Join("..", "deployment", "infrastructure", "sfl-pr-review-auto.yml")))
 	startMarker := "// BEGIN TESTABLE CODEX OBSERVER"
 	endMarker := "// END TESTABLE CODEX OBSERVER"

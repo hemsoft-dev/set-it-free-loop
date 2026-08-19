@@ -76,7 +76,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("pull request #%d in %s/%s comes from fork %s — subscription-backed SFL reviews support same-repository branches only", opts.pr, owner, repo, pr.HeadRepo)
 	}
 
-	marker := codexReviewMarker(pr.HeadSHA)
+	marker := codexReviewMarker(pr.HeadSHA, pr.BaseSHA)
 	if !opts.retry {
 		existingURL, findErr := findCodexReviewTrigger(client, owner, repo, opts.pr, marker)
 		if findErr != nil {
@@ -228,8 +228,9 @@ func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number i
 	}, nil
 }
 
-func codexReviewMarker(headSHA string) string {
-	return "<!-- sfl-codex-review:" + strings.ToLower(headSHA) + " -->"
+func codexReviewMarker(headSHA, baseSHA string) string {
+	return "<!-- sfl-codex-review:head=" + strings.ToLower(headSHA) +
+		";base=" + strings.ToLower(baseSHA) + " -->"
 }
 
 func findCodexReviewTrigger(

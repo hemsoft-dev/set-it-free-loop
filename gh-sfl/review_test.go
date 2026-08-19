@@ -124,7 +124,7 @@ func TestRunReviewPostsOneHeadBoundCodexRequest(t *testing.T) {
 	if rest.posts != 1 {
 		t.Fatalf("Codex request posts = %d, want 1", rest.posts)
 	}
-	wantMarker := codexReviewMarker(strings.Repeat("b", 40))
+	wantMarker := codexReviewMarker(strings.Repeat("b", 40), strings.Repeat("a", 40))
 	if rest.postBody != codexReviewCommand+"\n\n"+wantMarker {
 		t.Fatalf("posted body = %q", rest.postBody)
 	}
@@ -164,7 +164,7 @@ func TestRunReviewRejectsMissingHeadRepository(t *testing.T) {
 func TestRunReviewDeduplicatesCurrentHeadRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
-		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head),
+		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40)),
 		HTMLURL: "https://github.test/existing",
 		User: struct {
 			Login string `json:"login"`
@@ -189,7 +189,7 @@ func TestRunReviewDeduplicatesCurrentHeadRequest(t *testing.T) {
 func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
-		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head),
+		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40)),
 		HTMLURL: "https://github.test/existing",
 		User: struct {
 			Login string `json:"login"`
@@ -204,7 +204,7 @@ func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 	if rest.posts != 1 {
 		t.Fatalf("Codex retry posts = %d, want 1", rest.posts)
 	}
-	if rest.postBody != codexReviewCommand+"\n\n"+codexReviewMarker(head) {
+	if rest.postBody != codexReviewCommand+"\n\n"+codexReviewMarker(head, strings.Repeat("a", 40)) {
 		t.Fatalf("posted retry body = %q", rest.postBody)
 	}
 }
