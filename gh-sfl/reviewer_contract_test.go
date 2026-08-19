@@ -57,7 +57,7 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 		"vars.SFL_ENABLED != 'false'",
 		"SFL Codex Review Request Registry",
 		"const terminalRequestIdentity = `:request:${commentId}:at:`",
-		"registeredRequestIds.has(comment.id)",
+		"registrations.has(comment.id)",
 		"openPullCount",
 		"if: github.event_name == 'push'",
 	} {
@@ -76,9 +76,15 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 			t.Errorf("Codex observer retained forbidden legacy reviewer text %q", forbidden)
 		}
 	}
-	if !strings.Contains(canonical, "const publishedCompletedAt = new Date().toISOString();") ||
-		strings.Count(canonical, "completed_at: publishedCompletedAt") != 2 {
-		t.Error("Codex observer does not preserve the original terminal completion time during late invalidation")
+	for _, required := range []string{
+		`status: "in_progress"`,
+		"const confirmedState = await publicationState();",
+		"const postSuccessState = await publicationState();",
+		"await failPublishedSuccess(publicationChangeReason(postSuccessState));",
+	} {
+		if !strings.Contains(canonical, required) {
+			t.Errorf("Codex observer is missing two-phase publication contract %q", required)
+		}
 	}
 }
 
