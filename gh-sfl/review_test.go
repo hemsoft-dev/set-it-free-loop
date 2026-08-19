@@ -395,6 +395,7 @@ func TestRunReviewRejectsCloseReopenDuringRetryWait(t *testing.T) {
 	rest := &reviewREST{
 		lifecycleResponses: [][]reviewLifecycleEvent{
 			{{ID: 10, Event: "reopened"}},
+			{{ID: 10, Event: "reopened"}},
 			{{ID: 10, Event: "reopened"}, {ID: 11, Event: "closed"}, {ID: 12, Event: "reopened"}},
 		},
 		comments: []reviewTriggerComment{{
@@ -413,8 +414,26 @@ func TestRunReviewRejectsCloseReopenDuringRetryWait(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "was closed or reopened") {
 		t.Fatalf("runReview() lifecycle error = %v", err)
 	}
+	if rest.posts != 0 || rest.lifecycleGets != 3 {
+		t.Fatalf("close/reopen posts/lifecycle GETs = %d/%d, want 0/3", rest.posts, rest.lifecycleGets)
+	}
+}
+
+func TestRunReviewRejectsCloseReopenDuringInitialInvalidationWait(t *testing.T) {
+	rest := &reviewREST{
+		lifecycleResponses: [][]reviewLifecycleEvent{
+			{{ID: 10, Event: "reopened"}},
+			{{ID: 10, Event: "reopened"}, {ID: 11, Event: "closed"}, {ID: 12, Event: "reopened"}},
+		},
+	}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "was closed or reopened while SFL invalidations were settling") {
+		t.Fatalf("runReview() initial lifecycle error = %v", err)
+	}
 	if rest.posts != 0 || rest.lifecycleGets != 2 {
-		t.Fatalf("close/reopen posts/lifecycle GETs = %d/%d, want 0/2", rest.posts, rest.lifecycleGets)
+		t.Fatalf("initial close/reopen posts/lifecycle GETs = %d/%d, want 0/2", rest.posts, rest.lifecycleGets)
 	}
 }
 
