@@ -156,30 +156,20 @@ jobs:
             const currentBase = pull.data.base.sha;
             const currentHead = pull.data.head.sha;
             const activeContextRuns = async () => {
-              const runs = await github.paginate(
-                github.rest.actions.listWorkflowRuns,
-                {
-                  owner,
-                  repo,
-                  workflow_id: "sfl-pr-review-auto.yml",
-                  event: "pull_request_target",
-                  per_page: 100,
-                },
-                response => response.data.workflow_runs,
-              );
-              return runs.filter(
+              const response = await github.rest.actions.listWorkflowRuns({
+                owner,
+                repo,
+                workflow_id: "sfl-pr-review-auto.yml",
+                event: "pull_request_target",
+                per_page: 100,
+              });
+              return response.data.workflow_runs.filter(
                 run => run.id !== context.runId && run.status !== "completed" &&
                   (run.pull_requests || []).some(candidate => candidate.number === pullNumber),
               );
             };
-            let pendingContextRuns = await activeContextRuns();
-            for (let attempt = 0; pendingContextRuns.length > 0 && attempt < 12; attempt += 1) {
-              core.info(`Waiting for pull-context run ${pendingContextRuns[0].id} before publishing the Codex result`);
-              await new Promise(resolve => setTimeout(resolve, 5000));
-              pendingContextRuns = await activeContextRuns();
-            }
-            if (pendingContextRuns.length > 0) {
-              const reason = `Pull-context run ${pendingContextRuns[0].id} is still active; the Codex result cannot supersede its invalidation`;
+            const failForPendingContext = async pendingRun => {
+              const reason = `Pull-context run ${pendingRun.id} is still active; the Codex result cannot supersede its invalidation`;
               await github.rest.checks.create({
                 owner,
                 repo,
@@ -189,10 +179,27 @@ jobs:
                 conclusion: "failure",
                 completed_at: new Date().toISOString(),
                 details_url: artifact.html_url || pull.data.html_url,
-                external_id: `sfl-codex-review:pending-context:${pendingContextRuns[0].id}:artifact:${artifactId}`,
+                external_id: `sfl-codex-review:pending-context:${pendingRun.id}:artifact:${artifactId}`,
                 output: {title: "SFL Codex review blocked", summary: reason},
               });
               core.setFailed(reason);
+            };
+            let pendingContextRuns = [];
+            let observedContextRun = false;
+            for (let attempt = 0; attempt < 12; attempt += 1) {
+              pendingContextRuns = await activeContextRuns();
+              if (pendingContextRuns.length > 0) {
+                observedContextRun = true;
+                core.info(`Waiting for pull-context run ${pendingContextRuns[0].id} before publishing the Codex result`);
+              } else if (observedContextRun || attempt >= 5) {
+                break;
+              } else {
+                core.info("Allowing a pull-context run time to materialize before publishing the Codex result");
+              }
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            if (pendingContextRuns.length > 0) {
+              await failForPendingContext(pendingContextRuns[0]);
               return;
             }
             const reviewContextToken = checkRuns => {
@@ -303,6 +310,11 @@ jobs:
             const requestTime = request && request.requestTime;
             if (reviewContextToken(checks.data.check_runs) !== contextToken) {
               core.info("The matching Codex request is not bound to the latest pull context");
+              return;
+            }
+            const finalContextRuns = await activeContextRuns();
+            if (finalContextRuns.length > 0) {
+              await failForPendingContext(finalContextRuns[0]);
               return;
             }
             const externalId = `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${request.comment.id}:at:${requestTime}`;
@@ -424,6 +436,13 @@ jobs:
               },
               response => response.data.check_runs,
             );
+            const existingInvalidation = reviewerChecks.some(
+              check => check.app && check.app.id === 15368 && check.external_id === invalidationId,
+            );
+            if (existingInvalidation) {
+              core.info(`Pull request #${pull.number} already has this exact invalidation; skipping rerun`);
+              return;
+            }
             const supersedingContext = reviewerChecks.find(
               check => check.app && check.app.id === 15368 &&
                 supersedesInvalidation(check.external_id, contextChangeTime, context.runId),
@@ -458,6 +477,35 @@ jobs:
               : context.payload.action === "synchronize"
                 ? `Pull request head changed to ${pull.head.sha}; request a Codex review for this exact head and base.`
                 : `Pull request #${pull.number} opened or reopened for ${pull.base.ref} at ${pull.base.sha}; request a Codex review for this exact pull request context.`;
+            const finalChecks = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner,
+                repo,
+                ref: pull.head.sha,
+                check_name: "SFL Reviewer Gate Runner",
+                filter: "all",
+                per_page: 100,
+              },
+              response => response.data.check_runs,
+            );
+            const finalContextExists = finalChecks.some(
+              check => check.app && check.app.id === 15368 &&
+                (check.external_id === invalidationId ||
+                 supersedesInvalidation(check.external_id, contextChangeTime, context.runId)),
+            );
+            const finalSuccess = finalChecks.some(
+              check => check.app && check.app.id === 15368 &&
+                check.conclusion === "success" &&
+                check.external_id && check.external_id.startsWith(
+                  `sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}:`,
+                ) &&
+                check.external_id.includes(`:context:${encodeURIComponent(invalidationId)}:`),
+            );
+            if (finalContextExists || finalSuccess) {
+              core.info(`Pull request #${pull.number} received a newer context or successful Codex gate while invalidation was running`);
+              return;
+            }
             await github.rest.checks.create({
               owner,
               repo,
@@ -531,6 +579,13 @@ jobs:
                 },
                 response => response.data.check_runs,
               );
+              const existingInvalidation = reviewerChecks.some(
+                check => check.app && check.app.id === 15368 && check.external_id === invalidationId,
+              );
+              if (existingInvalidation) {
+                core.info(`Pull request #${pull.number} already has this exact invalidation; skipping rerun`);
+                continue;
+              }
               const supersedingContext = reviewerChecks.find(
                 check => check.app && check.app.id === 15368 &&
                   supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId),
@@ -552,6 +607,35 @@ jobs:
                 continue;
               }
               const reason = `Pull request base ${baseRef} advanced to ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`;
+              const finalChecks = await github.paginate(
+                github.rest.checks.listForRef,
+                {
+                  owner,
+                  repo,
+                  ref: pull.head.sha,
+                  check_name: "SFL Reviewer Gate Runner",
+                  filter: "all",
+                  per_page: 100,
+                },
+                response => response.data.check_runs,
+              );
+              const finalContextExists = finalChecks.some(
+                check => check.app && check.app.id === 15368 &&
+                  (check.external_id === invalidationId ||
+                   supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId)),
+              );
+              const finalSuccess = finalChecks.some(
+                check => check.app && check.app.id === 15368 &&
+                  check.conclusion === "success" &&
+                  check.external_id && check.external_id.startsWith(
+                    `sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}:`,
+                  ) &&
+                  check.external_id.includes(`:context:${encodeURIComponent(invalidationId)}:`),
+              );
+              if (finalContextExists || finalSuccess) {
+                core.info(`Pull request #${pull.number} received a newer context or successful Codex gate while invalidation was running`);
+                continue;
+              }
               await github.rest.checks.create({
                 owner,
                 repo,
