@@ -33,6 +33,7 @@ foreach ($pattern in @(
     'types: [opened, reopened, edited, synchronize]',
     'sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}',
     'sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}',
+    'const baseMarker = `${headMarker}${currentBase.toLowerCase()};`',
     'The pull request context changed while the Codex result was being published',
     'confirmedOpenPulls.length !== 1',
     'context=${contextToken}',
@@ -40,6 +41,10 @@ foreach ($pattern in @(
     'This exact Codex request already has a terminal SFL gate',
     'pull-context:at:${contextChangeTime}',
     'base-advance:at:${baseAdvanceTime}',
+    'sfl-codex-review-pull-context-${{ github.repository }}-${{ github.event.pull_request.number }}',
+    'sfl-codex-review-base-advance-${{ github.repository }}-${{ github.ref }}',
+    'supersedesInvalidation(check.external_id, contextChangeTime, context.runId)',
+    'supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId)',
     'conflictingBaseRequest',
     'reviewContextToken(confirmedChecks.data.check_runs) !== contextToken',
     ':context:${encodeURIComponent(invalidationId)}:',
@@ -55,6 +60,38 @@ foreach ($pattern in @(
     if ($canonical -notmatch [regex]::Escape($pattern)) {
         throw "Codex observer is missing contract text: $pattern"
     }
+}
+
+$helperMatches = [regex]::Matches(
+    $canonical,
+    '(?s)// BEGIN TESTABLE INVALIDATION ORDER\s*(.*?)\s*// END TESTABLE INVALIDATION ORDER'
+)
+if ($helperMatches.Count -ne 2) {
+    throw "Expected two testable invalidation-order helpers, found $($helperMatches.Count)."
+}
+if ($helperMatches[0].Groups[1].Value -ne $helperMatches[1].Groups[1].Value) {
+    throw 'Pull-context and base-advance invalidation-order helpers differ.'
+}
+
+$helperTest = @"
+$($helperMatches[0].Groups[1].Value)
+const cases = [
+  ["sfl-codex-review:pull-context:at:2000:20", 1000, 10, true],
+  ["sfl-codex-review:base-advance:at:1000:20:42", 1000, 10, true],
+  ["sfl-codex-review:pull-context:at:999:99", 1000, 10, false],
+  ["sfl-codex-review:pull-context:at:1000:10", 1000, 10, false],
+  ["sfl-codex-review:pull:42:base:abc", 1000, 10, false],
+];
+for (const [externalId, eventTime, runId, expected] of cases) {
+  const actual = supersedesInvalidation(externalId, eventTime, runId);
+  if (actual !== expected) {
+    throw new Error("Unexpected ordering for " + externalId + ": " + actual);
+  }
+}
+"@
+$helperTest | node -
+if ($LASTEXITCODE -ne 0) {
+    throw 'Invalidation-order helper tests failed.'
 }
 
 foreach ($legacyPath in @(

@@ -193,11 +193,12 @@ jobs:
             });
             const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
             const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
+            const baseMarker = `${headMarker}${currentBase.toLowerCase()};`;
             const conflictingBaseRequest = triggerComments.some(
               comment => trustedAssociations.has(comment.author_association) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(headMarker) &&
-                !(comment.body || "").includes(marker),
+                !(comment.body || "").includes(baseMarker),
             );
             const matchingRequests = Number.isFinite(artifactTime) ? triggerComments.map(
               comment => ({comment, requestTime: Date.parse(comment.updated_at || comment.created_at || "")}),
@@ -334,6 +335,9 @@ jobs:
       github.event.changes.base)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    concurrency:
+      group: sfl-codex-review-pull-context-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     permissions:
       actions: read
       checks: write
@@ -345,6 +349,18 @@ jobs:
         with:
           github-token: ${{ github.token }}
           script: |
+            // BEGIN TESTABLE INVALIDATION ORDER
+            function supersedesInvalidation(externalId, eventTime, runId) {
+              const match = /^sfl-codex-review:(?:pull-context|base-advance):at:(\d+):(\d+)/.exec(externalId || "");
+              if (!match) return false;
+              const candidateTime = Number(match[1]);
+              const candidateRunId = Number(match[2]);
+              if (!Number.isSafeInteger(candidateTime) || !Number.isSafeInteger(candidateRunId)) return false;
+              return candidateTime > eventTime ||
+                (candidateTime === eventTime && candidateRunId > runId);
+            }
+            // END TESTABLE INVALIDATION ORDER
+
             const {owner, repo} = context.repo;
             const pull = context.payload.pull_request;
             const workflowRun = await github.rest.actions.getWorkflowRun({
@@ -367,6 +383,14 @@ jobs:
               },
               response => response.data.check_runs,
             );
+            const supersedingContext = reviewerChecks.find(
+              check => check.app && check.app.id === 15368 &&
+                supersedesInvalidation(check.external_id, contextChangeTime, context.runId),
+            );
+            if (supersedingContext) {
+              core.info(`Pull request #${pull.number} has a newer invalidation context; skipping stale invalidation`);
+              return;
+            }
             const newerSuccess = reviewerChecks.some(
               check => check.app && check.app.id === 15368 &&
                 check.conclusion === "success" &&
@@ -412,6 +436,9 @@ jobs:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    concurrency:
+      group: sfl-codex-review-base-advance-${{ github.repository }}-${{ github.ref }}
+      cancel-in-progress: true
     permissions:
       actions: read
       checks: write
@@ -423,6 +450,18 @@ jobs:
         with:
           github-token: ${{ github.token }}
           script: |
+            // BEGIN TESTABLE INVALIDATION ORDER
+            function supersedesInvalidation(externalId, eventTime, runId) {
+              const match = /^sfl-codex-review:(?:pull-context|base-advance):at:(\d+):(\d+)/.exec(externalId || "");
+              if (!match) return false;
+              const candidateTime = Number(match[1]);
+              const candidateRunId = Number(match[2]);
+              if (!Number.isSafeInteger(candidateTime) || !Number.isSafeInteger(candidateRunId)) return false;
+              return candidateTime > eventTime ||
+                (candidateTime === eventTime && candidateRunId > runId);
+            }
+            // END TESTABLE INVALIDATION ORDER
+
             if (context.payload.deleted) return;
             const {owner, repo} = context.repo;
             const baseRef = context.ref.replace(/^refs\/heads\//, "");
@@ -451,6 +490,14 @@ jobs:
                 },
                 response => response.data.check_runs,
               );
+              const supersedingContext = reviewerChecks.find(
+                check => check.app && check.app.id === 15368 &&
+                  supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId),
+              );
+              if (supersedingContext) {
+                core.info(`Pull request #${pull.number} has a newer invalidation context; skipping stale invalidation`);
+                continue;
+              }
               const newerSuccess = reviewerChecks.some(
                 check => check.app && check.app.id === 15368 &&
                   check.conclusion === "success" &&
