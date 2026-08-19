@@ -1,6 +1,0 @@
-paths:
-  .github/workflows/sfl-pr-review.lock.yml:
-    ignore:
-      # gh-aw v0.86.2 emits this supported runtime extension. Keep the ignore
-      # scoped to the generated reviewer lock and the exact unknown-key error.
-      - '^unexpected key "queue" for "concurrency" section\. expected one of "cancel-in-progress", "group"$'

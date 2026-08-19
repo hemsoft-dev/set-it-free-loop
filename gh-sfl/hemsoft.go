@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-const hemSoftEnginePolicyJSON = "{\r\n  \"$schema\": \"./engine-policy.schema.json\",\r\n  \"defaultProfile\": \"codex-gpt-55-high\",\r\n  \"profiles\": {\r\n    \"codex-gpt-55-high\": {\r\n      \"provider\": \"codex\",\r\n      \"model\": \"gpt-5.5\",\r\n      \"effort\": \"high\",\r\n      \"requiredSecretsAnyOf\": [\r\n        \"CODEX_API_KEY\",\r\n        \"OPENAI_API_KEY\"\r\n      ]\r\n    },\r\n    \"openrouter-kimi-k3-high\": {\r\n      \"provider\": \"copilot\",\r\n      \"model\": \"moonshotai/kimi-k3\",\r\n      \"requiredSecretsAnyOf\": [\r\n        \"OPENROUTER_API_KEY\"\r\n      ],\r\n      \"environment\": {\r\n        \"COPILOT_PROVIDER_BASE_URL\": \"https://openrouter.ai/api/v1\",\r\n        \"COPILOT_PROVIDER_API_KEY\": \"${{ secrets.OPENROUTER_API_KEY }}\",\r\n        \"COPILOT_PROVIDER_TYPE\": \"openai\",\r\n        \"COPILOT_PROVIDER_WIRE_API\": \"responses\",\r\n        \"COPILOT_MODEL\": \"moonshotai/kimi-k3\"\r\n      }\r\n    }\r\n  },\r\n  \"workflows\": {\r\n    \"sfl-pr-review\": {\r\n      \"profile\": \"openrouter-kimi-k3-high\"\r\n    }\r\n  }\r\n}\r\n"
+const hemSoftEnginePolicyJSON = "{\r\n  \"$schema\": \"./engine-policy.schema.json\",\r\n  \"defaultProfile\": \"codex-gpt-55-high\",\r\n  \"profiles\": {\r\n    \"codex-gpt-55-high\": {\r\n      \"provider\": \"codex\",\r\n      \"model\": \"gpt-5.5\",\r\n      \"effort\": \"high\",\r\n      \"requiredSecretsAnyOf\": [\r\n        \"CODEX_API_KEY\",\r\n        \"OPENAI_API_KEY\"\r\n      ]\r\n    }\r\n  },\r\n  \"workflows\": {}\r\n}\r\n"
 
 type hemSoftEnginePolicy struct {
 	DefaultProfile string                              `json:"defaultProfile"`
@@ -361,10 +361,8 @@ func mergeHemSoftEnginePolicyManifest(
 
 func sourceWorkflowPath(name string) string {
 	switch name {
-	case "sfl-dispatcher.yml", "sfl-auditor.yml", "sfl-pr-review-auto.yml", "sfl-pr-review-recovery.yml":
+	case "sfl-dispatcher.yml", "sfl-auditor.yml", "sfl-pr-review-auto.yml":
 		return "deployment/infrastructure/" + name
-	case "sfl-pr-review.lock.yml":
-		return ".github/workflows/" + name
 	default:
 		return "deployment/workflows/" + name
 	}

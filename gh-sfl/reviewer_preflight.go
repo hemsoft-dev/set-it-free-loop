@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-var reviewerRequiredVariables = []string{"SFL_APP_CLIENT_ID"}
-var reviewerRequiredSecrets = []string{"SFL_APP_PRIVATE_KEY", "OPENROUTER_API_KEY"}
+var reviewerRequiredVariables = []string{}
+var reviewerRequiredSecrets = []string{}
 
 type reviewerRolloutHealth struct {
 	DefaultBranch    string
@@ -72,23 +72,12 @@ func inspectReviewerRolloutWithClient(
 		return reviewerRolloutHealth{}, err
 	}
 
-	variables, err := repositoryActionNames(client, owner, repo, "variables")
-	if err != nil {
-		return reviewerRolloutHealth{}, fmt.Errorf("listing Actions variables: %w", err)
-	}
-	secrets, err := repositoryActionNames(client, owner, repo, "secrets")
-	if err != nil {
-		return reviewerRolloutHealth{}, fmt.Errorf("listing Actions secrets: %w", err)
-	}
-
 	return reviewerRolloutHealth{
 		DefaultBranch:  repository.DefaultBranch,
 		ActionsEnabled: actionsPermissions.Enabled,
 		ActionsIssues:  actionsIssues,
-		AppNotice: "GitHub CLI OAuth cannot inspect App installation permissions in this path; " +
-			"verify scope and permissions with the App-authenticated credential bootstrap",
-		MissingVariables: missingNames(reviewerRequiredVariables, variables),
-		MissingSecrets:   missingNames(reviewerRequiredSecrets, secrets),
+		AppNotice: "The Codex GitHub App installation is verified by an authenticated review smoke test; " +
+			"GitHub CLI cannot inspect the owner's ChatGPT subscription connection",
 	}, nil
 }
 
@@ -100,7 +89,7 @@ func reviewerActionsPolicyIssues(
 	case "all":
 		return nil, nil
 	case "local_only":
-		return []string{"Actions policy allows only local actions; reviewer requires pinned GitHub-owned actions"}, nil
+		return []string{"Actions policy allows only local actions; reviewer requires the pinned GitHub-owned actions/github-script action"}, nil
 	case "selected":
 		var selected struct {
 			GitHubOwnedAllowed bool `json:"github_owned_allowed"`
@@ -114,9 +103,7 @@ func reviewerActionsPolicyIssues(
 		if selected.GitHubOwnedAllowed {
 			return nil, nil
 		}
-		return []string{
-			"selected Actions policy must allow GitHub-owned actions required by the reviewer; exact action patterns are not a supported rollout policy",
-		}, nil
+		return []string{"selected Actions policy must allow GitHub-owned actions for the reviewer"}, nil
 	case "":
 		return []string{"Actions policy did not report allowed_actions"}, nil
 	default:
@@ -189,8 +176,8 @@ func assertReviewerRolloutReady(owner, repo string, stdout io.Writer) error {
 	if len(issues) > 0 {
 		return fmt.Errorf("reviewer rollout preflight failed for %s/%s:\n - %s", owner, repo, strings.Join(issues, "\n - "))
 	}
-	fmt.Fprintf(stdout, "  Reviewer rollout preflight: default branch %s, Actions policy, variable, and secret metadata ready ✓\n", health.DefaultBranch)
-	fmt.Fprintln(stdout, "  Reviewer App installation: rely on the App-authenticated credential bootstrap check")
+	fmt.Fprintf(stdout, "  Reviewer rollout preflight: default branch %s and Actions policy ready ✓\n", health.DefaultBranch)
+	fmt.Fprintln(stdout, "  Codex App connection: verify with a current-head review after deployment")
 	fmt.Fprintln(stdout)
 	return nil
 }

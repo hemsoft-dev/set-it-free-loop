@@ -13,7 +13,7 @@ $existingFull = [pscustomobject]@{
     tier = 'full'
     source = 'HemSoft/set-it-free-loop'
     sourceSha = '1111111111111111111111111111111111111111'
-    components = @('labels', 'governance', 'repo-audit', 'pr-fixer')
+    components = @('labels', 'governance', 'repo-audit', 'pr-fixer', 'sfl-pr-review-recovery')
     enginePolicy = [pscustomobject]@{
         defaultProfile = 'codex-gpt-55-high'
         workflows = @(
@@ -25,6 +25,14 @@ $existingFull = [pscustomobject]@{
                 effort = 'high'
                 renderedModel = 'gpt-5.5?effort=high'
                 requiredSecretsAnyOf = @('OPENAI_API_KEY')
+            },
+            [pscustomobject]@{
+                name = 'sfl-pr-review'
+                profile = 'openrouter-kimi-k3-high'
+                provider = 'copilot'
+                model = 'moonshotai/kimi-k3'
+                renderedModel = 'moonshotai/kimi-k3'
+                requiredSecretsAnyOf = @('OPENROUTER_API_KEY')
             }
         )
     }
@@ -37,25 +45,12 @@ $incomingReview = [pscustomobject]@{
     source = 'HemSoft/set-it-free-loop'
     sourceSha = '2222222222222222222222222222222222222222'
     components = @(
-        'labels',
-        'governance',
         'sfl-pr-review',
-        'sfl-pr-review-auto',
-        'sfl-pr-review-recovery'
+        'sfl-pr-review-auto'
     )
     enginePolicy = [pscustomobject]@{
         defaultProfile = 'codex-gpt-55-high'
-        workflows = @(
-            [pscustomobject]@{
-                name = 'sfl-pr-review'
-                profile = 'openrouter-kimi-k3-high'
-                provider = 'copilot'
-                model = 'moonshotai/kimi-k3'
-                effort = 'high'
-                renderedModel = 'moonshotai/kimi-k3'
-                requiredSecretsAnyOf = @('OPENROUTER_API_KEY')
-            }
-        )
+        workflows = @()
     }
 }
 
@@ -71,8 +66,7 @@ $expectedComponents = @(
     'pr-fixer',
     'repo-audit',
     'sfl-pr-review',
-    'sfl-pr-review-auto',
-    'sfl-pr-review-recovery'
+    'sfl-pr-review-auto'
 )
 $actualComponents = @($merged.components | Sort-Object)
 if (($actualComponents -join ',') -ne ($expectedComponents -join ',')) {
@@ -80,7 +74,7 @@ if (($actualComponents -join ',') -ne ($expectedComponents -join ',')) {
 }
 
 $workflowNames = @($merged.enginePolicy.workflows.name | Sort-Object)
-if (($workflowNames -join ',') -ne 'repo-audit,sfl-pr-review') {
+if (($workflowNames -join ',') -ne 'repo-audit') {
     throw "Unexpected merged engine workflows: $($workflowNames -join ', ')"
 }
 
@@ -110,14 +104,13 @@ $legacyMerged = Merge-SflManifest `
 if ($legacyMerged.tier -ne 'standard') {
     throw "Expected legacy standard tier to be preserved; got '$($legacyMerged.tier)'."
 }
-foreach ($component in @('sfl-pr-review', 'sfl-pr-review-auto', 'sfl-pr-review-recovery')) {
+foreach ($component in @('sfl-pr-review', 'sfl-pr-review-auto')) {
     if ($component -notin @($legacyMerged.components)) {
         throw "Legacy manifest did not receive the $component component."
     }
 }
-if (@($legacyMerged.enginePolicy.workflows).Count -ne 1 -or
-    $legacyMerged.enginePolicy.workflows[0].name -ne 'sfl-pr-review') {
-    throw 'Legacy manifest did not receive the review engine policy.'
+if (@($legacyMerged.enginePolicy.workflows).Count -ne 0) {
+    throw 'Subscription-backed reviewer unexpectedly added an API engine policy.'
 }
 
 Write-Output 'Review-tier manifest merge tests passed.'

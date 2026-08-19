@@ -21,7 +21,8 @@ function Merge-SflManifest {
 
     $existingComponentsProperty = $ExistingManifest.PSObject.Properties['components']
     $existingComponents = if ($null -ne $existingComponentsProperty) {
-        @($existingComponentsProperty.Value)
+        @($existingComponentsProperty.Value) |
+            Where-Object { $_ -ne 'sfl-pr-review-recovery' }
     } else {
         @()
     }
@@ -49,6 +50,9 @@ function Merge-SflManifest {
 
     $workflowMap = [ordered]@{}
     foreach ($workflow in $existingWorkflows) {
+        if ([string] $workflow.name -eq 'sfl-pr-review') {
+            continue
+        }
         $workflowMap[[string] $workflow.name] = $workflow
     }
     foreach ($workflow in @($IncomingManifest.enginePolicy.workflows)) {

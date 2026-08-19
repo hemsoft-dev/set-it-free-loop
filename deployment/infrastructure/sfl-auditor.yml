@@ -356,44 +356,24 @@ jobs:
 
           MISSING=0
           MISSING_ITEMS=""
-          if ! gh api "repos/$REPO/actions/workflows/sfl-pr-review.lock.yml" >/dev/null 2>&1; then
-            echo "::warning::Missing active workflow .github/workflows/sfl-pr-review.lock.yml"
+          if ! gh api "repos/$REPO/actions/workflows/sfl-pr-review-auto.yml" >/dev/null 2>&1; then
+            echo "::warning::Missing active workflow .github/workflows/sfl-pr-review-auto.yml"
             MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review.lock.yml\`"$'\n'
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review-auto.yml\`"$'\n'
           fi
 
-          REVIEW_LOCK=""
-          if REVIEW_LOCK_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review.lock.yml" --jq '.content' 2>/dev/null); then
-            REVIEW_LOCK=$(echo "$REVIEW_LOCK_B64" | base64 --decode)
+          OBSERVER=""
+          if OBSERVER_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review-auto.yml" --jq '.content' 2>/dev/null); then
+            OBSERVER=$(echo "$OBSERVER_B64" | base64 --decode)
           fi
-          if [ -n "$REVIEW_LOCK" ] && { \
-            ! grep -q '"allow-only"' <<< "$REVIEW_LOCK" || \
-            ! grep -q '"write-sink"' <<< "$REVIEW_LOCK"; \
+          if [ -n "$OBSERVER" ] && { \
+            ! grep -q 'name: SFL Codex Review Observer' <<< "$OBSERVER" || \
+            ! grep -q 'github.event.sender.id == 199175422' <<< "$OBSERVER" || \
+            ! grep -q 'name: "SFL Reviewer Gate Runner"' <<< "$OBSERVER"; \
           }; then
-            echo "::warning::Malformed SFL review guard policies in .github/workflows/sfl-pr-review.lock.yml"
+            echo "::warning::Malformed subscription-backed Codex observer"
             MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review.lock.yml\` with generated \`allow-only\` and \`write-sink\` guard policies"$'\n'
-          fi
-
-          if ! gh api "repos/$REPO/labels/sfl-review" >/dev/null 2>&1; then
-            echo "::warning::Missing required label sfl-review"
-            MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Create the \`sfl-review\` label"$'\n'
-          fi
-
-          REVIEW_SOURCE=""
-          if REVIEW_SOURCE_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review.md" --jq '.content' 2>/dev/null); then
-            REVIEW_SOURCE=$(echo "$REVIEW_SOURCE_B64" | base64 --decode)
-          fi
-          if [ -z "$REVIEW_SOURCE" ]; then
-            echo "::warning::Missing source workflow .github/workflows/sfl-pr-review.md"
-            MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review.md\`"$'\n'
-          elif ! grep -q '^Deployed from: HemSoft/set-it-free-loop/' <<< "$REVIEW_SOURCE" || \
-            grep -Eq '^# (Deployed from|To upgrade):' <<< "$REVIEW_SOURCE"; then
-            echo "::warning::Malformed SFL source provenance in .github/workflows/sfl-pr-review.md"
-            MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review.md\` with non-heading source provenance"$'\n'
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review-auto.yml\` from the pinned SFL release"$'\n'
           fi
 
           ISSUE_TITLE="[SFL Auditor] Missing SFL review prerequisites"

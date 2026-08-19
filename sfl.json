@@ -15,7 +15,6 @@
     "simplisticate",
     "sfl-pr-review",
     "sfl-pr-review-auto",
-    "sfl-pr-review-recovery",
     "pr-analyzer-general",
     "pr-analyzer-quality",
     "pr-analyzer-security",
@@ -73,23 +72,6 @@
           "CODEX_API_KEY",
           "OPENAI_API_KEY"
         ]
-      },
-      {
-        "name": "sfl-pr-review",
-        "profile": "openrouter-kimi-k3-high",
-        "provider": "copilot",
-        "model": "moonshotai/kimi-k3",
-        "renderedModel": "moonshotai/kimi-k3",
-        "requiredSecretsAnyOf": [
-          "OPENROUTER_API_KEY"
-        ],
-        "environment": {
-          "COPILOT_PROVIDER_BASE_URL": "https://openrouter.ai/api/v1",
-          "COPILOT_PROVIDER_API_KEY": "${{ secrets.OPENROUTER_API_KEY }}",
-          "COPILOT_PROVIDER_TYPE": "openai",
-          "COPILOT_PROVIDER_WIRE_API": "responses",
-          "COPILOT_MODEL": "moonshotai/kimi-k3"
-        }
       },
       {
         "name": "pr-analyzer-general",

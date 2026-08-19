@@ -1,263 +1,115 @@
-# HemSoft SFL Pull Request Reviewer
+# HemSoft SFL pull request reviewer
 
-The HemSoft reviewer is a HemSoft-owned repository package that performs three
-evidence-based passes over eligible pull requests, publishes native inline
-findings, and exposes a current-head approval check suitable for branch
-protection.
-
-## Distribution boundary
-
-The deployment scripts fail closed unless the target is owned by `HemSoft`.
-The source repository, release assets, and credentials remain private. Reviewer
-workflow deployments may target public or private HemSoft repositories, but
-must not be published outside HemSoft-owned repositories.
+HemSoft SFL uses the native Codex GitHub review connected to Franz's ChatGPT
+subscription. It does not run a model through OpenRouter and does not require an
+OpenAI API key.
 
 ## Package
 
-The `review` tier installs these files:
+The review tier installs one workflow:
 
-- `.github/workflows/sfl-pr-review.md` - runtime-imported agent instructions
-- `.github/workflows/sfl-pr-review.lock.yml` - generated executable workflow
-- `.github/workflows/sfl-pr-review-auto.yml` - PR lifecycle dispatcher and
-  immutable-head `SFL Reviewer Approval` check publisher
-- `.github/workflows/sfl-pr-review-recovery.yml` - one-shot missing-output
-  recovery
+- .github/workflows/sfl-pr-review-auto.yml observes authenticated Codex results
+  and publishes the immutable-head SFL Reviewer Gate Runner check.
 
-The lock must be generated from the deployed Markdown with the repository's
-checksum-verified `gh-aw` compiler. Never edit the lock directly.
+A synchronized deployment also removes the retired sfl-pr-review.md,
+sfl-pr-review.lock.yml, and sfl-pr-review-recovery.yml files.
 
-The Kimi model has explicit provider pricing in the Markdown frontmatter. The
-compiler must carry that pricing into both the primary reviewer and the
-mandatory threat-detection firewall configuration. Generic fallback pricing
-is not an acceptable substitute because the two runtimes are generated
-independently.
+## Prerequisite
 
-## Required repository configuration
+Install and connect the Codex GitHub App for the target repository using the
+same ChatGPT account that owns the Codex subscription. SFL cannot inspect that
+subscription connection through GitHub CLI, so a current-head smoke review is
+the rollout proof.
 
-The target repository needs the following Actions configuration:
+No reviewer Actions variable or AI-provider secret is required. The reviewer
+does not read OPENROUTER_API_KEY, OPENAI_API_KEY, CODEX_API_KEY,
+SFL_APP_CLIENT_ID, or SFL_APP_PRIVATE_KEY.
 
-| Kind | Name | Purpose |
-| --- | --- | --- |
-| Variable | `SFL_APP_CLIENT_ID` | Reviewer GitHub App client ID |
-| Secret | `SFL_APP_PRIVATE_KEY` | App installation private key |
-| Secret | `OPENROUTER_API_KEY` | Private Kimi K3 route |
+The observer uses the SHA-pinned GitHub-owned actions/github-script action. A
+selected-actions policy must therefore allow GitHub-owned actions.
 
-The App installation may cover all HemSoft repositories or selected intended
-repositories. Its exact repository permission contract is Actions read/write,
-Checks read/write, Contents read, Issues read/write, Metadata read, and Pull
-requests read/write. It must not have Contents write, Workflows write, or
-unrelated repository permissions. Review
-evidence and obsolete-thread mutations use the repository-scoped `GITHUB_TOKEN`
-instead of expanding the shared App's permission ceiling.
+## Deploy
 
-Configure App credentials only through the fail-closed bootstrap:
+Deploy through a pull request:
 
-```powershell
-.\deployment\scripts\set-sfl-github-app-credentials.ps1 `
-  -Repos HemSoft/repository `
-  -AppId 123456 `
-  -ClientId Iv1.example `
-  -PrivateKeyPath C:\secure\sfl-app.private-key.pem
-```
+    .\deployment\scripts\deploy-workflow.ps1 `
+      -Tier review `
+      -Repos "HemSoft/repository"
 
-Before its first variable or secret write, the bootstrap uses a locally signed
-App JWT to verify the App ID, client ID, HemSoft ownership, target access, and
-permission ceiling for every requested repository. It also independently
-verifies each target is a `HemSoft/*` repository. If any target fails, none of
-the targets are mutated.
+The gh sfl adapter provides the same package:
 
-`gh sfl init`, `gh sfl sync`, and `gh sfl add pr-review` inspect only repository
-metadata and credential names; they never read secret values. Before preparing
-a reviewer deployment pull request, including a `pr-review` add-on deployment,
-they require a default branch, enabled GitHub Actions, the variable above, and
-both secrets above. A normal GitHub CLI OAuth token cannot inspect
-GitHub App installations owned by the `HemSoft` personal account, so App scope
-and permission-ceiling validation belongs to the App-authenticated credential
-bootstrap and remains a required rollout step.
-Repositories with a selected-actions policy must enable the policy's
-GitHub-owned-actions option; exact allowlist patterns are intentionally not a
-supported rollout policy because the compiled reviewer uses a changing set of
-SHA-pinned `actions/*` and `github/gh-aw-actions/*` actions.
-`gh sfl status` reports each missing prerequisite separately from package drift,
-gate posture, and reviewer-run health.
+    gh sfl init --repo HemSoft/repository
+    gh sfl sync --repo HemSoft/repository
 
-## Deployment
+Both paths are restricted to HemSoft-owned consumers and default to a
+reviewable deployment pull request.
 
-Deploy through a reviewable pull request:
+## Request a review
 
-```powershell
-.\deployment\scripts\deploy-workflow.ps1 `
-  -Tier review `
-  -Repos "HemSoft/repository"
-```
+Request one review for the current pull request head:
 
-The deployer stamps the exact source commit into the reviewer Markdown and the
-two standard YAML wrappers, compiles the Markdown in the consumer checkout, and
-records all reviewer components in `sfl.json`. A later deployment from the same
-source should produce no unexpected workflow diff.
+    gh sfl review --repo HemSoft/repository --pr 42
 
-For local dogfood materialization:
+The command:
 
-```powershell
-.\deployment\scripts\deploy-workflow.ps1 -Local -Compile
-```
+1. verifies the active GitHub identity is HemSoft;
+2. verifies the pull request is open and the observer is installed;
+3. posts @codex review with an invisible marker containing the full head SHA;
+4. reuses the existing request URL instead of posting a duplicate for that
+   head.
 
-The HemSoft `gh sfl` adapter exposes the equivalent package as the `reviewer`
-tier and writes the CLI-compatible `.sfl/sfl.json` manifest. Its Go source is
-owned in this repository under `gh-sfl/`; building or installing it does not
-read from a Relias checkout. The provenance of the initial source import is
-recorded in `gh-sfl/PROVENANCE.md`.
+A new commit creates a new head and therefore permits one new request.
 
-Validate and build without changing the installed extension:
+## Result contract
 
-```powershell
-.\gh-sfl\build.ps1 -NoInstall
-```
+Codex currently emits two result shapes:
 
-Install the local build, then open the default reviewer deployment PR:
+- clean: an issue comment beginning with
+  "Codex Review: Didn't find any major issues.";
+- findings: a COMMENTED pull request review, usually with inline comments.
 
-```powershell
-.\deployment\scripts\install-gh-sfl-hemsoft.ps1
-gh sfl init --repo HemSoft/repository
-```
+Both include a Reviewed commit SHA prefix. The observer resolves that prefix
+through GitHub and requires the resulting full SHA to equal the current pull
+request head. A stale result is ignored and cannot satisfy or fail the new head.
 
-`init` defaults to the `reviewer` tier and both `init` and `sync` default to a
-signed deployment pull request. `--direct` is an explicit opt-in for direct
-default-branch mutation. Workflow reads are pinned to the SHA behind the
-selected private HemSoft release, and `.sfl/sfl.json` records both its version
-and source SHA.
+For clean comments, the observer requires GitHub App ID 1144995, slug
+chatgpt-codex-connector, owner openai, and bot user ID 199175422. GitHub's
+pull-request-review REST object currently omits performed_via_github_app;
+finding reviews therefore require the immutable bot user ID and login, a
+COMMENTED state, the full review commit_id, and the resolved reviewed-commit
+prefix. If GitHub starts returning App provenance on reviews, the observer
+requires the same App identity.
 
-Both deployment paths reject non-HemSoft or non-private mutation targets. The
-CLI also requires the active GitHub CLI identity to be `HemSoft`; direct Git
-writes use the `github-personal1` SSH profile.
+Authenticated malformed current-head output fails closed. Spoofed or stale
+output is ignored. Event redelivery is idempotent through an artifact-specific
+check-run external ID.
 
-During the first deployment, review-submitted events can load the wrapper from
-the deployment branch before the compatible reviewer lock exists on the
-default branch. The wrapper detects that state, does not mint or dispatch, and
-reports a successful bootstrap gate. This exception ends as soon as the lock
-with exact `dispatch_id` correlation reaches the default branch. Configure
-branch protection only after that deployment is merged.
+## Gate
 
-The supported rollout order is:
+After deployment, enable the existing strict branch rule:
 
-1. Ensure the App installation covers the repository and run the credential
-   bootstrap above. It verifies target access and the permission ceiling with
-   App authentication before setting credentials.
-2. Run `gh sfl init` or `gh sfl sync` and merge its reviewed deployment PR.
-3. Run `gh sfl gate` to require the reviewer without replacing unrelated
-   repository rules.
-4. Open a smoke PR and require `gh sfl status` to show a successful reviewer
-   run, current manifest/files, healthy credentials/App, and the required gate.
+    gh sfl gate --repo HemSoft/repository
 
-Maintainers who can change workflow files on the protected default branch are
-trusted in this first HemSoft rollout model. The reviewer prevents unreviewed
-pull-request heads from satisfying its gate; it does not attempt to defend
-against an authorized maintainer changing the trusted default-branch workflow.
+The rule still requires SFL Reviewer Gate Runner from GitHub Actions App ID
+15368 with strict base freshness. The observer writes that exact check on the
+reviewed head:
 
-## Automatic and explicit review
+- clean Codex result: success;
+- current-head Codex findings or malformed authenticated output: failure;
+- stale or spoofed artifact: no check.
 
-An internal, non-draft pull request targeting the default branch is reviewed
-when it is opened, reopened, marked ready for review, or synchronized with a new
-commit. Fork pull requests are skipped because repository secrets are not made
-available to them.
+## Semantic change from the retired reviewer
 
-Adding `sfl-review` requests an explicit rerun. The dispatcher consumes the
-label after validating the pull request and passes immutable PR number, base
-SHA, and head SHA inputs to the executable workflow. Duplicate runs for the
-same sealed context are suppressed.
+The retired Kimi/OpenRouter reviewer ran a prescribed three-pass,
+full-spectrum prompt, assigned Critical/High/Medium/Low severities, managed its
+own SFL review threads, and retried missing output once.
 
-An owner, organization member, or repository collaborator can make the same
-request by adding this exact standalone comment to an eligible pull request:
+Native Codex owns review depth, severity, and presentation. SFL now verifies
+Codex provenance and head freshness and translates its clean/finding result
+into the existing branch gate. It does not promise three passes, all severity
+classes, SFL-authored approvals, obsolete-thread cleanup, or recovery retries.
+A rerun is an explicit new gh sfl review request.
 
-```text
-@sfl-app review
-```
-
-SFL acknowledges the command once and replaces the acknowledgement with a link
-to the exact Actions run. Duplicate delivery of one comment is coalesced, and
-edited comments do not trigger the command. The command uses the existing
-`sfl-review` label path, so automatic review, immutable-head validation, and the
-required gate keep their established behavior.
-
-The optional `review_effort` input is an audit marker retained in provenance
-and forwarded by recovery. The HemSoft Kimi route does not currently map it to
-a provider-specific reasoning control.
-
-A maintainer can dispatch manually from the default branch:
-
-```powershell
-$context = '{"item_type":"pull_request","item_number":42,"base_sha":"BASE_SHA","head_sha":"HEAD_SHA"}'
-gh workflow run sfl-pr-review.lock.yml `
-  --ref main `
-  -f item_number=42 `
-  -f base_sha=BASE_SHA `
-  -f head_sha=HEAD_SHA `
-  -f retry_count=0 `
-  -f dispatch_id=manual `
-  -f review_effort=low `
-  -f "aw_context=$context"
-```
-
-## Evidence and approval
-
-Each run validates its repository, workflow path, default-branch revision, pull
-request, base, and head before the reviewer starts and again before safe output.
-The workflow initializes an in-progress evidence check for the exact run and
-head, then finalizes that same evidence after reconciling immutable artifacts
-and SFL-owned review threads.
-
-Every unresolved Critical, High, Medium, or Low SFL finding blocks approval.
-Older success cannot satisfy a newer head or a pull request whose base branch
-advanced. Obsolete threads are resolved only after verifying their SFL App
-ownership and proving they belong to the expected pull request context.
-The trusted wrapper publishes `SFL Reviewer Approval` directly on that head
-with the repository-scoped `GITHUB_TOKEN`; the wrapper job itself runs in the
-safer default-branch context and is not used as the required status context.
-
-## Recovery
-
-If a trusted reviewer run fails or times out without one formal review, the
-recovery workflow downloads and validates its provenance and safe-output
-artifacts. It retries exactly once only when:
-
-- the pull request is still eligible;
-- base and head are unchanged;
-- no newer run already owns the same context; and
-- the agent did not emit an explicit terminal missing-data, missing-tool, or
-  incomplete-report signal.
-
-A stale context suppresses recovery. A second missing review fails closed.
-Published reviews are reconciled before retry so a missing artifact cannot
-produce a duplicate review.
-
-## Advisory and gated operation
-
-Deployment is advisory until a repository rule requires
-`SFL Reviewer Gate Runner`. After the deployment PR is merged, enable strict
-gating with:
-
-```powershell
-gh sfl gate --repo HemSoft/repository
-```
-
-The command creates a dedicated repository ruleset on the consumer's default
-branch. The rule requires `SFL Reviewer Gate Runner` from GitHub Actions App ID
-`15368` and uses strict base freshness, so a base update needs a new sealed
-review. The runner authenticates the exact App review plus the inner
-`SFL Reviewer Approval` and `SFL Review Evidence` checks. This differs from
-Relias because `HemSoft` is a personal GitHub account and cannot create
-organization required-workflow rulesets.
-
-An already-correct gate is a write-free no-op. Before changing a stale dedicated
-gate, the command rechecks its entity tag and complete state, then aborts if
-either changed. It verifies the write and restores the exact pre-write rule if
-GitHub accepts an invalid update that remains unchanged before rollback. GitHub
-does not support conditional headers on repository ruleset updates or deletes.
-The command refuses stale shared or inherited rules instead of changing
-unrelated policy. Gate creation, status, and uninstall use repository endpoints
-and do not require `admin:org`. The command still rejects public or non-HemSoft
-repositories.
-
-`gh sfl stop` pauses review dispatch and recovery, but the required gate runner
-continues to execute and fails closed. New pull request heads remain blocked
-until `gh sfl start` re-enables reviews.
+Pilot deployments are limited to HemSoft/hs-buddy until the source change and
+smoke evidence are accepted. Do not deploy this migration to
+developer-documentation.

@@ -36,30 +36,6 @@ func TestHemSoftEnginePolicyRewriteIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestCanonicalReviewerEnginePolicyIsDeploymentStable(t *testing.T) {
-	canonical := normalizeLineEndings(readContractFile(
-		t,
-		filepath.Join("..", "deployment", "workflows", "sfl-pr-review.md"),
-	))
-
-	rendered, err := applyHemSoftEnginePolicyToWorkflow(canonical, "sfl-pr-review")
-	if err != nil {
-		t.Fatalf("render canonical reviewer workflow: %v", err)
-	}
-	if rendered != canonical {
-		firstDifference := 0
-		for firstDifference < len(canonical) && firstDifference < len(rendered) && canonical[firstDifference] == rendered[firstDifference] {
-			firstDifference++
-		}
-		t.Fatalf(
-			"canonical reviewer workflow changes during consumer deployment, which invalidates its generated lock: canonical bytes=%d, rendered bytes=%d, first difference=%d",
-			len(canonical),
-			len(rendered),
-			firstDifference,
-		)
-	}
-}
-
 func TestRenderHemSoftWorkflowMatchesDeploymentAndStatus(t *testing.T) {
 	markdown := "---\nname: Example\nmodel: legacy\nnetwork: defaults\n---\nVersion " + sflVersionPlaceholder + "\n"
 	rendered, err := renderHemSoftWorkflow("example.md", markdown, "2.0.0")
@@ -81,19 +57,16 @@ func TestRenderHemSoftWorkflowMatchesDeploymentAndStatus(t *testing.T) {
 	}
 }
 
-func TestHemSoftReviewerUsesPrivateOpenRouterProfile(t *testing.T) {
-	config, err := hemSoftEngineConfigForWorkflow("sfl-pr-review")
+func TestHemSoftEnginePolicyHasNoOpenRouterReviewerProfile(t *testing.T) {
+	policy, err := hemSoftEnginePolicyConfig()
 	if err != nil {
-		t.Fatalf("resolve reviewer engine: %v", err)
+		t.Fatalf("load engine policy: %v", err)
 	}
-	if config.Profile != "openrouter-kimi-k3-high" || config.Provider != "copilot" {
-		t.Fatalf("reviewer engine = %+v", config)
+	if _, exists := policy.Workflows["sfl-pr-review"]; exists {
+		t.Fatal("native Codex reviewer still has a gh-aw engine mapping")
 	}
-	if config.Environment["COPILOT_PROVIDER_BASE_URL"] != "https://openrouter.ai/api/v1" {
-		t.Fatalf("reviewer base URL = %q", config.Environment["COPILOT_PROVIDER_BASE_URL"])
-	}
-	if len(config.RequiredSecretsAnyOf) != 1 || config.RequiredSecretsAnyOf[0] != "OPENROUTER_API_KEY" {
-		t.Fatalf("reviewer secret requirements = %v", config.RequiredSecretsAnyOf)
+	if strings.Contains(hemSoftEnginePolicyJSON, "OPENROUTER") || strings.Contains(hemSoftEnginePolicyJSON, "openrouter") {
+		t.Fatal("embedded engine policy retained OpenRouter configuration")
 	}
 }
 
@@ -173,11 +146,8 @@ func TestValidateDeploymentTargetRejectsScopeBeforeGitHubAccess(t *testing.T) {
 
 func TestHemSoftWorkflowSourceRouting(t *testing.T) {
 	for name, want := range map[string]string{
-		"sfl-pr-review.md":           "deployment/workflows/sfl-pr-review.md",
-		"sfl-pr-review.lock.yml":     ".github/workflows/sfl-pr-review.lock.yml",
-		"sfl-pr-review-auto.yml":     "deployment/infrastructure/sfl-pr-review-auto.yml",
-		"sfl-pr-review-recovery.yml": "deployment/infrastructure/sfl-pr-review-recovery.yml",
-		"repo-audit.md":              "deployment/workflows/repo-audit.md",
+		"sfl-pr-review-auto.yml": "deployment/infrastructure/sfl-pr-review-auto.yml",
+		"repo-audit.md":          "deployment/workflows/repo-audit.md",
 	} {
 		if got := sourceWorkflowPath(name); got != want {
 			t.Errorf("sourceWorkflowPath(%q) = %q, want %q", name, got, want)

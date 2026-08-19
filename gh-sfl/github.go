@@ -116,6 +116,17 @@ func parseRepoFlag(repoFlag string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
+// isNotFoundError reports whether an API read failed because the resource does
+// not exist, rather than because of authentication, rate limiting, or network
+// failure. Some go-gh errors expose only the rendered HTTP status.
+func isNotFoundError(err error) bool {
+	return err != nil && isNotFoundMessage(err.Error())
+}
+
+func isNotFoundMessage(message string) bool {
+	return strings.Contains(message, "HTTP 404") || strings.Contains(message, "Not Found")
+}
+
 func parseMutationTarget(repoFlag string) (string, string, error) {
 	owner, repo, err := parseRepoFlag(repoFlag)
 	if err != nil {
@@ -725,6 +736,9 @@ func deploymentManifestContentsMatch(current []byte, desired string) (bool, erro
 // older SFL releases installed but the current catalog no longer contains.
 var retiredWorkflowPaths = []string{
 	"sfl-copilot-review-bridge.yml",
+	"sfl-pr-review.md",
+	"sfl-pr-review.lock.yml",
+	"sfl-pr-review-recovery.yml",
 }
 
 func managedDeploymentPaths() []string {
