@@ -46,6 +46,7 @@ foreach ($pattern in @(
     'request:${requestId}:at:${requestTime}',
     ':artifact:${artifactIdentity}',
     'const artifactAlreadyConsumed = artifactChecks.some(',
+    'pending-invalidation:${pendingRun.id}:artifact:${artifactIdentity}',
     'This exact Codex artifact already completed a review request',
     'const pendingRequest = candidateRequests[0]',
     'contextMatch = /;context=(.*?) -->/.exec',

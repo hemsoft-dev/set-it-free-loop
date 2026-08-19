@@ -320,7 +320,7 @@ jobs:
                 return;
               }
               const reason = `${pendingRun.event} invalidation run ${pendingRun.id} is still active; the Codex result cannot supersede its invalidation`;
-              let externalId = `sfl-codex-review:pending-invalidation:${pendingRun.id}:artifact:${artifactId}`;
+              let externalId = `sfl-codex-review:pending-invalidation:${pendingRun.id}:artifact:${artifactIdentity}`;
               if (pendingRequest) {
                 const contextMatch = /;context=(.*?) -->/.exec(pendingRequest.comment.body || "");
                 if (contextMatch && contextMatch[1]) {
