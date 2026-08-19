@@ -29,7 +29,7 @@ foreach ($pattern in @(
     'const appOwner = "openai"',
     'comment.updated_at || comment.created_at',
     'github.rest.actions.getWorkflowRun',
-    'Date.parse(check.completed_at || "") >= baseAdvanceTime',
+    'Date.parse(check.completed_at || "") > baseAdvanceTime',
     'name: "SFL Reviewer Gate Runner"',
     'check.app.id === 15368',
     'action: "success"',

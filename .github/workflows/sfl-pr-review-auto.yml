@@ -319,7 +319,7 @@ jobs:
                 check => check.app && check.app.id === 15368 &&
                   check.conclusion === "success" &&
                   Number.isFinite(Date.parse(check.completed_at || "")) &&
-                  Date.parse(check.completed_at || "") >= baseAdvanceTime,
+                  Date.parse(check.completed_at || "") > baseAdvanceTime,
               );
               if (newerSuccess) {
                 core.info(`Pull request #${pull.number} already has a successful Codex gate completed after this base advance`);
