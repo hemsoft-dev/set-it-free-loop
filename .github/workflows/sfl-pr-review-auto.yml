@@ -172,7 +172,7 @@ jobs:
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(marker) &&
                 Number.isFinite(Date.parse(comment.updated_at || comment.created_at || "")) &&
-                Date.parse(comment.updated_at || comment.created_at || "") <= artifactTime,
+                Date.parse(comment.updated_at || comment.created_at || "") < artifactTime,
             );
             const openPulls = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: "open", per_page: 100,
