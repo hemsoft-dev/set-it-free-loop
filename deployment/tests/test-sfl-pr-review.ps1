@@ -28,6 +28,7 @@ foreach ($pattern in @(
     'const appSlug = "chatgpt-codex-connector"',
     'const appOwner = "openai"',
     'comment.updated_at || comment.created_at',
+    'pull.data.state !== "open"',
     'github.rest.actions.getWorkflowRun',
     'Date.parse(check.completed_at || "") > baseAdvanceTime',
     'successful Codex gate completed after this context change',

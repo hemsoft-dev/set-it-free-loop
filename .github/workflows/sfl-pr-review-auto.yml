@@ -139,6 +139,10 @@ jobs:
             const pull = await github.rest.pulls.get({
               owner, repo, pull_number: pullNumber,
             });
+            if (pull.data.state !== "open") {
+              core.info("The pull request is no longer open; no SFL gate was published");
+              return;
+            }
             const headRepo = pull.data.head.repo && pull.data.head.repo.full_name;
             if (!headRepo || headRepo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) {
               core.info("Fork pull requests are unsupported; no SFL gate was published");
