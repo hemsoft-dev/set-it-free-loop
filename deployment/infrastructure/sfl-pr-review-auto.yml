@@ -236,7 +236,6 @@ jobs:
   invalidate-pull-context:
     name: Invalidate Codex review for changed pull context
     if: >-
-      vars.SFL_ENABLED != 'false' &&
       github.event_name == 'pull_request_target' &&
       (github.event.action == 'opened' ||
       github.event.action == 'reopened' ||
@@ -273,7 +272,7 @@ jobs:
 
   invalidate-base-advance:
     name: Invalidate Codex reviews after base advance
-    if: vars.SFL_ENABLED != 'false' && github.event_name == 'push'
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

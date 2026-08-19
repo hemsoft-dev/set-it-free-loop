@@ -52,6 +52,7 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 		"SFL Codex review invalidated",
 		"requestMatchesCurrentBase",
 		"openPullCount",
+		"if: github.event_name == 'push'",
 	} {
 		if !strings.Contains(canonical, required) {
 			t.Errorf("Codex observer is missing %q", required)
