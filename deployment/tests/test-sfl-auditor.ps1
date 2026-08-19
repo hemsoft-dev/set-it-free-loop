@@ -81,6 +81,10 @@ function Invoke-BashScript {
     }
 }
 
+$workflowContent = Get-Content -Raw -LiteralPath $workflowPath
+Assert-True ($workflowContent -match 'index\("sfl-pr-review-auto"\)') 'Auditor does not activate for the current reviewer component.'
+Assert-True ($workflowContent -notmatch 'index\("sfl-pr-review"\)') 'Auditor still activates on the retired reviewer component.'
+
 $mockGh = @'
 gh() {
   if [ "$1 $2" = "pr list" ]; then

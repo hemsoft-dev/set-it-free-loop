@@ -343,7 +343,7 @@ jobs:
           EXPECTED=0
           if MANIFEST=$(gh api "repos/$REPO/contents/sfl.json" --jq '.content' 2>/dev/null); then
             if echo "$MANIFEST" | base64 --decode | jq -e \
-              '.components | index("sfl-pr-review") != null' >/dev/null; then
+              '.components | index("sfl-pr-review-auto") != null' >/dev/null; then
               EXPECTED=1
             fi
           fi
@@ -384,7 +384,7 @@ jobs:
 
           if [ "$MISSING" -gt 0 ] && [ -z "$EXISTING_ISSUE" ]; then
             ISSUE_BODY=$(printf '%s\n\n## Missing prerequisites\n\n%s## Recovery\n\n%s' \
-              "The repository declares \`sfl-pr-review\` in \`sfl.json\`, but the standalone reviewer is missing or malformed." \
+              "The repository declares \`sfl-pr-review-auto\` in \`sfl.json\`, but the standalone reviewer is missing or malformed." \
               "$MISSING_ITEMS" \
               "Run \`deployment/scripts/deploy-workflow.ps1 -Tier review\` and \`deployment/governance/setup-labels.ps1\` from \`HemSoft/set-it-free-loop\`.")
             gh issue create --repo "$REPO" \
