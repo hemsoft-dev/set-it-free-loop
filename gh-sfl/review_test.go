@@ -14,6 +14,8 @@ type reviewREST struct {
 	comments            []reviewTriggerComment
 	headRepo            string
 	headRepoUnavailable bool
+	baseRef             string
+	defaultBranch       string
 	posts               int
 	postBody            string
 }
@@ -28,6 +30,12 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 		})
 	case strings.Contains(path, "/actions/variables/SFL_ENABLED"):
 		return decodeTestResponse(response, map[string]any{"value": "true"})
+	case path == "repos/HemSoft/consumer":
+		defaultBranch := f.defaultBranch
+		if defaultBranch == "" {
+			defaultBranch = "main"
+		}
+		return decodeTestResponse(response, map[string]any{"default_branch": defaultBranch})
 	case strings.Contains(path, "/pulls/"):
 		var headRepo any = map[string]string{"full_name": f.headRepo}
 		if f.headRepo == "" {
@@ -36,8 +44,12 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 		if f.headRepoUnavailable {
 			headRepo = nil
 		}
+		baseRef := f.baseRef
+		if baseRef == "" {
+			baseRef = "main"
+		}
 		return decodeTestResponse(response, map[string]any{
-			"base":  map[string]any{"sha": strings.Repeat("a", 40), "repo": map[string]string{"full_name": "HemSoft/consumer"}},
+			"base":  map[string]any{"sha": strings.Repeat("a", 40), "ref": baseRef, "repo": map[string]string{"full_name": "HemSoft/consumer"}},
 			"head":  map[string]any{"sha": strings.Repeat("b", 40), "repo": headRepo},
 			"state": "open",
 		})
@@ -158,6 +170,20 @@ func TestRunReviewRejectsMissingHeadRepository(t *testing.T) {
 	}
 	if rest.posts != 0 {
 		t.Fatalf("missing-head review posts = %d, want 0", rest.posts)
+	}
+}
+
+func TestRunReviewRejectsNonDefaultBaseBranch(t *testing.T) {
+	rest := &reviewREST{baseRef: "release/next", defaultBranch: "main"}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "support only the default branch main") ||
+		!strings.Contains(err.Error(), "release/next") {
+		t.Fatalf("runReview() non-default base error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("non-default-base review posts = %d, want 0", rest.posts)
 	}
 }
 

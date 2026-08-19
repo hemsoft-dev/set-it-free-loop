@@ -29,6 +29,7 @@ foreach ($pattern in @(
     'const appOwner = "openai"',
     'comment.updated_at || comment.created_at',
     'pull.data.state !== "open"',
+    'SFL reviews require the default branch',
     'types: [opened, reopened, edited, synchronize]',
     'sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}',
     'sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}',

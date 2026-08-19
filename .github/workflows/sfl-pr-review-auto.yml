@@ -143,6 +143,12 @@ jobs:
               core.info("The pull request is no longer open; no SFL gate was published");
               return;
             }
+            const defaultBranch = context.payload.repository && context.payload.repository.default_branch;
+            if (!defaultBranch) throw new Error("Could not determine the repository default branch");
+            if (pull.data.base.ref !== defaultBranch) {
+              core.info(`Pull requests targeting ${pull.data.base.ref} are unsupported; SFL reviews require the default branch ${defaultBranch}`);
+              return;
+            }
             const headRepo = pull.data.head.repo && pull.data.head.repo.full_name;
             if (!headRepo || headRepo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) {
               core.info("Fork pull requests are unsupported; no SFL gate was published");

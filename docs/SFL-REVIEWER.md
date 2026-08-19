@@ -51,15 +51,18 @@ Request one review for the current pull request head:
     gh sfl review --repo HemSoft/repository --pr 42
 
 The reviewer supports pull requests whose head branch is in the target
-repository. Fork pull requests are rejected because GitHub downgrades workflow
-tokens for fork review events, preventing reliable publication of the required
-check.
+repository and whose base is the repository's default branch. Fork pull
+requests are rejected because GitHub downgrades workflow tokens for fork review
+events, preventing reliable publication of the required check. Non-default base
+branches are rejected because base-advance invalidation is deliberately scoped
+to the trusted default branch.
 
 The command:
 
 1. verifies the active GitHub identity is HemSoft;
 2. verifies the pull request is open and the observer is installed;
-3. posts @codex review with an invisible marker containing the full head SHA;
+3. posts @codex review with an invisible marker containing the full head and
+   base SHAs;
 4. reuses the existing request URL instead of posting a duplicate for that
    head.
 

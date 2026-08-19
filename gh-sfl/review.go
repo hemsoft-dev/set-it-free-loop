@@ -23,6 +23,7 @@ type reviewOptions struct {
 
 type pullRequestShas struct {
 	BaseSHA  string
+	BaseRef  string
 	HeadSHA  string
 	BaseRepo string
 	HeadRepo string
@@ -74,6 +75,13 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 	if !strings.EqualFold(pr.HeadRepo, owner+"/"+repo) {
 		return fmt.Errorf("pull request #%d in %s/%s comes from fork %s — subscription-backed SFL reviews support same-repository branches only", opts.pr, owner, repo, pr.HeadRepo)
+	}
+	defaultBranch, err := fetchRepositoryDefaultBranchWithClient(client, owner, repo)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(pr.BaseRef, defaultBranch) {
+		return fmt.Errorf("pull request #%d in %s/%s targets %s — subscription-backed SFL reviews support only the default branch %s", opts.pr, owner, repo, pr.BaseRef, defaultBranch)
 	}
 
 	marker := codexReviewMarker(pr.HeadSHA, pr.BaseSHA)
@@ -199,6 +207,7 @@ func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number i
 	var response struct {
 		Base struct {
 			SHA  string `json:"sha"`
+			Ref  string `json:"ref"`
 			Repo struct {
 				FullName string `json:"full_name"`
 			} `json:"repo"`
@@ -221,11 +230,25 @@ func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number i
 	}
 	return pullRequestShas{
 		BaseSHA:  response.Base.SHA,
+		BaseRef:  response.Base.Ref,
 		HeadSHA:  response.Head.SHA,
 		BaseRepo: response.Base.Repo.FullName,
 		HeadRepo: response.Head.Repo.FullName,
 		State:    response.State,
 	}, nil
+}
+
+func fetchRepositoryDefaultBranchWithClient(client restAPI, owner, repo string) (string, error) {
+	var response struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := client.Get(fmt.Sprintf("repos/%s/%s", owner, repo), &response); err != nil {
+		return "", fmt.Errorf("reading the default branch for %s/%s: %w", owner, repo, err)
+	}
+	if strings.TrimSpace(response.DefaultBranch) == "" {
+		return "", fmt.Errorf("repository %s/%s has no default branch", owner, repo)
+	}
+	return response.DefaultBranch, nil
 }
 
 func codexReviewMarker(headSHA, baseSHA string) string {
