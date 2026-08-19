@@ -52,6 +52,13 @@ foreach ($pattern in @(
     'registeredRequestIds.has(comment.id)',
     'const publishedCompletedAt = new Date().toISOString()',
     'completed_at: publishedCompletedAt',
+    'status: "in_progress"',
+    'SFL Codex review validating',
+    'conclusion: "success"',
+    'GET /repos/{owner}/{repo}/issues/{issue_number}/events',
+    'event.event === "closed" || event.event === "reopened"',
+    'confirmedLifecycleToken !== initialLifecycleToken',
+    'confirmedInvalidationRuns.length > 0',
     'confirmedOpenPulls.length !== 1',
     'context=${contextToken}',
     'function requestGateExternalId(',
@@ -132,6 +139,18 @@ $pendingRequestIndex = $canonical.IndexOf('const pendingRequest = candidateReque
 if ($artifactBindingIndex -lt 0 -or $pendingRequestIndex -lt 0 -or
     $artifactBindingIndex -gt $pendingRequestIndex) {
     throw 'Codex artifact binding is not validated before pending request selection.'
+}
+
+$inProgressIndex = $canonical.IndexOf('status: "in_progress"')
+$confirmationIndex = if ($inProgressIndex -ge 0) {
+    $canonical.IndexOf('const confirmedPull = await github.rest.pulls.get', $inProgressIndex)
+} else { -1 }
+$successIndex = if ($confirmationIndex -ge 0) {
+    $canonical.IndexOf('conclusion: "success"', $confirmationIndex)
+} else { -1 }
+if ($inProgressIndex -lt 0 -or $confirmationIndex -lt 0 -or $successIndex -lt 0 -or
+    $inProgressIndex -gt $confirmationIndex -or $confirmationIndex -gt $successIndex) {
+    throw 'Codex success is exposed before the final pull-context confirmation.'
 }
 
 $eligibilityMatch = [regex]::Match(

@@ -535,6 +535,15 @@ jobs:
               });
               core.setFailed(reason);
             };
+            const pullLifecycleToken = async () => {
+              const events = await github.paginate(
+                "GET /repos/{owner}/{repo}/issues/{issue_number}/events",
+                {owner, repo, issue_number: pullNumber, per_page: 100},
+              );
+              return events.filter(event => event.event === "closed" || event.event === "reopened")
+                .reduce((latest, event) => Math.max(latest, event.id || 0), 0);
+            };
+            const initialLifecycleToken = await pullLifecycleToken();
             let pendingInvalidationRuns = [];
             let observedInvalidationRun = false;
             for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -629,7 +638,6 @@ jobs:
               return;
             }
 
-            const conclusion = result.action === "success" ? "success" : "failure";
             const title = result.action === "success"
               ? "SFL Codex review passed"
               : "SFL Codex review failed";
@@ -697,71 +705,101 @@ jobs:
               core.info("This Codex review request already has a terminal SFL gate");
               return;
             }
-            const publishedCompletedAt = new Date().toISOString();
-            const common = {
+            const detailsURL = artifact.html_url || pull.data.html_url;
+            if (result.action !== "success") {
+              const publishedCompletedAt = new Date().toISOString();
+              await github.rest.checks.create({
+                owner,
+                repo,
+                name: "SFL Reviewer Gate Runner",
+                head_sha: currentHead,
+                status: "completed",
+                conclusion: "failure",
+                completed_at: publishedCompletedAt,
+                details_url: detailsURL,
+                external_id: externalId,
+                output: {title, summary: result.reason},
+              });
+              core.setFailed(result.reason);
+              return;
+            }
+            const published = await github.rest.checks.create({
               owner,
               repo,
-              status: "completed",
-              conclusion,
-              completed_at: publishedCompletedAt,
-              details_url: artifact.html_url || pull.data.html_url,
-              external_id: externalId,
-              output: {title, summary: result.reason},
-            };
-            const published = await github.rest.checks.create({
-              ...common,
               name: "SFL Reviewer Gate Runner",
               head_sha: currentHead,
+              status: "in_progress",
+              started_at: new Date().toISOString(),
+              details_url: detailsURL,
+              external_id: externalId,
+              output: {title: "SFL Codex review validating", summary: result.reason},
             });
-            if (result.action === "success") {
-              const confirmedPull = await github.rest.pulls.get({
-                owner, repo, pull_number: pullNumber,
+            const confirmedPull = await github.rest.pulls.get({
+              owner, repo, pull_number: pullNumber,
+            });
+            const confirmedOpenPulls = await openPullsForCurrentHead();
+            const confirmedTriggerComments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: pullNumber, per_page: 100,
+            });
+            const confirmedChecks = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner,
+                repo,
+                ref: currentHead,
+                check_name: "SFL Reviewer Gate Runner",
+                filter: "all",
+                per_page: 100,
+              },
+              response => response.data.check_runs,
+            );
+            const confirmedLifecycleToken = await pullLifecycleToken();
+            const confirmedInvalidationRuns = await activeInvalidationRuns();
+            const supersededRequest = hasNewerMatchingRequest(
+              confirmedTriggerComments, confirmedChecks,
+            );
+            const lifecycleChanged = confirmedLifecycleToken !== initialLifecycleToken;
+            if (confirmedPull.data.state !== "open" ||
+                confirmedPull.data.head.sha !== currentHead ||
+                confirmedPull.data.base.sha !== currentBase ||
+                confirmedOpenPulls.length !== 1 ||
+                confirmedOpenPulls[0].number !== pullNumber ||
+                supersededRequest ||
+                lifecycleChanged ||
+                confirmedInvalidationRuns.length > 0 ||
+                reviewContextToken(confirmedChecks) !== contextToken) {
+              const changedReason = supersededRequest
+                ? "A newer Codex review request superseded this result while it was being published"
+                : lifecycleChanged
+                  ? "The pull request was closed or reopened while the Codex result was being published"
+                  : confirmedInvalidationRuns.length > 0
+                    ? "An SFL invalidation started while the Codex result was being published"
+                    : "The pull request context changed while the Codex result was being published";
+              await github.rest.checks.update({
+                owner,
+                repo,
+                check_run_id: published.data.id,
+                status: "completed",
+                conclusion: "failure",
+                completed_at: new Date().toISOString(),
+                details_url: detailsURL,
+                external_id: externalId,
+                output: {title: "SFL Codex review invalidated", summary: changedReason},
               });
-              const confirmedOpenPulls = await openPullsForCurrentHead();
-              const confirmedTriggerComments = await github.paginate(github.rest.issues.listComments, {
-                owner, repo, issue_number: pullNumber, per_page: 100,
-              });
-              const confirmedChecks = await github.paginate(
-                github.rest.checks.listForRef,
-                {
-                  owner,
-                  repo,
-                  ref: currentHead,
-                  check_name: "SFL Reviewer Gate Runner",
-                  filter: "all",
-                  per_page: 100,
-                },
-                response => response.data.check_runs,
-              );
-              const supersededRequest = hasNewerMatchingRequest(
-                confirmedTriggerComments, confirmedChecks,
-              );
-              if (confirmedPull.data.state !== "open" ||
-                  confirmedPull.data.head.sha !== currentHead ||
-                  confirmedPull.data.base.sha !== currentBase ||
-                  confirmedOpenPulls.length !== 1 ||
-                  confirmedOpenPulls[0].number !== pullNumber ||
-                  supersededRequest ||
-                  reviewContextToken(confirmedChecks) !== contextToken) {
-                const changedReason = supersededRequest
-                  ? "A newer Codex review request superseded this result while it was being published"
-                  : "The pull request context changed while the Codex result was being published";
-                await github.rest.checks.update({
-                  owner,
-                  repo,
-                  check_run_id: published.data.id,
-                  status: "completed",
-                  conclusion: "failure",
-                  completed_at: publishedCompletedAt,
-                  details_url: artifact.html_url || pull.data.html_url,
-                  external_id: externalId,
-                  output: {title: "SFL Codex review invalidated", summary: changedReason},
-                });
-                core.setFailed(changedReason);
-                return;
-              }
+              core.setFailed(changedReason);
+              return;
             }
-            if (result.action !== "success") core.setFailed(result.reason);
+            await github.rest.checks.update({
+              owner,
+              repo,
+              check_run_id: published.data.id,
+              status: "completed",
+              conclusion: "success",
+              completed_at: new Date().toISOString(),
+              details_url: detailsURL,
+              external_id: externalId,
+              output: {title, summary: result.reason},
+            });
 
   invalidate-pull-context:
     name: Invalidate Codex review for changed pull context
