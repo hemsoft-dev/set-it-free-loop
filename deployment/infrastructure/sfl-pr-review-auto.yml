@@ -381,13 +381,10 @@ jobs:
               return;
             }
             const artifactTime = Date.parse(artifact.created_at || artifact.submitted_at || "");
-            const triggerComments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: pullNumber, per_page: 100,
-            });
-            const requestStatuses = await github.paginate(
-              github.rest.repos.listCommitStatusesForRef,
-              {owner, repo, ref: currentHead, per_page: 100},
-            );
+            const isOwnerRequest = comment =>
+              ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
+            const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
+            const baseMarker = `${headMarker}${currentBase.toLowerCase()};`;
             const requestTargetPrefix = `https://github.com/${owner}/${repo}/pull/${pullNumber}#issuecomment-`.toLowerCase();
             const registeredRequestIdsFromStatuses = statuses => new Set(statuses.flatMap(status => {
               if (status.context !== "SFL Codex Review Request Registry" ||
@@ -399,12 +396,44 @@ jobs:
               const requestId = Number(targetURL.slice(requestTargetPrefix.length));
               return Number.isSafeInteger(requestId) && requestId > 0 ? [requestId] : [];
             }));
+            let triggerComments = [];
+            let requestStatuses = [];
+            let latestPotentialRequest;
+            let latestPotentialRequestRegistered = false;
+            for (let attempt = 0; attempt < 12; attempt += 1) {
+              [triggerComments, requestStatuses] = await Promise.all([
+                github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: pullNumber, per_page: 100,
+                }),
+                github.paginate(
+                  github.rest.repos.listCommitStatusesForRef,
+                  {owner, repo, ref: currentHead, per_page: 100},
+                ),
+              ]);
+              const potentialRequests = triggerComments.map(comment => ({
+                comment,
+                requestTime: Date.parse(comment.created_at || ""),
+                updatedTime: Date.parse(comment.updated_at || ""),
+              })).filter(({comment, requestTime, updatedTime}) => {
+                const contextMatch = /;context=(.*?) -->/.exec(comment.body || "");
+                return isOwnerRequest(comment) && contextMatch && contextMatch[1] &&
+                  (comment.body || "") === `@codex review\n\n${baseMarker}context=${contextMatch[1]} -->` &&
+                  Number.isFinite(requestTime) && requestTime <= artifactTime &&
+                  Number.isFinite(updatedTime) && updatedTime === requestTime;
+              }).sort((left, right) =>
+                left.requestTime - right.requestTime || left.comment.id - right.comment.id);
+              latestPotentialRequest = potentialRequests[potentialRequests.length - 1];
+              const visibleRegistrations = registeredRequestIdsFromStatuses(requestStatuses);
+              latestPotentialRequestRegistered = Boolean(latestPotentialRequest) &&
+                visibleRegistrations.has(latestPotentialRequest.comment.id);
+              if (latestPotentialRequestRegistered) break;
+              if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            if (!latestPotentialRequestRegistered) {
+              core.info("No registered Codex review request materialized for this artifact");
+              return;
+            }
             const registeredRequestIds = registeredRequestIdsFromStatuses(requestStatuses);
-
-            const isOwnerRequest = comment =>
-              ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
-            const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
-            const baseMarker = `${headMarker}${currentBase.toLowerCase()};`;
             // BEGIN TESTABLE REQUEST ELIGIBILITY
             const requestContextFromBody = body => {
               const contextMatch = /;context=(.*?) -->/.exec(body || "");
