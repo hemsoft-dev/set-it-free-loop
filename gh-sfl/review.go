@@ -127,15 +127,23 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	if conflictingURL != "" {
 		return fmt.Errorf("pull request #%d head %.10s was already requested against another base at %s — update the pull request branch to a new head before requesting review for the current base", opts.pr, pr.HeadSHA, conflictingURL)
 	}
-	requests, findErr := findCodexReviewTriggers(client, owner, repo, opts.pr, marker)
+	requests, ownerRequests, findErr := findCodexReviewTriggers(client, owner, repo, opts.pr, marker)
 	if findErr != nil {
 		return fmt.Errorf("checking existing Codex review requests: %w", findErr)
 	}
 	var existing reviewTriggerComment
+	untrackedExisting := false
 	retryNeedsCompletionWait := false
 	retryNeedsReactionMaterialization := false
 	if len(requests) > 0 {
 		existing = requests[len(requests)-1]
+	}
+	if len(ownerRequests) > 0 {
+		latestOwnerRequest := ownerRequests[len(ownerRequests)-1]
+		if existing.ID != latestOwnerRequest.ID {
+			existing = latestOwnerRequest
+			untrackedExisting = true
+		}
 	}
 	if existing.HTMLURL != "" {
 		if !opts.retry {
@@ -143,7 +151,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 				owner, repo, opts.pr, pr.HeadSHA, existing.HTMLURL)
 			return nil
 		}
-		if reviewCommentWasEdited(existing) {
+		if untrackedExisting || reviewCommentWasEdited(existing) {
 			retryNeedsReactionMaterialization = true
 		} else {
 			completed, completedErr := hasTerminalGateForRequest(client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing)
@@ -436,19 +444,24 @@ func findCodexReviewTriggers(
 	owner, repo string,
 	prNumber int,
 	marker string,
-) ([]reviewTriggerComment, error) {
+) ([]reviewTriggerComment, []reviewTriggerComment, error) {
 	var matches []reviewTriggerComment
+	var ownerRequests []reviewTriggerComment
 	for page := 1; ; page++ {
 		var comments []reviewTriggerComment
 		if err := client.Get(
 			fmt.Sprintf("repos/%s/%s/issues/%d/comments?per_page=100&page=%d", owner, repo, prNumber, page),
 			&comments,
 		); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, comment := range comments {
-			if strings.EqualFold(comment.User.Login, owner) && strings.Contains(comment.Body, marker) {
-				matches = append(matches, comment)
+			if strings.EqualFold(comment.User.Login, owner) &&
+				strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) {
+				ownerRequests = append(ownerRequests, comment)
+				if strings.Contains(comment.Body, marker) {
+					matches = append(matches, comment)
+				}
 			}
 		}
 		if len(comments) < 100 {
@@ -463,7 +476,15 @@ func findCodexReviewTriggers(
 		}
 		return left.Before(right)
 	})
-	return matches, nil
+	sort.SliceStable(ownerRequests, func(i, j int) bool {
+		left := reviewCommentTime(ownerRequests[i])
+		right := reviewCommentTime(ownerRequests[j])
+		if left.Equal(right) {
+			return ownerRequests[i].ID < ownerRequests[j].ID
+		}
+		return left.Before(right)
+	})
+	return matches, ownerRequests, nil
 }
 
 func reviewCommentTime(comment reviewTriggerComment) time.Time {
