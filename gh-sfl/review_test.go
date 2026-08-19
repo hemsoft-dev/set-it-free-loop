@@ -22,6 +22,7 @@ type reviewREST struct {
 	headRepoUnavailable bool
 	baseRef             string
 	defaultBranch       string
+	observerBranch      string
 	observerState       string
 	posts               int
 	postBody            string
@@ -30,7 +31,15 @@ type reviewREST struct {
 func (f *reviewREST) Get(path string, response interface{}) error {
 	switch {
 	case strings.Contains(path, "/contents/.github/workflows/sfl-pr-review-auto.yml"):
-		content := "name: SFL Codex Review Observer\nif: github.event.sender.id == 199175422\n"
+		observerBranch := f.observerBranch
+		if observerBranch == "" {
+			observerBranch = f.defaultBranch
+		}
+		if observerBranch == "" {
+			observerBranch = "main"
+		}
+		yamlBranch := strings.ReplaceAll(observerBranch, "'", "''")
+		content := fmt.Sprintf("name: SFL Codex Review Observer\non:\n  push:\n    branches: ['%s']\nenv:\n  SFL_REVIEW_BASE_BRANCH: '%s'\nif: github.event.sender.id == 199175422\n", yamlBranch, yamlBranch)
 		return decodeTestResponse(response, map[string]any{
 			"content":  base64.StdEncoding.EncodeToString([]byte(content)),
 			"encoding": "base64",
@@ -224,6 +233,33 @@ func TestRunReviewRejectsDisabledObserver(t *testing.T) {
 	}
 	if rest.posts != 0 {
 		t.Fatalf("disabled-observer review posts = %d, want 0", rest.posts)
+	}
+}
+
+func TestRunReviewRejectsStaleObserverBaseBranch(t *testing.T) {
+	rest := &reviewREST{defaultBranch: "main", observerBranch: "trunk"}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "retired or stale") ||
+		!strings.Contains(err.Error(), "gh sfl sync") {
+		t.Fatalf("runReview() stale observer error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("stale-observer review posts = %d, want 0", rest.posts)
+	}
+}
+
+func TestRunReviewAcceptsYamlEscapedObserverBaseBranch(t *testing.T) {
+	branch := "release/o'brien"
+	rest := &reviewREST{defaultBranch: branch, baseRef: branch}
+	installReviewFakes(t, rest)
+
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runReview() quoted observer branch error = %v", err)
+	}
+	if rest.posts != 1 {
+		t.Fatalf("quoted-observer review posts = %d, want 1", rest.posts)
 	}
 }
 

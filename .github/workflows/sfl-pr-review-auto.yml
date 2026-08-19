@@ -251,12 +251,17 @@ jobs:
             const requestOrder = (left, right) =>
               left.requestTime - right.requestTime || left.comment.id - right.comment.id;
             const requestCandidates = (comments, beforeTime) => comments.map(
-              comment => ({comment, requestTime: Date.parse(comment.created_at || "")}),
+              comment => ({
+                comment,
+                requestTime: Date.parse(comment.created_at || ""),
+                updatedTime: Date.parse(comment.updated_at || ""),
+              }),
             ).filter(
-              ({comment, requestTime}) => isOwnerRequest(comment) &&
+              ({comment, requestTime, updatedTime}) => isOwnerRequest(comment) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(baseMarker) &&
-                Number.isFinite(requestTime) && requestTime < beforeTime,
+                Number.isFinite(requestTime) && requestTime < beforeTime &&
+                Number.isFinite(updatedTime) && updatedTime === requestTime,
             ).sort(requestOrder);
             const hasTerminalGateBefore = (request, contextToken, nextRequestTime, checkRuns) => {
               const prefix = requestGateExternalIdPrefix(

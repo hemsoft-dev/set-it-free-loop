@@ -87,7 +87,11 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("creating GitHub REST client: %w", err)
 	}
-	if err := requireCodexReviewObserver(client, owner, repo); err != nil {
+	defaultBranch, err := fetchRepositoryDefaultBranchWithClient(client, owner, repo)
+	if err != nil {
+		return err
+	}
+	if err := requireCodexReviewObserver(client, owner, repo, defaultBranch); err != nil {
 		return err
 	}
 	if err := requireReviewerEnabled(client, owner, repo); err != nil {
@@ -106,10 +110,6 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 	if !strings.EqualFold(pr.HeadRepo, owner+"/"+repo) {
 		return fmt.Errorf("pull request #%d in %s/%s comes from fork %s — subscription-backed SFL reviews support same-repository branches only", opts.pr, owner, repo, pr.HeadRepo)
-	}
-	defaultBranch, err := fetchRepositoryDefaultBranchWithClient(client, owner, repo)
-	if err != nil {
-		return err
 	}
 	if !strings.EqualFold(pr.BaseRef, defaultBranch) {
 		return fmt.Errorf("pull request #%d in %s/%s targets %s — subscription-backed SFL reviews support only the default branch %s", opts.pr, owner, repo, pr.BaseRef, defaultBranch)
@@ -290,7 +290,7 @@ func parseReviewOptions(args []string, stderr io.Writer) (reviewOptions, error) 
 	return opts, nil
 }
 
-func requireCodexReviewObserver(client restAPI, owner, repo string) error {
+func requireCodexReviewObserver(client restAPI, owner, repo, defaultBranch string) error {
 	var workflow struct {
 		Content  string `json:"content"`
 		Encoding string `json:"encoding"`
@@ -308,8 +308,14 @@ func requireCodexReviewObserver(client restAPI, owner, repo string) error {
 			return fmt.Errorf("checking the SFL Codex observer in %s/%s: %w", owner, repo, decodeErr)
 		}
 		content := string(decoded)
+		yamlBranch := strings.ReplaceAll(defaultBranch, "'", "''")
+		pushFilterValid := strings.Contains(content, "    branches: ['"+yamlBranch+"']") ||
+			strings.Contains(content, "    branches: ["+defaultBranch+"]")
+		baseEnvironmentValid := strings.Contains(content, "  SFL_REVIEW_BASE_BRANCH: '"+yamlBranch+"'") ||
+			strings.Contains(content, "  SFL_REVIEW_BASE_BRANCH: "+defaultBranch)
 		if strings.Contains(content, "name: SFL Codex Review Observer") &&
-			strings.Contains(content, "github.event.sender.id == 199175422") {
+			strings.Contains(content, "github.event.sender.id == 199175422") &&
+			pushFilterValid && baseEnvironmentValid {
 			var workflow struct {
 				State string `json:"state"`
 			}
@@ -324,7 +330,7 @@ func requireCodexReviewObserver(client restAPI, owner, repo string) error {
 			}
 			return nil
 		}
-		return fmt.Errorf("%s/%s still has the retired SFL reviewer — run 'gh sfl sync --repo %s/%s' before requesting a Codex review", owner, repo, owner, repo)
+		return fmt.Errorf("%s/%s has a retired or stale SFL reviewer deployment — run 'gh sfl sync --repo %s/%s' before requesting a Codex review", owner, repo, owner, repo)
 	}
 	var httpErr *api.HTTPError
 	if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {

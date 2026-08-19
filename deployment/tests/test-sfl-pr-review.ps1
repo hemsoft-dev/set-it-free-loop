@@ -28,6 +28,7 @@ foreach ($pattern in @(
     'const appSlug = "chatgpt-codex-connector"',
     'const appOwner = "openai"',
     'Date.parse(comment.created_at || "")',
+    'Date.parse(comment.updated_at || "")',
     'pull.data.state !== "open"',
     'SFL reviews require the default branch',
     'SFL_REVIEW_BASE_BRANCH: main',
@@ -135,6 +136,7 @@ function requestGateExternalIdPrefix(pullNumber, currentBase, contextToken, requ
 const comment = (id, created_at, contextToken) => ({
   id,
   created_at,
+  updated_at: created_at,
   user: {login: "HemSoft"},
   body: `@codex review\n\n${baseMarker}context=${contextToken} -->`,
 });
@@ -142,6 +144,7 @@ const first = comment(1, "2026-08-19T00:00:01Z", "none");
 const second = comment(2, "2026-08-19T00:00:02Z", "none");
 const otherContext = comment(3, "2026-08-19T00:00:02Z", "base-advance");
 const recoveredRetry = comment(4, "2026-08-19T00:00:04Z", "none");
+const editedSecond = {...second, updated_at: "2026-08-19T00:00:03Z"};
 const firstTime = Date.parse(first.created_at);
 const firstPrefix = requestGateExternalIdPrefix(pullNumber, currentBase, "none", first.id, firstTime);
 const terminal = completed_at => ({
@@ -154,6 +157,7 @@ const cases = [
   {name: "overlap blocked", comments: [first, second], checks: [], want: [1]},
   {name: "terminal predecessor allows retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1, 2]},
   {name: "same-second terminal fails closed", comments: [first, second], checks: [terminal("2026-08-19T00:00:02Z")], want: [1]},
+  {name: "edited marker is rejected", comments: [first, editedSecond], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
   {name: "late terminal does not authorize retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:02.500Z")], want: [1]},
   {name: "later retry recovers after overlap", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:03Z")], want: [1, 4]},
   {name: "different contexts are independent", comments: [first, otherContext], checks: [], want: [1, 3]},
