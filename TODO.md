@@ -8,6 +8,43 @@ Issue #125 replaces the HemSoft reviewer model runtime with native Codex review
 from Franz's ChatGPT subscription. SFL requests one current-head review,
 authenticates Codex output, and preserves the required immutable-head gate.
 
+## Active recovery plan: stop the review loop
+
+### Current state
+
+- SFL PR #132 and the `hs-buddy` deployment PR #522 are merged.
+- `hs-buddy` PR #521 is frozen after one bounded merge attempt proved that the
+  merge operation can regenerate GitHub's synthetic merge SHA and orphan a
+  successful required status.
+- Issue #133 owns the source repair. No consumer refresh commit, retry, or
+  deployment is allowed while that repair is under review.
+- `developer-documentation` is excluded and remains read-only.
+
+### Hard guardrails
+
+- Do not create more refresh commits, rebases, force-pushes, dummy changes,
+  duplicate review requests, or deployment PRs for `hs-buddy` PR #521.
+- Keep the required gate on an immutable review identity; do not rely on a
+  synthetic merge SHA that GitHub can regenerate during merge evaluation.
+- Preserve exact reviewed-head and reviewed-base validation, strict base
+  freshness, and fail-closed invalidation behavior.
+- Every write must reduce uncertainty or move issue #133 toward one reviewed
+  source PR. Never start a second simultaneous consumer review cycle.
+- Keep `developer-documentation` and account-wide deployment out of scope.
+- Clean branches and worktrees only after their PR is confirmed merged or
+  closed; do not touch unrelated worktrees.
+
+### Next bounded sequence
+
+1. Add a regression test that fails while the gate targets `merge_commit_sha`.
+2. Publish every required gate transition on the immutable reviewed head and
+   retain strict base freshness.
+3. Run the focused deployment contract, complete Go suite, workflow lint, and
+   repository deployment tests.
+4. Open one source PR for issue #133 and process current-head review feedback.
+5. Stop before any new consumer deployment. Reassess the proof plan from a
+   green source PR instead of churning `hs-buddy`.
+
 ## Working baseline
 
 - SFL is working on `HemSoft/hs-buddy`. It is the only repository approved for
