@@ -749,8 +749,8 @@ func TestNormalizeManifestForSyncRemovesRetiredReviewerComponents(t *testing.T) 
 
 	custom := &sflManifest{Tier: "custom", Components: []string{"repo-audit", "sfl-pr-review", "sfl-pr-review-recovery"}}
 	normalizeManifestForSync(custom, canonicalDeploymentTier(custom.Tier))
-	if !slices.Equal(custom.Components, []string{"repo-audit"}) {
-		t.Fatalf("custom components = %v, want only active components", custom.Components)
+	if !slices.Equal(custom.Components, []string{"repo-audit", "sfl-pr-review-auto"}) {
+		t.Fatalf("custom components = %v, want legacy reviewer migrated to observer", custom.Components)
 	}
 }
 

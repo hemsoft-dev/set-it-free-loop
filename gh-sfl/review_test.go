@@ -12,10 +12,12 @@ import (
 
 type reviewREST struct {
 	comments            []reviewTriggerComment
+	reviews             []codexReviewArtifact
 	headRepo            string
 	headRepoUnavailable bool
 	baseRef             string
 	defaultBranch       string
+	observerState       string
 	posts               int
 	postBody            string
 }
@@ -28,6 +30,12 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 			"content":  base64.StdEncoding.EncodeToString([]byte(content)),
 			"encoding": "base64",
 		})
+	case strings.Contains(path, "/actions/workflows/sfl-pr-review-auto.yml"):
+		state := f.observerState
+		if state == "" {
+			state = "active"
+		}
+		return decodeTestResponse(response, map[string]any{"state": state})
 	case strings.Contains(path, "/actions/variables/SFL_ENABLED"):
 		return decodeTestResponse(response, map[string]any{"value": "true"})
 	case path == "repos/HemSoft/consumer":
@@ -36,6 +44,8 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 			defaultBranch = "main"
 		}
 		return decodeTestResponse(response, map[string]any{"default_branch": defaultBranch})
+	case strings.Contains(path, "/pulls/94/reviews?"):
+		return decodeTestResponse(response, f.reviews)
 	case strings.Contains(path, "/pulls/"):
 		var headRepo any = map[string]string{"full_name": f.headRepo}
 		if f.headRepo == "" {
@@ -187,6 +197,20 @@ func TestRunReviewRejectsNonDefaultBaseBranch(t *testing.T) {
 	}
 }
 
+func TestRunReviewRejectsDisabledObserver(t *testing.T) {
+	rest := &reviewREST{observerState: "disabled_manually"}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "disabled_manually") ||
+		!strings.Contains(err.Error(), "enable sfl-pr-review-auto.yml") {
+		t.Fatalf("runReview() disabled observer error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("disabled-observer review posts = %d, want 0", rest.posts)
+	}
+}
+
 func TestRunReviewDeduplicatesCurrentHeadRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
@@ -215,11 +239,18 @@ func TestRunReviewDeduplicatesCurrentHeadRequest(t *testing.T) {
 func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
-		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40)),
-		HTMLURL: "https://github.test/existing",
+		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40)),
+		HTMLURL:   "https://github.test/existing",
+		CreatedAt: "2026-08-19T00:00:00Z",
 		User: struct {
 			Login string `json:"login"`
 		}{Login: "HemSoft"},
+	}, {
+		Body:      "Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** `bbbbbbbbbb`",
+		CreatedAt: "2026-08-19T00:01:00Z",
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "chatgpt-codex-connector[bot]"},
 	}}}
 	installReviewFakes(t, rest)
 
@@ -232,6 +263,27 @@ func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 	}
 	if rest.postBody != codexReviewCommand+"\n\n"+codexReviewMarker(head, strings.Repeat("a", 40)) {
 		t.Fatalf("posted retry body = %q", rest.postBody)
+	}
+}
+
+func TestRunReviewRetryRejectsOutstandingRequest(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	rest := &reviewREST{comments: []reviewTriggerComment{{
+		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, strings.Repeat("a", 40)),
+		HTMLURL:   "https://github.test/existing",
+		CreatedAt: "2026-08-19T00:00:00Z",
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "HemSoft"},
+	}}}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "still outstanding") {
+		t.Fatalf("runReview() outstanding retry error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("outstanding retry posts = %d, want 0", rest.posts)
 	}
 }
 

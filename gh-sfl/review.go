@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/cli/go-gh/v2/pkg/api"
 )
@@ -31,9 +33,21 @@ type pullRequestShas struct {
 }
 
 type reviewTriggerComment struct {
-	Body    string `json:"body"`
-	HTMLURL string `json:"html_url"`
-	User    struct {
+	ID        int64  `json:"id"`
+	Body      string `json:"body"`
+	HTMLURL   string `json:"html_url"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	User      struct {
+		Login string `json:"login"`
+	} `json:"user"`
+}
+
+type codexReviewArtifact struct {
+	Body        string `json:"body"`
+	CommitID    string `json:"commit_id"`
+	SubmittedAt string `json:"submitted_at"`
+	User        struct {
 		Login string `json:"login"`
 	} `json:"user"`
 }
@@ -85,15 +99,22 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 
 	marker := codexReviewMarker(pr.HeadSHA, pr.BaseSHA)
-	if !opts.retry {
-		existingURL, findErr := findCodexReviewTrigger(client, owner, repo, opts.pr, marker)
-		if findErr != nil {
-			return fmt.Errorf("checking existing Codex review requests: %w", findErr)
-		}
-		if existingURL != "" {
+	existing, findErr := findCodexReviewTrigger(client, owner, repo, opts.pr, marker)
+	if findErr != nil {
+		return fmt.Errorf("checking existing Codex review requests: %w", findErr)
+	}
+	if existing.HTMLURL != "" {
+		if !opts.retry {
 			fmt.Fprintf(stdout, "Codex review already requested for %s/%s#%d at %.10s: %s\nUse --retry if its result event was skipped.\n",
-				owner, repo, opts.pr, pr.HeadSHA, existingURL)
+				owner, repo, opts.pr, pr.HeadSHA, existing.HTMLURL)
 			return nil
+		}
+		completed, completedErr := hasCodexResultAfterRequest(client, owner, repo, opts.pr, pr.HeadSHA, existing)
+		if completedErr != nil {
+			return fmt.Errorf("checking the prior Codex review result: %w", completedErr)
+		}
+		if !completed {
+			return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
 		}
 	}
 
@@ -192,6 +213,18 @@ func requireCodexReviewObserver(client restAPI, owner, repo string) error {
 		content := string(decoded)
 		if strings.Contains(content, "name: SFL Codex Review Observer") &&
 			strings.Contains(content, "github.event.sender.id == 199175422") {
+			var workflow struct {
+				State string `json:"state"`
+			}
+			if stateErr := client.Get(
+				fmt.Sprintf("repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml", owner, repo),
+				&workflow,
+			); stateErr != nil {
+				return fmt.Errorf("checking the SFL Codex observer state in %s/%s: %w", owner, repo, stateErr)
+			}
+			if workflow.State != "active" {
+				return fmt.Errorf("the subscription-backed SFL reviewer is %s in %s/%s — enable sfl-pr-review-auto.yml before requesting a Codex review", workflow.State, owner, repo)
+			}
 			return nil
 		}
 		return fmt.Errorf("%s/%s still has the retired SFL reviewer — run 'gh sfl sync --repo %s/%s' before requesting a Codex review", owner, repo, owner, repo)
@@ -261,22 +294,94 @@ func findCodexReviewTrigger(
 	owner, repo string,
 	prNumber int,
 	marker string,
-) (string, error) {
+) (reviewTriggerComment, error) {
+	var latest reviewTriggerComment
 	for page := 1; ; page++ {
 		var comments []reviewTriggerComment
 		if err := client.Get(
 			fmt.Sprintf("repos/%s/%s/issues/%d/comments?per_page=100&page=%d", owner, repo, prNumber, page),
 			&comments,
 		); err != nil {
-			return "", err
+			return reviewTriggerComment{}, err
 		}
 		for _, comment := range comments {
 			if strings.EqualFold(comment.User.Login, owner) && strings.Contains(comment.Body, marker) {
-				return comment.HTMLURL, nil
+				if latest.HTMLURL == "" || reviewCommentTime(comment).After(reviewCommentTime(latest)) {
+					latest = comment
+				}
 			}
 		}
 		if len(comments) < 100 {
-			return "", nil
+			return latest, nil
+		}
+	}
+}
+
+var reviewedCommitPattern = regexp.MustCompile(`(?i)\*\*Reviewed commit:\*\*\s+` + "`" + `([0-9a-f]{7,40})` + "`")
+
+func reviewCommentTime(comment reviewTriggerComment) time.Time {
+	value := comment.UpdatedAt
+	if value == "" {
+		value = comment.CreatedAt
+	}
+	parsed, _ := time.Parse(time.RFC3339, value)
+	return parsed
+}
+
+func artifactMatchesHead(body, commitID, headSHA string) bool {
+	if strings.EqualFold(commitID, headSHA) {
+		return true
+	}
+	match := reviewedCommitPattern.FindStringSubmatch(body)
+	return len(match) == 2 && strings.HasPrefix(strings.ToLower(headSHA), strings.ToLower(match[1]))
+}
+
+func hasCodexResultAfterRequest(
+	client restAPI,
+	owner, repo string,
+	prNumber int,
+	headSHA string,
+	request reviewTriggerComment,
+) (bool, error) {
+	requestTime := reviewCommentTime(request)
+	if requestTime.IsZero() {
+		return false, errors.New("latest Codex review request has no valid timestamp")
+	}
+	for page := 1; ; page++ {
+		var comments []reviewTriggerComment
+		if err := client.Get(
+			fmt.Sprintf("repos/%s/%s/issues/%d/comments?per_page=100&page=%d", owner, repo, prNumber, page),
+			&comments,
+		); err != nil {
+			return false, err
+		}
+		for _, comment := range comments {
+			if strings.EqualFold(comment.User.Login, "chatgpt-codex-connector[bot]") &&
+				reviewCommentTime(comment).After(requestTime) && artifactMatchesHead(comment.Body, "", headSHA) {
+				return true, nil
+			}
+		}
+		if len(comments) < 100 {
+			break
+		}
+	}
+	for page := 1; ; page++ {
+		var reviews []codexReviewArtifact
+		if err := client.Get(
+			fmt.Sprintf("repos/%s/%s/pulls/%d/reviews?per_page=100&page=%d", owner, repo, prNumber, page),
+			&reviews,
+		); err != nil {
+			return false, err
+		}
+		for _, review := range reviews {
+			submitted, _ := time.Parse(time.RFC3339, review.SubmittedAt)
+			if strings.EqualFold(review.User.Login, "chatgpt-codex-connector[bot]") &&
+				submitted.After(requestTime) && artifactMatchesHead(review.Body, review.CommitID, headSHA) {
+				return true, nil
+			}
+		}
+		if len(reviews) < 100 {
+			return false, nil
 		}
 	}
 }

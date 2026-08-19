@@ -57,6 +57,8 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		shortLatestSHA = shortLatestSHA[:12]
 	}
 
+	installedTier := canonicalDeploymentTier(manifest.Tier)
+	normalizeManifestForSync(manifest, installedTier)
 	workflows, err := workflowsForInstalledManifest(manifest)
 	if err != nil {
 		return fmt.Errorf("resolving installed workflows: %w", err)
@@ -66,7 +68,6 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 			return err
 		}
 	}
-	installedTier := canonicalDeploymentTier(manifest.Tier)
 	if manifest.SourceSHA == latestSHA {
 		if opts.dryRun {
 			fmt.Fprintf(stdout, "  ✓ Source revision is current (version %s, SHA %s)\n", latestVersion, shortLatestSHA)
@@ -163,7 +164,6 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Update manifest
 	manifest.Version = release.Version
 	manifest.SourceSHA = latestSHA
-	normalizeManifestForSync(manifest, installedTier)
 	manifest.DeployedAt = deployedAt
 	manifest.DeployedBy = deployedBy
 	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
@@ -228,6 +228,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func normalizeManifestForSync(manifest *sflManifest, installedTier string) {
+	hadLegacyReviewer := slices.Contains(manifest.Components, "sfl-pr-review")
 	components := manifest.Components[:0]
 	for _, component := range manifest.Components {
 		if component != "sfl-pr-review" && component != "sfl-pr-review-recovery" {
@@ -236,7 +237,8 @@ func normalizeManifestForSync(manifest *sflManifest, installedTier string) {
 	}
 	manifest.Components = components
 
-	if installedTier == "full" && !slices.Contains(manifest.Components, "sfl-pr-review-auto") {
+	if (installedTier == "full" || (installedTier == "custom" && hadLegacyReviewer)) &&
+		!slices.Contains(manifest.Components, "sfl-pr-review-auto") {
 		manifest.Components = append(manifest.Components, "sfl-pr-review-auto")
 	}
 	if installedTier != "reviewer" {
