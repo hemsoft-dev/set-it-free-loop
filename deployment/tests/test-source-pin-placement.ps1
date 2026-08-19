@@ -86,6 +86,16 @@ if ($yamlPinned -notmatch [regex]::Escape("branches: ['trunk']") -or
     throw 'YAML push trigger was not restricted to the target default branch.'
 }
 
+$yamlPinnedFromCrLf = Add-SflYamlSourcePin `
+    -Content $yamlWorkflow.Replace("`n", "`r`n") `
+    -SourceRef $yamlRef `
+    -DefaultBranch 'trunk'
+if ($yamlPinnedFromCrLf -notmatch [regex]::Escape("branches: ['trunk']") -or
+    $yamlPinnedFromCrLf -notmatch [regex]::Escape("SFL_REVIEW_BASE_BRANCH: 'trunk'") -or
+    $yamlPinnedFromCrLf -match "`r") {
+    throw 'CRLF YAML was not normalized and rewritten for the target default branch.'
+}
+
 $yamlUpdatedRef = 'HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@cccccccccccccccccccccccccccccccccccccccc'
 $yamlRepinned = Add-SflYamlSourcePin -Content $yamlPinned -SourceRef $yamlUpdatedRef -DefaultBranch 'release/next'
 if (([regex]::Matches($yamlRepinned, '(?m)^# Deployed from:').Count -ne 1) -or

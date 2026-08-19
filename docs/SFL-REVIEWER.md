@@ -57,6 +57,10 @@ events, preventing reliable publication of the required check. Non-default base
 branches are rejected because base-advance invalidation is deliberately scoped
 to the trusted default branch.
 
+Only review requests posted by the repository owner are accepted. This HemSoft
+reviewer is owner-operated; member and collaborator comments cannot authorize a
+gate result.
+
 The command:
 
 1. verifies the active GitHub identity is HemSoft;

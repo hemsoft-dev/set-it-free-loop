@@ -261,11 +261,12 @@ jobs:
             const triggerComments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pullNumber, per_page: 100,
             });
-            const trustedAssociations = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+            const isOwnerRequest = comment =>
+              ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
             const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
             const baseMarker = `${headMarker}${currentBase.toLowerCase()};`;
             const conflictingBaseRequest = triggerComments.some(
-              comment => trustedAssociations.has(comment.author_association) &&
+              comment => isOwnerRequest(comment) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(headMarker) &&
                 !(comment.body || "").includes(baseMarker),
@@ -273,7 +274,7 @@ jobs:
             const matchingRequests = Number.isFinite(artifactTime) ? triggerComments.map(
               comment => ({comment, requestTime: Date.parse(comment.updated_at || comment.created_at || "")}),
             ).filter(
-              ({comment, requestTime}) => trustedAssociations.has(comment.author_association) &&
+              ({comment, requestTime}) => isOwnerRequest(comment) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(marker) &&
                 Number.isFinite(requestTime) && requestTime < artifactTime,

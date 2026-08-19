@@ -41,6 +41,7 @@ function Add-SflYamlSourcePin {
         '\A# Deployed from: HemSoft/set-it-free-loop/[^\r\n]+\r?\n# To upgrade: re-run deploy-workflow\.ps1 at the desired SHA\r?\n',
         ''
     )
+    $withoutExistingPin = $withoutExistingPin.Replace("`r`n", "`n")
     $sourcePattern = '(?m)^# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto\.yml@(?:main|[0-9a-f]{40})$'
     $withoutExistingPin = ([regex]::new($sourcePattern)).Replace(
         $withoutExistingPin,

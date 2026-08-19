@@ -36,6 +36,8 @@ foreach ($pattern in @(
     'sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}',
     'sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}',
     'const baseMarker = `${headMarker}${currentBase.toLowerCase()};`',
+    'const isOwnerRequest = comment =>',
+    'comment.user && comment.user.login',
     'The pull request context changed while the Codex result was being published',
     'confirmedOpenPulls.length !== 1',
     'context=${contextToken}',
