@@ -6,227 +6,294 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
 . (Join-Path $PSScriptRoot 'line-ending-test-helpers.ps1')
-$sourcePath = Join-Path $repoRoot 'deployment\workflows\sfl-pr-review.md'
-$stagedPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.md'
-$lockPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review.lock.yml'
-$actionsLockPath = Join-Path $repoRoot '.github\aw\actions-lock.json'
-$failures = [System.Collections.Generic.List[string]]::new()
 
-foreach ($path in @($sourcePath, $stagedPath, $lockPath, $actionsLockPath)) {
+$canonicalPath = Join-Path $repoRoot 'deployment\infrastructure\sfl-pr-review-auto.yml'
+$stagedPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review-auto.yml'
+foreach ($path in @($canonicalPath, $stagedPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        $failures.Add("Missing reviewer artifact: $path")
+        throw "Missing subscription-backed Codex observer: $path"
     }
 }
 
-if ($failures.Count -eq 0) {
-    $source = Get-Content -LiteralPath $sourcePath -Raw
-    $staged = Get-Content -LiteralPath $stagedPath -Raw
-    $lock = Get-Content -LiteralPath $lockPath -Raw
-    $actionsLock = Get-Content -LiteralPath $actionsLockPath -Raw
+$canonical = Get-Content -LiteralPath $canonicalPath -Raw
+$staged = Get-Content -LiteralPath $stagedPath -Raw
+if (-not (Test-NormalizedTextEqual $canonical $staged)) {
+    throw 'Canonical and staged Codex observers differ.'
+}
 
-    if (-not (Test-NormalizedTextEqual $source $staged)) {
-        $failures.Add('Canonical and staged reviewer Markdown differ.')
-    }
-
-    $deployScriptPath = Join-Path $repoRoot 'deployment\scripts\deploy-workflow.ps1'
-    $deployScript = Get-Content -LiteralPath $deployScriptPath -Raw
-    $rendererStart = $deployScript.IndexOf('function ConvertTo-SflWorkflowWithEnginePolicy')
-    $rendererEnd = $deployScript.IndexOf('function New-SflEnginePolicyManifest', $rendererStart)
-    if ($rendererStart -lt 0 -or $rendererEnd -le $rendererStart) {
-        $failures.Add('Could not load the PowerShell engine-policy renderer for behavioral testing.')
-    } else {
-        Invoke-Expression $deployScript.Substring($rendererStart, $rendererEnd - $rendererStart)
-
-        $reviewerProfile = [pscustomobject]@{
-            Provider = 'copilot'
-            Arguments = @()
-            Environment = [pscustomobject][ordered]@{
-                COPILOT_PROVIDER_WIRE_API = 'responses'
-                COPILOT_PROVIDER_TYPE = 'openai'
-                COPILOT_PROVIDER_BASE_URL = 'https://openrouter.ai/api/v1'
-                COPILOT_PROVIDER_API_KEY = '${{ secrets.OPENROUTER_API_KEY }}'
-                COPILOT_MODEL = 'moonshotai/kimi-k3'
-            }
-            RenderedModel = 'moonshotai/kimi-k3'
-        }
-        $renderedReviewer = ConvertTo-SflWorkflowWithEnginePolicy `
-            -Content $source `
-            -EngineProfile $reviewerProfile `
-            -WorkflowName 'sfl-pr-review'
-        if (-not (Test-NormalizedTextEqual $source $renderedReviewer)) {
-            $failures.Add('PowerShell engine-policy rendering changes the canonical reviewer and invalidates its generated lock.')
-        }
-
-        # Go uses sort.Strings, so PowerShell must preserve the same ordinal order.
-        $mixedCaseProfile = [pscustomobject]@{
-            Provider = 'copilot'
-            Arguments = @()
-            Environment = [pscustomobject][ordered]@{
-                dKey = 'lower-d'
-                aKey = 'lower-a'
-                CKey = 'upper-c'
-                BKey = 'upper-b'
-            }
-            RenderedModel = 'example'
-        }
-        $mixedCaseRendered = ConvertTo-SflWorkflowWithEnginePolicy `
-            -Content "---`nname: Mixed case`nnetwork: defaults`n---`n" `
-            -EngineProfile $mixedCaseProfile `
-            -WorkflowName 'mixed-case'
-        $renderedEnvironmentNames = @(
-            [regex]::Matches($mixedCaseRendered, '(?m)^    (?<name>[A-Za-z]+):') |
-                ForEach-Object { $_.Groups['name'].Value }
-        )
-        if (($renderedEnvironmentNames -join ',') -cne 'BKey,CKey,aKey,dKey') {
-            $failures.Add("PowerShell engine environment order is not ordinal: $($renderedEnvironmentNames -join ',')")
-        }
-    }
-
-    $requiredSourcePatterns = @(
-        '(?m)^source: HemSoft/set-it-free-loop/deployment/workflows/sfl-pr-review\.md@main\r?$',
-        '(?m)^  workflow_dispatch:\r?$',
-        'Validate trusted review context',
-        'Install ripgrep with bounded diagnostics',
-        'timeout --signal=TERM --kill-after=15s 180s',
-        'Retain ripgrep setup diagnostics',
-        'sfl-ripgrep-setup-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}',
-        'Install threat-detection ripgrep with bounded diagnostics',
-        'Retain threat-detection ripgrep setup diagnostics',
-        'sfl-threat-detection-ripgrep-setup-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}',
-        'publish_review_provenance:',
-        'Initialize review evidence',
-        'sfl-review:\$\{pullNumber\}:\$\{baseSha\}:\$\{headSha\}:\$\{runId\}',
-        'Verify pull request base and head before safe outputs',
-        'commit-id: "\$\{\{ inputs\.head_sha \}\}"',
-        'resolve-sfl-review-thread:',
-        "if: needs\.safe_outputs\.result == 'success'",
-        'isOutdated',
-        '\(!thread\.isResolved && !thread\.isOutdated\)',
-        'const unresolvedOutdatedThreadIds = \[\]',
-        'for \(const threadId of unresolvedOutdatedThreadIds\)',
-        'if \(thread\.isResolved\) \{\s*core\.info\(`SFL review thread \$\{threadId\} is already resolved`\);\s*continue;',
-        'whose thread GitHub reports as outdated',
-        'Never request resolution for a live unresolved thread',
-        'name: safe-outputs-items',
-        'Download reviewer agent output',
-        'Expected exactly one immutable agent submitted-review item',
-        'Published review manifest does not match the immutable agent verdict',
-        'Review body contains unresolved template placeholder',
-        'const immutableFindingCount = agentReviewComments\.length',
-        'const gateApproved =\s*\r?\n\s*verdictApproved',
-        'unresolvedFindingCount === 0',
-        'Initialized SFL review evidence does not match this run',
-        'COPILOT_PROVIDER_BASE_URL: https://openrouter\.ai/api/v1',
-        'COPILOT_MODEL: moonshotai/kimi-k3',
-        '(?m)^max-turn-cache-misses: 10\r?$',
-        '(?m)^  providers:\r?$',
-        '(?m)^    github-copilot:\r?$',
-        '(?m)^        "moonshotai/kimi-k3":\r?$',
-        '(?m)^            input: "3e-06"\r?$',
-        '(?m)^            output: "1\.5e-05"\r?$'
-    )
-    foreach ($pattern in $requiredSourcePatterns) {
-        if ($source -notmatch $pattern) {
-            $failures.Add("Reviewer source is missing contract pattern: $pattern")
-        }
-    }
-
-    $requiredLockPatterns = @(
-        '"compiler_version":"v0\.86\.2"',
-        '"engine_base_url_customized":true',
-        '"agent_model":"moonshotai/kimi-k3"',
-        '\\"maxCacheMisses\\":10',
-        '"OPENROUTER_API_KEY"',
-        'GH_AW_INPUTS_BASE_SHA: \$\{\{ inputs\.base_sha \}\}',
-        'GH_AW_INPUTS_HEAD_SHA: \$\{\{ inputs\.head_sha \}\}',
-        'Validate trusted review context',
-        'Install ripgrep with bounded diagnostics',
-        'timeout --signal=TERM --kill-after=15s 180s',
-        'Retain ripgrep setup diagnostics',
-        'sfl-ripgrep-setup-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}',
-        'Install threat-detection ripgrep with bounded diagnostics',
-        'Retain threat-detection ripgrep setup diagnostics',
-        'sfl-threat-detection-ripgrep-setup-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}',
-        'publish_review_provenance:',
-        'Initialize review evidence',
-        'Verify pull request base and head before safe outputs',
-        'SFL_SAFE_OUTPUT_ITEMS: /tmp/sfl-review-safe-outputs/safe-output-items\.jsonl',
-        'Initialized SFL review evidence does not match this run',
-        'isOutdated',
-        '\(!thread\.isResolved && !thread\.isOutdated\)',
-        'const unresolvedOutdatedThreadIds = \[\]',
-        'for \(const threadId of unresolvedOutdatedThreadIds\)',
-        '\{\{#runtime-import \.github/workflows/sfl-pr-review\.md\}\}'
-    )
-    foreach ($pattern in $requiredLockPatterns) {
-        if ($lock -notmatch $pattern) {
-            $failures.Add("Compiled reviewer is missing contract pattern: $pattern")
-        }
-    }
-
-    $compiledPricingPattern = '\\"providers\\":\{\\"github-copilot\\":\{\\"models\\":\{\\"moonshotai/kimi-k3\\":\{\\"cost\\":\{\\"input\\":\\"3e-06\\",\\"output\\":\\"1\.5e-05\\"\}\}\}\}\}'
-    $compiledPricingCount = [regex]::Matches($lock, $compiledPricingPattern).Count
-    if ($compiledPricingCount -ne 2) {
-        $failures.Add("Expected explicit Kimi pricing in both primary and threat-detection firewall configurations; found $compiledPricingCount occurrence(s).")
-    }
-    if ($source -match 'default-ai-credits-pricing' -or
-        $lock -match 'defaultAiCreditsPricing') {
-        $failures.Add('Reviewer still relies on generic fallback pricing instead of explicit Kimi pricing.')
-    }
-
-    if ($source -match 'copilot-requests:\s*write' -or
-        $lock -match 'copilot-requests:\s*write') {
-        $failures.Add('HemSoft OpenRouter reviewer unexpectedly requests Copilot billing permission.')
-    }
-    if ($source -match 'needs\.detection\.result') {
-        $failures.Add('Thread resolution references an undeclared detection dependency.')
-    }
-    if ($source -match '(?im)^\s*(?:app-id|github-app-id|installation-id|client-id):\s*(?:\d+|Iv[A-Za-z0-9]+)\s*$') {
-        $failures.Add('Reviewer source contains a hard-coded GitHub App or installation identity.')
-    }
-    if ($actionsLock -notmatch 'github/gh-aw-actions/setup@v0\.86\.2') {
-        $failures.Add('Action lock does not pin the compiler-matched gh-aw setup action.')
-    }
-
-    $eligibilityGuardIndex = $source.IndexOf('(!thread.isResolved && !thread.isOutdated)')
-    $resolvedGuardIndex = $source.IndexOf('if (thread.isResolved)')
-    $resolutionQueueIndex = $source.IndexOf('unresolvedOutdatedThreadIds.push(threadId)')
-    $resolutionMutationIndex = $source.IndexOf('resolveReviewThread(input: { threadId: $threadId })')
-    if ($eligibilityGuardIndex -lt 0 -or
-        $resolvedGuardIndex -le $eligibilityGuardIndex -or
-        $resolutionQueueIndex -le $resolvedGuardIndex -or
-        $resolutionMutationIndex -le $resolutionQueueIndex) {
-        $failures.Add('Thread eligibility, idempotency, queueing, and mutation are not ordered fail-closed.')
+foreach ($pattern in @(
+    'name: SFL Codex Review Observer',
+    "format('SFL Codex review request #{0}', github.event.issue.number)",
+    'github.event.sender.id == 199175422',
+    'const appId = 1144995',
+    'const appSlug = "chatgpt-codex-connector"',
+    'const appOwner = "openai"',
+    'Date.parse(comment.created_at || "")',
+    'Date.parse(comment.updated_at || "")',
+    'pull.data.state !== "open"',
+    'SFL reviews require the default branch',
+    'SFL_REVIEW_BASE_BRANCH: main',
+    'differs from deployed SFL review base',
+    'types: [opened, reopened, edited, synchronize]',
+    'sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}',
+    'sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}',
+    'const baseMarker = `${headMarker}${currentBase.toLowerCase()};`',
+    'const isOwnerRequest = comment =>',
+    'comment.user && comment.user.login',
+    'The pull request context changed while the Codex result was being published',
+    'Codex artifact and registered request have ambiguous same-second ordering',
+    'invalidate-review-request:',
+    'statuses: read',
+    "vars.SFL_ENABLED != 'false'",
+    'SFL Codex Review Request Registry',
+    'sfl-codex-review:request-pending:${commentId}',
+    'const terminalRequestIdentity = `:request:${commentId}:at:`',
+    'This registered Codex review request already has a terminal SFL gate',
+    'registrations.has(comment.id)',
+    'const publishedCompletedAt = new Date().toISOString()',
+    'completed_at: publishedCompletedAt',
+    'status: "in_progress"',
+    'SFL Codex review validating',
+    'conclusion: "success"',
+    'GET /repos/{owner}/{repo}/issues/{issue_number}/events',
+    'event.event === "closed" || event.event === "reopened"',
+    'lifecycleToken !== initialLifecycleToken',
+    'state.invalidationRuns.length > 0',
+    'const publicationState = async () =>',
+    'const postSuccessState = await publicationState()',
+    'state.openPulls.length !== 1',
+    'registeredRequestIdsFromStatuses(statuses)',
+    'let latestPotentialRequestRegistered = false',
+    'visibleRegistrations.has(latestPotentialRequest.comment.id)',
+    'if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 5000))',
+    'No registered Codex review request materialized for this artifact',
+    'context=${contextToken}',
+    'function requestGateExternalId(',
+    'function requestGateExternalIdPrefix(',
+    'request:${requestId}:at:${requestTime}',
+    ':artifact:${artifactIdentity}',
+    'const artifactAlreadyConsumed = artifactChecks.some(',
+    'pending-invalidation:${pendingRun.id}:artifact:${artifactIdentity}',
+    'This exact Codex artifact already completed a review request',
+    'const pendingRequest = candidateRequests[0]',
+    'contextMatch = /;context=(.*?) -->/.exec',
+    'pendingRequest.comment.id',
+    'const artifactBindsCurrentHead = eventName === "issue_comment"',
+    'it cannot complete the pending request',
+    'const eligibleReviewRequests = (',
+    'completedTime < nextRequestTime',
+    'const hasNewerMatchingRequest = (comments, checkRuns, statuses) =>',
+    'comment.id > request.comment.id',
+    'A newer Codex review request superseded this artifact before publication',
+    'supersededRequest',
+    'This Codex review request already has a terminal SFL gate',
+    'sfl-codex-review-serialize-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}',
+    'const pendingRequestAlreadyTerminal = artifactChecks.some(',
+    'const externalIdPrefix = requestGateExternalIdPrefix(',
+    'pull-context:at:${contextChangeTime}',
+    'base-advance:at:${baseAdvanceTime}',
+    'sfl-codex-review-pull-context-${{ github.repository }}-${{ github.event.pull_request.number }}',
+    'github.rest.actions.listWorkflowRuns',
+    'const initialChecks = await github.paginate(',
+    'const checks = await github.paginate(',
+    'const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"]',
+    'const events = ["pull_request_target", "push", "issue_comment"]',
+    'activeStatuses.map(status => github.paginate(',
+    'events.includes(run.event)',
+    'run.display_title === `SFL Codex review request #${pullNumber}`',
+    'actions: read',
+    'if (run.event === "push") return true',
+    'run.actor && run.actor.login',
+    'run.status === "completed"',
+    'Allowing an invalidation run time to materialize before publishing the Codex result',
+    'const finalInvalidationRuns = await activeInvalidationRuns()',
+    'the Codex result cannot supersede its invalidation',
+    'sfl-codex-review-base-advance-${{ github.repository }}-${{ github.ref }}',
+    'const batchSize = 10',
+    'Promise.allSettled(batch.map(invalidatePull))',
+    'Base-advance invalidation failed after attempting every pull request',
+    'supersedesInvalidation(check.external_id, contextChangeTime, context.runId)',
+    'supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId)',
+    'already has this exact invalidation; skipping rerun',
+    'received a newer context or successful Codex gate while invalidation was running',
+    'conflictingBaseRequest',
+    'reviewContextToken(confirmedChecks) !== contextToken',
+    ':context:${encodeURIComponent(invalidationId)}:',
+    'skipping stale invalidation',
+    'github.rest.actions.getWorkflowRun',
+    'successful Codex gate completed after this context change',
+    'if (context.payload.deleted)',
+    'repository.data.default_branch',
+    'Repository default branch changed from deployed SFL review base',
+    'name: "SFL Reviewer Gate Runner"',
+    'check.app.id === 15368',
+    'action: "success"',
+    'action: "failure"',
+    'action: "ignore"'
+)) {
+    if ($canonical -notmatch [regex]::Escape($pattern)) {
+        throw "Codex observer is missing contract text: $pattern"
     }
 }
 
-function Get-ExpectedThreadResolutionEligibility {
-    param(
-        [bool] $IsResolved,
-        [bool] $IsOutdated
-    )
-
-    return $IsResolved -or $IsOutdated
+if ($canonical -match [regex]::Escape('if (context.payload.deleted) return;')) {
+    throw 'Base-branch deletion events are still discarded instead of invalidating gates after a rename.'
+}
+if ($canonical -match [regex]::Escape('events.flatMap(') -or
+    $canonical -match [regex]::Escape('events.map(event => github.paginate(')) {
+    throw 'Codex observer still multiplies or unboundedly paginates workflow-run queries by event.'
+}
+if ($canonical -notmatch '(?s)invalidate-base-advance:.*?timeout-minutes: 30' -or
+    $canonical -match [regex]::Escape('for (const pull of openPulls)')) {
+    throw 'Base-advance invalidation is still a short, serial repository-wide sweep.'
 }
 
-$threadStateCases = @(
-    @{ Name = 'live unresolved thread'; Resolved = $false; Outdated = $false; Expected = $false },
-    @{ Name = 'outdated unresolved thread'; Resolved = $false; Outdated = $true; Expected = $true },
-    @{ Name = 'already resolved current thread'; Resolved = $true; Outdated = $false; Expected = $true },
-    @{ Name = 'already resolved outdated thread'; Resolved = $true; Outdated = $true; Expected = $true }
+$artifactBindingIndex = $canonical.IndexOf('const artifactBindsCurrentHead')
+$pendingRequestIndex = $canonical.IndexOf('const pendingRequest = candidateRequests[0]')
+if ($artifactBindingIndex -lt 0 -or $pendingRequestIndex -lt 0 -or
+    $artifactBindingIndex -gt $pendingRequestIndex) {
+    throw 'Codex artifact binding is not validated before pending request selection.'
+}
+
+$inProgressIndex = $canonical.IndexOf('status: "in_progress"')
+$confirmationIndex = if ($inProgressIndex -ge 0) {
+    $canonical.IndexOf('const confirmedState = await publicationState()', $inProgressIndex)
+} else { -1 }
+$successIndex = if ($confirmationIndex -ge 0) {
+    $canonical.IndexOf('conclusion: "success"', $confirmationIndex)
+} else { -1 }
+if ($inProgressIndex -lt 0 -or $confirmationIndex -lt 0 -or $successIndex -lt 0 -or
+    $inProgressIndex -gt $confirmationIndex -or $confirmationIndex -gt $successIndex) {
+    throw 'Codex success is exposed before the final pull-context confirmation.'
+}
+
+$eligibilityMatch = [regex]::Match(
+    $canonical,
+    '(?s)// BEGIN TESTABLE REQUEST ELIGIBILITY\s*(.*?)\s*// END TESTABLE REQUEST ELIGIBILITY'
 )
-foreach ($case in $threadStateCases) {
-    $actual = Get-ExpectedThreadResolutionEligibility `
-        -IsResolved $case.Resolved `
-        -IsOutdated $case.Outdated
-    if ($actual -ne $case.Expected) {
-        $failures.Add("Thread eligibility case failed: $($case.Name)")
+if (-not $eligibilityMatch.Success) {
+    throw 'Could not locate the testable request-eligibility block.'
+}
+$eligibilityTest = @'
+const owner = "HemSoft";
+const pullNumber = 42;
+const currentBase = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const baseMarker = `<!-- sfl-codex-review:head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;base=${currentBase};`;
+const isOwnerRequest = comment =>
+  ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
+const registeredRequestIds = new Set([1, 2, 3, 4]);
+function requestGateExternalIdPrefix(pullNumber, currentBase, contextToken, requestId, requestTime) {
+  return `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${requestId}:at:${requestTime}`;
+}
+'@ + "`n" + $eligibilityMatch.Groups[1].Value + "`n" + @'
+const comment = (id, created_at, contextToken) => ({
+  id,
+  created_at,
+  updated_at: created_at,
+  user: {login: "HemSoft"},
+  body: `@codex review\n\n${baseMarker}context=${contextToken} -->`,
+});
+const first = comment(1, "2026-08-19T00:00:01Z", "none");
+const second = comment(2, "2026-08-19T00:00:02Z", "none");
+const otherContext = comment(3, "2026-08-19T00:00:02Z", "base-advance");
+const recoveredRetry = comment(4, "2026-08-19T00:00:04Z", "none");
+const unregistered = comment(5, "2026-08-19T00:00:05Z", "none");
+const editedSecond = {...second, updated_at: "2026-08-19T00:00:03Z"};
+const sameSecondBodyMutation = {...second, body: `please @codex review\n\n${baseMarker}context=none -->`};
+const firstTime = Date.parse(first.created_at);
+const firstPrefix = requestGateExternalIdPrefix(pullNumber, currentBase, "none", first.id, firstTime);
+const terminal = completed_at => ({
+  app: {id: 15368},
+  status: "completed",
+  completed_at,
+  external_id: `${firstPrefix}:artifact:r123`,
+});
+const cases = [
+  {name: "overlap blocked", comments: [first, second], checks: [], want: [1]},
+  {name: "terminal predecessor allows retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1, 2]},
+  {name: "same-second terminal fails closed", comments: [first, second], checks: [terminal("2026-08-19T00:00:02Z")], want: [1]},
+  {name: "edited marker is rejected", comments: [first, editedSecond], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
+  {name: "same-second body mutation is rejected", comments: [first, sameSecondBodyMutation], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
+  {name: "late terminal does not authorize retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:02.500Z")], want: [1]},
+  {name: "later retry recovers after overlap", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:03Z")], want: [1, 4]},
+  {name: "different contexts are independent", comments: [first, otherContext], checks: [], want: [1, 3]},
+  {name: "unregistered owner marker is rejected", comments: [first, unregistered], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
+];
+const sameSecondCandidates = eligibleReviewRequests([first], [], Date.parse(first.created_at))
+  .map(candidate => candidate.comment.id);
+if (JSON.stringify(sameSecondCandidates) !== JSON.stringify([1])) {
+  throw new Error(`same-second request lookup: got ${JSON.stringify(sameSecondCandidates)}, want [1]`);
+}
+const refreshedRegistrations = new Set([1, 2, 3, 4, 5]);
+const refreshedCandidates = eligibleReviewRequests(
+  [first, unregistered],
+  [terminal("2026-08-19T00:00:01.500Z")],
+  Number.POSITIVE_INFINITY,
+  refreshedRegistrations,
+).map(candidate => candidate.comment.id);
+if (JSON.stringify(refreshedCandidates) !== JSON.stringify([1, 5])) {
+  throw new Error(`refreshed registrations: got ${JSON.stringify(refreshedCandidates)}, want [1,5]`);
+}
+for (const fixture of cases) {
+  const got = eligibleReviewRequests(fixture.comments, fixture.checks, Number.POSITIVE_INFINITY)
+    .map(candidate => candidate.comment.id);
+  if (JSON.stringify(got) !== JSON.stringify(fixture.want)) {
+    throw new Error(`${fixture.name}: got ${JSON.stringify(got)}, want ${JSON.stringify(fixture.want)}`);
+  }
+}
+'@
+$eligibilityTest | node -
+if ($LASTEXITCODE -ne 0) {
+    throw 'Request-eligibility fixture tests failed.'
+}
+
+$helperMatches = [regex]::Matches(
+    $canonical,
+    '(?s)// BEGIN TESTABLE INVALIDATION ORDER\s*(.*?)\s*// END TESTABLE INVALIDATION ORDER'
+)
+if ($helperMatches.Count -ne 2) {
+    throw "Expected two testable invalidation-order helpers, found $($helperMatches.Count)."
+}
+if ($helperMatches[0].Groups[1].Value -ne $helperMatches[1].Groups[1].Value) {
+    throw 'Pull-context and base-advance invalidation-order helpers differ.'
+}
+
+$helperTest = @"
+$($helperMatches[0].Groups[1].Value)
+const cases = [
+  ["sfl-codex-review:pull-context:at:2000:20", 1000, 10, true],
+  ["sfl-codex-review:base-advance:at:1000:20:42", 1000, 10, true],
+  ["sfl-codex-review:pull-context:at:999:99", 1000, 10, false],
+  ["sfl-codex-review:pull-context:at:1000:10", 1000, 10, false],
+  ["sfl-codex-review:pull:42:base:abc", 1000, 10, false],
+];
+for (const [externalId, eventTime, runId, expected] of cases) {
+  const actual = supersedesInvalidation(externalId, eventTime, runId);
+  if (actual !== expected) {
+    throw new Error("Unexpected ordering for " + externalId + ": " + actual);
+  }
+}
+"@
+$helperTest | node -
+if ($LASTEXITCODE -ne 0) {
+    throw 'Invalidation-order helper tests failed.'
+}
+
+foreach ($legacyPath in @(
+    'deployment\workflows\sfl-pr-review.md',
+    'deployment\infrastructure\sfl-pr-review-recovery.yml',
+    '.github\workflows\sfl-pr-review.md',
+    '.github\workflows\sfl-pr-review.lock.yml',
+    '.github\workflows\sfl-pr-review-recovery.yml'
+)) {
+    if (Test-Path -LiteralPath (Join-Path $repoRoot $legacyPath)) {
+        throw "Retired OpenRouter reviewer artifact remains: $legacyPath"
     }
 }
 
-if ($failures.Count -gt 0) {
-    $failures | ForEach-Object { Write-Error $_ }
-    throw "SFL review artifact contract failed with $($failures.Count) finding(s)."
+$policy = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\engine-policy.json') -Raw
+if ($policy -match '(?i)openrouter|moonshotai/kimi|OPENROUTER_API_KEY') {
+    throw 'Engine policy retained the OpenRouter reviewer configuration.'
 }
 
-Write-Output 'SFL review artifact contract passed.'
+Write-Output 'Subscription-backed Codex reviewer contract tests passed.'

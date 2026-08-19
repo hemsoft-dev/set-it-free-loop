@@ -42,22 +42,20 @@ if ($release.distribution.repository -ne 'HemSoft/set-it-free-loop' -or
     $release.distribution.visibility -ne 'private') {
     $failures.Add('Release distribution identity is not the private HemSoft repository.')
 }
-if ($release.reviewerBaseline.repository -ne 'relias-engineering/set-it-free-loop' -or
-    $release.reviewerBaseline.releaseVersion -ne '6.5.7' -or
-    $release.reviewerBaseline.releaseTag -ne "v$($release.reviewerBaseline.releaseVersion)") {
-    $failures.Add('Relias reviewer release identity is inconsistent.')
-}
-foreach ($property in @('releaseCommit', 'reviewedCommit')) {
-    if ([string] $release.reviewerBaseline.$property -notmatch '^[0-9a-f]{40}$') {
-        $failures.Add("reviewerBaseline.$property is not an immutable full commit SHA.")
-    }
+if ($release.schemaVersion -ne 2 -or
+    $release.reviewerRuntime.type -ne 'subscription-backed-codex-github-app' -or
+    $release.reviewerRuntime.trigger -ne '@codex review' -or
+    $release.reviewerRuntime.app.id -ne 1144995 -or
+    $release.reviewerRuntime.app.slug -ne 'chatgpt-codex-connector' -or
+    $release.reviewerRuntime.app.owner -ne 'openai' -or
+    $release.reviewerRuntime.app.botUserId -ne 199175422 -or
+    $release.reviewerRuntime.requiredGate.name -ne 'SFL Reviewer Gate Runner' -or
+    $release.reviewerRuntime.requiredGate.appId -ne 15368) {
+    $failures.Add('Subscription-backed Codex reviewer identity is incomplete or inconsistent.')
 }
 if ($release.cliSource.repository -ne 'HemSoft/set-it-free-loop' -or
     $release.cliSource.path -ne 'gh-sfl' -or
     $release.cliSource.module -ne 'github.com/HemSoft/set-it-free-loop/gh-sfl' -or
-    $release.cliSource.upstreamRepository -ne 'relias-engineering/set-it-free-loop' -or
-    $release.cliSource.upstreamRelease -ne 'v6.5.7' -or
-    [string] $release.cliSource.upstreamCommit -notmatch '^[0-9a-f]{40}$' -or
     $release.cliSource.buildScript -ne 'deployment/scripts/install-gh-sfl-hemsoft.ps1') {
     $failures.Add('Repository-owned CLI source provenance is incomplete or inconsistent.')
 }
@@ -208,4 +206,4 @@ if ($failures.Count -gt 0) {
     throw "Release metadata contract failed:`n - $($failures -join "`n - ")"
 }
 
-Write-Output "Release metadata contract passed for HemSoft $version and Relias $($release.reviewerBaseline.releaseVersion)."
+Write-Output "Release metadata contract passed for HemSoft $version and subscription-backed Codex review."

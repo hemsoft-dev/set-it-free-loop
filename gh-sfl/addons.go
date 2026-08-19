@@ -4,15 +4,12 @@ import "sort"
 
 var addonWorkflows = map[string][]string{
 	"pr-review": {
-		"sfl-pr-review.md",
-		"sfl-pr-review.lock.yml",
 		"sfl-pr-review-auto.yml",
-		"sfl-pr-review-recovery.yml",
 	},
 }
 
 var addonDescriptions = map[string]string{
-	"pr-review": "Automatic evidence-based PR review with recovery and a zero-finding approval gate",
+	"pr-review": "Subscription-backed Codex review with an authenticated immutable-head gate",
 }
 
 func validAddon(name string) bool {

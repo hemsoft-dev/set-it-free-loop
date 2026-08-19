@@ -35,7 +35,7 @@ gh sfl init --slack-webhook "https://hooks.slack.com/..."  # Enable Slack notifi
 
 | Tier | Workflows | Description |
 |------|-----------|-------------|
-| `reviewer` | PR Reviewer source, runtime, trigger/gate, recovery | Default reviewer-only package |
+| `reviewer` | Subscription-backed Codex observer and gate | Default reviewer-only package |
 | `minimal` | Dispatcher | Legacy label routing only |
 | `standard` | Dispatcher, Processor, Review Reactor | Full quality loop |
 | `full` | Standard + Repo Audit, Simplisticate Audit, Simplisticate PR | Everything |
@@ -74,8 +74,8 @@ gh sfl gate --repo owner/repo
 
 The command creates one repository ruleset for the default branch. It requires
 `SFL Reviewer Gate Runner` from GitHub Actions App ID `15368` and enables strict
-base freshness. The runner authenticates the exact App review plus the inner
-`SFL Reviewer Approval` and `SFL Review Evidence` checks. An already-correct
+base freshness. The observer authenticates the native Codex result and writes
+the runner check on the exact reviewed head. An already-correct
 gate causes no write. A stale dedicated SFL gate is updated with its current
 entity tag and state rechecked immediately before the write. The command aborts
 if either changed, verifies the result, and restores the pre-write snapshot if
@@ -84,9 +84,9 @@ does not support conditional headers on repository ruleset updates or deletes.
 The command refuses to rewrite a shared or inherited rule. It does not use
 organization endpoints or require the `admin:org` scope.
 
-When `gh sfl stop` enables maintenance mode, automatic review dispatch pauses
-but the required gate runner still executes and fails closed. New pull request
-heads cannot pass the gate until `gh sfl start` re-enables reviews.
+When `gh sfl stop` enables maintenance mode, the observer ignores Codex result
+events, so new pull request heads remain blocked by the absent required gate.
+`gh sfl start` re-enables observation.
 
 ### `gh sfl uninstall`
 

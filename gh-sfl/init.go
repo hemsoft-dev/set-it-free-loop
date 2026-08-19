@@ -47,10 +47,7 @@ func (f *stringSliceFlag) Set(val string) error {
 // Tier definitions: which workflow files to deploy per tier.
 var tierWorkflows = map[string][]string{
 	"reviewer": {
-		"sfl-pr-review.md",
-		"sfl-pr-review.lock.yml",
 		"sfl-pr-review-auto.yml",
-		"sfl-pr-review-recovery.yml",
 	},
 	"minimal": {
 		"sfl-dispatcher.yml",
@@ -76,17 +73,14 @@ var tierWorkflows = map[string][]string{
 		"pr-analyzer-testing.md",
 		"pr-fixer.md",
 		"pr-promoter.md",
-		"sfl-pr-review.md",
-		"sfl-pr-review.lock.yml",
 		"sfl-pr-review-auto.yml",
-		"sfl-pr-review-recovery.yml",
 	},
 }
 var tierComponents = map[string][]string{
-	"reviewer": {"sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
+	"reviewer": {"sfl-pr-review-auto"},
 	"minimal":  {"labels", "governance", "sfl-dispatcher"},
 	"standard": {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate"},
-	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security", "pr-analyzer-testing", "pr-fixer", "pr-promoter", "sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
+	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security", "pr-analyzer-testing", "pr-fixer", "pr-promoter", "sfl-pr-review-auto"},
 }
 
 func canonicalDeploymentTier(tier string) string {
@@ -227,6 +221,10 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
+		content, prepareErr := prepareWorkflowSource(wf, content, release.SHA, owner+"/"+repo, defaultBranch)
+		if prepareErr != nil {
+			return prepareErr
+		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, release.Version)
 		if renderErr != nil {
 			return fmt.Errorf("applying HemSoft engine policy to %s: %w", wf, renderErr)
@@ -244,6 +242,10 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 			content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, release.SHA)
 			if fetchErr != nil {
 				return fmt.Errorf("fetching add-on %s: %w", srcPath, fetchErr)
+			}
+			content, prepareErr := prepareWorkflowSource(wf, content, release.SHA, owner+"/"+repo, defaultBranch)
+			if prepareErr != nil {
+				return prepareErr
 			}
 			rendered, renderErr := renderHemSoftWorkflow(wf, content, release.Version)
 			if renderErr != nil {
@@ -511,7 +513,7 @@ func writeInitUsage(w io.Writer) {
 	fmt.Fprint(w, initUsage)
 }
 
-const initUsage = `Deploy the latest synchronized SFL PR Reviewer release.
+const initUsage = `Deploy the latest synchronized SFL Codex Reviewer release.
 
 Usage:
   gh sfl init [flags]
@@ -523,7 +525,7 @@ Flags:
       --source-ref     Deploy a specific synchronized release tag (defaults to latest)
 
 Tiers:
-  reviewer   SFL PR Reviewer package only (default)
+  reviewer   Subscription-backed Codex reviewer observer only (default)
   minimal    SFL Dispatcher only (label routing)
   standard   Dispatcher + Processor + Review Reactor (full quality loop)
   full       Standard + Repo Audit + Simplisticate Audit + Simplisticate PR + PR Review

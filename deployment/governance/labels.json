@@ -9,7 +9,7 @@
   { "name": "pr-analyzer-quality",    "color": "0e8a16", "description": "Request the optional PR quality analyzer" },
   { "name": "pr-analyzer-security",   "color": "e11d48", "description": "Request the optional PR security analyzer" },
   { "name": "pr-analyzer-testing",    "color": "5319e7", "description": "Request the optional PR testing analyzer" },
-  { "name": "sfl-review",             "color": "6f42c1", "description": "One-shot command that requests a standalone SFL full-spectrum PR review" },
+  { "name": "sfl-review",              "color": "6f42c1", "description": "Deprecated: use gh sfl review; applying this label does not trigger a review" },
   { "name": "risk:trivial",           "color": "cfd3d7", "description": "Zero-risk: formatting, typos, doc updates" },
   { "name": "risk:low",               "color": "0e8a16", "description": "Low-risk: dependency bumps, safe refactors" },
   { "name": "risk:medium",            "color": "fbca04", "description": "Medium-risk: logic changes, new features" },
