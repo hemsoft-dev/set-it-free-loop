@@ -12,38 +12,32 @@ authenticates Codex output, and preserves the required immutable-head gate.
 
 ### Current state
 
-- SFL PR #132 and the `hs-buddy` deployment PR #522 are merged.
-- `hs-buddy` PR #521 is frozen after one bounded merge attempt proved that the
-  merge operation can regenerate GitHub's synthetic merge SHA and orphan a
-  successful required status.
-- Issue #133 owns the source repair. No consumer refresh commit, retry, or
-  deployment is allowed while that repair is under review.
+- SFL PR #134 fixed issue #133 and is merged at `eb83674`.
+- `hs-buddy` PR #521 and deployment PR #522 are merged at `58203bd`.
+- The broken `hs-buddy` SFL reviewer ruleset is removed. Its separate Copilot
+  review ruleset remains active.
 - `developer-documentation` is excluded and remains read-only.
 
 ### Hard guardrails
 
-- Do not create more refresh commits, rebases, force-pushes, dummy changes,
-  duplicate review requests, or deployment PRs for `hs-buddy` PR #521.
-- Keep the required gate on an immutable review identity; do not rely on a
+- Do not create refresh commits, rebases, force-pushes, dummy changes,
+  duplicate review requests, or replacement deployment PRs for the completed
+  `hs-buddy` cycle.
+- Any future required gate must use an immutable review identity, never a
   synthetic merge SHA that GitHub can regenerate during merge evaluation.
-- Preserve exact reviewed-head and reviewed-base validation, strict base
-  freshness, and fail-closed invalidation behavior.
-- Every write must reduce uncertainty or move issue #133 toward one reviewed
-  source PR. Never start a second simultaneous consumer review cycle.
+- Any replacement must preserve exact reviewed-head and reviewed-base
+  validation, strict base freshness, and fail-closed invalidation behavior.
+- Never start a second simultaneous consumer review cycle.
 - Keep `developer-documentation` and account-wide deployment out of scope.
 - Clean branches and worktrees only after their PR is confirmed merged or
   closed; do not touch unrelated worktrees.
 
 ### Next bounded sequence
 
-1. Add a regression test that fails while the gate targets `merge_commit_sha`.
-2. Publish every required gate transition on the immutable reviewed head and
-   retain strict base freshness.
-3. Run the focused deployment contract, complete Go suite, workflow lint, and
-   repository deployment tests.
-4. Open one source PR for issue #133 and process current-head review feedback.
-5. Stop before any new consumer deployment. Reassess the proof plan from a
-   green source PR instead of churning `hs-buddy`.
+1. Leave the broken `hs-buddy` SFL reviewer rule absent.
+2. Do not start another deployment or reviewer cycle from this recovery work.
+3. If SFL enforcement is revisited, begin with one bounded issue and prove the
+   replacement gate before enabling it in a consumer repository.
 
 ## Working baseline
 
