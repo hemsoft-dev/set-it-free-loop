@@ -154,10 +154,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Update manifest
 	manifest.Version = release.Version
 	manifest.SourceSHA = latestSHA
-	if manifest.Tier == "review" {
-		manifest.Tier = "reviewer"
-		manifest.Components = tierComponents["reviewer"]
-	}
+	normalizeManifestForSync(manifest, installedTier)
 	manifest.DeployedAt = deployedAt
 	manifest.DeployedBy = deployedBy
 	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
@@ -219,6 +216,14 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	updateAgentPRBranches(owner, repo, stdout)
 
 	return nil
+}
+
+func normalizeManifestForSync(manifest *sflManifest, installedTier string) {
+	if installedTier != "reviewer" {
+		return
+	}
+	manifest.Tier = "reviewer"
+	manifest.Components = append([]string(nil), tierComponents["reviewer"]...)
 }
 
 func shouldPreflightReviewerSync(dryRun bool, workflowSets ...[]string) bool {

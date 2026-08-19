@@ -108,7 +108,10 @@ Native Codex owns review depth, severity, and presentation. SFL now verifies
 Codex provenance and head freshness and translates its clean/finding result
 into the existing branch gate. It does not promise three passes, all severity
 classes, SFL-authored approvals, obsolete-thread cleanup, or recovery retries.
-A rerun is an explicit new gh sfl review request.
+A rerun is an explicit new `gh sfl review` request. If the current-head request
+already exists but its Codex result event was skipped while SFL was stopped,
+run `gh sfl review --repo HemSoft/repository --pr 42 --retry` after restarting
+SFL.
 
 Pilot deployments are limited to HemSoft/hs-buddy until the source change and
 smoke evidence are accepted. Do not deploy this migration to

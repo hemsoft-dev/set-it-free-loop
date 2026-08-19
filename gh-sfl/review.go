@@ -16,8 +16,9 @@ import (
 const codexReviewCommand = "@codex review"
 
 type reviewOptions struct {
-	repo string
-	pr   int
+	repo  string
+	pr    int
+	retry bool
 }
 
 type pullRequestShas struct {
@@ -68,14 +69,16 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 
 	marker := codexReviewMarker(pr.HeadSHA)
-	existingURL, err := findCodexReviewTrigger(client, owner, repo, opts.pr, marker)
-	if err != nil {
-		return fmt.Errorf("checking existing Codex review requests: %w", err)
-	}
-	if existingURL != "" {
-		fmt.Fprintf(stdout, "Codex review already requested for %s/%s#%d at %.10s: %s\n",
-			owner, repo, opts.pr, pr.HeadSHA, existingURL)
-		return nil
+	if !opts.retry {
+		existingURL, findErr := findCodexReviewTrigger(client, owner, repo, opts.pr, marker)
+		if findErr != nil {
+			return fmt.Errorf("checking existing Codex review requests: %w", findErr)
+		}
+		if existingURL != "" {
+			fmt.Fprintf(stdout, "Codex review already requested for %s/%s#%d at %.10s: %s\nUse --retry if its result event was skipped.\n",
+				owner, repo, opts.pr, pr.HeadSHA, existingURL)
+			return nil
+		}
 	}
 
 	body := codexReviewCommand + "\n\n" + marker
@@ -128,6 +131,7 @@ func parseReviewOptions(args []string, stderr io.Writer) (reviewOptions, error) 
 	flags.StringVar(&opts.repo, "repo", "", "Target repository (OWNER/REPO)")
 	flags.StringVar(&opts.repo, "R", "", "Target repository (OWNER/REPO)")
 	flags.IntVar(&opts.pr, "pr", 0, "Pull request number")
+	flags.BoolVar(&opts.retry, "retry", false, "Post another request for the current head")
 
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -254,8 +258,10 @@ Usage:
 Flags:
   -R, --repo string    Target repository (OWNER/REPO). Defaults to current repo.
       --pr int         Pull request number.
+      --retry          Post another request when a prior result event was skipped.
 
 Examples:
   gh sfl review 94
   gh sfl review --repo HemSoft/hs-buddy --pr 94
+  gh sfl review --repo HemSoft/hs-buddy --pr 94 --retry
 `

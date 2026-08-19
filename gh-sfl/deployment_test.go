@@ -671,6 +671,30 @@ func TestInstalledManifestWorkflowResolutionFailsClosed(t *testing.T) {
 	}
 }
 
+func TestNormalizeManifestForSyncRemovesRetiredReviewerComponents(t *testing.T) {
+	for _, tier := range []string{"review", "reviewer"} {
+		t.Run(tier, func(t *testing.T) {
+			manifest := &sflManifest{
+				Tier:       tier,
+				Components: []string{"sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
+			}
+			normalizeManifestForSync(manifest, canonicalDeploymentTier(manifest.Tier))
+			if manifest.Tier != "reviewer" {
+				t.Fatalf("normalized tier = %q, want reviewer", manifest.Tier)
+			}
+			if !slices.Equal(manifest.Components, tierComponents["reviewer"]) {
+				t.Fatalf("normalized components = %v, want %v", manifest.Components, tierComponents["reviewer"])
+			}
+		})
+	}
+
+	full := &sflManifest{Tier: "full", Components: []string{"sfl-pr-review-recovery"}}
+	normalizeManifestForSync(full, canonicalDeploymentTier(full.Tier))
+	if !slices.Equal(full.Components, []string{"sfl-pr-review-recovery"}) {
+		t.Fatalf("full components were unexpectedly rewritten: %v", full.Components)
+	}
+}
+
 func TestSyncChecksManagedFilesWhenSourceRevisionIsCurrent(t *testing.T) {
 	source := string(readContractFile(t, "sync.go"))
 	if !strings.Contains(source, "verifying managed files for drift") {

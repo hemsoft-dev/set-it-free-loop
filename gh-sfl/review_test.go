@@ -79,6 +79,7 @@ func TestParseReviewOptions(t *testing.T) {
 		{name: "hash prefix", args: []string{"#94"}, wantPR: 94},
 		{name: "PR flag", args: []string{"--pr", "94"}, wantPR: 94},
 		{name: "repo and PR flags", args: []string{"--repo", "owner/repo", "--pr", "94"}, wantPR: 94},
+		{name: "retry", args: []string{"--retry", "94"}, wantPR: 94},
 		{name: "missing number", args: []string{}, wantErr: "required"},
 		{name: "duplicate number", args: []string{"--pr", "94", "94"}, wantErr: "exactly once"},
 		{name: "two numbers", args: []string{"1", "2"}, wantErr: "exactly once"},
@@ -143,8 +144,32 @@ func TestRunReviewDeduplicatesCurrentHeadRequest(t *testing.T) {
 		t.Fatalf("Codex request posts = %d, want 0", rest.posts)
 	}
 	if !strings.Contains(stdout.String(), "already requested") ||
-		!strings.Contains(stdout.String(), "https://github.test/existing") {
+		!strings.Contains(stdout.String(), "https://github.test/existing") ||
+		!strings.Contains(stdout.String(), "--retry") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	rest := &reviewREST{comments: []reviewTriggerComment{{
+		Body:    codexReviewCommand + "\n\n" + codexReviewMarker(head),
+		HTMLURL: "https://github.test/existing",
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "HemSoft"},
+	}}}
+	installReviewFakes(t, rest)
+
+	var stdout bytes.Buffer
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, &stdout, io.Discard); err != nil {
+		t.Fatalf("runReview() unexpected error: %v", err)
+	}
+	if rest.posts != 1 {
+		t.Fatalf("Codex retry posts = %d, want 1", rest.posts)
+	}
+	if rest.postBody != codexReviewCommand+"\n\n"+codexReviewMarker(head) {
+		t.Fatalf("posted retry body = %q", rest.postBody)
 	}
 }
 
