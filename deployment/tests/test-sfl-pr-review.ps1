@@ -164,6 +164,17 @@ if ($canonical -notmatch '(?s)invalidate-base-advance:.*?timeout-minutes: 30' -o
     throw 'Base-advance invalidation is still a short, serial repository-wide sweep.'
 }
 
+$pullContextInvalidation = [regex]::Match(
+    $canonical,
+    '(?s)  invalidate-pull-context:.*?(?=\r?\n  invalidate-base-advance:)'
+)
+if (-not $pullContextInvalidation.Success) {
+    throw 'Could not locate the pull-context invalidation job.'
+}
+if ($pullContextInvalidation.Value -match [regex]::Escape('core.setFailed(reason);')) {
+    throw 'Pull-context invalidation still fails its workflow job after publishing the blocking gate.'
+}
+
 $artifactBindingIndex = $canonical.IndexOf('const artifactBindsCurrentHead')
 $pendingRequestIndex = $canonical.IndexOf('const pendingRequest = candidateRequests[0]')
 if ($artifactBindingIndex -lt 0 -or $pendingRequestIndex -lt 0 -or
