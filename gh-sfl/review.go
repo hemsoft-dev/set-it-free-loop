@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -44,10 +45,11 @@ type reviewTriggerComment struct {
 }
 
 type reviewerCheckRun struct {
-	ID         int64  `json:"id"`
-	Status     string `json:"status"`
-	ExternalID string `json:"external_id"`
-	App        struct {
+	ID          int64  `json:"id"`
+	Status      string `json:"status"`
+	CompletedAt string `json:"completed_at"`
+	ExternalID  string `json:"external_id"`
+	App         struct {
 		ID int64 `json:"id"`
 	} `json:"app"`
 }
@@ -110,9 +112,13 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	if conflictingURL != "" {
 		return fmt.Errorf("pull request #%d head %.10s was already requested against another base at %s — update the pull request branch to a new head before requesting review for the current base", opts.pr, pr.HeadSHA, conflictingURL)
 	}
-	existing, findErr := findCodexReviewTrigger(client, owner, repo, opts.pr, marker)
+	requests, findErr := findCodexReviewTriggers(client, owner, repo, opts.pr, marker)
 	if findErr != nil {
 		return fmt.Errorf("checking existing Codex review requests: %w", findErr)
+	}
+	var existing reviewTriggerComment
+	if len(requests) > 0 {
+		existing = requests[len(requests)-1]
 	}
 	if existing.HTMLURL != "" {
 		if !opts.retry {
@@ -125,7 +131,15 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 			return fmt.Errorf("checking the prior Codex review result: %w", completedErr)
 		}
 		if !completed {
-			return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
+			recoverable, recoveryErr := canRecoverFromOverlappingRequest(
+				client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, requests,
+			)
+			if recoveryErr != nil {
+				return fmt.Errorf("checking overlapping Codex review requests: %w", recoveryErr)
+			}
+			if !recoverable {
+				return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
+			}
 		}
 	}
 
@@ -335,32 +349,39 @@ func findConflictingCodexBaseRequest(
 	}
 }
 
-func findCodexReviewTrigger(
+func findCodexReviewTriggers(
 	client restAPI,
 	owner, repo string,
 	prNumber int,
 	marker string,
-) (reviewTriggerComment, error) {
-	var latest reviewTriggerComment
+) ([]reviewTriggerComment, error) {
+	var matches []reviewTriggerComment
 	for page := 1; ; page++ {
 		var comments []reviewTriggerComment
 		if err := client.Get(
 			fmt.Sprintf("repos/%s/%s/issues/%d/comments?per_page=100&page=%d", owner, repo, prNumber, page),
 			&comments,
 		); err != nil {
-			return reviewTriggerComment{}, err
+			return nil, err
 		}
 		for _, comment := range comments {
 			if strings.EqualFold(comment.User.Login, owner) && strings.Contains(comment.Body, marker) {
-				if latest.HTMLURL == "" || reviewCommentTime(comment).After(reviewCommentTime(latest)) {
-					latest = comment
-				}
+				matches = append(matches, comment)
 			}
 		}
 		if len(comments) < 100 {
-			return latest, nil
+			break
 		}
 	}
+	sort.SliceStable(matches, func(i, j int) bool {
+		left := reviewCommentTime(matches[i])
+		right := reviewCommentTime(matches[j])
+		if left.Equal(right) {
+			return matches[i].ID < matches[j].ID
+		}
+		return left.Before(right)
+	})
+	return matches, nil
 }
 
 func reviewCommentTime(comment reviewTriggerComment) time.Time {
@@ -414,13 +435,24 @@ func hasTerminalGateForRequest(
 	headSHA, baseSHA string,
 	request reviewTriggerComment,
 ) (bool, error) {
+	_, found, err := findTerminalGateForRequest(client, owner, repo, prNumber, headSHA, baseSHA, request)
+	return found, err
+}
+
+func findTerminalGateForRequest(
+	client restAPI,
+	owner, repo string,
+	prNumber int,
+	headSHA, baseSHA string,
+	request reviewTriggerComment,
+) (reviewerCheckRun, bool, error) {
 	requestTime := reviewCommentTime(request)
 	if requestTime.IsZero() {
-		return false, errors.New("latest Codex review request has no valid timestamp")
+		return reviewerCheckRun{}, false, errors.New("latest Codex review request has no valid timestamp")
 	}
 	contextToken, ok := reviewContextTokenFromBody(request.Body)
 	if !ok {
-		return false, errors.New("latest Codex review request has no valid context token")
+		return reviewerCheckRun{}, false, errors.New("latest Codex review request has no valid context token")
 	}
 	expected := fmt.Sprintf(
 		"sfl-codex-review:pull:%d:base:%s:context:%s:request:%d:at:%d",
@@ -438,18 +470,51 @@ func hasTerminalGateForRequest(
 			fmt.Sprintf("repos/%s/%s/commits/%s/check-runs?check_name=SFL%%20Reviewer%%20Gate%%20Runner&filter=all&per_page=100&page=%d", owner, repo, headSHA, page),
 			&response,
 		); err != nil {
-			return false, err
+			return reviewerCheckRun{}, false, err
 		}
 		for _, check := range response.CheckRuns {
 			if check.App.ID == 15368 && check.Status == "completed" &&
 				(check.ExternalID == expected || strings.HasPrefix(check.ExternalID, expected+":artifact:")) {
-				return true, nil
+				return check, true, nil
 			}
 		}
 		if len(response.CheckRuns) < 100 {
-			return false, nil
+			return reviewerCheckRun{}, false, nil
 		}
 	}
+}
+
+func canRecoverFromOverlappingRequest(
+	client restAPI,
+	owner, repo string,
+	prNumber int,
+	headSHA, baseSHA string,
+	requests []reviewTriggerComment,
+) (bool, error) {
+	if len(requests) < 2 {
+		return false, nil
+	}
+	latestTime := reviewCommentTime(requests[len(requests)-1])
+	if latestTime.IsZero() {
+		return false, errors.New("latest Codex review request has no valid timestamp")
+	}
+	for index := len(requests) - 2; index >= 0; index-- {
+		check, found, err := findTerminalGateForRequest(
+			client, owner, repo, prNumber, headSHA, baseSHA, requests[index],
+		)
+		if err != nil {
+			return false, err
+		}
+		if !found {
+			continue
+		}
+		completedAt, err := time.Parse(time.RFC3339Nano, check.CompletedAt)
+		if err != nil {
+			return false, fmt.Errorf("terminal gate for prior request %d has invalid completed_at: %w", requests[index].ID, err)
+		}
+		return completedAt.After(latestTime), nil
+	}
+	return false, nil
 }
 
 func writeReviewUsage(w io.Writer) {

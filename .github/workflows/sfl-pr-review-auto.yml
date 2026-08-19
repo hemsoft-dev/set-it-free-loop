@@ -282,8 +282,8 @@ jobs:
                 if (!previous ||
                     hasTerminalGateBefore(previous, requestContext, candidate.requestTime, checkRuns)) {
                   eligible.push({...candidate, contextToken: requestContext});
+                  previousByContext.set(requestContext, candidate);
                 }
-                previousByContext.set(requestContext, candidate);
               }
               return eligible;
             };
