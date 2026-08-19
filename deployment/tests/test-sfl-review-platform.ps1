@@ -9,6 +9,8 @@ $files = @{
     Init = Get-Content -LiteralPath (Join-Path $repoRoot 'gh-sfl\init.go') -Raw
     Review = Get-Content -LiteralPath (Join-Path $repoRoot 'gh-sfl\review.go') -Raw
     Deploy = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\scripts\deploy-workflow.ps1') -Raw
+    LabelsJson = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\governance\labels.json') -Raw
+    LabelSetup = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\governance\setup-labels.ps1') -Raw
     Observer = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\infrastructure\sfl-pr-review-auto.yml') -Raw
 }
 
@@ -27,6 +29,12 @@ foreach ($required in @(
 if ($files.Init -match 'sfl-pr-review\.lock\.yml|sfl-pr-review-recovery\.yml' -or
     $files.Deploy -match '@\("sfl-pr-review-auto", "sfl-pr-review-recovery"\)') {
     throw 'Deployment tiers still include the retired compiled reviewer or recovery workflow.'
+}
+
+foreach ($labelContract in @($files.LabelsJson, $files.LabelSetup)) {
+    if ($labelContract -notmatch 'Deprecated: use gh sfl review; applying this label does not trigger a review') {
+        throw 'The retired sfl-review label still advertises an active review trigger.'
+    }
 }
 
 foreach ($required in @(

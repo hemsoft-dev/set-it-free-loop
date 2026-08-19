@@ -96,6 +96,8 @@ Assert-True ($workflowContent -match 'BASE_ENV_VALID') 'Auditor does not validat
 Assert-True ($workflowContent -match 'EXPECTED_SOURCE_SHA') 'Auditor does not read the canonical manifest source SHA.'
 Assert-True ($workflowContent -match 'OBSERVER_SOURCE_SHA') 'Auditor does not read the observer source pin.'
 Assert-True ($workflowContent -match 'OBSERVER_SOURCE_SHA" != "\$EXPECTED_SOURCE_SHA') 'Auditor does not reject an observer source-pin mismatch.'
+Assert-True ($workflowContent -match 'declares standalone SFL review in') 'Auditor issue text does not cover both supported reviewer manifest forms.'
+Assert-True ($workflowContent -notmatch 'declares \\`sfl-pr-review-auto\\` in') 'Auditor issue text still claims every reviewer manifest uses the component form.'
 
 $mockGh = @'
 gh() {

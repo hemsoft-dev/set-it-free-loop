@@ -413,7 +413,7 @@ jobs:
 
           if [ "$MISSING" -gt 0 ] && [ -z "$EXISTING_ISSUE" ]; then
             ISSUE_BODY=$(printf '%s\n\n## Missing prerequisites\n\n%s## Recovery\n\n%s' \
-              "The repository declares \`sfl-pr-review-auto\` in \`sfl.json\`, but the standalone reviewer is missing or malformed." \
+              "The repository declares standalone SFL review in \`sfl.json\`, but the standalone reviewer is missing or malformed." \
               "$MISSING_ITEMS" \
               "Run \`deployment/scripts/deploy-workflow.ps1 -Tier review\` and \`deployment/governance/setup-labels.ps1\` from \`HemSoft/set-it-free-loop\`.")
             gh issue create --repo "$REPO" \
