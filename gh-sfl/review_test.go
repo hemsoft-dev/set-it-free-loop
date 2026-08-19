@@ -13,6 +13,9 @@ import (
 
 type reviewREST struct {
 	comments            []reviewTriggerComment
+	reactions           []reviewCommentReaction
+	reactionGets        int
+	clearReaction       bool
 	checkRuns           []map[string]any
 	checkRunPages       map[int][]map[string]any
 	headRepo            string
@@ -72,6 +75,12 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 		})
 	case strings.Contains(path, "/comments?"):
 		return decodeTestResponse(response, f.comments)
+	case strings.Contains(path, "/reactions?"):
+		f.reactionGets++
+		if f.clearReaction && f.reactionGets > 1 {
+			return decodeTestResponse(response, []reviewCommentReaction{})
+		}
+		return decodeTestResponse(response, f.reactions)
 	default:
 		return fmt.Errorf("unexpected GET %s", path)
 	}
@@ -460,13 +469,42 @@ func TestReviewCommentTimeUsesImmutableCreatedAt(t *testing.T) {
 	}
 }
 
+func TestWaitForCodexRequestCompletionRecognizesFinishedRequest(t *testing.T) {
+	rest := &reviewREST{reactions: []reviewCommentReaction{{Content: "eyes"}}}
+	rest.reactions[0].User.ID = 12345
+
+	if err := waitForCodexRequestCompletion(rest, "HemSoft", "consumer", 123); err != nil {
+		t.Fatalf("waitForCodexRequestCompletion() error = %v", err)
+	}
+}
+
+func TestWaitForCodexRequestCompletionWaitsForActiveReactionToClear(t *testing.T) {
+	rest := &reviewREST{
+		reactions:     []reviewCommentReaction{{Content: "eyes"}},
+		clearReaction: true,
+	}
+	rest.reactions[0].User.ID = 199175422
+	oldPoll := waitForCodexReactionPoll
+	waitForCodexReactionPoll = func() {}
+	t.Cleanup(func() { waitForCodexReactionPoll = oldPoll })
+
+	if err := waitForCodexRequestCompletion(rest, "HemSoft", "consumer", 123); err != nil {
+		t.Fatalf("waitForCodexRequestCompletion() error = %v", err)
+	}
+	if rest.reactionGets != 2 {
+		t.Fatalf("reaction GETs = %d, want 2", rest.reactionGets)
+	}
+}
+
 func installReviewFakes(t *testing.T, rest restAPI) {
 	t.Helper()
 	oldREST := newRESTClient
 	oldGHExec := ghExec
 	oldWaitForRetryOrdering := waitForRetryOrdering
+	oldWaitForCodexReactionPoll := waitForCodexReactionPoll
 	newRESTClient = func() (restAPI, error) { return rest, nil }
 	waitForRetryOrdering = func() {}
+	waitForCodexReactionPoll = func() {}
 	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
 		if strings.Join(args, " ") != "api user --jq .login" {
 			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected gh call: %v", args)
@@ -477,5 +515,6 @@ func installReviewFakes(t *testing.T, rest restAPI) {
 		newRESTClient = oldREST
 		ghExec = oldGHExec
 		waitForRetryOrdering = oldWaitForRetryOrdering
+		waitForCodexReactionPoll = oldWaitForCodexReactionPoll
 	})
 }

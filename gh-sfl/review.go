@@ -22,6 +22,10 @@ var waitForRetryOrdering = func() {
 	time.Sleep(1100 * time.Millisecond)
 }
 
+var waitForCodexReactionPoll = func() {
+	time.Sleep(2 * time.Second)
+}
+
 type reviewOptions struct {
 	repo  string
 	pr    int
@@ -45,6 +49,13 @@ type reviewTriggerComment struct {
 	UpdatedAt string `json:"updated_at"`
 	User      struct {
 		Login string `json:"login"`
+	} `json:"user"`
+}
+
+type reviewCommentReaction struct {
+	Content string `json:"content"`
+	User    struct {
+		ID int64 `json:"id"`
 	} `json:"user"`
 }
 
@@ -149,6 +160,9 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		retryAuthorizedByTerminal = true
 	}
 	if retryAuthorizedByTerminal {
+		if err := waitForCodexRequestCompletion(client, owner, repo, existing.ID); err != nil {
+			return fmt.Errorf("waiting for the prior Codex review to finish: %w", err)
+		}
 		// GitHub exposes request and gate timestamps at second resolution. Waiting
 		// past a full boundary keeps a retry strictly ordered after the terminal
 		// gate that authorized it, while the observer fails closed on equal times.
@@ -175,6 +189,41 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "Requested subscription-backed Codex review for %s/%s#%d at %.10s: %s\n",
 		owner, repo, opts.pr, pr.HeadSHA, created.HTMLURL)
 	return nil
+}
+
+func waitForCodexRequestCompletion(client restAPI, owner, repo string, commentID int64) error {
+	const (
+		codexConnectorUserID = int64(199175422)
+		attempts             = 60
+	)
+	for attempt := 0; attempt < attempts; attempt++ {
+		active := false
+		for page := 1; ; page++ {
+			var reactions []reviewCommentReaction
+			if err := client.Get(
+				fmt.Sprintf("repos/%s/%s/issues/comments/%d/reactions?per_page=100&page=%d", owner, repo, commentID, page),
+				&reactions,
+			); err != nil {
+				return err
+			}
+			for _, reaction := range reactions {
+				if reaction.User.ID == codexConnectorUserID && reaction.Content == "eyes" {
+					active = true
+					break
+				}
+			}
+			if active || len(reactions) < 100 {
+				break
+			}
+		}
+		if !active {
+			return nil
+		}
+		if attempt < attempts-1 {
+			waitForCodexReactionPoll()
+		}
+	}
+	return errors.New("Codex still has an active review reaction on the prior request")
 }
 
 func requireReviewerEnabled(client restAPI, owner, repo string) error {
