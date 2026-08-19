@@ -77,6 +77,7 @@ foreach ($pattern in @(
     'state.invalidationRuns.length > 0',
     'const publicationState = async () =>',
     'function requiredGateTarget(pull)',
+    'function requiredGateRepair(check, statuses)',
     'const requiredGateSha = requiredGateTarget(confirmedState.pull)',
     'requiredPublished = await github.rest.repos.createCommitStatus({',
     'sha: requiredGateSha',
@@ -175,8 +176,8 @@ $requiredStatusWrites = [regex]::Matches(
     $canonical,
     '(?s)github\.rest\.repos\.createCommitStatus\(\{(.*?)\}\);'
 )
-if ($requiredStatusWrites.Count -ne 9) {
-    throw "Expected nine required-gate status transitions, found $($requiredStatusWrites.Count)."
+if ($requiredStatusWrites.Count -ne 10) {
+    throw "Expected ten required-gate status transitions, found $($requiredStatusWrites.Count)."
 }
 foreach ($statusWrite in $requiredStatusWrites) {
     if ($statusWrite.Groups[1].Value -notmatch '(?m)^\s+sha: (currentHead|requiredGateSha|pull\.head\.sha),\s*$') {
@@ -203,6 +204,36 @@ if (requiredGateTarget(before) !== head || requiredGateTarget(after) !== head) {
 $gateTargetTest | node -
 if ($LASTEXITCODE -ne 0) {
     throw 'Required-gate target fixture tests failed.'
+}
+
+$gateRepairMatch = [regex]::Match(
+    $canonical,
+    '(?s)// BEGIN TESTABLE REQUIRED GATE REPAIR\s*(.*?)\s*// END TESTABLE REQUIRED GATE REPAIR'
+)
+if (-not $gateRepairMatch.Success) {
+    throw 'Could not locate the testable required-gate repair helper.'
+}
+$gateRepairTest = @"
+$($gateRepairMatch.Groups[1].Value)
+const actions = state => ({context: "SFL Reviewer Gate Runner", state, creator: {login: "github-actions[bot]"}});
+const successCheck = {status: "completed", conclusion: "success"};
+const failureCheck = {status: "completed", conclusion: "failure"};
+const cases = [
+  ["partial success publication", successCheck, [actions("pending")], "success"],
+  ["already repaired success", successCheck, [actions("success")], null],
+  ["partial failure publication", failureCheck, [actions("pending")], "failure"],
+  ["manual status cannot suppress repair", successCheck, [{...actions("success"), creator: {login: "HemSoft"}}], "success"],
+  ["in-progress audit is not terminal", {status: "in_progress", conclusion: null}, [actions("pending")], null],
+];
+for (const [name, check, statuses, expected] of cases) {
+  const repair = requiredGateRepair(check, statuses);
+  const actual = repair && repair.state;
+  if (actual !== expected) throw new Error(name + ": got " + actual + ", want " + expected);
+}
+"@
+$gateRepairTest | node -
+if ($LASTEXITCODE -ne 0) {
+    throw 'Required-gate repair fixture tests failed.'
 }
 
 if ($canonical -match [regex]::Escape('if (context.payload.deleted) return;')) {

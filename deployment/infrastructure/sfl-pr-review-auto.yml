@@ -400,8 +400,7 @@ jobs:
                 (check.external_id || "").endsWith(artifactSuffix),
             );
             if (artifactAlreadyConsumed) {
-              core.info("This exact Codex artifact already completed a review request");
-              return;
+              core.info("This exact Codex artifact already completed a review request; verifying its required status");
             }
             const artifactTime = Date.parse(artifact.created_at || artifact.submitted_at || "");
             const isOwnerRequest = comment =>
@@ -533,8 +532,7 @@ jobs:
                    (check.external_id || "").startsWith(`${pendingRequestPrefix}:artifact:`)),
               );
               if (pendingRequestAlreadyTerminal) {
-                core.info("This Codex review request already has a terminal SFL gate");
-                return;
+                core.info("This Codex review request already has a terminal SFL audit; verifying its required status");
               }
             }
             const activeInvalidationRuns = async () => {
@@ -730,6 +728,21 @@ jobs:
                    (candidate.requestTime === requestTime &&
                     candidate.comment.id > request.comment.id)),
               );
+            // BEGIN TESTABLE REQUIRED GATE REPAIR
+            function requiredGateRepair(check, statuses) {
+              if (!check || check.status !== "completed" ||
+                  (check.conclusion !== "success" && check.conclusion !== "failure")) {
+                return null;
+              }
+              const expectedState = check.conclusion;
+              const latestGateStatus = statuses.find(status =>
+                status.context === "SFL Reviewer Gate Runner" &&
+                ((status.creator && status.creator.login) || "").toLowerCase() === "github-actions[bot]");
+              return latestGateStatus && latestGateStatus.state === expectedState
+                ? null
+                : {state: expectedState};
+            }
+            // END TESTABLE REQUIRED GATE REPAIR
             if (reviewContextToken(checks) !== contextToken) {
               core.info("The matching Codex request is not bound to the latest pull context");
               return;
@@ -777,6 +790,21 @@ jobs:
                  (check.external_id || "").startsWith(`${externalIdPrefix}:artifact:`)),
             );
             if (existing) {
+              const repair = requiredGateRepair(existing, latestRequestStatuses);
+              if (repair) {
+                await github.rest.repos.createCommitStatus({
+                  owner,
+                  repo,
+                  sha: currentHead,
+                  state: repair.state,
+                  context: "SFL Reviewer Gate Runner",
+                  target_url: existing.details_url || artifact.html_url || pull.data.html_url,
+                  description: repair.state === "success"
+                    ? "Restored the required status for the completed Codex review"
+                    : "Restored the blocking status for the failed Codex review",
+                });
+                core.info(`Restored the ${repair.state} required status from the terminal SFL audit`);
+              }
               core.info("This Codex review request already has a terminal SFL gate");
               return;
             }
