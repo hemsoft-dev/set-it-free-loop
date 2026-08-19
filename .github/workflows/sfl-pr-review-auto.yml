@@ -115,8 +115,8 @@ jobs:
                 (run.pull_requests || []).some(candidate => candidate.number === pullNumber);
             }
 
-            function requestGateExternalId(pullNumber, currentBase, contextToken, requestId, requestTime) {
-              return `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${requestId}:at:${requestTime}`;
+            function requestGateExternalId(pullNumber, currentBase, contextToken, requestId, requestTime, artifactIdentity) {
+              return `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${requestId}:at:${requestTime}:artifact:${artifactIdentity}`;
             }
             // END TESTABLE CODEX OBSERVER
 
@@ -188,6 +188,46 @@ jobs:
               core.setFailed(reason);
               return;
             }
+            const match = (artifact.body || "").match(
+              /\*\*Reviewed commit:\*\*\s+`([0-9a-f]{7,40})`/i,
+            );
+            let resolvedSha = "";
+            if (match) {
+              try {
+                const commit = await github.rest.repos.getCommit({
+                  owner, repo, ref: match[1],
+                });
+                resolvedSha = commit.data.sha;
+              } catch (error) {
+                if (error.status !== 404 && error.status !== 422) throw error;
+              }
+            }
+            const artifactBindsCurrentHead = eventName === "issue_comment"
+              ? Boolean(match) && resolvedSha.toLowerCase() === currentHead.toLowerCase()
+              : reviewCommit.toLowerCase() === currentHead.toLowerCase() &&
+                (!match || resolvedSha.toLowerCase() === currentHead.toLowerCase());
+            const artifactIdentity = `${eventName === "issue_comment" ? "c" : "r"}${artifactId}`;
+            const artifactSuffix = `:artifact:${artifactIdentity}`;
+            const artifactChecks = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner,
+                repo,
+                ref: currentHead,
+                check_name: "SFL Reviewer Gate Runner",
+                filter: "all",
+                per_page: 100,
+              },
+              response => response.data.check_runs,
+            );
+            const artifactAlreadyConsumed = artifactChecks.some(
+              check => check.app && check.app.id === 15368 &&
+                (check.external_id || "").endsWith(artifactSuffix),
+            );
+            if (artifactAlreadyConsumed) {
+              core.info("This exact Codex artifact already completed a review request");
+              return;
+            }
             const artifactTime = Date.parse(artifact.created_at || artifact.submitted_at || "");
             const triggerComments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pullNumber, per_page: 100,
@@ -228,6 +268,10 @@ jobs:
               );
             };
             const failForPendingInvalidation = async pendingRun => {
+              if (!artifactBindsCurrentHead) {
+                core.info("The Codex artifact does not bind to the current head; it cannot complete the pending request");
+                return;
+              }
               const reason = `${pendingRun.event} invalidation run ${pendingRun.id} is still active; the Codex result cannot supersede its invalidation`;
               let externalId = `sfl-codex-review:pending-invalidation:${pendingRun.id}:artifact:${artifactId}`;
               if (pendingRequest) {
@@ -239,6 +283,7 @@ jobs:
                     contextMatch[1],
                     pendingRequest.comment.id,
                     pendingRequest.requestTime,
+                    artifactIdentity,
                   );
                 }
               }
@@ -291,21 +336,6 @@ jobs:
               per_page: 100,
             });
             const contextToken = reviewContextToken(initialChecks.data.check_runs);
-            const match = (artifact.body || "").match(
-              /\*\*Reviewed commit:\*\*\s+`([0-9a-f]{7,40})`/i,
-            );
-            let resolvedSha = "";
-            if (match) {
-              try {
-                const commit = await github.rest.repos.getCommit({
-                  owner, repo, ref: match[1],
-                });
-                resolvedSha = commit.data.sha;
-              } catch (error) {
-                if (error.status !== 404 && error.status !== 422) throw error;
-              }
-            }
-
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
             const conflictingBaseRequest = triggerComments.some(
               comment => isOwnerRequest(comment) &&
@@ -394,7 +424,7 @@ jobs:
               return;
             }
             const externalId = requestGateExternalId(
-              pullNumber, currentBase, contextToken, request.comment.id, requestTime,
+              pullNumber, currentBase, contextToken, request.comment.id, requestTime, artifactIdentity,
             );
             const existing = checks.data.check_runs.find(
               check => check.app && check.app.id === 15368 &&

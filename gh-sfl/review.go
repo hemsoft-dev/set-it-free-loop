@@ -441,7 +441,8 @@ func hasTerminalGateForRequest(
 			return false, err
 		}
 		for _, check := range response.CheckRuns {
-			if check.App.ID == 15368 && check.Status == "completed" && check.ExternalID == expected {
+			if check.App.ID == 15368 && check.Status == "completed" &&
+				(check.ExternalID == expected || strings.HasPrefix(check.ExternalID, expected+":artifact:")) {
 				return true, nil
 			}
 		}

@@ -291,7 +291,7 @@ func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 		}{Login: "HemSoft"},
 	}}, checkRuns: []map[string]any{{
 		"status":      "completed",
-		"external_id": fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d", strings.Repeat("a", 40), requestMillis),
+		"external_id": fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d:artifact:r456", strings.Repeat("a", 40), requestMillis),
 		"app":         map[string]any{"id": 15368},
 	}}}
 	installReviewFakes(t, rest)

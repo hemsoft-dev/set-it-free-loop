@@ -43,9 +43,14 @@ foreach ($pattern in @(
     'context=${contextToken}',
     'function requestGateExternalId(',
     'request:${requestId}:at:${requestTime}',
+    ':artifact:${artifactIdentity}',
+    'const artifactAlreadyConsumed = artifactChecks.some(',
+    'This exact Codex artifact already completed a review request',
     'const pendingRequest = candidateRequests[0]',
     'contextMatch = /;context=(.*?) -->/.exec',
     'pendingRequest.comment.id',
+    'const artifactBindsCurrentHead = eventName === "issue_comment"',
+    'it cannot complete the pending request',
     'const hasNewerMatchingRequest = comments =>',
     'comment.id > request.comment.id',
     'A newer Codex review request superseded this artifact before publication',
@@ -91,6 +96,13 @@ foreach ($pattern in @(
 
 if ($canonical -match [regex]::Escape('if (context.payload.deleted) return;')) {
     throw 'Base-branch deletion events are still discarded instead of invalidating gates after a rename.'
+}
+
+$artifactBindingIndex = $canonical.IndexOf('const artifactBindsCurrentHead')
+$pendingRequestIndex = $canonical.IndexOf('const pendingRequest = candidateRequests[0]')
+if ($artifactBindingIndex -lt 0 -or $pendingRequestIndex -lt 0 -or
+    $artifactBindingIndex -gt $pendingRequestIndex) {
+    throw 'Codex artifact binding is not validated before pending request selection.'
 }
 
 $helperMatches = [regex]::Matches(
