@@ -341,13 +341,15 @@ jobs:
           set -euo pipefail
 
           EXPECTED=0
-          if MANIFEST=$(gh api "repos/$REPO/contents/sfl.json" --jq '.content' 2>/dev/null); then
-            if echo "$MANIFEST" | base64 --decode | jq -e \
+          for MANIFEST_PATH in .sfl/sfl.json sfl.json; do
+            if MANIFEST=$(gh api "repos/$REPO/contents/$MANIFEST_PATH" --jq '.content' 2>/dev/null) && \
+              echo "$MANIFEST" | base64 --decode | jq -e \
               '(.components | index("sfl-pr-review-auto") != null) or
                ((.addons // []) | any(. == "pr-review"))' >/dev/null; then
               EXPECTED=1
+              break
             fi
-          fi
+          done
 
           if [ "$EXPECTED" -eq 0 ]; then
             echo "sfl_review_prerequisites_missing=0" >> "$GITHUB_OUTPUT"

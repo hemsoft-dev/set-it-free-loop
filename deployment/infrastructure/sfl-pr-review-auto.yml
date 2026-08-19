@@ -26,6 +26,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      actions: read
       checks: write
       contents: read
       issues: read
@@ -154,6 +155,46 @@ jobs:
             }
             const currentBase = pull.data.base.sha;
             const currentHead = pull.data.head.sha;
+            const activeContextRuns = async () => {
+              const runs = await github.paginate(
+                github.rest.actions.listWorkflowRuns,
+                {
+                  owner,
+                  repo,
+                  workflow_id: "sfl-pr-review-auto.yml",
+                  event: "pull_request_target",
+                  per_page: 100,
+                },
+                response => response.data.workflow_runs,
+              );
+              return runs.filter(
+                run => run.id !== context.runId && run.status !== "completed" &&
+                  (run.pull_requests || []).some(candidate => candidate.number === pullNumber),
+              );
+            };
+            let pendingContextRuns = await activeContextRuns();
+            for (let attempt = 0; pendingContextRuns.length > 0 && attempt < 12; attempt += 1) {
+              core.info(`Waiting for pull-context run ${pendingContextRuns[0].id} before publishing the Codex result`);
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              pendingContextRuns = await activeContextRuns();
+            }
+            if (pendingContextRuns.length > 0) {
+              const reason = `Pull-context run ${pendingContextRuns[0].id} is still active; the Codex result cannot supersede its invalidation`;
+              await github.rest.checks.create({
+                owner,
+                repo,
+                name: "SFL Reviewer Gate Runner",
+                head_sha: currentHead,
+                status: "completed",
+                conclusion: "failure",
+                completed_at: new Date().toISOString(),
+                details_url: artifact.html_url || pull.data.html_url,
+                external_id: `sfl-codex-review:pending-context:${pendingContextRuns[0].id}:artifact:${artifactId}`,
+                output: {title: "SFL Codex review blocked", summary: reason},
+              });
+              core.setFailed(reason);
+              return;
+            }
             const reviewContextToken = checkRuns => {
               const invalidation = checkRuns.filter(
                 check => check.app && check.app.id === 15368 &&
