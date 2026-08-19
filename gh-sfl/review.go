@@ -133,6 +133,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 	var existing reviewTriggerComment
 	retryAuthorizedByTerminal := false
+	retryNeedsReactionMaterialization := false
 	if len(requests) > 0 {
 		existing = requests[len(requests)-1]
 	}
@@ -156,11 +157,14 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 			if !recoverable {
 				return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
 			}
+			retryNeedsReactionMaterialization = true
 		}
 		retryAuthorizedByTerminal = true
 	}
 	if retryAuthorizedByTerminal {
-		if err := waitForCodexRequestCompletion(client, owner, repo, existing.ID); err != nil {
+		if err := waitForCodexRequestCompletion(
+			client, owner, repo, existing.ID, retryNeedsReactionMaterialization,
+		); err != nil {
 			return fmt.Errorf("waiting for the prior Codex review to finish: %w", err)
 		}
 		// GitHub exposes request and gate timestamps at second resolution. Waiting
@@ -191,11 +195,17 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	return nil
 }
 
-func waitForCodexRequestCompletion(client restAPI, owner, repo string, commentID int64) error {
+func waitForCodexRequestCompletion(
+	client restAPI,
+	owner, repo string,
+	commentID int64,
+	requireMaterialization bool,
+) error {
 	const (
 		codexConnectorUserID = int64(199175422)
 		attempts             = 60
 	)
+	seenActive := false
 	for attempt := 0; attempt < attempts; attempt++ {
 		active := false
 		for page := 1; ; page++ {
@@ -216,7 +226,8 @@ func waitForCodexRequestCompletion(client restAPI, owner, repo string, commentID
 				break
 			}
 		}
-		if !active {
+		seenActive = seenActive || active
+		if !active && (!requireMaterialization || seenActive || attempt == attempts-1) {
 			return nil
 		}
 		if attempt < attempts-1 {

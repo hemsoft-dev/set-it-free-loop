@@ -473,7 +473,7 @@ func TestWaitForCodexRequestCompletionRecognizesFinishedRequest(t *testing.T) {
 	rest := &reviewREST{reactions: []reviewCommentReaction{{Content: "eyes"}}}
 	rest.reactions[0].User.ID = 12345
 
-	if err := waitForCodexRequestCompletion(rest, "HemSoft", "consumer", 123); err != nil {
+	if err := waitForCodexRequestCompletion(rest, "HemSoft", "consumer", 123, false); err != nil {
 		t.Fatalf("waitForCodexRequestCompletion() error = %v", err)
 	}
 }
@@ -488,11 +488,25 @@ func TestWaitForCodexRequestCompletionWaitsForActiveReactionToClear(t *testing.T
 	waitForCodexReactionPoll = func() {}
 	t.Cleanup(func() { waitForCodexReactionPoll = oldPoll })
 
-	if err := waitForCodexRequestCompletion(rest, "HemSoft", "consumer", 123); err != nil {
+	if err := waitForCodexRequestCompletion(rest, "HemSoft", "consumer", 123, true); err != nil {
 		t.Fatalf("waitForCodexRequestCompletion() error = %v", err)
 	}
 	if rest.reactionGets != 2 {
 		t.Fatalf("reaction GETs = %d, want 2", rest.reactionGets)
+	}
+}
+
+func TestWaitForCodexRequestCompletionAllowsMaterializationGrace(t *testing.T) {
+	rest := &reviewREST{}
+	oldPoll := waitForCodexReactionPoll
+	waitForCodexReactionPoll = func() {}
+	t.Cleanup(func() { waitForCodexReactionPoll = oldPoll })
+
+	if err := waitForCodexRequestCompletion(rest, "HemSoft", "consumer", 123, true); err != nil {
+		t.Fatalf("waitForCodexRequestCompletion() error = %v", err)
+	}
+	if rest.reactionGets != 60 {
+		t.Fatalf("reaction GETs = %d, want 60", rest.reactionGets)
 	}
 }
 
