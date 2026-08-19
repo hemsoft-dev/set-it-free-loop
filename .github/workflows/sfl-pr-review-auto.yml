@@ -890,7 +890,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - name: Fail the immutable-head gate until the new diff is reviewed
+      - name: Publish the blocking gate until the new diff is reviewed
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           github-token: ${{ github.token }}
@@ -1011,7 +1011,7 @@ jobs:
               external_id: invalidationId,
               output: {title: "SFL Codex review invalidated", summary: reason},
             });
-            core.setFailed(reason);
+            core.info(reason);
 
   invalidate-base-advance:
     name: Invalidate Codex reviews after base advance
