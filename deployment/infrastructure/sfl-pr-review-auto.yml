@@ -389,7 +389,7 @@ jobs:
               {owner, repo, ref: currentHead, per_page: 100},
             );
             const requestTargetPrefix = `https://github.com/${owner}/${repo}/pull/${pullNumber}#issuecomment-`.toLowerCase();
-            const registeredRequestIds = new Set(requestStatuses.flatMap(status => {
+            const registeredRequestIdsFromStatuses = statuses => new Set(statuses.flatMap(status => {
               if (status.context !== "SFL Codex Review Request Registry" ||
                   ((status.creator && status.creator.login) || "").toLowerCase() !== owner.toLowerCase()) {
                 return [];
@@ -399,6 +399,7 @@ jobs:
               const requestId = Number(targetURL.slice(requestTargetPrefix.length));
               return Number.isSafeInteger(requestId) && requestId > 0 ? [requestId] : [];
             }));
+            const registeredRequestIds = registeredRequestIdsFromStatuses(requestStatuses);
 
             const isOwnerRequest = comment =>
               ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
@@ -411,7 +412,7 @@ jobs:
             };
             const requestOrder = (left, right) =>
               left.requestTime - right.requestTime || left.comment.id - right.comment.id;
-            const requestCandidates = (comments, beforeTime) => comments.map(
+            const requestCandidates = (comments, beforeTime, registrations = registeredRequestIds) => comments.map(
               comment => ({
                 comment,
                 requestTime: Date.parse(comment.created_at || ""),
@@ -419,7 +420,7 @@ jobs:
               }),
             ).filter(
               ({comment, requestTime, updatedTime}) => isOwnerRequest(comment) &&
-                registeredRequestIds.has(comment.id) &&
+                registrations.has(comment.id) &&
                 (comment.body || "").includes(baseMarker) &&
                 (comment.body || "") === `@codex review\n\n${baseMarker}context=${requestContextFromBody(comment.body)} -->` &&
                 Number.isFinite(requestTime) && requestTime <= beforeTime &&
@@ -442,10 +443,12 @@ jobs:
                   Number.isFinite(completedTime) && completedTime < nextRequestTime;
               });
             };
-            const eligibleReviewRequests = (comments, checkRuns, beforeTime) => {
+            const eligibleReviewRequests = (
+              comments, checkRuns, beforeTime, registrations = registeredRequestIds,
+            ) => {
               const previousByContext = new Map();
               const eligible = [];
-              for (const candidate of requestCandidates(comments, beforeTime)) {
+              for (const candidate of requestCandidates(comments, beforeTime, registrations)) {
                 const requestContext = requestContextFromBody(candidate.comment.body);
                 if (!requestContext) continue;
                 const previous = previousByContext.get(requestContext);
@@ -654,8 +657,13 @@ jobs:
               response => response.data.check_runs,
             );
             const requestTime = request && request.requestTime;
-            const hasNewerMatchingRequest = (comments, checkRuns) =>
-              eligibleReviewRequests(comments, checkRuns, Number.POSITIVE_INFINITY).some(
+            const hasNewerMatchingRequest = (comments, checkRuns, statuses) =>
+              eligibleReviewRequests(
+                comments,
+                checkRuns,
+                Number.POSITIVE_INFINITY,
+                registeredRequestIdsFromStatuses(statuses),
+              ).some(
                 candidate => candidate.contextToken === contextToken &&
                   (candidate.requestTime > requestTime ||
                    (candidate.requestTime === requestTime &&
@@ -685,7 +693,13 @@ jobs:
               },
               response => response.data.check_runs,
             );
-            if (hasNewerMatchingRequest(latestTriggerComments, latestRequestChecks)) {
+            const latestRequestStatuses = await github.paginate(
+              github.rest.repos.listCommitStatusesForRef,
+              {owner, repo, ref: currentHead, per_page: 100},
+            );
+            if (hasNewerMatchingRequest(
+              latestTriggerComments, latestRequestChecks, latestRequestStatuses,
+            )) {
               core.info("A newer Codex review request superseded this artifact before publication");
               return;
             }
@@ -734,47 +748,66 @@ jobs:
               external_id: externalId,
               output: {title: "SFL Codex review validating", summary: result.reason},
             });
-            const confirmedPull = await github.rest.pulls.get({
-              owner, repo, pull_number: pullNumber,
-            });
-            const confirmedOpenPulls = await openPullsForCurrentHead();
-            const confirmedTriggerComments = await github.paginate(github.rest.issues.listComments, {
-              owner, repo, issue_number: pullNumber, per_page: 100,
-            });
-            const confirmedChecks = await github.paginate(
-              github.rest.checks.listForRef,
-              {
-                owner,
-                repo,
-                ref: currentHead,
-                check_name: "SFL Reviewer Gate Runner",
-                filter: "all",
-                per_page: 100,
-              },
-              response => response.data.check_runs,
-            );
-            const confirmedLifecycleToken = await pullLifecycleToken();
-            const confirmedInvalidationRuns = await activeInvalidationRuns();
-            const supersededRequest = hasNewerMatchingRequest(
-              confirmedTriggerComments, confirmedChecks,
-            );
-            const lifecycleChanged = confirmedLifecycleToken !== initialLifecycleToken;
-            if (confirmedPull.data.state !== "open" ||
-                confirmedPull.data.head.sha !== currentHead ||
-                confirmedPull.data.base.sha !== currentBase ||
-                confirmedOpenPulls.length !== 1 ||
-                confirmedOpenPulls[0].number !== pullNumber ||
-                supersededRequest ||
-                lifecycleChanged ||
-                confirmedInvalidationRuns.length > 0 ||
-                reviewContextToken(confirmedChecks) !== contextToken) {
-              const changedReason = supersededRequest
-                ? "A newer Codex review request superseded this result while it was being published"
-                : lifecycleChanged
-                  ? "The pull request was closed or reopened while the Codex result was being published"
-                  : confirmedInvalidationRuns.length > 0
-                    ? "An SFL invalidation started while the Codex result was being published"
-                    : "The pull request context changed while the Codex result was being published";
+            const publicationState = async () => {
+              const [
+                currentPull,
+                openPulls,
+                comments,
+                checkRuns,
+                statuses,
+                lifecycleToken,
+                invalidationRuns,
+              ] = await Promise.all([
+                github.rest.pulls.get({owner, repo, pull_number: pullNumber}),
+                openPullsForCurrentHead(),
+                github.paginate(github.rest.issues.listComments, {
+                  owner, repo, issue_number: pullNumber, per_page: 100,
+                }),
+                github.paginate(
+                  github.rest.checks.listForRef,
+                  {
+                    owner,
+                    repo,
+                    ref: currentHead,
+                    check_name: "SFL Reviewer Gate Runner",
+                    filter: "all",
+                    per_page: 100,
+                  },
+                  response => response.data.check_runs,
+                ),
+                github.paginate(
+                  github.rest.repos.listCommitStatusesForRef,
+                  {owner, repo, ref: currentHead, per_page: 100},
+                ),
+                pullLifecycleToken(),
+                activeInvalidationRuns(),
+              ]);
+              return {
+                pull: currentPull.data,
+                openPulls,
+                contextToken: reviewContextToken(checkRuns),
+                supersededRequest: hasNewerMatchingRequest(comments, checkRuns, statuses),
+                lifecycleChanged: lifecycleToken !== initialLifecycleToken,
+                invalidationRuns,
+              };
+            };
+            const publicationChanged = state => state.pull.state !== "open" ||
+              state.pull.head.sha !== currentHead ||
+              state.pull.base.sha !== currentBase ||
+              state.openPulls.length !== 1 ||
+              state.openPulls[0].number !== pullNumber ||
+              state.supersededRequest ||
+              state.lifecycleChanged ||
+              state.invalidationRuns.length > 0 ||
+              state.contextToken !== contextToken;
+            const publicationChangeReason = state => state.supersededRequest
+              ? "A newer Codex review request superseded this result while it was being published"
+              : state.lifecycleChanged
+                ? "The pull request was closed or reopened while the Codex result was being published"
+                : state.invalidationRuns.length > 0
+                  ? "An SFL invalidation started while the Codex result was being published"
+                  : "The pull request context changed while the Codex result was being published";
+            const failPublishedSuccess = async changedReason => {
               await github.rest.checks.update({
                 owner,
                 repo,
@@ -787,6 +820,10 @@ jobs:
                 output: {title: "SFL Codex review invalidated", summary: changedReason},
               });
               core.setFailed(changedReason);
+            };
+            const confirmedState = await publicationState();
+            if (publicationChanged(confirmedState)) {
+              await failPublishedSuccess(publicationChangeReason(confirmedState));
               return;
             }
             await github.rest.checks.update({
@@ -800,22 +837,9 @@ jobs:
               external_id: externalId,
               output: {title, summary: result.reason},
             });
-            const postSuccessOpenPulls = await openPullsForCurrentHead();
-            if (postSuccessOpenPulls.length !== 1 ||
-                postSuccessOpenPulls[0].number !== pullNumber) {
-              const changedReason = "The pull request head became shared while Codex success was being published";
-              await github.rest.checks.update({
-                owner,
-                repo,
-                check_run_id: published.data.id,
-                status: "completed",
-                conclusion: "failure",
-                completed_at: new Date().toISOString(),
-                details_url: detailsURL,
-                external_id: externalId,
-                output: {title: "SFL Codex review invalidated", summary: changedReason},
-              });
-              core.setFailed(changedReason);
+            const postSuccessState = await publicationState();
+            if (publicationChanged(postSuccessState)) {
+              await failPublishedSuccess(publicationChangeReason(postSuccessState));
             }
 
   invalidate-pull-context:

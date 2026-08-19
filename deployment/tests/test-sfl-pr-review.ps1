@@ -49,7 +49,7 @@ foreach ($pattern in @(
     'sfl-codex-review:request-pending:${commentId}',
     'const terminalRequestIdentity = `:request:${commentId}:at:`',
     'This registered Codex review request already has a terminal SFL gate',
-    'registeredRequestIds.has(comment.id)',
+    'registrations.has(comment.id)',
     'const publishedCompletedAt = new Date().toISOString()',
     'completed_at: publishedCompletedAt',
     'status: "in_progress"',
@@ -57,11 +57,12 @@ foreach ($pattern in @(
     'conclusion: "success"',
     'GET /repos/{owner}/{repo}/issues/{issue_number}/events',
     'event.event === "closed" || event.event === "reopened"',
-    'confirmedLifecycleToken !== initialLifecycleToken',
-    'confirmedInvalidationRuns.length > 0',
-    'const postSuccessOpenPulls = await openPullsForCurrentHead()',
-    'The pull request head became shared while Codex success was being published',
-    'confirmedOpenPulls.length !== 1',
+    'lifecycleToken !== initialLifecycleToken',
+    'state.invalidationRuns.length > 0',
+    'const publicationState = async () =>',
+    'const postSuccessState = await publicationState()',
+    'state.openPulls.length !== 1',
+    'registeredRequestIdsFromStatuses(statuses)',
     'context=${contextToken}',
     'function requestGateExternalId(',
     'function requestGateExternalIdPrefix(',
@@ -75,9 +76,9 @@ foreach ($pattern in @(
     'pendingRequest.comment.id',
     'const artifactBindsCurrentHead = eventName === "issue_comment"',
     'it cannot complete the pending request',
-    'const eligibleReviewRequests = (comments, checkRuns, beforeTime) =>',
+    'const eligibleReviewRequests = (',
     'completedTime < nextRequestTime',
-    'const hasNewerMatchingRequest = (comments, checkRuns) =>',
+    'const hasNewerMatchingRequest = (comments, checkRuns, statuses) =>',
     'comment.id > request.comment.id',
     'A newer Codex review request superseded this artifact before publication',
     'supersededRequest',
@@ -152,7 +153,7 @@ if ($artifactBindingIndex -lt 0 -or $pendingRequestIndex -lt 0 -or
 
 $inProgressIndex = $canonical.IndexOf('status: "in_progress"')
 $confirmationIndex = if ($inProgressIndex -ge 0) {
-    $canonical.IndexOf('const confirmedPull = await github.rest.pulls.get', $inProgressIndex)
+    $canonical.IndexOf('const confirmedState = await publicationState()', $inProgressIndex)
 } else { -1 }
 $successIndex = if ($confirmationIndex -ge 0) {
     $canonical.IndexOf('conclusion: "success"', $confirmationIndex)
@@ -218,6 +219,16 @@ const sameSecondCandidates = eligibleReviewRequests([first], [], Date.parse(firs
   .map(candidate => candidate.comment.id);
 if (JSON.stringify(sameSecondCandidates) !== JSON.stringify([1])) {
   throw new Error(`same-second request lookup: got ${JSON.stringify(sameSecondCandidates)}, want [1]`);
+}
+const refreshedRegistrations = new Set([1, 2, 3, 4, 5]);
+const refreshedCandidates = eligibleReviewRequests(
+  [first, unregistered],
+  [terminal("2026-08-19T00:00:01.500Z")],
+  Number.POSITIVE_INFINITY,
+  refreshedRegistrations,
+).map(candidate => candidate.comment.id);
+if (JSON.stringify(refreshedCandidates) !== JSON.stringify([1, 5])) {
+  throw new Error(`refreshed registrations: got ${JSON.stringify(refreshedCandidates)}, want [1,5]`);
 }
 for (const fixture of cases) {
   const got = eligibleReviewRequests(fixture.comments, fixture.checks, Number.POSITIVE_INFINITY)
