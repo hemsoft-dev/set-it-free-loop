@@ -440,13 +440,14 @@ func TestReviewerAddonRequiresSubscriptionBackedSource(t *testing.T) {
 		t.Fatalf("legacy reviewer source error = %v", err)
 	}
 
-	content := reviewerSourcePlaceholder + "\nname: SFL Codex Review Observer\non:\n  push:\n" + reviewerPushBranchPlaceholder + "\nif: github.event.sender.id == 199175422\n"
+	content := reviewerSourcePlaceholder + "\nname: SFL Codex Review Observer\non:\n  push:\n" + reviewerPushBranchPlaceholder + "\nenv:\n" + reviewerBaseBranchPlaceholder + "\nif: github.event.sender.id == 199175422\n"
 	prepared, err := prepareWorkflowSource("sfl-pr-review-auto.yml", content, strings.Repeat("b", 40), "HemSoft/consumer", "release/next")
 	if err != nil {
 		t.Fatalf("subscription-backed reviewer source rejected: %v", err)
 	}
 	if strings.Contains(prepared, "@main") || !strings.Contains(prepared, "@"+strings.Repeat("b", 40)) ||
-		!strings.HasPrefix(prepared, "# Deployed from:") || !strings.Contains(prepared, "branches: ['release/next']") {
+		!strings.HasPrefix(prepared, "# Deployed from:") || !strings.Contains(prepared, "branches: ['release/next']") ||
+		!strings.Contains(prepared, "SFL_REVIEW_BASE_BRANCH: 'release/next'") {
 		t.Fatalf("prepared reviewer source lacks immutable provenance: %q", prepared)
 	}
 	if _, err := prepareWorkflowSource("repo-audit.md", "legacy content", strings.Repeat("a", 40), "HemSoft/consumer", "main"); err != nil {

@@ -15,6 +15,9 @@ on:
 
 permissions: {}
 
+env:
+  SFL_REVIEW_BASE_BRANCH: main
+
 jobs:
   observe:
     name: Observe authenticated Codex review
@@ -155,6 +158,25 @@ jobs:
             }
             const currentBase = pull.data.base.sha;
             const currentHead = pull.data.head.sha;
+            const configuredBaseBranch = process.env.SFL_REVIEW_BASE_BRANCH || "";
+            if (!configuredBaseBranch) throw new Error("The deployed SFL review base branch is empty");
+            if (defaultBranch !== configuredBaseBranch) {
+              const reason = `Repository default branch ${defaultBranch} differs from deployed SFL review base ${configuredBaseBranch}; redeploy SFL before accepting review results`;
+              await github.rest.checks.create({
+                owner,
+                repo,
+                name: "SFL Reviewer Gate Runner",
+                head_sha: currentHead,
+                status: "completed",
+                conclusion: "failure",
+                completed_at: new Date().toISOString(),
+                details_url: artifact.html_url || pull.data.html_url,
+                external_id: `sfl-codex-review:default-branch-mismatch:${encodeURIComponent(configuredBaseBranch)}:${encodeURIComponent(defaultBranch)}`,
+                output: {title: "SFL Codex review blocked", summary: reason},
+              });
+              core.setFailed(reason);
+              return;
+            }
             const activeContextRuns = async () => {
               const response = await github.rest.actions.listWorkflowRuns({
                 owner,

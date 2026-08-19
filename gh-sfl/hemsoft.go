@@ -370,6 +370,7 @@ func sourceWorkflowPath(name string) string {
 
 const reviewerSourcePlaceholder = "# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main"
 const reviewerPushBranchPlaceholder = "    branches: [main]"
+const reviewerBaseBranchPlaceholder = "  SFL_REVIEW_BASE_BRANCH: main"
 
 func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo, defaultBranch string) (string, error) {
 	if workflow != "sfl-pr-review-auto.yml" {
@@ -378,7 +379,8 @@ func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo, defaultBran
 	if !strings.Contains(content, "name: SFL Codex Review Observer") ||
 		!strings.Contains(content, "github.event.sender.id == 199175422") ||
 		!strings.Contains(content, reviewerSourcePlaceholder) ||
-		!strings.Contains(content, reviewerPushBranchPlaceholder) {
+		!strings.Contains(content, reviewerPushBranchPlaceholder) ||
+		!strings.Contains(content, reviewerBaseBranchPlaceholder) {
 		return "", fmt.Errorf("the SFL source %s selected for %s predates the subscription-backed Codex reviewer; deploy or sync from a release containing SFL Codex Review Observer", sourceSHA, targetRepo)
 	}
 	if strings.TrimSpace(defaultBranch) == "" {
@@ -388,6 +390,7 @@ func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo, defaultBran
 	content = strings.Replace(content, reviewerSourcePlaceholder, "# Source: "+sourceRef, 1)
 	escapedBranch := strings.ReplaceAll(defaultBranch, "'", "''")
 	content = strings.Replace(content, reviewerPushBranchPlaceholder, "    branches: ['"+escapedBranch+"']", 1)
+	content = strings.Replace(content, reviewerBaseBranchPlaceholder, "  SFL_REVIEW_BASE_BRANCH: '"+escapedBranch+"'", 1)
 	prefix := "# Deployed from: " + sourceRef + "\n" +
 		"# To upgrade: re-run deploy-workflow.ps1 at the desired SHA\n"
 	return prefix + content, nil

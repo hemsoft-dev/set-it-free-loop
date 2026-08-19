@@ -54,5 +54,11 @@ function Add-SflYamlSourcePin {
         "    branches: ['$escapedDefaultBranch']",
         1
     )
+    $reviewBasePattern = "(?m)^  SFL_REVIEW_BASE_BRANCH: (?:main|'(?:[^']|'')*')$"
+    $withoutExistingPin = ([regex]::new($reviewBasePattern)).Replace(
+        $withoutExistingPin,
+        "  SFL_REVIEW_BASE_BRANCH: '$escapedDefaultBranch'",
+        1
+    )
     return "# Deployed from: $SourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n$withoutExistingPin"
 }

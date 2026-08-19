@@ -30,6 +30,8 @@ foreach ($pattern in @(
     'comment.updated_at || comment.created_at',
     'pull.data.state !== "open"',
     'SFL reviews require the default branch',
+    'SFL_REVIEW_BASE_BRANCH: main',
+    'differs from deployed SFL review base',
     'types: [opened, reopened, edited, synchronize]',
     'sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}',
     'sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}',
