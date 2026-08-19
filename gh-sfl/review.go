@@ -18,6 +18,10 @@ import (
 
 const codexReviewCommand = "@codex review"
 
+var waitForRetryOrdering = func() {
+	time.Sleep(1100 * time.Millisecond)
+}
+
 type reviewOptions struct {
 	repo  string
 	pr    int
@@ -117,6 +121,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("checking existing Codex review requests: %w", findErr)
 	}
 	var existing reviewTriggerComment
+	retryAuthorizedByTerminal := false
 	if len(requests) > 0 {
 		existing = requests[len(requests)-1]
 	}
@@ -141,6 +146,13 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 				return fmt.Errorf("the latest Codex review request for %s/%s#%d is still outstanding — wait for its result before using --retry", owner, repo, opts.pr)
 			}
 		}
+		retryAuthorizedByTerminal = true
+	}
+	if retryAuthorizedByTerminal {
+		// GitHub exposes request and gate timestamps at second resolution. Waiting
+		// past a full boundary keeps a retry strictly ordered after the terminal
+		// gate that authorized it, while the observer fails closed on equal times.
+		waitForRetryOrdering()
 	}
 
 	body := codexReviewCommand + "\n\n" + marker
@@ -517,7 +529,7 @@ func canRecoverFromOverlappingRequest(
 		if err != nil {
 			return false, fmt.Errorf("terminal gate for prior request %d has invalid completed_at: %w", requests[index].ID, err)
 		}
-		return completedAt.After(latestTime), nil
+		return !completedAt.Before(latestTime), nil
 	}
 	return false, nil
 }

@@ -382,6 +382,51 @@ func TestRunReviewRetryRecoversFromOverlappingRequest(t *testing.T) {
 	}
 }
 
+func TestRunReviewRetryRecoversFromSameSecondOverlap(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	firstCreated := "2026-08-19T00:00:00Z"
+	secondCreated := "2026-08-19T00:00:01Z"
+	firstMillis := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC).UnixMilli()
+	marker := codexReviewCommand + "\n\n" + codexReviewMarker(head, base, "none")
+	comment := func(id int64, createdAt string) reviewTriggerComment {
+		return reviewTriggerComment{
+			ID:        id,
+			Body:      marker,
+			HTMLURL:   fmt.Sprintf("https://github.test/request/%d", id),
+			CreatedAt: createdAt,
+			User: struct {
+				Login string `json:"login"`
+			}{Login: "HemSoft"},
+		}
+	}
+	rest := &reviewREST{
+		comments: []reviewTriggerComment{
+			comment(123, firstCreated),
+			comment(124, secondCreated),
+		},
+		checkRuns: []map[string]any{{
+			"status":       "completed",
+			"completed_at": secondCreated,
+			"external_id":  fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d:artifact:r456", base, firstMillis),
+			"app":          map[string]any{"id": 15368},
+		}},
+	}
+	installReviewFakes(t, rest)
+	waits := 0
+	waitForRetryOrdering = func() { waits++ }
+
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runReview() same-second overlap error = %v", err)
+	}
+	if rest.posts != 1 {
+		t.Fatalf("same-second overlap posts = %d, want 1", rest.posts)
+	}
+	if waits != 1 {
+		t.Fatalf("same-second overlap waits = %d, want 1", waits)
+	}
+}
+
 func TestRunReviewRetryRejectsOutstandingRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	rest := &reviewREST{comments: []reviewTriggerComment{{
@@ -419,7 +464,9 @@ func installReviewFakes(t *testing.T, rest restAPI) {
 	t.Helper()
 	oldREST := newRESTClient
 	oldGHExec := ghExec
+	oldWaitForRetryOrdering := waitForRetryOrdering
 	newRESTClient = func() (restAPI, error) { return rest, nil }
+	waitForRetryOrdering = func() {}
 	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
 		if strings.Join(args, " ") != "api user --jq .login" {
 			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected gh call: %v", args)
@@ -429,5 +476,6 @@ func installReviewFakes(t *testing.T, rest restAPI) {
 	t.Cleanup(func() {
 		newRESTClient = oldREST
 		ghExec = oldGHExec
+		waitForRetryOrdering = oldWaitForRetryOrdering
 	})
 }
