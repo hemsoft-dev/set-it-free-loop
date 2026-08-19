@@ -30,6 +30,7 @@ foreach ($pattern in @(
     'comment.updated_at || comment.created_at',
     'github.rest.actions.getWorkflowRun',
     'Date.parse(check.completed_at || "") > baseAdvanceTime',
+    'successful Codex gate completed after this context change',
     'name: "SFL Reviewer Gate Runner"',
     'check.app.id === 15368',
     'action: "success"',

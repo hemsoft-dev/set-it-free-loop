@@ -245,6 +245,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      actions: read
       checks: write
       contents: read
     steps:
@@ -255,6 +256,35 @@ jobs:
           script: |
             const {owner, repo} = context.repo;
             const pull = context.payload.pull_request;
+            const workflowRun = await github.rest.actions.getWorkflowRun({
+              owner, repo, run_id: context.runId,
+            });
+            const contextChangeTime = Date.parse(workflowRun.data.created_at || "");
+            if (!Number.isFinite(contextChangeTime)) {
+              throw new Error("Could not determine the pull-context change event time");
+            }
+            const reviewerChecks = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner,
+                repo,
+                ref: pull.head.sha,
+                check_name: "SFL Reviewer Gate Runner",
+                filter: "all",
+                per_page: 100,
+              },
+              response => response.data.check_runs,
+            );
+            const newerSuccess = reviewerChecks.some(
+              check => check.app && check.app.id === 15368 &&
+                check.conclusion === "success" &&
+                Number.isFinite(Date.parse(check.completed_at || "")) &&
+                Date.parse(check.completed_at || "") > contextChangeTime,
+            );
+            if (newerSuccess) {
+              core.info(`Pull request #${pull.number} already has a successful Codex gate completed after this context change`);
+              return;
+            }
             const reason = context.payload.action === "edited"
               ? `Pull request base changed to ${pull.base.ref} at ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`
               : `Pull request #${pull.number} opened or reopened for ${pull.base.ref} at ${pull.base.sha}; request a Codex review for this exact pull request context.`;
