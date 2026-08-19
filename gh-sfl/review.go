@@ -542,7 +542,7 @@ func findRegisteredCodexRequestIDs(
 	headSHA string,
 ) (map[int64]bool, error) {
 	registered := map[int64]bool{}
-	targetMarker := fmt.Sprintf("/%s/%s/pull/%d#issuecomment-", owner, repo, prNumber)
+	targetMarker := strings.ToLower(fmt.Sprintf("/%s/%s/pull/%d#issuecomment-", owner, repo, prNumber))
 	for page := 1; ; page++ {
 		var statuses []reviewRequestStatus
 		if err := client.Get(
@@ -556,11 +556,12 @@ func findRegisteredCodexRequestIDs(
 				!strings.EqualFold(status.Creator.Login, owner) {
 				continue
 			}
-			markerIndex := strings.LastIndex(status.TargetURL, targetMarker)
+			normalizedTargetURL := strings.ToLower(status.TargetURL)
+			markerIndex := strings.LastIndex(normalizedTargetURL, targetMarker)
 			if markerIndex < 0 {
 				continue
 			}
-			idText := status.TargetURL[markerIndex+len(targetMarker):]
+			idText := normalizedTargetURL[markerIndex+len(targetMarker):]
 			id, parseErr := strconv.ParseInt(idText, 10, 64)
 			if parseErr == nil && id > 0 {
 				registered[id] = true

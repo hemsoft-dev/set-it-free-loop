@@ -615,6 +615,20 @@ func registeredReviewRequestStatus(commentID int64) reviewRequestStatus {
 	return status
 }
 
+func TestFindRegisteredCodexRequestIDsMatchesCanonicalURLCase(t *testing.T) {
+	rest := &reviewREST{statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)}}
+
+	got, err := findRegisteredCodexRequestIDs(
+		rest, "hemsoft", "consumer", 94, strings.Repeat("b", 40),
+	)
+	if err != nil {
+		t.Fatalf("findRegisteredCodexRequestIDs() error = %v", err)
+	}
+	if !got[123] {
+		t.Fatalf("registered IDs = %#v, want 123", got)
+	}
+}
+
 func TestReviewCommentTimeUsesImmutableCreatedAt(t *testing.T) {
 	created := "2026-08-19T00:00:00Z"
 	comment := reviewTriggerComment{
