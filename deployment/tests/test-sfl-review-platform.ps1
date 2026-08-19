@@ -32,7 +32,10 @@ foreach ($required in @(
     'Workflows      = @()',
     'Infrastructure = @("sfl-pr-review-auto")',
     '"sfl-pr-review", "sfl-pr-review-auto"',
-    'Remove-Item -LiteralPath $retiredPath -Force'
+    'Remove-Item -LiteralPath $retiredPath -Force',
+    'gh pr edit $existingPrNumber',
+    '--body $prBody',
+    'actionlint .github/workflows/sfl-pr-review-auto.yml'
 )) {
     if ($files.Deploy -notmatch [regex]::Escape($required)) {
         throw "Review-tier deployment is missing contract text: $required"

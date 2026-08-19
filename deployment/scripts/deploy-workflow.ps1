@@ -692,17 +692,12 @@ See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
         }
 
         $componentList = ($DeployComponents | ForEach-Object { "- ``$_``" }) -join "`n"
-
-        if ($existingPrUrl) {
-            $prUrl = $existingPrUrl
-            Write-Status "✅" "Existing PR updated: $prUrl" Green
-        } else {
-            $prUrl = gh pr create `
-                --repo $TargetRepo `
-                --head $BranchName `
-                --base $BaseBranch `
-                --title $prTitle `
-                --body "## Set it Free Loop — Deployment
+		$compileChecklist = if ($WorkflowsToDeploy.Count -gt 0) {
+			"- [ ] For each ``.md`` workflow: verify ``gh aw compile .github/workflows/<name>.md`` succeeds"
+		} else {
+			"- [ ] Verify the standard Actions observer with ``actionlint .github/workflows/sfl-pr-review-auto.yml``"
+		}
+		$prBody = "## Set it Free Loop — Deployment
 
 **Version**: $SflVersion
 **Tier**: $DeployTier
@@ -723,10 +718,29 @@ for all available workflows.
 ### Before merging
 
 - [ ] Run ``.\deployment\governance\setup-labels.ps1 -Owner <org> -Repo <repo>`` if labels are not yet configured
-- [ ] For each ``.md`` workflow: verify ``gh aw compile .github/workflows/<name>.md`` succeeds
+$compileChecklist
 - [ ] Trigger a workflow manually to confirm output
 - [ ] Review ``sfl.json`` manifest in the repo root
-" 2>&1
+"
+
+        if ($existingPrUrl) {
+			$existingPrNumber = [int] $existingPr.number
+			gh pr edit $existingPrNumber `
+				--repo $TargetRepo `
+				--title $prTitle `
+				--body $prBody | Out-Null
+			if ($LASTEXITCODE -ne 0) {
+				throw "gh pr edit failed for $existingPrUrl"
+			}
+            $prUrl = $existingPrUrl
+            Write-Status "✅" "Existing PR updated: $prUrl" Green
+        } else {
+            $prUrl = gh pr create `
+                --repo $TargetRepo `
+                --head $BranchName `
+                --base $BaseBranch `
+                --title $prTitle `
+                --body $prBody 2>&1
 
             if ($LASTEXITCODE -eq 0) {
                 Write-Status "✅" "PR created: $prUrl" Green
