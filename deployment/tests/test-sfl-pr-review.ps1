@@ -54,7 +54,7 @@ foreach ($pattern in @(
     'const artifactBindsCurrentHead = eventName === "issue_comment"',
     'it cannot complete the pending request',
     'const eligibleReviewRequests = (comments, checkRuns, beforeTime) =>',
-    'completedTime <= nextRequestTime',
+    'completedTime < nextRequestTime',
     'const hasNewerMatchingRequest = (comments, checkRuns) =>',
     'comment.id > request.comment.id',
     'A newer Codex review request superseded this artifact before publication',
@@ -153,6 +153,7 @@ const terminal = completed_at => ({
 const cases = [
   {name: "overlap blocked", comments: [first, second], checks: [], want: [1]},
   {name: "terminal predecessor allows retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1, 2]},
+  {name: "same-second terminal fails closed", comments: [first, second], checks: [terminal("2026-08-19T00:00:02Z")], want: [1]},
   {name: "late terminal does not authorize retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:02.500Z")], want: [1]},
   {name: "later retry recovers after overlap", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:03Z")], want: [1, 4]},
   {name: "different contexts are independent", comments: [first, otherContext], checks: [], want: [1, 3]},

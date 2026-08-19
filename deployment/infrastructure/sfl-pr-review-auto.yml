@@ -272,7 +272,7 @@ jobs:
                   check.status === "completed" &&
                   (check.external_id === prefix ||
                    (check.external_id || "").startsWith(`${prefix}:artifact:`)) &&
-                  Number.isFinite(completedTime) && completedTime <= nextRequestTime;
+                  Number.isFinite(completedTime) && completedTime < nextRequestTime;
               });
             };
             const eligibleReviewRequests = (comments, checkRuns, beforeTime) => {
