@@ -115,8 +115,12 @@ jobs:
                 (run.pull_requests || []).some(candidate => candidate.number === pullNumber);
             }
 
+            function requestGateExternalIdPrefix(pullNumber, currentBase, contextToken, requestId, requestTime) {
+              return `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${requestId}:at:${requestTime}`;
+            }
+
             function requestGateExternalId(pullNumber, currentBase, contextToken, requestId, requestTime, artifactIdentity) {
-              return `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${requestId}:at:${requestTime}:artifact:${artifactIdentity}`;
+              return `${requestGateExternalIdPrefix(pullNumber, currentBase, contextToken, requestId, requestTime)}:artifact:${artifactIdentity}`;
             }
             // END TESTABLE CODEX OBSERVER
 
@@ -236,15 +240,58 @@ jobs:
               ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
             const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
             const baseMarker = `${headMarker}${currentBase.toLowerCase()};`;
-            const candidateRequests = Number.isFinite(artifactTime) ? triggerComments.map(
+            // BEGIN TESTABLE REQUEST ELIGIBILITY
+            const requestContextFromBody = body => {
+              const contextMatch = /;context=(.*?) -->/.exec(body || "");
+              return contextMatch && contextMatch[1] ? contextMatch[1] : "";
+            };
+            const requestOrder = (left, right) =>
+              left.requestTime - right.requestTime || left.comment.id - right.comment.id;
+            const requestCandidates = (comments, beforeTime) => comments.map(
               comment => ({comment, requestTime: Date.parse(comment.created_at || "")}),
             ).filter(
               ({comment, requestTime}) => isOwnerRequest(comment) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(baseMarker) &&
-                Number.isFinite(requestTime) && requestTime < artifactTime,
-            ).sort((left, right) => right.requestTime - left.requestTime ||
-              right.comment.id - left.comment.id) : [];
+                Number.isFinite(requestTime) && requestTime < beforeTime,
+            ).sort(requestOrder);
+            const hasTerminalGateBefore = (request, contextToken, nextRequestTime, checkRuns) => {
+              const prefix = requestGateExternalIdPrefix(
+                pullNumber,
+                currentBase,
+                contextToken,
+                request.comment.id,
+                request.requestTime,
+              );
+              return checkRuns.some(check => {
+                const completedTime = Date.parse(check.completed_at || "");
+                return check.app && check.app.id === 15368 &&
+                  check.status === "completed" &&
+                  (check.external_id === prefix ||
+                   (check.external_id || "").startsWith(`${prefix}:artifact:`)) &&
+                  Number.isFinite(completedTime) && completedTime <= nextRequestTime;
+              });
+            };
+            const eligibleReviewRequests = (comments, checkRuns, beforeTime) => {
+              const previousByContext = new Map();
+              const eligible = [];
+              for (const candidate of requestCandidates(comments, beforeTime)) {
+                const requestContext = requestContextFromBody(candidate.comment.body);
+                if (!requestContext) continue;
+                const previous = previousByContext.get(requestContext);
+                if (!previous ||
+                    hasTerminalGateBefore(previous, requestContext, candidate.requestTime, checkRuns)) {
+                  eligible.push({...candidate, contextToken: requestContext});
+                }
+                previousByContext.set(requestContext, candidate);
+              }
+              return eligible;
+            };
+            // END TESTABLE REQUEST ELIGIBILITY
+            const candidateRequests = Number.isFinite(artifactTime)
+              ? eligibleReviewRequests(triggerComments, artifactChecks, artifactTime)
+                .sort((left, right) => -requestOrder(left, right))
+              : [];
             const pendingRequest = candidateRequests[0];
             const activeInvalidationRuns = async () => {
               const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"];
@@ -398,15 +445,13 @@ jobs:
               per_page: 100,
             });
             const requestTime = request && request.requestTime;
-            const hasNewerMatchingRequest = comments => comments.some(comment => {
-              const commentTime = Date.parse(comment.created_at || "");
-              return isOwnerRequest(comment) &&
-                (comment.body || "").startsWith("@codex review") &&
-                (comment.body || "").includes(marker) &&
-                Number.isFinite(commentTime) &&
-                (commentTime > requestTime ||
-                 (commentTime === requestTime && comment.id > request.comment.id));
-            });
+            const hasNewerMatchingRequest = (comments, checkRuns) =>
+              eligibleReviewRequests(comments, checkRuns, Number.POSITIVE_INFINITY).some(
+                candidate => candidate.contextToken === contextToken &&
+                  (candidate.requestTime > requestTime ||
+                   (candidate.requestTime === requestTime &&
+                    candidate.comment.id > request.comment.id)),
+              );
             if (reviewContextToken(checks.data.check_runs) !== contextToken) {
               core.info("The matching Codex request is not bound to the latest pull context");
               return;
@@ -419,14 +464,26 @@ jobs:
             const latestTriggerComments = await github.paginate(github.rest.issues.listComments, {
               owner, repo, issue_number: pullNumber, per_page: 100,
             });
-            if (hasNewerMatchingRequest(latestTriggerComments)) {
+            const latestRequestChecks = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner,
+                repo,
+                ref: currentHead,
+                check_name: "SFL Reviewer Gate Runner",
+                filter: "all",
+                per_page: 100,
+              },
+              response => response.data.check_runs,
+            );
+            if (hasNewerMatchingRequest(latestTriggerComments, latestRequestChecks)) {
               core.info("A newer Codex review request superseded this artifact before publication");
               return;
             }
             const externalId = requestGateExternalId(
               pullNumber, currentBase, contextToken, request.comment.id, requestTime, artifactIdentity,
             );
-            const existing = checks.data.check_runs.find(
+            const existing = latestRequestChecks.find(
               check => check.app && check.app.id === 15368 &&
                 check.external_id === externalId,
             );
@@ -457,22 +514,28 @@ jobs:
               const confirmedTriggerComments = await github.paginate(github.rest.issues.listComments, {
                 owner, repo, issue_number: pullNumber, per_page: 100,
               });
-              const confirmedChecks = await github.rest.checks.listForRef({
-                owner,
-                repo,
-                ref: currentHead,
-                check_name: "SFL Reviewer Gate Runner",
-                filter: "all",
-                per_page: 100,
-              });
-              const supersededRequest = hasNewerMatchingRequest(confirmedTriggerComments);
+              const confirmedChecks = await github.paginate(
+                github.rest.checks.listForRef,
+                {
+                  owner,
+                  repo,
+                  ref: currentHead,
+                  check_name: "SFL Reviewer Gate Runner",
+                  filter: "all",
+                  per_page: 100,
+                },
+                response => response.data.check_runs,
+              );
+              const supersededRequest = hasNewerMatchingRequest(
+                confirmedTriggerComments, confirmedChecks,
+              );
               if (confirmedPull.data.state !== "open" ||
                   confirmedPull.data.head.sha !== currentHead ||
                   confirmedPull.data.base.sha !== currentBase ||
                   confirmedOpenPulls.length !== 1 ||
                   confirmedOpenPulls[0].number !== pullNumber ||
                   supersededRequest ||
-                  reviewContextToken(confirmedChecks.data.check_runs) !== contextToken) {
+                  reviewContextToken(confirmedChecks) !== contextToken) {
                 const changedReason = supersededRequest
                   ? "A newer Codex review request superseded this result while it was being published"
                   : "The pull request context changed while the Codex result was being published";

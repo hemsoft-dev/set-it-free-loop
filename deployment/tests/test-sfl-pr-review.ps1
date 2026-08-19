@@ -42,6 +42,7 @@ foreach ($pattern in @(
     'confirmedOpenPulls.length !== 1',
     'context=${contextToken}',
     'function requestGateExternalId(',
+    'function requestGateExternalIdPrefix(',
     'request:${requestId}:at:${requestTime}',
     ':artifact:${artifactIdentity}',
     'const artifactAlreadyConsumed = artifactChecks.some(',
@@ -51,7 +52,9 @@ foreach ($pattern in @(
     'pendingRequest.comment.id',
     'const artifactBindsCurrentHead = eventName === "issue_comment"',
     'it cannot complete the pending request',
-    'const hasNewerMatchingRequest = comments =>',
+    'const eligibleReviewRequests = (comments, checkRuns, beforeTime) =>',
+    'completedTime <= nextRequestTime',
+    'const hasNewerMatchingRequest = (comments, checkRuns) =>',
     'comment.id > request.comment.id',
     'A newer Codex review request superseded this artifact before publication',
     'supersededRequest',
@@ -75,7 +78,7 @@ foreach ($pattern in @(
     'already has this exact invalidation; skipping rerun',
     'received a newer context or successful Codex gate while invalidation was running',
     'conflictingBaseRequest',
-    'reviewContextToken(confirmedChecks.data.check_runs) !== contextToken',
+    'reviewContextToken(confirmedChecks) !== contextToken',
     ':context:${encodeURIComponent(invalidationId)}:',
     'skipping stale invalidation',
     'github.rest.actions.getWorkflowRun',
@@ -103,6 +106,60 @@ $pendingRequestIndex = $canonical.IndexOf('const pendingRequest = candidateReque
 if ($artifactBindingIndex -lt 0 -or $pendingRequestIndex -lt 0 -or
     $artifactBindingIndex -gt $pendingRequestIndex) {
     throw 'Codex artifact binding is not validated before pending request selection.'
+}
+
+$eligibilityMatch = [regex]::Match(
+    $canonical,
+    '(?s)// BEGIN TESTABLE REQUEST ELIGIBILITY\s*(.*?)\s*// END TESTABLE REQUEST ELIGIBILITY'
+)
+if (-not $eligibilityMatch.Success) {
+    throw 'Could not locate the testable request-eligibility block.'
+}
+$eligibilityTest = @'
+const owner = "HemSoft";
+const pullNumber = 42;
+const currentBase = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const baseMarker = `<!-- sfl-codex-review:head=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb;base=${currentBase};`;
+const isOwnerRequest = comment =>
+  ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
+function requestGateExternalIdPrefix(pullNumber, currentBase, contextToken, requestId, requestTime) {
+  return `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${requestId}:at:${requestTime}`;
+}
+'@ + "`n" + $eligibilityMatch.Groups[1].Value + "`n" + @'
+const comment = (id, created_at, contextToken) => ({
+  id,
+  created_at,
+  user: {login: "HemSoft"},
+  body: `@codex review\n\n${baseMarker}context=${contextToken} -->`,
+});
+const first = comment(1, "2026-08-19T00:00:01Z", "none");
+const second = comment(2, "2026-08-19T00:00:02Z", "none");
+const otherContext = comment(3, "2026-08-19T00:00:02Z", "base-advance");
+const firstTime = Date.parse(first.created_at);
+const firstPrefix = requestGateExternalIdPrefix(pullNumber, currentBase, "none", first.id, firstTime);
+const terminal = completed_at => ({
+  app: {id: 15368},
+  status: "completed",
+  completed_at,
+  external_id: `${firstPrefix}:artifact:r123`,
+});
+const cases = [
+  {name: "overlap blocked", comments: [first, second], checks: [], want: [1]},
+  {name: "terminal predecessor allows retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1, 2]},
+  {name: "late terminal does not authorize retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:02.500Z")], want: [1]},
+  {name: "different contexts are independent", comments: [first, otherContext], checks: [], want: [1, 3]},
+];
+for (const fixture of cases) {
+  const got = eligibleReviewRequests(fixture.comments, fixture.checks, Number.POSITIVE_INFINITY)
+    .map(candidate => candidate.comment.id);
+  if (JSON.stringify(got) !== JSON.stringify(fixture.want)) {
+    throw new Error(`${fixture.name}: got ${JSON.stringify(got)}, want ${JSON.stringify(fixture.want)}`);
+  }
+}
+'@
+$eligibilityTest | node -
+if ($LASTEXITCODE -ne 0) {
+    throw 'Request-eligibility fixture tests failed.'
 }
 
 $helperMatches = [regex]::Matches(
