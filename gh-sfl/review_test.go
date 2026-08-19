@@ -795,6 +795,49 @@ func TestRunReviewRejectsEditedRequestAfterSuccessfulGate(t *testing.T) {
 	}
 }
 
+func TestRunReviewAllowsEditedRecoveryAfterContextInvalidation(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	createdAt := "2026-08-19T00:00:00Z"
+	createdMillis := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC).UnixMilli()
+	currentContext := "sfl-codex-review:pull-context:at:1787097600000:77"
+	rest := &reviewREST{
+		comments: []reviewTriggerComment{{
+			ID:        123,
+			Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, base, "none"),
+			HTMLURL:   "https://github.test/pre-invalidation-success",
+			CreatedAt: createdAt,
+			UpdatedAt: createdAt,
+			User: struct {
+				Login string `json:"login"`
+			}{Login: "HemSoft"},
+		}},
+		statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)},
+		checkRuns: []map[string]any{
+			{
+				"id":          77,
+				"status":      "completed",
+				"external_id": currentContext,
+				"app":         map[string]any{"id": 15368},
+			},
+			{
+				"status":      "completed",
+				"conclusion":  "success",
+				"external_id": fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d:artifact:c456", base, createdMillis),
+				"app":         map[string]any{"id": 15368},
+			},
+		},
+	}
+	installReviewFakes(t, rest)
+
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runReview() invalidated success recovery error = %v", err)
+	}
+	if rest.posts != 1 || rest.reactionGets != 60 {
+		t.Fatalf("invalidated success posts/reaction GETs = %d/%d, want 1/60", rest.posts, rest.reactionGets)
+	}
+}
+
 func TestRunReviewRetryRecoversAfterEditedMarkerIsRemoved(t *testing.T) {
 	rest := &reviewREST{comments: []reviewTriggerComment{{
 		ID:        123,

@@ -211,7 +211,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		if !untrackedExisting {
 			if edited {
 				successful, successfulErr := findSuccessfulTerminalGateForRequestID(
-					client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing.ID,
+					client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, contextToken, existing.ID,
 				)
 				if successfulErr != nil {
 					return fmt.Errorf("checking the edited Codex review result: %w", successfulErr)
@@ -865,15 +865,16 @@ func findSuccessfulTerminalGateForRequestID(
 	client restAPI,
 	owner, repo string,
 	prNumber int,
-	headSHA, baseSHA string,
+	headSHA, baseSHA, contextToken string,
 	requestID int64,
 ) (bool, error) {
 	prefix := fmt.Sprintf(
-		"sfl-codex-review:pull:%d:base:%s:context:",
+		"sfl-codex-review:pull:%d:base:%s:context:%s:request:%d:at:",
 		prNumber,
 		strings.ToLower(baseSHA),
+		url.QueryEscape(contextToken),
+		requestID,
 	)
-	requestMarker := fmt.Sprintf(":request:%d:at:", requestID)
 	for page := 1; ; page++ {
 		var response struct {
 			CheckRuns []reviewerCheckRun `json:"check_runs"`
@@ -887,8 +888,7 @@ func findSuccessfulTerminalGateForRequestID(
 		for _, check := range response.CheckRuns {
 			if check.App.ID == 15368 && check.Status == "completed" &&
 				strings.EqualFold(check.Conclusion, "success") &&
-				strings.HasPrefix(check.ExternalID, prefix) &&
-				strings.Contains(check.ExternalID, requestMarker) {
+				strings.HasPrefix(check.ExternalID, prefix) {
 				return true, nil
 			}
 		}
