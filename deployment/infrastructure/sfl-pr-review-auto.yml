@@ -483,19 +483,19 @@ jobs:
             const activeInvalidationRuns = async () => {
               const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"];
               const events = ["pull_request_target", "push", "issue_comment"];
-              const pages = await Promise.all(events.map(event => github.paginate(
+              const pages = await Promise.all(activeStatuses.map(status => github.paginate(
                 github.rest.actions.listWorkflowRuns,
                 {
                   owner,
                   repo,
                   workflow_id: "sfl-pr-review-auto.yml",
-                  event,
+                  status,
                   per_page: 100,
                 },
                 response => response.data.workflow_runs,
               )));
               return pages.flat().filter(
-                run => run.id !== context.runId && activeStatuses.includes(run.status) &&
+                run => run.id !== context.runId && events.includes(run.event) &&
                   isActiveInvalidationRun(run, pullNumber, owner),
               );
             };

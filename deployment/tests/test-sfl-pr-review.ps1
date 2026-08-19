@@ -82,8 +82,8 @@ foreach ($pattern in @(
     'const checks = await github.paginate(',
     'const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"]',
     'const events = ["pull_request_target", "push", "issue_comment"]',
-    'events.map(event => github.paginate(',
-    'activeStatuses.includes(run.status)',
+    'activeStatuses.map(status => github.paginate(',
+    'events.includes(run.event)',
     'run.display_title === `SFL Codex review request #${pullNumber}`',
     'actions: read',
     'if (run.event === "push") return true',
@@ -119,6 +119,10 @@ foreach ($pattern in @(
 
 if ($canonical -match [regex]::Escape('if (context.payload.deleted) return;')) {
     throw 'Base-branch deletion events are still discarded instead of invalidating gates after a rename.'
+}
+if ($canonical -match [regex]::Escape('events.flatMap(') -or
+    $canonical -match [regex]::Escape('events.map(event => github.paginate(')) {
+    throw 'Codex observer still multiplies or unboundedly paginates workflow-run queries by event.'
 }
 
 $artifactBindingIndex = $canonical.IndexOf('const artifactBindsCurrentHead')
