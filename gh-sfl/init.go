@@ -221,8 +221,9 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
-		if err := validateReviewerSource(wf, content, release.SHA, owner+"/"+repo); err != nil {
-			return err
+		content, prepareErr := prepareWorkflowSource(wf, content, release.SHA, owner+"/"+repo)
+		if prepareErr != nil {
+			return prepareErr
 		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, release.Version)
 		if renderErr != nil {
@@ -242,8 +243,9 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 			if fetchErr != nil {
 				return fmt.Errorf("fetching add-on %s: %w", srcPath, fetchErr)
 			}
-			if err := validateReviewerSource(wf, content, release.SHA, owner+"/"+repo); err != nil {
-				return err
+			content, prepareErr := prepareWorkflowSource(wf, content, release.SHA, owner+"/"+repo)
+			if prepareErr != nil {
+				return prepareErr
 			}
 			rendered, renderErr := renderHemSoftWorkflow(wf, content, release.Version)
 			if renderErr != nil {

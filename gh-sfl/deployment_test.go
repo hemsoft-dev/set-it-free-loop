@@ -429,7 +429,7 @@ func TestAddonCompilationGuidanceOnlyAppliesToMarkdownSource(t *testing.T) {
 }
 
 func TestReviewerAddonRequiresSubscriptionBackedSource(t *testing.T) {
-	if err := validateReviewerSource(
+	if _, err := prepareWorkflowSource(
 		"sfl-pr-review-auto.yml",
 		"name: SFL PR Review Auto Trigger",
 		strings.Repeat("a", 40),
@@ -439,11 +439,16 @@ func TestReviewerAddonRequiresSubscriptionBackedSource(t *testing.T) {
 		t.Fatalf("legacy reviewer source error = %v", err)
 	}
 
-	content := "name: SFL Codex Review Observer\nif: github.event.sender.id == 199175422\n"
-	if err := validateReviewerSource("sfl-pr-review-auto.yml", content, strings.Repeat("b", 40), "HemSoft/consumer"); err != nil {
+	content := reviewerSourcePlaceholder + "\nname: SFL Codex Review Observer\nif: github.event.sender.id == 199175422\n"
+	prepared, err := prepareWorkflowSource("sfl-pr-review-auto.yml", content, strings.Repeat("b", 40), "HemSoft/consumer")
+	if err != nil {
 		t.Fatalf("subscription-backed reviewer source rejected: %v", err)
 	}
-	if err := validateReviewerSource("repo-audit.md", "legacy content", strings.Repeat("a", 40), "HemSoft/consumer"); err != nil {
+	if strings.Contains(prepared, "@main") || !strings.Contains(prepared, "@"+strings.Repeat("b", 40)) ||
+		!strings.HasPrefix(prepared, "# Deployed from:") {
+		t.Fatalf("prepared reviewer source lacks immutable provenance: %q", prepared)
+	}
+	if _, err := prepareWorkflowSource("repo-audit.md", "legacy content", strings.Repeat("a", 40), "HemSoft/consumer"); err != nil {
 		t.Fatalf("non-reviewer add-on source rejected: %v", err)
 	}
 }
@@ -451,7 +456,7 @@ func TestReviewerAddonRequiresSubscriptionBackedSource(t *testing.T) {
 func TestReviewerSourceValidationCoversEveryDeploymentPath(t *testing.T) {
 	for _, file := range []string{"init.go", "sync.go", "add.go"} {
 		source := string(readContractFile(t, file))
-		if !strings.Contains(source, "validateReviewerSource(wf, content,") {
+		if !strings.Contains(source, "prepareWorkflowSource(wf, content,") {
 			t.Fatalf("%s does not validate the selected reviewer source", file)
 		}
 	}

@@ -62,6 +62,7 @@ if ($upgraded -match '(?m)^# (?:Deployed from|To upgrade):' -or
 
 $yamlWorkflow = @'
 # HemSoft SFL reviewer platform v2
+# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main
 name: SFL PR Review Auto Trigger
 on:
   pull_request_target:
@@ -71,11 +72,16 @@ $yamlPinned = Add-SflYamlSourcePin -Content $yamlWorkflow -SourceRef $yamlRef
 if ($yamlPinned -notmatch "\A# Deployed from: $([regex]::Escape($yamlRef))\r?\n# To upgrade:") {
     throw 'YAML source pin was not placed at the beginning of the workflow.'
 }
+if ($yamlPinned -match '@main' -or
+    ([regex]::Matches($yamlPinned, [regex]::Escape($yamlRef)).Count -ne 2)) {
+    throw 'YAML provenance was not rewritten to the immutable source SHA.'
+}
 
 $yamlUpdatedRef = 'HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@cccccccccccccccccccccccccccccccccccccccc'
 $yamlRepinned = Add-SflYamlSourcePin -Content $yamlPinned -SourceRef $yamlUpdatedRef
 if (([regex]::Matches($yamlRepinned, '(?m)^# Deployed from:').Count -ne 1) -or
-    $yamlRepinned -notmatch [regex]::Escape($yamlUpdatedRef)) {
+    ([regex]::Matches($yamlRepinned, [regex]::Escape($yamlUpdatedRef)).Count -ne 2) -or
+    $yamlRepinned -match [regex]::Escape($yamlRef)) {
     throw 'Existing YAML source pin was not replaced idempotently.'
 }
 

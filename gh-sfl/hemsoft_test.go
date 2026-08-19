@@ -166,7 +166,7 @@ func TestReviewerStatusReadsPinnedFilesThroughHemSoftRouting(t *testing.T) {
 	if !strings.Contains(statusSource, "sourceWorkflowPath(workflow)") {
 		t.Error("reviewer status does not resolve pinned artifacts through HemSoft source routing")
 	}
-	if !strings.Contains(statusSource, "renderHemSoftWorkflow(workflow, source, manifest.Version)") {
+	if !strings.Contains(statusSource, "renderHemSoftWorkflow(workflow, preparedSource, manifest.Version)") {
 		t.Error("reviewer status does not apply the same engine policy as deployment")
 	}
 	if strings.Contains(statusSource, `"workflows/"+workflow`) {

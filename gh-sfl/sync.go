@@ -107,8 +107,9 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
-		if err := validateReviewerSource(wf, content, sourceRef, owner+"/"+repo); err != nil {
-			return err
+		content, prepareErr := prepareWorkflowSource(wf, content, sourceRef, owner+"/"+repo)
+		if prepareErr != nil {
+			return prepareErr
 		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, latestVersion)
 		if renderErr != nil {
@@ -123,8 +124,9 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching add-on %s: %w", srcPath, fetchErr)
 		}
-		if err := validateReviewerSource(wf, content, sourceRef, owner+"/"+repo); err != nil {
-			return err
+		content, prepareErr := prepareWorkflowSource(wf, content, sourceRef, owner+"/"+repo)
+		if prepareErr != nil {
+			return prepareErr
 		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, latestVersion)
 		if renderErr != nil {

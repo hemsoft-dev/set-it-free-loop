@@ -289,8 +289,14 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 				sourceWorkflowPath(workflow),
 				manifest.SourceSHA,
 			)
-			expected, renderErr := renderHemSoftWorkflow(workflow, source, manifest.Version)
-			if manifest.SourceSHA == "" || sourceErr != nil || renderErr != nil ||
+			preparedSource, prepareErr := prepareWorkflowSource(
+				workflow,
+				source,
+				manifest.SourceSHA,
+				owner+"/"+repo,
+			)
+			expected, renderErr := renderHemSoftWorkflow(workflow, preparedSource, manifest.Version)
+			if manifest.SourceSHA == "" || sourceErr != nil || prepareErr != nil || renderErr != nil ||
 				content != expected {
 				drifted++
 				fmt.Fprintf(stdout, "    %s %s differs from pinned source %s\n",

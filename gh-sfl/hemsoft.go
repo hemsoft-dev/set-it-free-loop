@@ -368,6 +368,24 @@ func sourceWorkflowPath(name string) string {
 	}
 }
 
+const reviewerSourcePlaceholder = "# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main"
+
+func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo string) (string, error) {
+	if workflow != "sfl-pr-review-auto.yml" {
+		return content, nil
+	}
+	if !strings.Contains(content, "name: SFL Codex Review Observer") ||
+		!strings.Contains(content, "github.event.sender.id == 199175422") ||
+		!strings.Contains(content, reviewerSourcePlaceholder) {
+		return "", fmt.Errorf("the SFL source %s selected for %s predates the subscription-backed Codex reviewer; deploy or sync from a release containing SFL Codex Review Observer", sourceSHA, targetRepo)
+	}
+	sourceRef := "HemSoft/set-it-free-loop/" + sourceWorkflowPath(workflow) + "@" + sourceSHA
+	content = strings.Replace(content, reviewerSourcePlaceholder, "# Source: "+sourceRef, 1)
+	prefix := "# Deployed from: " + sourceRef + "\n" +
+		"# To upgrade: re-run deploy-workflow.ps1 at the desired SHA\n"
+	return prefix + content, nil
+}
+
 func renderHemSoftWorkflow(name, content, sflVersion string) (string, error) {
 	rendered := renderWorkflow(content, sflVersion)
 	if !strings.HasSuffix(name, ".md") {
