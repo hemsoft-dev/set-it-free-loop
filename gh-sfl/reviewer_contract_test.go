@@ -39,6 +39,7 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 	for _, required := range []string{
 		"name: SFL Codex Review Observer",
 		"github.event.sender.id == 199175422",
+		"Fork pull requests are unsupported",
 		"appId = 1144995",
 		"appSlug = \"chatgpt-codex-connector\"",
 		"appOwner = \"openai\"",

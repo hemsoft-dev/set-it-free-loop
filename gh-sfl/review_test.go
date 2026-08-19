@@ -12,6 +12,7 @@ import (
 
 type reviewREST struct {
 	comments []reviewTriggerComment
+	headRepo string
 	posts    int
 	postBody string
 }
@@ -27,9 +28,13 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 	case strings.Contains(path, "/actions/variables/SFL_ENABLED"):
 		return decodeTestResponse(response, map[string]any{"value": "true"})
 	case strings.Contains(path, "/pulls/"):
+		headRepo := f.headRepo
+		if headRepo == "" {
+			headRepo = "HemSoft/consumer"
+		}
 		return decodeTestResponse(response, map[string]any{
-			"base":  map[string]any{"sha": strings.Repeat("a", 40)},
-			"head":  map[string]any{"sha": strings.Repeat("b", 40)},
+			"base":  map[string]any{"sha": strings.Repeat("a", 40), "repo": map[string]string{"full_name": "HemSoft/consumer"}},
+			"head":  map[string]any{"sha": strings.Repeat("b", 40), "repo": map[string]string{"full_name": headRepo}},
 			"state": "open",
 		})
 	case strings.Contains(path, "/comments?"):
@@ -122,6 +127,20 @@ func TestRunReviewPostsOneHeadBoundCodexRequest(t *testing.T) {
 	if !strings.Contains(stdout.String(), "subscription-backed Codex review") ||
 		!strings.Contains(stdout.String(), "#issuecomment-1") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestRunReviewRejectsForkPullRequest(t *testing.T) {
+	rest := &reviewREST{headRepo: "contributor/consumer"}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "same-repository branches only") ||
+		!strings.Contains(err.Error(), "contributor/consumer") {
+		t.Fatalf("runReview() fork error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("fork review posts = %d, want 0", rest.posts)
 	}
 }
 

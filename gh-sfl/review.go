@@ -22,9 +22,11 @@ type reviewOptions struct {
 }
 
 type pullRequestShas struct {
-	BaseSHA string
-	HeadSHA string
-	State   string
+	BaseSHA  string
+	HeadSHA  string
+	BaseRepo string
+	HeadRepo string
+	State    string
 }
 
 type reviewTriggerComment struct {
@@ -66,6 +68,9 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 	if pr.State != "open" {
 		return fmt.Errorf("pull request #%d in %s/%s is %s — reviews only run on open pull requests", opts.pr, owner, repo, pr.State)
+	}
+	if pr.BaseRepo != "" && pr.HeadRepo != "" && !strings.EqualFold(pr.BaseRepo, pr.HeadRepo) {
+		return fmt.Errorf("pull request #%d in %s/%s comes from fork %s — subscription-backed SFL reviews support same-repository branches only", opts.pr, owner, repo, pr.HeadRepo)
 	}
 
 	marker := codexReviewMarker(pr.HeadSHA)
@@ -190,10 +195,16 @@ func requireCodexReviewObserver(client restAPI, owner, repo string) error {
 func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number int) (pullRequestShas, error) {
 	var response struct {
 		Base struct {
-			SHA string `json:"sha"`
+			SHA  string `json:"sha"`
+			Repo struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
 		} `json:"base"`
 		Head struct {
-			SHA string `json:"sha"`
+			SHA  string `json:"sha"`
+			Repo struct {
+				FullName string `json:"full_name"`
+			} `json:"repo"`
 		} `json:"head"`
 		State string `json:"state"`
 	}
@@ -206,9 +217,11 @@ func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number i
 		return pullRequestShas{}, fmt.Errorf("reading pull request #%d in %s/%s: %w", number, owner, repo, err)
 	}
 	return pullRequestShas{
-		BaseSHA: response.Base.SHA,
-		HeadSHA: response.Head.SHA,
-		State:   response.State,
+		BaseSHA:  response.Base.SHA,
+		HeadSHA:  response.Head.SHA,
+		BaseRepo: response.Base.Repo.FullName,
+		HeadRepo: response.Head.Repo.FullName,
+		State:    response.State,
 	}, nil
 }
 

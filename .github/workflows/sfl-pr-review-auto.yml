@@ -123,6 +123,10 @@ jobs:
             const pull = await github.rest.pulls.get({
               owner, repo, pull_number: pullNumber,
             });
+            if (pull.data.head.repo.full_name.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) {
+              core.info("Fork pull requests are unsupported; no SFL gate was published");
+              return;
+            }
             const currentHead = pull.data.head.sha;
             const match = (artifact.body || "").match(
               /\*\*Reviewed commit:\*\*\s+`([0-9a-f]{7,40})`/i,

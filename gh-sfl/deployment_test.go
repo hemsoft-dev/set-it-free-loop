@@ -410,6 +410,24 @@ func TestParseInitOptionsRegistersAndDeduplicatesAddons(t *testing.T) {
 	}
 }
 
+func TestAddonCompilationGuidanceOnlyAppliesToMarkdownSource(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		workflows []string
+		want      bool
+	}{
+		{name: "standard Actions YAML", workflows: []string{"sfl-pr-review-auto.yml"}, want: false},
+		{name: "Markdown source", workflows: []string{"repo-audit.md"}, want: true},
+		{name: "precompiled Markdown", workflows: []string{"repo-audit.md", "repo-audit.lock.yml"}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := addonNeedsCompilation(test.workflows); got != test.want {
+				t.Fatalf("addonNeedsCompilation(%v) = %v, want %v", test.workflows, got, test.want)
+			}
+		})
+	}
+}
+
 func TestParseAddOptionsDefaultsToPullRequest(t *testing.T) {
 	opts, err := parseAddOptions([]string{"pr-review"}, io.Discard)
 	if err != nil {

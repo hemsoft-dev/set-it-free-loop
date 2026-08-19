@@ -143,20 +143,24 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	fmt.Fprintf(stdout, "\n✅ Add-on %q deployed to %s/%s\n", opts.addon, owner, repo)
 
-	// Only suggest compilation if the addon doesn't ship a precompiled lock file
-	hasLock := false
-	for _, wf := range workflows {
-		if strings.HasSuffix(wf, ".lock.yml") {
-			hasLock = true
-			break
-		}
-	}
-	if !hasLock {
+	// Only Markdown-source workflows need gh-aw compilation. Standard Actions
+	// YAML files are already executable and do not have lock-file companions.
+	if addonNeedsCompilation(workflows) {
 		fmt.Fprintf(stdout, "\n  ⚠ Note: This workflow is deployed as source (.md) only.\n")
 		fmt.Fprintf(stdout, "  Run 'gh aw compile' in the target repo to generate the lock file.\n")
 	}
 
 	return nil
+}
+
+func addonNeedsCompilation(workflows []string) bool {
+	hasMarkdownSource := false
+	hasLock := false
+	for _, workflow := range workflows {
+		hasMarkdownSource = hasMarkdownSource || strings.HasSuffix(workflow, ".md")
+		hasLock = hasLock || strings.HasSuffix(workflow, ".lock.yml")
+	}
+	return hasMarkdownSource && !hasLock
 }
 
 func parseAddOptions(args []string, stderr io.Writer) (addOptions, error) {
@@ -214,7 +218,7 @@ Usage:
   gh sfl add <addon-name> [flags]
 
 Available Add-ons:
-  pr-review    Evidence-based PR review with recovery and a zero-finding approval gate
+  pr-review    Subscription-backed Codex review with an immutable-head gate
 
 Flags:
   -R, --repo string    Target repository (OWNER/REPO). Defaults to current repo.
