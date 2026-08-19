@@ -16,7 +16,10 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 )
 
-const codexReviewCommand = "@codex review"
+const (
+	codexReviewCommand                = "@codex review"
+	codexReviewRequestRegistryContext = "SFL Codex Review Request Registry"
+)
 
 var waitForRetryOrdering = func() {
 	time.Sleep(1100 * time.Millisecond)
@@ -57,6 +60,14 @@ type reviewCommentReaction struct {
 	User    struct {
 		ID int64 `json:"id"`
 	} `json:"user"`
+}
+
+type reviewRequestStatus struct {
+	Context   string `json:"context"`
+	TargetURL string `json:"target_url"`
+	Creator   struct {
+		Login string `json:"login"`
+	} `json:"creator"`
 }
 
 type reviewerCheckRun struct {
@@ -127,7 +138,9 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	if conflictingURL != "" {
 		return fmt.Errorf("pull request #%d head %.10s was already requested against another base at %s — update the pull request branch to a new head before requesting review for the current base", opts.pr, pr.HeadSHA, conflictingURL)
 	}
-	requests, ownerRequests, findErr := findCodexReviewTriggers(client, owner, repo, opts.pr, marker)
+	requests, ownerRequests, findErr := findCodexReviewTriggers(
+		client, owner, repo, opts.pr, pr.HeadSHA, marker,
+	)
 	if findErr != nil {
 		return fmt.Errorf("checking existing Codex review requests: %w", findErr)
 	}
@@ -198,13 +211,39 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	); err != nil {
 		return fmt.Errorf("requesting Codex review: %w", err)
 	}
-	if strings.TrimSpace(created.HTMLURL) == "" {
-		return errors.New("GitHub created the Codex review request without returning its URL")
+	if created.ID < 1 || strings.TrimSpace(created.HTMLURL) == "" {
+		return errors.New("GitHub created the Codex review request without returning its ID and URL")
+	}
+	if err := registerCodexReviewRequest(client, owner, repo, opts.pr, pr.HeadSHA, created); err != nil {
+		return fmt.Errorf("registering the Codex review request: %w", err)
 	}
 
 	fmt.Fprintf(stdout, "Requested subscription-backed Codex review for %s/%s#%d at %.10s: %s\n",
 		owner, repo, opts.pr, pr.HeadSHA, created.HTMLURL)
 	return nil
+}
+
+func registerCodexReviewRequest(
+	client restAPI,
+	owner, repo string,
+	prNumber int,
+	headSHA string,
+	request reviewTriggerComment,
+) error {
+	payload, err := jsonBody(map[string]string{
+		"state":       "success",
+		"context":     codexReviewRequestRegistryContext,
+		"description": fmt.Sprintf("SFL Codex request comment %d for PR #%d", request.ID, prNumber),
+		"target_url":  request.HTMLURL,
+	})
+	if err != nil {
+		return err
+	}
+	return client.Post(
+		fmt.Sprintf("repos/%s/%s/statuses/%s", owner, repo, headSHA),
+		payload,
+		nil,
+	)
 }
 
 func waitForCodexRequestCompletion(
@@ -446,8 +485,13 @@ func findCodexReviewTriggers(
 	client restAPI,
 	owner, repo string,
 	prNumber int,
+	headSHA string,
 	marker string,
 ) ([]reviewTriggerComment, []reviewTriggerComment, error) {
+	registeredIDs, err := findRegisteredCodexRequestIDs(client, owner, repo, prNumber, headSHA)
+	if err != nil {
+		return nil, nil, err
+	}
 	var matches []reviewTriggerComment
 	var ownerRequests []reviewTriggerComment
 	for page := 1; ; page++ {
@@ -461,7 +505,7 @@ func findCodexReviewTriggers(
 		for _, comment := range comments {
 			if strings.EqualFold(comment.User.Login, owner) &&
 				(strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) ||
-					reviewCommentWasEdited(comment)) {
+					registeredIDs[comment.ID]) {
 				ownerRequests = append(ownerRequests, comment)
 				if strings.Contains(comment.Body, marker) {
 					matches = append(matches, comment)
@@ -489,6 +533,43 @@ func findCodexReviewTriggers(
 		return left.Before(right)
 	})
 	return matches, ownerRequests, nil
+}
+
+func findRegisteredCodexRequestIDs(
+	client restAPI,
+	owner, repo string,
+	prNumber int,
+	headSHA string,
+) (map[int64]bool, error) {
+	registered := map[int64]bool{}
+	targetMarker := fmt.Sprintf("/%s/%s/pull/%d#issuecomment-", owner, repo, prNumber)
+	for page := 1; ; page++ {
+		var statuses []reviewRequestStatus
+		if err := client.Get(
+			fmt.Sprintf("repos/%s/%s/commits/%s/statuses?per_page=100&page=%d", owner, repo, headSHA, page),
+			&statuses,
+		); err != nil {
+			return nil, err
+		}
+		for _, status := range statuses {
+			if status.Context != codexReviewRequestRegistryContext ||
+				!strings.EqualFold(status.Creator.Login, owner) {
+				continue
+			}
+			markerIndex := strings.LastIndex(status.TargetURL, targetMarker)
+			if markerIndex < 0 {
+				continue
+			}
+			idText := status.TargetURL[markerIndex+len(targetMarker):]
+			id, parseErr := strconv.ParseInt(idText, 10, 64)
+			if parseErr == nil && id > 0 {
+				registered[id] = true
+			}
+		}
+		if len(statuses) < 100 {
+			return registered, nil
+		}
+	}
 }
 
 func reviewCommentTime(comment reviewTriggerComment) time.Time {

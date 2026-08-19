@@ -14,6 +14,7 @@ import (
 type reviewREST struct {
 	comments            []reviewTriggerComment
 	reactions           []reviewCommentReaction
+	statuses            []reviewRequestStatus
 	reactionGets        int
 	clearReaction       bool
 	checkRuns           []map[string]any
@@ -25,6 +26,8 @@ type reviewREST struct {
 	observerBranch      string
 	observerState       string
 	posts               int
+	statusPosts         int
+	statusBody          map[string]string
 	postBody            string
 }
 
@@ -65,6 +68,8 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 			}
 		}
 		return decodeTestResponse(response, map[string]any{"check_runs": f.checkRuns})
+	case strings.Contains(path, "/statuses?"):
+		return decodeTestResponse(response, f.statuses)
 	case strings.Contains(path, "/pulls/"):
 		var headRepo any = map[string]string{"full_name": f.headRepo}
 		if f.headRepo == "" {
@@ -100,6 +105,13 @@ func (f *reviewREST) GetWithETag(string, interface{}) (string, error) {
 }
 
 func (f *reviewREST) Post(path string, body io.Reader, response interface{}) error {
+	if strings.Contains(path, "/statuses/") {
+		f.statusPosts++
+		if err := json.NewDecoder(body).Decode(&f.statusBody); err != nil {
+			return err
+		}
+		return nil
+	}
 	if !strings.HasSuffix(path, "/issues/94/comments") {
 		return fmt.Errorf("unexpected POST %s", path)
 	}
@@ -110,7 +122,8 @@ func (f *reviewREST) Post(path string, body io.Reader, response interface{}) err
 	}
 	f.postBody = payload["body"]
 	return decodeTestResponse(response, map[string]any{
-		"html_url": "https://github.test/HemSoft/consumer/pull/94#issuecomment-1",
+		"id":       999,
+		"html_url": "https://github.test/HemSoft/consumer/pull/94#issuecomment-999",
 	})
 }
 
@@ -171,12 +184,17 @@ func TestRunReviewPostsOneHeadBoundCodexRequest(t *testing.T) {
 	if rest.posts != 1 {
 		t.Fatalf("Codex request posts = %d, want 1", rest.posts)
 	}
+	if rest.statusPosts != 1 ||
+		rest.statusBody["context"] != codexReviewRequestRegistryContext ||
+		rest.statusBody["target_url"] != "https://github.test/HemSoft/consumer/pull/94#issuecomment-999" {
+		t.Fatalf("request registry status = posts %d, body %#v", rest.statusPosts, rest.statusBody)
+	}
 	wantMarker := codexReviewMarker(strings.Repeat("b", 40), strings.Repeat("a", 40), "none")
 	if rest.postBody != codexReviewCommand+"\n\n"+wantMarker {
 		t.Fatalf("posted body = %q", rest.postBody)
 	}
 	if !strings.Contains(stdout.String(), "subscription-backed Codex review") ||
-		!strings.Contains(stdout.String(), "#issuecomment-1") {
+		!strings.Contains(stdout.String(), "#issuecomment-999") {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 }
@@ -553,7 +571,7 @@ func TestRunReviewRetryRecoversAfterEditedCommandIsRemoved(t *testing.T) {
 		User: struct {
 			Login string `json:"login"`
 		}{Login: "HemSoft"},
-	}}}
+	}}, statuses: []reviewRequestStatus{registeredReviewRequestStatus(123)}}
 	installReviewFakes(t, rest)
 
 	if err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard); err != nil {
@@ -565,6 +583,36 @@ func TestRunReviewRetryRecoversAfterEditedCommandIsRemoved(t *testing.T) {
 	if rest.reactionGets != 60 {
 		t.Fatalf("command-removed reaction GETs = %d, want 60", rest.reactionGets)
 	}
+}
+
+func TestRunReviewIgnoresUnregisteredEditedDiscussionComment(t *testing.T) {
+	rest := &reviewREST{comments: []reviewTriggerComment{{
+		ID:        123,
+		Body:      "ordinary edited discussion",
+		HTMLURL:   "https://github.test/discussion",
+		CreatedAt: "2026-08-19T00:00:00Z",
+		UpdatedAt: "2026-08-19T00:00:01Z",
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "HemSoft"},
+	}}}
+	installReviewFakes(t, rest)
+
+	if err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard); err != nil {
+		t.Fatalf("runReview() ordinary edited comment error = %v", err)
+	}
+	if rest.posts != 1 || rest.reactionGets != 0 {
+		t.Fatalf("ordinary edited comment posts/reaction GETs = %d/%d, want 1/0", rest.posts, rest.reactionGets)
+	}
+}
+
+func registeredReviewRequestStatus(commentID int64) reviewRequestStatus {
+	status := reviewRequestStatus{
+		Context:   codexReviewRequestRegistryContext,
+		TargetURL: fmt.Sprintf("https://github.test/HemSoft/consumer/pull/94#issuecomment-%d", commentID),
+	}
+	status.Creator.Login = "HemSoft"
+	return status
 }
 
 func TestReviewCommentTimeUsesImmutableCreatedAt(t *testing.T) {

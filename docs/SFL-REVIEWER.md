@@ -67,8 +67,15 @@ The command:
 2. verifies the pull request is open and the observer is installed;
 3. posts @codex review with an invisible marker containing the full head SHA,
    base SHA, and latest SFL invalidation context token;
-4. reuses the existing request URL instead of posting a duplicate for that
+4. records the returned comment ID in the append-only
+   `SFL Codex Review Request Registry` commit-status context;
+5. reuses the existing request URL instead of posting a duplicate for that
    head.
+
+The registry preserves request identity if the owner later edits the comment.
+The observer rejects edited markers, while `--retry` waits for the registered
+request's Codex reaction lifecycle before posting an immutable replacement.
+Ordinary edited discussion comments are not review requests.
 
 A new commit creates a new head and therefore permits one new request.
 If a base change or retarget would reuse a head that was already requested
@@ -124,12 +131,13 @@ Native Codex owns review depth, severity, and presentation. SFL now verifies
 Codex provenance and head freshness and translates its clean/finding result
 into the existing branch gate. It does not promise three passes, all severity
 classes, SFL-authored approvals, obsolete-thread cleanup, or recovery retries.
-A rerun is an explicit new `gh sfl review` request. `--retry` is rejected until
-the latest request has a request-specific terminal SFL gate, preventing an
-older observer run from publishing after a newer verdict. If SFL was stopped
-and skipped the Codex result event, restart SFL and rerun that completed
-observer workflow from Actions; do not post a competing request while its gate
-is absent.
+A rerun is an explicit new `gh sfl review --retry` request. A normal retry is
+rejected until the latest request has a request-specific terminal SFL gate.
+For an edited or overlapping request that can never receive its own gate, the
+CLI uses the durable request registry and waits up to two minutes for the exact
+Codex `eyes` reaction to materialize and clear. It then waits beyond GitHub's
+one-second timestamp boundary before posting the replacement. This prevents a
+delayed artifact from an older request from consuming the replacement's gate.
 
 Pilot deployments are limited to HemSoft/hs-buddy until the source change and
 smoke evidence are accepted. Do not deploy this migration to
