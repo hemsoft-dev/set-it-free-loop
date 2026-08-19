@@ -660,9 +660,6 @@ func latestReviewerRunWithPageSize(client restAPI, owner, repo string, pageSize 
 			return workflowRunSummary{}, err
 		}
 		for _, run := range response.Runs {
-			if run.Status != "completed" {
-				return run, nil
-			}
 			var jobs struct {
 				Jobs []workflowJobSummary `json:"jobs"`
 			}

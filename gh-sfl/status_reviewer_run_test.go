@@ -16,7 +16,7 @@ func (f *reviewerRunREST) Get(path string, response interface{}) error {
 	switch {
 	case strings.Contains(path, "/workflows/sfl-pr-review-auto.yml/runs?"):
 		return decodeTestResponse(response, map[string]any{"workflow_runs": []map[string]any{
-			{"id": 2, "status": "completed", "conclusion": "success", "html_url": "https://github.test/runs/2"},
+			{"id": 2, "status": "in_progress", "conclusion": "", "html_url": "https://github.test/runs/2"},
 			{"id": 1, "status": "completed", "conclusion": "failure", "html_url": "https://github.test/runs/1"},
 		}})
 	case strings.Contains(path, "/actions/runs/2/jobs?"):
