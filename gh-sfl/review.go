@@ -96,6 +96,7 @@ type reviewRequestStatus struct {
 type reviewerCheckRun struct {
 	ID          int64  `json:"id"`
 	Status      string `json:"status"`
+	Conclusion  string `json:"conclusion"`
 	CompletedAt string `json:"completed_at"`
 	ExternalID  string `json:"external_id"`
 	App         struct {
@@ -207,9 +208,14 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		if untrackedExisting || reviewCommentWasEdited(existing) {
 			retryNeedsReactionMaterialization = true
 		} else {
-			completed, completedErr := hasTerminalGateForRequest(client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing)
+			terminal, completed, completedErr := findTerminalGateForRequest(
+				client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, existing,
+			)
 			if completedErr != nil {
 				return fmt.Errorf("checking the prior Codex review result: %w", completedErr)
+			}
+			if completed && strings.EqualFold(terminal.Conclusion, "success") {
+				return fmt.Errorf("the latest Codex review request for %s/%s#%d already passed — push a new commit before requesting another review so the successful gate cannot remain valid during a retry", owner, repo, opts.pr)
 			}
 			if !completed {
 				recoverable, recoveryErr := canRecoverFromOverlappingRequest(
@@ -766,17 +772,6 @@ func reviewContextTokenFromBody(body string) (string, bool) {
 		return "", false
 	}
 	return body[start : start+end], true
-}
-
-func hasTerminalGateForRequest(
-	client restAPI,
-	owner, repo string,
-	prNumber int,
-	headSHA, baseSHA string,
-	request reviewTriggerComment,
-) (bool, error) {
-	_, found, err := findTerminalGateForRequest(client, owner, repo, prNumber, headSHA, baseSHA, request)
-	return found, err
 }
 
 func findTerminalGateForRequest(

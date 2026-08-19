@@ -529,6 +529,37 @@ func TestRunReviewRetryPostsAnotherCurrentHeadRequest(t *testing.T) {
 	}
 }
 
+func TestRunReviewRejectsRetryAfterSuccessfulGate(t *testing.T) {
+	head := strings.Repeat("b", 40)
+	base := strings.Repeat("a", 40)
+	requestTime := "2026-08-19T00:00:00Z"
+	requestMillis := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC).UnixMilli()
+	rest := &reviewREST{comments: []reviewTriggerComment{{
+		ID:        123,
+		Body:      codexReviewCommand + "\n\n" + codexReviewMarker(head, base, "none"),
+		HTMLURL:   "https://github.test/existing",
+		CreatedAt: requestTime,
+		User: struct {
+			Login string `json:"login"`
+		}{Login: "HemSoft"},
+	}}, checkRuns: []map[string]any{{
+		"status":      "completed",
+		"conclusion":  "success",
+		"external_id": fmt.Sprintf("sfl-codex-review:pull:94:base:%s:context:none:request:123:at:%d:artifact:r456", base, requestMillis),
+		"app":         map[string]any{"id": 15368},
+	}}}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "--retry", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "already passed") ||
+		!strings.Contains(err.Error(), "push a new commit") {
+		t.Fatalf("runReview() successful retry error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("successful-gate retry posts = %d, want 0", rest.posts)
+	}
+}
+
 func TestRunReviewRetryRecoversFromOverlappingRequest(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	base := strings.Repeat("a", 40)

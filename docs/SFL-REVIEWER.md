@@ -135,6 +135,8 @@ into the existing branch gate. It does not promise three passes, all severity
 classes, SFL-authored approvals, obsolete-thread cleanup, or recovery retries.
 A rerun is an explicit new `gh sfl review --retry` request. A normal retry is
 rejected until the latest request has a request-specific terminal SFL gate.
+Retries after a successful terminal gate are rejected; push a new commit so the
+old success cannot satisfy the required check while another review is pending.
 For an edited or overlapping request that can never receive its own gate, the
 CLI uses the durable request registry and waits up to two minutes for the exact
 Codex `eyes` reaction to materialize and clear. It then waits beyond GitHub's
