@@ -11,7 +11,7 @@ on:
   pull_request_review:
     types: [submitted]
   pull_request_target:
-    types: [opened, reopened, edited]
+    types: [opened, reopened, edited, synchronize]
 
 permissions: {}
 
@@ -198,11 +198,21 @@ jobs:
             core.info(result.reason);
             if (result.action === "ignore") return;
 
+            const publishPull = await github.rest.pulls.get({
+              owner, repo, pull_number: pullNumber,
+            });
+            if (publishPull.data.state !== "open" ||
+                publishPull.data.head.sha !== currentHead ||
+                publishPull.data.base.sha !== currentBase) {
+              core.info("The pull request context changed before the Codex result could be published");
+              return;
+            }
+
             const conclusion = result.action === "success" ? "success" : "failure";
             const title = result.action === "success"
               ? "SFL Codex review passed"
               : "SFL Codex review failed";
-            const externalId = "sfl-codex-review:" + artifactKind + ":" + artifactId;
+            const externalId = `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:${artifactKind}:${artifactId}`;
             const checks = await github.rest.checks.listForRef({
               owner,
               repo,
@@ -225,17 +235,41 @@ jobs:
               external_id: externalId,
               output: {title, summary: result.reason},
             };
+            let published;
             if (existing) {
-              await github.rest.checks.update({
+              published = await github.rest.checks.update({
                 ...common,
                 check_run_id: existing.id,
               });
             } else {
-              await github.rest.checks.create({
+              published = await github.rest.checks.create({
                 ...common,
                 name: "SFL Reviewer Gate Runner",
                 head_sha: currentHead,
               });
+            }
+            if (result.action === "success") {
+              const confirmedPull = await github.rest.pulls.get({
+                owner, repo, pull_number: pullNumber,
+              });
+              if (confirmedPull.data.state !== "open" ||
+                  confirmedPull.data.head.sha !== currentHead ||
+                  confirmedPull.data.base.sha !== currentBase) {
+                const changedReason = "The pull request context changed while the Codex result was being published";
+                await github.rest.checks.update({
+                  owner,
+                  repo,
+                  check_run_id: published.data.id,
+                  status: "completed",
+                  conclusion: "failure",
+                  completed_at: new Date().toISOString(),
+                  details_url: artifact.html_url || pull.data.html_url,
+                  external_id: externalId,
+                  output: {title: "SFL Codex review invalidated", summary: changedReason},
+                });
+                core.setFailed(changedReason);
+                return;
+              }
             }
             if (result.action !== "success") core.setFailed(result.reason);
 
@@ -245,6 +279,7 @@ jobs:
       github.event_name == 'pull_request_target' &&
       (github.event.action == 'opened' ||
       github.event.action == 'reopened' ||
+      github.event.action == 'synchronize' ||
       github.event.changes.base)
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -282,6 +317,9 @@ jobs:
             const newerSuccess = reviewerChecks.some(
               check => check.app && check.app.id === 15368 &&
                 check.conclusion === "success" &&
+                check.external_id && check.external_id.startsWith(
+                  `sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}:`,
+                ) &&
                 Number.isFinite(Date.parse(check.completed_at || "")) &&
                 Date.parse(check.completed_at || "") > contextChangeTime,
             );
@@ -291,7 +329,9 @@ jobs:
             }
             const reason = context.payload.action === "edited"
               ? `Pull request base changed to ${pull.base.ref} at ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`
-              : `Pull request #${pull.number} opened or reopened for ${pull.base.ref} at ${pull.base.sha}; request a Codex review for this exact pull request context.`;
+              : context.payload.action === "synchronize"
+                ? `Pull request head changed to ${pull.head.sha}; request a Codex review for this exact head and base.`
+                : `Pull request #${pull.number} opened or reopened for ${pull.base.ref} at ${pull.base.sha}; request a Codex review for this exact pull request context.`;
             await github.rest.checks.create({
               owner,
               repo,
@@ -352,6 +392,9 @@ jobs:
               const newerSuccess = reviewerChecks.some(
                 check => check.app && check.app.id === 15368 &&
                   check.conclusion === "success" &&
+                  check.external_id && check.external_id.startsWith(
+                    `sfl-codex-review:pull:${pull.number}:base:${pull.base.sha.toLowerCase()}:`,
+                  ) &&
                   Number.isFinite(Date.parse(check.completed_at || "")) &&
                   Date.parse(check.completed_at || "") > baseAdvanceTime,
               );
