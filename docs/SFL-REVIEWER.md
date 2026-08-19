@@ -8,8 +8,9 @@ OpenAI API key.
 
 The review tier installs one workflow:
 
-- .github/workflows/sfl-pr-review-auto.yml observes authenticated Codex results
-  and publishes the immutable-head SFL Reviewer Gate Runner check.
+- .github/workflows/sfl-pr-review-auto.yml observes authenticated Codex results,
+  publishes an immutable-head audit check, and publishes the required SFL
+  Reviewer Gate Runner status on the synthetic merge commit.
 
 A synchronized deployment also removes the retired sfl-pr-review.md,
 sfl-pr-review.lock.yml, and sfl-pr-review-recovery.yml files.
@@ -121,11 +122,11 @@ After deployment, enable the existing strict branch rule:
 The rule still requires SFL Reviewer Gate Runner from GitHub Actions App ID
 15368 with strict base freshness. The observer binds the review artifact to the
 reviewed head and base, keeps its terminal audit check on that head, and writes
-the required check on GitHub's current synthetic merge commit:
+the required commit status on GitHub's current synthetic merge commit:
 
-- clean Codex result: success on the head audit and required merge checks;
+- clean Codex result: success on the head audit check and required merge status;
 - current-head Codex findings or malformed authenticated output: failure on
-  the head audit check, leaving the required merge check unsatisfied;
+  the head audit check, leaving the required merge status unsatisfied;
 - stale or spoofed artifact: no check.
 
 ## Semantic change from the retired reviewer

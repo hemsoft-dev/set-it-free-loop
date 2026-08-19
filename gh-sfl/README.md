@@ -75,8 +75,8 @@ gh sfl gate --repo owner/repo
 The command creates one repository ruleset for the default branch. It requires
 `SFL Reviewer Gate Runner` from GitHub Actions App ID `15368` and enables strict
 base freshness. The observer authenticates the native Codex result against the
-exact reviewed head and base, then writes the required runner check on GitHub's
-current merge commit. An already-correct
+exact reviewed head and base, then writes the required runner commit status on
+GitHub's current merge commit. An already-correct
 gate causes no write. A stale dedicated SFL gate is updated with its current
 entity tag and state rechecked immediately before the write. The command aborts
 if either changed, verifies the result, and restores the pre-write snapshot if

@@ -177,7 +177,7 @@ jobs:
       contents: read
       issues: read
       pull-requests: read
-      statuses: read
+      statuses: write
     steps:
       - name: Validate Codex result and publish immutable-head gate
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -851,16 +851,14 @@ jobs:
                 output: {title: "SFL Codex review invalidated", summary: changedReason},
               });
               if (requiredPublished) {
-                await github.rest.checks.update({
+                await github.rest.repos.createCommitStatus({
                   owner,
                   repo,
-                  check_run_id: requiredPublished.data.id,
-                  status: "completed",
-                  conclusion: "failure",
-                  completed_at: new Date().toISOString(),
-                  details_url: detailsURL,
-                  external_id: requiredPublished.data.external_id,
-                  output: {title: "SFL Codex review invalidated", summary: changedReason},
+                  sha: requiredPublished.data.sha,
+                  state: "failure",
+                  context: "SFL Reviewer Gate Runner",
+                  target_url: detailsURL,
+                  description: "The reviewed pull request context changed during publication",
                 });
               }
               core.setFailed(changedReason);
@@ -875,16 +873,14 @@ jobs:
               await failPublishedSuccess("GitHub has not prepared the pull request merge commit; rerun the review after mergeability is computed");
               return;
             }
-            requiredPublished = await github.rest.checks.create({
+            requiredPublished = await github.rest.repos.createCommitStatus({
               owner,
               repo,
-              name: "SFL Reviewer Gate Runner",
-              head_sha: currentMerge,
-              status: "in_progress",
-              started_at: new Date().toISOString(),
-              details_url: detailsURL,
-              external_id: `${externalId}:merge:${currentMerge}`,
-              output: {title: "SFL Codex review validating", summary: result.reason},
+              sha: currentMerge,
+              state: "pending",
+              context: "SFL Reviewer Gate Runner",
+              target_url: detailsURL,
+              description: "Validating Codex review for the pull request merge commit",
             });
             await github.rest.checks.update({
               owner,
@@ -897,16 +893,14 @@ jobs:
               external_id: externalId,
               output: {title, summary: result.reason},
             });
-            await github.rest.checks.update({
+            await github.rest.repos.createCommitStatus({
               owner,
               repo,
-              check_run_id: requiredPublished.data.id,
-              status: "completed",
-              conclusion: "success",
-              completed_at: new Date().toISOString(),
-              details_url: detailsURL,
-              external_id: requiredPublished.data.external_id,
-              output: {title, summary: result.reason},
+              sha: currentMerge,
+              state: "success",
+              context: "SFL Reviewer Gate Runner",
+              target_url: detailsURL,
+              description: "Codex found no major issues on the reviewed pull request head",
             });
             const postSuccessState = await publicationState();
             if (publicationChanged(postSuccessState, currentMerge)) {
