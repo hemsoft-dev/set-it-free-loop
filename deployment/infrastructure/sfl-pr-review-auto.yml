@@ -107,6 +107,13 @@ jobs:
               }
               return { action: "failure", reason: "authenticated Codex artifact has an unknown result shape" };
             }
+
+            function isActiveInvalidationRun(run, pullNumber) {
+              if (!run || run.status === "completed") return false;
+              if (run.event === "push") return true;
+              return run.event === "pull_request_target" &&
+                (run.pull_requests || []).some(candidate => candidate.number === pullNumber);
+            }
             // END TESTABLE CODEX OBSERVER
 
             const {owner, repo} = context.repo;
@@ -177,29 +184,29 @@ jobs:
               core.setFailed(reason);
               return;
             }
-            const activeContextRuns = async () => {
+            const activeInvalidationRuns = async () => {
               const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"];
-              const pages = await Promise.all(activeStatuses.map(
-                status => github.paginate(
+              const events = ["pull_request_target", "push"];
+              const pages = await Promise.all(events.flatMap(
+                event => activeStatuses.map(status => github.paginate(
                   github.rest.actions.listWorkflowRuns,
                   {
                     owner,
                     repo,
                     workflow_id: "sfl-pr-review-auto.yml",
-                    event: "pull_request_target",
+                    event,
                     status,
                     per_page: 100,
                   },
                   response => response.data.workflow_runs,
-                ),
+                )),
               ));
               return pages.flat().filter(
-                run => run.id !== context.runId && run.status !== "completed" &&
-                  (run.pull_requests || []).some(candidate => candidate.number === pullNumber),
+                run => run.id !== context.runId && isActiveInvalidationRun(run, pullNumber),
               );
             };
-            const failForPendingContext = async pendingRun => {
-              const reason = `Pull-context run ${pendingRun.id} is still active; the Codex result cannot supersede its invalidation`;
+            const failForPendingInvalidation = async pendingRun => {
+              const reason = `${pendingRun.event} invalidation run ${pendingRun.id} is still active; the Codex result cannot supersede its invalidation`;
               await github.rest.checks.create({
                 owner,
                 repo,
@@ -209,27 +216,27 @@ jobs:
                 conclusion: "failure",
                 completed_at: new Date().toISOString(),
                 details_url: artifact.html_url || pull.data.html_url,
-                external_id: `sfl-codex-review:pending-context:${pendingRun.id}:artifact:${artifactId}`,
+                external_id: `sfl-codex-review:pending-invalidation:${pendingRun.id}:artifact:${artifactId}`,
                 output: {title: "SFL Codex review blocked", summary: reason},
               });
               core.setFailed(reason);
             };
-            let pendingContextRuns = [];
-            let observedContextRun = false;
+            let pendingInvalidationRuns = [];
+            let observedInvalidationRun = false;
             for (let attempt = 0; attempt < 12; attempt += 1) {
-              pendingContextRuns = await activeContextRuns();
-              if (pendingContextRuns.length > 0) {
-                observedContextRun = true;
-                core.info(`Waiting for pull-context run ${pendingContextRuns[0].id} before publishing the Codex result`);
-              } else if (observedContextRun || attempt >= 5) {
+              pendingInvalidationRuns = await activeInvalidationRuns();
+              if (pendingInvalidationRuns.length > 0) {
+                observedInvalidationRun = true;
+                core.info(`Waiting for ${pendingInvalidationRuns[0].event} invalidation run ${pendingInvalidationRuns[0].id} before publishing the Codex result`);
+              } else if (observedInvalidationRun || attempt >= 5) {
                 break;
               } else {
-                core.info("Allowing a pull-context run time to materialize before publishing the Codex result");
+                core.info("Allowing an invalidation run time to materialize before publishing the Codex result");
               }
               await new Promise(resolve => setTimeout(resolve, 5000));
             }
-            if (pendingContextRuns.length > 0) {
-              await failForPendingContext(pendingContextRuns[0]);
+            if (pendingInvalidationRuns.length > 0) {
+              await failForPendingInvalidation(pendingInvalidationRuns[0]);
               return;
             }
             const reviewContextToken = checkRuns => {
@@ -343,9 +350,9 @@ jobs:
               core.info("The matching Codex request is not bound to the latest pull context");
               return;
             }
-            const finalContextRuns = await activeContextRuns();
-            if (finalContextRuns.length > 0) {
-              await failForPendingContext(finalContextRuns[0]);
+            const finalInvalidationRuns = await activeInvalidationRuns();
+            if (finalInvalidationRuns.length > 0) {
+              await failForPendingInvalidation(finalInvalidationRuns[0]);
               return;
             }
             const externalId = `sfl-codex-review:pull:${pullNumber}:base:${currentBase.toLowerCase()}:context:${encodeURIComponent(contextToken)}:request:${request.comment.id}:at:${requestTime}`;
@@ -582,9 +589,17 @@ jobs:
             }
             // END TESTABLE INVALIDATION ORDER
 
-            if (context.payload.deleted) return;
             const {owner, repo} = context.repo;
-            const baseRef = context.ref.replace(/^refs\/heads\//, "");
+            const configuredBaseBranch = process.env.SFL_REVIEW_BASE_BRANCH || "";
+            let baseRef = context.ref.replace(/^refs\/heads\//, "");
+            let renamedBase = false;
+            if (context.payload.deleted) {
+              const repository = await github.rest.repos.get({owner, repo});
+              const defaultBranch = repository.data.default_branch || "";
+              if (!defaultBranch) throw new Error("Could not determine the repository default branch after base deletion");
+              baseRef = defaultBranch;
+              renamedBase = defaultBranch !== configuredBaseBranch;
+            }
             const workflowRun = await github.rest.actions.getWorkflowRun({
               owner, repo, run_id: context.runId,
             });
@@ -637,7 +652,9 @@ jobs:
                 core.info(`Pull request #${pull.number} already has a successful Codex gate completed after this base advance`);
                 continue;
               }
-              const reason = `Pull request base ${baseRef} advanced to ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`;
+              const reason = renamedBase
+                ? `Repository default branch changed from deployed SFL review base ${configuredBaseBranch} to ${baseRef}; redeploy SFL before requesting a new Codex review.`
+                : `Pull request base ${baseRef} advanced to ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`;
               const finalChecks = await github.paginate(
                 github.rest.checks.listForRef,
                 {

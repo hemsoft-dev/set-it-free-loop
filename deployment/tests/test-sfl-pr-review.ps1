@@ -48,12 +48,13 @@ foreach ($pattern in @(
     'sfl-codex-review-pull-context-${{ github.repository }}-${{ github.event.pull_request.number }}',
     'github.rest.actions.listWorkflowRuns',
     'const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"]',
+    'const events = ["pull_request_target", "push"]',
     'status => github.paginate(',
     'actions: read',
-    'event: "pull_request_target"',
-    'run.status !== "completed"',
-    'Allowing a pull-context run time to materialize before publishing the Codex result',
-    'const finalContextRuns = await activeContextRuns()',
+    'if (run.event === "push") return true',
+    'run.status === "completed"',
+    'Allowing an invalidation run time to materialize before publishing the Codex result',
+    'const finalInvalidationRuns = await activeInvalidationRuns()',
     'the Codex result cannot supersede its invalidation',
     'sfl-codex-review-base-advance-${{ github.repository }}-${{ github.ref }}',
     'supersedesInvalidation(check.external_id, contextChangeTime, context.runId)',
@@ -66,6 +67,9 @@ foreach ($pattern in @(
     'skipping stale invalidation',
     'github.rest.actions.getWorkflowRun',
     'successful Codex gate completed after this context change',
+    'if (context.payload.deleted)',
+    'repository.data.default_branch',
+    'Repository default branch changed from deployed SFL review base',
     'name: "SFL Reviewer Gate Runner"',
     'check.app.id === 15368',
     'action: "success"',
@@ -75,6 +79,10 @@ foreach ($pattern in @(
     if ($canonical -notmatch [regex]::Escape($pattern)) {
         throw "Codex observer is missing contract text: $pattern"
     }
+}
+
+if ($canonical -match [regex]::Escape('if (context.payload.deleted) return;')) {
+    throw 'Base-branch deletion events are still discarded instead of invalidating gates after a rename.'
 }
 
 $helperMatches = [regex]::Matches(

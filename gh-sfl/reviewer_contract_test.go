@@ -242,6 +242,56 @@ func TestCodexObserverClassificationFixtures(t *testing.T) {
 	}
 }
 
+func TestCodexObserverActiveInvalidationFixtures(t *testing.T) {
+	tests := []struct {
+		name       string
+		run        map[string]any
+		pullNumber int
+		want       bool
+	}{
+		{
+			name:       "active push can invalidate every reviewed pull",
+			run:        map[string]any{"event": "push", "status": "in_progress"},
+			pullNumber: 42,
+			want:       true,
+		},
+		{
+			name: "matching active pull context can invalidate",
+			run: map[string]any{
+				"event":         "pull_request_target",
+				"status":        "queued",
+				"pull_requests": []map[string]any{{"number": 42}},
+			},
+			pullNumber: 42,
+			want:       true,
+		},
+		{
+			name: "other pull context is irrelevant",
+			run: map[string]any{
+				"event":         "pull_request_target",
+				"status":        "waiting",
+				"pull_requests": []map[string]any{{"number": 41}},
+			},
+			pullNumber: 42,
+			want:       false,
+		},
+		{
+			name:       "completed push is no longer active",
+			run:        map[string]any{"event": "push", "status": "completed"},
+			pullNumber: 42,
+			want:       false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := runActiveInvalidationFixture(t, tc.run, tc.pullNumber); got != tc.want {
+				t.Fatalf("isActiveInvalidationRun() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
 func userCopy(user map[string]any) map[string]any {
 	return map[string]any{"id": user["id"], "login": user["login"]}
 }
@@ -280,6 +330,38 @@ func runObserverFixture(t *testing.T, input map[string]any) observerResult {
 	var result observerResult
 	if err := json.Unmarshal(output, &result); err != nil {
 		t.Fatalf("parse observer result %q: %v", output, err)
+	}
+	return result
+}
+
+func runActiveInvalidationFixture(t *testing.T, run map[string]any, pullNumber int) bool {
+	t.Helper()
+	workflow := string(readContractFile(t, filepath.Join("..", "deployment", "infrastructure", "sfl-pr-review-auto.yml")))
+	startMarker := "// BEGIN TESTABLE CODEX OBSERVER"
+	endMarker := "// END TESTABLE CODEX OBSERVER"
+	start := strings.Index(workflow, startMarker)
+	end := strings.Index(workflow, endMarker)
+	if start < 0 || end <= start {
+		t.Fatal("could not locate testable Codex observer block")
+	}
+	source := workflow[start+len(startMarker) : end]
+	source += "\nconst fixture = JSON.parse(process.argv[2]); console.log(JSON.stringify(isActiveInvalidationRun(fixture.run, fixture.pullNumber)));\n"
+
+	temp := filepath.Join(t.TempDir(), "active-invalidation.js")
+	if err := os.WriteFile(temp, []byte(source), 0o600); err != nil {
+		t.Fatalf("write active invalidation fixture: %v", err)
+	}
+	payload, err := json.Marshal(map[string]any{"run": run, "pullNumber": pullNumber})
+	if err != nil {
+		t.Fatalf("marshal active invalidation fixture: %v", err)
+	}
+	output, err := exec.Command("node", temp, string(payload)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run active invalidation fixture: %v\n%s", err, output)
+	}
+	var result bool
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("parse active invalidation result %q: %v", output, err)
 	}
 	return result
 }
