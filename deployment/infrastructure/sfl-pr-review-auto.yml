@@ -854,7 +854,7 @@ jobs:
                 await github.rest.repos.createCommitStatus({
                   owner,
                   repo,
-                  sha: requiredPublished.data.sha,
+                  sha: currentMerge,
                   state: "failure",
                   context: "SFL Reviewer Gate Runner",
                   target_url: detailsURL,

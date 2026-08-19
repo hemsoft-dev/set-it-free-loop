@@ -159,6 +159,10 @@ foreach ($pattern in @(
     }
 }
 
+if ($canonical -match [regex]::Escape('requiredPublished.data.sha')) {
+    throw 'Merge-gate invalidation relies on a SHA absent from commit-status responses.'
+}
+
 if ($canonical -match [regex]::Escape('if (context.payload.deleted) return;')) {
     throw 'Base-branch deletion events are still discarded instead of invalidating gates after a rename.'
 }
