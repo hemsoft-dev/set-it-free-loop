@@ -740,13 +740,13 @@ func TestNormalizeManifestForSyncRemovesRetiredReviewerComponents(t *testing.T) 
 		})
 	}
 
-	full := &sflManifest{Tier: "full", Components: []string{"sfl-pr-review-recovery"}}
+	full := &sflManifest{Tier: "full", Components: []string{"sfl-pr-review", "sfl-pr-review-recovery"}}
 	normalizeManifestForSync(full, canonicalDeploymentTier(full.Tier))
-	if len(full.Components) != 0 {
-		t.Fatalf("full components retained the retired recovery component: %v", full.Components)
+	if !slices.Equal(full.Components, []string{"sfl-pr-review-auto"}) {
+		t.Fatalf("full components did not migrate to the observer component: %v", full.Components)
 	}
 
-	custom := &sflManifest{Tier: "custom", Components: []string{"repo-audit", "sfl-pr-review-recovery"}}
+	custom := &sflManifest{Tier: "custom", Components: []string{"repo-audit", "sfl-pr-review", "sfl-pr-review-recovery"}}
 	normalizeManifestForSync(custom, canonicalDeploymentTier(custom.Tier))
 	if !slices.Equal(custom.Components, []string{"repo-audit"}) {
 		t.Fatalf("custom components = %v, want only active components", custom.Components)

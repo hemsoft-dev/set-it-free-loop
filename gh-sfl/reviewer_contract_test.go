@@ -38,6 +38,7 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 
 	for _, required := range []string{
 		"name: SFL Codex Review Observer",
+		"pull_request_target:",
 		"github.event.sender.id == 199175422",
 		"Fork pull requests are unsupported",
 		"appId = 1144995",
@@ -47,6 +48,7 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 		"check.app.id === 15368",
 		"Codex artifact is stale",
 		"Codex reported review findings",
+		"SFL Codex review invalidated",
 	} {
 		if !strings.Contains(canonical, required) {
 			t.Errorf("Codex observer is missing %q", required)
@@ -157,6 +159,22 @@ func TestCodexObserverClassificationFixtures(t *testing.T) {
 				},
 			},
 			wantAction: "failure",
+		},
+		{
+			name: "stale malformed review is ignored",
+			input: map[string]any{
+				"eventName":    "pull_request_review",
+				"currentHead":  head,
+				"resolvedSha":  "",
+				"reviewCommit": "048484a6ced8de230284f03c7214d76f76987318",
+				"inlineCount":  1,
+				"artifact": map[string]any{
+					"user":  userCopy(codexUser),
+					"state": "COMMENTED",
+					"body":  "Here are some automated review suggestions without a commit marker.",
+				},
+			},
+			wantAction: "ignore",
 		},
 	}
 

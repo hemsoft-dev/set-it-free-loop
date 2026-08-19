@@ -307,7 +307,7 @@ $TierComponents = @{
     "review"   = @{
         Workflows      = @()
         Infrastructure = @("sfl-pr-review-auto")
-        Components     = @("sfl-pr-review", "sfl-pr-review-auto")
+        Components     = @("sfl-pr-review-auto")
     }
     "minimal"  = @{
         Workflows      = @("daily-repo-status", "repo-audit")
@@ -328,7 +328,7 @@ $TierComponents = @{
                            "sfl-pr-review-auto")
         Components     = @("labels", "governance", "sfl-dispatcher", "sfl-auditor",
                            "daily-repo-status", "repo-audit", "issue-processor", "simplisticate",
-                           "sfl-pr-review", "sfl-pr-review-auto",
+                           "sfl-pr-review-auto",
                            "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security",
                            "pr-analyzer-testing", "pr-fixer", "pr-promoter")
     }
@@ -535,7 +535,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
         # 3. Copy workflow files
         New-Item -ItemType Directory -Force $DestWorkdir | Out-Null
 
-        if ("sfl-pr-review" -in $DeployComponents) {
+        if ("sfl-pr-review-auto" -in $DeployComponents) {
             foreach ($retiredReviewerFile in @(
                 "sfl-pr-review.md",
                 "sfl-pr-review.lock.yml",

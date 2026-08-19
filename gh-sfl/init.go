@@ -77,10 +77,10 @@ var tierWorkflows = map[string][]string{
 	},
 }
 var tierComponents = map[string][]string{
-	"reviewer": {"sfl-pr-review", "sfl-pr-review-auto"},
+	"reviewer": {"sfl-pr-review-auto"},
 	"minimal":  {"labels", "governance", "sfl-dispatcher"},
 	"standard": {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate"},
-	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security", "pr-analyzer-testing", "pr-fixer", "pr-promoter", "sfl-pr-review", "sfl-pr-review-auto"},
+	"full":     {"labels", "governance", "sfl-dispatcher", "sfl-auditor", "daily-repo-status", "repo-audit", "issue-processor", "simplisticate", "pr-analyzer-general", "pr-analyzer-quality", "pr-analyzer-security", "pr-analyzer-testing", "pr-fixer", "pr-promoter", "sfl-pr-review-auto"},
 }
 
 func canonicalDeploymentTier(tier string) string {

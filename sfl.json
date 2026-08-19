@@ -13,7 +13,6 @@
     "repo-audit",
     "issue-processor",
     "simplisticate",
-    "sfl-pr-review",
     "sfl-pr-review-auto",
     "pr-analyzer-general",
     "pr-analyzer-quality",

@@ -22,7 +22,7 @@ function Merge-SflManifest {
     $existingComponentsProperty = $ExistingManifest.PSObject.Properties['components']
     $existingComponents = if ($null -ne $existingComponentsProperty) {
         @($existingComponentsProperty.Value) |
-            Where-Object { $_ -ne 'sfl-pr-review-recovery' }
+            Where-Object { $_ -notin @('sfl-pr-review', 'sfl-pr-review-recovery') }
     } else {
         @()
     }

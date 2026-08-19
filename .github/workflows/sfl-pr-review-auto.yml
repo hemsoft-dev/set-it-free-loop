@@ -8,6 +8,8 @@ on:
     types: [created]
   pull_request_review:
     types: [submitted]
+  pull_request_target:
+    types: [edited]
 
 permissions: {}
 
@@ -70,10 +72,13 @@ jobs:
               const currentHead = (input.currentHead || "").toLowerCase();
               const resolvedSha = (input.resolvedSha || "").toLowerCase();
               const reviewCommit = (input.reviewCommit || "").toLowerCase();
+              if (reviewCommit && reviewCommit !== currentHead) {
+                return { action: "ignore", reason: "Codex artifact is stale for the current pull request head" };
+              }
               if (!resolvedSha) {
                 return { action: "failure", reason: "Codex artifact has a malformed or unresolvable reviewed commit" };
               }
-              if (resolvedSha !== currentHead || (reviewCommit && reviewCommit !== currentHead)) {
+              if (resolvedSha !== currentHead) {
                 return { action: "ignore", reason: "Codex artifact is stale for the current pull request head" };
               }
 
@@ -195,3 +200,37 @@ jobs:
               });
             }
             if (result.action !== "success") core.setFailed(result.reason);
+
+  invalidate-base-change:
+    name: Invalidate Codex review after base change
+    if: >-
+      vars.SFL_ENABLED != 'false' &&
+      github.event_name == 'pull_request_target' &&
+      github.event.changes.base
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - name: Fail the immutable-head gate until the new diff is reviewed
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const {owner, repo} = context.repo;
+            const pull = context.payload.pull_request;
+            const reason = `Pull request base changed to ${pull.base.ref} at ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`;
+            await github.rest.checks.create({
+              owner,
+              repo,
+              name: "SFL Reviewer Gate Runner",
+              head_sha: pull.head.sha,
+              status: "completed",
+              conclusion: "failure",
+              completed_at: new Date().toISOString(),
+              details_url: pull.html_url,
+              external_id: `sfl-codex-review:base-change:${context.runId}`,
+              output: {title: "SFL Codex review invalidated", summary: reason},
+            });
+            core.setFailed(reason);

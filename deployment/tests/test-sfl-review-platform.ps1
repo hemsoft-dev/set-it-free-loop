@@ -31,7 +31,7 @@ if ($files.Init -match 'sfl-pr-review\.lock\.yml|sfl-pr-review-recovery\.yml' -o
 foreach ($required in @(
     'Workflows      = @()',
     'Infrastructure = @("sfl-pr-review-auto")',
-    '"sfl-pr-review", "sfl-pr-review-auto"',
+    'Components     = @("sfl-pr-review-auto")',
     'Remove-Item -LiteralPath $retiredPath -Force',
     'gh pr edit $existingPrNumber',
     '--body $prBody',

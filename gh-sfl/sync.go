@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 )
@@ -229,12 +230,15 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 func normalizeManifestForSync(manifest *sflManifest, installedTier string) {
 	components := manifest.Components[:0]
 	for _, component := range manifest.Components {
-		if component != "sfl-pr-review-recovery" {
+		if component != "sfl-pr-review" && component != "sfl-pr-review-recovery" {
 			components = append(components, component)
 		}
 	}
 	manifest.Components = components
 
+	if installedTier == "full" && !slices.Contains(manifest.Components, "sfl-pr-review-auto") {
+		manifest.Components = append(manifest.Components, "sfl-pr-review-auto")
+	}
 	if installedTier != "reviewer" {
 		return
 	}

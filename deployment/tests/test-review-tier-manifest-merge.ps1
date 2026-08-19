@@ -45,7 +45,6 @@ $incomingReview = [pscustomobject]@{
     source = 'HemSoft/set-it-free-loop'
     sourceSha = '2222222222222222222222222222222222222222'
     components = @(
-        'sfl-pr-review',
         'sfl-pr-review-auto'
     )
     enginePolicy = [pscustomobject]@{
@@ -65,7 +64,6 @@ $expectedComponents = @(
     'labels',
     'pr-fixer',
     'repo-audit',
-    'sfl-pr-review',
     'sfl-pr-review-auto'
 )
 $actualComponents = @($merged.components | Sort-Object)
@@ -104,13 +102,16 @@ $legacyMerged = Merge-SflManifest `
 if ($legacyMerged.tier -ne 'standard') {
     throw "Expected legacy standard tier to be preserved; got '$($legacyMerged.tier)'."
 }
-foreach ($component in @('sfl-pr-review', 'sfl-pr-review-auto')) {
+foreach ($component in @('sfl-pr-review-auto')) {
     if ($component -notin @($legacyMerged.components)) {
         throw "Legacy manifest did not receive the $component component."
     }
 }
 if (@($legacyMerged.enginePolicy.workflows).Count -ne 0) {
     throw 'Subscription-backed reviewer unexpectedly added an API engine policy.'
+}
+if ('sfl-pr-review' -in @($legacyMerged.components)) {
+    throw 'Legacy manifest retained the retired Markdown reviewer component.'
 }
 
 Write-Output 'Review-tier manifest merge tests passed.'
