@@ -235,8 +235,12 @@ func TestRunReviewWaitsForCurrentInvalidationBeforeReadingContext(t *testing.T) 
 		updatedAt: updatedAt,
 		workflowRunResponses: [][]map[string]any{
 			{},
-			{run("in_progress")},
-			{run("completed")},
+			{},
+			{},
+			{},
+			{},
+			{run("queued")},
+			{},
 		},
 		checkRuns: []map[string]any{{
 			"id":          5,
@@ -249,8 +253,8 @@ func TestRunReviewWaitsForCurrentInvalidationBeforeReadingContext(t *testing.T) 
 	if err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard); err != nil {
 		t.Fatalf("runReview() invalidation barrier error = %v", err)
 	}
-	if rest.workflowRunGets != 3 {
-		t.Fatalf("workflow run GETs = %d, want 3", rest.workflowRunGets)
+	if rest.workflowRunGets != 15 {
+		t.Fatalf("workflow run GETs = %d, want 15", rest.workflowRunGets)
 	}
 	wantMarker := codexReviewMarker(head, base, contextToken)
 	if !strings.Contains(rest.postBody, wantMarker) {
@@ -261,11 +265,10 @@ func TestRunReviewWaitsForCurrentInvalidationBeforeReadingContext(t *testing.T) 
 func TestReviewWorkflowRunAppliesOnlyToExactContext(t *testing.T) {
 	head := strings.Repeat("b", 40)
 	base := strings.Repeat("a", 40)
-	changedAt := time.Date(2026, 8, 19, 0, 0, 0, 0, time.UTC)
 	run := reviewWorkflowRun{
 		Event:     "pull_request_target",
 		Status:    "in_progress",
-		CreatedAt: changedAt.Format(time.RFC3339),
+		CreatedAt: "2026-08-19T00:00:00Z",
 	}
 	run.PullRequests = append(run.PullRequests, struct {
 		Number int `json:"number"`
@@ -279,26 +282,44 @@ func TestReviewWorkflowRunAppliesOnlyToExactContext(t *testing.T) {
 	run.PullRequests[0].Head.SHA = head
 	run.PullRequests[0].Base.SHA = base
 
-	if !reviewWorkflowRunApplies(run, 94, "main", head, base, changedAt) {
+	if !reviewWorkflowRunApplies(run, 94, "main", head, base) {
 		t.Fatal("exact pull-request invalidation did not apply")
 	}
-	if reviewWorkflowRunApplies(run, 95, "main", head, base, changedAt) {
+	if reviewWorkflowRunApplies(run, 95, "main", head, base) {
 		t.Fatal("another pull request invalidation applied")
-	}
-	run.Status = "completed"
-	run.CreatedAt = changedAt.Add(-time.Second).Format(time.RFC3339)
-	if reviewWorkflowRunApplies(run, 94, "main", head, base, changedAt) {
-		t.Fatal("stale completed pull-request invalidation applied to a newer context")
-	}
-	run.Status = "in_progress"
-	if !reviewWorkflowRunApplies(run, 94, "main", head, base, changedAt) {
-		t.Fatal("active exact-context invalidation was ignored after a later pull-request update")
 	}
 	run.Event = "push"
 	run.HeadBranch = "main"
 	run.HeadSHA = base
-	if !reviewWorkflowRunApplies(run, 94, "main", head, base, changedAt) {
+	if !reviewWorkflowRunApplies(run, 94, "main", head, base) {
 		t.Fatal("exact default-branch push invalidation did not apply")
+	}
+	run.Status = "completed"
+	if reviewWorkflowRunApplies(run, 94, "main", head, base) {
+		t.Fatal("completed invalidation run remained active")
+	}
+}
+
+func TestFetchActiveReviewWorkflowRunsPaginatesEveryStatus(t *testing.T) {
+	firstPage := make([]map[string]any, 100)
+	for index := range firstPage {
+		firstPage[index] = map[string]any{"id": index + 1, "status": "requested"}
+	}
+	rest := &reviewREST{workflowRunResponses: [][]map[string]any{
+		firstPage,
+		{{"id": 101, "status": "requested"}},
+		{},
+	}}
+
+	runs, err := fetchActiveReviewWorkflowRuns(rest, "HemSoft", "consumer")
+	if err != nil {
+		t.Fatalf("fetchActiveReviewWorkflowRuns() error = %v", err)
+	}
+	if len(runs) != 101 {
+		t.Fatalf("active workflow runs = %d, want 101", len(runs))
+	}
+	if rest.workflowRunGets != 6 {
+		t.Fatalf("workflow run GETs = %d, want 6", rest.workflowRunGets)
 	}
 }
 

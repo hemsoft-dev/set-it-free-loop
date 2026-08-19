@@ -30,7 +30,7 @@ var waitForCodexReactionPoll = func() {
 }
 
 var waitForReviewInvalidationPoll = func() {
-	time.Sleep(time.Second)
+	time.Sleep(5 * time.Second)
 }
 
 type reviewOptions struct {
@@ -161,7 +161,8 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 	if confirmedDefaultBranch != defaultBranch || confirmedPR.State != "open" ||
 		confirmedPR.HeadSHA != pr.HeadSHA || confirmedPR.BaseSHA != pr.BaseSHA ||
-		confirmedPR.BaseRef != pr.BaseRef {
+		confirmedPR.BaseRef != pr.BaseRef ||
+		!strings.EqualFold(confirmedPR.HeadRepo, owner+"/"+repo) {
 		return fmt.Errorf("pull request #%d context changed while SFL invalidations were settling — rerun gh sfl review for the current head and base", opts.pr)
 	}
 
@@ -338,32 +339,28 @@ func waitForReviewInvalidations(
 		materializationAttempts = 6
 		maximumAttempts         = 60
 	)
-	contextChangedAt, _ := time.Parse(time.RFC3339Nano, pr.UpdatedAt)
+	contextChangedAt := time.Time{}
+	if strings.TrimSpace(pr.UpdatedAt) != "" {
+		var err error
+		contextChangedAt, err = time.Parse(time.RFC3339Nano, pr.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("pull request has invalid updated_at %q: %w", pr.UpdatedAt, err)
+		}
+	}
 	observedApplicableRun := false
 	for attempt := 0; attempt < maximumAttempts; attempt++ {
-		var response struct {
-			Runs []reviewWorkflowRun `json:"workflow_runs"`
-		}
-		path := fmt.Sprintf(
-			"repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml/runs?per_page=100&page=1",
-			owner,
-			repo,
-		)
-		if err := client.Get(path, &response); err != nil {
+		runs, err := fetchActiveReviewWorkflowRuns(client, owner, repo)
+		if err != nil {
 			return err
 		}
-		applicable := false
 		active := false
-		for _, run := range response.Runs {
-			if !reviewWorkflowRunApplies(run, prNumber, defaultBranch, pr.HeadSHA, pr.BaseSHA, contextChangedAt) {
+		for _, run := range runs {
+			if !reviewWorkflowRunApplies(run, prNumber, defaultBranch, pr.HeadSHA, pr.BaseSHA) {
 				continue
 			}
-			applicable = true
-			if run.Status != "completed" {
-				active = true
-			}
+			active = true
 		}
-		observedApplicableRun = observedApplicableRun || applicable
+		observedApplicableRun = observedApplicableRun || active
 		if !active && (observedApplicableRun || contextChangedAt.IsZero() || attempt >= materializationAttempts-1) {
 			return nil
 		}
@@ -374,14 +371,39 @@ func waitForReviewInvalidations(
 	return errors.New("an applicable SFL invalidation workflow is still active")
 }
 
+func fetchActiveReviewWorkflowRuns(client restAPI, owner, repo string) ([]reviewWorkflowRun, error) {
+	activeStatuses := []string{"requested", "queued", "in_progress", "waiting", "pending"}
+	runs := make([]reviewWorkflowRun, 0)
+	for _, status := range activeStatuses {
+		for page := 1; ; page++ {
+			var response struct {
+				Runs []reviewWorkflowRun `json:"workflow_runs"`
+			}
+			path := fmt.Sprintf(
+				"repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml/runs?status=%s&per_page=100&page=%d",
+				owner,
+				repo,
+				status,
+				page,
+			)
+			if err := client.Get(path, &response); err != nil {
+				return nil, err
+			}
+			runs = append(runs, response.Runs...)
+			if len(response.Runs) < 100 {
+				break
+			}
+		}
+	}
+	return runs, nil
+}
+
 func reviewWorkflowRunApplies(
 	run reviewWorkflowRun,
 	prNumber int,
 	defaultBranch, headSHA, baseSHA string,
-	contextChangedAt time.Time,
 ) bool {
-	createdAt, err := time.Parse(time.RFC3339Nano, run.CreatedAt)
-	if err != nil {
+	if run.Status == "completed" {
 		return false
 	}
 	if run.Event == "push" {
@@ -393,8 +415,7 @@ func reviewWorkflowRunApplies(
 	for _, pull := range run.PullRequests {
 		if pull.Number == prNumber && strings.EqualFold(pull.Head.SHA, headSHA) &&
 			strings.EqualFold(pull.Base.SHA, baseSHA) {
-			return run.Status != "completed" || contextChangedAt.IsZero() ||
-				!createdAt.Before(contextChangedAt)
+			return true
 		}
 	}
 	return false
