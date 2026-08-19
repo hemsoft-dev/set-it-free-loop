@@ -428,6 +428,26 @@ func TestAddonCompilationGuidanceOnlyAppliesToMarkdownSource(t *testing.T) {
 	}
 }
 
+func TestReviewerAddonRequiresSubscriptionBackedSource(t *testing.T) {
+	if err := validateReviewerAddonSource(
+		"sfl-pr-review-auto.yml",
+		"name: SFL PR Review Auto Trigger",
+		strings.Repeat("a", 40),
+		"HemSoft/consumer",
+	); err == nil || !strings.Contains(err.Error(), "gh sfl sync") ||
+		!strings.Contains(err.Error(), strings.Repeat("a", 40)) {
+		t.Fatalf("legacy reviewer source error = %v", err)
+	}
+
+	content := "name: SFL Codex Review Observer\nif: github.event.sender.id == 199175422\n"
+	if err := validateReviewerAddonSource("sfl-pr-review-auto.yml", content, strings.Repeat("b", 40), "HemSoft/consumer"); err != nil {
+		t.Fatalf("subscription-backed reviewer source rejected: %v", err)
+	}
+	if err := validateReviewerAddonSource("repo-audit.md", "legacy content", strings.Repeat("a", 40), "HemSoft/consumer"); err != nil {
+		t.Fatalf("non-reviewer add-on source rejected: %v", err)
+	}
+}
+
 func TestParseAddOptionsDefaultsToPullRequest(t *testing.T) {
 	opts, err := parseAddOptions([]string{"pr-review"}, io.Discard)
 	if err != nil {

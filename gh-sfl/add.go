@@ -97,6 +97,9 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
+		if err := validateReviewerAddonSource(wf, content, manifest.SourceSHA, owner+"/"+repo); err != nil {
+			return err
+		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, manifest.Version)
 		if renderErr != nil {
 			return fmt.Errorf("applying HemSoft engine policy to %s: %w", wf, renderErr)
@@ -151,6 +154,17 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	}
 
 	return nil
+}
+
+func validateReviewerAddonSource(workflow, content, sourceSHA, targetRepo string) error {
+	if workflow != "sfl-pr-review-auto.yml" {
+		return nil
+	}
+	if strings.Contains(content, "name: SFL Codex Review Observer") &&
+		strings.Contains(content, "github.event.sender.id == 199175422") {
+		return nil
+	}
+	return fmt.Errorf("the SFL source %s pinned by %s predates the subscription-backed Codex reviewer; run 'gh sfl sync --repo %s' before adding pr-review", sourceSHA, targetRepo, targetRepo)
 }
 
 func addonNeedsCompilation(workflows []string) bool {

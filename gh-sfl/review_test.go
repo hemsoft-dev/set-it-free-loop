@@ -11,10 +11,11 @@ import (
 )
 
 type reviewREST struct {
-	comments []reviewTriggerComment
-	headRepo string
-	posts    int
-	postBody string
+	comments            []reviewTriggerComment
+	headRepo            string
+	headRepoUnavailable bool
+	posts               int
+	postBody            string
 }
 
 func (f *reviewREST) Get(path string, response interface{}) error {
@@ -28,13 +29,16 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 	case strings.Contains(path, "/actions/variables/SFL_ENABLED"):
 		return decodeTestResponse(response, map[string]any{"value": "true"})
 	case strings.Contains(path, "/pulls/"):
-		headRepo := f.headRepo
-		if headRepo == "" {
-			headRepo = "HemSoft/consumer"
+		var headRepo any = map[string]string{"full_name": f.headRepo}
+		if f.headRepo == "" {
+			headRepo = map[string]string{"full_name": "HemSoft/consumer"}
+		}
+		if f.headRepoUnavailable {
+			headRepo = nil
 		}
 		return decodeTestResponse(response, map[string]any{
 			"base":  map[string]any{"sha": strings.Repeat("a", 40), "repo": map[string]string{"full_name": "HemSoft/consumer"}},
-			"head":  map[string]any{"sha": strings.Repeat("b", 40), "repo": map[string]string{"full_name": headRepo}},
+			"head":  map[string]any{"sha": strings.Repeat("b", 40), "repo": headRepo},
 			"state": "open",
 		})
 	case strings.Contains(path, "/comments?"):
@@ -141,6 +145,19 @@ func TestRunReviewRejectsForkPullRequest(t *testing.T) {
 	}
 	if rest.posts != 0 {
 		t.Fatalf("fork review posts = %d, want 0", rest.posts)
+	}
+}
+
+func TestRunReviewRejectsMissingHeadRepository(t *testing.T) {
+	rest := &reviewREST{headRepoUnavailable: true}
+	installReviewFakes(t, rest)
+
+	err := runReview([]string{"--repo", "HemSoft/consumer", "94"}, io.Discard, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "no available head repository") {
+		t.Fatalf("runReview() missing head repository error = %v", err)
+	}
+	if rest.posts != 0 {
+		t.Fatalf("missing-head review posts = %d, want 0", rest.posts)
 	}
 }
 

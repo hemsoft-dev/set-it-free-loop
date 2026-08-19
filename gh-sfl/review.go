@@ -69,7 +69,10 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	if pr.State != "open" {
 		return fmt.Errorf("pull request #%d in %s/%s is %s — reviews only run on open pull requests", opts.pr, owner, repo, pr.State)
 	}
-	if pr.BaseRepo != "" && pr.HeadRepo != "" && !strings.EqualFold(pr.BaseRepo, pr.HeadRepo) {
+	if pr.HeadRepo == "" {
+		return fmt.Errorf("pull request #%d in %s/%s has no available head repository — subscription-backed SFL reviews cannot run after the source repository is deleted", opts.pr, owner, repo)
+	}
+	if !strings.EqualFold(pr.HeadRepo, owner+"/"+repo) {
 		return fmt.Errorf("pull request #%d in %s/%s comes from fork %s — subscription-backed SFL reviews support same-repository branches only", opts.pr, owner, repo, pr.HeadRepo)
 	}
 
