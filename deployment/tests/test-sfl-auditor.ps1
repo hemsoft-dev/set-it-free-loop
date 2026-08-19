@@ -86,7 +86,8 @@ Assert-True ($workflowContent -match 'index\("sfl-pr-review-auto"\)') 'Auditor d
 Assert-True ($workflowContent -notmatch 'index\("sfl-pr-review"\)') 'Auditor still activates on the retired reviewer component.'
 Assert-True ($workflowContent -match 'any\(\. == "pr-review"\)') 'Auditor does not activate for the string-valued reviewer add-on.'
 Assert-True ($workflowContent -notmatch 'any\(\.name == "pr-review"\)') 'Auditor still treats string-valued add-ons as objects.'
-Assert-True ($workflowContent -match 'for MANIFEST_PATH in \.sfl/sfl\.json sfl\.json') 'Auditor does not inspect both CLI and legacy manifest paths.'
+Assert-True ($workflowContent -match 'if ! MANIFEST=.*contents/\.sfl/sfl\.json' -and
+    $workflowContent -match 'MANIFEST=.*contents/sfl\.json') 'Auditor does not use root sfl.json as a canonical-manifest fallback.'
 Assert-True ($workflowContent -match 'OBSERVER_STATE.*\.state') 'Auditor does not inspect the observer workflow state.'
 Assert-True ($workflowContent -match 'OBSERVER_STATE" != "active"') 'Auditor does not reject disabled observer workflows.'
 Assert-True ($workflowContent -match "DEFAULT_BRANCH=.*\.default_branch") 'Auditor does not read the repository default branch.'
@@ -174,16 +175,25 @@ try {
 
     $reviewScript = Get-WorkflowStepScript "      - name: `"Check: SFL review prerequisites`"`n"
     $manifestPath = Join-Path $temporaryDirectory 'sfl.json'
+    $rootManifestPath = Join-Path $temporaryDirectory 'root-sfl.json'
+    $manifestLogPath = Join-Path $temporaryDirectory 'manifest-log'
     $observerPath = Join-Path $temporaryDirectory 'observer.yml'
     $reviewOutputPath = Join-Path $temporaryDirectory 'review-output'
     $issueLogPath = Join-Path $temporaryDirectory 'issue-log'
     '{"components":["sfl-pr-review-auto"]}' | Set-Content -LiteralPath $manifestPath
+    '{"components":["sfl-pr-review-auto"]}' | Set-Content -LiteralPath $rootManifestPath
     $reviewMock = @'
 gh() {
   if [ "$1" = "api" ]; then
     case "$2" in
       repos/HemSoft/example/contents/.sfl/sfl.json)
+        printf 'canonical\n' >> "$MANIFEST_LOG"
         base64 "$MANIFEST_FIXTURE"
+        return
+        ;;
+      repos/HemSoft/example/contents/sfl.json)
+        printf 'root\n' >> "$MANIFEST_LOG"
+        base64 "$ROOT_MANIFEST_FIXTURE"
         return
         ;;
       repos/HemSoft/example/actions/workflows/sfl-pr-review-auto.yml)
@@ -220,8 +230,10 @@ gh() {
         DEFAULT_BRANCH_FIXTURE = 'main'
         ISSUE_LOG = $issueLogPath
         MANIFEST_FIXTURE = $manifestPath
+        MANIFEST_LOG = $manifestLogPath
         OBSERVER_FIXTURE = $observerPath
         REPO = 'HemSoft/example'
+        ROOT_MANIFEST_FIXTURE = $rootManifestPath
     }
     @'
 name: SFL Codex Review Observer
@@ -276,6 +288,15 @@ name: "SFL Reviewer Gate Runner"
     Assert-True ($quotedBaseRun.ExitCode -eq 0) "Quoted-base prerequisite script failed: $($quotedBaseRun.Output)"
     Assert-True ($quotedBaseOutput -match 'sfl_review_prerequisites_missing=0') 'Auditor rejected a correctly YAML-escaped default branch.'
     Assert-True ([string]::IsNullOrEmpty($quotedBaseIssue)) 'Auditor opened or closed an issue for a correctly YAML-escaped default branch.'
+
+    Remove-Item -LiteralPath $reviewOutputPath, $manifestLogPath -Force -ErrorAction SilentlyContinue
+    '{"components":[]}' | Set-Content -LiteralPath $manifestPath
+    $canonicalManifestRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    $canonicalManifestOutput = Get-Content -Raw -LiteralPath $reviewOutputPath
+    $manifestLookups = Get-Content -Raw -LiteralPath $manifestLogPath
+    Assert-True ($canonicalManifestRun.ExitCode -eq 0) "Canonical-manifest precedence script failed: $($canonicalManifestRun.Output)"
+    Assert-True ($canonicalManifestOutput -match 'sfl_review_prerequisites_missing=0') 'Auditor used a stale root reviewer declaration after the canonical manifest removed it.'
+    Assert-True ($manifestLookups -eq "canonical`n") 'Auditor read root sfl.json even though .sfl/sfl.json exists.'
 
     $summaryScript = Get-WorkflowStepScript "      - name: Summary`n"
     $summaryExpressions = @(
