@@ -30,7 +30,10 @@ function Add-SflYamlSourcePin {
         [string] $Content,
 
         [Parameter(Mandatory)]
-        [string] $SourceRef
+        [string] $SourceRef,
+
+        [Parameter(Mandatory)]
+        [string] $DefaultBranch
     )
 
     $withoutExistingPin = [regex]::Replace(
@@ -42,6 +45,13 @@ function Add-SflYamlSourcePin {
     $withoutExistingPin = ([regex]::new($sourcePattern)).Replace(
         $withoutExistingPin,
         "# Source: $SourceRef",
+        1
+    )
+    $escapedDefaultBranch = $DefaultBranch.Replace("'", "''")
+    $pushBranchPattern = "(?m)^    branches: \[(?:main|'(?:[^']|'')*')\]$"
+    $withoutExistingPin = ([regex]::new($pushBranchPattern)).Replace(
+        $withoutExistingPin,
+        "    branches: ['$escapedDefaultBranch']",
         1
     )
     return "# Deployed from: $SourceRef`n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA`n$withoutExistingPin"

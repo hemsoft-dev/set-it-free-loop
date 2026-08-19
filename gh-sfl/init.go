@@ -221,7 +221,7 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
-		content, prepareErr := prepareWorkflowSource(wf, content, release.SHA, owner+"/"+repo)
+		content, prepareErr := prepareWorkflowSource(wf, content, release.SHA, owner+"/"+repo, defaultBranch)
 		if prepareErr != nil {
 			return prepareErr
 		}
@@ -243,7 +243,7 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 			if fetchErr != nil {
 				return fmt.Errorf("fetching add-on %s: %w", srcPath, fetchErr)
 			}
-			content, prepareErr := prepareWorkflowSource(wf, content, release.SHA, owner+"/"+repo)
+			content, prepareErr := prepareWorkflowSource(wf, content, release.SHA, owner+"/"+repo, defaultBranch)
 			if prepareErr != nil {
 				return prepareErr
 			}

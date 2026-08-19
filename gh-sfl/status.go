@@ -269,6 +269,7 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 	fmt.Fprintf(stdout, "\n  Reviewer package:\n")
 	missing := 0
 	drifted := 0
+	defaultBranch, defaultBranchErr := getDefaultBranch(owner, repo)
 	if manifest.SourceSHA == "" {
 		drifted++
 		fmt.Fprintf(stdout, "    %s Manifest is missing immutable sourceSha\n",
@@ -294,9 +295,10 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 				source,
 				manifest.SourceSHA,
 				owner+"/"+repo,
+				defaultBranch,
 			)
 			expected, renderErr := renderHemSoftWorkflow(workflow, preparedSource, manifest.Version)
-			if manifest.SourceSHA == "" || sourceErr != nil || prepareErr != nil || renderErr != nil ||
+			if manifest.SourceSHA == "" || defaultBranchErr != nil || sourceErr != nil || prepareErr != nil || renderErr != nil ||
 				content != expected {
 				drifted++
 				fmt.Fprintf(stdout, "    %s %s differs from pinned source %s\n",

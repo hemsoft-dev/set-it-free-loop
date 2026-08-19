@@ -88,6 +88,10 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 			return err
 		}
 	}
+	defaultBranch, err := getDefaultBranch(owner, repo)
+	if err != nil {
+		return fmt.Errorf("getting default branch: %w", err)
+	}
 	fileMap := make(map[string]string)
 
 	fmt.Fprintf(stdout, "  Fetching %d workflow file(s)...\n", len(workflows))
@@ -97,7 +101,7 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
-		content, prepareErr := prepareWorkflowSource(wf, content, manifest.SourceSHA, owner+"/"+repo)
+		content, prepareErr := prepareWorkflowSource(wf, content, manifest.SourceSHA, owner+"/"+repo, defaultBranch)
 		if prepareErr != nil {
 			return prepareErr
 		}
@@ -124,11 +128,6 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	fileMap[".sfl/sfl.json"] = manifestJSON
 
 	// Deploy
-	defaultBranch, err := getDefaultBranch(owner, repo)
-	if err != nil {
-		return fmt.Errorf("getting default branch: %w", err)
-	}
-
 	commitMsg := fmt.Sprintf("chore: add SFL add-on %q\n\nDeployed by gh-sfl add", opts.addon)
 	fmt.Fprintf(stdout, "\n")
 	var prURL string

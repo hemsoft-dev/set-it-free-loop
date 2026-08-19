@@ -589,7 +589,8 @@ function Deploy-ToRepo([string]$TargetRepo) {
                 $sourceRef = "HemSoft/set-it-free-loop/deployment/infrastructure/$inf.yml@$CurrentSha"
                 $content = Add-SflYamlSourcePin `
                     -Content (Get-Content $DestFile -Raw) `
-                    -SourceRef $sourceRef
+                    -SourceRef $sourceRef `
+                    -DefaultBranch $BaseBranch
                 Set-Content $DestFile -Value $content -NoNewline
             }
             Write-Status "⚙️ " "  $inf.yml"

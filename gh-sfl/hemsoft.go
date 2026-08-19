@@ -369,18 +369,25 @@ func sourceWorkflowPath(name string) string {
 }
 
 const reviewerSourcePlaceholder = "# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main"
+const reviewerPushBranchPlaceholder = "    branches: [main]"
 
-func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo string) (string, error) {
+func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo, defaultBranch string) (string, error) {
 	if workflow != "sfl-pr-review-auto.yml" {
 		return content, nil
 	}
 	if !strings.Contains(content, "name: SFL Codex Review Observer") ||
 		!strings.Contains(content, "github.event.sender.id == 199175422") ||
-		!strings.Contains(content, reviewerSourcePlaceholder) {
+		!strings.Contains(content, reviewerSourcePlaceholder) ||
+		!strings.Contains(content, reviewerPushBranchPlaceholder) {
 		return "", fmt.Errorf("the SFL source %s selected for %s predates the subscription-backed Codex reviewer; deploy or sync from a release containing SFL Codex Review Observer", sourceSHA, targetRepo)
+	}
+	if strings.TrimSpace(defaultBranch) == "" {
+		return "", fmt.Errorf("preparing the SFL Codex observer for %s: target default branch is empty", targetRepo)
 	}
 	sourceRef := "HemSoft/set-it-free-loop/" + sourceWorkflowPath(workflow) + "@" + sourceSHA
 	content = strings.Replace(content, reviewerSourcePlaceholder, "# Source: "+sourceRef, 1)
+	escapedBranch := strings.ReplaceAll(defaultBranch, "'", "''")
+	content = strings.Replace(content, reviewerPushBranchPlaceholder, "    branches: ['"+escapedBranch+"']", 1)
 	prefix := "# Deployed from: " + sourceRef + "\n" +
 		"# To upgrade: re-run deploy-workflow.ps1 at the desired SHA\n"
 	return prefix + content, nil

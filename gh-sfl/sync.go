@@ -108,7 +108,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
-		content, prepareErr := prepareWorkflowSource(wf, content, sourceRef, owner+"/"+repo)
+		content, prepareErr := prepareWorkflowSource(wf, content, sourceRef, owner+"/"+repo, defaultBranch)
 		if prepareErr != nil {
 			return prepareErr
 		}
@@ -125,7 +125,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching add-on %s: %w", srcPath, fetchErr)
 		}
-		content, prepareErr := prepareWorkflowSource(wf, content, sourceRef, owner+"/"+repo)
+		content, prepareErr := prepareWorkflowSource(wf, content, sourceRef, owner+"/"+repo, defaultBranch)
 		if prepareErr != nil {
 			return prepareErr
 		}

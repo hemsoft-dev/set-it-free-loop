@@ -65,10 +65,12 @@ $yamlWorkflow = @'
 # Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main
 name: SFL PR Review Auto Trigger
 on:
+  push:
+    branches: [main]
   pull_request_target:
 '@
 $yamlRef = 'HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
-$yamlPinned = Add-SflYamlSourcePin -Content $yamlWorkflow -SourceRef $yamlRef
+$yamlPinned = Add-SflYamlSourcePin -Content $yamlWorkflow -SourceRef $yamlRef -DefaultBranch 'trunk'
 if ($yamlPinned -notmatch "\A# Deployed from: $([regex]::Escape($yamlRef))\r?\n# To upgrade:") {
     throw 'YAML source pin was not placed at the beginning of the workflow.'
 }
@@ -76,12 +78,17 @@ if ($yamlPinned -match '@main' -or
     ([regex]::Matches($yamlPinned, [regex]::Escape($yamlRef)).Count -ne 2)) {
     throw 'YAML provenance was not rewritten to the immutable source SHA.'
 }
+if ($yamlPinned -notmatch [regex]::Escape("branches: ['trunk']") -or
+    $yamlPinned -match [regex]::Escape('branches: [main]')) {
+    throw 'YAML push trigger was not restricted to the target default branch.'
+}
 
 $yamlUpdatedRef = 'HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@cccccccccccccccccccccccccccccccccccccccc'
-$yamlRepinned = Add-SflYamlSourcePin -Content $yamlPinned -SourceRef $yamlUpdatedRef
+$yamlRepinned = Add-SflYamlSourcePin -Content $yamlPinned -SourceRef $yamlUpdatedRef -DefaultBranch 'release/next'
 if (([regex]::Matches($yamlRepinned, '(?m)^# Deployed from:').Count -ne 1) -or
     ([regex]::Matches($yamlRepinned, [regex]::Escape($yamlUpdatedRef)).Count -ne 2) -or
-    $yamlRepinned -match [regex]::Escape($yamlRef)) {
+    $yamlRepinned -match [regex]::Escape($yamlRef) -or
+    $yamlRepinned -notmatch [regex]::Escape("branches: ['release/next']")) {
     throw 'Existing YAML source pin was not replaced idempotently.'
 }
 
