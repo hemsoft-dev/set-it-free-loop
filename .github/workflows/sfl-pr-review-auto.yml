@@ -80,7 +80,7 @@ jobs:
                 filter: "all",
                 per_page: 100,
               },
-              response => response.data.check_runs,
+              response => response.data,
             );
             const reviewContextToken = checks => {
               const invalidation = checks.filter(
@@ -370,7 +370,7 @@ jobs:
                 filter: "all",
                 per_page: 100,
               },
-              response => response.data.check_runs,
+              response => response.data,
             );
             const artifactAlreadyConsumed = artifactChecks.some(
               check => check.app && check.app.id === 15368 &&
@@ -526,7 +526,7 @@ jobs:
                   status,
                   per_page: 100,
                 },
-                response => response.data.workflow_runs,
+                response => response.data,
               )));
               return pages.flat().filter(
                 run => run.id !== context.runId && events.includes(run.event) &&
@@ -612,7 +612,7 @@ jobs:
                 filter: "all",
                 per_page: 100,
               },
-              response => response.data.check_runs,
+              response => response.data,
             );
             const contextToken = reviewContextToken(initialChecks);
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
@@ -683,7 +683,7 @@ jobs:
                 filter: "all",
                 per_page: 100,
               },
-              response => response.data.check_runs,
+              response => response.data,
             );
             const requestTime = request && request.requestTime;
             const hasNewerMatchingRequest = (comments, checkRuns, statuses) =>
@@ -720,7 +720,7 @@ jobs:
                 filter: "all",
                 per_page: 100,
               },
-              response => response.data.check_runs,
+              response => response.data,
             );
             const latestRequestStatuses = await github.paginate(
               github.rest.repos.listCommitStatusesForRef,
@@ -802,7 +802,7 @@ jobs:
                     filter: "all",
                     per_page: 100,
                   },
-                  response => response.data.check_runs,
+                  response => response.data,
                 ),
                 github.paginate(
                   github.rest.repos.listCommitStatusesForRef,
@@ -927,7 +927,7 @@ jobs:
                 filter: "all",
                 per_page: 100,
               },
-              response => response.data.check_runs,
+              response => response.data,
             );
             const existingInvalidation = reviewerChecks.some(
               check => check.app && check.app.id === 15368 && check.external_id === invalidationId,
@@ -980,7 +980,7 @@ jobs:
                 filter: "all",
                 per_page: 100,
               },
-              response => response.data.check_runs,
+              response => response.data,
             );
             const finalContextExists = finalChecks.some(
               check => check.app && check.app.id === 15368 &&
@@ -1078,7 +1078,7 @@ jobs:
                   filter: "all",
                   per_page: 100,
                 },
-                response => response.data.check_runs,
+                response => response.data,
               );
               const existingInvalidation = reviewerChecks.some(
                 check => check.app && check.app.id === 15368 && check.external_id === invalidationId,
@@ -1120,7 +1120,7 @@ jobs:
                   filter: "all",
                   per_page: 100,
                 },
-                response => response.data.check_runs,
+                response => response.data,
               );
               const finalContextExists = finalChecks.some(
                 check => check.app && check.app.id === 15368 &&

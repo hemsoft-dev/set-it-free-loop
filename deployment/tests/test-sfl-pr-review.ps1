@@ -21,6 +21,22 @@ if (-not (Test-NormalizedTextEqual $canonical $staged)) {
     throw 'Canonical and staged Codex observers differ.'
 }
 
+$invalidNestedPaginationMapperMatches = [regex]::Matches(
+    $canonical,
+    'response\s*=>\s*response\.data\.[A-Za-z_][A-Za-z0-9_]*'
+)
+if ($invalidNestedPaginationMapperMatches.Count -gt 0) {
+    @'
+const mappedPage = (response => response.data.items)({data: []});
+const items = [mappedPage].flat();
+items.filter(item => item.id);
+'@ | node -
+    if ($LASTEXITCODE -eq 0) {
+        throw 'The invalid nested pagination mapper no longer reproduces the observer crash.'
+    }
+    throw "Codex observer has $($invalidNestedPaginationMapperMatches.Count) pagination mapper(s) that read a nested collection from Octokit's normalized response.data array."
+}
+
 foreach ($pattern in @(
     'name: SFL Codex Review Observer',
     "format('SFL Codex review request #{0}', github.event.issue.number)",
