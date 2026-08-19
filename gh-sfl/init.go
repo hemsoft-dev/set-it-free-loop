@@ -221,6 +221,9 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
+		if err := validateReviewerSource(wf, content, release.SHA, owner+"/"+repo); err != nil {
+			return err
+		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, release.Version)
 		if renderErr != nil {
 			return fmt.Errorf("applying HemSoft engine policy to %s: %w", wf, renderErr)
@@ -238,6 +241,9 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 			content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, release.SHA)
 			if fetchErr != nil {
 				return fmt.Errorf("fetching add-on %s: %w", srcPath, fetchErr)
+			}
+			if err := validateReviewerSource(wf, content, release.SHA, owner+"/"+repo); err != nil {
+				return err
 			}
 			rendered, renderErr := renderHemSoftWorkflow(wf, content, release.Version)
 			if renderErr != nil {

@@ -107,6 +107,9 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
+		if err := validateReviewerSource(wf, content, sourceRef, owner+"/"+repo); err != nil {
+			return err
+		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, latestVersion)
 		if renderErr != nil {
 			return fmt.Errorf("applying HemSoft engine policy to %s: %w", wf, renderErr)
@@ -119,6 +122,9 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, sourceRef)
 		if fetchErr != nil {
 			return fmt.Errorf("fetching add-on %s: %w", srcPath, fetchErr)
+		}
+		if err := validateReviewerSource(wf, content, sourceRef, owner+"/"+repo); err != nil {
+			return err
 		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, latestVersion)
 		if renderErr != nil {
