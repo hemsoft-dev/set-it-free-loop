@@ -14,6 +14,7 @@ import (
 type reviewREST struct {
 	comments            []reviewTriggerComment
 	checkRuns           []map[string]any
+	checkRunPages       map[int][]map[string]any
 	headRepo            string
 	headRepoUnavailable bool
 	baseRef             string
@@ -46,6 +47,11 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 		}
 		return decodeTestResponse(response, map[string]any{"default_branch": defaultBranch})
 	case strings.Contains(path, "/check-runs?"):
+		for page, runs := range f.checkRunPages {
+			if strings.Contains(path, fmt.Sprintf("page=%d", page)) {
+				return decodeTestResponse(response, map[string]any{"check_runs": runs})
+			}
+		}
 		return decodeTestResponse(response, map[string]any{"check_runs": f.checkRuns})
 	case strings.Contains(path, "/pulls/"):
 		var headRepo any = map[string]string{"full_name": f.headRepo}
@@ -249,6 +255,34 @@ func TestFetchReviewContextTokenUsesLatestInvalidation(t *testing.T) {
 	}
 	if token != "sfl-codex-review:pull-context:at:123:456" {
 		t.Fatalf("context token = %q", token)
+	}
+}
+
+func TestFetchReviewContextTokenPaginatesPastTerminalHistory(t *testing.T) {
+	firstPage := make([]map[string]any, 100)
+	for index := range firstPage {
+		firstPage[index] = map[string]any{
+			"id":          index + 1,
+			"external_id": fmt.Sprintf("sfl-codex-review:pull:94:request:%d", index+1),
+			"app":         map[string]any{"id": 15368},
+		}
+	}
+	want := "sfl-codex-review:pull-context:at:123:456"
+	rest := &reviewREST{checkRunPages: map[int][]map[string]any{
+		1: firstPage,
+		2: {{
+			"id":          101,
+			"external_id": want,
+			"app":         map[string]any{"id": 15368},
+		}},
+	}}
+
+	token, err := fetchReviewContextToken(rest, "HemSoft", "consumer", strings.Repeat("b", 40))
+	if err != nil {
+		t.Fatalf("fetchReviewContextToken() error = %v", err)
+	}
+	if token != want {
+		t.Fatalf("context token = %q, want paginated %q", token, want)
 	}
 }
 

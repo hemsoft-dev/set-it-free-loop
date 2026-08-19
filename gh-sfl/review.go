@@ -390,22 +390,27 @@ func reviewCommentTime(comment reviewTriggerComment) time.Time {
 }
 
 func fetchReviewContextToken(client restAPI, owner, repo, headSHA string) (string, error) {
-	var response struct {
-		CheckRuns []reviewerCheckRun `json:"check_runs"`
-	}
-	if err := client.Get(
-		fmt.Sprintf("repos/%s/%s/commits/%s/check-runs?check_name=SFL%%20Reviewer%%20Gate%%20Runner&filter=all&per_page=100", owner, repo, headSHA),
-		&response,
-	); err != nil {
-		return "", err
-	}
 	latest := reviewerCheckRun{}
-	for _, check := range response.CheckRuns {
-		if check.App.ID == 15368 &&
-			(strings.HasPrefix(check.ExternalID, "sfl-codex-review:pull-context:") ||
-				strings.HasPrefix(check.ExternalID, "sfl-codex-review:base-advance:")) &&
-			check.ID > latest.ID {
-			latest = check
+	for page := 1; ; page++ {
+		var response struct {
+			CheckRuns []reviewerCheckRun `json:"check_runs"`
+		}
+		if err := client.Get(
+			fmt.Sprintf("repos/%s/%s/commits/%s/check-runs?check_name=SFL%%20Reviewer%%20Gate%%20Runner&filter=all&per_page=100&page=%d", owner, repo, headSHA, page),
+			&response,
+		); err != nil {
+			return "", err
+		}
+		for _, check := range response.CheckRuns {
+			if check.App.ID == 15368 &&
+				(strings.HasPrefix(check.ExternalID, "sfl-codex-review:pull-context:") ||
+					strings.HasPrefix(check.ExternalID, "sfl-codex-review:base-advance:")) &&
+				check.ID > latest.ID {
+				latest = check
+			}
+		}
+		if len(response.CheckRuns) < 100 {
+			break
 		}
 	}
 	if latest.ExternalID != "" {

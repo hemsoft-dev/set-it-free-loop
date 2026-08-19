@@ -63,6 +63,8 @@ foreach ($pattern in @(
     'base-advance:at:${baseAdvanceTime}',
     'sfl-codex-review-pull-context-${{ github.repository }}-${{ github.event.pull_request.number }}',
     'github.rest.actions.listWorkflowRuns',
+    'const initialChecks = await github.paginate(',
+    'const checks = await github.paginate(',
     'const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"]',
     'const events = ["pull_request_target", "push"]',
     'status => github.paginate(',

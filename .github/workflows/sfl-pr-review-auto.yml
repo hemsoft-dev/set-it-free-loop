@@ -374,15 +374,19 @@ jobs:
               ).sort((left, right) => right.id - left.id)[0];
               return invalidation ? invalidation.external_id : "none";
             };
-            const initialChecks = await github.rest.checks.listForRef({
-              owner,
-              repo,
-              ref: currentHead,
-              check_name: "SFL Reviewer Gate Runner",
-              filter: "all",
-              per_page: 100,
-            });
-            const contextToken = reviewContextToken(initialChecks.data.check_runs);
+            const initialChecks = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner,
+                repo,
+                ref: currentHead,
+                check_name: "SFL Reviewer Gate Runner",
+                filter: "all",
+                per_page: 100,
+              },
+              response => response.data.check_runs,
+            );
+            const contextToken = reviewContextToken(initialChecks);
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
             const conflictingBaseRequest = triggerComments.some(
               comment => isOwnerRequest(comment) &&
@@ -436,14 +440,18 @@ jobs:
             const title = result.action === "success"
               ? "SFL Codex review passed"
               : "SFL Codex review failed";
-            const checks = await github.rest.checks.listForRef({
-              owner,
-              repo,
-              ref: currentHead,
-              check_name: "SFL Reviewer Gate Runner",
-              filter: "all",
-              per_page: 100,
-            });
+            const checks = await github.paginate(
+              github.rest.checks.listForRef,
+              {
+                owner,
+                repo,
+                ref: currentHead,
+                check_name: "SFL Reviewer Gate Runner",
+                filter: "all",
+                per_page: 100,
+              },
+              response => response.data.check_runs,
+            );
             const requestTime = request && request.requestTime;
             const hasNewerMatchingRequest = (comments, checkRuns) =>
               eligibleReviewRequests(comments, checkRuns, Number.POSITIVE_INFINITY).some(
@@ -452,7 +460,7 @@ jobs:
                    (candidate.requestTime === requestTime &&
                     candidate.comment.id > request.comment.id)),
               );
-            if (reviewContextToken(checks.data.check_runs) !== contextToken) {
+            if (reviewContextToken(checks) !== contextToken) {
               core.info("The matching Codex request is not bound to the latest pull context");
               return;
             }
