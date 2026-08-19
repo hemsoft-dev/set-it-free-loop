@@ -171,7 +171,8 @@ jobs:
               comment => trustedAssociations.has(comment.author_association) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(marker) &&
-                Date.parse(comment.created_at || "") <= artifactTime,
+                Number.isFinite(Date.parse(comment.updated_at || comment.created_at || "")) &&
+                Date.parse(comment.updated_at || comment.created_at || "") <= artifactTime,
             );
             const openPulls = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: "open", per_page: 100,
@@ -277,6 +278,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
+      actions: read
       checks: write
       contents: read
       pull-requests: read
@@ -289,11 +291,40 @@ jobs:
             if (context.payload.deleted) return;
             const {owner, repo} = context.repo;
             const baseRef = context.ref.replace(/^refs\/heads\//, "");
+            const workflowRun = await github.rest.actions.getWorkflowRun({
+              owner, repo, run_id: context.runId,
+            });
+            const baseAdvanceTime = Date.parse(workflowRun.data.created_at || "");
+            if (!Number.isFinite(baseAdvanceTime)) {
+              throw new Error("Could not determine the base-advance event time");
+            }
             const openPulls = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: "open", base: baseRef, per_page: 100,
             });
             for (const pull of openPulls) {
               if (pull.base.ref !== baseRef) continue;
+              const reviewerChecks = await github.paginate(
+                github.rest.checks.listForRef,
+                {
+                  owner,
+                  repo,
+                  ref: pull.head.sha,
+                  check_name: "SFL Reviewer Gate Runner",
+                  filter: "all",
+                  per_page: 100,
+                },
+                response => response.data.check_runs,
+              );
+              const newerSuccess = reviewerChecks.some(
+                check => check.app && check.app.id === 15368 &&
+                  check.conclusion === "success" &&
+                  Number.isFinite(Date.parse(check.completed_at || "")) &&
+                  Date.parse(check.completed_at || "") >= baseAdvanceTime,
+              );
+              if (newerSuccess) {
+                core.info(`Pull request #${pull.number} already has a successful Codex gate completed after this base advance`);
+                continue;
+              }
               const reason = `Pull request base ${baseRef} advanced to ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`;
               await github.rest.checks.create({
                 owner,
