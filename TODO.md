@@ -135,6 +135,13 @@ The next SFL source work should address the CLI account-selection gap and the
 two-minute stale-reaction wait as a bounded source issue. Do not start another
 consumer deployment as part of that follow-up.
 
+The Windows run of `deployment/tests/test-source-pin-placement.ps1` also fails
+its CRLF case because the fixture replaces line feeds in a string that already
+contains CRLF, producing doubled carriage returns. The deployed observer still
+passes `actionlint`, the reviewer platform contract, and manifest validation.
+Fix the test fixture separately; do not redeploy a consumer for that test-only
+change.
+
 ### Hard guardrails
 
 - Do not create refresh commits, rebases, force-pushes, dummy changes,
