@@ -4,32 +4,81 @@
 
 Keep the HemSoft reviewer reliable and finish one milestone at a time.
 
-Core reviewer parity is complete. SFL automatically reviews the current head,
-creates inline findings, submits App-authored reviews, publishes immutable
-evidence, enforces a required gate, retries bounded operational failures,
-cleans up obsolete threads, and filters reviewer communication through Unslop.
+Issue #125 replaces the HemSoft reviewer model runtime with native Codex review
+from Franz's ChatGPT subscription. SFL requests one current-head review,
+authenticates Codex output, and preserves the required immutable-head gate.
+
+## Active recovery plan: stop the review loop
+
+### Current state
+
+- SFL PR #134 fixed issue #133 and is merged at `eb83674`.
+- `hs-buddy` PR #521 and deployment PR #522 are merged at `58203bd`.
+- The broken `hs-buddy` SFL reviewer ruleset is removed. Its separate Copilot
+  review ruleset remains active.
+- PR #121 closes issue #120 as superseded. The subscription-backed Codex path
+  has no concurrency-cancelled recovery wrapper, and contract tests require
+  the retired workflow files to remain absent.
+- `developer-documentation` is excluded and remains read-only.
+
+### Hard guardrails
+
+- Do not create refresh commits, rebases, force-pushes, dummy changes,
+  duplicate review requests, or replacement deployment PRs for the completed
+  `hs-buddy` cycle.
+- Any future required gate must use an immutable review identity, never a
+  synthetic merge SHA that GitHub can regenerate during merge evaluation.
+- Any replacement must preserve exact reviewed-head and reviewed-base
+  validation, strict base freshness, and fail-closed invalidation behavior.
+- Never start a second simultaneous consumer review cycle.
+- Keep `developer-documentation` and account-wide deployment out of scope.
+- Clean branches and worktrees only after their PR is confirmed merged or
+  closed; do not touch unrelated worktrees.
+
+### Next bounded sequence
+
+1. Leave the broken `hs-buddy` SFL reviewer rule absent.
+2. Do not start another deployment or reviewer cycle from this recovery work.
+3. If SFL enforcement is revisited, begin with one bounded issue and prove the
+   replacement gate before enabling it in a consumer repository.
 
 ## Working baseline
 
 - SFL is working on `HemSoft/hs-buddy`. It is the only repository approved for
   live HemSoft validation.
-- `v2.1.0-rc.13` is the current immutable private release at
+- `v2.1.0-rc.13` is the last immutable private release at
   `076325cd78119442dd0922abab2023451cff5189`. It is deployed to `hs-buddy`
   through [PR #454](https://github.com/HemSoft/hs-buddy/pull/454). HemSoft
-  intentionally uses Kimi K3 through its private OpenRouter route.
+  uses the retired Kimi/OpenRouter reviewer. It must be superseded before the
+  native Codex observer can be deployed.
 - `hs-buddy` PR #415 proved the full finding lifecycle on 2026-08-16. SFL found
   real issues, approved the fixes on the current head, recovered automatically
   from one failed evidence attempt, and finished with zero unresolved threads
   and a green required gate.
-- The working repository rule requires `SFL Reviewer Gate Runner`. That runner
-  authenticates the App review plus `SFL Reviewer Approval` and
-  `SFL Review Evidence`.
-- The personal-account App installation currently selects all repositories and
-  works. Do not change its authentication, permissions, ownership, or scope as
-  part of the current milestone.
+- The working repository rule requires `SFL Reviewer Gate Runner`. The new
+  observer publishes that same Actions-owned check after authenticating Codex
+  and proving the reviewed commit is the current head.
+- The Codex GitHub App is connected for the approved pilot repository. Do not
+  change its installation scope as part of this milestone.
 - Run `gh sfl init` or `gh sfl sync` only for an explicitly approved repository.
   Never fan either command out across the account. If approval is withdrawn,
   close the pending deployment PR and delete its branch.
+
+## Active milestone: issue #125
+
+- [x] Remove the OpenRouter/Kimi reviewer, compiled lock, recovery wrapper, and
+  reviewer credential requirements from the HemSoft package.
+- [x] Make `gh sfl review --repo OWNER/REPO --pr NUMBER` post one head-bound
+  `@codex review` request and deduplicate retries.
+- [x] Authenticate clean comments and finding reviews, resolve reviewed commit
+  prefixes, and reject stale, spoofed, or malformed evidence.
+- [x] Preserve the strict `SFL Reviewer Gate Runner` branch-rule contract.
+- [ ] Land the source PR after current-head Copilot and SFL review.
+- [ ] Publish the next prerelease and pilot only on `HemSoft/hs-buddy`.
+- [ ] Prove one clean result and one finding result through the deployed gate.
+
+This milestone explicitly excludes developer-documentation and account-wide
+deployment.
 
 ## Completed milestone: issue #73
 

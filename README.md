@@ -64,7 +64,7 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 # Deploy the full autonomous loop
 .\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "HemSoft/repository"
 
-# Or deploy the automatic, recoverable SFL pull request reviewer
+# Or deploy the subscription-backed Codex pull request reviewer
 .\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "HemSoft/repository"
 
 # Or start with hygiene-only
@@ -77,7 +77,7 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 ### 3. Review the catalog
 
 See [CATALOG.md](CATALOG.md) for all available workflows, tiers, and expected outputs.
-Reviewer installation, recovery, and optional gating are documented in
+Reviewer installation, current-head evidence, and optional gating are documented in
 [docs/SFL-REVIEWER.md](docs/SFL-REVIEWER.md).
 
 For the private HemSoft CLI path, install a checksum-verified release with
@@ -92,9 +92,8 @@ defaults to the reviewer-only tier and opens a deployment pull request.
 
 The SFL uses [Semantic Versioning](https://semver.org/). The single source of
 truth is the [`VERSION`](VERSION) file in this repo. The synchronized
-[`deployment/release-metadata.json`](deployment/release-metadata.json) keeps
-that HemSoft distribution version separate from the pinned Relias reviewer
-release and immutable reviewed commit.
+[`deployment/release-metadata.json`](deployment/release-metadata.json) records
+the HemSoft distribution version and native Codex reviewer identity.
 
 ### Private release contract
 

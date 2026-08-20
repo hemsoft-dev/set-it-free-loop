@@ -67,10 +67,10 @@ func parseToggleOptions(cmd string, args []string, errw io.Writer) (toggleOption
 
 	fs.Usage = func() {
 		action := "Stop"
-		desc := "Pauses automatic SFL dispatch and recovery while the required reviewer gate fails closed."
+		desc := "Pauses Codex result observation while the required reviewer gate fails closed."
 		if cmd == "start" {
 			action = "Start"
-			desc = "Re-enables automatic SFL dispatch and recovery by setting SFL_ENABLED=true."
+			desc = "Re-enables Codex result observation by setting SFL_ENABLED=true."
 		}
 		fmt.Fprintf(errw, "%s SFL in a repository.\n%s\n\nUsage:\n  gh sfl %s [--repo OWNER/REPO]\n\nFlags:\n", action, desc, cmd)
 		fs.PrintDefaults()

@@ -1,875 +1,21 @@
 package main
 
 import (
-	"bytes"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
-
-	"gopkg.in/yaml.v3"
 )
 
-func TestReviewerDeploymentContract(t *testing.T) {
-	t.Helper()
-
-	root := filepath.Clean("..")
-	assertFilesEqual(t,
-		filepath.Join(root, "deployment", "workflows", "sfl-pr-review.md"),
-		filepath.Join(root, ".github", "workflows", "sfl-pr-review.md"),
-	)
-	assertFilesEqual(t,
-		filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-auto.yml"),
-		filepath.Join(root, ".github", "workflows", "sfl-pr-review-auto.yml"),
-	)
-	assertFilesEqual(t,
-		filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-recovery.yml"),
-		filepath.Join(root, ".github", "workflows", "sfl-pr-review-recovery.yml"),
-	)
-
-	source := readContractFile(t, filepath.Join(root, "deployment", "workflows", "sfl-pr-review.md"))
-	sourceText := normalizeLineEndings(source)
-	for _, required := range []string{
-		"base_sha:\n        description: Expected pull request base commit",
-		"head_sha:\n        description: Expected pull request head commit",
-		"dispatch_id:\n        description: Unique wrapper or recovery dispatch identifier",
-		"retry_count:\n        description: Missing-review-output retry counter",
-		"review_effort:\n        description: Audit effort marker retained in provenance and recovery",
-		"default: low\n        type: choice",
-		"options:\n          - low\n          - medium\n          - high",
-		"SFL_REVIEW_EFFORT: ${{ inputs.review_effort || 'low' }}",
-		"pre-steps:",
-		"Validate trusted review context",
-		"Install ripgrep with bounded diagnostics",
-		"timeout --signal=TERM --kill-after=15s 180s",
-		"Retain ripgrep setup diagnostics",
-		"sfl-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}",
-		"Install threat-detection ripgrep with bounded diagnostics",
-		"Retain threat-detection ripgrep setup diagnostics",
-		"sfl-threat-detection-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}",
-		`--argjson item_number "$ITEM_NUMBER"`,
-		`item_type: "pull_request"`,
-		`item_number: $item_number`,
-		`base_sha: $base_sha`,
-		`head_sha: $head_sha`,
-		"Untrusted or inconsistent review context",
-		`case "$REVIEW_EFFORT" in`,
-		`low|medium|high) ;;`,
-		"-f review_effort=low",
-		`run-name: "SFL PR Review #${{ inputs.item_number }} ${{ inputs.base_sha }}:${{ inputs.head_sha }} retry=${{ inputs.retry_count }} dispatch=${{ inputs.dispatch_id }}"`,
-		"publish_review_provenance:",
-		"Initialize review evidence",
-		"status: 'in_progress'",
-		"`sfl-review:${pullNumber}:${baseSha}:${headSha}:${runId}`",
-		"SFL_RUN_ID: ${{ github.run_id }}",
-		"evidence-check-run-id: ${{ steps.initialize-evidence.outputs.check-run-id }}",
-		"name: sfl-review-run-provenance",
-		"workflow_run_id: $workflow_run_id",
-		"base_sha: $base_sha",
-		`[[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]`,
-		"continue-on-error: false",
-		"commit-id: \"${{ inputs.head_sha }}\"",
-		"resolve-sfl-review-thread:",
-		"if: needs.safe_outputs.result == 'success'",
-		"pull-requests: write",
-		"Thread ${threadId} is not an obsolete SFL finding on PR",
-		"Verify pull request base and head before safe outputs",
-		"still-applicable unresolved SFL",
-		"`side: LEFT` for a deleted line",
-		"countUnresolvedSflFindings",
-		"replace(/\\[bot\\]$/i, '')",
-		"name: safe-outputs-items",
-		"item => item.type === 'submit_pull_request_review'",
-		"submittedReview.metadata?.review_id",
-		"Review body contains unresolved template placeholder",
-		"const publishFailure = async ({ reason }) =>",
-		"name: 'SFL Review Evidence'",
-		"github.rest.checks.get",
-		"github.rest.checks.update",
-		"for (let attempt = 1; attempt <= 3; attempt += 1)",
-		"Initialized SFL review evidence does not match this run",
-		"external_id: gateExternalId",
-		"core.setFailed(summary)",
-		"github-token: ${{ steps.app-token.outputs.token }}",
-		"github-token: ${{ github.token }}",
-		"checks: write",
-		"permission-contents: read",
-		"'replacement-retry-eligible'",
-		"SFL_AGENT_OUTPUT: /tmp/gh-aw/agent_output.json",
-		"Download reviewer agent output",
-		"fs.readFileSync(process.env.SFL_AGENT_OUTPUT",
-		"item.type === 'missing_data'",
-		"item.type === 'missing_tool'",
-		"item.type === 'report_incomplete'",
-		"let replacementRetryEligible = false",
-		"Expected exactly one immutable agent submitted-review item",
-		"(agentSubmittedReview.repo ?? configuredRepo) !== configuredRepo",
-		"(item.repo ?? configuredRepo) !== configuredRepo ||",
-		"Published review-comment count ${publishedReviewComments.length} does not match immutable agent count ${agentReviewComments.length}",
-		"const originalBody = agentSubmittedReview.body || ''",
-		"Published review manifest does not match the immutable agent verdict",
-		"const immutableFindingCount = agentReviewComments.length",
-		"publishedFindingCount !== immutableFindingCount",
-		"replacement_retry_eligible=${replacementRetryEligible}",
-		"SFL_REPLACEMENT_RETRY_ELIGIBLE === 'true'",
-		"-f base_sha=PULL_REQUEST_BASE_SHA",
-		`"base_sha":"PULL_REQUEST_BASE_SHA"`,
-		"make exactly one successful `submit_pull_request_review` call",
-		"call `missing_data` with the specific blocker",
-		"`noop` and never silently stop",
-		"Run the embedded Unslop pass on every user-facing sentence",
-		"Protocol literals override the Unslop rules",
-		`Ask, "What makes this obviously AI generated?"`,
-		"immutable-head `SFL Reviewer Approval` check",
-	} {
-		if !strings.Contains(sourceText, required) {
-			t.Errorf("canonical reviewer is missing contract text %q", required)
-		}
-	}
-
-	for _, placeholder := range reviewerTemplatePlaceholders {
-		if !strings.Contains(sourceText, "'"+placeholder+"'") {
-			t.Errorf("canonical reviewer does not validate template placeholder %q", placeholder)
-		}
-	}
-	if strings.Contains(sourceText, "require('@actions/github')") {
-		t.Error("review metadata dynamically imports an unavailable github-script module")
-	}
-	if strings.Contains(sourceText, "permission-checks: write") {
-		t.Error("shared SFL App token still requests forgeable Checks write access")
-	}
-
-	compiled := readContractFile(t, filepath.Join(root, ".github", "workflows", "sfl-pr-review.lock.yml"))
-	compiledText := normalizeLineEndings(compiled)
-	for _, required := range []string{
-		"GH_AW_INPUTS_BASE_SHA: ${{ inputs.base_sha }}",
-		"GH_AW_INPUTS_HEAD_SHA: ${{ inputs.head_sha }}",
-		"SFL_REVIEW_EFFORT: ${{ inputs.review_effort || 'low' }}",
-		"Validate trusted review context",
-		"Untrusted or inconsistent review context",
-		"Install ripgrep with bounded diagnostics",
-		"timeout --signal=TERM --kill-after=15s 180s",
-		"Retain ripgrep setup diagnostics",
-		"sfl-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}",
-		"Install threat-detection ripgrep with bounded diagnostics",
-		"Retain threat-detection ripgrep setup diagnostics",
-		"sfl-threat-detection-ripgrep-setup-${{ github.run_id }}-${{ github.run_attempt }}",
-		`run-name: "SFL PR Review #${{ inputs.item_number }} ${{ inputs.base_sha }}:${{ inputs.head_sha }} retry=${{ inputs.retry_count }} dispatch=${{ inputs.dispatch_id }}"`,
-		"{{#runtime-import .github/workflows/sfl-pr-review.md}}",
-		"publish_review_provenance:",
-		"Initialize review evidence",
-		"status: 'in_progress'",
-		"`sfl-review:${pullNumber}:${baseSha}:${headSha}:${runId}`",
-		"SFL_RUN_ID: ${{ github.run_id }}",
-		"evidence-check-run-id: ${{ steps.initialize-evidence.outputs.check-run-id }}",
-		"name: sfl-review-run-provenance",
-		"RETRY_COUNT: ${{ inputs.retry_count }}",
-		"\"commit_id\":\"${GH_AW_INPUT_HEAD_SHA}\"",
-		"GH_AW_DETECTION_CONTINUE_ON_ERROR: \"false\"",
-		"Verify pull request base and head before safe outputs",
-		"Could not enumerate unresolved SFL findings",
-		"SFL_BASE_SHA: ${{ inputs.base_sha }}",
-		"SFL_HEAD_SHA: ${{ inputs.head_sha }}",
-		"SFL_SAFE_OUTPUT_ITEMS: /tmp/sfl-review-safe-outputs/safe-output-items.jsonl",
-		"const publishFailure = async ({ reason }) =>",
-		"name: 'SFL Review Evidence'",
-		"github.rest.checks.get",
-		"github.rest.checks.update",
-		"for (let attempt = 1; attempt <= 3; attempt += 1)",
-		"Initialized SFL review evidence does not match this run",
-		"external_id: gateExternalId",
-		"core.setFailed(summary)",
-		"permission-contents: read",
-		"'replacement-retry-eligible'",
-		"SFL_AGENT_OUTPUT: /tmp/gh-aw/agent_output.json",
-		"Download reviewer agent output",
-		"fs.readFileSync(process.env.SFL_AGENT_OUTPUT",
-		"let replacementRetryEligible = false",
-		"Expected exactly one immutable agent submitted-review item",
-		"agentSubmittedReview.repo ?? configuredRepo",
-		"const originalBody = agentSubmittedReview.body || ''",
-		"const immutableFindingCount = agentReviewComments.length",
-		"replacement_retry_eligible=${replacementRetryEligible}",
-		"SFL_REPLACEMENT_RETRY_ELIGIBLE === 'true'",
-	} {
-		if !strings.Contains(compiledText, required) {
-			t.Errorf("compiled reviewer is missing contract text %q", required)
-		}
-	}
-	if strings.Contains(compiledText, "require('@actions/github')") {
-		t.Error("compiled review metadata dynamically imports an unavailable github-script module")
-	}
-	if strings.Contains(compiledText, "permission-checks: write") {
-		t.Error("compiled reviewer still requests forgeable Checks write access for the shared SFL App")
-	}
-	if !strings.Contains(
-		compiledText,
-		"agent:\n    needs:\n      - activation\n      - publish_review_provenance",
-	) {
-		t.Error("reviewer agent can run before current review evidence is initialized")
-	}
-	validationIndex := strings.Index(compiledText, "name: Validate trusted review context")
-	if validationIndex < 0 {
-		t.Fatal("compiled reviewer is missing trusted review context validation")
-	}
-	for _, laterStep := range []string{
-		"name: Checkout repository",
-		"name: Checkout PR branch",
-		"name: Execute GitHub Copilot CLI",
-	} {
-		stepIndex := strings.Index(compiledText, laterStep)
-		if stepIndex < 0 {
-			t.Errorf("compiled reviewer is missing ordering target %q", laterStep)
-		} else if validationIndex > stepIndex {
-			t.Errorf("trusted review context validation runs after %q", laterStep)
-		}
-	}
-	agentIndex := strings.Index(compiledText, "\n  agent:\n")
-	detectionIndex := strings.Index(compiledText, "\n  detection:\n")
-	if agentIndex < 0 {
-		t.Fatal("compiled reviewer is missing the agent job")
-	}
-	if detectionIndex < 0 {
-		t.Fatal("compiled reviewer is missing the threat-detection job")
-	}
-	agentText := compiledText[agentIndex:detectionIndex]
-	boundedAgentSetupIndex := strings.Index(
-		agentText,
-		"name: Install ripgrep with bounded diagnostics",
-	)
-	generatedAgentSetupIndex := strings.Index(agentText, "name: Install ripgrep\n")
-	if boundedAgentSetupIndex < 0 || generatedAgentSetupIndex < 0 {
-		t.Fatal("compiled agent job is missing bounded or generated ripgrep setup")
-	}
-	if boundedAgentSetupIndex > generatedAgentSetupIndex {
-		t.Error("bounded agent ripgrep setup runs after the generated installer")
-	}
-	detectionText := compiledText[detectionIndex:]
-	boundedDetectionSetupIndex := strings.Index(
-		detectionText,
-		"name: Install threat-detection ripgrep with bounded diagnostics",
-	)
-	generatedDetectionSetupIndex := strings.Index(detectionText, "name: Install ripgrep\n")
-	if boundedDetectionSetupIndex < 0 || generatedDetectionSetupIndex < 0 {
-		t.Fatal("compiled threat-detection job is missing bounded or generated ripgrep setup")
-	}
-	if boundedDetectionSetupIndex > generatedDetectionSetupIndex {
-		t.Error("bounded threat-detection ripgrep setup runs after the generated installer")
-	}
-	boundedDetectionStepEnd := strings.Index(
-		detectionText,
-		"name: Retain threat-detection ripgrep setup diagnostics",
-	)
-	if boundedDetectionStepEnd < 0 || boundedDetectionStepEnd <= boundedDetectionSetupIndex {
-		t.Fatal("compiled threat-detection job is missing the bounded setup diagnostics step")
-	}
-	boundedDetectionStep := detectionText[boundedDetectionSetupIndex:boundedDetectionStepEnd]
-	if !strings.Contains(boundedDetectionStep, "if: always()") {
-		t.Error("bounded threat-detection ripgrep setup is skipped before the unconditional generated installer")
-	}
-	if strings.Contains(boundedDetectionStep, "run_detection") {
-		t.Error("bounded threat-detection ripgrep setup still inherits the detection guard")
-	}
-
-	trigger := readContractFile(t, filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-auto.yml"))
-	triggerText := normalizeLineEndings(trigger)
-	var triggerWorkflow any
-	if err := yaml.Unmarshal(trigger, &triggerWorkflow); err != nil {
-		t.Fatalf("parse automatic reviewer workflow: %v", err)
-	}
-	for _, required := range []string{
-		"issue_comment:",
-		"types: [created]",
-		"pull_request_target:",
-		"pull_request_review:",
-		"BASE_SHA: ${{ github.event.pull_request.base.sha }}",
-		"HEAD_SHA: ${{ github.event.pull_request.head.sha }}",
-		`if [ "$BASE_REF" != "$DEFAULT_BRANCH" ]; then`,
-		"types: [opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled]",
-		"github.event.action != 'labeled'",
-		"github.event.label.name == 'sfl-review'",
-		"github.event.comment.body == '@sfl-app review'",
-		`contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)`,
-		"github.event_name != 'issue_comment'",
-		"Validate command and seal pull request state",
-		"sfl-review-command:${COMMAND_COMMENT_ID}",
-		`DISPATCH_ID="command-${COMMAND_COMMENT_ID}"`,
-		"find_command_acknowledgement",
-		"find_command_run",
-		`select(.display_title | endswith(" dispatch=" + $dispatch_id))`,
-		"command_acknowledgement_complete",
-		"command_acknowledgement_run_id",
-		`test("\\[Actions run [1-9][0-9]*\\]\\(")`,
-		`(capture("\\[Actions run (?<id>[1-9][0-9]*)\\]\\(")? | .id) // empty`,
-		`test("^sfl-app\\[bot\\]$"; "i")`,
-		"Command comment ${COMMAND_COMMENT_ID} was already acknowledged",
-		"for ATTEMPT in $(seq 1 120); do",
-		`-f "inputs[dispatch_id]=${DISPATCH_ID}"`,
-		`-f "inputs[review_effort]=${REVIEW_EFFORT}"`,
-		"expected-review-run-id: ${{ steps.request-review.outputs.review-run-id }}",
-		"needs: [comment-command, dispatch]",
-		"needs.comment-command.outputs.expected-review-run-id",
-		"Could not resolve the exact comment-dispatched SFL review run",
-		"SFL review was requested for `%s`, but its Actions run could not be correlated.",
-		"[Command run](%s)",
-		"SFL review requested for `%s`: [Actions run %s](%s)",
-		"vars.SFL_ENABLED != 'false'",
-		"cancel-in-progress: false",
-		"name: SFL Reviewer Gate Runner",
-		"name: Resolve immutable approval context",
-		`PR_NUMBER: ${{ github.event.pull_request.number || needs.comment-command.outputs.pr-number || github.event.issue.number }}`,
-		`PR=$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")`,
-		"Could not resolve immutable SFL approval context",
-		"BASE_SHA: ${{ steps.approval-context.outputs.base-sha }}",
-		"HEAD_SHA: ${{ steps.approval-context.outputs.head-sha }}",
-		"if: always()",
-		"SFL_ENABLED: ${{ vars.SFL_ENABLED }}",
-		`if [ "$SFL_ENABLED" = "false" ]; then`,
-		"required reviewer gate fails closed",
-		"DISPATCH_RESULT: ${{ needs.dispatch.result }}",
-		`if [ "$EVENT_NAME" != "issue_comment" ]`,
-		`SFL dispatch job concluded ${DISPATCH_RESULT}; refusing to bootstrap`,
-		"timeout-minutes: 120",
-		"for ATTEMPT in $(seq 1 440); do",
-		"Wait for exact SFL review run",
-		"validate_review_run",
-		`.path == ".github/workflows/sfl-pr-review.lock.yml"`,
-		`.event == "workflow_dispatch"`,
-		".head_repository.full_name == $repository",
-		".head_branch == $default_branch",
-		`actions/runs/${EXPECTED_REVIEW_RUN_ID}`,
-		"--paginate --jq '.workflow_runs[]'",
-		"Actions run lookup failed",
-		"Exact SFL review run concluded",
-		"expected-review-run-id:",
-		"review-run-id=",
-		"permission-contents: read",
-		"permission-pull-requests: write",
-		"Reset stale SFL review state after a push",
-		`issues/${PR_NUMBER}/labels?per_page=100`,
-		"--paginate",
-		"contains(github.event.pull_request.labels.*.name, 'sfl-pr')",
-		`grep -Eq '^(sfl-done|sfl-needs-work)$'`,
-		`labels[]=sfl-ready-for-review`,
-		"grep -qE '^\\s+base_sha:\\s*$'",
-		"dispatch_args+=(-f \"inputs[base_sha]=${BASE_SHA}\")",
-		"grep -qE '^\\s+head_sha:\\s*$'",
-		"-f \"ref=${TRUSTED_REF}\"",
-		"dispatch_args+=(-f \"inputs[head_sha]=${HEAD_SHA}\")",
-		"grep -qE '^\\s+retry_count:\\s*$'",
-		"dispatch_args+=(-f \"inputs[retry_count]=0\")",
-		`EVENT_ACTION: ${{ github.event.action }}`,
-		"grep -qE '^\\s+review_effort:\\s*$'",
-		`REVIEW_EFFORT=$(resolve_review_effort "$PR_LABELS")`,
-		`dispatch_args+=(-f "inputs[review_effort]=${REVIEW_EFFORT}")`,
-		`DISPATCH_ID="auto-${GITHUB_RUN_ID}"`,
-		`dispatch_args+=(-f "inputs[dispatch_id]=${DISPATCH_ID}")`,
-		`select(.display_title | endswith(" dispatch=" + $dispatch_id))`,
-		`issues/${PR_NUMBER}/labels/sfl-review`,
-		"consume_review_label",
-		`consume_review_label "$PR_LABELS"`,
-		`grep -Fxq "sfl-review"`,
-		`"${EXPECTED_TITLE}" "$REVIEW_LABEL_PRESENT"`,
-		"selected at request time, even",
-		"stale queued labeled event whose trigger was consumed",
-		"cat > /dev/null",
-		`grep -q 'HTTP 404'`,
-		"sfl-review trigger label is already absent",
-		"Could not consume sfl-review trigger label",
-		`EXPECTED_TITLE="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="`,
-		`BEFORE_RUN_ID=$(gh api`,
-		`--argjson before_run_id "$BEFORE_RUN_ID"`,
-		`select(.id > $before_run_id)`,
-		"skipping duplicate dispatch",
-		"for STATUS in $(reusable_review_statuses)",
-		`runs?status=${STATUS}&per_page=100`,
-		"correctness hazard worse than an occasional duplicate",
-		"# BEGIN TESTABLE DISPATCH DEDUP",
-		"find_reusable_review_run",
-	} {
-		if !strings.Contains(triggerText, required) {
-			t.Errorf("automatic reviewer trigger is missing contract text %q", required)
-		}
-	}
-	if strings.Contains(triggerText, "ref=${BASE_REF}") {
-		t.Error("automatic reviewer trigger still dispatches from the pull request base ref")
-	}
-	if strings.Contains(triggerText, "created_at >= $dispatched_at") {
-		t.Error("automatic reviewer trigger still trusts the runner clock to resolve a dispatched run")
-	}
-	if count := strings.Count(triggerText, "github.event.label.name == 'sfl-review'"); count != 3 {
-		t.Errorf("sfl-review label gate appears %d times, want concurrency, dispatch, and approval guards", count)
-	}
-	if count := strings.Count(triggerText, "github.event.action != 'labeled'"); count != 2 {
-		t.Errorf("unrelated-label guard appears %d times, want dispatch and approval guards", count)
-	}
-	if count := strings.Count(triggerText, "consume_review_label"); count != 3 {
-		t.Errorf("sfl-review label consumer appears %d times, want definition plus active and new dispatch paths", count)
-	}
-
-	recovery := normalizeLineEndings(readContractFile(t,
-		filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-recovery.yml"),
-	))
-	for _, required := range []string{
-		`workflows: ["SFL PR Review"]`,
-		"vars.SFL_ENABLED != 'false'",
-		"github.event.workflow_run.conclusion == 'failure'",
-		"github.event.workflow_run.conclusion == 'timed_out'",
-		"github.event.workflow_run.conclusion == 'cancelled'",
-		"github.event.workflow_run.path == '.github/workflows/sfl-pr-review.lock.yml'",
-		"github.event.workflow_run.event == 'workflow_dispatch'",
-		"github.event.workflow_run.head_repository.full_name == github.repository",
-		"github.event.workflow_run.head_branch == github.event.repository.default_branch",
-		"Finalize interrupted review evidence",
-		"FAILED_RUN_TITLE: ${{ github.event.workflow_run.display_title }}",
-		"const checkRuns = await github.paginate(",
-		"github.rest.checks.listForRef",
-		"check.external_id === externalId && check.app?.id === 15368",
-		"status: 'completed'",
-		"conclusion: 'failure'",
-		"if: github.event.workflow_run.conclusion != 'cancelled'",
-		"--name sfl-review-run-provenance",
-		"--name safe-outputs-items",
-		"--name agent",
-		"agent_output.json",
-		`SFL_APP_SLUG: ${{ steps.app-token.outputs.app-slug }}`,
-		`pulls/${PR_NUMBER}/reviews?per_page=100`,
-		`contains("/actions/runs/" + $workflow_run_id)`,
-		`reconcile_review_count`,
-		`PUBLISHED_REVIEW_COUNT`,
-		`reconciling published reviews`,
-		`select(.type == "submit_pull_request_review")`,
-		`.type == "missing_data"`,
-		`.type == "report_incomplete"`,
-		`if type == "array" then`,
-		`elif type == "object" and (.items | type) == "array" then`,
-		`error("agent output must be an array or contain an items array")`,
-		`terminal_signal_count`,
-		`echo "reported"`,
-		`if [ "$retry_count" -eq 0 ]; then`,
-		`echo "exhausted"`,
-		`(.base_sha | test("^[0-9a-f]{40}$"))`,
-		`(.review_effort | test("^(low|medium|high)$"))`,
-		`inputs[base_sha]=${BASE_SHA}`,
-		`inputs[retry_count]=1`,
-		`REVIEW_EFFORT=$(jq -r '.review_effort' "$PROVENANCE")`,
-		`dispatch_args+=(-f "inputs[review_effort]=${REVIEW_EFFORT}")`,
-		`dispatch_args+=(-f "inputs[dispatch_id]=recovery-${GITHUB_RUN_ID}")`,
-		`A newer review run already owns PR`,
-		`--name sfl-review-run-provenance`,
-		`--paginate`,
-		`--slurp`,
-		`.workflow_runs[]`,
-		`NEWER_PROVENANCE_ATTEMPTS=12`,
-		`NEWER_PROVENANCE_LOADED="false"`,
-		`newer_run_suppresses_retry`,
-		"The sealed title is computed first",
-		`EXPECTED_REVIEW_TITLE_PREFIX="SFL PR Review #${PR_NUMBER} ${BASE_SHA}:${HEAD_SHA} retry="`,
-		`NEWER_TITLE_MATCH`,
-		`A newer matching review for PR #${PR_NUMBER} at ${BASE_SHA}:${HEAD_SHA} suppresses duplicate retry`,
-		`PR #${PR_NUMBER} is no longer eligible`,
-	} {
-		if !strings.Contains(recovery, required) {
-			t.Errorf("review recovery workflow is missing contract text %q", required)
-		}
-	}
-	if strings.Contains(recovery, `.conclusion != "cancelled"`) {
-		t.Error("recovery ignores newer cancelled reviews and can dispatch an unwanted replacement")
-	}
-
-}
-func TestResolverTokenSeparation(t *testing.T) {
-	t.Helper()
-
-	root := filepath.Clean("..")
-	const tokenStepName = "Generate SFL App token for thread validation"
-	const identityStepName = "Resolve SFL App identity"
-	const resolverStepName = "Validate and resolve requested SFL threads"
-
-	sourcePath := filepath.Join(root, "deployment", "workflows", "sfl-pr-review.md")
-	source := normalizeLineEndings(readContractFile(t, sourcePath))
-	if count := strings.Count(source, tokenStepName); count != 1 {
-		t.Fatalf("%s contains %d resolver token steps, want 1", sourcePath, count)
-	}
-	tokenStepStart := strings.Index(source, tokenStepName)
-	tokenStepEnd := strings.Index(source[tokenStepStart:], resolverStepName)
-	if tokenStepEnd < 0 {
-		t.Fatalf("%s resolver token step boundary is missing", sourcePath)
-	}
-	tokenStep := source[tokenStepStart : tokenStepStart+tokenStepEnd]
-	for _, permission := range []string{
-		"permission-contents: read",
-		"permission-pull-requests: read",
-	} {
-		if !strings.Contains(tokenStep, permission) {
-			t.Errorf("%s resolver token step is missing %q", sourcePath, permission)
-		}
-	}
-	for _, contract := range []string{
-		"contents: write",
-		"github-token: ${{ steps.validation-token.outputs.token }}",
-		"SFL_APP_LOGIN: ${{ steps.app-identity.outputs.login }}",
-		"github-token: ${{ github.token }}",
-		"isOutdated",
-		"(!thread.isResolved && !thread.isOutdated)",
-		"const unresolvedOutdatedThreadIds = []",
-		"for (const threadId of unresolvedOutdatedThreadIds)",
-		"github.rest.repos.getContent",
-		"no longer exists at head ${expectedHead}; human resolution is required",
-		"const failedThreadIds = []",
-		"for (let attempt = 1; attempt <= 3; attempt += 1)",
-		"failedThreadIds.push(threadId)",
-	} {
-		if !strings.Contains(source, contract) {
-			t.Errorf("%s resolver is missing %q", sourcePath, contract)
-		}
-	}
-
-	compiledPath := filepath.Join(root, ".github", "workflows", "sfl-pr-review.lock.yml")
-	var compiled struct {
-		Jobs map[string]struct {
-			Permissions map[string]string `yaml:"permissions"`
-			Steps       []struct {
-				ID   string         `yaml:"id"`
-				Name string         `yaml:"name"`
-				Env  map[string]any `yaml:"env"`
-				Uses string         `yaml:"uses"`
-				With map[string]any `yaml:"with"`
-			} `yaml:"steps"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(readContractFile(t, compiledPath), &compiled); err != nil {
-		t.Fatalf("parse compiled reviewer workflow: %v", err)
-	}
-	job, ok := compiled.Jobs["resolve_sfl_review_thread"]
-	if !ok {
-		t.Fatal("compiled reviewer is missing resolve_sfl_review_thread job")
-	}
-	for permission, expected := range map[string]string{
-		"contents":      "write",
-		"pull-requests": "write",
-	} {
-		if actual := job.Permissions[permission]; actual != expected {
-			t.Errorf("compiled resolver job permission %s = %q, want %q", permission, actual, expected)
-		}
-	}
-
-	var tokenSteps, identitySteps, resolverSteps int
-	for _, step := range job.Steps {
-		switch step.Name {
-		case tokenStepName:
-			tokenSteps++
-			if step.ID != "validation-token" {
-				t.Errorf("compiled resolver token step id = %q, want validation-token", step.ID)
-			}
-			const tokenAction = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1"
-			if step.Uses != tokenAction {
-				t.Errorf("compiled resolver token step uses %q, want %q", step.Uses, tokenAction)
-			}
-			expectedPermissions := map[string]string{
-				"permission-contents":      "read",
-				"permission-pull-requests": "read",
-			}
-			var permissionCount int
-			for permission, actual := range step.With {
-				if !strings.HasPrefix(permission, "permission-") {
-					continue
-				}
-				permissionCount++
-				expected, ok := expectedPermissions[permission]
-				if !ok {
-					t.Errorf("compiled resolver token has unexpected permission %q", permission)
-					continue
-				}
-				if actual != expected {
-					t.Errorf("compiled resolver token %s = %v, want %q", permission, actual, expected)
-				}
-			}
-			if permissionCount != len(expectedPermissions) {
-				t.Errorf("compiled resolver token has %d permission inputs, want %d", permissionCount, len(expectedPermissions))
-			}
-			for permission, expected := range expectedPermissions {
-				if actual := step.With[permission]; actual != expected {
-					t.Errorf("compiled resolver token %s = %v, want %q", permission, actual, expected)
-				}
-			}
-		case identityStepName:
-			identitySteps++
-			const expectedToken = "${{ steps.validation-token.outputs.token }}"
-			if actual := step.With["github-token"]; actual != expectedToken {
-				t.Errorf("compiled identity github-token = %v, want %q", actual, expectedToken)
-			}
-		case resolverStepName:
-			resolverSteps++
-			const expectedToken = "${{ github.token }}"
-			if actual := step.With["github-token"]; actual != expectedToken {
-				t.Errorf("compiled resolver github-token = %v, want %q", actual, expectedToken)
-			}
-			const expectedLogin = "${{ steps.app-identity.outputs.login }}"
-			if actual := step.Env["SFL_APP_LOGIN"]; actual != expectedLogin {
-				t.Errorf("compiled resolver SFL_APP_LOGIN = %v, want %q", actual, expectedLogin)
-			}
-		}
-	}
-	if tokenSteps != 1 {
-		t.Errorf("compiled resolver has %d token steps, want 1", tokenSteps)
-	}
-	if identitySteps != 1 {
-		t.Errorf("compiled resolver has %d identity steps, want 1", identitySteps)
-	}
-	if resolverSteps != 1 {
-		t.Errorf("compiled resolver has %d mutation steps, want 1", resolverSteps)
-	}
-}
-
-func TestAutoTriggerTokenPermissions(t *testing.T) {
-	t.Helper()
-
-	root := filepath.Clean("..")
-	path := filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-auto.yml")
-	var workflow struct {
-		Permissions map[string]string `yaml:"permissions"`
-		Jobs        map[string]struct {
-			Permissions map[string]string `yaml:"permissions"`
-			Steps       []struct {
-				ID   string         `yaml:"id"`
-				Name string         `yaml:"name"`
-				Uses string         `yaml:"uses"`
-				With map[string]any `yaml:"with"`
-			} `yaml:"steps"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(readContractFile(t, path), &workflow); err != nil {
-		t.Fatalf("parse auto-trigger workflow: %v", err)
-	}
-	if len(workflow.Permissions) != 0 {
-		t.Errorf("auto-trigger workflow has workflow-level permissions %v, want none", workflow.Permissions)
-	}
-	job, ok := workflow.Jobs["dispatch"]
-	if !ok {
-		t.Fatal("auto-trigger workflow is missing dispatch job")
-	}
-	if actual := job.Permissions["contents"]; actual != "read" {
-		t.Errorf("auto-trigger dispatch contents permission = %q, want read", actual)
-	}
-
-	const tokenAction = "actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1"
-	expectedPermissions := map[string]string{
-		"permission-actions":       "write",
-		"permission-contents":      "read",
-		"permission-pull-requests": "write",
-	}
-	var tokenSteps int
-	for _, step := range job.Steps {
-		if step.Name != "Mint SFL GitHub App token" {
-			continue
-		}
-		tokenSteps++
-		if step.ID != "app-token" {
-			t.Errorf("auto-trigger token step id = %q, want app-token", step.ID)
-		}
-		if step.Uses != tokenAction {
-			t.Errorf("auto-trigger token step uses %q, want %q", step.Uses, tokenAction)
-		}
-		var permissionCount int
-		for permission, actual := range step.With {
-			if !strings.HasPrefix(permission, "permission-") {
-				continue
-			}
-			permissionCount++
-			expected, ok := expectedPermissions[permission]
-			if !ok {
-				t.Errorf("auto-trigger token has unexpected permission %q", permission)
-				continue
-			}
-			if actual != expected {
-				t.Errorf("auto-trigger token %s = %v, want %q", permission, actual, expected)
-			}
-		}
-		if permissionCount != len(expectedPermissions) {
-			t.Errorf("auto-trigger token has %d permission inputs, want %d", permissionCount, len(expectedPermissions))
-		}
-		for permission, expected := range expectedPermissions {
-			if actual := step.With[permission]; actual != expected {
-				t.Errorf("auto-trigger token %s = %v, want %q", permission, actual, expected)
-			}
-		}
-	}
-	if tokenSteps != 1 {
-		t.Errorf("auto-trigger has %d token steps, want 1", tokenSteps)
-	}
-}
-
-// The approval gate must be published with the repository-scoped github.token,
-// never the shared SFL App token. A global substring assertion cannot prove
-// this because other compiled steps also receive a github-token input; parse
-// the compiled workflow and assert the credential on the exact publication
-// steps so the trust-boundary contract fails exactly when either step changes.
-func TestCompiledEvidencePublishesWithRepositoryToken(t *testing.T) {
-	t.Helper()
-
-	root := filepath.Clean("..")
-	compiled := readContractFile(t, filepath.Join(root, ".github", "workflows", "sfl-pr-review.lock.yml"))
-
-	var workflow struct {
-		Jobs map[string]struct {
-			Steps []struct {
-				Name string         `yaml:"name"`
-				With map[string]any `yaml:"with"`
-			} `yaml:"steps"`
-		} `yaml:"jobs"`
-	}
-	if err := yaml.Unmarshal(compiled, &workflow); err != nil {
-		t.Fatalf("parse compiled reviewer workflow: %v", err)
-	}
-
-	expectedSteps := map[string]int{
-		"Initialize review evidence":   0,
-		"Finalize SFL review evidence": 0,
-	}
-	for jobName, job := range workflow.Jobs {
-		for _, step := range job.Steps {
-			if _, ok := expectedSteps[step.Name]; !ok {
-				continue
-			}
-			expectedSteps[step.Name]++
-			token, ok := step.With["github-token"].(string)
-			if !ok {
-				t.Errorf("job %q evidence-publication step has no github-token input", jobName)
-				continue
-			}
-			if token != "${{ github.token }}" {
-				t.Errorf(
-					"job %q evidence-publication step github-token = %q, want repository-scoped ${{ github.token }}",
-					jobName, token,
-				)
-			}
-		}
-	}
-	for stepName, matches := range expectedSteps {
-		if matches != 1 {
-			t.Fatalf("expected exactly one %s step, found %d", stepName, matches)
-		}
-	}
-}
-
-func TestIssueBranchCorrelationPattern(t *testing.T) {
-	pattern := regexp.MustCompile(`^agent-fix/issue-36(-|$)`)
-	for _, branch := range []string{
-		"agent-fix/issue-36",
-		"agent-fix/issue-36-retry-output",
-	} {
-		if !pattern.MatchString(branch) {
-			t.Errorf("expected branch %q to match issue correlation", branch)
-		}
-	}
-	for _, branch := range []string{
-		"agent-fix/issue-360",
-		"agent-fix/issue-36retry-output",
-		"feature/issue-36",
-	} {
-		if pattern.MatchString(branch) {
-			t.Errorf("expected branch %q not to match issue correlation", branch)
-		}
-	}
-}
-
-func assertRunBlocksWithinLimit(t *testing.T, workflow string, limit int) {
-	t.Helper()
-
-	runBlock := regexp.MustCompile(`^\s+run:\s*[|>]`)
-	lines := strings.Split(workflow, "\n")
-	for index := 0; index < len(lines); index++ {
-		line := lines[index]
-		if !runBlock.MatchString(line) {
-			continue
-		}
-
-		indent := len(line) - len(strings.TrimLeft(line, " "))
-		end := index + 1
-		for ; end < len(lines); end++ {
-			candidate := lines[end]
-			if strings.TrimSpace(candidate) == "" {
-				continue
-			}
-			candidateIndent := len(candidate) - len(strings.TrimLeft(candidate, " "))
-			if candidateIndent <= indent {
-				break
-			}
-		}
-		if length := len(strings.Join(lines[index+1:end], "\n")); length > limit {
-			t.Errorf(
-				"workflow run block at line %d has %d characters, exceeding GitHub's %d-character expression limit",
-				index+1,
-				length,
-				limit,
-			)
-		}
-		index = end - 1
-	}
-}
-
-var reviewerTemplatePlaceholders = []string{
-	"{verdict_icon}",
-	"{VERDICT}",
-	"{verdict_reason}",
-	"{security_critical_or_dash}",
-	"{security_high_or_dash}",
-	"{security_medium_or_dash}",
-	"{security_low_or_dash}",
-	"{accuracy_critical_or_dash}",
-	"{accuracy_high_or_dash}",
-	"{accuracy_medium_or_dash}",
-	"{accuracy_low_or_dash}",
-	"{quality_maintainability_critical_or_dash}",
-	"{quality_maintainability_high_or_dash}",
-	"{quality_maintainability_medium_or_dash}",
-	"{quality_maintainability_low_or_dash}",
-	"{total_critical_or_dash}",
-	"{total_high_or_dash}",
-	"{total_medium_or_dash}",
-	"{total_low_or_dash}",
-	`{Top 3 most impactful current findings with their severity prefixes, or "No findings."}`,
-}
-
-func TestReviewerTemplatePlaceholderDetection(t *testing.T) {
-	t.Helper()
-
-	validBody := `Key finding: use {side: "LEFT"} for deleted lines.`
-	if placeholder := unresolvedReviewerTemplatePlaceholder(validBody); placeholder != "" {
-		t.Fatalf("ordinary brace-delimited code was treated as a placeholder: %s", placeholder)
-	}
-
-	for _, placeholder := range reviewerTemplatePlaceholders {
-		if actual := unresolvedReviewerTemplatePlaceholder("Review body " + placeholder); actual != placeholder {
-			t.Errorf("placeholder %q was not detected; got %q", placeholder, actual)
-		}
-	}
-}
-
-func unresolvedReviewerTemplatePlaceholder(body string) string {
-	for _, placeholder := range reviewerTemplatePlaceholders {
-		if strings.Contains(body, placeholder) {
-			return placeholder
-		}
-	}
-	return ""
-}
-
-func assertFilesEqual(t *testing.T, sourcePath, deployedPath string) {
-	t.Helper()
-
-	source := readContractFile(t, sourcePath)
-	deployed := readContractFile(t, deployedPath)
-	if !bytes.Equal(source, deployed) {
-		t.Errorf("%s differs from %s", deployedPath, sourcePath)
-	}
+type observerResult struct {
+	Action string `json:"action"`
+	Reason string `json:"reason"`
 }
 
 func readContractFile(t *testing.T, path string) []byte {
 	t.Helper()
-
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
@@ -879,4 +25,398 @@ func readContractFile(t *testing.T, path string) []byte {
 
 func normalizeLineEndings(content []byte) string {
 	return strings.ReplaceAll(string(content), "\r\n", "\n")
+}
+
+func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
+	root := filepath.Join("..")
+	canonicalBytes := readContractFile(t, filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-auto.yml"))
+	staged := readContractFile(t, filepath.Join(root, ".github", "workflows", "sfl-pr-review-auto.yml"))
+	if normalizeLineEndings(canonicalBytes) != normalizeLineEndings(staged) {
+		t.Fatal("staged Codex observer differs from canonical deployment source")
+	}
+	canonical := string(canonicalBytes)
+
+	for _, required := range []string{
+		"name: SFL Codex Review Observer",
+		"format('SFL Codex review request #{0}', github.event.issue.number)",
+		"types: [opened, reopened, edited, synchronize]",
+		"invalidate-base-advance:",
+		"github.event.sender.id == 199175422",
+		"Fork pull requests are unsupported",
+		"SFL reviews require the default branch",
+		"appId = 1144995",
+		"appSlug = \"chatgpt-codex-connector\"",
+		"appOwner = \"openai\"",
+		"name: \"SFL Reviewer Gate Runner\"",
+		"check.app.id === 15368",
+		"Codex artifact is stale",
+		"Codex reported review findings",
+		"SFL Codex review invalidated",
+		"requestMatchesCurrentBase",
+		"invalidate-review-request:",
+		"vars.SFL_ENABLED != 'false'",
+		"SFL Codex Review Request Registry",
+		"const terminalRequestIdentity = `:request:${commentId}:at:`",
+		"registrations.has(comment.id)",
+		"openPullCount",
+		"if: github.event_name == 'push'",
+	} {
+		if !strings.Contains(canonical, required) {
+			t.Errorf("Codex observer is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"OPENROUTER_API_KEY",
+		"openrouter.ai",
+		"moonshotai/kimi",
+		"sfl-pr-review.lock.yml",
+		"SFL_APP_PRIVATE_KEY",
+	} {
+		if strings.Contains(canonical, forbidden) {
+			t.Errorf("Codex observer retained forbidden legacy reviewer text %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		`status: "in_progress"`,
+		"const confirmedState = await publicationState();",
+		"const postSuccessState = await publicationState();",
+		"await failPublishedSuccess(publicationChangeReason(postSuccessState));",
+	} {
+		if !strings.Contains(canonical, required) {
+			t.Errorf("Codex observer is missing two-phase publication contract %q", required)
+		}
+	}
+}
+
+func TestCodexObserverClassificationFixtures(t *testing.T) {
+	const head = "a47ba21b6916090642092f03c8b77b24bf658a46"
+	codexUser := map[string]any{
+		"id":    199175422,
+		"login": "chatgpt-codex-connector[bot]",
+	}
+	codexApp := map[string]any{
+		"id":    1144995,
+		"slug":  "chatgpt-codex-connector",
+		"owner": map[string]any{"login": "openai"},
+	}
+
+	tests := []struct {
+		name       string
+		input      map[string]any
+		wantAction string
+	}{
+		{
+			name: "clean current-head comment passes",
+			input: map[string]any{
+				"eventName":   "issue_comment",
+				"currentHead": head,
+				"resolvedSha": head,
+				"inlineCount": 0,
+				"artifact": map[string]any{
+					"user":                     userCopy(codexUser),
+					"performed_via_github_app": codexApp,
+					"body":                     "Codex Review: Didn't find any major issues. Keep it up!\n\n**Reviewed commit:** `a47ba21b69`",
+				},
+			},
+			wantAction: "success",
+		},
+		{
+			name: "current-head finding review fails",
+			input: map[string]any{
+				"eventName":    "pull_request_review",
+				"currentHead":  head,
+				"resolvedSha":  head,
+				"reviewCommit": head,
+				"inlineCount":  1,
+				"artifact": map[string]any{
+					"user":  userCopy(codexUser),
+					"state": "COMMENTED",
+					"body":  "Here are some automated review suggestions.\n\n**Reviewed commit:** `a47ba21b69`",
+				},
+			},
+			wantAction: "failure",
+		},
+		{
+			name: "stale clean result is ignored",
+			input: map[string]any{
+				"eventName":   "issue_comment",
+				"currentHead": head,
+				"resolvedSha": "048484a6ced8de230284f03c7214d76f76987318",
+				"inlineCount": 0,
+				"artifact": map[string]any{
+					"user":                     userCopy(codexUser),
+					"performed_via_github_app": codexApp,
+					"body":                     "Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** `048484a6ce`",
+				},
+			},
+			wantAction: "ignore",
+		},
+		{
+			name: "spoofed comment is ignored",
+			input: map[string]any{
+				"eventName":   "issue_comment",
+				"currentHead": head,
+				"resolvedSha": head,
+				"inlineCount": 0,
+				"artifact": map[string]any{
+					"user":                     map[string]any{"id": 42, "login": "chatgpt-codex-connector[bot]"},
+					"performed_via_github_app": codexApp,
+					"body":                     "Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** `a47ba21b69`",
+				},
+			},
+			wantAction: "ignore",
+		},
+		{
+			name: "malformed comment without a commit binding is ignored",
+			input: map[string]any{
+				"eventName":   "issue_comment",
+				"currentHead": head,
+				"resolvedSha": "",
+				"inlineCount": 0,
+				"artifact": map[string]any{
+					"user":                     userCopy(codexUser),
+					"performed_via_github_app": codexApp,
+					"body":                     "Codex Review returned an unexpected response.",
+				},
+			},
+			wantAction: "ignore",
+		},
+		{
+			name: "malformed current-head review fails closed",
+			input: map[string]any{
+				"eventName":    "pull_request_review",
+				"currentHead":  head,
+				"resolvedSha":  "",
+				"reviewCommit": head,
+				"inlineCount":  0,
+				"artifact": map[string]any{
+					"user":  userCopy(codexUser),
+					"state": "COMMENTED",
+					"body":  "Codex returned an unexpected review response.",
+				},
+			},
+			wantAction: "failure",
+		},
+		{
+			name: "stale malformed review is ignored",
+			input: map[string]any{
+				"eventName":    "pull_request_review",
+				"currentHead":  head,
+				"resolvedSha":  "",
+				"reviewCommit": "048484a6ced8de230284f03c7214d76f76987318",
+				"inlineCount":  1,
+				"artifact": map[string]any{
+					"user":  userCopy(codexUser),
+					"state": "COMMENTED",
+					"body":  "Here are some automated review suggestions without a commit marker.",
+				},
+			},
+			wantAction: "ignore",
+		},
+		{
+			name: "current-head result for another base is ignored",
+			input: map[string]any{
+				"eventName":                 "pull_request_review",
+				"currentHead":               head,
+				"resolvedSha":               head,
+				"reviewCommit":              head,
+				"requestMatchesCurrentBase": false,
+				"inlineCount":               0,
+				"artifact": map[string]any{
+					"user":  userCopy(codexUser),
+					"state": "COMMENTED",
+					"body":  "Codex Review: Didn't find any major issues.",
+				},
+			},
+			wantAction: "ignore",
+		},
+		{
+			name: "shared current head fails closed",
+			input: map[string]any{
+				"eventName":     "issue_comment",
+				"currentHead":   head,
+				"resolvedSha":   head,
+				"openPullCount": 2,
+				"inlineCount":   0,
+				"artifact": map[string]any{
+					"user":                     userCopy(codexUser),
+					"performed_via_github_app": codexApp,
+					"body":                     "Codex Review: Didn't find any major issues.",
+				},
+			},
+			wantAction: "failure",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := runObserverFixture(t, tc.input)
+			if result.Action != tc.wantAction {
+				t.Fatalf("observer action = %q (%s), want %q", result.Action, result.Reason, tc.wantAction)
+			}
+		})
+	}
+}
+
+func TestCodexObserverActiveInvalidationFixtures(t *testing.T) {
+	tests := []struct {
+		name       string
+		run        map[string]any
+		pullNumber int
+		want       bool
+	}{
+		{
+			name:       "active push can invalidate every reviewed pull",
+			run:        map[string]any{"event": "push", "status": "in_progress"},
+			pullNumber: 42,
+			want:       true,
+		},
+		{
+			name: "matching active pull context can invalidate",
+			run: map[string]any{
+				"event":         "pull_request_target",
+				"status":        "queued",
+				"pull_requests": []map[string]any{{"number": 42}},
+			},
+			pullNumber: 42,
+			want:       true,
+		},
+		{
+			name: "other pull context is irrelevant",
+			run: map[string]any{
+				"event":         "pull_request_target",
+				"status":        "waiting",
+				"pull_requests": []map[string]any{{"number": 41}},
+			},
+			pullNumber: 42,
+			want:       false,
+		},
+		{
+			name:       "completed push is no longer active",
+			run:        map[string]any{"event": "push", "status": "completed"},
+			pullNumber: 42,
+			want:       false,
+		},
+		{
+			name: "active owner request invalidation blocks observation",
+			run: map[string]any{
+				"event": "issue_comment", "status": "in_progress",
+				"actor":         map[string]any{"login": "HemSoft"},
+				"display_title": "SFL Codex review request #42",
+			},
+			pullNumber: 42,
+			want:       true,
+		},
+		{
+			name: "owner request for another pull is irrelevant",
+			run: map[string]any{
+				"event": "issue_comment", "status": "in_progress",
+				"actor":         map[string]any{"login": "HemSoft"},
+				"display_title": "SFL Codex review request #41",
+			},
+			pullNumber: 42,
+			want:       false,
+		},
+		{
+			name: "ordinary owner comment is not an invalidation",
+			run: map[string]any{
+				"event": "issue_comment", "status": "queued",
+				"actor":         map[string]any{"login": "HemSoft"},
+				"display_title": "SFL issue_comment event",
+			},
+			pullNumber: 42,
+			want:       false,
+		},
+		{
+			name: "Codex result comment is not a request invalidation",
+			run: map[string]any{
+				"event": "issue_comment", "status": "queued",
+				"actor": map[string]any{"login": "chatgpt-codex-connector[bot]"},
+			},
+			pullNumber: 42,
+			want:       false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := runActiveInvalidationFixture(t, tc.run, tc.pullNumber); got != tc.want {
+				t.Fatalf("isActiveInvalidationRun() = %t, want %t", got, tc.want)
+			}
+		})
+	}
+}
+
+func userCopy(user map[string]any) map[string]any {
+	return map[string]any{"id": user["id"], "login": user["login"]}
+}
+
+func runObserverFixture(t *testing.T, input map[string]any) observerResult {
+	t.Helper()
+	if _, ok := input["requestMatchesCurrentBase"]; !ok {
+		input["requestMatchesCurrentBase"] = true
+	}
+	if _, ok := input["openPullCount"]; !ok {
+		input["openPullCount"] = 1
+	}
+	workflow := string(readContractFile(t, filepath.Join("..", "deployment", "infrastructure", "sfl-pr-review-auto.yml")))
+	startMarker := "// BEGIN TESTABLE CODEX OBSERVER"
+	endMarker := "// END TESTABLE CODEX OBSERVER"
+	start := strings.Index(workflow, startMarker)
+	end := strings.Index(workflow, endMarker)
+	if start < 0 || end <= start {
+		t.Fatal("could not locate testable Codex observer block")
+	}
+	source := workflow[start+len(startMarker) : end]
+	source += "\nconsole.log(JSON.stringify(classifyCodexArtifact(JSON.parse(process.argv[2]))));\n"
+
+	temp := filepath.Join(t.TempDir(), "observer.js")
+	if err := os.WriteFile(temp, []byte(source), 0o600); err != nil {
+		t.Fatalf("write observer fixture: %v", err)
+	}
+	payload, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("marshal observer fixture: %v", err)
+	}
+	output, err := exec.Command("node", temp, string(payload)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run observer fixture: %v\n%s", err, output)
+	}
+	var result observerResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("parse observer result %q: %v", output, err)
+	}
+	return result
+}
+
+func runActiveInvalidationFixture(t *testing.T, run map[string]any, pullNumber int) bool {
+	t.Helper()
+	workflow := string(readContractFile(t, filepath.Join("..", "deployment", "infrastructure", "sfl-pr-review-auto.yml")))
+	startMarker := "// BEGIN TESTABLE CODEX OBSERVER"
+	endMarker := "// END TESTABLE CODEX OBSERVER"
+	start := strings.Index(workflow, startMarker)
+	end := strings.Index(workflow, endMarker)
+	if start < 0 || end <= start {
+		t.Fatal("could not locate testable Codex observer block")
+	}
+	source := workflow[start+len(startMarker) : end]
+	source += "\nconst fixture = JSON.parse(process.argv[2]); console.log(JSON.stringify(isActiveInvalidationRun(fixture.run, fixture.pullNumber, \"HemSoft\")));\n"
+
+	temp := filepath.Join(t.TempDir(), "active-invalidation.js")
+	if err := os.WriteFile(temp, []byte(source), 0o600); err != nil {
+		t.Fatalf("write active invalidation fixture: %v", err)
+	}
+	payload, err := json.Marshal(map[string]any{"run": run, "pullNumber": pullNumber})
+	if err != nil {
+		t.Fatalf("marshal active invalidation fixture: %v", err)
+	}
+	output, err := exec.Command("node", temp, string(payload)).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run active invalidation fixture: %v\n%s", err, output)
+	}
+	var result bool
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("parse active invalidation result %q: %v", output, err)
+	}
+	return result
 }

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 )
@@ -56,6 +57,8 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		shortLatestSHA = shortLatestSHA[:12]
 	}
 
+	installedTier := canonicalDeploymentTier(manifest.Tier)
+	normalizeManifestForSync(manifest, installedTier)
 	workflows, err := workflowsForInstalledManifest(manifest)
 	if err != nil {
 		return fmt.Errorf("resolving installed workflows: %w", err)
@@ -65,7 +68,6 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 			return err
 		}
 	}
-	installedTier := canonicalDeploymentTier(manifest.Tier)
 	if manifest.SourceSHA == latestSHA {
 		if opts.dryRun {
 			fmt.Fprintf(stdout, "  ✓ Source revision is current (version %s, SHA %s)\n", latestVersion, shortLatestSHA)
@@ -107,6 +109,10 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
 		}
+		content, prepareErr := prepareWorkflowSource(wf, content, sourceRef, owner+"/"+repo, defaultBranch)
+		if prepareErr != nil {
+			return prepareErr
+		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, latestVersion)
 		if renderErr != nil {
 			return fmt.Errorf("applying HemSoft engine policy to %s: %w", wf, renderErr)
@@ -119,6 +125,10 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, sourceRef)
 		if fetchErr != nil {
 			return fmt.Errorf("fetching add-on %s: %w", srcPath, fetchErr)
+		}
+		content, prepareErr := prepareWorkflowSource(wf, content, sourceRef, owner+"/"+repo, defaultBranch)
+		if prepareErr != nil {
+			return prepareErr
 		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, latestVersion)
 		if renderErr != nil {
@@ -154,10 +164,6 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Update manifest
 	manifest.Version = release.Version
 	manifest.SourceSHA = latestSHA
-	if manifest.Tier == "review" {
-		manifest.Tier = "reviewer"
-		manifest.Components = tierComponents["reviewer"]
-	}
 	manifest.DeployedAt = deployedAt
 	manifest.DeployedBy = deployedBy
 	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
@@ -219,6 +225,28 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	updateAgentPRBranches(owner, repo, stdout)
 
 	return nil
+}
+
+func normalizeManifestForSync(manifest *sflManifest, installedTier string) {
+	hadLegacyReviewer := slices.Contains(manifest.Components, "sfl-pr-review")
+	components := manifest.Components[:0]
+	for _, component := range manifest.Components {
+		if component != "sfl-pr-review" && component != "sfl-pr-review-recovery" {
+			components = append(components, component)
+		}
+	}
+	manifest.Components = components
+
+	if (installedTier == "full" || (installedTier == "custom" && hadLegacyReviewer)) &&
+		!slices.Contains(manifest.Components, "sfl-pr-review-auto") {
+		manifest.Components = append(manifest.Components, "sfl-pr-review-auto")
+	}
+	if installedTier != "reviewer" {
+		return
+	}
+
+	manifest.Tier = "reviewer"
+	manifest.Components = append([]string(nil), tierComponents["reviewer"]...)
 }
 
 func shouldPreflightReviewerSync(dryRun bool, workflowSets ...[]string) bool {

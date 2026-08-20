@@ -48,9 +48,16 @@ type repositoryRuleset struct {
 }
 
 type workflowRunSummary struct {
+	ID         int64  `json:"id"`
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	URL        string `json:"html_url"`
+}
+
+type workflowJobSummary struct {
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
 }
 
 // SFL state labels in priority order
@@ -262,6 +269,7 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 	fmt.Fprintf(stdout, "\n  Reviewer package:\n")
 	missing := 0
 	drifted := 0
+	defaultBranch, defaultBranchErr := getDefaultBranch(owner, repo)
 	if manifest.SourceSHA == "" {
 		drifted++
 		fmt.Fprintf(stdout, "    %s Manifest is missing immutable sourceSha\n",
@@ -282,8 +290,15 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 				sourceWorkflowPath(workflow),
 				manifest.SourceSHA,
 			)
-			expected, renderErr := renderHemSoftWorkflow(workflow, source, manifest.Version)
-			if manifest.SourceSHA == "" || sourceErr != nil || renderErr != nil ||
+			preparedSource, prepareErr := prepareWorkflowSource(
+				workflow,
+				source,
+				manifest.SourceSHA,
+				owner+"/"+repo,
+				defaultBranch,
+			)
+			expected, renderErr := renderHemSoftWorkflow(workflow, preparedSource, manifest.Version)
+			if manifest.SourceSHA == "" || defaultBranchErr != nil || sourceErr != nil || prepareErr != nil || renderErr != nil ||
 				content != expected {
 				drifted++
 				fmt.Fprintf(stdout, "    %s %s differs from pinned source %s\n",
@@ -358,7 +373,7 @@ func printReviewerPrerequisites(
 	health reviewerRolloutHealth,
 	healthErr error,
 ) {
-	fmt.Fprintf(stdout, "\n  Reviewer App:\n")
+	fmt.Fprintf(stdout, "\n  Codex App:\n")
 	if healthErr != nil {
 		fmt.Fprintf(stdout, "    %s Could not inspect reviewer rollout prerequisites: %v\n",
 			styler.colored("!", termenv.ANSIYellow).styled, healthErr)
@@ -367,7 +382,7 @@ func printReviewerPrerequisites(
 			styler.colored("!", termenv.ANSIYellow).styled, health.AppNotice)
 	}
 
-	fmt.Fprintf(stdout, "\n  Reviewer credentials and Actions:\n")
+	fmt.Fprintf(stdout, "\n  Reviewer prerequisites:\n")
 	if healthErr != nil {
 		fmt.Fprintf(stdout, "    %s Could not inspect credential metadata or Actions state\n",
 			styler.colored("!", termenv.ANSIYellow).styled)
@@ -622,21 +637,51 @@ func latestReviewerRun(owner, repo string) (workflowRunSummary, error) {
 	if err != nil {
 		return workflowRunSummary{}, err
 	}
-	var response struct {
-		Runs []workflowRunSummary `json:"workflow_runs"`
+	return latestReviewerRunWithClient(client, owner, repo)
+}
+
+func latestReviewerRunWithClient(client restAPI, owner, repo string) (workflowRunSummary, error) {
+	return latestReviewerRunWithPageSize(client, owner, repo, 100)
+}
+
+func latestReviewerRunWithPageSize(client restAPI, owner, repo string, pageSize int) (workflowRunSummary, error) {
+	for page := 1; ; page++ {
+		var response struct {
+			Runs []workflowRunSummary `json:"workflow_runs"`
+		}
+		path := fmt.Sprintf(
+			"repos/%s/%s/actions/workflows/sfl-pr-review-auto.yml/runs?actor=chatgpt-codex-connector%%5Bbot%%5D&per_page=%d&page=%d",
+			owner,
+			repo,
+			pageSize,
+			page,
+		)
+		if err := client.Get(path, &response); err != nil {
+			return workflowRunSummary{}, err
+		}
+		for _, run := range response.Runs {
+			var jobs struct {
+				Jobs []workflowJobSummary `json:"jobs"`
+			}
+			jobsPath := fmt.Sprintf(
+				"repos/%s/%s/actions/runs/%d/jobs?filter=latest&per_page=100",
+				owner,
+				repo,
+				run.ID,
+			)
+			if err := client.Get(jobsPath, &jobs); err != nil {
+				return workflowRunSummary{}, err
+			}
+			for _, job := range jobs.Jobs {
+				if job.Name == "Observe authenticated Codex review" && job.Conclusion != "skipped" {
+					return run, nil
+				}
+			}
+		}
+		if len(response.Runs) < pageSize {
+			return workflowRunSummary{}, nil
+		}
 	}
-	path := fmt.Sprintf(
-		"repos/%s/%s/actions/workflows/sfl-pr-review.lock.yml/runs?per_page=1",
-		owner,
-		repo,
-	)
-	if err := client.Get(path, &response); err != nil {
-		return workflowRunSummary{}, err
-	}
-	if len(response.Runs) == 0 {
-		return workflowRunSummary{}, nil
-	}
-	return response.Runs[0], nil
 }
 
 func parseStatusOptions(args []string, stderr io.Writer) (statusOptions, error) {

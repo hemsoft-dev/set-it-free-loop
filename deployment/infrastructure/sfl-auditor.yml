@@ -341,11 +341,18 @@ jobs:
           set -euo pipefail
 
           EXPECTED=0
-          if MANIFEST=$(gh api "repos/$REPO/contents/sfl.json" --jq '.content' 2>/dev/null); then
-            if echo "$MANIFEST" | base64 --decode | jq -e \
-              '.components | index("sfl-pr-review") != null' >/dev/null; then
-              EXPECTED=1
-            fi
+          MANIFEST=""
+          MANIFEST_JSON=""
+          if ! MANIFEST=$(gh api "repos/$REPO/contents/.sfl/sfl.json" --jq '.content' 2>/dev/null); then
+            MANIFEST=$(gh api "repos/$REPO/contents/sfl.json" --jq '.content' 2>/dev/null || true)
+          fi
+          if [ -n "$MANIFEST" ]; then
+            MANIFEST_JSON=$(echo "$MANIFEST" | base64 --decode)
+          fi
+          if [ -n "$MANIFEST_JSON" ] && echo "$MANIFEST_JSON" | jq -e \
+            '(.components | index("sfl-pr-review-auto") != null) or
+             ((.addons // []) | any(. == "pr-review"))' >/dev/null; then
+            EXPECTED=1
           fi
 
           if [ "$EXPECTED" -eq 0 ]; then
@@ -356,44 +363,46 @@ jobs:
 
           MISSING=0
           MISSING_ITEMS=""
-          if ! gh api "repos/$REPO/actions/workflows/sfl-pr-review.lock.yml" >/dev/null 2>&1; then
-            echo "::warning::Missing active workflow .github/workflows/sfl-pr-review.lock.yml"
+          OBSERVER_STATE=$(gh api "repos/$REPO/actions/workflows/sfl-pr-review-auto.yml" --jq '.state' 2>/dev/null || true)
+          if [ "$OBSERVER_STATE" != "active" ]; then
+            echo "::warning::Missing or disabled active workflow .github/workflows/sfl-pr-review-auto.yml (state: ${OBSERVER_STATE:-missing})"
             MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review.lock.yml\`"$'\n'
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy and enable \`.github/workflows/sfl-pr-review-auto.yml\`"$'\n'
           fi
 
-          REVIEW_LOCK=""
-          if REVIEW_LOCK_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review.lock.yml" --jq '.content' 2>/dev/null); then
-            REVIEW_LOCK=$(echo "$REVIEW_LOCK_B64" | base64 --decode)
+          OBSERVER=""
+          if OBSERVER_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review-auto.yml" --jq '.content' 2>/dev/null); then
+            OBSERVER=$(echo "$OBSERVER_B64" | base64 --decode)
           fi
-          if [ -n "$REVIEW_LOCK" ] && { \
-            ! grep -q '"allow-only"' <<< "$REVIEW_LOCK" || \
-            ! grep -q '"write-sink"' <<< "$REVIEW_LOCK"; \
+          EXPECTED_SOURCE_SHA=$(jq -r '.sourceSha // empty' <<< "$MANIFEST_JSON")
+          OBSERVER_SOURCE_SHA=$(grep -F '# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@' \
+            <<< "$OBSERVER" | head -n 1 | cut -d@ -f2) || true
+          DEFAULT_BRANCH=$(gh api "repos/$REPO" --jq '.default_branch' 2>/dev/null || true)
+          DEFAULT_BRANCH_YAML=$(printf '%s' "$DEFAULT_BRANCH" | sed "s/'/''/g")
+          PUSH_FILTER_VALID=0
+          BASE_ENV_VALID=0
+          if [ -n "$OBSERVER" ] && [ -n "$DEFAULT_BRANCH" ]; then
+            if grep -Fqx "    branches: ['$DEFAULT_BRANCH_YAML']" <<< "$OBSERVER" || \
+              grep -Fqx "    branches: [$DEFAULT_BRANCH]" <<< "$OBSERVER"; then
+              PUSH_FILTER_VALID=1
+            fi
+            if grep -Fqx "  SFL_REVIEW_BASE_BRANCH: '$DEFAULT_BRANCH_YAML'" <<< "$OBSERVER" || \
+              grep -Fqx "  SFL_REVIEW_BASE_BRANCH: $DEFAULT_BRANCH" <<< "$OBSERVER"; then
+              BASE_ENV_VALID=1
+            fi
+          fi
+          if [ -z "$OBSERVER" ] || { \
+            ! grep -q 'name: SFL Codex Review Observer' <<< "$OBSERVER" || \
+            ! grep -q 'github.event.sender.id == 199175422' <<< "$OBSERVER" || \
+            ! grep -q 'name: "SFL Reviewer Gate Runner"' <<< "$OBSERVER" || \
+            [ -z "$EXPECTED_SOURCE_SHA" ] || \
+            [ "$OBSERVER_SOURCE_SHA" != "$EXPECTED_SOURCE_SHA" ] || \
+            [ "$PUSH_FILTER_VALID" -ne 1 ] || \
+            [ "$BASE_ENV_VALID" -ne 1 ]; \
           }; then
-            echo "::warning::Malformed SFL review guard policies in .github/workflows/sfl-pr-review.lock.yml"
+            echo "::warning::Malformed subscription-backed Codex observer or stale default-branch deployment"
             MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review.lock.yml\` with generated \`allow-only\` and \`write-sink\` guard policies"$'\n'
-          fi
-
-          if ! gh api "repos/$REPO/labels/sfl-review" >/dev/null 2>&1; then
-            echo "::warning::Missing required label sfl-review"
-            MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Create the \`sfl-review\` label"$'\n'
-          fi
-
-          REVIEW_SOURCE=""
-          if REVIEW_SOURCE_B64=$(gh api "repos/$REPO/contents/.github/workflows/sfl-pr-review.md" --jq '.content' 2>/dev/null); then
-            REVIEW_SOURCE=$(echo "$REVIEW_SOURCE_B64" | base64 --decode)
-          fi
-          if [ -z "$REVIEW_SOURCE" ]; then
-            echo "::warning::Missing source workflow .github/workflows/sfl-pr-review.md"
-            MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Deploy \`.github/workflows/sfl-pr-review.md\`"$'\n'
-          elif ! grep -q '^Deployed from: HemSoft/set-it-free-loop/' <<< "$REVIEW_SOURCE" || \
-            grep -Eq '^# (Deployed from|To upgrade):' <<< "$REVIEW_SOURCE"; then
-            echo "::warning::Malformed SFL source provenance in .github/workflows/sfl-pr-review.md"
-            MISSING=$((MISSING + 1))
-            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review.md\` with non-heading source provenance"$'\n'
+            MISSING_ITEMS="${MISSING_ITEMS}- [ ] Redeploy \`.github/workflows/sfl-pr-review-auto.yml\` from the pinned SFL release"$'\n'
           fi
 
           ISSUE_TITLE="[SFL Auditor] Missing SFL review prerequisites"
@@ -404,7 +413,7 @@ jobs:
 
           if [ "$MISSING" -gt 0 ] && [ -z "$EXISTING_ISSUE" ]; then
             ISSUE_BODY=$(printf '%s\n\n## Missing prerequisites\n\n%s## Recovery\n\n%s' \
-              "The repository declares \`sfl-pr-review\` in \`sfl.json\`, but the standalone reviewer is missing or malformed." \
+              "The repository declares standalone SFL review in \`sfl.json\`, but the standalone reviewer is missing or malformed." \
               "$MISSING_ITEMS" \
               "Run \`deployment/scripts/deploy-workflow.ps1 -Tier review\` and \`deployment/governance/setup-labels.ps1\` from \`HemSoft/set-it-free-loop\`.")
             gh issue create --repo "$REPO" \

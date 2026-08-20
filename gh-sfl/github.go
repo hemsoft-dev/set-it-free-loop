@@ -116,12 +116,34 @@ func parseRepoFlag(repoFlag string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
+// isNotFoundError reports whether an API read failed because the resource does
+// not exist, rather than because of authentication, rate limiting, or network
+// failure. Some go-gh errors expose only the rendered HTTP status.
+func isNotFoundError(err error) bool {
+	return err != nil && isNotFoundMessage(err.Error())
+}
+
+func isNotFoundMessage(message string) bool {
+	return strings.Contains(message, "HTTP 404") || strings.Contains(message, "Not Found")
+}
+
 func parseMutationTarget(repoFlag string) (string, string, error) {
 	owner, repo, err := parseRepoFlag(repoFlag)
 	if err != nil {
 		return "", "", err
 	}
 	if err := validateDeploymentTarget(owner, repo); err != nil {
+		return "", "", err
+	}
+	return owner, repo, nil
+}
+
+func parseReviewTarget(repoFlag string) (string, string, error) {
+	owner, repo, err := parseRepoFlag(repoFlag)
+	if err != nil {
+		return "", "", err
+	}
+	if err := validateHemSoftTarget(owner, repo); err != nil {
 		return "", "", err
 	}
 	return owner, repo, nil
@@ -134,7 +156,13 @@ func validateDeploymentTarget(owner, repo string) error {
 	if strings.EqualFold(repo, motherRepoName) {
 		return fmt.Errorf("%s/%s is protected and cannot be targeted by SFL deployment operations", owner, repo)
 	}
+	return validateHemSoftTarget(owner, repo)
+}
 
+func validateHemSoftTarget(owner, repo string) error {
+	if !strings.EqualFold(owner, "HemSoft") {
+		return fmt.Errorf("%s/%s is outside the HemSoft repository scope", owner, repo)
+	}
 	loginOut, loginErr, err := ghExec("api", "user", "--jq", ".login")
 	if err != nil {
 		return fmt.Errorf("checking GitHub CLI identity: %s: %w", loginErr.String(), err)
@@ -725,6 +753,9 @@ func deploymentManifestContentsMatch(current []byte, desired string) (bool, erro
 // older SFL releases installed but the current catalog no longer contains.
 var retiredWorkflowPaths = []string{
 	"sfl-copilot-review-bridge.yml",
+	"sfl-pr-review.md",
+	"sfl-pr-review.lock.yml",
+	"sfl-pr-review-recovery.yml",
 }
 
 func managedDeploymentPaths() []string {

@@ -8,7 +8,7 @@ import (
 	"sync"
 )
 
-const hemSoftEnginePolicyJSON = "{\r\n  \"$schema\": \"./engine-policy.schema.json\",\r\n  \"defaultProfile\": \"codex-gpt-55-high\",\r\n  \"profiles\": {\r\n    \"codex-gpt-55-high\": {\r\n      \"provider\": \"codex\",\r\n      \"model\": \"gpt-5.5\",\r\n      \"effort\": \"high\",\r\n      \"requiredSecretsAnyOf\": [\r\n        \"CODEX_API_KEY\",\r\n        \"OPENAI_API_KEY\"\r\n      ]\r\n    },\r\n    \"openrouter-kimi-k3-high\": {\r\n      \"provider\": \"copilot\",\r\n      \"model\": \"moonshotai/kimi-k3\",\r\n      \"requiredSecretsAnyOf\": [\r\n        \"OPENROUTER_API_KEY\"\r\n      ],\r\n      \"environment\": {\r\n        \"COPILOT_PROVIDER_BASE_URL\": \"https://openrouter.ai/api/v1\",\r\n        \"COPILOT_PROVIDER_API_KEY\": \"${{ secrets.OPENROUTER_API_KEY }}\",\r\n        \"COPILOT_PROVIDER_TYPE\": \"openai\",\r\n        \"COPILOT_PROVIDER_WIRE_API\": \"responses\",\r\n        \"COPILOT_MODEL\": \"moonshotai/kimi-k3\"\r\n      }\r\n    }\r\n  },\r\n  \"workflows\": {\r\n    \"sfl-pr-review\": {\r\n      \"profile\": \"openrouter-kimi-k3-high\"\r\n    }\r\n  }\r\n}\r\n"
+const hemSoftEnginePolicyJSON = "{\r\n  \"$schema\": \"./engine-policy.schema.json\",\r\n  \"defaultProfile\": \"codex-gpt-55-high\",\r\n  \"profiles\": {\r\n    \"codex-gpt-55-high\": {\r\n      \"provider\": \"codex\",\r\n      \"model\": \"gpt-5.5\",\r\n      \"effort\": \"high\",\r\n      \"requiredSecretsAnyOf\": [\r\n        \"CODEX_API_KEY\",\r\n        \"OPENAI_API_KEY\"\r\n      ]\r\n    }\r\n  },\r\n  \"workflows\": {}\r\n}\r\n"
 
 type hemSoftEnginePolicy struct {
 	DefaultProfile string                              `json:"defaultProfile"`
@@ -361,13 +361,39 @@ func mergeHemSoftEnginePolicyManifest(
 
 func sourceWorkflowPath(name string) string {
 	switch name {
-	case "sfl-dispatcher.yml", "sfl-auditor.yml", "sfl-pr-review-auto.yml", "sfl-pr-review-recovery.yml":
+	case "sfl-dispatcher.yml", "sfl-auditor.yml", "sfl-pr-review-auto.yml":
 		return "deployment/infrastructure/" + name
-	case "sfl-pr-review.lock.yml":
-		return ".github/workflows/" + name
 	default:
 		return "deployment/workflows/" + name
 	}
+}
+
+const reviewerSourcePlaceholder = "# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main"
+const reviewerPushBranchPlaceholder = "    branches: [main]"
+const reviewerBaseBranchPlaceholder = "  SFL_REVIEW_BASE_BRANCH: main"
+
+func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo, defaultBranch string) (string, error) {
+	if workflow != "sfl-pr-review-auto.yml" {
+		return content, nil
+	}
+	if !strings.Contains(content, "name: SFL Codex Review Observer") ||
+		!strings.Contains(content, "github.event.sender.id == 199175422") ||
+		!strings.Contains(content, reviewerSourcePlaceholder) ||
+		!strings.Contains(content, reviewerPushBranchPlaceholder) ||
+		!strings.Contains(content, reviewerBaseBranchPlaceholder) {
+		return "", fmt.Errorf("the SFL source %s selected for %s predates the subscription-backed Codex reviewer; deploy or sync from a release containing SFL Codex Review Observer", sourceSHA, targetRepo)
+	}
+	if strings.TrimSpace(defaultBranch) == "" {
+		return "", fmt.Errorf("preparing the SFL Codex observer for %s: target default branch is empty", targetRepo)
+	}
+	sourceRef := "HemSoft/set-it-free-loop/" + sourceWorkflowPath(workflow) + "@" + sourceSHA
+	content = strings.Replace(content, reviewerSourcePlaceholder, "# Source: "+sourceRef, 1)
+	escapedBranch := strings.ReplaceAll(defaultBranch, "'", "''")
+	content = strings.Replace(content, reviewerPushBranchPlaceholder, "    branches: ['"+escapedBranch+"']", 1)
+	content = strings.Replace(content, reviewerBaseBranchPlaceholder, "  SFL_REVIEW_BASE_BRANCH: '"+escapedBranch+"'", 1)
+	prefix := "# Deployed from: " + sourceRef + "\n" +
+		"# To upgrade: re-run deploy-workflow.ps1 at the desired SHA\n"
+	return prefix + content, nil
 }
 
 func renderHemSoftWorkflow(name, content, sflVersion string) (string, error) {

@@ -88,6 +88,10 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 			return err
 		}
 	}
+	defaultBranch, err := getDefaultBranch(owner, repo)
+	if err != nil {
+		return fmt.Errorf("getting default branch: %w", err)
+	}
 	fileMap := make(map[string]string)
 
 	fmt.Fprintf(stdout, "  Fetching %d workflow file(s)...\n", len(workflows))
@@ -96,6 +100,10 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 		content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, manifest.SourceSHA)
 		if fetchErr != nil {
 			return fmt.Errorf("fetching %s: %w", srcPath, fetchErr)
+		}
+		content, prepareErr := prepareWorkflowSource(wf, content, manifest.SourceSHA, owner+"/"+repo, defaultBranch)
+		if prepareErr != nil {
+			return prepareErr
 		}
 		rendered, renderErr := renderHemSoftWorkflow(wf, content, manifest.Version)
 		if renderErr != nil {
@@ -120,11 +128,6 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	fileMap[".sfl/sfl.json"] = manifestJSON
 
 	// Deploy
-	defaultBranch, err := getDefaultBranch(owner, repo)
-	if err != nil {
-		return fmt.Errorf("getting default branch: %w", err)
-	}
-
 	commitMsg := fmt.Sprintf("chore: add SFL add-on %q\n\nDeployed by gh-sfl add", opts.addon)
 	fmt.Fprintf(stdout, "\n")
 	var prURL string
@@ -143,20 +146,24 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	fmt.Fprintf(stdout, "\n✅ Add-on %q deployed to %s/%s\n", opts.addon, owner, repo)
 
-	// Only suggest compilation if the addon doesn't ship a precompiled lock file
-	hasLock := false
-	for _, wf := range workflows {
-		if strings.HasSuffix(wf, ".lock.yml") {
-			hasLock = true
-			break
-		}
-	}
-	if !hasLock {
+	// Only Markdown-source workflows need gh-aw compilation. Standard Actions
+	// YAML files are already executable and do not have lock-file companions.
+	if addonNeedsCompilation(workflows) {
 		fmt.Fprintf(stdout, "\n  ⚠ Note: This workflow is deployed as source (.md) only.\n")
 		fmt.Fprintf(stdout, "  Run 'gh aw compile' in the target repo to generate the lock file.\n")
 	}
 
 	return nil
+}
+
+func addonNeedsCompilation(workflows []string) bool {
+	hasMarkdownSource := false
+	hasLock := false
+	for _, workflow := range workflows {
+		hasMarkdownSource = hasMarkdownSource || strings.HasSuffix(workflow, ".md")
+		hasLock = hasLock || strings.HasSuffix(workflow, ".lock.yml")
+	}
+	return hasMarkdownSource && !hasLock
 }
 
 func parseAddOptions(args []string, stderr io.Writer) (addOptions, error) {
@@ -214,7 +221,7 @@ Usage:
   gh sfl add <addon-name> [flags]
 
 Available Add-ons:
-  pr-review    Evidence-based PR review with recovery and a zero-finding approval gate
+  pr-review    Subscription-backed Codex review with an immutable-head gate
 
 Flags:
   -R, --repo string    Target repository (OWNER/REPO). Defaults to current repo.

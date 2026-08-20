@@ -410,6 +410,60 @@ func TestParseInitOptionsRegistersAndDeduplicatesAddons(t *testing.T) {
 	}
 }
 
+func TestAddonCompilationGuidanceOnlyAppliesToMarkdownSource(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		workflows []string
+		want      bool
+	}{
+		{name: "standard Actions YAML", workflows: []string{"sfl-pr-review-auto.yml"}, want: false},
+		{name: "Markdown source", workflows: []string{"repo-audit.md"}, want: true},
+		{name: "precompiled Markdown", workflows: []string{"repo-audit.md", "repo-audit.lock.yml"}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := addonNeedsCompilation(test.workflows); got != test.want {
+				t.Fatalf("addonNeedsCompilation(%v) = %v, want %v", test.workflows, got, test.want)
+			}
+		})
+	}
+}
+
+func TestReviewerAddonRequiresSubscriptionBackedSource(t *testing.T) {
+	if _, err := prepareWorkflowSource(
+		"sfl-pr-review-auto.yml",
+		"name: SFL PR Review Auto Trigger",
+		strings.Repeat("a", 40),
+		"HemSoft/consumer",
+		"main",
+	); err == nil || !strings.Contains(err.Error(), "predates") ||
+		!strings.Contains(err.Error(), strings.Repeat("a", 40)) {
+		t.Fatalf("legacy reviewer source error = %v", err)
+	}
+
+	content := reviewerSourcePlaceholder + "\nname: SFL Codex Review Observer\non:\n  push:\n" + reviewerPushBranchPlaceholder + "\nenv:\n" + reviewerBaseBranchPlaceholder + "\nif: github.event.sender.id == 199175422\n"
+	prepared, err := prepareWorkflowSource("sfl-pr-review-auto.yml", content, strings.Repeat("b", 40), "HemSoft/consumer", "release/next")
+	if err != nil {
+		t.Fatalf("subscription-backed reviewer source rejected: %v", err)
+	}
+	if strings.Contains(prepared, "@main") || !strings.Contains(prepared, "@"+strings.Repeat("b", 40)) ||
+		!strings.HasPrefix(prepared, "# Deployed from:") || !strings.Contains(prepared, "branches: ['release/next']") ||
+		!strings.Contains(prepared, "SFL_REVIEW_BASE_BRANCH: 'release/next'") {
+		t.Fatalf("prepared reviewer source lacks immutable provenance: %q", prepared)
+	}
+	if _, err := prepareWorkflowSource("repo-audit.md", "legacy content", strings.Repeat("a", 40), "HemSoft/consumer", "main"); err != nil {
+		t.Fatalf("non-reviewer add-on source rejected: %v", err)
+	}
+}
+
+func TestReviewerSourceValidationCoversEveryDeploymentPath(t *testing.T) {
+	for _, file := range []string{"init.go", "sync.go", "add.go"} {
+		source := string(readContractFile(t, file))
+		if !strings.Contains(source, "prepareWorkflowSource(wf, content,") {
+			t.Fatalf("%s does not validate the selected reviewer source", file)
+		}
+	}
+}
+
 func TestParseAddOptionsDefaultsToPullRequest(t *testing.T) {
 	opts, err := parseAddOptions([]string{"pr-review"}, io.Discard)
 	if err != nil {
@@ -650,12 +704,12 @@ func TestInstalledManifestWorkflowResolutionFailsClosed(t *testing.T) {
 
 	custom, err := workflowsForInstalledManifest(&sflManifest{
 		Tier:       "custom",
-		Components: []string{"repo-audit", "sfl-pr-review"},
+		Components: []string{"repo-audit", "sfl-pr-review", "sfl-pr-review-auto"},
 	})
 	if err != nil {
 		t.Fatalf("custom workflow resolution: %v", err)
 	}
-	for _, want := range []string{"repo-audit.md", "sfl-pr-review.md", "sfl-pr-review.lock.yml"} {
+	for _, want := range []string{"repo-audit.md", "sfl-pr-review-auto.yml"} {
 		if !slices.Contains(custom, want) {
 			t.Errorf("custom workflows missing %q: %v", want, custom)
 		}
@@ -668,6 +722,36 @@ func TestInstalledManifestWorkflowResolutionFailsClosed(t *testing.T) {
 		if _, err := workflowsForInstalledManifest(manifest); err == nil {
 			t.Errorf("workflowsForInstalledManifest(%+v) unexpectedly succeeded", manifest)
 		}
+	}
+}
+
+func TestNormalizeManifestForSyncRemovesRetiredReviewerComponents(t *testing.T) {
+	for _, tier := range []string{"review", "reviewer"} {
+		t.Run(tier, func(t *testing.T) {
+			manifest := &sflManifest{
+				Tier:       tier,
+				Components: []string{"sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
+			}
+			normalizeManifestForSync(manifest, canonicalDeploymentTier(manifest.Tier))
+			if manifest.Tier != "reviewer" {
+				t.Fatalf("normalized tier = %q, want reviewer", manifest.Tier)
+			}
+			if !slices.Equal(manifest.Components, tierComponents["reviewer"]) {
+				t.Fatalf("normalized components = %v, want %v", manifest.Components, tierComponents["reviewer"])
+			}
+		})
+	}
+
+	full := &sflManifest{Tier: "full", Components: []string{"sfl-pr-review", "sfl-pr-review-recovery"}}
+	normalizeManifestForSync(full, canonicalDeploymentTier(full.Tier))
+	if !slices.Equal(full.Components, []string{"sfl-pr-review-auto"}) {
+		t.Fatalf("full components did not migrate to the observer component: %v", full.Components)
+	}
+
+	custom := &sflManifest{Tier: "custom", Components: []string{"repo-audit", "sfl-pr-review", "sfl-pr-review-recovery"}}
+	normalizeManifestForSync(custom, canonicalDeploymentTier(custom.Tier))
+	if !slices.Equal(custom.Components, []string{"repo-audit", "sfl-pr-review-auto"}) {
+		t.Fatalf("custom components = %v, want legacy reviewer migrated to observer", custom.Components)
 	}
 }
 
@@ -703,10 +787,7 @@ func TestSyncReportsNonFatalLabelSourceFailures(t *testing.T) {
 
 func TestReviewerTierContainsOnlyReviewerPackage(t *testing.T) {
 	want := []string{
-		"sfl-pr-review.md",
-		"sfl-pr-review.lock.yml",
 		"sfl-pr-review-auto.yml",
-		"sfl-pr-review-recovery.yml",
 	}
 	if !slices.Equal(tierWorkflows["reviewer"], want) {
 		t.Errorf("reviewer workflows = %v, want %v", tierWorkflows["reviewer"], want)
@@ -725,9 +806,6 @@ func TestReviewerHealthUsesManifestPackageAndVersionMarkers(t *testing.T) {
 	}
 	want := []string{
 		"sfl-pr-review-auto.yml",
-		"sfl-pr-review-recovery.yml",
-		"sfl-pr-review.lock.yml",
-		"sfl-pr-review.md",
 	}
 	if got := expectedWorkflowFiles(manifest); !slices.Equal(got, want) {
 		t.Errorf("expectedWorkflowFiles() = %v, want %v", got, want)
@@ -741,7 +819,7 @@ func TestReviewerHealthUsesManifestPackageAndVersionMarkers(t *testing.T) {
 func TestReviewerHealthCoversEveryTierContainingReviewer(t *testing.T) {
 	custom := &sflManifest{
 		Tier:       "custom",
-		Components: []string{"labels", "sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"},
+		Components: []string{"labels", "sfl-pr-review", "sfl-pr-review-auto"},
 	}
 	for name, manifest := range map[string]*sflManifest{
 		"reviewer": {Tier: "reviewer"},
@@ -754,9 +832,6 @@ func TestReviewerHealthCoversEveryTierContainingReviewer(t *testing.T) {
 			}
 			want := []string{
 				"sfl-pr-review-auto.yml",
-				"sfl-pr-review-recovery.yml",
-				"sfl-pr-review.lock.yml",
-				"sfl-pr-review.md",
 			}
 			if got := expectedReviewerWorkflowFiles(manifest); !slices.Equal(got, want) {
 				t.Fatalf("expectedReviewerWorkflowFiles(%s) = %v, want %v", name, got, want)
@@ -772,9 +847,6 @@ func TestReviewerHealthCoversEveryTierContainingReviewer(t *testing.T) {
 	}
 	wantAddon := []string{
 		"sfl-pr-review-auto.yml",
-		"sfl-pr-review-recovery.yml",
-		"sfl-pr-review.lock.yml",
-		"sfl-pr-review.md",
 	}
 	if got := expectedReviewerWorkflowFiles(addonManifest); !slices.Equal(got, wantAddon) {
 		t.Fatalf("reviewer add-on files = %v, want %v", got, wantAddon)
@@ -1089,9 +1161,6 @@ func TestInspectReviewerRolloutReportsEveryDistinctFault(t *testing.T) {
 		"repository has no default branch",
 		"GitHub Actions is disabled",
 		"Actions policy allows only local actions",
-		"missing Actions variable SFL_APP_CLIENT_ID",
-		"missing Actions secret SFL_APP_PRIVATE_KEY",
-		"missing Actions secret OPENROUTER_API_KEY",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("rollout issues missing %q:\n%s", want, joined)
@@ -1099,35 +1168,19 @@ func TestInspectReviewerRolloutReportsEveryDistinctFault(t *testing.T) {
 	}
 }
 
-func TestReviewerCredentialMetadataPaginatesWithoutReadingValues(t *testing.T) {
-	firstVariables := make([]string, 100)
-	firstSecrets := make([]string, 100)
-	for index := range firstVariables {
-		firstVariables[index] = fmt.Sprintf("VARIABLE_%03d", index)
-		firstSecrets[index] = fmt.Sprintf("SECRET_%03d", index)
-	}
+func TestReviewerPreflightDoesNotReadCredentialMetadata(t *testing.T) {
 	client := &fakeREST{
 		repositoryDefaultBranch: "main",
 		actionsEnabled:          true,
 		actionsAllowed:          "all",
-		actionVariablePages:     [][]string{firstVariables, {"SFL_APP_CLIENT_ID"}},
-		actionSecretPages:       [][]string{firstSecrets, {"SFL_APP_PRIVATE_KEY", "OPENROUTER_API_KEY"}},
 	}
 	health, err := inspectReviewerRolloutWithClient(client, "owner", "repo")
 	if err != nil || len(health.issues()) != 0 {
 		t.Fatalf("paginated rollout health = %+v, %v", health, err)
 	}
 	joinedRequests := strings.Join(client.gets, "\n")
-	for _, want := range []string{
-		"actions/variables?per_page=100&page=2",
-		"actions/secrets?per_page=100&page=2",
-	} {
-		if !strings.Contains(joinedRequests, want) {
-			t.Errorf("metadata requests missing %q: %v", want, client.gets)
-		}
-	}
-	if strings.Contains(joinedRequests, "values") {
-		t.Errorf("preflight requested credential values: %v", client.gets)
+	if strings.Contains(joinedRequests, "/actions/variables") || strings.Contains(joinedRequests, "/actions/secrets") {
+		t.Errorf("subscription-backed reviewer inspected API credentials: %v", client.gets)
 	}
 }
 
@@ -1136,8 +1189,8 @@ func TestReviewerActionsSelectedPolicyRequiresGitHubOwnedActions(t *testing.T) {
 		githubOwned bool
 		wantHealthy bool
 	}{
-		"GitHub owned": {githubOwned: true, wantHealthy: true},
-		"exact patterns are deliberately unsupported": {},
+		"GitHub owned":          {githubOwned: true, wantHealthy: true},
+		"GitHub owned disabled": {},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -1151,10 +1204,7 @@ func TestReviewerActionsSelectedPolicyRequiresGitHubOwnedActions(t *testing.T) {
 			if tc.wantHealthy && len(issues) != 0 {
 				t.Fatalf("healthy selected policy issues = %v", issues)
 			}
-			if !tc.wantHealthy && !slices.Contains(
-				issues,
-				"selected Actions policy must allow GitHub-owned actions required by the reviewer; exact action patterns are not a supported rollout policy",
-			) {
+			if !tc.wantHealthy && !slices.Contains(issues, "selected Actions policy must allow GitHub-owned actions for the reviewer") {
 				t.Fatalf("blocked selected policy issues = %v", issues)
 			}
 		})
@@ -1164,7 +1214,7 @@ func TestReviewerActionsSelectedPolicyRequiresGitHubOwnedActions(t *testing.T) {
 func TestAssertReviewerRolloutReadyFailsBeforeAnyWrite(t *testing.T) {
 	client := &fakeREST{
 		repositoryDefaultBranch: "main",
-		actionsEnabled:          true,
+		actionsEnabled:          false,
 		actionsAllowed:          "all",
 		actionVariablePages:     [][]string{{}},
 		actionSecretPages:       [][]string{{}},
@@ -1174,7 +1224,7 @@ func TestAssertReviewerRolloutReadyFailsBeforeAnyWrite(t *testing.T) {
 	t.Cleanup(func() { newRESTClient = oldClient })
 
 	err := assertReviewerRolloutReady("owner", "repo", io.Discard)
-	if err == nil || !strings.Contains(err.Error(), "missing Actions variable SFL_APP_CLIENT_ID") {
+	if err == nil || !strings.Contains(err.Error(), "GitHub Actions is disabled") {
 		t.Fatalf("assertReviewerRolloutReady() error = %v", err)
 	}
 	if len(client.posts)+len(client.puts)+len(client.patches)+len(client.deletes) != 0 {
@@ -1202,8 +1252,8 @@ func TestAssertReviewerRolloutReadyDoesNotClaimAppVerification(t *testing.T) {
 		t.Fatalf("preflight falsely reported App verification:\n%s", output.String())
 	}
 	for _, want := range []string{
-		"Actions policy, variable, and secret metadata ready",
-		"rely on the App-authenticated credential bootstrap check",
+		"default branch main and Actions policy ready",
+		"verify with a current-head review after deployment",
 	} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("preflight output missing %q:\n%s", want, output.String())
@@ -1223,15 +1273,12 @@ func TestPrintReviewerPrerequisitesSeparatesCredentialFaults(t *testing.T) {
 	var output bytes.Buffer
 	printReviewerPrerequisites(&output, newTableStyler(&output, false), health, nil)
 	for _, want := range []string{
-		"Reviewer App:",
+		"Codex App:",
 		"App scope requires App-authenticated credential bootstrap verification",
-		"Reviewer credentials and Actions:",
+		"Reviewer prerequisites:",
 		"Default branch: main",
 		"GitHub Actions disabled",
 		"Actions policy allows only local actions",
-		"Missing Actions variable SFL_APP_CLIENT_ID",
-		"Missing Actions secret SFL_APP_PRIVATE_KEY",
-		"Missing Actions secret OPENROUTER_API_KEY",
 	} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("status output missing %q:\n%s", want, output.String())
@@ -1320,7 +1367,7 @@ func TestUninstallUsesManifestTierWithoutExpandingUnknownTiers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("uninstallFiles(review): %v", err)
 	}
-	if !slices.Contains(legacyReview, ".github/workflows/sfl-pr-review.md") {
+	if !slices.Contains(legacyReview, ".github/workflows/sfl-pr-review-auto.yml") {
 		t.Errorf("legacy review uninstall is missing reviewer workflow: %v", legacyReview)
 	}
 	if slices.Contains(legacyReview, ".github/workflows/pr-fixer.md") {
@@ -1568,7 +1615,6 @@ func TestMutatingCommandsRejectProtectedRepositoryBeforeAccess(t *testing.T) {
 		{name: "sync", run: runSync, args: func(target string) []string { return []string{"--repo", target} }},
 		{name: "gate", run: runGate, args: func(target string) []string { return []string{"--repo", target} }},
 		{name: "add", run: runAdd, args: func(target string) []string { return []string{"--repo", target, "policy-manager"} }},
-		{name: "review", run: runReview, args: func(target string) []string { return []string{"--repo", target, "1"} }},
 		{name: "uninstall", run: runUninstall, args: func(target string) []string { return []string{"--repo", target, "--force"} }},
 		{name: "start", run: runStart, args: func(target string) []string { return []string{"--repo", target} }},
 		{name: "stop", run: runStop, args: func(target string) []string { return []string{"--repo", target} }},
@@ -2090,24 +2136,7 @@ func TestDeployViaPullRequestSkipsCurrentOpenPR(t *testing.T) {
 }
 
 func TestDeployViaPullRequestSkipsCurrentDefaultBranch(t *testing.T) {
-	reviewerWorkflow, err := applyHemSoftEnginePolicyToWorkflow(
-		string(readContractFile(t, filepath.Join("..", "deployment", "workflows", "sfl-pr-review.md"))),
-		"sfl-pr-review",
-	)
-	if err != nil {
-		t.Fatalf("normalize reviewer workflow: %v", err)
-	}
-	rewrittenReviewerWorkflow, err := applyHemSoftEnginePolicyToWorkflow(reviewerWorkflow, "sfl-pr-review")
-	if err != nil || rewrittenReviewerWorkflow != reviewerWorkflow {
-		firstLines := strings.Split(reviewerWorkflow, "\n")
-		secondLines := strings.Split(rewrittenReviewerWorkflow, "\n")
-		for index := 0; index < min(len(firstLines), len(secondLines)); index++ {
-			if firstLines[index] != secondLines[index] {
-				t.Fatalf("reviewer workflow rewrite differs at line %d: first=%q second=%q err=%v", index+1, firstLines[index], secondLines[index], err)
-			}
-		}
-		t.Fatalf("reviewer workflow rewrite length differs: first=%d second=%d err=%v", len(firstLines), len(secondLines), err)
-	}
+	reviewerWorkflow := string(readContractFile(t, filepath.Join("..", "deployment", "infrastructure", "sfl-pr-review-auto.yml")))
 	currentManifest := `{
 		"version": "6.5.0",
 		"tier": "reviewer",
@@ -2129,7 +2158,7 @@ func TestDeployViaPullRequestSkipsCurrentDefaultBranch(t *testing.T) {
 	rest := &fakeREST{
 		manifestContent: currentManifest,
 		fileContents: map[string]string{
-			".github/workflows/sfl-pr-review.md": reviewerWorkflow,
+			".github/workflows/sfl-pr-review-auto.yml": reviewerWorkflow,
 		},
 	}
 	graphQL := &fakeGraphQL{}
@@ -2142,8 +2171,8 @@ func TestDeployViaPullRequestSkipsCurrentDefaultBranch(t *testing.T) {
 		"main",
 		"init",
 		map[string]string{
-			".sfl/sfl.json":                      desiredManifest,
-			".github/workflows/sfl-pr-review.md": reviewerWorkflow,
+			".sfl/sfl.json": desiredManifest,
+			".github/workflows/sfl-pr-review-auto.yml": reviewerWorkflow,
 		},
 		"init",
 		true,
@@ -2278,13 +2307,13 @@ func TestDeployViaPullRequestRemovesStaleManagedWorkflows(t *testing.T) {
 }
 
 func TestDeployViaPullRequestRemovesLegacyGovernanceFromReviewerInstall(t *testing.T) {
-	reviewerWorkflow := string(readContractFile(t, filepath.Join("..", "deployment", "workflows", "sfl-pr-review.md")))
+	reviewerWorkflow := string(readContractFile(t, filepath.Join("..", "deployment", "infrastructure", "sfl-pr-review-auto.yml")))
 	manifest := `{
 		"version": "6.5.1",
 		"tier": "reviewer",
 		"source": "HemSoft/set-it-free-loop",
 		"sourceSha": "source-sha",
-		"components": ["sfl-pr-review", "sfl-pr-review-auto", "sfl-pr-review-recovery"]
+		"components": ["sfl-pr-review", "sfl-pr-review-auto"]
 	}`
 	governancePath := ".sfl/governance/policy.md"
 	rest := &fakeREST{
@@ -2292,8 +2321,8 @@ func TestDeployViaPullRequestRemovesLegacyGovernanceFromReviewerInstall(t *testi
 		openPRBranch:    "sfl/init-existing",
 		manifestContent: manifest,
 		fileContents: map[string]string{
-			".github/workflows/sfl-pr-review.md": reviewerWorkflow,
-			governancePath:                       "legacy policy",
+			".github/workflows/sfl-pr-review-auto.yml": reviewerWorkflow,
+			governancePath: "legacy policy",
 		},
 	}
 	graphQL := &fakeGraphQL{}
@@ -2305,8 +2334,8 @@ func TestDeployViaPullRequestRemovesLegacyGovernanceFromReviewerInstall(t *testi
 		"main",
 		"init",
 		map[string]string{
-			".sfl/sfl.json":                      manifest,
-			".github/workflows/sfl-pr-review.md": reviewerWorkflow,
+			".sfl/sfl.json": manifest,
+			".github/workflows/sfl-pr-review-auto.yml": reviewerWorkflow,
 		},
 		"deploy reviewer",
 		true,

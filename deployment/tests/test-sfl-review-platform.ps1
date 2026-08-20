@@ -5,323 +5,63 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
-. (Join-Path $PSScriptRoot 'line-ending-test-helpers.ps1')
-$failures = [System.Collections.Generic.List[string]]::new()
-
-function Read-RepoFile([string] $RelativePath) {
-    $path = Join-Path $repoRoot $RelativePath
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        $failures.Add("Missing file: $RelativePath")
-        return ''
-    }
-    return Get-Content -LiteralPath $path -Raw
+$files = @{
+    Init = Get-Content -LiteralPath (Join-Path $repoRoot 'gh-sfl\init.go') -Raw
+    Review = Get-Content -LiteralPath (Join-Path $repoRoot 'gh-sfl\review.go') -Raw
+    Deploy = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\scripts\deploy-workflow.ps1') -Raw
+    LabelsJson = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\governance\labels.json') -Raw
+    LabelSetup = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\governance\setup-labels.ps1') -Raw
+    Observer = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\infrastructure\sfl-pr-review-auto.yml') -Raw
 }
 
-function Assert-PatternSet(
-    [string] $RelativePath,
-    [string[]] $Patterns
-) {
-    $content = Read-RepoFile $RelativePath
-    foreach ($pattern in $Patterns) {
-        if ($content -notmatch $pattern) {
-            $failures.Add("$RelativePath does not contain pattern: $pattern")
-        }
+foreach ($required in @(
+    'codexReviewCommand',
+    '"@codex review"',
+    'sfl-codex-review:',
+    'findCodexReviewTrigger',
+    'sfl-pr-review-auto.yml'
+)) {
+    if ($files.Review -notmatch [regex]::Escape($required)) {
+        throw "gh sfl review is missing contract text: $required"
     }
 }
 
-function Assert-PatternAbsent(
-    [string] $RelativePath,
-    [string] $Pattern
-) {
-    $content = Read-RepoFile $RelativePath
-    if ($content -match $Pattern) {
-        $failures.Add("$RelativePath contains forbidden pattern: $Pattern")
+if ($files.Init -match 'sfl-pr-review\.lock\.yml|sfl-pr-review-recovery\.yml' -or
+    $files.Deploy -match '@\("sfl-pr-review-auto", "sfl-pr-review-recovery"\)') {
+    throw 'Deployment tiers still include the retired compiled reviewer or recovery workflow.'
+}
+
+foreach ($labelContract in @($files.LabelsJson, $files.LabelSetup)) {
+    if ($labelContract -notmatch 'Deprecated: use gh sfl review; applying this label does not trigger a review') {
+        throw 'The retired sfl-review label still advertises an active review trigger.'
     }
 }
 
-function Assert-ExactPair(
-    [string] $CanonicalPath,
-    [string] $StagedPath
-) {
-    $canonical = Read-RepoFile $CanonicalPath
-    $staged = Read-RepoFile $StagedPath
-    if (-not (Test-NormalizedTextEqual $canonical $staged)) {
-        $failures.Add("Staged file differs from canonical source: $StagedPath")
+foreach ($required in @(
+    'Workflows      = @()',
+    'Infrastructure = @("sfl-pr-review-auto")',
+    'Components     = @("sfl-pr-review-auto")',
+    'Remove-Item -LiteralPath $retiredPath -Force',
+    'gh pr edit $existingPrNumber',
+    '--body $prBody',
+    'actionlint .github/workflows/sfl-pr-review-auto.yml'
+)) {
+    if ($files.Deploy -notmatch [regex]::Escape($required)) {
+        throw "Review-tier deployment is missing contract text: $required"
     }
 }
 
-$reviewer = 'deployment\workflows\sfl-pr-review.md'
-$auto = 'deployment\infrastructure\sfl-pr-review-auto.yml'
-$recovery = 'deployment\infrastructure\sfl-pr-review-recovery.yml'
-
-Assert-ExactPair $reviewer '.github\workflows\sfl-pr-review.md'
-Assert-ExactPair $auto '.github\workflows\sfl-pr-review-auto.yml'
-Assert-ExactPair $recovery '.github\workflows\sfl-pr-review-recovery.yml'
-
-Assert-PatternSet $reviewer @(
-    'source: HemSoft/set-it-free-loop/deployment/workflows/sfl-pr-review\.md@main',
-    'COPILOT_PROVIDER_BASE_URL: https://openrouter\.ai/api/v1',
-    'COPILOT_MODEL: moonshotai/kimi-k3',
-    'item_number:',
-    'base_sha:',
-    'head_sha:',
-    'Validate trusted review context',
-    'sfl-review-run-provenance',
-    'external_id:',
-    'Validate and resolve requested SFL threads',
-    'Thread \$\{threadId\} is not an obsolete SFL finding',
-    'Could not enumerate unresolved SFL findings',
-    'Critical, High, Medium, or Low',
-    'SFL Reviewer Approval',
-    'sfl-app\[bot\]',
-    'cancel-in-progress: false',
-    'pre_activation:',
-    'recovery_allowed:',
-    'Revalidate queued recovery ownership',
-    'github\.paginate\(',
-    'SFL_REVIEWER_LOGIN: sfl-app',
-    "inputs\.retry_count != '1' \|\| needs\.pre_activation\.outputs\.recovery_allowed == 'true'",
-    "inputs\.retry_count != '1' \|\| needs\.publish_review_provenance\.outputs\.recovery_allowed == 'true'",
-    "needs\.activation\.result == 'success' && \(inputs\.retry_count != '1' \|\| needs\.pre_activation\.outputs\.recovery_allowed == 'true'\)",
-    "needs\.pre_activation\.outputs\.recovery_allowed == 'true' && needs\.activation\.result == 'success'"
-)
-Assert-PatternAbsent $reviewer 'set-it-free-loop\[bot\]'
-
-Assert-PatternSet '.github\workflows\sfl-pr-review.lock.yml' @(
-    'cancel-in-progress: false',
-    'pre_activation:',
-    'recovery_allowed: \$\{\{ steps\.recovery_owner\.outputs\.recovery_allowed \}\}',
-    'Revalidate queued recovery ownership',
-    'github\.paginate\(',
-    'SFL_REVIEWER_LOGIN: sfl-app',
-    "inputs\.retry_count != '1' \|\| needs\.pre_activation\.outputs\.recovery_allowed == 'true'",
-    "inputs\.retry_count != '1' \|\| needs\.publish_review_provenance\.outputs\.recovery_allowed == 'true'"
-)
-
-Assert-PatternSet $auto @(
-    "vars.SFL_ENABLED != 'false'",
-    'issue_comment:\s*\r?\n\s+types: \[created\]',
-    "github\.event\.comment\.body == '@sfl-app review'",
-    '\["OWNER","MEMBER","COLLABORATOR"\]',
-    "github\.event_name != 'issue_comment'",
-    'name: Validate command and seal pull request state',
-    'sfl-review-command:\$\{COMMAND_COMMENT_ID\}',
-    'DISPATCH_ID="command-\$\{COMMAND_COMMENT_ID\}"',
-    'find_command_acknowledgement',
-    'find_command_run',
-    'select\(\.display_title \| endswith\(" dispatch=" \+ \$dispatch_id\)\)',
-    'command_acknowledgement_complete',
-    'command_acknowledgement_run_id',
-    'command_run_matches',
-    'repos/\$\{REPOSITORY\}/actions/runs/\$\{ACKNOWLEDGED_RUN_ID\}',
-    'Ignoring stale SFL acknowledgement run',
-    'test\("\\\\\[Actions run \[1-9\]\[0-9\]\*\\\\\]\\\\\("\)',
-    '\(capture\("\\\\\[Actions run \(\?<id>\[1-9\]\[0-9\]\*\)\\\\\]\\\\\("\)\? \| \.id\) // empty',
-    'Command comment \$\{COMMAND_COMMENT_ID\} was already acknowledged',
-    'DRAFT=\$\(jq -r ''if \.draft == false then false else true end'' <<< "\$PR"\)',
-    'for ATTEMPT in \$\(seq 1 120\); do',
-    'inputs\[dispatch_id\]=\$\{DISPATCH_ID\}',
-    'inputs\[review_effort\]=\$\{REVIEW_EFFORT\}',
-    'expected-review-run-id: \$\{\{ steps\.request-review\.outputs\.review-run-id \}\}',
-    'needs: \[comment-command, dispatch\]',
-    'needs\.comment-command\.outputs\.expected-review-run-id',
-    'Could not resolve the exact comment-dispatched SFL review run',
-    'SFL review was requested for `%s`, but its Actions run could not be correlated\.',
-    '\[Command run\]\(%s\)',
-    'SFL review requested for `%s`: \[Actions run %s\]\(%s\)',
-    'types: \[opened, synchronize, reopened, ready_for_review, edited, review_requested, labeled\]',
-    '\$\(normalize_login "\$REVIEW_AUTHOR"\)" = "sfl-app"',
-    '\$\(normalize_login "\$REQUESTED_REVIEWER"\)" != "sfl-app"',
-    'pull_request_review:\s*\r?\n\s+types: \[submitted\]',
-    "github\.event\.label\.name == 'sfl-review'",
-    'HEAD_REPOSITORY: \$\{\{ github\.event\.pull_request\.head\.repo\.full_name \}\}',
-    'if \[ "\$HEAD_REPOSITORY" != "\$REPOSITORY" \]',
-    'if \[ "\$BASE_REF" != "\$DEFAULT_BRANCH" \]',
-    'name: Detect installed reviewer contract',
-    'reviewer-installed: \$\{\{ steps\.reviewer-contract\.outputs\.installed \}\}',
-    "steps\.reviewer-contract\.outputs\.installed == 'true'",
-    'Reviewer bootstrap deployment detected',
-    'permission-pull-requests: write',
-    'consume_review_label',
-    'resolve_review_effort',
-    'reusable_review_statuses',
-    'for STATUS in \$\(reusable_review_statuses\)',
-    'runs\?status=\$\{STATUS\}',
-    'find_reusable_review_run',
-    'already active or successfully completed',
-    'first observes a live explicit request',
-    'inputs\[base_sha\]',
-    'inputs\[head_sha\]',
-    'name: SFL Reviewer Gate Runner',
-    'name: Resolve immutable approval context',
-    'PR_NUMBER: \$\{\{ github\.event\.pull_request\.number \|\| needs\.comment-command\.outputs\.pr-number \|\| github\.event\.issue\.number \}\}',
-    'PR=\$\(gh api "repos/\$\{REPOSITORY\}/pulls/\$\{PR_NUMBER\}"\)',
-    'Could not resolve immutable SFL approval context',
-    'BASE_SHA: \$\{\{ steps\.approval-context\.outputs\.base-sha \}\}',
-    'HEAD_SHA: \$\{\{ steps\.approval-context\.outputs\.head-sha \}\}',
-    'if: always\(\)',
-    'checks: write',
-    '--arg name "SFL Reviewer Approval"',
-    'head_sha: \$head_sha',
-    'continue-on-error: true',
-    'SFL_ENABLED: \$\{\{ vars\.SFL_ENABLED \}\}',
-    'required reviewer gate fails closed',
-    'COMMENT_COMMAND_RESULT: \$\{\{ needs\.comment-command\.result \}\}',
-    'DISPATCH_RESULT: \$\{\{ needs\.dispatch\.result \}\}',
-    'if \[ "\$EVENT_NAME" = "issue_comment" \].*\\',
-    '&& \[ "\$COMMENT_COMMAND_RESULT" != "success" \]',
-    'SFL comment command job concluded \$\{COMMENT_COMMAND_RESULT\}; refusing to bootstrap',
-    'if \[ "\$EVENT_NAME" != "issue_comment" \].*\\',
-    '&& \[ "\$DISPATCH_RESULT" != "success" \]',
-    'SFL dispatch job concluded \$\{DISPATCH_RESULT\}; refusing to bootstrap',
-    'name: Finalize head approval check',
-    'WAIT_OUTCOME: \$\{\{ steps\.wait-review\.outcome \}\}',
-    'validate_review_run'
-)
-Assert-PatternAbsent $auto 'normalize_login[^\r\n]+set-it-free-loop'
-Assert-PatternAbsent $auto '\.draft // true'
-Assert-PatternAbsent $auto 'has\("draft"\) then \.draft'
-
-$autoContent = Read-RepoFile $auto
-$labelGuardCount = ([regex]::Matches(
-        $autoContent,
-        [regex]::Escape("github.event.action != 'labeled'")
-    )).Count
-if ($labelGuardCount -ne 2) {
-    $failures.Add(
-        "Auto-review dispatch and approval jobs must both reject unrelated label events; found $labelGuardCount guards."
-    )
-}
-if ($autoContent -match 'permission-pull-requests:\s*read') {
-    $failures.Add('Auto-review dispatcher cannot consume pull-request labels with a read-only pull-request token.')
-}
-if ($autoContent -match 'permission-issues:\s*write') {
-    $failures.Add('Auto-review dispatcher should not retain issue-wide write access when pull-request write covers its label mutations.')
-}
-
-Assert-PatternSet $recovery @(
-    "vars.SFL_ENABLED != 'false'",
-    "github\.event\.workflow_run\.path == '\.github/workflows/sfl-pr-review\.lock\.yml'",
-    "github\.event\.workflow_run\.conclusion == 'cancelled'",
-    'name: Finalize interrupted review evidence',
-    'checks: write',
-    'FAILED_RUN_TITLE: \$\{\{ github\.event\.workflow_run\.display_title \}\}',
-    'sfl-review:\$\{pullNumber\}:\$\{baseSha\}:\$\{headSha\}:\$\{runId\}',
-    "check\.external_id === externalId && check\.app\?\.id === 15368",
-    "status: 'completed'",
-    "conclusion: 'failure'",
-    "if: github\.event\.workflow_run\.conclusion != 'cancelled'",
-    'decide_review_recovery',
-    'newer_run_suppresses_retry',
-    'Serialized same-PR reviewer runs cannot be cancelled by',
-    'sealed_title_retry_count',
-    'NEWER_RETRY_COUNT=',
-    'FINAL_NEWER_RETRY_COUNT=',
-    'missing_data',
-    'missing_tool',
-    'report_incomplete',
-    '\.retry_count == 0 or \.retry_count == 1',
-    'inputs\[retry_count\]=1',
-    'suppressing stale retry',
-    'produced no formal review after its one trusted retry',
-    'Review agent output is unavailable; refusing an unproven retry',
-    'Review agent output is malformed; refusing an unproven retry',
-    'Last-moment interlock',
-    'FINAL_PULL_REQUEST=',
-    'FINAL_WORKFLOW_RUN_PAGES=',
-    'FINAL_NEWER_RUNS=',
-    '<<< "\$FINAL_WORKFLOW_RUN_PAGES"',
-    'FINAL_NEWER_PROVENANCE_ATTEMPTS=3',
-    'for FINAL_NEWER_PROVENANCE_ATTEMPT in \$\(seq 1 "\$FINAL_NEWER_PROVENANCE_ATTEMPTS"\)',
-    'FINAL_NEWER_PROVENANCE_MATCH=',
-    'while IFS=\$''\\t'' read -r FINAL_NEWER_RUN_ID FINAL_NEWER_RUN_STATUS FINAL_NEWER_RUN_TITLE FINAL_NEWER_RUN_CONCLUSION',
-    'done <<< "\$FINAL_NEWER_RUNS"',
-    'changed before recovery dispatch; suppressing stale retry'
-)
-
-Assert-PatternSet 'deployment\scripts\deploy-workflow.ps1' @(
-    'sfl-pr-review-auto',
-    'sfl-pr-review-recovery',
-    'Assert-HemSoftRepository',
-    "owner.login -ne 'HemSoft'",
-    'Add-SflYamlSourcePin',
-    'deployment/infrastructure/\$inf\.yml@\$CurrentSha'
-)
-
-Assert-PatternSet 'deployment\scripts\set-sfl-review-gate.ps1' @(
-    "ValidatePattern\('\^HemSoft/",
-    "owner.login -ne 'HemSoft'",
-    "reviewContext = 'SFL Reviewer Approval'",
-    'githubActionsAppId = 15368',
-    "activeLogin -ne 'HemSoft'",
-    'strict = \$true',
-    'protection/required_status_checks',
-    'protectionExists',
-    'enabling status checks without replacing existing branch protection',
-    'Could not inspect full branch protection',
-    '--method PUT',
-    '--method PATCH',
-    'preserving'
-)
-
-Assert-PatternSet 'deployment\scripts\install-gh-sfl-hemsoft.ps1' @(
-    'Join-Path \$repoRoot ''gh-sfl''',
-    'gofmt -l \.',
-    'go vet \./\.\.\.',
-    'go test \./\.\.\.',
-    'go build -trimpath -buildvcs=false',
-    'GitHub CLI\\extensions\\gh-sfl'
-)
-
-Assert-PatternSet 'gh-sfl\github.go' @(
-    'outside the HemSoft repository scope',
-    'GitHub CLI must be authenticated as HemSoft',
-    'is protected and cannot be targeted'
-)
-
-Assert-PatternSet 'gh-sfl\init.go' @(
-    '"reviewer": \{',
-    'sfl-pr-review\.lock\.yml',
-    'sfl-pr-review-auto\.yml',
-    'sfl-pr-review-recovery\.yml',
-    'opts\.tier = "reviewer"',
-    'opts\.pr = true'
-)
-
-Assert-PatternSet 'gh-sfl\sync.go' @(
-    'opts := syncOptions\{pr: true\}',
-    'resolveDeploymentRelease\(opts\.sourceRef\)',
-    'sourceRef := release\.SHA'
-)
-
-foreach ($manifestPath in @('deployment\sfl-manifest.schema.json', 'sfl.json')) {
-    Assert-PatternSet $manifestPath @('sfl-pr-review-auto', 'sfl-pr-review-recovery')
-}
-
-Assert-PatternSet 'docs\SFL-REVIEWER.md' @(
-    'HemSoft-owned repositories',
-    'OPENROUTER_API_KEY',
-    'retries exactly once',
-    'SFL Reviewer Approval',
-    'gh sfl gate --repo'
-)
-
-$sensitivePatterns = @(
-    '(?im)^\s*(?:app-id|github-app-id|installation-id|client-id):\s*(?:\d+|Iv[A-Za-z0-9]+)\s*$',
-    '(?im)^\s*source:[ \t]+(?!HemSoft/set-it-free-loop(?:/|@))[^\r\n]*set-it-free-loop'
-)
-foreach ($path in @($reviewer, $auto, $recovery, 'docs\SFL-REVIEWER.md')) {
-    $content = Read-RepoFile $path
-    foreach ($pattern in $sensitivePatterns) {
-        if ($content -match $pattern) {
-            $failures.Add("$path contains prohibited organization-specific content: $pattern")
-        }
+foreach ($required in @(
+    'issue_comment:',
+    'pull_request_review:',
+    'Reviewed commit:',
+    'github.rest.repos.getCommit',
+    'Codex artifact is stale for the current pull request head',
+    'Codex reported review findings on the current head'
+)) {
+    if ($files.Observer -notmatch [regex]::Escape($required)) {
+        throw "Observer is missing result contract text: $required"
     }
 }
 
-if ($failures.Count -gt 0) {
-    $failures | ForEach-Object { Write-Error $_ }
-    exit 1
-}
-
-Write-Output 'SFL reviewer platform contract passed.'
+Write-Output 'SFL Codex reviewer platform contract tests passed.'

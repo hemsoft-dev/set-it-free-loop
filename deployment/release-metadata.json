@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "reviewedAt": "2026-08-18",
   "distribution": {
     "repository": "HemSoft/set-it-free-loop",
@@ -8,98 +8,43 @@
     "tag": "v2.1.0-rc.13",
     "prerelease": true
   },
-  "reviewerBaseline": {
-    "repository": "relias-engineering/set-it-free-loop",
-    "releaseVersion": "6.5.7",
-    "releaseTag": "v6.5.7",
-    "releaseCommit": "8d5e30714fa6cc61a89189266f8eb463132abde9",
-    "reviewedCommit": "669d4d84ef37ebab107c5931d6727846626062e5",
-    "postReleaseChanges": [
-      "TODO.md"
+  "reviewerRuntime": {
+    "type": "subscription-backed-codex-github-app",
+    "trigger": "@codex review",
+    "app": {
+      "id": 1144995,
+      "slug": "chatgpt-codex-connector",
+      "owner": "openai",
+      "botUserId": 199175422
+    },
+    "requiredGate": {
+      "name": "SFL Reviewer Gate Runner",
+      "appId": 15368,
+      "strictRequiredStatusChecksPolicy": true
+    },
+    "evidence": [
+      "https://github.com/HemSoft/hs-buddy/pull/427#issuecomment-5336227425",
+      "https://github.com/HemSoft/hs-buddy/pull/427#issuecomment-5336243021",
+      "https://github.com/HemSoft/hs-buddy/pull/415#pullrequestreview-4947117457"
     ]
   },
   "cliSource": {
     "repository": "HemSoft/set-it-free-loop",
     "path": "gh-sfl",
     "module": "github.com/HemSoft/set-it-free-loop/gh-sfl",
-    "upstreamRepository": "relias-engineering/set-it-free-loop",
-    "upstreamRelease": "v6.5.7",
-    "upstreamCommit": "8d5e30714fa6cc61a89189266f8eb463132abde9",
     "buildScript": "deployment/scripts/install-gh-sfl-hemsoft.ps1"
   },
-  "allowedDifferenceClasses": [
-    "provider-configuration",
-    "private-distribution-boundary",
-    "tested-hemsoft-hardening"
-  ],
   "artifacts": [
     {
-      "name": "reviewer-source",
-      "upstreamPath": "workflows/sfl-pr-review.md",
-      "upstreamSha256": "35b1d066abd0df5498a9ece6937be0c92c8dbfc04f3adf1c43b22dc7d2dc3a5a",
-      "hemsoftPath": "deployment/workflows/sfl-pr-review.md",
-      "hemsoftSha256": "02e1006e1dc704c00c20f290f7f7c9c93e5e0395031a338fbeee2e7b10963258",
-      "stagedPaths": [
-        ".github/workflows/sfl-pr-review.md"
-      ],
-      "differenceClasses": [
-        "provider-configuration",
-        "private-distribution-boundary",
-        "tested-hemsoft-hardening"
-      ],
-      "evidenceTests": [
-        "deployment/tests/test-sfl-pr-review.ps1",
-        "deployment/tests/test-sfl-verdict-validator.ps1"
-      ]
-    },
-    {
-      "name": "reviewer-lock",
-      "upstreamPath": "workflows/sfl-pr-review.lock.yml",
-      "upstreamSha256": "b232c552c59b17edef1bfe3326a9b0eb6d29d379be44a33e861f33a6ae47af02",
-      "hemsoftPath": ".github/workflows/sfl-pr-review.lock.yml",
-      "hemsoftSha256": "74b08acac6c4f77e5056205f7bfed23f9f9984fec483196cdd9af4e80b13757c",
-      "stagedPaths": [],
-      "differenceClasses": [
-        "provider-configuration",
-        "private-distribution-boundary",
-        "tested-hemsoft-hardening"
-      ],
-      "evidenceTests": [
-        "deployment/tests/test-sfl-pr-review.ps1"
-      ]
-    },
-    {
-      "name": "auto-trigger-gate",
-      "upstreamPath": "workflows/sfl-pr-review-auto.yml",
-      "upstreamSha256": "abbb6615ec2c598e42ef242596c0e6f05e3b616641da7c656d74b7bbb5487bf6",
+      "name": "codex-review-observer",
       "hemsoftPath": "deployment/infrastructure/sfl-pr-review-auto.yml",
-      "hemsoftSha256": "08e9213e106eff63930457a173bdae5458ff077003889e0b22ca210e7e264bb1",
       "stagedPaths": [
         ".github/workflows/sfl-pr-review-auto.yml"
       ],
-      "differenceClasses": [
-        "private-distribution-boundary",
-        "tested-hemsoft-hardening"
-      ],
       "evidenceTests": [
-        "deployment/tests/test-sfl-dispatch-dedup.ps1",
-        "deployment/tests/test-sfl-review-platform.ps1"
-      ]
-    },
-    {
-      "name": "recovery",
-      "upstreamPath": "workflows/sfl-pr-review-recovery.yml",
-      "upstreamSha256": "d94fb4a788a0f4c39ed45a24d14e44ec6f0a8bcd2027c3357edae2167ae33a25",
-      "hemsoftPath": "deployment/infrastructure/sfl-pr-review-recovery.yml",
-      "hemsoftSha256": "ef18e3007fcd55692c88ddcd42b2bec9964f03c151e97f24cc1345a59a7bf8e7",
-      "stagedPaths": [
-        ".github/workflows/sfl-pr-review-recovery.yml"
-      ],
-      "differenceClasses": [
-        "tested-hemsoft-hardening"
-      ],
-      "evidenceTests": [
-        "deployment/tests/test-sfl-review-platform.ps1"
+        "deployment/tests/test-sfl-pr-review.ps1",
+        "deployment/tests/test-sfl-review-platform.ps1",
+        "gh-sfl/reviewer_contract_test.go"
       ]
     }
   ]
