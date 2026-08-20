@@ -28,6 +28,15 @@ not satisfy this goal.
   Copilot entitlement with 199 chat requests remaining. Personal repositories
   require a fine-grained `COPILOT_GITHUB_TOKEN`; that secret is not configured
   in SFL or `hs-buddy` yet.
+- Mini's isolated GitHub runner is online and has the Docker runtime required by
+  `gh-aw`, but it is registered only to `HemSoft/yahtzee`. Its guest `actions`
+  account has neither Codex nor a ChatGPT login.
+- Mini's host account has Codex CLI 0.146.0 logged in through ChatGPT. A bounded
+  read-only `codex exec` probe returned `SUBSCRIPTION_OK` in five seconds, so
+  noninteractive subscription-backed Codex works on Linux.
+- Moving stock `gh-aw` to mini does not solve authentication. Its Codex harness
+  still requires `CODEX_API_KEY` or `OPENAI_API_KEY`, forces a transient
+  `CODEX_HOME`, and cannot see the host's ChatGPT login across the VM boundary.
 - SFL PR #134 fixed issue #133 and is merged at `eb83674`.
 - `hs-buddy` PR #521 and deployment PR #522 are merged at `58203bd`.
 - The broken `hs-buddy` SFL reviewer ruleset is removed. Its separate Copilot
@@ -44,6 +53,18 @@ not satisfy this goal.
   use the ChatGPT subscription in GitHub-hosted Actions.
 - [x] Verify that the working Relias reviewer uses the subscription-backed
   Copilot engine while preserving SFL's own prompt and output contract.
+- [x] Verify mini's runner state and prove that noninteractive Codex works with
+  the ChatGPT subscription on mini's host.
+- [x] Reject a `runs-on: self-hosted` change by itself; it leaves the stock
+  `gh-aw` API-key requirement intact.
+- [ ] If the Codex subscription remains the selected engine, run one bounded
+  infrastructure spike: create a distinct repository runner service and guest
+  user, device-authenticate Codex there, and prove a manual-only read-only
+  `codex exec` workflow before changing the SFL reviewer.
+- [ ] Decide whether to replace `gh-aw`'s model-execution layer with direct
+  Codex while preserving SFL's deterministic input, output validation, App
+  publication, and exact head/base contracts. Do not use dummy API keys or
+  mount mini's host credentials into the guest.
 - [ ] Configure the approved HemSoft subscription credential path without
   exposing or copying credentials into source control.
 - [ ] Restore the SFL reviewer, compiled lock, wrapper, recovery path, App
@@ -78,9 +99,9 @@ Status: merged, but invalid as SFL reviewer proof.
 - The installed `gh sfl` is the retired `6.5.16` dispatcher. Any resumed
   canary must use the HemSoft source CLI after deploying the current source.
 - This observer experiment posted exactly one new request, comment
-  `5350591677`. Codex returned a clean result for reviewed commit `1c6b76dd39` in comment
-  `5350608246`. The observer authenticated it and published terminal success in
-  check `96297674647` on the immutable head.
+  `5350591677`. Codex returned a clean result for reviewed commit `1c6b76dd39`
+  in comment `5350608246`. The observer authenticated it and published terminal
+  success in check `96297674647` on the immutable head.
 - PR #427 merged as `87c625cf65cbd56cedd3e2ce49c92553c360a222`.
   GitHub deleted its branch and the stale local tracking ref was pruned.
 - The source CLI launches `gh.exe` directly, bypassing the PowerShell wrapper
