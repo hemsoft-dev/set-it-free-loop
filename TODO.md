@@ -59,21 +59,25 @@ Status: passed and merged.
 Next: baseline `hs-buddy` PR #428 and process it as a separate review epoch.
 Do not overlap its request with another consumer PR.
 
-### Active consumer: `hs-buddy` PR #428
+### Completed consumer: `hs-buddy` PR #428
 
-Status: baseline complete; no Codex request exists yet.
+Status: passed and merged.
 
 - Head: `e6cfc64b9b1add9d0d19ca9aa461e166d3e17d08`.
 - Recorded base: `7b5e9bc870bdda54fb38d9037fca8ba89d4808cb`;
-  current `hs-buddy` `main`: `87c625cf65cbd56cedd3e2ce49c92553c360a222`.
+  current `hs-buddy` `main`: `5d6723b84a486fd98b1579f80975ddc78c2bd430`.
 - Current-head CI, lockfile validation, and the historical reviewer checks are
   green. There are no review threads.
 - The current observer invalidation is
   `sfl-codex-review:base-advance:at:1787194360000:32326201694:428`.
-- Existing current-head `@codex review` request count: zero.
-- Next action: send exactly one HemSoft-authenticated source-CLI request, prove
-  the reviewed SHA and terminal immutable-head status, then merge and clean the
-  PR before starting #429.
+- The sequence posted exactly one request, comment `5350661988`. Codex returned
+  clean result comment `5350682707` for reviewed commit `e6cfc64b9b`.
+- The observer authenticated that result and published terminal success in
+  check `96298915667` on the immutable head.
+- PR #428 merged as `5d6723b84a486fd98b1579f80975ddc78c2bd430`.
+  GitHub deleted its branch and the local tracking ref was pruned.
+
+Next: baseline `hs-buddy` PR #429 as a new, non-overlapping review epoch.
 
 ### Hard guardrails
 
