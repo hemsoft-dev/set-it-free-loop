@@ -21,6 +21,30 @@ authenticate Codex output, but no consumer currently requires the SFL gate.
   the retired workflow files to remain absent.
 - `developer-documentation` is excluded and remains read-only.
 
+### Active canary: `hs-buddy` PR #427
+
+Status: blocked before sending a review request, pending approval for one
+review-tier deployment PR.
+
+- Canary head: `1c6b76dd39a2ee821db16167d556ac53f041ddaf`.
+- The PR's recorded base is `e49e4ae41cfed134d52aa8b424b0e3a76e7d38f3`;
+  current `hs-buddy` `main` is `58203bd0c699761a99759ebb9cb04eef0f0e75fd`.
+- The deployed reviewer is pinned to SFL source
+  `25ffda422e3db5ac70b18b618813cde15491334c`, which predates PR #134's
+  reviewed-head gate fix at `eb83674`.
+- Two identical current-head `@codex review` requests already exist from the
+  prior cycle (comments `5348122372` and `5348122430`). Codex returned one
+  connector error and one clean result for reviewed commit `1c6b76dd39`
+  (comment `5348143375`).
+- The installed `gh sfl` is the retired `6.5.16` dispatcher. Any resumed
+  canary must use the HemSoft source CLI after deploying the current source.
+- This canary run has not posted a review request or changed `hs-buddy`.
+- If Franz approves one review-tier deployment PR, validate and merge that PR,
+  clean its branch/worktree, then submit exactly one explicit current-head
+  retry and observe it for no more than 15 minutes. Keep the gate non-required
+  and stop on a wrong SHA, duplicate request, timeout, or further deployment or
+  ruleset churn.
+
 ### Hard guardrails
 
 - Do not create refresh commits, rebases, force-pushes, dummy changes,
