@@ -2,28 +2,64 @@
 
 ## Goal
 
-Keep the HemSoft reviewer reliable and finish one milestone at a time.
-
-Issue #125 replaced the HemSoft reviewer model runtime with native Codex review
-from Franz's ChatGPT subscription. SFL can request one current-head review and
-authenticate Codex output, but no consumer currently requires the SFL gate.
+Restore the actual SFL PR Reviewer under HemSoft and finish one milestone at a
+time. SFL must own the review prompt, model invocation, structured output, and
+App-authenticated review publication. An external `@codex review` request does
+not satisfy this goal.
 
 ## Current operating state
 
 ### Current state
 
+- Diagnosis on 2026-08-19 proved that the `review` tier contains no SFL-owned
+  PR reviewer workflow. The deterministic source check fails because
+  `deployment/workflows/sfl-pr-review.md` is absent.
+- PR #126 removed the SFL reviewer, compiled lock, and recovery workflow and
+  replaced them with an observer that requests and authenticates external
+  `@codex review` output. That architecture is not an SFL reviewer and is not a
+  valid solution to the current goal.
+- The supported `gh-aw` Codex engine requires `CODEX_API_KEY` or
+  `OPENAI_API_KEY`, which uses API billing rather than Franz's ChatGPT
+  subscription.
+- The working Relias SFL reviewer uses `engine: copilot` with
+  `copilot-requests: write`; SFL still controls its three-pass prompt and
+  structured App review output.
+- The `HemSoft` GitHub account currently reports an individual free-limited
+  Copilot entitlement with 199 chat requests remaining. Personal repositories
+  require a fine-grained `COPILOT_GITHUB_TOKEN`; that secret is not configured
+  in SFL or `hs-buddy` yet.
 - SFL PR #134 fixed issue #133 and is merged at `eb83674`.
 - `hs-buddy` PR #521 and deployment PR #522 are merged at `58203bd`.
 - The broken `hs-buddy` SFL reviewer ruleset is removed. Its separate Copilot
   review ruleset remains active.
-- PR #121 closes issue #120 as superseded. The subscription-backed Codex path
-  has no concurrency-cancelled recovery wrapper, and contract tests require
-  the retired workflow files to remain absent.
+- PR #121 closes issue #120 as superseded. Its observer-only replacement is now
+  rejected as the reviewer solution.
 - `developer-documentation` is excluded and remains read-only.
 
-### Completed canary: `hs-buddy` PR #427
+### Active milestone: restore the SFL-owned reviewer
 
-Status: passed and merged.
+- [x] Prove the current review tier is observer-only and cannot run an SFL-owned
+  review.
+- [x] Verify that the standard `gh-aw` Codex engine is API-key billed and cannot
+  use the ChatGPT subscription in GitHub-hosted Actions.
+- [x] Verify that the working Relias reviewer uses the subscription-backed
+  Copilot engine while preserving SFL's own prompt and output contract.
+- [ ] Configure the approved HemSoft subscription credential path without
+  exposing or copying credentials into source control.
+- [ ] Restore the SFL reviewer, compiled lock, wrapper, recovery path, App
+  publication, and exact head/base freshness contracts from the working Relias
+  design.
+- [ ] Compile and validate the reviewer locally. The red source check must pass
+  before any consumer deployment.
+- [ ] Deploy only to `HemSoft/hs-buddy`, then invoke the SFL command and prove a
+  backend SFL workflow run plus an App-authenticated structured review on the
+  exact current head.
+- [ ] Do not count an external `@codex review` comment or observer gate as SFL
+  reviewer evidence.
+
+### Invalid SFL canary: `hs-buddy` PR #427
+
+Status: merged, but invalid as SFL reviewer proof.
 
 - Canary head: `1c6b76dd39a2ee821db16167d556ac53f041ddaf`.
 - The PR's recorded base is `e49e4ae41cfed134d52aa8b424b0e3a76e7d38f3`;
@@ -41,8 +77,8 @@ Status: passed and merged.
   (comment `5348143375`).
 - The installed `gh sfl` is the retired `6.5.16` dispatcher. Any resumed
   canary must use the HemSoft source CLI after deploying the current source.
-- This canary posted exactly one new request, comment `5350591677`. Codex
-  returned a clean result for reviewed commit `1c6b76dd39` in comment
+- This observer experiment posted exactly one new request, comment
+  `5350591677`. Codex returned a clean result for reviewed commit `1c6b76dd39` in comment
   `5350608246`. The observer authenticated it and published terminal success in
   check `96297674647` on the immutable head.
 - PR #427 merged as `87c625cf65cbd56cedd3e2ce49c92553c360a222`.
@@ -56,12 +92,9 @@ Status: passed and merged.
   that bounded wait is follow-up work; do not change or redeploy it during the
   current consumer sequence.
 
-Next: baseline `hs-buddy` PR #428 and process it as a separate review epoch.
-Do not overlap its request with another consumer PR.
+### Observer-only consumer: `hs-buddy` PR #428
 
-### Completed consumer: `hs-buddy` PR #428
-
-Status: passed and merged.
+Status: merged, but not reviewed by the SFL PR Reviewer.
 
 - Head: `e6cfc64b9b1add9d0d19ca9aa461e166d3e17d08`.
 - Recorded base: `7b5e9bc870bdda54fb38d9037fca8ba89d4808cb`;
@@ -77,11 +110,9 @@ Status: passed and merged.
 - PR #428 merged as `5d6723b84a486fd98b1579f80975ddc78c2bd430`.
   GitHub deleted its branch and the local tracking ref was pruned.
 
-Next: baseline `hs-buddy` PR #429 as a new, non-overlapping review epoch.
+### Observer-only consumer: `hs-buddy` PR #429
 
-### Completed consumer: `hs-buddy` PR #429
-
-Status: passed and merged.
+Status: merged, but not reviewed by the SFL PR Reviewer.
 
 - Head: `7133b66e7b1e0c26a02bcba77c2d0aaa8e7f94ce`.
 - Recorded base: `7b5e9bc870bdda54fb38d9037fca8ba89d4808cb`;
@@ -100,9 +131,9 @@ Status: passed and merged.
 - PR #429 merged as `99e8ba979b4b64ae6a09ff86bd9046a8f297951a`.
   GitHub deleted its branch and the local tracking ref was pruned.
 
-### Completed consumer: `hs-buddy` PR #430
+### Observer-only consumer: `hs-buddy` PR #430
 
-Status: passed and merged.
+Status: merged, but not reviewed by the SFL PR Reviewer in this sequence.
 
 - Head: `caea83cfd29dd04f482561281f97d7e9c27da6b7`.
 - Recorded base: `7b5e9bc870bdda54fb38d9037fca8ba89d4808cb`;
@@ -119,7 +150,10 @@ Status: passed and merged.
 - PR #430 merged as `8aee4e9ad8f7d3363a0a0e24af016ac73b5de91d`.
   GitHub deleted its branch and the local tracking ref was pruned.
 
-### Completed consumer sequence: PRs #427 through #430
+### External Codex observer sequence: PRs #427 through #430
+
+These merges remain factual, but this sequence validated only the external
+Codex observer and immutable-head gate. It did not validate the SFL PR Reviewer.
 
 - [x] Deploy the current review observer through PR #523 and clean its branch.
 - [x] Process, prove, merge, and clean PR #427.
@@ -131,9 +165,9 @@ Status: passed and merged.
 - [x] Keep the SFL gate non-required and leave `developer-documentation` out of
   the deployment and review sequence.
 
-The next SFL source work should address the CLI account-selection gap and the
-two-minute stale-reaction wait as a bounded source issue. Do not start another
-consumer deployment as part of that follow-up.
+The CLI account-selection gap, two-minute stale-reaction wait, and Windows CRLF
+fixture belong to the rejected observer path. Do not spend more time refining
+that path before the real reviewer is restored.
 
 The Windows run of `deployment/tests/test-source-pin-placement.ps1` also fails
 its CRLF case because the fixture replaces line feeds in a string that already
@@ -158,17 +192,19 @@ change.
 
 ### Operating rules
 
-1. Leave the broken `hs-buddy` SFL reviewer rule absent.
-2. Do not start another deployment or reviewer cycle from this recovery work.
-3. If SFL enforcement is revisited, begin with one bounded issue and prove the
-   replacement gate before enabling it in a consumer repository.
+1. Leave the broken `hs-buddy` SFL reviewer rule absent until the restored
+   reviewer has produced valid current-head evidence.
+2. Do not start another consumer deployment from the observer-only path.
+3. Restore and prove the reviewer in SFL first, then use one bounded `hs-buddy`
+   canary before considering enforcement.
 
 ## Working baseline
 
 - `HemSoft/hs-buddy` remains the only repository approved for live HemSoft
   validation.
-- The subscription-backed Codex reviewer source and `hs-buddy` pilot deployment
-  are merged. The unreliable required SFL rule was removed from `hs-buddy`.
+- The external Codex observer source and `hs-buddy` pilot deployment are merged,
+  but they do not implement the SFL PR Reviewer. The unreliable required SFL
+  rule was removed from `hs-buddy`.
 - No consumer repository currently requires `SFL Reviewer Gate Runner`.
 - The Codex GitHub App is connected for the approved pilot repository. Do not
   change its installation scope as part of this milestone.
@@ -176,7 +212,7 @@ change.
   Never fan either command out across the account. If approval is withdrawn,
   close the pending deployment PR and delete its branch.
 
-## Completed milestone: issue #125
+## Rejected implementation milestone: issue #125
 
 - [x] Remove the OpenRouter/Kimi reviewer, compiled lock, recovery wrapper, and
   reviewer credential requirements from the HemSoft package.
@@ -185,12 +221,13 @@ change.
 - [x] Authenticate clean comments and finding reviews, resolve reviewed commit
   prefixes, and reject stale, spoofed, or malformed evidence.
 - [x] Preserve the strict `SFL Reviewer Gate Runner` branch-rule contract.
-- [x] Land the subscription-backed Codex source in PR #126.
+- [x] Land the external subscription-backed Codex observer source in PR #126.
 - [x] Deploy the pilot only to `HemSoft/hs-buddy` through PR #522.
 - [x] Stop the pilot without reenabling the unreliable required SFL rule.
 
-End-to-end clean and finding proofs through a required Codex-backed gate were
-not completed. Any renewed enforcement starts with a new bounded issue.
+This milestone did not preserve the SFL reviewer. End-to-end clean and finding
+proofs from an SFL-owned workflow were not completed. Any renewed enforcement
+starts only after the active restoration milestone succeeds.
 
 This milestone explicitly excludes developer-documentation and account-wide
 deployment.
