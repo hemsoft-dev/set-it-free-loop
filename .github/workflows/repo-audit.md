@@ -4,7 +4,6 @@ description: |
   stale artifacts, configuration hygiene issues, and cross-reference mismatches.
 
 on:
-  schedule: daily
   workflow_dispatch:
 
 permissions:

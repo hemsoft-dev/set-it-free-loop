@@ -6,7 +6,6 @@ description: |
   agent-fixable issues for low-risk simplifications an agent can apply autonomously.
 
 on:
-  schedule: daily
   workflow_dispatch:
 
 permissions:
