@@ -79,6 +79,26 @@ Status: passed and merged.
 
 Next: baseline `hs-buddy` PR #429 as a new, non-overlapping review epoch.
 
+### Active consumer: `hs-buddy` PR #429
+
+Status: baseline complete and historical thread resolved; no Codex request
+exists yet.
+
+- Head: `7133b66e7b1e0c26a02bcba77c2d0aaa8e7f94ce`.
+- Recorded base: `7b5e9bc870bdda54fb38d9037fca8ba89d4808cb`;
+  current `hs-buddy` `main`: `5d6723b84a486fd98b1579f80975ddc78c2bd430`.
+- Current-head CI, benchmarks, audit, and lockfile validation are green.
+- One historical SFL thread claimed `bun.lock` still resolved Convex 1.42.3.
+  Current head `7133b66` pins and resolves Convex 1.44.0. The agent replied with
+  that evidence in comment `3818296315` and resolved only thread
+  `PRRT_kwDOSUYqws6ZqyW3`.
+- The current observer invalidation is
+  `sfl-codex-review:base-advance:at:1787194776000:32326613840:429`.
+- Existing current-head `@codex review` request count: zero.
+- Next action: send exactly one HemSoft-authenticated source-CLI request, prove
+  the reviewed SHA and terminal immutable-head status, then merge and clean the
+  PR before starting #430.
+
 ### Hard guardrails
 
 - Do not create refresh commits, rebases, force-pushes, dummy changes,
