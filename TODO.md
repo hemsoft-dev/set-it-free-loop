@@ -103,6 +103,23 @@ Status: passed and merged.
 Next: baseline `hs-buddy` PR #430 as the final non-overlapping review epoch in
 this sequence.
 
+### Active consumer: `hs-buddy` PR #430
+
+Status: baseline complete; no Codex request exists yet.
+
+- Head: `caea83cfd29dd04f482561281f97d7e9c27da6b7`.
+- Recorded base: `7b5e9bc870bdda54fb38d9037fca8ba89d4808cb`;
+  current `hs-buddy` `main`: `99e8ba979b4b64ae6a09ff86bd9046a8f297951a`.
+- Current-head CI, benchmarks, audit, and lockfile validation are green.
+- The historical stale-lockfile finding already has a current-head evidence
+  reply and its only thread, `PRRT_kwDOSUYqws6ZqyMi`, is resolved.
+- The current observer invalidation is
+  `sfl-codex-review:base-advance:at:1787195134000:32326990663:430`.
+- Existing current-head `@codex review` request count: zero.
+- Next action: send exactly one HemSoft-authenticated source-CLI request, prove
+  the reviewed SHA and terminal immutable-head status, then merge and clean the
+  final PR.
+
 ### Hard guardrails
 
 - Do not create refresh commits, rebases, force-pushes, dummy changes,
