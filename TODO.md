@@ -2,14 +2,40 @@
 
 ## Goal
 
-Restore the actual SFL PR Reviewer under HemSoft and finish one milestone at a
-time. SFL must own the review prompt, model invocation, structured output, and
-App-authenticated review publication. An external `@codex review` request does
-not satisfy this goal.
+Status: discontinued for private HemSoft repositories by owner decision on
+2026-08-20.
+
+Do not restore, deploy, or enforce the SFL PR Reviewer in Franz's private
+HemSoft repositories. Use the connected Codex GitHub integration and request
+reviews with `@codex review` instead. This replacement is intentionally not
+SFL.
 
 ## Current operating state
 
 ### Current state
+
+- The HemSoft SFL effort is stopped. No further reviewer restoration, provider
+  migration, mini runner authentication, consumer deployment, or SFL canary is
+  authorized under the prior roadmap.
+- `@codex review` is the accepted review path for private HemSoft repositories.
+  It uses the connected Codex cloud integration and eligible ChatGPT plan
+  usage, not OpenRouter.
+- The successful external Codex reviews on `hs-buddy` PRs #427 through #430
+  prove that this GitHub connection works for the approved HemSoft repository.
+- Existing SFL source, observer artifacts, GitHub App installations, and
+  repository configuration remain unchanged. Removing them is separate cleanup
+  work and requires an explicit decision.
+- `developer-documentation` remains excluded and read-only.
+
+### Closed milestone: discontinue HemSoft SFL
+
+- [x] Stop work on restoring the SFL-owned reviewer.
+- [x] Cancel the mini self-hosted runner authentication spike for SFL.
+- [x] Cancel further HemSoft consumer deployments and SFL canaries.
+- [x] Adopt `@codex review` as Franz's private HemSoft review path.
+- [x] Preserve existing artifacts until cleanup is separately approved.
+
+### Historical state before discontinuation
 
 - Diagnosis on 2026-08-19 proved that the `review` tier contains no SFL-owned
   PR reviewer workflow. The deterministic source check fails because
@@ -43,9 +69,9 @@ not satisfy this goal.
   review ruleset remains active.
 - PR #121 closes issue #120 as superseded. Its observer-only replacement is now
   rejected as the reviewer solution.
-- `developer-documentation` is excluded and remains read-only.
+- `developer-documentation` was excluded and remained read-only.
 
-### Active milestone: restore the SFL-owned reviewer
+### Cancelled milestone: restore the SFL-owned reviewer
 
 - [x] Prove the current review tier is observer-only and cannot run an SFL-owned
   review.
@@ -57,25 +83,25 @@ not satisfy this goal.
   the ChatGPT subscription on mini's host.
 - [x] Reject a `runs-on: self-hosted` change by itself; it leaves the stock
   `gh-aw` API-key requirement intact.
-- [ ] If the Codex subscription remains the selected engine, run one bounded
-  infrastructure spike: create a distinct repository runner service and guest
-  user, device-authenticate Codex there, and prove a manual-only read-only
-  `codex exec` workflow before changing the SFL reviewer.
-- [ ] Decide whether to replace `gh-aw`'s model-execution layer with direct
-  Codex while preserving SFL's deterministic input, output validation, App
-  publication, and exact head/base contracts. Do not use dummy API keys or
+- [ ] Cancelled: If the Codex subscription remains the selected engine, run one
+  bounded infrastructure spike: create a distinct repository runner service
+  and guest user, device-authenticate Codex there, and prove a manual-only
+  read-only `codex exec` workflow before changing the SFL reviewer.
+- [ ] Cancelled: Decide whether to replace `gh-aw`'s model-execution layer with
+  direct Codex while preserving SFL's deterministic input, output validation,
+  App publication, and exact head/base contracts. Do not use dummy API keys or
   mount mini's host credentials into the guest.
-- [ ] Configure the approved HemSoft subscription credential path without
-  exposing or copying credentials into source control.
-- [ ] Restore the SFL reviewer, compiled lock, wrapper, recovery path, App
-  publication, and exact head/base freshness contracts from the working Relias
-  design.
-- [ ] Compile and validate the reviewer locally. The red source check must pass
-  before any consumer deployment.
-- [ ] Deploy only to `HemSoft/hs-buddy`, then invoke the SFL command and prove a
-  backend SFL workflow run plus an App-authenticated structured review on the
-  exact current head.
-- [ ] Do not count an external `@codex review` comment or observer gate as SFL
+- [ ] Cancelled: Configure the approved HemSoft subscription credential path
+  without exposing or copying credentials into source control.
+- [ ] Cancelled: Restore the SFL reviewer, compiled lock, wrapper, recovery
+  path, App publication, and exact head/base freshness contracts from the
+  working Relias design.
+- [ ] Cancelled: Compile and validate the reviewer locally. The red source
+  check must pass before any consumer deployment.
+- [ ] Cancelled: Deploy only to `HemSoft/hs-buddy`, then invoke the SFL command
+  and prove a backend SFL workflow run plus an App-authenticated structured
+  review on the exact current head.
+- [x] Do not count an external `@codex review` comment or observer gate as SFL
   reviewer evidence.
 
 ### Invalid SFL canary: `hs-buddy` PR #427
