@@ -100,9 +100,6 @@ Status: passed and merged.
 - PR #429 merged as `99e8ba979b4b64ae6a09ff86bd9046a8f297951a`.
   GitHub deleted its branch and the local tracking ref was pruned.
 
-Next: baseline `hs-buddy` PR #430 as the final non-overlapping review epoch in
-this sequence.
-
 ### Completed consumer: `hs-buddy` PR #430
 
 Status: passed and merged.
