@@ -103,22 +103,40 @@ Status: passed and merged.
 Next: baseline `hs-buddy` PR #430 as the final non-overlapping review epoch in
 this sequence.
 
-### Active consumer: `hs-buddy` PR #430
+### Completed consumer: `hs-buddy` PR #430
 
-Status: baseline complete; no Codex request exists yet.
+Status: passed and merged.
 
 - Head: `caea83cfd29dd04f482561281f97d7e9c27da6b7`.
 - Recorded base: `7b5e9bc870bdda54fb38d9037fca8ba89d4808cb`;
-  current `hs-buddy` `main`: `99e8ba979b4b64ae6a09ff86bd9046a8f297951a`.
+  current `hs-buddy` `main`: `8aee4e9ad8f7d3363a0a0e24af016ac73b5de91d`.
 - Current-head CI, benchmarks, audit, and lockfile validation are green.
 - The historical stale-lockfile finding already has a current-head evidence
   reply and its only thread, `PRRT_kwDOSUYqws6ZqyMi`, is resolved.
 - The current observer invalidation is
   `sfl-codex-review:base-advance:at:1787195134000:32326990663:430`.
-- Existing current-head `@codex review` request count: zero.
-- Next action: send exactly one HemSoft-authenticated source-CLI request, prove
-  the reviewed SHA and terminal immutable-head status, then merge and clean the
-  final PR.
+- The sequence posted exactly one request, comment `5350794291`. Codex returned
+  clean result comment `5350820816` for reviewed commit `caea83cfd2`.
+- The observer authenticated that result and published terminal success in
+  check `96300972535` on the immutable head.
+- PR #430 merged as `8aee4e9ad8f7d3363a0a0e24af016ac73b5de91d`.
+  GitHub deleted its branch and the local tracking ref was pruned.
+
+### Completed consumer sequence: PRs #427 through #430
+
+- [x] Deploy the current review observer through PR #523 and clean its branch.
+- [x] Process, prove, merge, and clean PR #427.
+- [x] Process, prove, merge, and clean PR #428.
+- [x] Process, prove, merge, and clean PR #429.
+- [x] Process, prove, merge, and clean PR #430.
+- [x] Keep every consumer request sequential and limited to one new request per
+  head during this run.
+- [x] Keep the SFL gate non-required and leave `developer-documentation` out of
+  the deployment and review sequence.
+
+The next SFL source work should address the CLI account-selection gap and the
+two-minute stale-reaction wait as a bounded source issue. Do not start another
+consumer deployment as part of that follow-up.
 
 ### Hard guardrails
 
