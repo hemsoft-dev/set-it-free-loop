@@ -59,6 +59,22 @@ Status: passed and merged.
 Next: baseline `hs-buddy` PR #428 and process it as a separate review epoch.
 Do not overlap its request with another consumer PR.
 
+### Active consumer: `hs-buddy` PR #428
+
+Status: baseline complete; no Codex request exists yet.
+
+- Head: `e6cfc64b9b1add9d0d19ca9aa461e166d3e17d08`.
+- Recorded base: `7b5e9bc870bdda54fb38d9037fca8ba89d4808cb`;
+  current `hs-buddy` `main`: `87c625cf65cbd56cedd3e2ce49c92553c360a222`.
+- Current-head CI, lockfile validation, and the historical reviewer checks are
+  green. There are no review threads.
+- The current observer invalidation is
+  `sfl-codex-review:base-advance:at:1787194360000:32326201694:428`.
+- Existing current-head `@codex review` request count: zero.
+- Next action: send exactly one HemSoft-authenticated source-CLI request, prove
+  the reviewed SHA and terminal immutable-head status, then merge and clean the
+  PR before starting #429.
+
 ### Hard guardrails
 
 - Do not create refresh commits, rebases, force-pushes, dummy changes,
