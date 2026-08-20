@@ -21,14 +21,13 @@ authenticate Codex output, but no consumer currently requires the SFL gate.
   the retired workflow files to remain absent.
 - `developer-documentation` is excluded and remains read-only.
 
-### Active canary: `hs-buddy` PR #427
+### Completed canary: `hs-buddy` PR #427
 
-Status: deployment complete; ready to send the one approved review retry. No
-review request has been sent in this canary run yet.
+Status: passed and merged.
 
 - Canary head: `1c6b76dd39a2ee821db16167d556ac53f041ddaf`.
 - The PR's recorded base is `e49e4ae41cfed134d52aa8b424b0e3a76e7d38f3`;
-  current `hs-buddy` `main` is `58203bd0c699761a99759ebb9cb04eef0f0e75fd`.
+  current `hs-buddy` `main` is `87c625cf65cbd56cedd3e2ce49c92553c360a222`.
 - `hs-buddy` deployment PR #523 merged at
   `47074a14b3d6d7db6ee3015ba9d792beca86eb66` and pins the observer to SFL
   source `82819b273b9f9878cf8c4c7b3b5e5ddec9dcd873`, including PR #134's
@@ -42,11 +41,23 @@ review request has been sent in this canary run yet.
   (comment `5348143375`).
 - The installed `gh sfl` is the retired `6.5.16` dispatcher. Any resumed
   canary must use the HemSoft source CLI after deploying the current source.
-- This canary run has not posted a review request.
-- Submit exactly one explicit current-head retry from the HemSoft source CLI
-  and observe it for no more than 15 minutes. Keep the gate non-required and
-  stop on a wrong SHA, duplicate request, timeout, or further deployment or
-  ruleset churn.
+- This canary posted exactly one new request, comment `5350591677`. Codex
+  returned a clean result for reviewed commit `1c6b76dd39` in comment
+  `5350608246`. The observer authenticated it and published terminal success in
+  check `96297674647` on the immutable head.
+- PR #427 merged as `87c625cf65cbd56cedd3e2ce49c92553c360a222`.
+  GitHub deleted its branch and the stale local tracking ref was pruned.
+- The source CLI launches `gh.exe` directly, bypassing the PowerShell wrapper
+  that selects the HemSoft account. Until the CLI owns account selection, run
+  it with `GH_CONFIG_DIR=$HOME/.gh-personal` and verify `gh.exe api user`
+  returns `HemSoft` before any write.
+- Retry recovery waits up to two minutes for a connector reaction when an old
+  request has a stale context marker, even when no reaction exists. Shortening
+  that bounded wait is follow-up work; do not change or redeploy it during the
+  current consumer sequence.
+
+Next: baseline `hs-buddy` PR #428 and process it as a separate review epoch.
+Do not overlap its request with another consumer PR.
 
 ### Hard guardrails
 
