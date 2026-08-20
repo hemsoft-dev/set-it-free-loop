@@ -23,27 +23,30 @@ authenticate Codex output, but no consumer currently requires the SFL gate.
 
 ### Active canary: `hs-buddy` PR #427
 
-Status: Franz approved one review-tier deployment PR. Deployment is in
-progress; no review request has been sent.
+Status: deployment complete; ready to send the one approved review retry. No
+review request has been sent in this canary run yet.
 
 - Canary head: `1c6b76dd39a2ee821db16167d556ac53f041ddaf`.
 - The PR's recorded base is `e49e4ae41cfed134d52aa8b424b0e3a76e7d38f3`;
   current `hs-buddy` `main` is `58203bd0c699761a99759ebb9cb04eef0f0e75fd`.
-- The deployed reviewer is pinned to SFL source
-  `25ffda422e3db5ac70b18b618813cde15491334c`, which predates PR #134's
-  reviewed-head gate fix at `eb83674`.
+- `hs-buddy` deployment PR #523 merged at
+  `47074a14b3d6d7db6ee3015ba9d792beca86eb66` and pins the observer to SFL
+  source `82819b273b9f9878cf8c4c7b3b5e5ddec9dcd873`, including PR #134's
+  reviewed-head gate fix. Its branch and isolated worktree are deleted.
+- The merged observer completed push run `32325578697` successfully and
+  invalidated PR #427 with context
+  `sfl-codex-review:base-advance:at:1787193734000:32325578697:427`.
 - Two identical current-head `@codex review` requests already exist from the
   prior cycle (comments `5348122372` and `5348122430`). Codex returned one
   connector error and one clean result for reviewed commit `1c6b76dd39`
   (comment `5348143375`).
 - The installed `gh sfl` is the retired `6.5.16` dispatcher. Any resumed
   canary must use the HemSoft source CLI after deploying the current source.
-- This canary run has not posted a review request or changed `hs-buddy`.
-- Validate and merge the one approved review-tier deployment PR, clean its
-  branch/worktree, then submit exactly one explicit current-head retry and
-  observe it for no more than 15 minutes. Keep the gate non-required and stop
-  on a wrong SHA, duplicate request, timeout, or further deployment or ruleset
-  churn.
+- This canary run has not posted a review request.
+- Submit exactly one explicit current-head retry from the HemSoft source CLI
+  and observe it for no more than 15 minutes. Keep the gate non-required and
+  stop on a wrong SHA, duplicate request, timeout, or further deployment or
+  ruleset churn.
 
 ### Hard guardrails
 
