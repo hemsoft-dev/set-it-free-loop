@@ -16,6 +16,9 @@ authenticates Codex output, and preserves the required immutable-head gate.
 - `hs-buddy` PR #521 and deployment PR #522 are merged at `58203bd`.
 - The broken `hs-buddy` SFL reviewer ruleset is removed. Its separate Copilot
   review ruleset remains active.
+- PR #121 closes issue #120 as superseded. The subscription-backed Codex path
+  has no concurrency-cancelled recovery wrapper, and contract tests require
+  the retired workflow files to remain absent.
 - `developer-documentation` is excluded and remains read-only.
 
 ### Hard guardrails
