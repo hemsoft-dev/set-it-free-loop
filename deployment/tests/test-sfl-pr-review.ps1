@@ -87,7 +87,7 @@ foreach ($pattern in @(
     'state: "failure"',
     'const postSuccessState = await publicationState()',
     'state.openPulls.length !== 1',
-    'registeredRequestIdsFromStatuses(statuses)',
+    'registeredRequestIdsFromStatuses(statuses, comments)',
     'let latestPotentialRequestRegistered = false',
     'visibleRegistrations.has(latestPotentialRequest.comment.id)',
     'if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 5000))',
@@ -406,5 +406,71 @@ $policy = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\engine-polic
 if ($policy -match '(?i)openrouter|moonshotai/kimi|OPENROUTER_API_KEY') {
     throw 'Engine policy retained the OpenRouter reviewer configuration.'
 }
+
+# Run the exact authorization helper embedded in both workflow jobs.
+$authorization = [regex]::Matches($canonical, '(?s)// BEGIN TESTABLE REQUESTER AUTHORIZATION\s*(.*?)\s*// END TESTABLE REQUESTER AUTHORIZATION')
+if ($authorization.Count -ne 2 -or $authorization[0].Groups[1].Value -cne $authorization[1].Groups[1].Value) {
+    throw 'Request invalidation and result observation do not share the same authorization policy.'
+}
+$authorizationTest = @'
+const assert = require("node:assert/strict");
+let owner = "hemsoft-dev";
+const repo = "consumer";
+let role = "write", responseUser = "member", fails = false, calls = 0;
+const github = {rest:{repos:{getCollaboratorPermissionLevel: async ({username}) => {
+  calls++;
+  if (fails) throw new Error("lookup failure");
+  return {data:{permission:role,user:{login:responseUser}}};
+}}}};
+'@ + "`n" + $authorization[0].Groups[1].Value + "`n" + @'
+(async () => {
+  for (const permission of ["admin", "maintain", "write"]) {
+    role=permission; assert.equal(await requesterAllowed("member"),true);
+  }
+  for (const permission of ["read", "triage", "none", ""]) {
+    role=permission; assert.equal(await requesterAllowed("member"),false);
+  }
+  role="write"; responseUser="other";
+  await assert.rejects(requesterAllowed("member"), /identity mismatch/);
+  responseUser="member"; fails=true;
+  await assert.rejects(requesterAllowed("member"), /lookup failure/);
+  fails=false;
+  const before=calls;
+  assert.equal(await requesterAllowed("github-actions[bot]"),false);
+  assert.equal(await requesterAllowed("member/permission"),false);
+  assert.equal(calls,before);
+  owner="HemSoft";
+  assert.equal(await requesterAllowed("HemSoft"),true);
+  assert.equal(await requesterAllowed("other"),false);
+  assert.equal(calls,before);
+})().catch(error => { console.error(error); process.exitCode=1; });
+'@
+$authorizationTest | node -
+if ($LASTEXITCODE -ne 0) { throw 'Live permission authorization fixtures failed.' }
+
+$registration = [regex]::Match($canonical, '(?s)// BEGIN TESTABLE REQUEST REGISTRATION\s*(.*?)\s*// END TESTABLE REQUEST REGISTRATION')
+if (-not $registration.Success) { throw 'Missing testable request registration.' }
+$registrationTest = @'
+const assert = require("node:assert/strict");
+const requestTargetPrefix = "https://github.com/hemsoft-dev/consumer/pull/42#issuecomment-";
+const triggerComments = [{id:1,user:{login:"member"}},{id:2,user:{login:"other"}}];
+const requesterPermissions = new Map([["member",true],["other",true],["reader",false]]);
+const isOwnerRequest = comment => Boolean(comment) && requesterPermissions.get(comment.user.login.toLowerCase()) === true;
+'@ + "`n" + $registration.Groups[1].Value + "`n" + @'
+const registration = (creator,id,host="https://github.com") => ({
+ context:"SFL Codex Review Request Registry", creator:{login:creator},
+ target_url:`${host}/hemsoft-dev/consumer/pull/42#issuecomment-${id}`,
+});
+assert.deepEqual([...registeredRequestIdsFromStatuses([registration("member",1)])],[1]);
+assert.equal(registeredRequestIdsFromStatuses([registration("member",2)]).size,0);
+assert.equal(registeredRequestIdsFromStatuses([registration("reader",1)]).size,0);
+assert.equal(registeredRequestIdsFromStatuses([registration("member",1,"https://attacker.test")]).size,0);
+assert.equal(registeredRequestIdsFromStatuses([registration("member",99)]).size,0);
+assert.deepEqual([...registeredRequestIdsFromStatuses([registration("member",1),registration("member",1)])],[1]);
+requesterPermissions.set("member",false);
+assert.equal(registeredRequestIdsFromStatuses([registration("member",1)]).size,0);
+'@
+$registrationTest | node -
+if ($LASTEXITCODE -ne 0) { throw 'Registry creator/author binding fixtures failed.' }
 
 Write-Output 'Subscription-backed Codex reviewer contract tests passed.'
