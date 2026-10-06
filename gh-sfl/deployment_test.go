@@ -480,7 +480,7 @@ func TestParseAddOptionsDefaultsToPullRequest(t *testing.T) {
 
 func TestSyncPreservesAuditFieldsOnlyForCurrentCanonicalDeployment(t *testing.T) {
 	release := deploymentRelease{Version: "2.0.0", SHA: strings.Repeat("a", 40)}
-	current := &sflManifest{Version: release.Version, SourceSHA: release.SHA, Tier: "reviewer"}
+	current := &sflManifest{MotherRepo: motherRepoOwner + "/" + motherRepoName, Version: release.Version, SourceSHA: release.SHA, Tier: "reviewer"}
 	if !shouldPreserveSyncAudit(current, release, "reviewer") {
 		t.Fatal("current canonical deployment did not preserve audit fields")
 	}

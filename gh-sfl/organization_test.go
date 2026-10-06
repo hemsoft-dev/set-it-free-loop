@@ -90,3 +90,18 @@ func TestOrganizationGateRequiresAdminBeforeMutation(t *testing.T) {
 		t.Fatalf("gate did not fail with admin preflight: %v", err)
 	}
 }
+
+func TestSourceCutoverRefreshesSyncAudit(t *testing.T) {
+	previous := motherRepoOwner
+	t.Cleanup(func() { motherRepoOwner = previous })
+	motherRepoOwner = "hemsoft-dev"
+	release := deploymentRelease{Version: "2.1.0-rc.13", SHA: strings.Repeat("a", 40)}
+	manifest := &sflManifest{MotherRepo: "HemSoft/set-it-free-loop", Version: release.Version, SourceSHA: release.SHA, Tier: "reviewer"}
+	if shouldPreserveSyncAudit(manifest, release, "reviewer") {
+		t.Fatal("source cutover retained an earlier deployment audit")
+	}
+	manifest.MotherRepo = "hemsoft-dev/set-it-free-loop"
+	if !shouldPreserveSyncAudit(manifest, release, "reviewer") {
+		t.Fatal("unchanged source did not preserve deployment audit")
+	}
+}

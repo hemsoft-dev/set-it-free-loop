@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string] $ExpectedVersion,
+    [string] $ExpectedRepository,
     [switch] $RequirePrerelease
 )
 
@@ -14,6 +15,15 @@ $release = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\release-met
     ConvertFrom-Json
 $workflow = Get-Content -LiteralPath (Join-Path $repoRoot '.github\workflows\publish-private-prerelease.yml') -Raw
 $failures = [System.Collections.Generic.List[string]]::new()
+if (-not $ExpectedRepository) {
+    $ExpectedRepository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'HemSoft/set-it-free-loop' }
+}
+if ($ExpectedRepository -notin @('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop') -or
+    $release.distribution.repository -ine $ExpectedRepository -or
+    $release.cliSource.repository -ine $ExpectedRepository) {
+    throw "Release source mismatch: distribution and CLI must both identify publishing repository '$ExpectedRepository'."
+}
+
 $semanticVersionPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$'
 
 if ($version -notmatch $semanticVersionPattern) {
@@ -63,7 +73,7 @@ if ($release.cliSource.repository -ne $release.distribution.repository -or
 $requiredWorkflowPatterns = @(
     "github.repository == 'HemSoft/set-it-free-loop'",
     "github.ref == 'refs/heads/main'",
-    'test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -RequirePrerelease',
+    'test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -ExpectedRepository $env:GITHUB_REPOSITORY -RequirePrerelease',
     'repos/${GITHUB_REPOSITORY}/commits/main',
     'test "$(git rev-parse HEAD)" = "$remote_main_sha"',
     'IMMUTABLE_RELEASES_ATTESTED: ${{ vars.SFL_IMMUTABLE_RELEASES_ENABLED }}',
@@ -165,6 +175,12 @@ try {
             $failures.Add("set-release-version.ps1 did not reject '$invalidVersion': $invalidVersionFailure")
         }
     }
+
+    $otherRepository = if ($ExpectedRepository -ieq 'HemSoft/set-it-free-loop') { 'hemsoft-dev/set-it-free-loop' } else { 'HemSoft/set-it-free-loop' }
+    $sourceMismatch = $null
+    try { & $PSCommandPath -ExpectedRepository $otherRepository | Out-Null }
+    catch { $sourceMismatch = $_.Exception.Message }
+    if ($sourceMismatch -notlike 'Release source mismatch:*') { $failures.Add('Publishing repository mismatch was not rejected before building.') }
 
     $nonEmptyOutput = Join-Path $fixtureRoot 'non-empty-output'
     New-Item -ItemType Directory -Path $nonEmptyOutput -Force | Out-Null

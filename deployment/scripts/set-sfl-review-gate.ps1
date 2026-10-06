@@ -89,6 +89,10 @@ if ($statusChecksExist) {
 $checksByIdentity = [ordered]@{}
 foreach ($check in @($current.checks)) {
     $appId = if ($null -eq $check.app_id) { -1 } else { [int64] $check.app_id }
+    if ($check.context -eq 'SFL Reviewer Approval') {
+        if ($appId -ne $githubActionsAppId) { throw 'Legacy SFL gate has an unverified App binding; reconcile it before migration.' }
+        continue
+    }
     $key = "$($check.context)|$appId"
     $checksByIdentity[$key] = [ordered]@{
         context = [string] $check.context
@@ -97,6 +101,11 @@ foreach ($check in @($current.checks)) {
 }
 
 foreach ($context in @($current.contexts)) {
+    if ($context -eq 'SFL Reviewer Approval') {
+        $boundLegacy = @($current.checks | Where-Object { $_.context -eq $context -and $_.app_id -eq $githubActionsAppId })
+        if (-not $boundLegacy.Count) { throw 'Legacy SFL gate has an unverified App binding; reconcile it before migration.' }
+        continue
+    }
     $alreadyPresent = @($checksByIdentity.Values) |
         Where-Object { $_.context -eq [string] $context } |
         Select-Object -First 1

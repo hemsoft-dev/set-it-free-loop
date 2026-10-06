@@ -43,7 +43,7 @@ jobs:
 
       - name: Preflight synchronized prerelease
         shell: pwsh
-        run: ./deployment/tests/test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -RequirePrerelease
+        run: ./deployment/tests/test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -ExpectedRepository $env:GITHUB_REPOSITORY -RequirePrerelease
 
       - name: Preflight immutable source and destination
         shell: bash

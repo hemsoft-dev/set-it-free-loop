@@ -19,7 +19,8 @@ type syncOptions struct {
 }
 
 func shouldPreserveSyncAudit(manifest *sflManifest, release deploymentRelease, installedTier string) bool {
-	return manifest.Version == release.Version &&
+	return manifest.MotherRepo == motherRepoOwner+"/"+motherRepoName &&
+		manifest.Version == release.Version &&
 		manifest.SourceSHA == release.SHA && manifest.Tier == installedTier
 }
 

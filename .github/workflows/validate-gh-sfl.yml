@@ -62,6 +62,11 @@ jobs:
         working-directory: .
         run: ./deployment/tests/test-organization-policy.ps1
 
+      - name: Test legacy reviewer gate migration
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-review-gate.ps1
+
       - name: Test SFL Auditor behavior
         shell: pwsh
         working-directory: .
