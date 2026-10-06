@@ -45,7 +45,8 @@
           "readyState": "READY",
           "url": "now-leadership-group-no14k6299-franz-hemmers-projects.vercel.app"
         }
-      }
+      },
+      "repository_visibility": "private"
     },
     {
       "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
@@ -83,7 +84,8 @@
           "readyState": "READY",
           "url": "dashboard-j0ox4mwlx-franz-hemmers-projects.vercel.app"
         }
-      }
+      },
+      "repository_visibility": "public"
     },
     {
       "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
@@ -121,7 +123,8 @@
           "readyState": "READY",
           "url": "modern-web-stack-ixkxetb60-franz-hemmers-projects.vercel.app"
         }
-      }
+      },
+      "repository_visibility": "private"
     },
     {
       "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
@@ -150,7 +153,8 @@
           "readyState": "READY",
           "url": "set-it-free-loop-site-7tt9xhdsc-franz-hemmers-projects.vercel.app"
         }
-      }
+      },
+      "repository_visibility": "private"
     },
     {
       "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
@@ -189,7 +193,8 @@
           "readyState": "READY",
           "url": "33fa1ur95-8pszdupmk-franz-hemmers-projects.vercel.app"
         }
-      }
+      },
+      "repository_visibility": "public"
     }
   ],
   "details": [
@@ -802,5 +807,10 @@
       "final_origin_and_path": "https://poc.hemmer.us",
       "observed_at": "2026-10-06T23:54:31.373354+00:00"
     }
+  ],
+  "private_organization_hobby_blockers": [
+    "HemSoft/now-leadership-group",
+    "HemSoft/modern-web-stack-poc",
+    "HemSoft/set-it-free-loop-site"
   ]
 }

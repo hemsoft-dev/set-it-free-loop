@@ -46,11 +46,13 @@ before transfer, or purchase a seat. Verify effective access and the
 after transfer, and stop if an unexpected billing change appears.
 
 The [Vercel owner evidence](vercel-provider-evidence.json) records five linked
-projects in the existing Hobby workspace, including private
-[modern-web-stack-poc](https://vercel.com/franz-hemmers-projects/modern-web-stack-poc).
+projects in the existing Hobby workspace. Three connected source repositories
+are private: [now-leadership-group](https://vercel.com/franz-hemmers-projects/now-leadership-group),
+[set-it-free-loop-site](https://vercel.com/franz-hemmers-projects/set-it-free-loop-site),
+and [modern-web-stack-poc](https://vercel.com/franz-hemmers-projects/modern-web-stack-poc).
 This exceeds the four repository selections in the historical App snapshot.
 [Vercel's Hobby policy](https://vercel.com/docs/git#using-hobby-teams) blocks private
-organization Git deployments. Its plan or hosting treatment is a mandatory gate.
+organization Git deployments. Plan or hosting treatment for all three private projects is a mandatory gate.
 Project IDs, Git repository IDs, domains, variable names and deployment states
 are observed; credential validity remains pending. The owner Shared tab and API both show no
 shared variables in this workspace.
