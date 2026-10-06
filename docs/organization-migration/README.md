@@ -53,7 +53,7 @@ transfer; it does not authorize merging or deleting either repository.
 
 `state: observed` means a successful API response. `state: unverified` means
 the endpoint could not be inspected. An unverified 404 does not establish that
-an App, setting, or resource is absent. There are 133 unverified repository
+an App, setting, or resource is absent. There are 142 unverified repository
 endpoints in the initial capture:
 
 - All 67 repository App-installation lookups require different authentication
@@ -63,6 +63,9 @@ endpoints in the initial capture:
   or an appropriate App credential before cutover.
 - The private fhemmer repository's ruleset lookup returned 403. Verify its
   effective protection policy before transfer.
+- Nine branch-protection detail lookups returned 404 despite successful
+  protected-branch listings. Verify these effective protections before transfer;
+  the summary includes nested protection and ruleset-detail failures.
 - Pages lookups returned 404 for 65 repositories. Two Pages configurations were
   observed: reports uses a workflow build; summarist uses `gh-pages`. Neither
   reported a custom domain. Treat unresolved Pages lookups as unverified.
@@ -81,9 +84,8 @@ owner, affected URL/reference, credential source, cutover action, smoke test,
 and recovery action. Keep credentials and sensitive callback paths outside Git.
 Do not treat an empty webhook list as proof of no external deployment.
 
-Organization creation requires a signed-in owner browser. The collaborative
-browser currently reaches GitHub's sign-in page; CLI authentication does not
-create a browser session. Use the
+Organization creation requires a signed-in owner browser. Franz is completing
+the signup himself using the
 [new organization flow](https://github.com/organizations/new), create
 `hemsoft-dev` if available, and retain the personal account. A signup CAPTCHA,
 MFA step, legal confirmation, or billing step must be completed by the owner.
@@ -136,10 +138,16 @@ python3 -B -m unittest discover -s deployment/tests -p test_org_migration.py -v
 ```
 
 The first command must return `HemSoft`. Collection uses only GET requests and
-requires successful, paginated enumeration of both owners. It checks for a
+requires a classic/OAuth credential with full `repo` scope and active HemSoft
+ownership of fhemmer. Repository-limited credentials are rejected. The collector
+also rejects omission of any ID from an existing output snapshot; reconcile
+legitimate source changes explicitly rather than overwriting that baseline.
+See GitHub's [OAuth scope definitions](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/scopes-for-oauth-apps).
+It requires successful, paginated enumeration of both owners and checks for a
 changed source population before writing the snapshot. Offline validation
-rejects duplicate IDs, case-insensitive destination collisions, and unexpected
-owners. A passing structural check does not mean inaccessible settings are
+rejects duplicate IDs, case-insensitive destination collisions, invalid logins,
+unexpected owners, and destination names outside the exact collision mapping.
+A passing structural check does not mean inaccessible settings are
 verified or that the destination exists. The CI workflow performs only offline
 validation and does not receive administrative credentials.
 

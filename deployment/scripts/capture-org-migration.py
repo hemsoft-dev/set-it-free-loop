@@ -50,6 +50,39 @@ def source_repositories():
     return sorted(repos, key=lambda repo: repo['full_name'].lower())
 
 
+def verify_source_access():
+    """Repository-limited tokens cannot establish a complete owner inventory."""
+    response = subprocess.run(['gh', 'api', '--method', 'GET', '--include', 'user'],
+                              capture_output=True, text=True, timeout=90)
+    match = re.search(r'^x-oauth-scopes:\s*([^\r\n]*)', response.stdout, re.I | re.M)
+    scopes = {scope.strip() for scope in match[1].split(',')} if match else set()
+    if response.returncode or 'repo' not in scopes:
+        raise RuntimeError('Complete discovery requires a classic/OAuth credential with repo scope')
+    membership = api('orgs/fhemmer/memberships/HemSoft')
+    data = membership.get('data', {})
+    if membership['state'] != 'observed' or data.get('state') != 'active' or data.get('role') != 'admin':
+        raise RuntimeError('Complete discovery requires active HemSoft ownership of fhemmer')
+    return {'credential': 'classic/OAuth', 'repo_scope': True, 'fhemmer_owner': True}
+
+
+def reconcile_population(repos, previous):
+    expected_ids = {repo['id'] for repo in previous['repositories']}
+    if not expected_ids.issubset({repo['id'] for repo in repos}):
+        raise RuntimeError('Source enumeration omits previously recorded IDs; reconcile before replacing inventory')
+
+
+def unverified_count(value):
+    if isinstance(value, dict):
+        return int(value.get('state') == 'unverified') + sum(unverified_count(item) for item in value.values())
+    if isinstance(value, list):
+        return sum(unverified_count(item) for item in value)
+    return 0
+
+
+def valid_login(value):
+    return bool(re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?', value)) and '--' not in value
+
+
 def capture_repo(repo, destination):
     name = repo['full_name']
     prefix = 'repos/' + name
@@ -104,6 +137,8 @@ def capture_repo(repo, destination):
 
 
 def validate(snapshot):
+    if not valid_login(snapshot['destination_login']):
+        raise ValueError('Invalid destination login')
     repositories = snapshot['repositories']
     ids = [repo['id'] for repo in repositories]
     targets = [repo['destination'].lower() for repo in repositories]
@@ -118,11 +153,14 @@ def validate(snapshot):
             raise ValueError('Out-of-scope source')
         if repo['destination'].split('/')[0] != snapshot['destination_login']:
             raise ValueError('Destination owner mismatch')
+        expected = snapshot['destination_login'] + '/' + COLLISION_NAMES.get(
+            repo['full_name'], repo['full_name'].split('/')[1])
+        if repo['destination'] != expected:
+            raise ValueError('Destination name does not match the reviewed mapping')
     return {'repositories': len(repositories),
             'private': sum(repo['private'] for repo in repositories),
             'archived': sum(repo['archived'] for repo in repositories),
-            'unverified_endpoints': sum(result['state'] != 'observed'
-                for repo in repositories for result in repo['settings'].values())}
+            'unverified_endpoints': sum(unverified_count(repo['settings']) for repo in repositories)}
 
 
 def main():
@@ -135,12 +173,15 @@ def main():
     if args.check:
         print(json.dumps(validate(json.loads(args.check.read_text())), indent=2))
         return
-    if not re.fullmatch(r'[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?', args.destination):
+    if not valid_login(args.destination):
         parser.error('Invalid destination login')
     identity = api('user')
     if identity['state'] != 'observed' or identity['data'].get('login') != 'HemSoft':
         raise RuntimeError('Authenticate as HemSoft before discovery')
+    source_access = verify_source_access()
     repos = source_repositories()
+    if args.output.exists():
+        reconcile_population(repos, json.loads(args.output.read_text()))
     organization = project(api('orgs/' + args.destination),
         lambda value: select(value, ('id', 'login', 'type', 'plan', 'default_repository_permission',
                                     'members_can_create_repositories', 'two_factor_requirement_enabled')))
@@ -148,6 +189,7 @@ def main():
         'schema_version': 1,
         'captured_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'requester': 'HemSoft', 'source_owners': list(SOURCE_OWNERS),
+        'source_access': source_access,
         'source_personal_plan': identity['data'].get('plan', {}).get('name'),
         'destination_login': args.destination,
         'destination_organization': organization,

@@ -70,6 +70,58 @@ class MigrationTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 capture.validate(snapshot)
 
+    def test_reject_destination_name_typo_and_wrong_collision_rename(self):
+        for index in (0, 1):
+            snapshot = self.snapshot()
+            snapshot['repositories'][index]['destination'] = 'hemsoft-dev/not-the-source-name'
+            with self.assertRaisesRegex(ValueError, 'reviewed mapping'):
+                capture.validate(snapshot)
+
+    def test_count_nested_protection_and_ruleset_failures(self):
+        snapshot = self.snapshot()
+        snapshot['repositories'][0]['settings'] = {
+            'protected_branches': {'state': 'observed', 'data': [
+                {'name': 'main', 'protection': {'state': 'unverified', 'http_status': 404}}]},
+            'rulesets': {'state': 'observed', 'data': [
+                {'id': 1, 'details': {'state': 'unverified', 'http_status': 403}}]},
+        }
+        self.assertEqual(capture.validate(snapshot)['unverified_endpoints'], 3)
+
+    def test_reject_invalid_destination_logins(self):
+        for login in ('hemsoft--dev', '-hemsoft', 'hemsoft-', 'x' * 40):
+            snapshot = self.snapshot()
+            snapshot['destination_login'] = login
+            with self.assertRaisesRegex(ValueError, 'Invalid destination login'):
+                capture.validate(snapshot)
+        for login in ('hemsoft-dev', 'HemSoft', 'x', 'x' * 39):
+            self.assertTrue(capture.valid_login(login))
+
+    def test_reject_repository_limited_credentials(self):
+        for headers in ('HTTP/2.0 200 OK\n\n{}', 'HTTP/2.0 200 OK\nX-OAuth-Scopes: public_repo\n\n{}'):
+            response = subprocess.CompletedProcess([], 0, headers, '')
+            with patch.object(capture.subprocess, 'run', return_value=response):
+                with self.assertRaisesRegex(RuntimeError, 'repo scope'):
+                    capture.verify_source_access()
+
+    def test_require_active_source_org_ownership(self):
+        response = subprocess.CompletedProcess([], 0, 'HTTP/2.0 200 OK\nX-OAuth-Scopes: repo, read:org\n\n{}', '')
+        for membership in ({'state': 'observed', 'data': {'state': 'active', 'role': 'member'}},
+                           {'state': 'unverified', 'http_status': 403}):
+            with patch.object(capture.subprocess, 'run', return_value=response), \
+                 patch.object(capture, 'api', return_value=membership):
+                with self.assertRaisesRegex(RuntimeError, 'ownership'):
+                    capture.verify_source_access()
+        with patch.object(capture.subprocess, 'run', return_value=response), \
+             patch.object(capture, 'api', return_value={'state': 'observed', 'data': {
+                 'state': 'active', 'role': 'admin', 'organization': {}}}):
+            self.assertTrue(capture.verify_source_access()['fhemmer_owner'])
+
+    def test_reconcile_against_existing_population(self):
+        previous = self.snapshot()
+        with self.assertRaisesRegex(RuntimeError, 'previously recorded IDs'):
+            capture.reconcile_population([{'id': 1}], previous)
+        capture.reconcile_population([{'id': 1}, {'id': 2}, {'id': 3}], previous)
+
     def test_collection_pagination_and_get_only(self):
         response = subprocess.CompletedProcess([], 0, json.dumps([[{'id': 1}], [{'id': 2}]]), '')
         with patch.object(capture.subprocess, 'run', return_value=response) as run:
