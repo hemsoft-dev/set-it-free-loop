@@ -13,6 +13,7 @@ param(
     [string] $ReleaseVersion,
     [string] $BuildDate,
     [string] $GitHubCliPath,
+    [string] $Repository,
     [switch] $NoInstall
 )
 

@@ -22,7 +22,7 @@
     },
     "source": {
       "type": "string",
-      "description": "The source repository in org/repo format.",
+      "description": "The selected canonical source repository: legacy HemSoft/set-it-free-loop or hemsoft-dev/set-it-free-loop during cutover.",
       "default": "HemSoft/set-it-free-loop"
     },
     "sourceSha": {

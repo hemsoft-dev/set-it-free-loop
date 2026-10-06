@@ -7,6 +7,8 @@ param(
     [string] $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath,
     [string] $OutputDirectory = (Join-Path $RepositoryRoot 'dist'),
     [string] $Version,
+    [ValidateSet('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop')]
+    [string] $SourceRepository = 'HemSoft/set-it-free-loop',
     [string] $BuildDate = (Get-Date -Format 'yyyy-MM-dd')
 )
 
@@ -73,7 +75,7 @@ try {
             $env:GOOS = $target.OS
             $artifactName = "gh-sfl_${Version}_$($target.OS)_amd64$($target.Suffix)"
             $artifactPath = Join-Path $OutputDirectory $artifactName
-            go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$Version -X main.buildDate=$BuildDate" -o $artifactPath .
+            go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$Version -X main.buildDate=$BuildDate -X main.motherRepoOwner=$($SourceRepository.Split('/')[0])" -o $artifactPath .
             if ($LASTEXITCODE -ne 0) {
                 throw "go build for $($target.OS)/amd64 failed with exit code $LASTEXITCODE"
             }

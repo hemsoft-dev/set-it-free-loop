@@ -196,8 +196,9 @@ function Assert-SflGitHubAppInstallation {
     if ($repositorySelection -notin @('selected', 'all')) {
         $problems.Add("installation repository selection '$repositorySelection' is invalid")
     }
-    if ([string](Get-SflObjectPropertyValue -Object $Installation -Name 'target_type') -cne 'User') {
-        $problems.Add('installation target type is not User')
+    $expectedType = if ($ExpectedOwner -ieq 'hemsoft-dev') { 'Organization' } else { 'User' }
+    if ([string](Get-SflObjectPropertyValue -Object $Installation -Name 'target_type') -cne $expectedType) {
+        $problems.Add("installation target type is not $expectedType")
     }
 
     $account = Get-SflObjectPropertyValue -Object $Installation -Name 'account'

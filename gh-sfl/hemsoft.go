@@ -386,7 +386,7 @@ func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo, defaultBran
 	if strings.TrimSpace(defaultBranch) == "" {
 		return "", fmt.Errorf("preparing the SFL Codex observer for %s: target default branch is empty", targetRepo)
 	}
-	sourceRef := "HemSoft/set-it-free-loop/" + sourceWorkflowPath(workflow) + "@" + sourceSHA
+	sourceRef := motherRepoOwner + "/" + motherRepoName + "/" + sourceWorkflowPath(workflow) + "@" + sourceSHA
 	content = strings.Replace(content, reviewerSourcePlaceholder, "# Source: "+sourceRef, 1)
 	escapedBranch := strings.ReplaceAll(defaultBranch, "'", "''")
 	content = strings.Replace(content, reviewerPushBranchPlaceholder, "    branches: ['"+escapedBranch+"']", 1)

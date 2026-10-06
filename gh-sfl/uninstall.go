@@ -86,6 +86,10 @@ func runUninstall(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("uninstall requires --force to confirm")
 	}
 
+	if err := requireOrganizationAdmin(owner, repo); err != nil {
+		return err
+	}
+
 	// Get the default branch
 	defaultBranch, err := getDefaultBranch(owner, repo)
 	if err != nil {

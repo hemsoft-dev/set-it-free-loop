@@ -15,6 +15,8 @@ param(
     [string] $ReleaseVersion,
     [string] $BuildDate = (Get-Date -Format 'yyyy-MM-dd'),
     [string] $GitHubCliPath = 'gh',
+    [ValidateSet('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop')]
+    [string] $Repository = 'HemSoft/set-it-free-loop',
     [switch] $NoInstall
 )
 
@@ -62,7 +64,7 @@ if (-not [string]::IsNullOrWhiteSpace($ReleaseVersion)) {
 
     $tag = "v$ReleaseVersion"
     $LASTEXITCODE = 0
-    & $GitHubCliPath release download $tag --repo HemSoft/set-it-free-loop --pattern $artifactName `
+    & $GitHubCliPath release download $tag --repo $Repository --pattern $artifactName `
         --pattern SHA256SUMS --dir $WorkDir --clobber
     $downloadSucceeded = $?
     $downloadExitCode = $LASTEXITCODE
@@ -128,7 +130,7 @@ else {
         if ($LASTEXITCODE -ne 0) { throw "go vet failed with exit code $LASTEXITCODE" }
         go test -count=1 ./...
         if ($LASTEXITCODE -ne 0) { throw "go test failed with exit code $LASTEXITCODE" }
-        go build -trimpath -buildvcs=false -ldflags "-X main.version=$Version -X main.buildDate=$BuildDate" -o $outputPath .
+        go build -trimpath -buildvcs=false -ldflags "-X main.version=$Version -X main.buildDate=$BuildDate -X main.motherRepoOwner=$($Repository.Split('/')[0])" -o $outputPath .
         if ($LASTEXITCODE -ne 0) { throw "go build failed with exit code $LASTEXITCODE" }
     }
     finally {

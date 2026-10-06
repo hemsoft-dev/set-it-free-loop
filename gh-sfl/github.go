@@ -150,8 +150,11 @@ func parseReviewTarget(repoFlag string) (string, string, error) {
 }
 
 func validateDeploymentTarget(owner, repo string) error {
-	if !strings.EqualFold(owner, "HemSoft") {
+	if !allowedTargetOwner(owner) {
 		return fmt.Errorf("%s/%s is outside the HemSoft repository scope", owner, repo)
+	}
+	if !validRepositoryName(repo) {
+		return fmt.Errorf("invalid repository name %q", repo)
 	}
 	if strings.EqualFold(repo, motherRepoName) {
 		return fmt.Errorf("%s/%s is protected and cannot be targeted by SFL deployment operations", owner, repo)
@@ -160,19 +163,93 @@ func validateDeploymentTarget(owner, repo string) error {
 }
 
 func validateHemSoftTarget(owner, repo string) error {
-	if !strings.EqualFold(owner, "HemSoft") {
+	if !allowedTargetOwner(owner) {
 		return fmt.Errorf("%s/%s is outside the HemSoft repository scope", owner, repo)
+	}
+	if !validRepositoryName(repo) {
+		return fmt.Errorf("invalid repository name %q", repo)
 	}
 	loginOut, loginErr, err := ghExec("api", "user", "--jq", ".login")
 	if err != nil {
 		return fmt.Errorf("checking GitHub CLI identity: %s: %w", loginErr.String(), err)
 	}
 	login := strings.TrimSpace(loginOut.String())
-	if !strings.EqualFold(login, "HemSoft") {
+	if strings.EqualFold(owner, "HemSoft") && !strings.EqualFold(login, "HemSoft") {
 		return fmt.Errorf("GitHub CLI must be authenticated as HemSoft; active login is %q", login)
+	}
+	if strings.EqualFold(owner, organizationOwner) {
+		return requireRepositoryPermission(owner, repo, login, false)
 	}
 
 	return nil
+}
+
+const organizationOwner = "hemsoft-dev"
+
+func validRepositoryName(repo string) bool {
+	if repo == "" || repo == "." || repo == ".." {
+		return false
+	}
+	return strings.IndexFunc(repo, func(r rune) bool {
+		return !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.')
+	}) == -1
+}
+
+func allowedTargetOwner(owner string) bool {
+	return strings.EqualFold(owner, "HemSoft") || strings.EqualFold(owner, organizationOwner)
+}
+
+func configureSourceRepository() error {
+	source := os.Getenv("SFL_SOURCE_REPOSITORY")
+	if source == "" {
+		if !allowedTargetOwner(motherRepoOwner) {
+			return fmt.Errorf("unsupported built-in SFL source owner %q", motherRepoOwner)
+		}
+		return nil
+	}
+	parts := strings.Split(source, "/")
+	if len(parts) != 2 || !allowedTargetOwner(parts[0]) || parts[1] != motherRepoName {
+		return fmt.Errorf("SFL_SOURCE_REPOSITORY must be HemSoft/%s or %s/%s", motherRepoName, organizationOwner, motherRepoName)
+	}
+	motherRepoOwner = parts[0]
+	return nil
+}
+
+func requireRepositoryPermission(owner, repo, login string, admin bool) error {
+	if login == "" || strings.ContainsAny(login, "/?# \r\n") {
+		return fmt.Errorf("invalid authenticated GitHub login")
+	}
+	endpoint := fmt.Sprintf("repos/%s/%s/collaborators/%s/permission", owner, repo, login)
+	stdout, _, err := ghExec("api", "--method", "GET", endpoint)
+	if err != nil {
+		return fmt.Errorf("cannot verify repository permissions for %s on %s/%s", login, owner, repo)
+	}
+	var permission struct {
+		Permission string `json:"permission"`
+		User       struct {
+			Login string `json:"login"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &permission); err != nil || !strings.EqualFold(permission.User.Login, login) {
+		return fmt.Errorf("invalid repository permission response for %s", login)
+	}
+	allowed := permission.Permission == "admin" || (!admin && (permission.Permission == "write" || permission.Permission == "maintain"))
+	if !allowed {
+		return fmt.Errorf("%s needs %s access to %s/%s", login, map[bool]string{true: "admin", false: "write or higher"}[admin], owner, repo)
+	}
+	return nil
+}
+
+// Administrative operations must fail before changing organization gates.
+func requireOrganizationAdmin(owner, repo string) error {
+	if !strings.EqualFold(owner, organizationOwner) {
+		return nil
+	}
+	login, _, err := ghExec("api", "user", "--jq", ".login")
+	if err != nil {
+		return fmt.Errorf("cannot verify GitHub identity for administrative operation")
+	}
+	return requireRepositoryPermission(owner, repo, strings.TrimSpace(login.String()), true)
 }
 
 // ensureRepoVariable creates or updates a repository Actions variable.

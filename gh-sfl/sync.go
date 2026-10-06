@@ -163,6 +163,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	// Update manifest
 	manifest.Version = release.Version
+	manifest.MotherRepo = motherRepoOwner + "/" + motherRepoName
 	manifest.SourceSHA = latestSHA
 	manifest.DeployedAt = deployedAt
 	manifest.DeployedBy = deployedBy

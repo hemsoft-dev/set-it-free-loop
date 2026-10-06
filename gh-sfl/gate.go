@@ -33,6 +33,9 @@ func runGate(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if err := requireOrganizationAdmin(owner, repo); err != nil {
+		return err
+	}
 	client, err := newRESTClient()
 	if err != nil {
 		return fmt.Errorf("creating GitHub REST client: %w", err)

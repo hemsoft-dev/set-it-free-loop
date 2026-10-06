@@ -11,20 +11,17 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-if ($Repository -ne 'HemSoft/set-it-free-loop') {
+if ($Repository -notin @('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop')) {
     throw "Release protection is restricted to HemSoft/set-it-free-loop, got $Repository."
 }
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw 'GitHub CLI is required to configure release protection.'
 }
 
-$login = (& gh api user --jq .login).Trim()
-if ($LASTEXITCODE -ne 0 -or $login -ne 'HemSoft') {
-    throw "Active GitHub CLI identity must be HemSoft, got '$login'."
-}
-$repositoryState = & gh api "repos/$Repository" | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or -not $repositoryState.private -or $repositoryState.owner.login -ne 'HemSoft') {
-    throw 'Release protection requires the private HemSoft repository.'
+Import-Module (Join-Path $PSScriptRoot 'SflRepositoryPolicy.psm1') -Force
+$context = Get-SflRepositoryContext -Repository $Repository -Access admin -AllowSource
+if (-not $context.Metadata.private) {
+    throw 'Release protection requires the private SFL source repository.'
 }
 
 $immutableState = & gh api "repos/$Repository/immutable-releases" | ConvertFrom-Json

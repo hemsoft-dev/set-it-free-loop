@@ -38,7 +38,7 @@ if ([bool] $release.distribution.prerelease -ne $isPrerelease) {
 if ($RequirePrerelease -and -not $isPrerelease) {
     $failures.Add("Release workflow only publishes prereleases, but '$version' is stable.")
 }
-if ($release.distribution.repository -ne 'HemSoft/set-it-free-loop' -or
+if ($release.distribution.repository -notin @('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop') -or
     $release.distribution.visibility -ne 'private') {
     $failures.Add('Release distribution identity is not the private HemSoft repository.')
 }
@@ -53,7 +53,7 @@ if ($release.schemaVersion -ne 2 -or
     $release.reviewerRuntime.requiredGate.appId -ne 15368) {
     $failures.Add('Subscription-backed Codex reviewer identity is incomplete or inconsistent.')
 }
-if ($release.cliSource.repository -ne 'HemSoft/set-it-free-loop' -or
+if ($release.cliSource.repository -ne $release.distribution.repository -or
     $release.cliSource.path -ne 'gh-sfl' -or
     $release.cliSource.module -ne 'github.com/HemSoft/set-it-free-loop/gh-sfl' -or
     $release.cliSource.buildScript -ne 'deployment/scripts/install-gh-sfl-hemsoft.ps1') {
@@ -186,7 +186,7 @@ try {
     Push-Location $fixtureRoot
     try {
         & (Join-Path $repoRoot 'deployment\scripts\build-release-artifacts.ps1') `
-            -Version '9.8.7-rc.2' -BuildDate '2026-08-13' `
+            -Version '9.8.7-rc.2' -BuildDate '2026-08-13' -SourceRepository 'hemsoft-dev/set-it-free-loop' `
             -OutputDirectory $relativeOutputName -RepositoryRoot $repoRoot | Out-Null
     }
     finally {

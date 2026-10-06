@@ -130,6 +130,17 @@ Assert-SflGitHubAppInstallation `
     -ExpectedClientId 'Iv1.testclient' `
     -ExpectedOwner 'HemSoft'
 
+$organizationInstallation = Get-HealthyInstallation
+$organizationInstallation.account.login = 'hemsoft-dev'
+$organizationInstallation.target_type = 'Organization'
+Assert-SflGitHubAppInstallation -Installation $organizationInstallation -Repository 'hemsoft-dev/example' `
+    -ExpectedAppId '123456' -ExpectedClientId 'Iv1.testclient' -ExpectedOwner 'hemsoft-dev'
+$organizationInstallation.target_type = 'User'
+Assert-Throw {
+    Assert-SflGitHubAppInstallation -Installation $organizationInstallation -Repository 'hemsoft-dev/example' `
+        -ExpectedAppId '123456' -ExpectedClientId 'Iv1.testclient' -ExpectedOwner 'hemsoft-dev'
+} 'target type' 'Organization installation target mismatch'
+
 $allRepositories = Get-HealthyInstallation
 $allRepositories.repository_selection = 'all'
 Assert-SflGitHubAppInstallation `
@@ -185,8 +196,11 @@ try {
         if ($call -eq 'api user --jq .login') {
             return 'HemSoft'
         }
-        if ($call -match '^repo view HemSoft/example ') {
-            return '{"nameWithOwner":"HemSoft/example","owner":{"login":"HemSoft"},"visibility":"PUBLIC"}'
+        if ($call -eq 'api --method GET repos/HemSoft/example') {
+            return '{"full_name":"HemSoft/example","owner":{"login":"HemSoft"}}'
+        }
+        if ($call -eq 'api --method GET repos/HemSoft/example/collaborators/HemSoft/permission') {
+            return '{"permission":"admin","user":{"login":"HemSoft"}}'
         }
         return ''
     }
@@ -214,6 +228,78 @@ try {
 
     $mutationCalls = @($scriptGhCalls | Where-Object { $_ -match '^(variable|secret) set ' })
     Assert-Equal $mutationCalls.Count 0 'Mutation count after failed App preflight'
+
+
+    # Exercise organization setup and precedence with real script control flow.
+    function global:Invoke-RestMethod {
+        param([string] $Method, [string] $Uri, [hashtable] $Headers)
+        if ($Method -ne 'Get' -or $Headers.Authorization -notmatch '^Bearer [^.]+\.[^.]+\.[^.]+$') {
+            throw 'Expected authenticated App GET.'
+        }
+        if ($Uri -eq 'https://api.github.com/app') { return Get-HealthyIdentity }
+        if ($Uri -eq 'https://api.github.com/repos/hemsoft-dev/example/installation') {
+            $installation = Get-HealthyInstallation
+            $installation.account.login = 'hemsoft-dev'
+            $installation.target_type = 'Organization'
+            return $installation
+        }
+        throw "Unexpected App API URI: $Uri"
+    }
+    function global:gh {
+        $call = $args -join ' '
+        $scriptGhCalls.Add($call)
+        $global:LASTEXITCODE = 0
+        switch ($call) {
+            'api user --jq .login' { return 'HemSoft' }
+            'api --method GET repos/hemsoft-dev/example' { return '{"full_name":"hemsoft-dev/example","owner":{"login":"hemsoft-dev"}}' }
+            'api --method GET repos/hemsoft-dev/example/collaborators/HemSoft/permission' { return '{"permission":"admin","user":{"login":"HemSoft"}}' }
+            'api --method GET orgs/hemsoft-dev/memberships/HemSoft' {
+                if ($global:sflBootstrapTestCase -eq 'member') { return '{"state":"active","role":"member"}' }
+                return '{"state":"active","role":"admin"}'
+            }
+            'api --method GET repos/hemsoft-dev/example/environments?per_page=100 --paginate --jq .environments[].name' { return 'production' }
+        }
+        if ($call -match '^(variable|secret) list ') {
+            if ($global:sflBootstrapTestCase -eq 'repository' -and $call -match '^variable list --repo hemsoft-dev/example --json') { return 'SFL_APP_ID' }
+            if ($global:sflBootstrapTestCase -eq 'environment' -and $call -match '^secret list --repo hemsoft-dev/example --env production') { return 'SFL_APP_PRIVATE_KEY' }
+            if ($global:sflBootstrapTestCase -eq 'shared' -and $call -match '^variable list --org') { return 'SFL_APP_CLIENT_ID' }
+            return ''
+        }
+        if ($call -match '^(variable|secret) set ') { return '' }
+        if ($call -match '^api --method GET orgs/hemsoft-dev/actions/(variables|secrets)/[^/]+/repositories') {
+            if ($global:sflBootstrapTestCase -eq 'coverage') { return 'hemsoft-dev/wrong' }
+            return 'hemsoft-dev/example'
+        }
+        throw "Unexpected gh call: $call"
+    }
+    $parameters = @{
+        Repos = 'hemsoft-dev/example'; AppId = '123456'; ClientId = 'Iv1.testclient'
+        PrivateKeyPath = $scriptPrivateKeyPath; ExpectedOwner = 'hemsoft-dev'
+        ExpectedAppOwner = 'HemSoft'; CredentialScope = 'organization'
+    }
+    foreach ($case in @(
+        @{ Name = 'member'; Pattern = 'organization owner' },
+        @{ Name = 'repository'; Pattern = 'Repository credential overrides' },
+        @{ Name = 'environment'; Pattern = 'Environment credential overrides' },
+        @{ Name = 'shared'; Pattern = 'Existing organization SFL credentials' }
+    )) {
+        $global:sflBootstrapTestCase = $case.Name
+        $scriptGhCalls.Clear()
+        Assert-Throw { & $scriptPath @parameters } $case.Pattern "Organization $($case.Name) preflight"
+        Assert-Equal @($scriptGhCalls | Where-Object { $_ -match '^(variable|secret) set ' }).Count 0 "No writes on $($case.Name) denial"
+    }
+    $global:sflBootstrapTestCase = 'success'
+    $scriptGhCalls.Clear()
+    & $scriptPath @parameters
+    Assert-Equal @($scriptGhCalls | Where-Object { $_ -match '^(variable|secret) set ' }).Count 3 'Selected organization credential write count'
+    Assert-Equal @($scriptGhCalls | Where-Object { $_ -match '^secret set .*--visibility selected --repos example$' }).Count 1 'Private key uses selected repositories'
+    Assert-Equal @($scriptGhCalls | Where-Object { $_ -match '^api --method GET orgs/hemsoft-dev/actions/.*/repositories' }).Count 3 'All credential coverage verified'
+    $global:sflBootstrapTestCase = 'coverage'
+    Assert-Throw { & $scriptPath @parameters } 'coverage mismatch' 'Coverage post-write failure is visible'
+    $global:sflBootstrapTestCase = 'success'
+    $scriptGhCalls.Clear()
+    & $scriptPath @parameters -WhatIf
+    Assert-Equal @($scriptGhCalls | Where-Object { $_ -match '^(variable|secret) set ' }).Count 0 'WhatIf leaves credentials untouched'
 }
 finally {
     Remove-Item function:\global:gh -ErrorAction SilentlyContinue
@@ -221,6 +307,7 @@ finally {
     if (Test-Path -LiteralPath $scriptPrivateKeyPath) {
         Remove-Item -LiteralPath $scriptPrivateKeyPath -Force
     }
+    Remove-Variable -Name sflBootstrapTestCase -Scope Global -ErrorAction SilentlyContinue
     $scriptRsa.Dispose()
 }
 

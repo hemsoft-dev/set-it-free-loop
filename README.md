@@ -95,6 +95,9 @@ truth is the [`VERSION`](VERSION) file in this repo. The synchronized
 [`deployment/release-metadata.json`](deployment/release-metadata.json) records
 the HemSoft distribution version and native Codex reviewer identity.
 
+Organization deployment, selected App credentials, and the source cutover are
+documented in [docs/ORGANIZATION-DEPLOYMENT.md](docs/ORGANIZATION-DEPLOYMENT.md).
+
 ### Private release contract
 
 Releases are deliberately manual. A version change is prepared on a branch with
