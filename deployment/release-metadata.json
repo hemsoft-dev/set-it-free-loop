@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
-  "reviewedAt": "2026-08-18",
+  "reviewedAt": "2026-10-06",
   "distribution": {
     "repository": "HemSoft/set-it-free-loop",
-    "version": "2.1.0-rc.13",
+    "version": "2.1.0-rc.14",
     "visibility": "private",
-    "tag": "v2.1.0-rc.13",
+    "tag": "v2.1.0-rc.14",
     "prerelease": true
   },
   "reviewerRuntime": {
