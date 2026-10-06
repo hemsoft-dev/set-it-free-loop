@@ -296,3 +296,10 @@ python3 -B deployment/scripts/capture-org-migration.py --check docs/organization
 
 Do not update expected manifests or reseal merely to make a failing check pass.
 The reviewer must assess both the changed evidence and manifest in the PR.
+
+## Transfer and rollout work records
+
+Use the [per-repository integration ledger](integration-ledger.csv),
+[rollout matrix](rollout-matrix.json), and [operator sequence](ROLLOUT.md) to
+complete #138 and #139. Their pending entries are not new verified baseline
+evidence. The original snapshot and its integrity manifest remain unchanged.
