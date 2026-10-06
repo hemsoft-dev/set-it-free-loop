@@ -16,7 +16,7 @@ spec.loader.exec_module(capture)
 
 class MigrationTests(unittest.TestCase):
     def snapshot(self):
-        return {
+        snapshot = {
             'source_owners': ['HemSoft', 'fhemmer'], 'destination_login': 'hemsoft-dev',
             'expected_repository_ids': [1, 2],
             'repositories': [
@@ -29,6 +29,11 @@ class MigrationTests(unittest.TestCase):
                  'settings': {'app_installation': {'state': 'unverified', 'http_status': 404}}},
             ],
         }
+
+        for repo in snapshot['repositories']:
+            for field, data_type in capture.SETTING_TYPES.items():
+                repo['settings'].setdefault(field, {'state': 'observed', 'data': data_type()})
+        return snapshot
 
     def test_preserve_collision_and_visibility(self):
         result = capture.validate(self.snapshot())
@@ -86,6 +91,8 @@ class MigrationTests(unittest.TestCase):
             'plan': 'team', 'members': ['HemSoft'], 'teams': [],
             'actions': {'state': 'observed_in_owner_browser'}},
             'source_personal_apps': {'state': 'observed_in_owner_browser', 'expected_installation_ids': [10],
+                'expected_repository_selections': {'10': {'selection': 'selected',
+                    'repositories': [snapshot['repositories'][0]['full_name']]}},
                 'installations': [{'installation_id': 10, 'selection': 'selected',
                                   'repositories': [snapshot['repositories'][0]['full_name']]}]},
             'effective_branch_rules': [],
@@ -161,6 +168,38 @@ class MigrationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'requires a stored summary'):
                 capture.validate_bundle(root / 'inventory.json')
 
+    def test_reject_missing_or_malformed_repository_settings(self):
+        for field, data_type in capture.SETTING_TYPES.items():
+            for malformed in (None, {'state': 'observed'}, {'state': 'invalid'},
+                              {'state': 'observed', 'data': 'wrong-type'}):
+                snapshot = self.snapshot()
+                snapshot['repositories'][1]['settings'][field] = malformed
+                with self.assertRaises(ValueError):
+                    capture.validate(snapshot)
+            snapshot = self.snapshot()
+            del snapshot['repositories'][1]['settings'][field]
+            with self.assertRaisesRegex(ValueError, 'Missing captured repository setting'):
+                capture.validate(snapshot)
+        snapshot = self.snapshot()
+        snapshot['repositories'][1]['settings']['collaborators']['data'] = [{'login': 'fhemmerrelias'}]
+        with self.assertRaisesRegex(ValueError, 'Incomplete captured setting item'):
+            capture.validate(snapshot)
+
+    def test_reject_truncated_or_changed_selected_app_access(self):
+        snapshot, owner, runtime = self.bundle()
+        app = owner['source_personal_apps']['installations'][0]
+        app['repositories'].pop()
+        with self.assertRaisesRegex(ValueError, 'App repository selection'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+        snapshot, owner, runtime = self.bundle()
+        owner['source_personal_apps']['installations'][0].update(selection='all', repositories=[])
+        with self.assertRaisesRegex(ValueError, 'App repository selection'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+        snapshot, owner, runtime = self.bundle()
+        owner['source_personal_apps']['expected_repository_selections'] = {}
+        with self.assertRaisesRegex(ValueError, 'App selection manifest'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+
     def test_capture_custom_environment_patterns_with_encoded_name(self):
         repo = {'id': 1, 'name': 'repo', 'full_name': 'HemSoft/repo'}
         paths = []
@@ -208,12 +247,12 @@ class MigrationTests(unittest.TestCase):
 
     def test_count_nested_protection_and_ruleset_failures(self):
         snapshot = self.snapshot()
-        snapshot['repositories'][0]['settings'] = {
+        snapshot['repositories'][0]['settings'].update({
             'protected_branches': {'state': 'observed', 'data': [
                 {'name': 'main', 'protection': {'state': 'unverified', 'http_status': 404}}]},
             'rulesets': {'state': 'observed', 'data': [
                 {'id': 1, 'details': {'state': 'unverified', 'http_status': 403}}]},
-        }
+        })
         self.assertEqual(capture.validate(snapshot)['unverified_endpoints'], 3)
 
     def test_reject_invalid_destination_logins(self):

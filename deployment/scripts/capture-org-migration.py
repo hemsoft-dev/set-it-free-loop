@@ -11,6 +11,21 @@ import subprocess
 import urllib.parse
 
 SOURCE_OWNERS = ('HemSoft', 'fhemmer')
+SETTING_TYPES = {
+    'collaborators': list, 'teams': list, 'rulesets': list, 'protected_branches': list,
+    'workflows': list, 'actions_policy': dict, 'workflow_permissions': dict,
+    'secret_names': list, 'variable_names': list, 'environments': list,
+    'deploy_keys': list, 'webhooks': list, 'pages': dict, 'app_installation': dict,
+}
+SETTING_ITEM_KEYS = {
+    'collaborators': ('login', 'id', 'role_name', 'permissions'),
+    'teams': ('id', 'slug', 'permission'), 'rulesets': ('id', 'details'),
+    'protected_branches': ('name', 'protection'),
+    'workflows': ('id', 'name', 'path', 'state', 'html_url'),
+    'environments': ('id', 'name', 'protection_rules', 'deployment_branch_policy'),
+    'deploy_keys': ('id', 'title', 'read_only', 'verified'),
+    'webhooks': ('id', 'active', 'events', 'delivery_host'),
+}
 COLLISION_NAMES = {'fhemmer/hs-cli-confluence-search': 'hs-cli-confluence-search-fhemmer'}
 
 
@@ -142,6 +157,44 @@ def capture_repo(repo, destination):
     return record
 
 
+def validate_result(result, data_type):
+    if not isinstance(result, dict) or result.get('state') not in ('observed', 'unverified'):
+        raise ValueError('Invalid captured setting result')
+    if result['state'] == 'observed':
+        if not isinstance(result.get('data'), data_type):
+            raise ValueError('Invalid captured setting payload')
+    elif 'data' in result or (result.get('http_status') is not None and
+                             type(result['http_status']) is not int):
+        raise ValueError('Invalid unverified setting result')
+
+
+def validate_settings(settings):
+    if not isinstance(settings, dict) or not set(SETTING_TYPES).issubset(settings):
+        raise ValueError('Missing captured repository setting')
+    for field, data_type in SETTING_TYPES.items():
+        result = settings[field]
+        validate_result(result, data_type)
+        if result['state'] != 'observed':
+            continue
+        if field in ('secret_names', 'variable_names'):
+            names = result['data']
+            if any(not isinstance(name, str) for name in names) or len(names) != len(set(names)):
+                raise ValueError('Repository credentials must contain unique names only')
+        for item in result['data'] if field in SETTING_ITEM_KEYS else []:
+            if not isinstance(item, dict) or not set(SETTING_ITEM_KEYS[field]).issubset(item):
+                raise ValueError('Incomplete captured setting item')
+            if field == 'rulesets':
+                validate_result(item['details'], dict)
+            elif field == 'protected_branches':
+                validate_result(item['protection'], dict)
+            elif field == 'environments' and (item['deployment_branch_policy'] or {}).get('custom_branch_policies'):
+                validate_result(item.get('deployment_branch_patterns'), list)
+                if item['deployment_branch_patterns']['state'] == 'observed':
+                    for pattern in item['deployment_branch_patterns']['data']:
+                        if not isinstance(pattern, dict) or not {'id', 'name', 'type'}.issubset(pattern):
+                            raise ValueError('Incomplete environment branch pattern')
+
+
 def validate(snapshot, require_summary=False):
     if not valid_login(snapshot['destination_login']):
         raise ValueError('Invalid destination login')
@@ -158,6 +211,7 @@ def validate(snapshot, require_summary=False):
     if {repo['full_name'].split('/')[0] for repo in repositories} != set(SOURCE_OWNERS):
         raise ValueError('Repository population does not cover both source owners')
     for repo in repositories:
+        validate_settings(repo['settings'])
         if repo['full_name'].split('/')[0] not in SOURCE_OWNERS:
             raise ValueError('Out-of-scope source')
         if repo['destination'].split('/')[0] != snapshot['destination_login']:
@@ -228,10 +282,19 @@ def validate_supplemental(snapshot, owner, runtime):
     if len(ids) != len(set(ids)) or len(expected) != len(set(expected)) or set(ids) != set(expected):
         raise ValueError('Supplemental App identity mismatch')
     personal = {name for name in sources if name.startswith('HemSoft/')}
+    selections = apps['expected_repository_selections']
+    if set(selections) != {str(item) for item in ids}:
+        raise ValueError('Supplemental App selection manifest mismatch')
     for app in apps['installations']:
         selected = app['repositories']
         if app['selection'] not in ('all', 'selected') or len(selected) != len(set(selected)) or not set(selected).issubset(personal):
             raise ValueError('Supplemental App repository selection mismatch')
+        expected = selections[str(app['installation_id'])]
+        names = expected['repositories']
+        if app['selection'] != expected['selection'] or len(names) != len(set(names)) or set(selected) != set(names):
+            raise ValueError('Supplemental App repository selection mismatch')
+        if app['selection'] == 'all' and selected:
+            raise ValueError('All-repository App selection must use the all marker')
     expected_rules = {(repo['full_name'], branch['name']) for repo in sources.values()
         for branch in repo['settings'].get('protected_branches', {}).get('data', [])
         if branch['protection']['state'] == 'unverified'}

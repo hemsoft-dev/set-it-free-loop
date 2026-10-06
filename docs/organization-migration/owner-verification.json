@@ -206,7 +206,121 @@
       149420600,
       150383874,
       151797116
-    ]
+    ],
+    "expected_repository_selections": {
+      "51466296": {
+        "selection": "all",
+        "repositories": []
+      },
+      "139881351": {
+        "selection": "all",
+        "repositories": []
+      },
+      "146036666": {
+        "selection": "all",
+        "repositories": []
+      },
+      "149420600": {
+        "selection": "all",
+        "repositories": []
+      },
+      "129542494": {
+        "selection": "all",
+        "repositories": []
+      },
+      "127700287": {
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/codexbar"
+        ]
+      },
+      "151797116": {
+        "selection": "all",
+        "repositories": []
+      },
+      "111818344": {
+        "selection": "all",
+        "repositories": []
+      },
+      "150383874": {
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/ESO",
+          "HemSoft/PXWritStatus",
+          "HemSoft/PXInfoPanel",
+          "HemSoft/PXVendorMagic",
+          "HemSoft/PXContainerMagic",
+          "HemSoft/PXFriends",
+          "HemSoft/TCE-Admin",
+          "HemSoft/TimCoRetailManager",
+          "HemSoft/PeopleCare",
+          "HemSoft/Relias.Lms.Enrollment",
+          "HemSoft/NWMM",
+          "HemSoft/Egg-Inc-Tracker",
+          "HemSoft/HemChat",
+          "HemSoft/pe-bot",
+          "HemSoft/notes",
+          "HemSoft/dashcam",
+          "HemSoft/cli-tools",
+          "HemSoft/mcp-server-demo",
+          "HemSoft/weather-cli",
+          "HemSoft/n8n-workflows",
+          "HemSoft/rag-poc",
+          "HemSoft/tickdown",
+          "HemSoft/spam-removal-agent",
+          "HemSoft/summarist",
+          "HemSoft/neo4j-graphrag-poc",
+          "HemSoft/dashboard-tui",
+          "HemSoft/subtitle-translator",
+          "HemSoft/ms-agent-framework-demo",
+          "HemSoft/hemsoft-power-ai",
+          "HemSoft/advent-of-code-2025",
+          "HemSoft/modern-web-stack-poc",
+          "HemSoft/skills",
+          "HemSoft/dashboard",
+          "HemSoft/hs-landing-page",
+          "HemSoft/agents",
+          "HemSoft/7d2d-mods",
+          "HemSoft/prs",
+          "HemSoft/ai-conductor",
+          "HemSoft/github-cli-sdk-demo",
+          "HemSoft/hs-cli-template",
+          "HemSoft/hs-cli-prs",
+          "HemSoft/hs-cli-confluence-search",
+          "HemSoft/hs-conductor",
+          "HemSoft/public-skills",
+          "HemSoft/now-leadership-group",
+          "HemSoft/set-it-free-loop-site",
+          "HemSoft/set-it-free-loop",
+          "HemSoft/hs-buddy-vscode-extension",
+          "HemSoft/yahtzee",
+          "HemSoft/hs-buddy",
+          "HemSoft/gh-prx",
+          "HemSoft/hs-tui-launcher",
+          "HemSoft/gh-x",
+          "HemSoft/ralph-loops",
+          "HemSoft/hoarders-heaven",
+          "HemSoft/codexbar-ios",
+          "HemSoft/codexbar-mac",
+          "HemSoft/buddy-ios",
+          "HemSoft/yahtzee-bench",
+          "HemSoft/.github",
+          "HemSoft/minibot",
+          "HemSoft/reports",
+          "HemSoft/hs-pi-dashboard",
+          "HemSoft/hemsoft-bench"
+        ]
+      },
+      "100502814": {
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/dashboard",
+          "HemSoft/hs-landing-page",
+          "HemSoft/now-leadership-group",
+          "HemSoft/set-it-free-loop-site"
+        ]
+      }
+    }
   },
   "coverage_limits": [
     "Repository selection is App access, not proof of active service deployment.",

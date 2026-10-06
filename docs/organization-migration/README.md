@@ -269,3 +269,9 @@ deploy that reviewer. The later reviewer issues must define and prove the
 intended SFL-owned runtime before enforcing it; an external `@codex review`
 result alone is not SFL reviewer proof. Use connected Codex for review of this
 preflight PR under the current repository review policy.
+
+The offline check requires every captured repository settings section and its
+result structure. App access mode and selected repository sets are reconciled
+against `expected_repository_selections`, separately from installation IDs.
+Refresh that manifest from the owner-verified App selections during preflight;
+review changes to both records rather than regenerating it from a truncated list.
