@@ -137,12 +137,14 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("creating GitHub REST client: %w", err)
 	}
+	reviewRequester := ""
 	if strings.EqualFold(owner, "hemsoft-dev") {
 		login, _, err := ghExec("api", "user", "--jq", ".login")
 		if err != nil {
 			return fmt.Errorf("cannot establish review requester identity: %w", err)
 		}
-		allowed, err := authorizeReviewRequester(client, owner, repo, strings.TrimSpace(login.String()))
+		reviewRequester = strings.TrimSpace(login.String())
+		allowed, err := authorizeReviewRequester(client, owner, repo, reviewRequester)
 		if err != nil {
 			return err
 		}
@@ -336,6 +338,9 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("encoding Codex review request: %w", err)
 	}
 	var created reviewTriggerComment
+	if err := confirmOrganizationReviewRequester(client, owner, repo, reviewRequester); err != nil {
+		return err
+	}
 	if err := client.Post(
 		fmt.Sprintf("repos/%s/%s/issues/%d/comments", owner, repo, opts.pr),
 		payload,
@@ -742,6 +747,29 @@ func findConflictingCodexBaseRequest(
 
 var reviewRepositoryName = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 var reviewRequesterLogin = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}$`)
+
+func confirmOrganizationReviewRequester(client restAPI, owner, repo, expectedLogin string) error {
+	if !strings.EqualFold(owner, "hemsoft-dev") {
+		return nil
+	}
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := client.Get("user", &user); err != nil {
+		return fmt.Errorf("cannot revalidate review requester identity: %w", err)
+	}
+	if !strings.EqualFold(user.Login, expectedLogin) {
+		return fmt.Errorf("review requester identity changed before posting")
+	}
+	allowed, err := authorizeReviewRequester(client, owner, repo, expectedLogin)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return fmt.Errorf("review requester lost write permission before posting")
+	}
+	return nil
+}
 
 func authorizeReviewRequester(client restAPI, owner, repo, login string) (bool, error) {
 	if !strings.EqualFold(owner, "hemsoft-dev") {

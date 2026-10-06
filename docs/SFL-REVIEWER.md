@@ -169,8 +169,9 @@ comment must remain present and unedited, with the same head/base/context marker
 Existing Codex bot/App identity checks, same-repository default-branch scope,
 retry ordering, and durable head-status publication remain required. An edited,
 forged, or unregistered request cannot produce success. Pending invalidation
-runs are conservatively awaited regardless of which permitted member started
-them. No authorization decision relies on comment association labels.
+runs are awaited only after their request actor passes the same live permission
+check. Only request-shaped comments and matching registry creators are queried,
+so unrelated discussion does not consume the authorization budget. No authorization decision relies on comment association labels.
 
 A connected Codex account and repository installation remain runtime
 prerequisites. Organization ownership alone does not establish them. Record

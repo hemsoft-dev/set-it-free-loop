@@ -416,10 +416,10 @@ $authorizationTest = @'
 const assert = require("node:assert/strict");
 let owner = "hemsoft-dev";
 const repo = "consumer";
-let role = "write", responseUser = "member", fails = false, calls = 0;
+let role = "write", responseUser = "member", fails = false, failureStatus=500, calls = 0;
 const github = {rest:{repos:{getCollaboratorPermissionLevel: async ({username}) => {
   calls++;
-  if (fails) throw new Error("lookup failure");
+  if (fails) throw Object.assign(new Error("lookup failure"), {status:failureStatus});
   return {data:{permission:role,user:{login:responseUser}}};
 }}}};
 '@ + "`n" + $authorization[0].Groups[1].Value + "`n" + @'
@@ -434,6 +434,7 @@ const github = {rest:{repos:{getCollaboratorPermissionLevel: async ({username}) 
   await assert.rejects(requesterAllowed("member"), /identity mismatch/);
   responseUser="member"; fails=true;
   await assert.rejects(requesterAllowed("member"), /lookup failure/);
+  for (const status of [403,404]) { failureStatus=status; assert.equal(await requesterAllowed("member"),false); }
   fails=false;
   const before=calls;
   assert.equal(await requesterAllowed("github-actions[bot]"),false);
@@ -474,3 +475,45 @@ $registrationTest | node -
 if ($LASTEXITCODE -ne 0) { throw 'Registry creator/author binding fixtures failed.' }
 
 Write-Output 'Subscription-backed Codex reviewer contract tests passed.'
+
+# Exercise candidate-only lookups and live authorization of pending invalidations.
+$refreshHelper = [regex]::Match($canonical, '(?s)// BEGIN TESTABLE REQUESTER REFRESH\s*(.*?)\s*// END TESTABLE REQUESTER REFRESH')
+$activeHelper = [regex]::Match($canonical, '(?s)// BEGIN TESTABLE ACTIVE INVALIDATIONS\s*(.*?)\s*// END TESTABLE ACTIVE INVALIDATIONS')
+if (-not $refreshHelper.Success -or -not $activeHelper.Success) { throw 'Missing request selection helpers.' }
+$selectionTest = @'
+const assert = require("node:assert/strict");
+let requesterPermissions = new Map();
+const requestTargetPrefix = "https://github.com/hemsoft-dev/consumer/pull/42#issuecomment-";
+const headMarker = "<!-- sfl-codex-review:head=abc;base=";
+let calls=[];
+const requesterAllowed = async login => { calls.push(login); return login === "member"; };
+const owner="hemsoft-dev", repo="consumer", pullNumber=42;
+const context={runId:99};
+const runs=[
+ {id:1,event:"issue_comment",actor:{login:"outsider"}},
+ {id:2,event:"issue_comment",actor:{login:"member"}},
+ {id:3,event:"push"},
+ {id:99,event:"push"}
+];
+const github={rest:{actions:{listWorkflowRuns:{}}},paginate:async (_method,args) => args.status === "queued" ? runs : []};
+const isActiveInvalidationRun = () => true;
+'@ + "`n" + $refreshHelper.Groups[1].Value + "`n" + $activeHelper.Groups[1].Value + "`n" + @'
+(async () => {
+ const comments=[
+  {id:1,user:{login:"irrelevant"},body:"ordinary comment"},
+  {id:2,user:{login:"member"},body:"@codex review\n"+headMarker+"xyz; -->"},
+  {id:3,user:{login:"outsider"},body:"registered comment"}
+ ];
+ const statuses=[{context:"SFL Codex Review Request Registry",target_url:requestTargetPrefix+3,creator:{login:"forged"}}];
+ await refreshRequesterPermissions(comments,statuses);
+ assert.deepEqual(calls,["member","outsider"]);
+ assert.equal(requesterPermissions.get("member"),true);
+ assert.equal(requesterPermissions.get("outsider"),false);
+ assert.equal(requesterPermissions.has("forged"),false);
+ calls=[];
+ assert.deepEqual((await activeInvalidationRuns()).map(r=>r.id),[2,3]);
+ assert.deepEqual(calls,["outsider","member"]);
+})().catch(error => { console.error(error); process.exitCode=1; });
+'@
+$selectionTest | node -
+if ($LASTEXITCODE -ne 0) { throw 'Request candidate and invalidation authorization fixtures failed.' }

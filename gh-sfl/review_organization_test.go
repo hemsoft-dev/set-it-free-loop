@@ -8,12 +8,15 @@ import (
 
 type organizationReviewREST struct {
 	*reviewREST
-	role, author, responseUser string
-	lookupError                bool
-	permissionGets             int
+	role, author, responseUser, authenticatedUser string
+	lookupError                                   bool
+	permissionGets                                int
 }
 
 func (f *organizationReviewREST) Get(path string, response interface{}) error {
+	if path == "user" {
+		return decodeTestResponse(response, map[string]string{"login": f.authenticatedUser})
+	}
 	if strings.Contains(path, "/collaborators/") {
 		f.permissionGets++
 		if f.lookupError {
@@ -69,5 +72,23 @@ func TestOrganizationRequestRegistrationRequiresMatchingAuthorizedAuthor(t *test
 				t.Fatal("read-only authorization mutated the repository")
 			}
 		})
+	}
+}
+
+func TestOrganizationRequesterRevalidatedBeforePosting(t *testing.T) {
+	for _, tc := range []struct {
+		role, user string
+		denied     bool
+	}{
+		{"write", "member", false}, {"read", "member", true}, {"write", "other", true},
+	} {
+		rest := &organizationReviewREST{reviewREST: &reviewREST{}, role: tc.role, authenticatedUser: tc.user}
+		err := confirmOrganizationReviewRequester(rest, "hemsoft-dev", "consumer", "member")
+		if (err != nil) != tc.denied {
+			t.Fatalf("role %s user %s error %v", tc.role, tc.user, err)
+		}
+		if rest.posts != 0 || rest.statusPosts != 0 {
+			t.Fatal("authorization mutated repository")
+		}
 	}
 }

@@ -52,10 +52,16 @@ jobs:
                 return (login || "").toLowerCase() === owner.toLowerCase();
               }
               if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(login || "")) return false;
-              const response = await github.rest.repos.getCollaboratorPermissionLevel({
-                owner, repo, username: login,
-              });
-              const permission = response.data;
+              let permission;
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username: login,
+                });
+                permission = response.data;
+              } catch (error) {
+                if (error.status === 404 || error.status === 403) return false;
+                throw error;
+              }
               if (!permission.user ||
                   (permission.user.login || "").toLowerCase() !== login.toLowerCase()) {
                 throw new Error("Review requester permission identity mismatch");
@@ -290,8 +296,8 @@ jobs:
               if (!run || run.status === "completed") return false;
               if (run.event === "push") return true;
               if (run.event === "issue_comment") {
-                // Conservatively wait for any request invalidation on this PR;
-                // authorization is checked inside that workflow, not by owner login.
+                // Identify a request invalidation candidate for this PR;
+                // activeInvalidationRuns verifies the actor before waiting.
                 return Boolean(run.actor && run.actor.login) &&
                   run.display_title === `SFL Codex review request #${pullNumber}`;
               }
@@ -315,10 +321,16 @@ jobs:
                 return (login || "").toLowerCase() === owner.toLowerCase();
               }
               if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(login || "")) return false;
-              const response = await github.rest.repos.getCollaboratorPermissionLevel({
-                owner, repo, username: login,
-              });
-              const permission = response.data;
+              let permission;
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username: login,
+                });
+                permission = response.data;
+              } catch (error) {
+                if (error.status === 404 || error.status === 403) return false;
+                throw error;
+              }
               if (!permission.user ||
                   (permission.user.login || "").toLowerCase() !== login.toLowerCase()) {
                 throw new Error("Review requester permission identity mismatch");
@@ -448,11 +460,26 @@ jobs:
             }
             const artifactTime = Date.parse(artifact.created_at || artifact.submitted_at || "");
             let requesterPermissions = new Map();
+            // BEGIN TESTABLE REQUESTER REFRESH
             const refreshRequesterPermissions = async (comments, statuses) => {
+              const registrations = statuses.filter(status =>
+                status.context === "SFL Codex Review Request Registry" &&
+                (status.target_url || "").toLowerCase().startsWith(requestTargetPrefix));
+              const registeredIds = new Set(registrations.map(status =>
+                Number(status.target_url.toLowerCase().slice(requestTargetPrefix.length))));
+              const candidates = comments.filter(comment =>
+                registeredIds.has(comment.id) ||
+                ((comment.body || "").startsWith("@codex review") &&
+                 (comment.body || "").includes(headMarker)));
+              const matchingCreators = registrations.filter(status => {
+                const id = Number(status.target_url.toLowerCase().slice(requestTargetPrefix.length));
+                const comment = candidates.find(candidate => candidate.id === id);
+                return comment && ((comment.user && comment.user.login) || "").toLowerCase() ===
+                  ((status.creator && status.creator.login) || "").toLowerCase();
+              });
               const logins = new Set([
-                ...comments.map(comment => (comment.user && comment.user.login) || ""),
-                ...statuses.filter(status => status.context === "SFL Codex Review Request Registry")
-                  .map(status => (status.creator && status.creator.login) || ""),
+                ...candidates.map(comment => (comment.user && comment.user.login) || ""),
+                ...matchingCreators.map(status => (status.creator && status.creator.login) || ""),
               ]);
               const refreshed = new Map();
               for (const login of logins) {
@@ -460,6 +487,7 @@ jobs:
               }
               requesterPermissions = refreshed;
             };
+            // END TESTABLE REQUESTER REFRESH
             const isOwnerRequest = comment =>
               requesterPermissions.get(((comment.user && comment.user.login) || "").toLowerCase()) === true;
             const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
@@ -599,6 +627,7 @@ jobs:
                 core.info("This Codex review request already has a terminal SFL audit; verifying its required status");
               }
             }
+            // BEGIN TESTABLE ACTIVE INVALIDATIONS
             const activeInvalidationRuns = async () => {
               const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"];
               const events = ["pull_request_target", "push", "issue_comment"];
@@ -613,11 +642,20 @@ jobs:
                 },
                 response => response.data,
               )));
-              return pages.flat().filter(
+              const candidates = pages.flat().filter(
                 run => run.id !== context.runId && events.includes(run.event) &&
                   isActiveInvalidationRun(run, pullNumber, owner),
               );
+              const authorized = [];
+              for (const run of candidates) {
+                if (run.event !== "issue_comment" ||
+                    await requesterAllowed((run.actor && run.actor.login) || "")) {
+                  authorized.push(run);
+                }
+              }
+              return authorized;
             };
+            // END TESTABLE ACTIVE INVALIDATIONS
             const failForPendingInvalidation = async pendingRun => {
               if (!artifactBindsCurrentHead) {
                 core.info("The Codex artifact does not bind to the current head; it cannot complete the pending request");
