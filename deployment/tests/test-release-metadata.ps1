@@ -202,8 +202,8 @@ try {
     Push-Location $fixtureRoot
     try {
         & (Join-Path $repoRoot 'deployment\scripts\build-release-artifacts.ps1') `
-            -Version '9.8.7-rc.2' -BuildDate '2026-08-13' -SourceRepository 'hemsoft-dev/set-it-free-loop' `
-            -OutputDirectory $relativeOutputName -RepositoryRoot $repoRoot | Out-Null
+            $repoRoot $relativeOutputName '9.8.7-rc.2' '2026-08-13' `
+            -SourceRepository 'hemsoft-dev/set-it-free-loop' | Out-Null
     }
     finally {
         Pop-Location

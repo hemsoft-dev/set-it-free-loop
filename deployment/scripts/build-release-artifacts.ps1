@@ -7,9 +7,9 @@ param(
     [string] $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath,
     [string] $OutputDirectory = (Join-Path $RepositoryRoot 'dist'),
     [string] $Version,
+    [string] $BuildDate = (Get-Date -Format 'yyyy-MM-dd'),
     [ValidateSet('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop')]
-    [string] $SourceRepository = 'HemSoft/set-it-free-loop',
-    [string] $BuildDate = (Get-Date -Format 'yyyy-MM-dd')
+    [string] $SourceRepository = 'HemSoft/set-it-free-loop'
 )
 
 Set-StrictMode -Version Latest

@@ -215,14 +215,14 @@ func configureSourceRepository() error {
 	return nil
 }
 
-func requireRepositoryPermission(owner, repo, login string, admin bool) error {
+func repositoryPermission(owner, repo, login string) (string, error) {
 	if login == "" || strings.ContainsAny(login, "/?# \r\n") {
-		return fmt.Errorf("invalid authenticated GitHub login")
+		return "", fmt.Errorf("invalid authenticated GitHub login")
 	}
 	endpoint := fmt.Sprintf("repos/%s/%s/collaborators/%s/permission", owner, repo, login)
 	stdout, _, err := ghExec("api", "--method", "GET", endpoint)
 	if err != nil {
-		return fmt.Errorf("cannot verify repository permissions for %s on %s/%s", login, owner, repo)
+		return "", fmt.Errorf("cannot verify repository permissions for %s on %s/%s", login, owner, repo)
 	}
 	var permission struct {
 		Permission string `json:"permission"`
@@ -231,13 +231,49 @@ func requireRepositoryPermission(owner, repo, login string, admin bool) error {
 		} `json:"user"`
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &permission); err != nil || !strings.EqualFold(permission.User.Login, login) {
-		return fmt.Errorf("invalid repository permission response for %s", login)
+		return "", fmt.Errorf("invalid repository permission response for %s", login)
 	}
-	allowed := permission.Permission == "admin" || (!admin && (permission.Permission == "write" || permission.Permission == "maintain"))
+	return permission.Permission, nil
+}
+
+func requireRepositoryPermission(owner, repo, login string, admin bool) error {
+	permission, err := repositoryPermission(owner, repo, login)
+	if err != nil {
+		return err
+	}
+	allowed := permission == "admin" || (!admin && (permission == "write" || permission == "maintain"))
 	if !allowed {
 		return fmt.Errorf("%s needs %s access to %s/%s", login, map[bool]string{true: "admin", false: "write or higher"}[admin], owner, repo)
 	}
 	return nil
+}
+
+func parseStatusTarget(repoFlag string) (string, string, error) {
+	owner, repo, err := parseRepoFlag(repoFlag)
+	if err != nil {
+		return "", "", err
+	}
+	if !allowedTargetOwner(owner) || !validRepositoryName(repo) {
+		return "", "", fmt.Errorf("invalid or unsupported SFL status target")
+	}
+	if !strings.EqualFold(owner, organizationOwner) {
+		if err := validateHemSoftTarget(owner, repo); err != nil {
+			return "", "", err
+		}
+		return owner, repo, nil
+	}
+	login, _, err := ghExec("api", "user", "--jq", ".login")
+	if err != nil {
+		return "", "", fmt.Errorf("cannot establish status reader identity: %w", err)
+	}
+	permission, err := repositoryPermission(owner, repo, strings.TrimSpace(login.String()))
+	if err != nil {
+		return "", "", err
+	}
+	if permission != "read" && permission != "triage" && permission != "write" && permission != "maintain" && permission != "admin" {
+		return "", "", fmt.Errorf("status reader needs read or higher repository access")
+	}
+	return owner, repo, nil
 }
 
 // Administrative operations must fail before changing organization gates.

@@ -169,7 +169,7 @@ if ($CredentialScope -eq 'organization') {
         $expectedRepositories = @($validatedRepos | Sort-Object -Unique)
         foreach ($endpoint in @('variables/SFL_APP_ID', 'variables/SFL_APP_CLIENT_ID', 'secrets/SFL_APP_PRIVATE_KEY')) {
             $actual = @(Invoke-GhCommand -Arguments @('api', '--method', 'GET', "orgs/$ExpectedOwner/actions/$endpoint/repositories?per_page=100", '--paginate', '--jq', '.repositories[].full_name') | Sort-Object -Unique)
-            if (($actual -join ',') -cne ($expectedRepositories -join ',')) {
+            if (($actual -join ',') -ine ($expectedRepositories -join ',')) {
                 throw "Organization credential repository coverage mismatch for $endpoint."
             }
         }

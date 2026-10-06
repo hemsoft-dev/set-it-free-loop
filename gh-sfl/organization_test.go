@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 )
@@ -52,6 +53,10 @@ func TestOrganizationSourceIsProtectedBeforeAPIAccess(t *testing.T) {
 }
 
 func TestSourceCutoverPinsProvenanceWithoutChangingGoModule(t *testing.T) {
+	module, err := os.ReadFile("go.mod")
+	if err != nil || strings.TrimSpace(strings.SplitN(string(module), "\n", 2)[0]) != "module github.com/HemSoft/set-it-free-loop/gh-sfl" {
+		t.Fatalf("incompatible Go module declaration: %v", err)
+	}
 	previous := motherRepoOwner
 	t.Cleanup(func() { motherRepoOwner = previous })
 	t.Setenv("SFL_SOURCE_REPOSITORY", "hemsoft-dev/set-it-free-loop")
@@ -103,5 +108,25 @@ func TestSourceCutoverRefreshesSyncAudit(t *testing.T) {
 	manifest.MotherRepo = "hemsoft-dev/set-it-free-loop"
 	if !shouldPreserveSyncAudit(manifest, release, "reviewer") {
 		t.Fatal("unchanged source did not preserve deployment audit")
+	}
+}
+
+func TestOrganizationStatusAllowsReadAccess(t *testing.T) {
+	previous := ghExec
+	t.Cleanup(func() { ghExec = previous })
+	for _, role := range []string{"read", "triage", "write", "maintain", "admin", "none"} {
+		ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
+			if strings.Join(args, " ") == "api user --jq .login" {
+				return *bytes.NewBufferString("reader"), bytes.Buffer{}, nil
+			}
+			if strings.Join(args, " ") != "api --method GET repos/hemsoft-dev/consumer/collaborators/reader/permission" {
+				t.Fatalf("unexpected call: %v", args)
+			}
+			return *bytes.NewBufferString(fmt.Sprintf(`{"permission":%q,"user":{"login":"reader"}}`, role)), bytes.Buffer{}, nil
+		}
+		_, _, err := parseStatusTarget("hemsoft-dev/consumer")
+		if (err != nil) != (role == "none") {
+			t.Fatalf("status role %s: %v", role, err)
+		}
 	}
 }

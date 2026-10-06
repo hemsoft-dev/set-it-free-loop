@@ -53,7 +53,8 @@ function gh {
     try {
         $cwd = (Get-Location).Path
 
-        if ($cwd -like 'D:\github\HemSoft*' -or $cwd -like 'D:\github\hemsoft-dev*') {
+        if ($cwd -eq 'D:\github\HemSoft' -or $cwd -like 'D:\github\HemSoft\*' -or
+            $cwd -eq 'D:\github\hemsoft-dev' -or $cwd -like 'D:\github\hemsoft-dev\*') {
             $env:GH_CONFIG_DIR = "$HOME\.gh-personal"
         }
         elseif ($cwd -like 'D:\github\Relias*') {

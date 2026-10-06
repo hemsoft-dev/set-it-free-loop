@@ -2,8 +2,8 @@
 
 The supported repository owners are `HemSoft` and `hemsoft-dev`. Authentication
 uses a personal GitHub login with permission on the target repository; the login
-is never compared to the organization name. Organization deployment and status
-require write, maintain, or admin access. Gate changes and destructive uninstall
+is never compared to the organization name. Organization deployment requires write, maintain, or admin access; status
+accepts read or higher access. Gate changes and destructive uninstall
 require admin access. API failures and identity mismatches stop the operation.
 Both owners' `set-it-free-loop` repositories are protected from deployment.
 

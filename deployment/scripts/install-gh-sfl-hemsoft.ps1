@@ -15,9 +15,9 @@ param(
     [string] $ReleaseVersion,
     [string] $BuildDate = (Get-Date -Format 'yyyy-MM-dd'),
     [string] $GitHubCliPath = 'gh',
+    [switch] $NoInstall,
     [ValidateSet('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop')]
-    [string] $Repository = 'HemSoft/set-it-free-loop',
-    [switch] $NoInstall
+    [string] $Repository = 'HemSoft/set-it-free-loop'
 )
 
 Set-StrictMode -Version Latest

@@ -77,7 +77,7 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) error {
 		return err
 	}
 
-	owner, repo, err := parseReviewTarget(opts.repo)
+	owner, repo, err := parseStatusTarget(opts.repo)
 	if err != nil {
 		return err
 	}

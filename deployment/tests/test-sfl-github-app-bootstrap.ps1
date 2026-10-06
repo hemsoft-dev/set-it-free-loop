@@ -294,6 +294,9 @@ try {
     Assert-Equal @($scriptGhCalls | Where-Object { $_ -match '^(variable|secret) set ' }).Count 3 'Selected organization credential write count'
     Assert-Equal @($scriptGhCalls | Where-Object { $_ -match '^secret set .*--visibility selected --repos example$' }).Count 1 'Private key uses selected repositories'
     Assert-Equal @($scriptGhCalls | Where-Object { $_ -match '^api --method GET orgs/hemsoft-dev/actions/.*/repositories' }).Count 3 'All credential coverage verified'
+    $mixedCase = $parameters.Clone()
+    $mixedCase.Repos = 'hemsoft-dev/EXAMPLE'
+    & $scriptPath @mixedCase
     $global:sflBootstrapTestCase = 'coverage'
     Assert-Throw { & $scriptPath @parameters } 'coverage mismatch' 'Coverage post-write failure is visible'
     $global:sflBootstrapTestCase = 'success'
