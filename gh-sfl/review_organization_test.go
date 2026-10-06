@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/cli/go-gh/v2/pkg/api"
 )
 
 type organizationReviewREST struct {
@@ -11,6 +13,7 @@ type organizationReviewREST struct {
 	role, author, responseUser, authenticatedUser string
 	lookupError                                   bool
 	permissionGets                                int
+	deniedLogins                                  map[string]int
 }
 
 func (f *organizationReviewREST) Get(path string, response interface{}) error {
@@ -24,6 +27,9 @@ func (f *organizationReviewREST) Get(path string, response interface{}) error {
 		}
 		parts := strings.Split(path, "/")
 		login := parts[len(parts)-2]
+		if status := f.deniedLogins[login]; status != 0 {
+			return &api.HTTPError{StatusCode: status}
+		}
 		if f.responseUser != "" {
 			login = f.responseUser
 		}
@@ -90,5 +96,26 @@ func TestOrganizationRequesterRevalidatedBeforePosting(t *testing.T) {
 		if rest.posts != 0 || rest.statusPosts != 0 {
 			t.Fatal("authorization mutated repository")
 		}
+	}
+}
+
+func TestOrganizationRequesterHTTPDenialsDoNotPoisonAuthorizedRegistry(t *testing.T) {
+	for _, status := range []int{403, 404} {
+		stale := reviewRequestStatus{Context: codexReviewRequestRegistryContext, TargetURL: "https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-122"}
+		stale.Creator.Login = "departed"
+		current := reviewRequestStatus{Context: codexReviewRequestRegistryContext, TargetURL: "https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-123"}
+		current.Creator.Login = "member"
+		rest := &organizationReviewREST{reviewREST: &reviewREST{statuses: []reviewRequestStatus{stale, current}}, role: "write", author: "member", deniedLogins: map[string]int{"departed": status}}
+		ids, err := findRegisteredCodexRequestIDs(rest, "hemsoft-dev", "consumer", 94, strings.Repeat("b", 40))
+		if err != nil || len(ids) != 1 || !ids[123] {
+			t.Fatalf("HTTP%d: registry=%v error=%v", status, ids, err)
+		}
+		if rest.posts != 0 || rest.statusPosts != 0 {
+			t.Fatal("registry scan mutated repository")
+		}
+	}
+	rest := &organizationReviewREST{reviewREST: &reviewREST{}, deniedLogins: map[string]int{"member": 500}}
+	if allowed, err := authorizeReviewRequester(rest, "hemsoft-dev", "consumer", "member"); err == nil || allowed {
+		t.Fatal("server failure must remain an error")
 	}
 }

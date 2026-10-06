@@ -786,6 +786,10 @@ func authorizeReviewRequester(client restAPI, owner, repo, login string) (bool, 
 	}
 	path := fmt.Sprintf("repos/%s/%s/collaborators/%s/permission", owner, repo, login)
 	if err := client.Get(path, &permission); err != nil {
+		var httpErr *api.HTTPError
+		if errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusNotFound || httpErr.StatusCode == http.StatusForbidden) {
+			return false, nil
+		}
 		return false, fmt.Errorf("cannot authorize review requester %s: %w", login, err)
 	}
 	if !strings.EqualFold(permission.User.Login, login) {
