@@ -756,7 +756,8 @@
   "limitations": [
     "No environment variable values read or stored.",
     "Credential presence does not prove credential validity.",
-    "Post-transfer GitHub App access and deployment smoke tests remain pending."
+    "Post-transfer GitHub App access and deployment smoke tests remain pending.",
+    "setitfreeloop.org failed DNS resolution before any transfer; existing failure is not classified as caused by migration."
   ],
   "shared_environment_variables": {
     "api_status": 200,
@@ -770,5 +771,36 @@
     "supabase_owner_resource_mapping": "pending",
     "vercel_storage_page": "https://vercel.com/franz-hemmers-projects/~/stores",
     "vercel_storage_observation": "Owner page shows Create a database; external Supabase resources still require verification"
-  }
+  },
+  "production_domain_smoke": [
+    {
+      "url": "https://nowleadershipgroup.com",
+      "status": 200,
+      "final_origin_and_path": "https://nowleadershipgroup.com",
+      "observed_at": "2026-10-06T23:54:29.376541+00:00"
+    },
+    {
+      "url": "https://www.hemmer.us",
+      "status": 200,
+      "final_origin_and_path": "https://www.hemmer.us",
+      "observed_at": "2026-10-06T23:54:29.310520+00:00"
+    },
+    {
+      "url": "https://dashboard.hemmer.us",
+      "status": 200,
+      "final_origin_and_path": "https://dashboard.hemmer.us/login",
+      "observed_at": "2026-10-06T23:54:31.048679+00:00"
+    },
+    {
+      "url": "https://setitfreeloop.org",
+      "error": "<urlopen error [Errno -5] No address associated with hostname>",
+      "observed_at": "2026-10-06T23:54:29.229531+00:00"
+    },
+    {
+      "url": "https://poc.hemmer.us",
+      "status": 200,
+      "final_origin_and_path": "https://poc.hemmer.us",
+      "observed_at": "2026-10-06T23:54:31.373354+00:00"
+    }
+  ]
 }

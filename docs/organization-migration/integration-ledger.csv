@@ -1,5 +1,5 @@
 repository_id,source,destination,status,provider_candidates_from_app_access,provider,resource_owner,resource_url,billing_dependency,credential_source,credential_validity,affected_reference,transfer_action,smoke_test,recovery_action,absence_reason,verified_by,verified_at,evidence_url
-1143951439,fhemmer/hs-cli-confluence-search,hemsoft-dev/hs-cli-confluence-search-fhemmer,owner_verification_pending,Blacksmith,,,,,,,,,,,,,,
+1143951439,fhemmer/hs-cli-confluence-search,hemsoft-dev/hs-cli-confluence-search-fhemmer,owner_verification_pending,Blacksmith,,,,GitHub Team one occupied seat; no retained direct grants. Source owner access expected to end at transfer; verify post-transfer effective access and license count. Blacksmith resource billing remains pending.,,,Inherited fhemmer organization-owner permission; zero direct collaborators or teams,Do not grant fhemmerrelias destination access; verify access removal after mapped transfer,,,,,,fhemmer-access-evidence.json
 1349305052,HemSoft/.github,hemsoft-dev/.github,owner_verification_pending,Azure Pipelines; Railway App,,,,,,,,,,,,,,
 1127994043,HemSoft/7d2d-mods,hemsoft-dev/7d2d-mods,owner_verification_pending,Azure Pipelines; Railway App,,,,,,,,,,,,,,
 1107806657,HemSoft/advent-of-code-2025,hemsoft-dev/advent-of-code-2025,owner_verification_pending,Azure Pipelines; Railway App,,,,,,,,,,,,,,

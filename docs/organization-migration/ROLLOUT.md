@@ -23,8 +23,12 @@ source evidence URL or approved owner receipt. Where there is no external
 integration, record `provider=none` and an evidence-backed `absence_reason`.
 Empty fields, missing access, and failed lookups remain pending.
 
-Refresh runner registrations and organization groups, all environment credential
-name inventories, App selections, and effective protections immediately before
+The [fresh runtime evidence](runtime-refresh-evidence.json) contains successful
+runner lookups for all 67 sources and secret/variable name inventories for all
+16 environments. Only HemSoft/yahtzee has a registered runner, online and idle;
+all 32 environment inventories are empty. Destination owner pages show no
+self-hosted runners and a Default group excluding public repositories. Refresh
+these observations, App selections and effective protections immediately before
 cutover. The [fhemmer owner-browser evidence](fhemmer-protection-evidence.json) observes
 no classic protections or rulesets; reconfirm its settings immediately before cutover. Keep original failures visible beside supplemental evidence.
 The [existing snapshot checker](README.md#refresh-and-validate) establishes
@@ -33,12 +37,13 @@ inventory integrity, not provider ownership or live credential validity.
 The destination Team plan has one occupied seat. Franz selected removal of
 `fhemmerrelias` access **after transfer** in
 [the recorded access decision](https://github.com/HemSoft/set-it-free-loop/issues/138).
-Do not revoke access before transfer or purchase a seat. Verify temporary license
-requirements before transfer. The source fhemmer owner is an organization;
-the personal-account original-owner collaborator rule does not apply to it. [Collaborator removal](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/removing-an-outside-collaborator-from-an-organization-repository)
-does not automatically reduce purchased licenses. Inspect the
+The [owner/API access evidence](fhemmer-access-evidence.json) distinguishes source
+organization-owner access from direct grants: there are zero direct collaborators
+and zero repository teams. No extra seat is required for those observed grants.
+Do not add destination membership or direct access, revoke source membership
+before transfer, or purchase a seat. Verify effective access and the
 [current organization licensing](https://github.com/organizations/hemsoft-dev/settings/licensing)
-and verify both effective access and billing after the approved sequence.
+after transfer, and stop if an unexpected billing change appears.
 
 The [Vercel owner evidence](vercel-provider-evidence.json) records five linked
 projects in the existing Hobby workspace, including private

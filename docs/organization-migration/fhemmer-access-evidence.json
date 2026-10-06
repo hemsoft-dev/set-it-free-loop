@@ -1,0 +1,42 @@
+{
+  "observed_at": "2026-10-06T23:52:28.283Z",
+  "identity": "HemSoft",
+  "source_repository_id": 1143951439,
+  "source_repository": "fhemmer/hs-cli-confluence-search",
+  "source_owner_type": "Organization",
+  "direct_collaborators": [],
+  "teams": [],
+  "source_organization_memberships": [
+    {
+      "login": "HemSoft",
+      "state": "active",
+      "role": "admin"
+    },
+    {
+      "login": "fhemmerrelias",
+      "state": "active",
+      "role": "admin"
+    }
+  ],
+  "owner_access_url": "https://github.com/fhemmer/hs-cli-confluence-search/settings/access",
+  "owner_access_observation": "Direct access: 0 teams or members. Both users are source organization owners; access comes from source organization membership.",
+  "transfer_preparation": {
+    "url": "https://github.com/fhemmer/hs-cli-confluence-search/transfer",
+    "selected_owner": "hemsoft-dev",
+    "observed_billing_warning": false,
+    "confirmation_entered": false,
+    "submitted": false
+  },
+  "decision": "Remove fhemmerrelias access after transfer; do not grant destination membership or direct access.",
+  "billing_assessment": "No additional license required for the observed grants: there is no direct collaborator to retain. Source-organization owner access is expected to end at transfer; verify destination effective access and license count afterward. Stop if an unexpected billing change is presented.",
+  "supersedes_interpretation": "Effective admin access in the baseline was incorrectly treated as a retained direct outside collaborator. Preserve the original snapshot; this supplements its access interpretation.",
+  "destination_observations": {
+    "members": [
+      "HemSoft"
+    ],
+    "outside_collaborators": [],
+    "filled_seats": 1,
+    "purchased_seats": 1,
+    "membership_endpoint_limitation": "Specific user membership endpoint requires admin:org; full member and outside-collaborator lists were separately observed."
+  }
+}

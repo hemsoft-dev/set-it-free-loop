@@ -145,15 +145,21 @@ and [organization rulesets](https://docs.github.com/en/organizations/managing-or
 Franz selected the destination plan himself. The agent made no purchase;
 future billing changes remain owner steps.
 
-The private, non-fork `fhemmer/hs-cli-confluence-search` currently grants
-`fhemmerrelias` admin access. The destination Team plan has one purchased seat,
-already occupied by HemSoft. Preserving that additional account's private
-repository access requires another approved paid seat. GitHub bills private
-outside collaborators under its
-[Team license rules](https://docs.github.com/en/billing/reference/github-license-users#organizations-on-github-team).
-Before any transfer, #138 must record the owner's decision to fund the extra
-seat or explicitly change this access. Do not silently remove the collaborator,
-spend money, or transfer first and discover the billing effect afterward.
+The private, non-fork `fhemmer/hs-cli-confluence-search` reports effective admin
+access for `fhemmerrelias`. The [supplemental owner/API access evidence](fhemmer-access-evidence.json)
+shows that this comes from source organization ownership: direct collaborators
+and repository teams are empty. Effective access alone does not identify a
+retained direct collaborator. Check `collaborators?affiliation=direct` and the
+[owner access page](https://github.com/fhemmer/hs-cli-confluence-search/settings/access)
+before classifying a transferred account as a billable outside collaborator.
+
+Franz selected removal of that access **after transfer** in
+[the access decision](https://github.com/HemSoft/set-it-free-loop/issues/138).
+Source organization membership does not grant destination access. No additional
+license is needed for the observed direct grants, and no new membership or grant
+will be added for `fhemmerrelias`. Verify effective destination access and the
+one-seat licensing state after transfer; stop if an unexpected billing change
+appears. Do not revoke source membership early or purchase another seat.
 
 The current gh OAuth token has `repo`, `read:org`, `user`, `gist`, and
 `admin:public_key`; it lacks `admin:org`. Reading an organization resource can
