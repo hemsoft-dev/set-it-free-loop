@@ -111,6 +111,8 @@ def validate(snapshot):
         raise ValueError('Duplicate repository ID or destination')
     if not repositories or set(snapshot['source_owners']) != set(SOURCE_OWNERS):
         raise ValueError('Missing migration population')
+    if {repo['full_name'].split('/')[0] for repo in repositories} != set(SOURCE_OWNERS):
+        raise ValueError('Repository population does not cover both source owners')
     for repo in repositories:
         if repo['full_name'].split('/')[0] not in SOURCE_OWNERS:
             raise ValueError('Out-of-scope source')

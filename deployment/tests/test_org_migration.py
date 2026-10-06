@@ -32,6 +32,25 @@ class MigrationTests(unittest.TestCase):
         result = capture.validate(self.snapshot())
         self.assertEqual(result, {'repositories': 2, 'private': 1, 'archived': 0, 'unverified_endpoints': 1})
 
+    def test_collector_maps_both_colliding_repositories(self):
+        for owner, private, expected in [
+            ('HemSoft', False, 'hemsoft-dev/hs-cli-confluence-search'),
+            ('fhemmer', True, 'hemsoft-dev/hs-cli-confluence-search-fhemmer'),
+        ]:
+            repo = {'id': 1 if owner == 'HemSoft' else 2, 'name': 'hs-cli-confluence-search',
+                    'full_name': owner + '/hs-cli-confluence-search', 'private': private}
+            with patch.object(capture, 'api', return_value={'state': 'unverified'}):
+                record = capture.capture_repo(repo, 'hemsoft-dev')
+            self.assertEqual(record['destination'], expected)
+            self.assertEqual(record['private'], private)
+            self.assertEqual(record['id'], repo['id'])
+
+    def test_reject_missing_source_owner_population(self):
+        snapshot = self.snapshot()
+        snapshot['repositories'] = snapshot['repositories'][:1]
+        with self.assertRaisesRegex(ValueError, 'both source owners'):
+            capture.validate(snapshot)
+
     def test_reject_case_insensitive_destination_collision(self):
         snapshot = self.snapshot()
         snapshot['repositories'][1]['destination'] = 'hemsoft-dev/HS-CLI-CONFLUENCE-SEARCH'
