@@ -1,0 +1,725 @@
+{
+  "verified_at": "2026-10-06 21:42:28 UTC",
+  "verifier_account": "HemSoft",
+  "method": "Read-only authenticated GitHub settings pages and REST responses",
+  "destination": {
+    "login": "hemsoft-dev",
+    "id": 338855369,
+    "members": [
+      "HemSoft"
+    ],
+    "teams": [],
+    "plan": "team",
+    "default_repository_permission": "read",
+    "actions": {
+      "source_url": "https://github.com/organizations/hemsoft-dev/settings/actions",
+      "state": "observed_in_owner_browser",
+      "enabled_repositories": "all",
+      "allowed_actions": "all",
+      "require_full_sha_pinning": false,
+      "standard_hosted_runners_enabled": true,
+      "fork_pull_request_approval": "first_time_contributors",
+      "private_fork_workflows_enabled": false,
+      "default_workflow_permissions": "read",
+      "can_approve_pull_request_reviews": false
+    },
+    "installed_apps": {
+      "state": "observed",
+      "source_endpoint": "orgs/hemsoft-dev/installations",
+      "installations": []
+    },
+    "avatar": {
+      "source_url": "https://hemsoft.github.io/reports/",
+      "source_asset": "header SVG gold three-ray mark",
+      "format": "512x512 PNG",
+      "background": "#0a0a0a",
+      "verified_avatar_url": "https://avatars.githubusercontent.com/u/338855369?s=400&u=0942deed890294ddc68b5a8ce4a75e2b92789795&v=4",
+      "requested_by": "Franz",
+      "state": "uploaded_and_verified"
+    }
+  },
+  "source_personal_apps": {
+    "source_url": "https://github.com/settings/installations",
+    "state": "observed_in_owner_browser",
+    "installations": [
+      {
+        "name": "Azure Pipelines",
+        "installation_id": 51466296,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Read access to metadata\n Read and write access to checks, code, commit statuses, deployments, issues, and pull requests",
+        "verified_at": "2026-10-06 21:42:03 UTC"
+      },
+      {
+        "name": "ChatGPT Codex Connector",
+        "installation_id": 139881351,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Read access to checks, commit statuses, and metadata\n Read and write access to actions, code, issues, pull requests, and workflows",
+        "verified_at": "2026-10-06 21:42:04 UTC"
+      },
+      {
+        "name": "Claude",
+        "installation_id": 146036666,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Claude is requesting an update to its permissions.\tReview request\n Read access to commit statuses and metadata\n Read and write access to actions, checks, code, discussions, issues, pull requests, repository hooks, and workflows",
+        "verified_at": "2026-10-06 21:42:05 UTC"
+      },
+      {
+        "name": "cubic-dev-ai",
+        "installation_id": 149420600,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Read access to administration, commit statuses, deployments, and metadata\n Read and write access to actions, checks, code, issues, pull requests, and workflows",
+        "verified_at": "2026-10-06 21:42:06 UTC"
+      },
+      {
+        "name": "Cursor",
+        "installation_id": 129542494,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Cursor is requesting an update to its permissions.\tReview request\n Read access to administration, commit statuses, deployments, metadata, packages, and pages\n Read and write access to actions, checks, code, discussions, issues, pull requests, and workflows",
+        "verified_at": "2026-10-06 21:42:07 UTC"
+      },
+      {
+        "name": "Fly.io",
+        "installation_id": 127700287,
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/codexbar"
+        ],
+        "permissions": "Read access to metadata\n Read and write access to actions, checks, code, deployments, environments, pull requests, and repository hooks",
+        "verified_at": "2026-10-06 21:42:08 UTC"
+      },
+      {
+        "name": "Greptile Apps",
+        "installation_id": 151797116,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Greptile Apps is requesting an update to its permissions.\tReview request\n Read access to Dependabot alerts, actions, deployments, metadata, secret scanning alerts, and security events\n Read and write access to checks, code, commit statuses, issues, and pull requests",
+        "verified_at": "2026-10-06 21:42:09 UTC"
+      },
+      {
+        "name": "Railway App",
+        "installation_id": 111818344,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Read access to metadata\n Read and write access to actions, administration, checks, code, commit statuses, deployments, pull requests, and workflows",
+        "verified_at": "2026-10-06 21:42:10 UTC"
+      },
+      {
+        "name": "SFL App",
+        "installation_id": 150383874,
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/ESO",
+          "HemSoft/PXWritStatus",
+          "HemSoft/PXInfoPanel",
+          "HemSoft/PXVendorMagic",
+          "HemSoft/PXContainerMagic",
+          "HemSoft/PXFriends",
+          "HemSoft/TCE-Admin",
+          "HemSoft/TimCoRetailManager",
+          "HemSoft/PeopleCare",
+          "HemSoft/Relias.Lms.Enrollment",
+          "HemSoft/NWMM",
+          "HemSoft/Egg-Inc-Tracker",
+          "HemSoft/HemChat",
+          "HemSoft/pe-bot",
+          "HemSoft/notes",
+          "HemSoft/dashcam",
+          "HemSoft/cli-tools",
+          "HemSoft/mcp-server-demo",
+          "HemSoft/weather-cli",
+          "HemSoft/n8n-workflows",
+          "HemSoft/rag-poc",
+          "HemSoft/tickdown",
+          "HemSoft/spam-removal-agent",
+          "HemSoft/summarist",
+          "HemSoft/neo4j-graphrag-poc",
+          "HemSoft/dashboard-tui",
+          "HemSoft/subtitle-translator",
+          "HemSoft/ms-agent-framework-demo",
+          "HemSoft/hemsoft-power-ai",
+          "HemSoft/advent-of-code-2025",
+          "HemSoft/modern-web-stack-poc",
+          "HemSoft/skills",
+          "HemSoft/dashboard",
+          "HemSoft/hs-landing-page",
+          "HemSoft/agents",
+          "HemSoft/7d2d-mods",
+          "HemSoft/prs",
+          "HemSoft/ai-conductor",
+          "HemSoft/github-cli-sdk-demo",
+          "HemSoft/hs-cli-template",
+          "HemSoft/hs-cli-prs",
+          "HemSoft/hs-cli-confluence-search",
+          "HemSoft/hs-conductor",
+          "HemSoft/public-skills",
+          "HemSoft/now-leadership-group",
+          "HemSoft/set-it-free-loop-site",
+          "HemSoft/set-it-free-loop",
+          "HemSoft/hs-buddy-vscode-extension",
+          "HemSoft/yahtzee",
+          "HemSoft/hs-buddy",
+          "HemSoft/gh-prx",
+          "HemSoft/hs-tui-launcher",
+          "HemSoft/gh-x",
+          "HemSoft/ralph-loops",
+          "HemSoft/hoarders-heaven",
+          "HemSoft/codexbar-ios",
+          "HemSoft/codexbar-mac",
+          "HemSoft/buddy-ios",
+          "HemSoft/yahtzee-bench",
+          "HemSoft/.github",
+          "HemSoft/minibot",
+          "HemSoft/reports",
+          "HemSoft/hs-pi-dashboard",
+          "HemSoft/hemsoft-bench"
+        ],
+        "permissions": "Read access to code and metadata\n Read and write access to actions, checks, issues, and pull requests",
+        "verified_at": "2026-10-06 21:42:11 UTC"
+      },
+      {
+        "name": "Vercel",
+        "installation_id": 100502814,
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/dashboard",
+          "HemSoft/hs-landing-page",
+          "HemSoft/now-leadership-group",
+          "HemSoft/set-it-free-loop-site"
+        ],
+        "permissions": "Read access to actions and metadata\n Read and write access to administration, checks, code, commit statuses, deployments, issues, pull requests, repository hooks, and workflows",
+        "verified_at": "2026-10-06 21:42:12 UTC"
+      }
+    ],
+    "expected_installation_ids": [
+      51466296,
+      100502814,
+      111818344,
+      127700287,
+      129542494,
+      139881351,
+      146036666,
+      149420600,
+      150383874,
+      151797116
+    ],
+    "expected_repository_selections": {
+      "51466296": {
+        "selection": "all",
+        "repositories": []
+      },
+      "139881351": {
+        "selection": "all",
+        "repositories": []
+      },
+      "146036666": {
+        "selection": "all",
+        "repositories": []
+      },
+      "149420600": {
+        "selection": "all",
+        "repositories": []
+      },
+      "129542494": {
+        "selection": "all",
+        "repositories": []
+      },
+      "127700287": {
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/codexbar"
+        ]
+      },
+      "151797116": {
+        "selection": "all",
+        "repositories": []
+      },
+      "111818344": {
+        "selection": "all",
+        "repositories": []
+      },
+      "150383874": {
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/ESO",
+          "HemSoft/PXWritStatus",
+          "HemSoft/PXInfoPanel",
+          "HemSoft/PXVendorMagic",
+          "HemSoft/PXContainerMagic",
+          "HemSoft/PXFriends",
+          "HemSoft/TCE-Admin",
+          "HemSoft/TimCoRetailManager",
+          "HemSoft/PeopleCare",
+          "HemSoft/Relias.Lms.Enrollment",
+          "HemSoft/NWMM",
+          "HemSoft/Egg-Inc-Tracker",
+          "HemSoft/HemChat",
+          "HemSoft/pe-bot",
+          "HemSoft/notes",
+          "HemSoft/dashcam",
+          "HemSoft/cli-tools",
+          "HemSoft/mcp-server-demo",
+          "HemSoft/weather-cli",
+          "HemSoft/n8n-workflows",
+          "HemSoft/rag-poc",
+          "HemSoft/tickdown",
+          "HemSoft/spam-removal-agent",
+          "HemSoft/summarist",
+          "HemSoft/neo4j-graphrag-poc",
+          "HemSoft/dashboard-tui",
+          "HemSoft/subtitle-translator",
+          "HemSoft/ms-agent-framework-demo",
+          "HemSoft/hemsoft-power-ai",
+          "HemSoft/advent-of-code-2025",
+          "HemSoft/modern-web-stack-poc",
+          "HemSoft/skills",
+          "HemSoft/dashboard",
+          "HemSoft/hs-landing-page",
+          "HemSoft/agents",
+          "HemSoft/7d2d-mods",
+          "HemSoft/prs",
+          "HemSoft/ai-conductor",
+          "HemSoft/github-cli-sdk-demo",
+          "HemSoft/hs-cli-template",
+          "HemSoft/hs-cli-prs",
+          "HemSoft/hs-cli-confluence-search",
+          "HemSoft/hs-conductor",
+          "HemSoft/public-skills",
+          "HemSoft/now-leadership-group",
+          "HemSoft/set-it-free-loop-site",
+          "HemSoft/set-it-free-loop",
+          "HemSoft/hs-buddy-vscode-extension",
+          "HemSoft/yahtzee",
+          "HemSoft/hs-buddy",
+          "HemSoft/gh-prx",
+          "HemSoft/hs-tui-launcher",
+          "HemSoft/gh-x",
+          "HemSoft/ralph-loops",
+          "HemSoft/hoarders-heaven",
+          "HemSoft/codexbar-ios",
+          "HemSoft/codexbar-mac",
+          "HemSoft/buddy-ios",
+          "HemSoft/yahtzee-bench",
+          "HemSoft/.github",
+          "HemSoft/minibot",
+          "HemSoft/reports",
+          "HemSoft/hs-pi-dashboard",
+          "HemSoft/hemsoft-bench"
+        ]
+      },
+      "100502814": {
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/dashboard",
+          "HemSoft/hs-landing-page",
+          "HemSoft/now-leadership-group",
+          "HemSoft/set-it-free-loop-site"
+        ]
+      }
+    }
+  },
+  "coverage_limits": [
+    "Repository selection is App access, not proof of active service deployment.",
+    "Provider account resources, URLs, billing, organization runner groups and recovery credentials remain unverified; repository runners and environment credential names are captured in runtime-metadata.json.",
+    "No App permissions, selections or Actions/security settings were changed; the requested organization avatar was updated."
+  ],
+  "supplemental_verified_at": "2026-10-06T21:45:41.738742+00:00",
+  "effective_branch_rules": [
+    {
+      "source": "HemSoft/codexbar",
+      "branch": "feat/issue-73-account-configuration",
+      "endpoint": "repos/HemSoft/codexbar/rules/branches/feat%2Fissue-73-account-configuration?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "copilot_code_review",
+          "parameters": {
+            "review_on_push": true,
+            "review_draft_pull_requests": false
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/codexbar",
+          "ruleset_id": 15259160
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/codexbar",
+      "branch": "fix/issue-84-local-time-locale",
+      "endpoint": "repos/HemSoft/codexbar/rules/branches/fix%2Fissue-84-local-time-locale?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "copilot_code_review",
+          "parameters": {
+            "review_on_push": true,
+            "review_draft_pull_requests": false
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/codexbar",
+          "ruleset_id": 15259160
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/codexbar",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/codexbar/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "copilot_code_review",
+          "parameters": {
+            "review_on_push": true,
+            "review_draft_pull_requests": false
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/codexbar",
+          "ruleset_id": 15259160
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/codexbar-ios",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/codexbar-ios/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": true,
+            "required_status_checks": [
+              {
+                "context": "SwiftLint"
+              },
+              {
+                "context": "Strict concurrency"
+              },
+              {
+                "context": "iOS tests"
+              },
+              {
+                "context": "watchOS tests"
+              },
+              {
+                "context": "SwiftPM smoke tests"
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/codexbar-ios",
+          "ruleset_id": 20103668
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/dashboard",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/dashboard/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Quality Gates"
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/dashboard",
+          "ruleset_id": 11400445
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/dashboard",
+          "ruleset_id": 11400445
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/gh-x",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/gh-x/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": false,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Quality Gate",
+                "integration_id": 15368
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/gh-x",
+          "ruleset_id": 22233834
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/gh-x",
+          "ruleset_id": 22233834
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/hs-buddy",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/hs-buddy/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "deletion",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        },
+        {
+          "type": "non_fast_forward",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": false,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "ci-complete",
+                "integration_id": 15368
+              },
+              {
+                "context": "npm audit",
+                "integration_id": 15368
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": false,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        },
+        {
+          "type": "code_scanning",
+          "parameters": {
+            "code_scanning_tools": [
+              {
+                "tool": "CodeQL",
+                "security_alerts_threshold": "high_or_higher",
+                "alerts_threshold": "none"
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/spam-removal-agent",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/spam-removal-agent/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "deletion",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "non_fast_forward",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 1,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": false,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "code_scanning",
+          "parameters": {
+            "code_scanning_tools": [
+              {
+                "tool": "CodeQL",
+                "security_alerts_threshold": "high_or_higher",
+                "alerts_threshold": "errors"
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "copilot_code_review",
+          "parameters": {
+            "review_on_push": true,
+            "review_draft_pull_requests": true
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "copilot_code_review",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/tickdown",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/tickdown/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "deletion",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/tickdown",
+          "ruleset_id": 23714417
+        },
+        {
+          "type": "non_fast_forward",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/tickdown",
+          "ruleset_id": 23714417
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": false,
+            "allowed_merge_methods": [
+              "squash"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/tickdown",
+          "ruleset_id": 23714417
+        },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Required",
+                "integration_id": 15368
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/tickdown",
+          "ruleset_id": 23714417
+        }
+      ]
+    }
+  ],
+  "source_fhemmer_rulesets": {
+    "state": "observed_in_owner_browser",
+    "source_url": "https://github.com/fhemmer/hs-cli-confluence-search/settings/rules",
+    "configured_rulesets": [],
+    "notice": "Your rulesets won't be enforced on this private repository until you upgrade this organization account to GitHub Team."
+  },
+  "expected_effective_branch_rule_hashes": {
+    "HemSoft/codexbar/feat/issue-73-account-configuration": "ecda26a05ede48aca9560db1a369fba382d29652c73551fa4b10c7b89b0858bc",
+    "HemSoft/codexbar/fix/issue-84-local-time-locale": "f07288d8628c2ab740bfcd8128427c38d4f2f638eb3ce297a96c7c2a396c72e9",
+    "HemSoft/codexbar/main": "a2bd86c91ec7407f492fe77115913efbc087388b6c41c0759148474243a30d07",
+    "HemSoft/codexbar-ios/main": "93addf78a97cb66f6279179cff92234e067f0bc2c6477d472b756a6df415342d",
+    "HemSoft/dashboard/main": "cae39be99fa51435874f3194dcefc239b189165c1d972da7b106f2d828db6870",
+    "HemSoft/gh-x/main": "553d7e025a0b87421a207cdb1da6ed56204953597d63ca21908434b2ea9ddbff",
+    "HemSoft/hs-buddy/main": "a2084799b2c22f9b469655592844f89c6ca2c4b1f2ebcb058e3c1bd63b65971b",
+    "HemSoft/spam-removal-agent/main": "3fa082b9cb47128727ddf313a08738ae6567e21e2c5fd1b0281eef0d443027fc",
+    "HemSoft/tickdown/main": "bddb4d5ace6668cc1c765f9dd43b3ddab37ff1164b9897b1a8396c545f2b802a"
+  }
+}

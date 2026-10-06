@@ -1,0 +1,32 @@
+name: Validate organization migration inventory
+
+on:
+  pull_request:
+    paths:
+      - 'deployment/scripts/capture-org-migration.py'
+      - 'deployment/tests/test_org_migration.py'
+      - 'docs/organization-migration/**'
+      - '.github/workflows/validate-org-migration.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deployment/scripts/capture-org-migration.py'
+      - 'deployment/tests/test_org_migration.py'
+      - 'docs/organization-migration/**'
+      - '.github/workflows/validate-org-migration.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test collection safety and migration mapping
+        run: python3 -B -m unittest discover -s deployment/tests -p test_org_migration.py -v
+      - name: Validate inventory and supplemental evidence without GitHub credentials
+        run: python3 -B deployment/scripts/capture-org-migration.py --check docs/organization-migration/inventory.json
