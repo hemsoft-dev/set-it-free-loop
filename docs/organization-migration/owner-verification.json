@@ -27,6 +27,15 @@
       "state": "observed",
       "source_endpoint": "orgs/hemsoft-dev/installations",
       "installations": []
+    },
+    "avatar": {
+      "source_url": "https://hemsoft.github.io/reports/",
+      "source_asset": "header SVG gold three-ray mark",
+      "format": "512x512 PNG",
+      "background": "#0a0a0a",
+      "verified_avatar_url": "https://avatars.githubusercontent.com/u/338855369?s=400&u=0942deed890294ddc68b5a8ce4a75e2b92789795&v=4",
+      "requested_by": "Franz",
+      "state": "uploaded_and_verified"
     }
   },
   "source_personal_apps": {
@@ -190,6 +199,390 @@
   "coverage_limits": [
     "Repository selection is App access, not proof of active service deployment.",
     "Provider account resources, URLs, billing, runner registrations and recovery credentials remain unverified.",
-    "No App permissions, selections or organization settings were changed."
-  ]
+    "No App permissions, selections or Actions/security settings were changed; the requested organization avatar was updated."
+  ],
+  "supplemental_verified_at": "2026-10-06T21:45:41.738742+00:00",
+  "effective_branch_rules": [
+    {
+      "source": "HemSoft/codexbar",
+      "branch": "feat/issue-73-account-configuration",
+      "endpoint": "repos/HemSoft/codexbar/rules/branches/feat%2Fissue-73-account-configuration?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "copilot_code_review",
+          "parameters": {
+            "review_on_push": true,
+            "review_draft_pull_requests": false
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/codexbar",
+          "ruleset_id": 15259160
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/codexbar",
+      "branch": "fix/issue-84-local-time-locale",
+      "endpoint": "repos/HemSoft/codexbar/rules/branches/fix%2Fissue-84-local-time-locale?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "copilot_code_review",
+          "parameters": {
+            "review_on_push": true,
+            "review_draft_pull_requests": false
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/codexbar",
+          "ruleset_id": 15259160
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/codexbar",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/codexbar/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "copilot_code_review",
+          "parameters": {
+            "review_on_push": true,
+            "review_draft_pull_requests": false
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/codexbar",
+          "ruleset_id": 15259160
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/codexbar-ios",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/codexbar-ios/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": true,
+            "required_status_checks": [
+              {
+                "context": "SwiftLint"
+              },
+              {
+                "context": "Strict concurrency"
+              },
+              {
+                "context": "iOS tests"
+              },
+              {
+                "context": "watchOS tests"
+              },
+              {
+                "context": "SwiftPM smoke tests"
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/codexbar-ios",
+          "ruleset_id": 20103668
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/dashboard",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/dashboard/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Quality Gates"
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/dashboard",
+          "ruleset_id": 11400445
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/dashboard",
+          "ruleset_id": 11400445
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/gh-x",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/gh-x/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": false,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Quality Gate",
+                "integration_id": 15368
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/gh-x",
+          "ruleset_id": 22233834
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/gh-x",
+          "ruleset_id": 22233834
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/hs-buddy",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/hs-buddy/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "deletion",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        },
+        {
+          "type": "non_fast_forward",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": false,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "ci-complete",
+                "integration_id": 15368
+              },
+              {
+                "context": "npm audit",
+                "integration_id": 15368
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": false,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        },
+        {
+          "type": "code_scanning",
+          "parameters": {
+            "code_scanning_tools": [
+              {
+                "tool": "CodeQL",
+                "security_alerts_threshold": "high_or_higher",
+                "alerts_threshold": "none"
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/hs-buddy",
+          "ruleset_id": 15947577
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/spam-removal-agent",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/spam-removal-agent/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "deletion",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "non_fast_forward",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 1,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": false,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "code_scanning",
+          "parameters": {
+            "code_scanning_tools": [
+              {
+                "tool": "CodeQL",
+                "security_alerts_threshold": "high_or_higher",
+                "alerts_threshold": "errors"
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "copilot_code_review",
+          "parameters": {
+            "review_on_push": true,
+            "review_draft_pull_requests": true
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        },
+        {
+          "type": "copilot_code_review",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/spam-removal-agent",
+          "ruleset_id": 8766844
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/tickdown",
+      "branch": "main",
+      "endpoint": "repos/HemSoft/tickdown/rules/branches/main?per_page=100",
+      "state": "observed",
+      "rules": [
+        {
+          "type": "deletion",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/tickdown",
+          "ruleset_id": 23714417
+        },
+        {
+          "type": "non_fast_forward",
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/tickdown",
+          "ruleset_id": 23714417
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": false,
+            "allowed_merge_methods": [
+              "squash"
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/tickdown",
+          "ruleset_id": 23714417
+        },
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Required",
+                "integration_id": 15368
+              }
+            ]
+          },
+          "ruleset_source_type": "Repository",
+          "ruleset_source": "HemSoft/tickdown",
+          "ruleset_id": 23714417
+        }
+      ]
+    }
+  ],
+  "source_fhemmer_rulesets": {
+    "state": "observed_in_owner_browser",
+    "source_url": "https://github.com/fhemmer/hs-cli-confluence-search/settings/rules",
+    "configured_rulesets": [],
+    "notice": "Your rulesets won't be enforced on this private repository until you upgrade this organization account to GitHub Team."
+  }
 }

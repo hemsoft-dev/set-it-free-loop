@@ -27,6 +27,11 @@ present when inspected. Members may create repositories; required two-factor
 authentication is currently disabled. These are observed settings, not changes
 made by this preflight.
 
+At Franz's request, the destination avatar now uses the reports site's existing
+gold three-ray mark on its dark background. The source SVG was rendered as a
+square PNG and uploaded through GitHub's profile flow; the saved avatar was
+visually verified from GitHub.
+
 GitHub resolves the requested `hemsoft` login to the existing `HemSoft` personal
 account. Franz registered the selected fallback `hemsoft-dev` himself.
 Keep HemSoft as the personal login. This plan does not rename or convert it.
@@ -67,11 +72,15 @@ endpoints in the initial capture:
   includes its complete repository list; `all` includes current/future owned
   repositories. Refresh this coverage through the owner's
   [installation settings](https://github.com/settings/installations) before cutover.
-- The private fhemmer repository's ruleset lookup returned 403. Verify its
-  effective protection policy before transfer.
+- The private fhemmer repository's ruleset lookup returned 403. Its owner settings
+  page shows no configured rulesets and warns that private rulesets require Team
+  for enforcement. This supplemental browser evidence is recorded separately;
+  retain the API failure as an accurate record of that endpoint's access.
 - Nine branch-protection detail lookups returned 404 despite successful
-  protected-branch listings. Verify these effective protections before transfer;
-  the summary includes nested protection and ruleset-detail failures.
+  protected-branch listings. All nine effective branch-rule lookups succeeded
+  and are recorded in the supplemental verification file, alongside the full
+  ruleset details in the main snapshot. Refresh effective rules before transfer.
+  The summary still includes the original nested endpoint failures.
 - Pages lookups returned 404 for 65 repositories. Two Pages configurations were
   observed: reports uses a workflow build; summarist uses `gh-pages`. Neither
   reported a custom domain. Treat unresolved Pages lookups as unverified.
