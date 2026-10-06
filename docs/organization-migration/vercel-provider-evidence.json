@@ -757,5 +757,18 @@
     "No environment variable values read or stored.",
     "Credential presence does not prove credential validity.",
     "Post-transfer GitHub App access and deployment smoke tests remain pending."
-  ]
+  ],
+  "shared_environment_variables": {
+    "api_status": 200,
+    "api_count": 0,
+    "owner_ui": "Shared tab states No shared variables",
+    "verified_at": "2026-10-06T23:48:11.816Z"
+  },
+  "integration_observations": {
+    "supabase_installation_url": "https://vercel.com/franz-hemmers-projects/~/integrations/supabase/icfg_959WaFB99D3RH3KVbrznohQX",
+    "configuration_id": "icfg_959WaFB99D3RH3KVbrznohQX",
+    "supabase_owner_resource_mapping": "pending",
+    "vercel_storage_page": "https://vercel.com/franz-hemmers-projects/~/stores",
+    "vercel_storage_observation": "Owner page shows Create a database; external Supabase resources still require verification"
+  }
 }

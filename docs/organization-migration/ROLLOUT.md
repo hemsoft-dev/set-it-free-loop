@@ -25,8 +25,8 @@ Empty fields, missing access, and failed lookups remain pending.
 
 Refresh runner registrations and organization groups, all environment credential
 name inventories, App selections, and effective protections immediately before
-cutover. Reconfirm inaccessible fhemmer protection settings from its owner's
-settings pages. Keep original failures visible beside supplemental evidence.
+cutover. The [fhemmer owner-browser evidence](fhemmer-protection-evidence.json) observes
+no classic protections or rulesets; reconfirm its settings immediately before cutover. Keep original failures visible beside supplemental evidence.
 The [existing snapshot checker](README.md#refresh-and-validate) establishes
 inventory integrity, not provider ownership or live credential validity.
 
@@ -34,8 +34,8 @@ The destination Team plan has one occupied seat. Franz selected removal of
 `fhemmerrelias` access **after transfer** in
 [the recorded access decision](https://github.com/HemSoft/set-it-free-loop/issues/138).
 Do not revoke access before transfer or purchase a seat. Verify temporary license
-requirements, including the original fhemmer owner being added as a collaborator,
-before transfer. [Collaborator removal](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/removing-an-outside-collaborator-from-an-organization-repository)
+requirements before transfer. The source fhemmer owner is an organization;
+the personal-account original-owner collaborator rule does not apply to it. [Collaborator removal](https://docs.github.com/en/organizations/managing-user-access-to-your-organizations-repositories/managing-outside-collaborators/removing-an-outside-collaborator-from-an-organization-repository)
 does not automatically reduce purchased licenses. Inspect the
 [current organization licensing](https://github.com/organizations/hemsoft-dev/settings/licensing)
 and verify both effective access and billing after the approved sequence.
@@ -47,15 +47,16 @@ This exceeds the four repository selections in the historical App snapshot.
 [Vercel's Hobby policy](https://vercel.com/docs/git#using-hobby-teams) blocks private
 organization Git deployments. Its plan or hosting treatment is a mandatory gate.
 Project IDs, Git repository IDs, domains, variable names and deployment states
-are observed; credential validity and shared-variable inheritance remain pending.
+are observed; credential validity remains pending. The owner Shared tab and API both show no
+shared variables in this workspace.
 No variable values were read or recorded. Preserve the current production
 projects and aliases while preparing the cutover.
 
 ## Runtime prerequisites
 
 Native Codex is OpenAI-owned App 1144995. Organization installation 168678981 is
-verified with all-repository selection; Franz confirmed account sign-in, and a
-real organization smoke review remains pending. Check the organization's
+verified with all-repository selection; a [real private organization review](https://github.com/hemsoft-dev/sfl-migration-pilot-private/pull/1#issuecomment-6027603864)
+completed clean at `f225d94d49a5951d6b2b205ad08990337aff040f`. Check the organization's
 [installed Apps](https://github.com/organizations/hemsoft-dev/settings/installations)
 and authenticate the requester through their connected account.
 
@@ -66,6 +67,9 @@ Do not count native Codex installation or a clean external Codex comment as proo
 that the intended SFL PR Reviewer runtime is restored. The
 [reviewer baseline](README.md#reviewer-baseline) records its discontinued state.
 Define and validate that SFL-owned runtime before claiming #139 complete.
+The August stop instruction applies to the prior private HemSoft rollout; this
+October organization request authorizes preparation for hemsoft-dev. It does not
+authorize new billing, publishing credentials, or weakening the required gates.
 
 ## Disposable pre-transfer validation
 

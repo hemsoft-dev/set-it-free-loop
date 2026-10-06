@@ -8,7 +8,9 @@
     "slug": "chatgpt-codex-connector",
     "repository_selection": "all",
     "verified_at": "2026-10-06T23:33:51.349396+00:00",
-    "connection_status": "owner_sign_in_confirmed; real_organization_review_pending"
+    "connection_status": "verified_by_real_private_organization_review",
+    "smoke_review_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/pull/1#issuecomment-6027603864",
+    "smoke_review_head": "f225d94d49a5951d6b2b205ad08990337aff040f"
   },
   "summary": {
     "repositories": 67,
@@ -1835,6 +1837,13 @@
       "source_inventory_member": false,
       "permission_probe_run": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/actions/runs/37548125725",
       "permission_probe_result": "workflow token: HemSoft admin; fhemmerrelias none",
+      "review_result": "native Codex clean at f225d94d49a5951d6b2b205ad08990337aff040f; SFL gate proof pending"
+    },
+    {
+      "repository_id": 1408029795,
+      "repository": "hemsoft-dev/sfl-migration-pilot-public",
+      "visibility": "public",
+      "source_inventory_member": false,
       "review_result": "pending"
     }
   ]
