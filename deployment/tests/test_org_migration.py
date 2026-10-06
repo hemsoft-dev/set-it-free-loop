@@ -19,6 +19,7 @@ class MigrationTests(unittest.TestCase):
         snapshot = {
             'source_owners': ['HemSoft', 'fhemmer'], 'destination_login': 'hemsoft-dev',
             'expected_repository_ids': [1, 2],
+            'expected_repository_sources': {'1': 'HemSoft/hs-cli-confluence-search', '2': 'fhemmer/hs-cli-confluence-search'},
             'repositories': [
                 {'id': 1, 'full_name': 'HemSoft/hs-cli-confluence-search',
                  'destination': 'hemsoft-dev/hs-cli-confluence-search',
@@ -30,6 +31,16 @@ class MigrationTests(unittest.TestCase):
             ],
         }
 
+        snapshot.update(schema_version=1, captured_at='2026-10-06T21:41:09Z', requester='HemSoft',
+            source_personal_plan='pro', coverage_limits=[],
+            source_access={'credential': 'classic/OAuth', 'repo_scope': True, 'fhemmer_owner': True})
+        for field in ('destination_organization', 'source_organization', 'known_owned_app', 'destination_actions_policy', 'source_organization_apps'):
+            snapshot[field] = {'state': 'unverified'}
+        snapshot['destination_organization'] = {'state': 'observed', 'data': {'id': 42, 'login': 'hemsoft-dev',
+            'type': 'Organization', 'plan': {'name': 'team'}, 'default_repository_permission': 'read'}}
+        snapshot['destination_teams'] = {'state': 'observed', 'data': []}
+        for field in ('destination_owner_membership', 'source_organization_membership'):
+            snapshot[field] = {'state': 'observed', 'data': {'state': 'active', 'role': 'admin'}}
         for repo in snapshot['repositories']:
             for field, data_type in capture.SETTING_TYPES.items():
                 repo['settings'].setdefault(field, {'state': 'observed', 'data': data_type()})
@@ -61,6 +72,7 @@ class MigrationTests(unittest.TestCase):
     def test_reject_repository_deletion_even_when_both_owners_remain(self):
         snapshot = self.snapshot()
         snapshot['expected_repository_ids'].append(3)
+        snapshot['expected_repository_sources']['3'] = 'HemSoft/another'
         snapshot['repositories'].append({**snapshot['repositories'][0], 'id': 3,
             'full_name': 'HemSoft/another', 'destination': 'hemsoft-dev/another'})
         snapshot['summary'] = capture.validate(snapshot)
@@ -82,8 +94,6 @@ class MigrationTests(unittest.TestCase):
 
     def bundle(self):
         snapshot = self.snapshot()
-        snapshot.update(requester='HemSoft', destination_organization={'state': 'observed',
-            'data': {'id': 42, 'plan': {'name': 'team'}}}, destination_teams={'state': 'observed', 'data': []})
         for repo in snapshot['repositories']:
             repo['settings']['environments'] = {'state': 'observed', 'data': []}
         snapshot['summary'] = capture.validate(snapshot)
@@ -95,7 +105,7 @@ class MigrationTests(unittest.TestCase):
                     'repositories': [snapshot['repositories'][0]['full_name']]}},
                 'installations': [{'installation_id': 10, 'selection': 'selected',
                                   'repositories': [snapshot['repositories'][0]['full_name']]}]},
-            'effective_branch_rules': [],
+            'effective_branch_rules': [], 'expected_effective_branch_rule_hashes': {},
             'source_fhemmer_rulesets': {'state': 'observed_in_owner_browser', 'configured_rulesets': []}}
         runtime = {'expected_repository_runner_ids': {}, 'repositories': [
             {'source': repo['full_name'], 'repository_runners': {'state': 'observed', 'data': []},
@@ -140,10 +150,12 @@ class MigrationTests(unittest.TestCase):
         snapshot, owner, runtime = self.bundle()
         snapshot['repositories'][0]['settings']['protected_branches'] = {'state': 'observed', 'data': [
             {'name': 'main', 'protection': {'state': 'unverified', 'http_status': 404}}]}
-        with self.assertRaisesRegex(ValueError, 'protection coverage'):
+        with self.assertRaisesRegex(ValueError, 'coverage mismatch'):
             capture.validate_supplemental(snapshot, owner, runtime)
         owner['effective_branch_rules'] = [{'source': snapshot['repositories'][0]['full_name'],
                                             'branch': 'main', 'state': 'observed', 'rules': []}]
+        owner['expected_effective_branch_rule_hashes'] = {snapshot['repositories'][0]['full_name'] + '/main':
+            capture.digest(owner['effective_branch_rules'][0])}
         capture.validate_supplemental(snapshot, owner, runtime)
         owner['verifier_account'] = 'another-user'
         with self.assertRaisesRegex(ValueError, 'identity mismatch'):
@@ -154,6 +166,9 @@ class MigrationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             (root / 'inventory.json').write_text(json.dumps(snapshot))
+            (root / 'evidence-integrity.json').write_text(json.dumps({name: capture.digest(value)
+                for name, value in [('inventory.json', snapshot), ('owner-verification.json', owner),
+                                    ('runtime-metadata.json', runtime)]}))
             for filename in ('owner-verification.json', 'runtime-metadata.json'):
                 (root / 'owner-verification.json').write_text(json.dumps(owner))
                 (root / 'runtime-metadata.json').write_text(json.dumps(runtime))
@@ -199,6 +214,68 @@ class MigrationTests(unittest.TestCase):
         owner['source_personal_apps']['expected_repository_selections'] = {}
         with self.assertRaisesRegex(ValueError, 'App selection manifest'):
             capture.validate_supplemental(snapshot, owner, runtime)
+
+    def test_require_top_level_capture_evidence(self):
+        fields = ('source_organization_apps', 'known_owned_app', 'destination_owner_membership',
+                  'destination_organization', 'destination_teams', 'destination_actions_policy',
+                  'source_organization', 'source_organization_membership')
+        for field in fields:
+            snapshot = self.snapshot()
+            del snapshot[field]
+            with self.assertRaisesRegex(ValueError, 'Missing top-level'):
+                capture.validate(snapshot)
+            snapshot = self.snapshot()
+            snapshot[field] = {'state': 'observed', 'data': 'invalid'}
+            with self.assertRaisesRegex(ValueError, 'setting payload'):
+                capture.validate(snapshot)
+
+    def test_reject_swapped_repository_id_source_pairs(self):
+        snapshot = self.snapshot()
+        left, right = snapshot['repositories']
+        left['id'], right['id'] = right['id'], left['id']
+        with self.assertRaisesRegex(ValueError, 'ID/source mapping'):
+            capture.validate(snapshot)
+
+    def test_reject_payload_on_unverified_environment_credentials(self):
+        for field in ('secret_names', 'variable_names'):
+            snapshot, owner, runtime = self.bundle()
+            snapshot['repositories'][0]['settings']['environments']['data'] = [{'name': 'Production'}]
+            env = {'name': 'Production', 'secret_names': {'state': 'observed', 'data': []},
+                   'variable_names': {'state': 'observed', 'data': []}}
+            runtime['repositories'][0]['environments'] = [env]
+            env[field] = {'state': 'unverified', 'data': [{'name': 'TOKEN', 'value': 'supersecret'}]}
+            with self.assertRaisesRegex(ValueError, 'unverified setting'):
+                capture.validate_supplemental(snapshot, owner, runtime)
+
+    def test_reject_truncated_branch_rule_payload(self):
+        snapshot, owner, runtime = self.bundle()
+        source = snapshot['repositories'][0]['full_name']
+        snapshot['repositories'][0]['settings']['protected_branches']['data'] = [
+            {'name': 'main', 'protection': {'state': 'unverified'}}]
+        rule = {'source': source, 'branch': 'main', 'state': 'observed',
+                'rules': [{'type': 'required_status_checks'}, {'type': 'pull_request'}]}
+        owner['effective_branch_rules'] = [rule]
+        owner['expected_effective_branch_rule_hashes'] = {source + '/main': capture.digest(rule)}
+        capture.validate_supplemental(snapshot, owner, runtime)
+        rule['rules'].pop()
+        with self.assertRaisesRegex(ValueError, 'Branch rule payload'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+
+    def test_integrity_manifest_rejects_any_evidence_payload_change(self):
+        snapshot, owner, runtime = self.bundle()
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            files = {'inventory.json': snapshot, 'owner-verification.json': owner, 'runtime-metadata.json': runtime}
+            for name, value in files.items():
+                (root / name).write_text(json.dumps(value))
+            (root / 'evidence-integrity.json').write_text(json.dumps({name: capture.digest(value) for name, value in files.items()}))
+            capture.validate_bundle(root / 'inventory.json')
+            for name, value in files.items():
+                changed = {**value, 'unexpected_evidence': 'changed'}
+                (root / name).write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError, 'integrity manifest'):
+                    capture.validate_bundle(root / 'inventory.json')
+                (root / name).write_text(json.dumps(value))
 
     def test_capture_custom_environment_patterns_with_encoded_name(self):
         repo = {'id': 1, 'name': 'repo', 'full_name': 'HemSoft/repo'}

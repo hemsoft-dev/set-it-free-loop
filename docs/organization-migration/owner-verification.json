@@ -710,5 +710,16 @@
     "source_url": "https://github.com/fhemmer/hs-cli-confluence-search/settings/rules",
     "configured_rulesets": [],
     "notice": "Your rulesets won't be enforced on this private repository until you upgrade this organization account to GitHub Team."
+  },
+  "expected_effective_branch_rule_hashes": {
+    "HemSoft/codexbar/feat/issue-73-account-configuration": "ecda26a05ede48aca9560db1a369fba382d29652c73551fa4b10c7b89b0858bc",
+    "HemSoft/codexbar/fix/issue-84-local-time-locale": "f07288d8628c2ab740bfcd8128427c38d4f2f638eb3ce297a96c7c2a396c72e9",
+    "HemSoft/codexbar/main": "a2bd86c91ec7407f492fe77115913efbc087388b6c41c0759148474243a30d07",
+    "HemSoft/codexbar-ios/main": "93addf78a97cb66f6279179cff92234e067f0bc2c6477d472b756a6df415342d",
+    "HemSoft/dashboard/main": "cae39be99fa51435874f3194dcefc239b189165c1d972da7b106f2d828db6870",
+    "HemSoft/gh-x/main": "553d7e025a0b87421a207cdb1da6ed56204953597d63ca21908434b2ea9ddbff",
+    "HemSoft/hs-buddy/main": "a2084799b2c22f9b469655592844f89c6ca2c4b1f2ebcb058e3c1bd63b65971b",
+    "HemSoft/spam-removal-agent/main": "3fa082b9cb47128727ddf313a08738ae6567e21e2c5fd1b0281eef0d443027fc",
+    "HemSoft/tickdown/main": "bddb4d5ace6668cc1c765f9dd43b3ddab37ff1164b9897b1a8396c545f2b802a"
   }
 }

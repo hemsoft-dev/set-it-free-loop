@@ -275,3 +275,24 @@ result structure. App access mode and selected repository sets are reconciled
 against `expected_repository_selections`, separately from installation IDs.
 Refresh that manifest from the owner-verified App selections during preflight;
 review changes to both records rather than regenerating it from a truncated list.
+
+Top-level organization, owner membership and owned/installed App evidence are
+also mandatory. `expected_repository_sources` pins each ID to its source name;
+`expected_effective_branch_rule_hashes` preserves every captured branch rule
+payload. Unverified credential results cannot contain data.
+
+[evidence-integrity.json](evidence-integrity.json) pins the complete canonical
+JSON payload of all three evidence files, including nested collections and
+metadata. This catches omitted collaborators, altered permissions, truncated
+protections and other evidence changes that preserve record counts. It is an
+accidental-change check, not proof that external settings remain current.
+After live capture and independent owner/runtime reconciliation, review every
+changed evidence record and expected manifest, then deliberately reseal:
+
+```sh
+python3 -B deployment/scripts/capture-org-migration.py --write-integrity docs/organization-migration/inventory.json
+python3 -B deployment/scripts/capture-org-migration.py --check docs/organization-migration/inventory.json
+```
+
+Do not update expected manifests or reseal merely to make a failing check pass.
+The reviewer must assess both the changed evidence and manifest in the PR.

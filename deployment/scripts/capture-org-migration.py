@@ -5,6 +5,7 @@ import argparse
 import concurrent.futures
 import datetime
 import json
+import hashlib
 import pathlib
 import re
 import subprocess
@@ -195,7 +196,42 @@ def validate_settings(settings):
                             raise ValueError('Incomplete environment branch pattern')
 
 
+def validate_global_evidence(snapshot):
+    required = {
+        'destination_organization': (dict, ('id', 'login', 'type', 'plan', 'default_repository_permission')),
+        'destination_owner_membership': (dict, ('state', 'role')),
+        'destination_teams': (list, ()), 'destination_actions_policy': (dict, ()),
+        'source_organization': (dict, ('id', 'login', 'plan', 'default_repository_permission')),
+        'source_organization_membership': (dict, ('state', 'role')),
+        'source_organization_apps': (list, ('id', 'app_id', 'app_slug', 'repository_selection', 'permissions')),
+        'known_owned_app': (dict, ('id', 'slug', 'owner_login', 'owner_type', 'permissions')),
+    }
+    for field, (data_type, keys) in required.items():
+        if field not in snapshot:
+            raise ValueError('Missing top-level capture evidence')
+        result = snapshot[field]
+        validate_result(result, data_type)
+        if result['state'] == 'observed':
+            items = result['data'] if data_type is list else [result['data']]
+            for item in items:
+                if not isinstance(item, dict) or not set(keys).issubset(item):
+                    raise ValueError('Incomplete top-level capture evidence')
+    if snapshot.get('requester') != 'HemSoft' or snapshot.get('schema_version') != 1:
+        raise ValueError('Invalid snapshot identity or schema')
+    if not isinstance(snapshot.get('captured_at'), str) or not isinstance(snapshot.get('coverage_limits'), list):
+        raise ValueError('Missing snapshot capture metadata')
+    access = snapshot.get('source_access', {})
+    if access != {'credential': 'classic/OAuth', 'repo_scope': True, 'fhemmer_owner': True}:
+        raise ValueError('Missing source access proof')
+    if not isinstance(snapshot.get('source_personal_plan'), str):
+        raise ValueError('Missing source personal plan')
+    for field in ('destination_owner_membership', 'source_organization_membership'):
+        if snapshot[field].get('data') != {'state': 'active', 'role': 'admin'}:
+            raise ValueError('Missing active owner membership')
+
+
 def validate(snapshot, require_summary=False):
+    validate_global_evidence(snapshot)
     if not valid_login(snapshot['destination_login']):
         raise ValueError('Invalid destination login')
     repositories = snapshot['repositories']
@@ -210,6 +246,9 @@ def validate(snapshot, require_summary=False):
         raise ValueError('Missing migration population')
     if {repo['full_name'].split('/')[0] for repo in repositories} != set(SOURCE_OWNERS):
         raise ValueError('Repository population does not cover both source owners')
+    expected_sources = snapshot['expected_repository_sources']
+    if expected_sources != {str(repo['id']): repo['full_name'] for repo in repositories}:
+        raise ValueError('Repository ID/source mapping mismatch')
     for repo in repositories:
         validate_settings(repo['settings'])
         if repo['full_name'].split('/')[0] not in SOURCE_OWNERS:
@@ -246,6 +285,7 @@ def validate_supplemental(snapshot, owner, runtime):
         if len(envs) != len(expected_envs) or {env['name'] for env in envs} != {env['name'] for env in expected_envs}:
             raise ValueError('Supplemental environment coverage mismatch')
         runners = record['repository_runners']
+        validate_result(runners, list)
         if runners['state'] == 'observed':
             ids = [runner['id'] for runner in runners['data']]
             expected = expected_runners.get(record['source'], [])
@@ -256,6 +296,7 @@ def validate_supplemental(snapshot, owner, runtime):
         for env in envs:
             for field in ('secret_names', 'variable_names'):
                 result = env[field]
+                validate_result(result, list)
                 if result['state'] == 'observed':
                     names = result['data']
                     if not isinstance(names, list) or any(not isinstance(name, str) for name in names) or len(names) != len(set(names)):
@@ -299,9 +340,14 @@ def validate_supplemental(snapshot, owner, runtime):
         for branch in repo['settings'].get('protected_branches', {}).get('data', [])
         if branch['protection']['state'] == 'unverified'}
     rules = owner['effective_branch_rules']
+    expected_payloads = owner['expected_effective_branch_rule_hashes']
+    if set(expected_payloads) != {source + '/' + branch for source, branch in expected_rules}:
+        raise ValueError('Branch rule manifest coverage mismatch')
     if len(rules) != len(expected_rules) or {(rule['source'], rule['branch']) for rule in rules} != expected_rules:
         raise ValueError('Supplemental protection coverage mismatch')
     for rule in rules:
+        if digest(rule) != expected_payloads[rule['source'] + '/' + rule['branch']]:
+            raise ValueError('Branch rule payload differs from expected manifest')
         if rule['state'] == 'observed':
             if not isinstance(rule['rules'], list) or any(not isinstance(item, dict) or not item.get('type') for item in rule['rules']):
                 raise ValueError('Invalid supplemental protection payload')
@@ -311,12 +357,22 @@ def validate_supplemental(snapshot, owner, runtime):
         raise ValueError('Missing fhemmer owner ruleset verification')
 
 
-def validate_bundle(path):
+def digest(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def validate_bundle(path, require_integrity=True):
     snapshot = json.loads(path.read_text())
     summary = validate(snapshot, require_summary=True)
     owner = json.loads((path.parent / 'owner-verification.json').read_text())
     runtime = json.loads((path.parent / 'runtime-metadata.json').read_text())
     validate_supplemental(snapshot, owner, runtime)
+    if require_integrity:
+        manifest = json.loads((path.parent / 'evidence-integrity.json').read_text())
+        actual = {name: digest(value) for name, value in (
+            ('inventory.json', snapshot), ('owner-verification.json', owner), ('runtime-metadata.json', runtime))}
+        if manifest != actual:
+            raise ValueError('Evidence payload differs from reviewed integrity manifest')
     return summary
 
 
@@ -326,7 +382,16 @@ def main():
     parser.add_argument('--output', type=pathlib.Path,
                         default=pathlib.Path('docs/organization-migration/inventory.json'))
     parser.add_argument('--check', type=pathlib.Path, help='Validate an existing snapshot without network calls')
+    parser.add_argument('--write-integrity', type=pathlib.Path,
+                        help='Seal a reconciled evidence bundle after reviewing refreshed owner/runtime records')
     args = parser.parse_args()
+    if args.write_integrity:
+        path = args.write_integrity
+        validate_bundle(path, require_integrity=False)
+        manifest = {name: digest(json.loads((path.parent / name).read_text())) for name in
+                    ('inventory.json', 'owner-verification.json', 'runtime-metadata.json')}
+        (path.parent / 'evidence-integrity.json').write_text(json.dumps(manifest, indent=2) + '\n')
+        return
     if args.check:
         print(json.dumps(validate_bundle(args.check), indent=2))
         return
@@ -348,6 +413,7 @@ def main():
         'requester': 'HemSoft', 'source_owners': list(SOURCE_OWNERS),
         'source_access': source_access,
         'expected_repository_ids': sorted(repo['id'] for repo in repos),
+        'expected_repository_sources': {str(repo['id']): repo['full_name'] for repo in repos},
         'source_personal_plan': identity['data'].get('plan', {}).get('name'),
         'destination_login': args.destination,
         'destination_organization': organization,
