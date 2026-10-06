@@ -763,5 +763,10 @@
       },
       "environments": []
     }
-  ]
+  ],
+  "expected_repository_runner_ids": {
+    "HemSoft/yahtzee": [
+      21
+    ]
+  }
 }

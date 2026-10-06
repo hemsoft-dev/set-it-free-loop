@@ -194,6 +194,18 @@
         "permissions": "Read access to actions and metadata\n Read and write access to administration, checks, code, commit statuses, deployments, issues, pull requests, repository hooks, and workflows",
         "verified_at": "2026-10-06 21:42:12 UTC"
       }
+    ],
+    "expected_installation_ids": [
+      51466296,
+      100502814,
+      111818344,
+      127700287,
+      129542494,
+      139881351,
+      146036666,
+      149420600,
+      150383874,
+      151797116
     ]
   },
   "coverage_limits": [

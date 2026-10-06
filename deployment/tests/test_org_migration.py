@@ -4,6 +4,7 @@ import importlib.util
 import json
 import pathlib
 import subprocess
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -67,6 +68,98 @@ class MigrationTests(unittest.TestCase):
         snapshot['summary'] = {**capture.validate(snapshot), 'repositories': 67}
         with self.assertRaisesRegex(ValueError, 'Stored summary'):
             capture.validate(snapshot)
+
+    def test_require_summary_for_offline_check_but_allow_live_computation(self):
+        snapshot = self.snapshot()
+        self.assertEqual(capture.validate(snapshot)['repositories'], 2)
+        with self.assertRaisesRegex(ValueError, 'requires a stored summary'):
+            capture.validate(snapshot, require_summary=True)
+
+    def bundle(self):
+        snapshot = self.snapshot()
+        snapshot.update(requester='HemSoft', destination_organization={'state': 'observed',
+            'data': {'id': 42, 'plan': {'name': 'team'}}}, destination_teams={'state': 'observed', 'data': []})
+        for repo in snapshot['repositories']:
+            repo['settings']['environments'] = {'state': 'observed', 'data': []}
+        snapshot['summary'] = capture.validate(snapshot)
+        owner = {'verifier_account': 'HemSoft', 'destination': {'login': 'hemsoft-dev', 'id': 42,
+            'plan': 'team', 'members': ['HemSoft'], 'teams': [],
+            'actions': {'state': 'observed_in_owner_browser'}},
+            'source_personal_apps': {'state': 'observed_in_owner_browser', 'expected_installation_ids': [10],
+                'installations': [{'installation_id': 10, 'selection': 'selected',
+                                  'repositories': [snapshot['repositories'][0]['full_name']]}]},
+            'effective_branch_rules': [],
+            'source_fhemmer_rulesets': {'state': 'observed_in_owner_browser', 'configured_rulesets': []}}
+        runtime = {'expected_repository_runner_ids': {}, 'repositories': [
+            {'source': repo['full_name'], 'repository_runners': {'state': 'observed', 'data': []},
+             'environments': []} for repo in snapshot['repositories']]}
+        return snapshot, owner, runtime
+
+    def test_reconcile_supplemental_repository_and_runner_coverage(self):
+        snapshot, owner, runtime = self.bundle()
+        capture.validate_supplemental(snapshot, owner, runtime)
+        runtime['repositories'].pop()
+        with self.assertRaisesRegex(ValueError, 'repository coverage'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+        snapshot, owner, runtime = self.bundle()
+        runtime['expected_repository_runner_ids'] = {runtime['repositories'][0]['source']: [12]}
+        with self.assertRaisesRegex(ValueError, 'runner identity'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+
+    def test_reconcile_supplemental_environment_coverage_and_names_only(self):
+        snapshot, owner, runtime = self.bundle()
+        snapshot['repositories'][0]['settings']['environments']['data'] = [{'name': 'Production'}]
+        with self.assertRaisesRegex(ValueError, 'environment coverage'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+        env = {'name': 'Production', 'secret_names': {'state': 'observed', 'data': []},
+               'variable_names': {'state': 'observed', 'data': []}}
+        runtime['repositories'][0]['environments'] = [env]
+        capture.validate_supplemental(snapshot, owner, runtime)
+        env['variable_names']['data'] = [{'name': 'KEY', 'value': 'sensitive'}]
+        with self.assertRaisesRegex(ValueError, 'names only'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+
+    def test_reconcile_supplemental_app_identity_and_selection(self):
+        snapshot, owner, runtime = self.bundle()
+        owner['source_personal_apps']['installations'] = []
+        with self.assertRaisesRegex(ValueError, 'App identity'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+        snapshot, owner, runtime = self.bundle()
+        owner['source_personal_apps']['installations'][0]['repositories'] = ['outside/repo']
+        with self.assertRaisesRegex(ValueError, 'App repository selection'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+
+    def test_reconcile_supplemental_protection_and_owner_identity(self):
+        snapshot, owner, runtime = self.bundle()
+        snapshot['repositories'][0]['settings']['protected_branches'] = {'state': 'observed', 'data': [
+            {'name': 'main', 'protection': {'state': 'unverified', 'http_status': 404}}]}
+        with self.assertRaisesRegex(ValueError, 'protection coverage'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+        owner['effective_branch_rules'] = [{'source': snapshot['repositories'][0]['full_name'],
+                                            'branch': 'main', 'state': 'observed', 'rules': []}]
+        capture.validate_supplemental(snapshot, owner, runtime)
+        owner['verifier_account'] = 'another-user'
+        with self.assertRaisesRegex(ValueError, 'identity mismatch'):
+            capture.validate_supplemental(snapshot, owner, runtime)
+
+    def test_offline_bundle_parses_both_supplemental_files(self):
+        snapshot, owner, runtime = self.bundle()
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            (root / 'inventory.json').write_text(json.dumps(snapshot))
+            for filename in ('owner-verification.json', 'runtime-metadata.json'):
+                (root / 'owner-verification.json').write_text(json.dumps(owner))
+                (root / 'runtime-metadata.json').write_text(json.dumps(runtime))
+                self.assertEqual(capture.validate_bundle(root / 'inventory.json')['repositories'], 2)
+                (root / filename).write_text('{malformed')
+                with self.assertRaises(json.JSONDecodeError):
+                    capture.validate_bundle(root / 'inventory.json')
+            (root / 'owner-verification.json').write_text(json.dumps(owner))
+            (root / 'runtime-metadata.json').write_text(json.dumps(runtime))
+            snapshot.pop('summary')
+            (root / 'inventory.json').write_text(json.dumps(snapshot))
+            with self.assertRaisesRegex(ValueError, 'requires a stored summary'):
+                capture.validate_bundle(root / 'inventory.json')
 
     def test_capture_custom_environment_patterns_with_encoded_name(self):
         repo = {'id': 1, 'name': 'repo', 'full_name': 'HemSoft/repo'}

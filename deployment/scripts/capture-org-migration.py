@@ -142,7 +142,7 @@ def capture_repo(repo, destination):
     return record
 
 
-def validate(snapshot):
+def validate(snapshot, require_summary=False):
     if not valid_login(snapshot['destination_login']):
         raise ValueError('Invalid destination login')
     repositories = snapshot['repositories']
@@ -170,8 +170,90 @@ def validate(snapshot):
             'private': sum(repo['private'] for repo in repositories),
             'archived': sum(repo['archived'] for repo in repositories),
             'unverified_endpoints': sum(unverified_count(repo['settings']) for repo in repositories)}
+    if require_summary and 'summary' not in snapshot:
+        raise ValueError('Committed snapshot requires a stored summary')
     if 'summary' in snapshot and snapshot['summary'] != summary:
         raise ValueError('Stored summary does not match inventory')
+    return summary
+
+
+def validate_supplemental(snapshot, owner, runtime):
+    sources = {repo['full_name']: repo for repo in snapshot['repositories']}
+    records = runtime['repositories']
+    if len(records) != len(sources) or {repo['source'] for repo in records} != set(sources):
+        raise ValueError('Supplemental repository coverage mismatch')
+    expected_runners = runtime['expected_repository_runner_ids']
+    if not set(expected_runners).issubset(sources):
+        raise ValueError('Unexpected runner source')
+    for record in records:
+        source = sources[record['source']]
+        expected_envs = source['settings'].get('environments', {}).get('data', [])
+        envs = record['environments']
+        if len(envs) != len(expected_envs) or {env['name'] for env in envs} != {env['name'] for env in expected_envs}:
+            raise ValueError('Supplemental environment coverage mismatch')
+        runners = record['repository_runners']
+        if runners['state'] == 'observed':
+            ids = [runner['id'] for runner in runners['data']]
+            expected = expected_runners.get(record['source'], [])
+            if len(ids) != len(set(ids)) or len(expected) != len(set(expected)) or set(ids) != set(expected):
+                raise ValueError('Supplemental runner identity mismatch')
+        elif runners['state'] != 'unverified':
+            raise ValueError('Invalid runner verification state')
+        for env in envs:
+            for field in ('secret_names', 'variable_names'):
+                result = env[field]
+                if result['state'] == 'observed':
+                    names = result['data']
+                    if not isinstance(names, list) or any(not isinstance(name, str) for name in names) or len(names) != len(set(names)):
+                        raise ValueError('Environment credentials must contain unique names only')
+                elif result['state'] != 'unverified':
+                    raise ValueError('Invalid environment verification state')
+    destination = snapshot['destination_organization']['data']
+    if owner['verifier_account'] != snapshot['requester'] or owner['destination']['login'] != snapshot['destination_login']:
+        raise ValueError('Owner verification identity mismatch')
+    if owner['destination']['id'] != destination['id'] or owner['destination']['plan'] != destination['plan']['name']:
+        raise ValueError('Owner verification destination mismatch')
+    if owner['destination']['actions']['state'] != 'observed_in_owner_browser':
+        raise ValueError('Missing owner Actions verification')
+    members = owner['destination']['members']
+    if len(members) != len(set(members)) or snapshot['requester'] not in members:
+        raise ValueError('Owner membership coverage mismatch')
+    if owner['destination']['teams'] != snapshot['destination_teams']['data']:
+        raise ValueError('Owner team coverage mismatch')
+    apps = owner['source_personal_apps']
+    if apps['state'] != 'observed_in_owner_browser':
+        raise ValueError('Missing owner App verification')
+    ids = [app['installation_id'] for app in apps['installations']]
+    expected = apps['expected_installation_ids']
+    if len(ids) != len(set(ids)) or len(expected) != len(set(expected)) or set(ids) != set(expected):
+        raise ValueError('Supplemental App identity mismatch')
+    personal = {name for name in sources if name.startswith('HemSoft/')}
+    for app in apps['installations']:
+        selected = app['repositories']
+        if app['selection'] not in ('all', 'selected') or len(selected) != len(set(selected)) or not set(selected).issubset(personal):
+            raise ValueError('Supplemental App repository selection mismatch')
+    expected_rules = {(repo['full_name'], branch['name']) for repo in sources.values()
+        for branch in repo['settings'].get('protected_branches', {}).get('data', [])
+        if branch['protection']['state'] == 'unverified'}
+    rules = owner['effective_branch_rules']
+    if len(rules) != len(expected_rules) or {(rule['source'], rule['branch']) for rule in rules} != expected_rules:
+        raise ValueError('Supplemental protection coverage mismatch')
+    for rule in rules:
+        if rule['state'] == 'observed':
+            if not isinstance(rule['rules'], list) or any(not isinstance(item, dict) or not item.get('type') for item in rule['rules']):
+                raise ValueError('Invalid supplemental protection payload')
+        elif rule['state'] != 'unverified':
+            raise ValueError('Invalid protection verification state')
+    if owner['source_fhemmer_rulesets']['state'] != 'observed_in_owner_browser' or not isinstance(owner['source_fhemmer_rulesets']['configured_rulesets'], list):
+        raise ValueError('Missing fhemmer owner ruleset verification')
+
+
+def validate_bundle(path):
+    snapshot = json.loads(path.read_text())
+    summary = validate(snapshot, require_summary=True)
+    owner = json.loads((path.parent / 'owner-verification.json').read_text())
+    runtime = json.loads((path.parent / 'runtime-metadata.json').read_text())
+    validate_supplemental(snapshot, owner, runtime)
     return summary
 
 
@@ -183,7 +265,7 @@ def main():
     parser.add_argument('--check', type=pathlib.Path, help='Validate an existing snapshot without network calls')
     args = parser.parse_args()
     if args.check:
-        print(json.dumps(validate(json.loads(args.check.read_text())), indent=2))
+        print(json.dumps(validate_bundle(args.check), indent=2))
         return
     if not valid_login(args.destination):
         parser.error('Invalid destination login')

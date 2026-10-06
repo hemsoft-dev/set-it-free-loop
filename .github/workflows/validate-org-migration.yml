@@ -28,5 +28,5 @@ jobs:
           persist-credentials: false
       - name: Test collection safety and migration mapping
         run: python3 -B -m unittest discover -s deployment/tests -p test_org_migration.py -v
-      - name: Validate the committed snapshot without GitHub credentials
+      - name: Validate inventory and supplemental evidence without GitHub credentials
         run: python3 -B deployment/scripts/capture-org-migration.py --check docs/organization-migration/inventory.json

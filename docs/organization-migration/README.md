@@ -193,6 +193,15 @@ A passing structural check does not mean inaccessible settings are
 verified or that the destination exists. The CI workflow performs only offline
 validation and does not receive administrative credentials.
 
+The offline `--check` command requires the stored summary and reads both sibling
+supplemental JSON files. It reconciles every runtime repository and environment
+with the main snapshot, runner and App IDs with their expected manifests, App
+repository selections with the personal source population, and effective-rule
+coverage with the unresolved classic-protection lookups. Owner identity,
+destination ID/plan, members and teams are checked as well. Missing, malformed,
+or inconsistent supplemental evidence fails CI. Review updates to the manifests
+together with the corresponding owner/API evidence.
+
 Refresh supplemental runner and environment names through paginated GETs to
 `repos/OWNER/REPO/actions/runners`,
 `repos/OWNER/REPO/environments/ENVIRONMENT/secrets`, and
