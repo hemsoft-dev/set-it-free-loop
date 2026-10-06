@@ -3,11 +3,12 @@
 This runbook implements the discovery and planning portion of
 [issue #135](https://github.com/HemSoft/set-it-free-loop/issues/135).
 It does not transfer repositories, change visibility, buy a plan, or install a
-reviewer. The destination organization has not yet been created or verified.
+reviewer. Franz created `hemsoft-dev`; HemSoft's active owner access and the
+selected Team plan are verified.
 
 ## Current evidence
 
-[inventory.json](inventory.json) was captured on October 6, 2026 at 5:24 PM EDT
+[inventory.json](inventory.json) was refreshed on October 6, 2026 at 5:41 PM EDT
 with the HemSoft account. Collection continued afterward; individual repository
 records include their capture times. The source population was checked again
 at the end of collection.
@@ -19,13 +20,15 @@ at the end of collection.
 | Total | 67 | | 25 private, 14 archived |
 
 The personal account uses GitHub Pro. The fhemmer organization uses GitHub Free
-and has default repository permissions of `write`. The new organization must
-have an explicitly recorded permission policy rather than inheriting that
-choice without inspection.
+and has default repository permissions of `write`. The destination is organization
+ID 338855369 and uses GitHub Team, with default repository permissions of `read`.
+HemSoft is its sole member and active owner; no teams or App installations were
+present when inspected. Members may create repositories; required two-factor
+authentication is currently disabled. These are observed settings, not changes
+made by this preflight.
 
 GitHub resolves the requested `hemsoft` login to the existing `HemSoft` personal
-account. The selected fallback for this migration is `hemsoft-dev`. Its lookup
-returned 404, which does not reserve the name or prove it can be registered.
+account. Franz registered the selected fallback `hemsoft-dev` himself.
 Keep HemSoft as the personal login. This plan does not rename or convert it.
 
 The snapshot maps every repository ID to a unique destination name. It records
@@ -58,9 +61,12 @@ endpoints in the initial capture:
 
 - All 67 repository App-installation lookups require different authentication
   and returned 401. The user-installations endpoint also rejects the current
-  OAuth credential. Verify personal-account App installation coverage through
-  the owner's [installation settings](https://github.com/settings/installations)
-  or an appropriate App credential before cutover.
+  OAuth credential. Supplemental read-only browser verification of all ten
+  personal-account installations is recorded in
+  [owner-verification.json](owner-verification.json). Each selected installation
+  includes its complete repository list; `all` includes current/future owned
+  repositories. Refresh this coverage through the owner's
+  [installation settings](https://github.com/settings/installations) before cutover.
 - The private fhemmer repository's ruleset lookup returned 403. Verify its
   effective protection policy before transfer.
 - Nine branch-protection detail lookups returned 404 despite successful
@@ -77,6 +83,13 @@ in the new organization during integration migration. The separately owned
 owned by the HemSoft personal account. Registration ownership and repository
 installation coverage are different facts.
 
+The SFL App installation is ID 150383874, with 64 selected personal repositories.
+It excludes `HemSoft/codexbar` and `HemSoft/survival-shelter-opus55`. Fly.io selects
+`HemSoft/codexbar`. Vercel selects dashboard, hs-landing-page, now-leadership-group,
+and set-it-free-loop-site. Azure Pipelines, ChatGPT Codex Connector, Claude,
+cubic-dev-ai, Cursor, Greptile Apps, and Railway App have all-repository access.
+Installation access does not prove a live service deployment or reviewer runtime.
+
 External hosting accounts, package registries, runner registrations, environment
 credential names, and webhook routing beyond the recorded delivery hosts need
 an owner-verified integration ledger. Record the provider, repository, service
@@ -84,34 +97,32 @@ owner, affected URL/reference, credential source, cutover action, smoke test,
 and recovery action. Keep credentials and sensitive callback paths outside Git.
 Do not treat an empty webhook list as proof of no external deployment.
 
-Organization creation requires a signed-in owner browser. Franz is completing
-the signup himself using the
-[new organization flow](https://github.com/organizations/new), create
-`hemsoft-dev` if available, and retain the personal account. A signup CAPTCHA,
-MFA step, legal confirmation, or billing step must be completed by the owner.
-
-After creation, record the canonical login, organization ID, active HemSoft
-owner membership, members/teams, default repository permissions, Actions
-policy, and actual plan. Refresh the snapshot to replace the destination's
-currently unverified organization, membership, teams, and policy entries.
-No actual destination plan has been selected or purchased in this preflight.
+The destination's organization, owner membership, and teams are now observed
+in the refreshed snapshot. Its Actions policy API returned 403 because the CLI
+lacks `admin:org`. The signed-in HemSoft browser verified the policy instead:
+all repositories may use all actions/reusable workflows; full-SHA pinning is
+not required; standard hosted runners are enabled. First-time contributors need
+approval for fork workflows; private fork workflows are disabled. Workflow
+tokens default to read contents/packages, and Actions cannot create or approve
+pull requests. The supplemental owner-verification file records this evidence
+and its source URL. No settings were changed.
 
 ## Plan and credential requirements
 
 GitHub Team or Enterprise Cloud is needed to retain protected branches/rulesets
 for organization-owned private repositories and to use organization secrets and
 variables in private repositories. HemSoft's personal Pro subscription does not
-establish the destination organization's plan. Free can be used to establish an
-empty organization, but private transfers requiring these features must remain
-blocked until the destination supports them.
+establish the destination organization's plan. The observed destination Team
+plan supports these features; still verify each repository's effective policy
+and credential access during transfer.
 
 Verify the actual requirements against GitHub's documentation for
 [protected branches](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches),
 [repository transfers](https://docs.github.com/en/repositories/creating-and-managing-repositories/transferring-a-repository),
 [organization secrets and variables](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets),
 and [organization rulesets](https://docs.github.com/en/organizations/managing-organization-settings/creating-rulesets-for-repositories-in-your-organization).
-Any paid plan selection remains an owner billing step; this issue does not
-authorize a purchase.
+Franz selected the destination plan himself. The agent made no purchase;
+future billing changes remain owner steps.
 
 The current gh OAuth token has `repo`, `read:org`, `user`, `gist`, and
 `admin:public_key`; it lacks `admin:org`. Reading an organization resource can

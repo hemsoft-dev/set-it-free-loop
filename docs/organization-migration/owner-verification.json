@@ -1,0 +1,195 @@
+{
+  "verified_at": "2026-10-06 21:42:28 UTC",
+  "verifier_account": "HemSoft",
+  "method": "Read-only authenticated GitHub settings pages and REST responses",
+  "destination": {
+    "login": "hemsoft-dev",
+    "id": 338855369,
+    "members": [
+      "HemSoft"
+    ],
+    "teams": [],
+    "plan": "team",
+    "default_repository_permission": "read",
+    "actions": {
+      "source_url": "https://github.com/organizations/hemsoft-dev/settings/actions",
+      "state": "observed_in_owner_browser",
+      "enabled_repositories": "all",
+      "allowed_actions": "all",
+      "require_full_sha_pinning": false,
+      "standard_hosted_runners_enabled": true,
+      "fork_pull_request_approval": "first_time_contributors",
+      "private_fork_workflows_enabled": false,
+      "default_workflow_permissions": "read",
+      "can_approve_pull_request_reviews": false
+    },
+    "installed_apps": {
+      "state": "observed",
+      "source_endpoint": "orgs/hemsoft-dev/installations",
+      "installations": []
+    }
+  },
+  "source_personal_apps": {
+    "source_url": "https://github.com/settings/installations",
+    "state": "observed_in_owner_browser",
+    "installations": [
+      {
+        "name": "Azure Pipelines",
+        "installation_id": 51466296,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Read access to metadata\n Read and write access to checks, code, commit statuses, deployments, issues, and pull requests",
+        "verified_at": "2026-10-06 21:42:03 UTC"
+      },
+      {
+        "name": "ChatGPT Codex Connector",
+        "installation_id": 139881351,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Read access to checks, commit statuses, and metadata\n Read and write access to actions, code, issues, pull requests, and workflows",
+        "verified_at": "2026-10-06 21:42:04 UTC"
+      },
+      {
+        "name": "Claude",
+        "installation_id": 146036666,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Claude is requesting an update to its permissions.\tReview request\n Read access to commit statuses and metadata\n Read and write access to actions, checks, code, discussions, issues, pull requests, repository hooks, and workflows",
+        "verified_at": "2026-10-06 21:42:05 UTC"
+      },
+      {
+        "name": "cubic-dev-ai",
+        "installation_id": 149420600,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Read access to administration, commit statuses, deployments, and metadata\n Read and write access to actions, checks, code, issues, pull requests, and workflows",
+        "verified_at": "2026-10-06 21:42:06 UTC"
+      },
+      {
+        "name": "Cursor",
+        "installation_id": 129542494,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Cursor is requesting an update to its permissions.\tReview request\n Read access to administration, commit statuses, deployments, metadata, packages, and pages\n Read and write access to actions, checks, code, discussions, issues, pull requests, and workflows",
+        "verified_at": "2026-10-06 21:42:07 UTC"
+      },
+      {
+        "name": "Fly.io",
+        "installation_id": 127700287,
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/codexbar"
+        ],
+        "permissions": "Read access to metadata\n Read and write access to actions, checks, code, deployments, environments, pull requests, and repository hooks",
+        "verified_at": "2026-10-06 21:42:08 UTC"
+      },
+      {
+        "name": "Greptile Apps",
+        "installation_id": 151797116,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Greptile Apps is requesting an update to its permissions.\tReview request\n Read access to Dependabot alerts, actions, deployments, metadata, secret scanning alerts, and security events\n Read and write access to checks, code, commit statuses, issues, and pull requests",
+        "verified_at": "2026-10-06 21:42:09 UTC"
+      },
+      {
+        "name": "Railway App",
+        "installation_id": 111818344,
+        "selection": "all",
+        "repositories": [],
+        "permissions": "Read access to metadata\n Read and write access to actions, administration, checks, code, commit statuses, deployments, pull requests, and workflows",
+        "verified_at": "2026-10-06 21:42:10 UTC"
+      },
+      {
+        "name": "SFL App",
+        "installation_id": 150383874,
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/ESO",
+          "HemSoft/PXWritStatus",
+          "HemSoft/PXInfoPanel",
+          "HemSoft/PXVendorMagic",
+          "HemSoft/PXContainerMagic",
+          "HemSoft/PXFriends",
+          "HemSoft/TCE-Admin",
+          "HemSoft/TimCoRetailManager",
+          "HemSoft/PeopleCare",
+          "HemSoft/Relias.Lms.Enrollment",
+          "HemSoft/NWMM",
+          "HemSoft/Egg-Inc-Tracker",
+          "HemSoft/HemChat",
+          "HemSoft/pe-bot",
+          "HemSoft/notes",
+          "HemSoft/dashcam",
+          "HemSoft/cli-tools",
+          "HemSoft/mcp-server-demo",
+          "HemSoft/weather-cli",
+          "HemSoft/n8n-workflows",
+          "HemSoft/rag-poc",
+          "HemSoft/tickdown",
+          "HemSoft/spam-removal-agent",
+          "HemSoft/summarist",
+          "HemSoft/neo4j-graphrag-poc",
+          "HemSoft/dashboard-tui",
+          "HemSoft/subtitle-translator",
+          "HemSoft/ms-agent-framework-demo",
+          "HemSoft/hemsoft-power-ai",
+          "HemSoft/advent-of-code-2025",
+          "HemSoft/modern-web-stack-poc",
+          "HemSoft/skills",
+          "HemSoft/dashboard",
+          "HemSoft/hs-landing-page",
+          "HemSoft/agents",
+          "HemSoft/7d2d-mods",
+          "HemSoft/prs",
+          "HemSoft/ai-conductor",
+          "HemSoft/github-cli-sdk-demo",
+          "HemSoft/hs-cli-template",
+          "HemSoft/hs-cli-prs",
+          "HemSoft/hs-cli-confluence-search",
+          "HemSoft/hs-conductor",
+          "HemSoft/public-skills",
+          "HemSoft/now-leadership-group",
+          "HemSoft/set-it-free-loop-site",
+          "HemSoft/set-it-free-loop",
+          "HemSoft/hs-buddy-vscode-extension",
+          "HemSoft/yahtzee",
+          "HemSoft/hs-buddy",
+          "HemSoft/gh-prx",
+          "HemSoft/hs-tui-launcher",
+          "HemSoft/gh-x",
+          "HemSoft/ralph-loops",
+          "HemSoft/hoarders-heaven",
+          "HemSoft/codexbar-ios",
+          "HemSoft/codexbar-mac",
+          "HemSoft/buddy-ios",
+          "HemSoft/yahtzee-bench",
+          "HemSoft/.github",
+          "HemSoft/minibot",
+          "HemSoft/reports",
+          "HemSoft/hs-pi-dashboard",
+          "HemSoft/hemsoft-bench"
+        ],
+        "permissions": "Read access to code and metadata\n Read and write access to actions, checks, issues, and pull requests",
+        "verified_at": "2026-10-06 21:42:11 UTC"
+      },
+      {
+        "name": "Vercel",
+        "installation_id": 100502814,
+        "selection": "selected",
+        "repositories": [
+          "HemSoft/dashboard",
+          "HemSoft/hs-landing-page",
+          "HemSoft/now-leadership-group",
+          "HemSoft/set-it-free-loop-site"
+        ],
+        "permissions": "Read access to actions and metadata\n Read and write access to administration, checks, code, commit statuses, deployments, issues, pull requests, repository hooks, and workflows",
+        "verified_at": "2026-10-06 21:42:12 UTC"
+      }
+    ]
+  },
+  "coverage_limits": [
+    "Repository selection is App access, not proof of active service deployment.",
+    "Provider account resources, URLs, billing, runner registrations and recovery credentials remain unverified.",
+    "No App permissions, selections or organization settings were changed."
+  ]
+}
