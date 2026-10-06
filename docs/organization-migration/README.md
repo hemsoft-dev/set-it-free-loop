@@ -100,8 +100,14 @@ cubic-dev-ai, Cursor, Greptile Apps, and Railway App have all-repository access.
 Installation access does not prove a live service deployment or reviewer runtime.
 
 External hosting accounts, package registries, runner registrations, environment
-credential names, and webhook routing beyond the recorded delivery hosts need
-an owner-verified integration ledger. Record the provider, repository, service
+credential validity, and webhook routing beyond the recorded delivery hosts need
+an owner-verified integration ledger. Repository-level runner registrations and
+secret/variable names for all 16 configured environments were additionally
+captured in [runtime-metadata.json](runtime-metadata.json), with no failed
+lookups. One repository runner is registered under HemSoft/yahtzee. All 16
+environment secret/variable name lists were observed empty.
+Organization runner groups and external provider runner resources remain
+separate checks. Record the provider, repository, service
 owner, affected URL/reference, credential source, cutover action, smoke test,
 and recovery action. Keep credentials and sensitive callback paths outside Git.
 Do not treat an empty webhook list as proof of no external deployment.
@@ -170,6 +176,15 @@ unexpected owners, and destination names outside the exact collision mapping.
 A passing structural check does not mean inaccessible settings are
 verified or that the destination exists. The CI workflow performs only offline
 validation and does not receive administrative credentials.
+
+Refresh supplemental runner and environment names through paginated GETs to
+`repos/OWNER/REPO/actions/runners`,
+`repos/OWNER/REPO/environments/ENVIRONMENT/secrets`, and
+`repos/OWNER/REPO/environments/ENVIRONMENT/variables`. URL-encode environment
+names, and project secret/variable responses to names before writing them.
+These supplemental records are separate from the main collector; refresh
+the owner-browser App selections, Actions settings and effective branch rules
+as well. Preserve the source population and record every failed lookup.
 
 Before the actual transfer, refresh again and compare every source ID, full
 name, visibility, archive state, default branch, and destination with the reviewed

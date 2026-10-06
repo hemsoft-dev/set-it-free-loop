@@ -1,0 +1,767 @@
+{
+  "captured_at": "2026-10-06T21:49:58.181660+00:00",
+  "method": "GitHub REST GET as HemSoft; runner metadata and credential names only",
+  "coverage_limits": [
+    "Organization runner groups and external provider registrations require separate verification.",
+    "Names establish configured GitHub credentials, not provider validity or credential values."
+  ],
+  "repositories": [
+    {
+      "source": "fhemmer/hs-cli-confluence-search",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/.github",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/7d2d-mods",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/advent-of-code-2025",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/agents",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/ai-conductor",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/buddy-ios",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/cli-tools",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/codexbar",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "copilot",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/codexbar-ios",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/codexbar-mac",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/dashboard",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "copilot",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        },
+        {
+          "name": "Preview",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        },
+        {
+          "name": "Production",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/dashboard-tui",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/dashcam",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/Egg-Inc-Tracker",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "copilot",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/ESO",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/gh-prx",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/gh-x",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/github-cli-sdk-demo",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/HemChat",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hemsoft-bench",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hemsoft-power-ai",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hoarders-heaven",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hs-buddy",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hs-buddy-vscode-extension",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hs-cli-confluence-search",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hs-cli-prs",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hs-cli-template",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hs-conductor",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hs-landing-page",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "Preview",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        },
+        {
+          "name": "Production",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/hs-pi-dashboard",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/hs-tui-launcher",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/mcp-server-demo",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "copilot",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/minibot",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/modern-web-stack-poc",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "copilot",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        },
+        {
+          "name": "Preview",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        },
+        {
+          "name": "Production",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/ms-agent-framework-demo",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/n8n-workflows",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/neo4j-graphrag-poc",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/notes",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/now-leadership-group",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "Preview",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        },
+        {
+          "name": "Production",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/NWMM",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/pe-bot",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/PeopleCare",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/prs",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/public-skills",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/PXContainerMagic",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/PXFriends",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/PXInfoPanel",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/PXVendorMagic",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/PXWritStatus",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/rag-poc",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/ralph-loops",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/Relias.Lms.Enrollment",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/reports",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "github-pages",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/set-it-free-loop",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/set-it-free-loop-site",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "Production",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/skills",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/spam-removal-agent",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/subtitle-translator",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/summarist",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": [
+        {
+          "name": "github-pages",
+          "secret_names": {
+            "state": "observed",
+            "data": []
+          },
+          "variable_names": {
+            "state": "observed",
+            "data": []
+          }
+        }
+      ]
+    },
+    {
+      "source": "HemSoft/survival-shelter-opus55",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/TCE-Admin",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/tickdown",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/TimCoRetailManager",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/weather-cli",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/yahtzee",
+      "repository_runners": {
+        "state": "observed",
+        "data": [
+          {
+            "id": 21,
+            "name": "mini-github-runner-01",
+            "os": "Linux",
+            "status": "online",
+            "busy": false,
+            "labels": [
+              {
+                "id": 0,
+                "name": "self-hosted",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "Linux",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "X64",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "mini",
+                "type": "custom"
+              },
+              {
+                "id": 0,
+                "name": "yahtzee",
+                "type": "custom"
+              }
+            ]
+          }
+        ]
+      },
+      "environments": []
+    },
+    {
+      "source": "HemSoft/yahtzee-bench",
+      "repository_runners": {
+        "state": "observed",
+        "data": []
+      },
+      "environments": []
+    }
+  ]
+}

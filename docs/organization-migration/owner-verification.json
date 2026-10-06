@@ -198,7 +198,7 @@
   },
   "coverage_limits": [
     "Repository selection is App access, not proof of active service deployment.",
-    "Provider account resources, URLs, billing, runner registrations and recovery credentials remain unverified.",
+    "Provider account resources, URLs, billing, organization runner groups and recovery credentials remain unverified; repository runners and environment credential names are captured in runtime-metadata.json.",
     "No App permissions, selections or Actions/security settings were changed; the requested organization avatar was updated."
   ],
   "supplemental_verified_at": "2026-10-06T21:45:41.738742+00:00",
