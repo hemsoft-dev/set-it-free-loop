@@ -17,6 +17,7 @@ class MigrationTests(unittest.TestCase):
     def snapshot(self):
         return {
             'source_owners': ['HemSoft', 'fhemmer'], 'destination_login': 'hemsoft-dev',
+            'expected_repository_ids': [1, 2],
             'repositories': [
                 {'id': 1, 'full_name': 'HemSoft/hs-cli-confluence-search',
                  'destination': 'hemsoft-dev/hs-cli-confluence-search',
@@ -48,8 +49,43 @@ class MigrationTests(unittest.TestCase):
     def test_reject_missing_source_owner_population(self):
         snapshot = self.snapshot()
         snapshot['repositories'] = snapshot['repositories'][:1]
-        with self.assertRaisesRegex(ValueError, 'both source owners'):
+        with self.assertRaises(ValueError):
             capture.validate(snapshot)
+
+    def test_reject_repository_deletion_even_when_both_owners_remain(self):
+        snapshot = self.snapshot()
+        snapshot['expected_repository_ids'].append(3)
+        snapshot['repositories'].append({**snapshot['repositories'][0], 'id': 3,
+            'full_name': 'HemSoft/another', 'destination': 'hemsoft-dev/another'})
+        snapshot['summary'] = capture.validate(snapshot)
+        snapshot['repositories'].pop()
+        with self.assertRaisesRegex(ValueError, 'expected IDs'):
+            capture.validate(snapshot)
+
+    def test_reject_stale_summary(self):
+        snapshot = self.snapshot()
+        snapshot['summary'] = {**capture.validate(snapshot), 'repositories': 67}
+        with self.assertRaisesRegex(ValueError, 'Stored summary'):
+            capture.validate(snapshot)
+
+    def test_capture_custom_environment_patterns_with_encoded_name(self):
+        repo = {'id': 1, 'name': 'repo', 'full_name': 'HemSoft/repo'}
+        paths = []
+        def endpoint(path, collection=None):
+            paths.append((path, collection))
+            if '/environments?' in path:
+                return {'state': 'observed', 'data': [{'id': 1, 'name': 'release /pages',
+                    'deployment_branch_policy': {'custom_branch_policies': True}}]}
+            if '/deployment-branch-policies?' in path:
+                return {'state': 'observed', 'data': [{'id': 2, 'name': 'release/*', 'type': 'branch'},
+                                                     {'id': 3, 'name': 'v*', 'type': 'tag'}]}
+            return {'state': 'observed', 'data': []} if collection is not None else {'state': 'unverified'}
+        with patch.object(capture, 'api', side_effect=endpoint):
+            record = capture.capture_repo(repo, 'hemsoft-dev')
+        patterns = record['settings']['environments']['data'][0]['deployment_branch_patterns']['data']
+        self.assertEqual([(item['name'], item['type']) for item in patterns], [('release/*', 'branch'), ('v*', 'tag')])
+        self.assertIn(('repos/HemSoft/repo/environments/release%20%2Fpages/deployment-branch-policies?per_page=100',
+                       'branch_policies'), paths)
 
     def test_reject_case_insensitive_destination_collision(self):
         snapshot = self.snapshot()

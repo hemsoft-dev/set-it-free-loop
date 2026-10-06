@@ -44,6 +44,12 @@ metadata, webhook delivery hosts, Pages configuration, and App lookup results.
 Secret values, variable values, private/public key material, webhook URL paths,
 and webhook URL queries are not written to the snapshot.
 
+The expected repository ID list is stored separately from the repository records
+inside the snapshot. Offline validation rejects any missing or substituted ID
+and any stale summary; retaining both source owners alone is insufficient.
+Environment records with custom deployment policies also contain the actual
+allowed branch/tag patterns from the paginated deployment-branch-policies API.
+
 ## Name collision
 
 | Source | Visibility | Destination |
@@ -138,6 +144,16 @@ Verify the actual requirements against GitHub's documentation for
 and [organization rulesets](https://docs.github.com/en/organizations/managing-organization-settings/creating-rulesets-for-repositories-in-your-organization).
 Franz selected the destination plan himself. The agent made no purchase;
 future billing changes remain owner steps.
+
+The private, non-fork `fhemmer/hs-cli-confluence-search` currently grants
+`fhemmerrelias` admin access. The destination Team plan has one purchased seat,
+already occupied by HemSoft. Preserving that additional account's private
+repository access requires another approved paid seat. GitHub bills private
+outside collaborators under its
+[Team license rules](https://docs.github.com/en/billing/reference/github-license-users#organizations-on-github-team).
+Before any transfer, #138 must record the owner's decision to fund the extra
+seat or explicitly change this access. Do not silently remove the collaborator,
+spend money, or transfer first and discover the billing effect afterward.
 
 The current gh OAuth token has `repo`, `read:org`, `user`, `gist`, and
 `admin:public_key`; it lacks `admin:org`. Reading an organization resource can

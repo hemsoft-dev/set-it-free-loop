@@ -66,7 +66,7 @@ def verify_source_access():
 
 
 def reconcile_population(repos, previous):
-    expected_ids = {repo['id'] for repo in previous['repositories']}
+    expected_ids = set(previous['expected_repository_ids'])
     if not expected_ids.issubset({repo['id'] for repo in repos}):
         raise RuntimeError('Source enumeration omits previously recorded IDs; reconcile before replacing inventory')
 
@@ -120,6 +120,12 @@ def capture_repo(repo, destination):
     settings['environments'] = project(api(prefix + '/environments?per_page=100', 'environments'),
         lambda items: [select(item, ('id', 'name', 'protection_rules', 'deployment_branch_policy'))
                        for item in items])
+    for environment in settings['environments'].get('data', []):
+        if (environment.get('deployment_branch_policy') or {}).get('custom_branch_policies'):
+            endpoint = prefix + '/environments/' + urllib.parse.quote(environment['name'], safe='')
+            environment['deployment_branch_patterns'] = project(
+                api(endpoint + '/deployment-branch-policies?per_page=100', 'branch_policies'),
+                lambda items: [select(item, ('id', 'name', 'type')) for item in items])
     settings['deploy_keys'] = project(api(prefix + '/keys?per_page=100', ''),
         lambda items: [select(item, ('id', 'title', 'read_only', 'verified')) for item in items])
     # Hook paths and query strings may contain credentials; retain only routing hosts.
@@ -144,6 +150,9 @@ def validate(snapshot):
     targets = [repo['destination'].lower() for repo in repositories]
     if len(ids) != len(set(ids)) or len(targets) != len(set(targets)):
         raise ValueError('Duplicate repository ID or destination')
+    expected_ids = snapshot['expected_repository_ids']
+    if len(expected_ids) != len(set(expected_ids)) or set(ids) != set(expected_ids):
+        raise ValueError('Repository population does not match expected IDs')
     if not repositories or set(snapshot['source_owners']) != set(SOURCE_OWNERS):
         raise ValueError('Missing migration population')
     if {repo['full_name'].split('/')[0] for repo in repositories} != set(SOURCE_OWNERS):
@@ -157,10 +166,13 @@ def validate(snapshot):
             repo['full_name'], repo['full_name'].split('/')[1])
         if repo['destination'] != expected:
             raise ValueError('Destination name does not match the reviewed mapping')
-    return {'repositories': len(repositories),
+    summary = {'repositories': len(repositories),
             'private': sum(repo['private'] for repo in repositories),
             'archived': sum(repo['archived'] for repo in repositories),
             'unverified_endpoints': sum(unverified_count(repo['settings']) for repo in repositories)}
+    if 'summary' in snapshot and snapshot['summary'] != summary:
+        raise ValueError('Stored summary does not match inventory')
+    return summary
 
 
 def main():
@@ -190,6 +202,7 @@ def main():
         'captured_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'requester': 'HemSoft', 'source_owners': list(SOURCE_OWNERS),
         'source_access': source_access,
+        'expected_repository_ids': sorted(repo['id'] for repo in repos),
         'source_personal_plan': identity['data'].get('plan', {}).get('name'),
         'destination_login': args.destination,
         'destination_organization': organization,
