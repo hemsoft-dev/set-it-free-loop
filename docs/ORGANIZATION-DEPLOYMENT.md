@@ -20,6 +20,8 @@ published release with `--source-ref v<version>` when running `gh sfl init` or
 `gh sfl sync`. Use `--repo hemsoft-dev/<consumer>` and `--pr` to review deployment
 changes. Repeating sync should reuse the current deployment PR or make no change.
 Existing manifest tiers, addons, and unmanaged files remain preserved.
+If the selected source differs from the installed manifest, sync before adding
+workflows so their provenance stays consistent.
 
 Review-only deployment uses the existing connected Codex integration and requires
 no SFL App private key or model API key. A successful observer installation does

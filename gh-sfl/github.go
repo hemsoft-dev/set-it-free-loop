@@ -205,13 +205,22 @@ func configureSourceRepository() error {
 		if !allowedTargetOwner(motherRepoOwner) {
 			return fmt.Errorf("unsupported built-in SFL source owner %q", motherRepoOwner)
 		}
+		if strings.EqualFold(motherRepoOwner, organizationOwner) {
+			motherRepoOwner = organizationOwner
+		} else {
+			motherRepoOwner = "HemSoft"
+		}
 		return nil
 	}
 	parts := strings.Split(source, "/")
 	if len(parts) != 2 || !allowedTargetOwner(parts[0]) || parts[1] != motherRepoName {
 		return fmt.Errorf("SFL_SOURCE_REPOSITORY must be HemSoft/%s or %s/%s", motherRepoName, organizationOwner, motherRepoName)
 	}
-	motherRepoOwner = parts[0]
+	if strings.EqualFold(parts[0], organizationOwner) {
+		motherRepoOwner = organizationOwner
+	} else {
+		motherRepoOwner = "HemSoft"
+	}
 	return nil
 }
 

@@ -106,7 +106,7 @@ foreach ($repo in $Repos) {
     if ($context.Metadata.owner.login -ine $ExpectedOwner) {
         throw "Repository '$repo' is not owned by '$ExpectedOwner'."
     }
-    $validatedRepos.Add($repo)
+    $validatedRepos.Add([string] $context.Metadata.full_name)
 }
 
 $privateKeyPem = Get-Content -LiteralPath $resolvedPrivateKeyPath -Raw

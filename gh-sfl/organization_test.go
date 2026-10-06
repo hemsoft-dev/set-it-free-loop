@@ -130,3 +130,21 @@ func TestOrganizationStatusAllowsReadAccess(t *testing.T) {
 		}
 	}
 }
+
+func TestAddonRequiresSyncBeforeSourceCutover(t *testing.T) {
+	previous := motherRepoOwner
+	t.Cleanup(func() { motherRepoOwner = previous })
+	motherRepoOwner = "hemsoft-dev"
+	manifest := &sflManifest{MotherRepo: "HemSoft/set-it-free-loop"}
+	if err := validateAddonSource(manifest); err == nil || !strings.Contains(err.Error(), "gh sfl sync") {
+		t.Fatalf("missing cutover preflight: %v", err)
+	}
+	manifest.MotherRepo = "hemsoft-dev/set-it-free-loop"
+	if err := validateAddonSource(manifest); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SFL_SOURCE_REPOSITORY", "HEMSOFT-DEV/set-it-free-loop")
+	if err := configureSourceRepository(); err != nil || motherRepoOwner != "hemsoft-dev" {
+		t.Fatalf("source not canonical: %s %v", motherRepoOwner, err)
+	}
+}

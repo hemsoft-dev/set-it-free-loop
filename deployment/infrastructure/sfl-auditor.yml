@@ -375,7 +375,7 @@ jobs:
             OBSERVER=$(echo "$OBSERVER_B64" | base64 --decode)
           fi
           EXPECTED_SOURCE_SHA=$(jq -r '.sourceSha // empty' <<< "$MANIFEST_JSON")
-          OBSERVER_SOURCE_SHA=$(grep -F '# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@' \
+          OBSERVER_SOURCE_SHA=$(grep -E '^# Source: (HemSoft|hemsoft-dev)/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto\.yml@[0-9a-f]{40}$' \
             <<< "$OBSERVER" | head -n 1 | cut -d@ -f2) || true
           DEFAULT_BRANCH=$(gh api "repos/$REPO" --jq '.default_branch' 2>/dev/null || true)
           DEFAULT_BRANCH_YAML=$(printf '%s' "$DEFAULT_BRANCH" | sed "s/'/''/g")

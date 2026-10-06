@@ -15,6 +15,13 @@ type addOptions struct {
 	pr    bool
 }
 
+func validateAddonSource(manifest *sflManifest) error {
+	if !strings.EqualFold(manifest.MotherRepo, motherRepoOwner+"/"+motherRepoName) {
+		return fmt.Errorf("installed source %q differs from selected source; run gh sfl sync before adding workflows", manifest.MotherRepo)
+	}
+	return nil
+}
+
 func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	opts, err := parseAddOptions(args, stderr)
 	if err != nil {
@@ -36,6 +43,9 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 	manifest, err := readRemoteManifest(owner, repo)
 	if err != nil {
 		return fmt.Errorf("reading manifest from %s/%s: %w\nHint: run 'gh sfl init' first", owner, repo, err)
+	}
+	if err := validateAddonSource(manifest); err != nil {
+		return err
 	}
 	if !fullCommitSHAPattern.MatchString(manifest.SourceSHA) {
 		return fmt.Errorf("manifest in %s/%s does not contain an immutable 40-character sourceSha; run 'gh sfl sync --repo %s/%s' before adding workflows", owner, repo, owner, repo)

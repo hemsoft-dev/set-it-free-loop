@@ -279,6 +279,20 @@ name: "SFL Reviewer Gate Runner"
     Assert-True ([string]::IsNullOrEmpty($currentBaseIssue)) 'Auditor opened or closed an issue for a valid observer base branch.'
 
     Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
+    $organizationObserver = (Get-Content -Raw -LiteralPath $observerPath).Replace('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop')
+    $organizationObserver | Set-Content -LiteralPath $observerPath
+    $organizationRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    Assert-True ($organizationRun.ExitCode -eq 0) 'Organization provenance check failed.'
+    Assert-True ((Get-Content -Raw -LiteralPath $reviewOutputPath) -match 'sfl_review_prerequisites_missing=0') 'Auditor rejected supported organization provenance.'
+    Assert-True (-not (Test-Path -LiteralPath $issueLogPath)) 'Auditor raised a false organization provenance issue.'
+    Remove-Item -LiteralPath $reviewOutputPath -Force
+    $organizationObserver.Replace('hemsoft-dev/set-it-free-loop', 'other/set-it-free-loop') | Set-Content -LiteralPath $observerPath
+    $untrustedSourceRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    Assert-True ($untrustedSourceRun.ExitCode -eq 0) 'Untrusted provenance check failed unexpectedly.'
+    Assert-True ((Get-Content -Raw -LiteralPath $reviewOutputPath) -match 'sfl_review_prerequisites_missing=1') 'Auditor accepted unsupported source provenance.'
+    $organizationObserver | Set-Content -LiteralPath $observerPath
+
+    Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
     (Get-Content -Raw -LiteralPath $observerPath).Replace($sourceSha, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb') |
         Set-Content -LiteralPath $observerPath
     $stalePinRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
