@@ -10,7 +10,7 @@ on:
       - 'deployment/scripts/validate-org-rollout.py'
       - 'deployment/tests/test_org_rollout.py'
       - 'docs/organization-migration/**'
-      - '.github/workflows/validate-org-migration.yml'
+      - '.github/workflows/*.yml'
   push:
     branches: [main]
     paths:
@@ -21,7 +21,7 @@ on:
       - 'deployment/scripts/validate-org-rollout.py'
       - 'deployment/tests/test_org_rollout.py'
       - 'docs/organization-migration/**'
-      - '.github/workflows/validate-org-migration.yml'
+      - '.github/workflows/*.yml'
 
 permissions:
   contents: read

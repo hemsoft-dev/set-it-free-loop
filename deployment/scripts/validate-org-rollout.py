@@ -188,6 +188,34 @@ def validate_app_credential(proof, directory):
                         proof.get('run_url', '')) is not None,
             'Owned-App credential run must belong to the source workflow')
     evidence(proof['run_url'], directory)
+    metadata = local_capture(proof.get('credential_metadata_evidence_url'), directory, 'App credential metadata')
+    require(all(metadata.get(field) == proof.get(field) for field in
+                ('repository_id', 'repository', 'reviewed_sha', 'run_url', 'app_id', 'client_id', 'owner',
+                 'installation_id', 'repository_selection', 'permission_ceiling_verified')) and
+            metadata.get('credential_verification') == 'success' and
+            metadata.get('installation_owner') == 'HemSoft' and metadata.get('target_type') == 'User',
+            'App credential assertions must match the uploaded workflow metadata')
+    observed_time(metadata.get('observed_at'), 'App credential metadata')
+    run = local_capture(proof.get('workflow_run_evidence_url'), directory, 'App credential workflow run')
+    require(run.get('repository', {}).get('id') == proof['repository_id'] and
+            run.get('repository', {}).get('full_name') == proof['repository'] and
+            run.get('html_url') == proof['run_url'] and run.get('head_sha') == proof['reviewed_sha'] and
+            run.get('path') == proof['workflow'] and run.get('head_branch') == 'main' and
+            run.get('status') == 'completed' and run.get('conclusion') == 'success',
+            'App credential capture must come from its successful reviewed main workflow run')
+
+
+def protection_semantics(value, repo, url_field=False):
+    if isinstance(value, dict):
+        return {key: protection_semantics(item, repo, key == 'url' or key.endswith('_url')) for key, item in value.items()}
+    if isinstance(value, list):
+        return [protection_semantics(item, repo, url_field) for item in value]
+    if isinstance(value, str) and url_field:
+        for prefix in ('https://api.github.com/repos/', 'https://github.com/'):
+            source = prefix + repo['full_name'] + '/'
+            if value.startswith(source):
+                return prefix + repo['destination'] + '/' + value[len(source):]
+    return value
 
 
 def protection_contract(repo, directory=None):
@@ -239,8 +267,27 @@ def validate_protection_preservation(proof, directory, repo):
     for rule in baseline['rulesets']:
         require(rule in proof['rulesets'], 'Destination must preserve every unrelated baseline ruleset')
     for name, protection in baseline['classic'].items():
-        require(proof['classic'].get(name) == protection,
+        require(protection_semantics(proof['classic'].get(name), repo) == protection_semantics(protection, repo),
                 'Destination must preserve every unrelated classic branch protection')
+
+
+def validate_release_download(proof, directory, repository_id, repository, source, sha, version):
+    release_url = 'https://github.com/' + source + '/releases/tag/v' + version
+    download = local_capture(proof.get('release_download_verification_url'), directory, 'Release download')
+    require(download.get('release_url') == release_url and
+            download.get('source_repository') == source and
+            download.get('source_sha') == sha and
+            download.get('release_version') == version and
+            type(download.get('source_repository_id')) is int and download['source_repository_id'] == 1169772257 and
+            download.get('target_repository_id') == repository_id and download.get('target_repository') == repository and
+            text(download.get('asset_name')) and '/' not in download['asset_name'] and
+            download.get('asset_url') == 'https://github.com/' + source +
+                '/releases/download/v' + version + '/' + urllib.parse.quote(download['asset_name']) and
+            re.fullmatch(r'[0-9a-f]{64}', download.get('expected_sha256', '')) is not None and
+            download.get('actual_sha256') == download['expected_sha256'] and
+            download.get('checksum_verified') is True and download.get('attestation_verified') is True,
+            'Release download capture must verify its canonical asset, source SHA and matching SHA256')
+    observed_time(download.get('observed_at'), 'Release download')
 
 
 def validate_final_onboarding(proof, directory, expected, organization, app_id):
@@ -307,21 +354,7 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id):
             'New onboarding manifest capture must match its repository and deployed configuration')
     require(proof.get('release_url') == 'https://github.com/'+proof['deployment_source']+'/releases/tag/v'+proof['release_version'],
             'New onboarding release verification must use its canonical version')
-    download = local_capture(proof.get('release_download_verification_url'), directory, 'Release download')
-    require(download.get('release_url') == proof['release_url'] and
-            download.get('source_repository') == proof['deployment_source'] and
-            download.get('source_sha') == proof['deployment_sha'] and
-            download.get('release_version') == proof['release_version'] and
-            type(download.get('source_repository_id')) is int and download['source_repository_id'] == 1169772257 and
-            download.get('target_repository_id') == repo_id and download.get('target_repository') == name and
-            text(download.get('asset_name')) and '/' not in download['asset_name'] and
-            download.get('asset_url') == 'https://github.com/' + proof['deployment_source'] +
-                '/releases/download/v' + proof['release_version'] + '/' + urllib.parse.quote(download['asset_name']) and
-            re.fullmatch(r'[0-9a-f]{64}', download.get('expected_sha256', '')) is not None and
-            download.get('actual_sha256') == download['expected_sha256'] and
-            download.get('checksum_verified') is True and download.get('attestation_verified') is True,
-            'Release download capture must verify its canonical asset, source SHA and matching SHA256')
-    observed_time(download.get('observed_at'), 'Release download')
+    validate_release_download(proof, directory, repo_id, name, proof['deployment_source'], proof['deployment_sha'], proof['release_version'])
     operations = proof.get('onboarding_operation_receipts')
     fields = ('init_pr_url', 'repeat_onboarding_url', 'sync_pr_url', 'repeat_sync_url', 'status_url')
     require(isinstance(operations, dict) and set(operations) == set(fields),
@@ -349,7 +382,7 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id):
             'New onboarding revisions must follow init, repeated init, sync and final status in order')
     validate_app_coverage(proof.get('destination_sfl_app_access'), directory, repo_id, name, app_id, organization)
     validate_app_coverage(proof.get('destination_codex_access'), directory, repo_id, name, 1144995, organization)
-    validate_registered_review(proof, directory, name, target_branch=metadata.get('default_branch'))
+    validate_registered_review(proof, directory, name, target_branch=metadata.get('default_branch'), deployment_revision=observed['revision_sha'])
     return proof
 
 
@@ -434,7 +467,7 @@ def validate_app_coverage(coverage, directory, repository_id, repository, app_id
                 'Codex coverage must match the independently captured organization installation')
 
 
-def validate_registered_review(row, directory, repository, repository_id=None, target_branch=None):
+def validate_registered_review(row, directory, repository, repository_id=None, target_branch=None, deployment_revision=None):
     if repository_id is None:
         repository_id = row.get('repository_id')
     validate_gate_policy(row.get('gate_policy'), directory, repository_id, repository, target_branch)
@@ -474,6 +507,20 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
         require(row[field].startswith('https://github.com/' + repository + '/') or
                 row[field].startswith('https://api.github.com/repos/' + repository + '/'),
                 'Review operation URL must belong to its designated repository')
+    require(immutable_sha(deployment_revision), 'Registered review needs its captured deployed revision')
+    ancestry = local_capture(row.get('review_deployment_evidence_url'), directory, 'Review deployment ancestry')
+    require(ancestry.get('repository_id') == repository_id and ancestry.get('repository') == repository and
+            ancestry.get('deployed_revision') == deployment_revision and ancestry.get('reviewed_base_sha') == row['review_base_sha'] and
+            ancestry.get('pr_url') == row['review_pr_url'] and ancestry.get('head_sha') == row['review_head_sha'],
+            'Review deployment capture must bind its repository, PR and deployed revision')
+    comparison = ancestry.get('comparison', {})
+    require(comparison.get('status') in {'ahead', 'identical'} and
+            comparison.get('base_commit', {}).get('sha') == deployment_revision and
+            comparison.get('merge_base_commit', {}).get('sha') == deployment_revision and
+            comparison.get('html_url') == 'https://github.com/' + repository + '/compare/' +
+                deployment_revision + '...' + row['review_base_sha'],
+            'Reviewed base must contain the captured deployed revision')
+    observed_time(ancestry.get('observed_at'), 'Review deployment ancestry')
     identity = row.get('review_artifact_identity')
     require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
             identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and identity.get('reviewed_head_sha') == row['review_head_sha'] and
@@ -935,6 +982,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Protected source release must belong to its canonical destination')
             for field in ('release_url', 'release_verification_url', 'governance_evidence_url'):
                 evidence(proof.get(field), directory)
+            validate_release_download({'release_download_verification_url': proof.get('release_verification_url')},
+                                      directory, repo_id, row['destination'], canonical_source,
+                                      proof['source_sha'], proof['release_version'])
             runs = proof.get('workflow_run_urls')
             require(isinstance(runs, list) and bool(runs), 'Protected source needs in-place workflow runs')
             operations = proof.get('workflow_operation_receipts')
@@ -952,7 +1002,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             # The source owns its workflows; it must not acquire a consumer manifest through init/sync.
             require(row['installed_tier'] is None and row['selected_tier'] is None,
                     'Protected source must not be recorded as a deployed consumer')
-            validate_registered_review(row, directory, row["destination"], target_branch=repo["default_branch"])
+            validate_registered_review(row, directory, row["destination"], target_branch=repo["default_branch"], deployment_revision=proof["source_sha"])
             verified_rollouts += 1
         elif health == 'scope_exception':
             require(not protected_source, 'Protected source cannot omit in-place verification through an exception')
@@ -1081,6 +1131,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 row['selected_tier'] == 'custom' and
                 bool(set(row['selected_components']) & (supported_components - {'sfl-pr-review-auto'})))
             require(not wider or bool(runs), 'Wider tier needs workflow evidence')
+            validate_release_download(row, directory, repo_id, row['destination'], canonical_source,
+                                      row['deployment_sha'], row['manifest_version'])
             revision = deployed_revision(row, directory, repo_id, row['destination'], manifest)
             operations = row.get('wider_operation_receipts', [])
             require(isinstance(operations, list) and len(operations) == len(runs),
@@ -1090,7 +1142,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                                          row['deployment_sha'], row['manifest_version'], run,
                                          deployed_workflow_paths(row['selected_tier'], row['selected_addons'],
                                                                  row['selected_components']) - {'.github/workflows/sfl-pr-review-auto.yml'}, revision)
-            validate_registered_review(row, directory, row['destination'], target_branch=repo['default_branch'])
+            validate_registered_review(row, directory, row['destination'], target_branch=repo['default_branch'], deployment_revision=revision)
             verified_rollouts += 1
     if app_transfer['status'] == 'verified':
         require(all(row.get('retained_app_dependency', {}).get('status') == 'verified'
@@ -1142,6 +1194,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Verified pilot configuration must actually deploy the review observer')
             for field in ('manifest_evidence_url', 'release_download_verification_url'):
                 evidence(receipts.get(field), directory)
+            validate_release_download(receipts, directory, extra_id, name, canonical_source,
+                                      receipts['deployment_sha'], receipts['release_version'])
             revision = deployed_revision(receipts, directory, extra_id, name, manifest)
             validate_app_coverage(receipts.get('destination_sfl_app_access'), directory, extra_id, name,
                                   owned_app_id, inventory['destination_login'])
@@ -1211,7 +1265,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         re.fullmatch(r'[0-9a-f]{40}', identity[field])
                         for field in ('reviewed_head_sha', 'reviewed_base_sha')),
                     'Verified pilot needs immutable SFL registered Codex review identity')
-            validate_registered_review(receipts, directory, name, extra_id, target_branch="main")
+            validate_registered_review(receipts, directory, name, extra_id, target_branch="main", deployment_revision=revision)
             require(receipts.get('requester_permission') in {'write', 'maintain', 'admin'},
                     'Verified pilot needs an authorized human requester')
             require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,38}', receipts['review_requester']) is not None,

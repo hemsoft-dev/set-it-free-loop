@@ -50,6 +50,18 @@ class RolloutTests(unittest.TestCase):
             'phase':'post_transfer','destructive_changes':False,'continuity_verified':True,
             'observed_at':'2026-10-07T02:00:00Z'},directory)
 
+    def bind_download(self, row, directory=DIRECTORY, repository_id=None, repository=None,
+                      source=None, sha=None, version=None, field='release_download_verification_url'):
+        repository_id=repository_id or row['repository_id'];repository=repository or row['destination']
+        source=source or row['deployment_source'];sha=sha or row['deployment_sha']
+        version=version or row.get('manifest_version') or row['release_version']
+        row[field]=self.capture({'release_url':'https://github.com/'+source+'/releases/tag/v'+version,
+            'source_repository':source,'source_repository_id':1169772257,'source_sha':sha,'release_version':version,
+            'target_repository_id':repository_id,'target_repository':repository,'asset_name':'gh-sfl_linux_amd64',
+            'asset_url':'https://github.com/'+source+'/releases/download/v'+version+'/gh-sfl_linux_amd64',
+            'expected_sha256':'a'*64,'actual_sha256':'a'*64,'checksum_verified':True,'attestation_verified':True,
+            'observed_at':'2026-10-07T03:30:00Z'},directory)
+
     def gate_policy(self, repository_id, repository, directory=DIRECTORY):
         capture = {'repository_id':repository_id,'repository':repository,'branch':self.branch(repository_id),
                    'observed_at':'2026-10-07T02:00:00Z','classic_protection':{'state':'absent','http_status':404},
@@ -110,7 +122,7 @@ class RolloutTests(unittest.TestCase):
             'conclusion':'success','run_head_sha':'b'*40,'workflow':next(iter(sorted(paths)),'.github/workflows/sfl-auditor.yml')}
             for run in row['wider_workflow_run_urls']]
 
-    def bind_review_operations(self, row, repository_id=None, repository=None, directory=DIRECTORY):
+    def bind_review_operations(self, row, repository_id=None, repository=None, directory=DIRECTORY, revision="b"*40):
         repository_id = repository_id or row['repository_id']
         repository = repository or row['destination']
         row['gate_policy']=self.gate_policy(repository_id,repository,directory)
@@ -122,6 +134,12 @@ class RolloutTests(unittest.TestCase):
                 'head_sha':row['review_head_sha'],'base_sha':row['review_base_sha'],'pr_url':row['review_pr_url'],
                 'evidence_url':row[field]}
 
+        row['review_deployment_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
+            'deployed_revision':revision,'reviewed_base_sha':row['review_base_sha'],'pr_url':row['review_pr_url'],
+            'head_sha':row['review_head_sha'],'observed_at':'2026-10-07T03:30:00Z',
+            'comparison':{'status':'identical' if revision==row['review_base_sha'] else 'ahead',
+                'base_commit':{'sha':revision},'merge_base_commit':{'sha':revision},
+                'html_url':'https://github.com/'+repository+'/compare/'+revision+'...'+row['review_base_sha']}},directory)
         row['requester_permission_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
             'actor':row['review_requester'],'pr_url':row['review_pr_url'],'head_sha':row['review_head_sha'],
             'base_sha':row['review_base_sha'],'http_status':200,'result':{'permission':'admin','role_name':'admin'},
@@ -163,6 +181,15 @@ class RolloutTests(unittest.TestCase):
             'conclusion':'success','reviewed_sha':'e'*40,'app_id':4448946,'client_id':'Iv23liwvwJJUh2bUIKLW',
             'owner':'HemSoft','installation_id':150383874,'repository_selection':'all','permission_ceiling_verified':True,
             'run_url':'https://github.com/HemSoft/set-it-free-loop/actions/runs/1'}
+        proof=self.matrix['pre_transfer_credential_verification']
+        proof['credential_metadata_evidence_url']=self.capture({**{field:proof[field] for field in
+            ('repository_id','repository','reviewed_sha','run_url','app_id','client_id','owner',
+             'installation_id','repository_selection','permission_ceiling_verified')},
+            'credential_verification':'success','installation_owner':'HemSoft','target_type':'User',
+            'observed_at':'2026-10-07T03:30:00Z'})
+        proof['workflow_run_evidence_url']=self.capture({'repository':{'id':proof['repository_id'],'full_name':proof['repository']},
+            'html_url':proof['run_url'],'head_sha':proof['reviewed_sha'],'path':proof['workflow'],
+            'head_branch':'main','status':'completed','conclusion':'success'})
         for row in self.matrix['repositories']:
             repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
             if repo['full_name']=='HemSoft/yahtzee':
@@ -226,6 +253,7 @@ class RolloutTests(unittest.TestCase):
                    release_url='https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v'+row['manifest_version'],
                    release_download_verification_url='https://example.com/checksum')
         self.bind_manifest(row)
+        self.bind_download(row)
         self.matrix['summary']['verified_rollouts'] += 1
         return row
 
@@ -283,6 +311,7 @@ class RolloutTests(unittest.TestCase):
             for field in receipts['review_operation_receipts']:
                 receipts['operation_receipts'][field]['evidence_url']=receipts[field]
             self.bind_manifest(receipts,repository_id=pilot['repository_id'],repository=pilot['repository'])
+            self.bind_download(receipts,repository_id=pilot['repository_id'],repository=pilot['repository'])
             for field,operation in receipts['operation_receipts'].items():
                 if field not in {'init_pr_url','sync_pr_url','repeat_sync_evidence_url','repeat_onboarding_evidence_url','status_evidence_url','gate_uninstall_evidence_url'}:continue
                 command='init' if field in {'init_pr_url','repeat_onboarding_evidence_url'} else 'sync' if field in {'sync_pr_url','repeat_sync_evidence_url'} else 'status' if field=='status_evidence_url' else 'uninstall-gate'
@@ -316,11 +345,13 @@ class RolloutTests(unittest.TestCase):
             'release_url':'https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.14',
             'release_verification_url':'https://example.com/checksum',
             'governance_evidence_url':'https://example.com/governance'}
-        self.bind_review_operations(row)
+        self.bind_review_operations(row,revision=row['in_place_evidence']['source_sha'])
         proof=row['in_place_evidence'];proof['workflow_run_urls']=['https://github.com/'+row['destination']+'/actions/runs/1']
         proof['workflow_operation_receipts']=[{'repository_id':row['repository_id'],'repository':row['destination'],
             'deployment_sha':proof['source_sha'],'release_version':proof['release_version'],'evidence_url':proof['workflow_run_urls'][0],
             'conclusion':'success','workflow':'.github/workflows/validate-gh-sfl.yml','run_head_sha':proof['source_sha']}]
+        self.bind_download(proof,repository_id=row['repository_id'],repository=row['destination'],
+            source='hemsoft-dev/set-it-free-loop',sha=proof['source_sha'],version=proof['release_version'],field='release_verification_url')
         self.verify_source_ledger(row['repository_id'])
         self.matrix['summary']['verified_rollouts'] += 1
         return row
@@ -382,6 +413,7 @@ class RolloutTests(unittest.TestCase):
             row['manifest_identity']['version']=value
             row['release_url']='https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v'+value
             self.bind_manifest(row)
+            self.bind_download(row)
             self.check()
 
     def test_retained_status_cannot_reference_scope_decision_itself(self):
@@ -1329,7 +1361,7 @@ class RolloutTests(unittest.TestCase):
         proof['review_artifact_identity'].update(review_pr_url=proof['review_pr_url'])
         proof['destination_sfl_app_access'].update(repository_id=42,repository=name)
         proof['destination_codex_access']=dict(proof['destination_sfl_app_access'],app_id=1144995,installation_id=168678981)
-        self.bind_review_operations(proof,directory=directory)
+        self.bind_review_operations(proof,directory=directory,revision='f'*40)
         proof['gate_policy']=self.gate_policy(42,name,directory)
         (directory/'owned-app-organization-installation-evidence.json').write_text((DIRECTORY/'owned-app-organization-installation-evidence.json').read_text())
         (directory/'codex-organization-installation-evidence.json').write_text((DIRECTORY/'codex-organization-installation-evidence.json').read_text())
@@ -1650,6 +1682,83 @@ class RolloutTests(unittest.TestCase):
             row['wider_workflow_run_urls']=['https://example.com/run'];self.bind_consumer_runs(row)
             with self.subTest(tier=tier),self.assertRaisesRegex(ValueError,'actually deploy the review observer'):self.check()
             row['selected_addons']=['pr-review'];row['manifest_identity']['addons']=['pr-review'];self.bind_consumer_runs(row);self.check()
+
+
+    def test_app_credential_assertions_match_uploaded_metadata_and_successful_run(self):
+        self.complete_transfer_gates();proof=self.matrix['pre_transfer_credential_verification']
+        original=json.loads((DIRECTORY/proof['credential_metadata_evidence_url']).read_text())
+        for field,value in [('installation_id',42),('repository_selection','selected'),('reviewed_sha','f'*40),
+                            ('permission_ceiling_verified',False),('credential_verification','failed'),('target_type','Organization')]:
+            capture=copy.deepcopy(original);capture[field]=value;proof['credential_metadata_evidence_url']=self.capture(capture)
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'uploaded workflow metadata'):self.check()
+        proof['credential_metadata_evidence_url']=self.capture(original)
+        run=json.loads((DIRECTORY/proof['workflow_run_evidence_url']).read_text())
+        for field,value in [('path','.github/workflows/unrelated.yml'),('conclusion','failure'),('head_sha','f'*40),('head_branch','feature/unsafe')]:
+            capture=copy.deepcopy(run);capture[field]=value;proof['workflow_run_evidence_url']=self.capture(capture)
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'successful reviewed main'):self.check()
+
+    def test_consumer_pilot_and_source_downloads_require_structured_checksum_evidence(self):
+        row=self.complete_rollout();original=row['release_download_verification_url']
+        row['release_download_verification_url']='https://example.com/unrelated'
+        with self.assertRaisesRegex(ValueError,'Release download needs an independent'):self.check()
+        row['release_download_verification_url']=original
+        pilot=self.matrix['disposable_validation_repositories'][0]['validation_evidence']
+        original=pilot['release_download_verification_url'];capture=json.loads((DIRECTORY/original).read_text())
+        capture['actual_sha256']='f'*64;pilot['release_download_verification_url']=self.capture(capture)
+        with self.assertRaisesRegex(ValueError,'canonical asset'):self.check()
+        pilot['release_download_verification_url']=original
+        row=self.complete_source();row['in_place_evidence']['release_verification_url']='https://example.com/unrelated'
+        with self.assertRaisesRegex(ValueError,'Release download needs an independent'):self.check()
+
+    def test_classic_protection_semantics_survive_owner_and_repository_url_changes(self):
+        repos=[r for r in self.inventory['repositories'] if validator.protection_contract(r)['classic']]
+        self.assertEqual(len(repos),5)
+        for repo in repos:
+            uri='https://api.github.com/repos/'+repo['full_name']+'/branches/main/protection'
+            normalized=validator.protection_semantics({'url':uri,'contexts':[uri]},repo)
+            self.assertEqual(normalized['url'],'https://api.github.com/repos/'+repo['destination']+'/branches/main/protection')
+            self.assertEqual(normalized['contexts'],[uri])
+            proof=dict(validator.protection_contract(repo),repository_id=repo['id'],repository=repo['destination'],
+                       revision_sha='e'*40,observed_at='2026-10-07T03:30:00Z')
+            proof['classic']=validator.protection_semantics(proof['classic'],repo)
+            proof['evidence_url']=self.capture(dict(proof,phase='post_transfer'))
+            with self.subTest(repository=repo['full_name']):validator.validate_protection_preservation(proof,DIRECTORY,repo)
+            branch=next(iter(proof['classic']));proof['classic'][branch]['allow_deletions']={'enabled':True}
+            proof['evidence_url']=self.capture(dict(proof,phase='post_transfer'))
+            with self.subTest(repository=repo['full_name']),self.assertRaisesRegex(ValueError,'every unrelated classic'):
+                validator.validate_protection_preservation(proof,DIRECTORY,repo)
+
+    def test_registered_reviews_must_have_a_base_containing_the_deployed_revision(self):
+        row=self.complete_rollout();original=json.loads((DIRECTORY/row['review_deployment_evidence_url']).read_text())
+        for field,value in [('deployed_revision','d'*40),('reviewed_base_sha','f'*40),('repository_id',42)]:
+            capture=copy.deepcopy(original);capture[field]=value;row['review_deployment_evidence_url']=self.capture(capture)
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'deployment capture must bind'):self.check()
+        capture=copy.deepcopy(original);capture['comparison']['merge_base_commit']['sha']='d'*40
+        row['review_deployment_evidence_url']=self.capture(capture)
+        with self.assertRaisesRegex(ValueError,'must contain the captured deployed'):self.check()
+        row['review_deployment_evidence_url']=self.capture(original)
+        pilot=self.matrix['disposable_validation_repositories'][0]['validation_evidence']
+        capture=json.loads((DIRECTORY/pilot['review_deployment_evidence_url']).read_text());capture['comparison']['status']='behind'
+        pilot['review_deployment_evidence_url']=self.capture(capture)
+        with self.assertRaisesRegex(ValueError,'must contain the captured deployed'):self.check()
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            capture=json.loads((directory/proof['review_deployment_evidence_url']).read_text());capture['comparison']['status']='diverged'
+            proof['review_deployment_evidence_url']=self.capture(capture,directory)
+            with self.assertRaisesRegex(ValueError,'must contain the captured deployed'):
+                validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+
+    def test_source_workflow_glob_triggers_inventory_for_pr_and_main_push(self):
+        import fnmatch
+        import re
+        workflow=(ROOT/'.github/workflows/validate-org-migration.yml').read_text()
+        filters=re.findall(r'    paths:\n((?:      - .*\n)+)',workflow)
+        self.assertEqual(len(filters),2)
+        for filters_for_event in filters:
+            paths=re.findall(r"      - '([^']+)'",filters_for_event)
+            for source_workflow in ('validate-gh-sfl.yml','sfl-pr-review-auto.yml','renamed-source-workflow.yml'):
+                with self.subTest(workflow=source_workflow):
+                    self.assertTrue(any(fnmatch.fnmatch('.github/workflows/'+source_workflow,path) for path in paths))
 
 
 if __name__ == '__main__':

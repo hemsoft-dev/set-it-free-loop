@@ -397,3 +397,14 @@ now verifies HemSoft identity, classic repo scope and private organization
 access, completing Reports issue [62](https://github.com/HemSoft/reports/issues/62).
 The organization Actions API scope block is also cleared; this does not claim
 that organization secrets have been distributed or transfer gates completed.
+
+The pre-transfer App credential proof loads the workflow's uploaded public
+metadata and a separate successful main-run API capture. App/client/owner,
+installation, selection, permission ceiling and reviewed SHA must match those
+captures. Consumer, pilot, protected-source and final onboarding downloads all
+use the same structured canonical asset/checksum/attestation contract.
+Registered reviews include a captured repository comparison showing their base
+contains the deployed revision; a coherent older review cannot validate a newer
+deployment. Classic protection comparisons normalize only the known source to
+destination URL prefixes, preserving checks on every semantic setting. Both PR
+and main-push validation run for changes to any source workflow YAML.
