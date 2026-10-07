@@ -454,7 +454,8 @@ $registration = [regex]::Match($canonical, '(?s)// BEGIN TESTABLE REQUEST REGIST
 if (-not $registration.Success) { throw 'Missing testable request registration.' }
 $registrationTest = @'
 const assert = require("node:assert/strict");
-const owner="hemsoft-dev";
+const owner="hemsoft-dev", pullNumber=42, currentBase="a".repeat(40);
+const baseMarker=`<!-- sfl-codex-review:head=${"b".repeat(40)};base=${currentBase};`;
 const requestTargetPrefix = "https://github.com/hemsoft-dev/consumer/pull/42#issuecomment-";
 const triggerComments = [{id:1,user:{login:"member"}},{id:2,user:{login:"other"}}];
 const requesterPermissions = new Map([["member",true],["other",true],["reader",false]]);
@@ -469,11 +470,17 @@ assert.equal(registeredRequestIdsFromStatuses([registration("member",2)]).size,0
 assert.equal(registeredRequestIdsFromStatuses([registration("reader",1)]).size,0);
 assert.equal(registeredRequestIdsFromStatuses([registration("member",1,"https://attacker.test")]).size,0);
 assert.equal(registeredRequestIdsFromStatuses([registration("member",99)]).size,0);
+assert.equal(hasHistoricalBaseConflict(triggerComments,[registration("member",99)]),true);
 assert.deepEqual([...registeredRequestIdsFromStatuses([registration("member",1),registration("member",1)])],[1]);
 requesterPermissions.set("member",false);
 assert.equal(registeredRequestIdsFromStatuses([registration("member",1)]).size,0);
 assert.deepEqual([...historicalRequestIdsFromStatuses([registration("member",1)])],[1]);
 assert.equal(historicalRequestIdsFromStatuses([registration("reader",1)]).size,0);
+const edited={id:1,user:{login:"member"},body:"marker removed",created_at:"2026-08-19T00:00:00Z",updated_at:"2026-08-19T00:00:01Z"};
+assert.equal(hasHistoricalBaseConflict([edited],[registration("member",1)]),true);
+const durable={...registration("member",1),description:`SFL Codex request comment 1 for PR #42 base ${currentBase}`};
+assert.equal(hasHistoricalBaseConflict([edited],[durable]),false);
+assert.equal(hasHistoricalBaseConflict([edited],[{...durable,description:durable.description.replace(currentBase,"c".repeat(40))}]),true);
 for (const id of ["01","+1","1?x=1"]) assert.equal(historicalRequestIdsFromStatuses([registration("member",id)]).size,0);
 '@
 $registrationTest | node -

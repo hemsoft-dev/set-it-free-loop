@@ -488,7 +488,7 @@ jobs:
               requesterPermissions = refreshed;
             };
             // END TESTABLE REQUESTER REFRESH
-            const isOwnerRequest = comment =>
+            const isOwnerRequest = comment => Boolean(comment) &&
               requesterPermissions.get(((comment.user && comment.user.login) || "").toLowerCase()) === true;
             const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
             const baseMarker = `${headMarker}${currentBase.toLowerCase()};`;
@@ -506,12 +506,35 @@ jobs:
               const creator = ((status.creator && status.creator.login) || "").toLowerCase();
               return Number.isSafeInteger(requestId) && requestId > 0 &&
                 String(requestId) === targetURL.slice(requestTargetPrefix.length) &&
-                Boolean(author) && author === creator &&
+                Boolean(creator) && (!comment || author === creator) &&
                 (owner.toLowerCase() === "hemsoft-dev" || creator === owner.toLowerCase()) ? [requestId] : [];
             }));
             const registeredRequestIdsFromStatuses = (statuses, comments = triggerComments) =>
               new Set([...historicalRequestIdsFromStatuses(statuses, comments)].filter(id =>
                 isOwnerRequest(comments.find(comment => comment.id === id))));
+            const hasHistoricalBaseConflict = (comments, statuses) => {
+              const historical = historicalRequestIdsFromStatuses(statuses, comments);
+              for (const id of historical) {
+                const comment = comments.find(candidate => candidate.id === id);
+                if (!comment) return true;
+                const creator = ((comment.user && comment.user.login) || "").toLowerCase();
+                const registration = statuses.filter(status =>
+                  status.context === "SFL Codex Review Request Registry" &&
+                  (status.target_url || "").toLowerCase() === `${requestTargetPrefix}${id}` &&
+                  ((status.creator && status.creator.login) || "").toLowerCase() === creator).at(-1);
+                const prefix = `SFL Codex request comment ${id} for PR #${pullNumber} base `;
+                const description = (registration && registration.description) || "";
+                const originalBase = description.startsWith(prefix) ? description.slice(prefix.length) : "";
+                if (/^[0-9a-f]{40}$/.test(originalBase)) {
+                  if (originalBase !== currentBase.toLowerCase()) return true;
+                } else if (comment.updated_at !== comment.created_at ||
+                           !(comment.body || "").includes(baseMarker)) {
+                  // Old registries lack an immutable base. Edits erase that evidence.
+                  return true;
+                }
+              }
+              return false;
+            };
             // END TESTABLE REQUEST REGISTRATION
             let triggerComments = [];
             let requestStatuses = [];
@@ -752,7 +775,7 @@ jobs:
             );
             const contextToken = reviewContextToken(initialChecks);
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
-            const conflictingBaseRequest = triggerComments.some(
+            const conflictingBaseRequest = hasHistoricalBaseConflict(triggerComments, requestStatuses) || triggerComments.some(
               comment => (isOwnerRequest(comment) || historicalRequestIdsFromStatuses(requestStatuses).has(comment.id)) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(headMarker) &&
@@ -879,7 +902,7 @@ jobs:
             );
             await refreshRequesterPermissions(latestTriggerComments, latestRequestStatuses);
             const latestOriginalRequest = latestTriggerComments.find(comment => comment.id === request.comment.id);
-            if (latestTriggerComments.some(comment =>
+            if (hasHistoricalBaseConflict(latestTriggerComments, latestRequestStatuses) || latestTriggerComments.some(comment =>
                 historicalRequestIdsFromStatuses(latestRequestStatuses, latestTriggerComments).has(comment.id) &&
                 (comment.body || "").includes(headMarker) && !(comment.body || "").includes(baseMarker))) {
               core.setFailed("Historical registered request belongs to another base");

@@ -177,3 +177,5 @@ A connected Codex account and repository installation remain runtime
 prerequisites. Organization ownership alone does not establish them. Record
 real fixed-head review evidence in [#137](https://github.com/HemSoft/set-it-free-loop/issues/137)
 and the full rollout in [#139](https://github.com/HemSoft/set-it-free-loop/issues/139).
+
+Registered request statuses now preserve their original base SHA in the immutable status description. Historical requests remain ordering and base-conflict barriers after permission revocation or comment edits. For older registrations without a durable base, an edited/deleted comment loses that evidence and requires a new PR head; it cannot authorize matching a delayed artifact to a new base. Current permission and an unchanged exact request body remain required for gate publication.

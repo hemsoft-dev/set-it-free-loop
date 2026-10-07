@@ -1130,8 +1130,9 @@ func TestRunReviewIgnoresUnregisteredEditedDiscussionComment(t *testing.T) {
 
 func registeredReviewRequestStatus(commentID int64) reviewRequestStatus {
 	status := reviewRequestStatus{
-		Context:   codexReviewRequestRegistryContext,
-		TargetURL: fmt.Sprintf("https://github.com/HemSoft/consumer/pull/94#issuecomment-%d", commentID),
+		Context:     codexReviewRequestRegistryContext,
+		Description: fmt.Sprintf("SFL Codex request comment %d for PR #94 base %s", commentID, strings.Repeat("a", 40)),
+		TargetURL:   fmt.Sprintf("https://github.com/HemSoft/consumer/pull/94#issuecomment-%d", commentID),
 	}
 	status.Creator.Login = "HemSoft"
 	return status

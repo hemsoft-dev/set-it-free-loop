@@ -93,9 +93,10 @@ type reviewCommentReaction struct {
 }
 
 type reviewRequestStatus struct {
-	Context   string `json:"context"`
-	TargetURL string `json:"target_url"`
-	Creator   struct {
+	Context     string `json:"context"`
+	Description string `json:"description"`
+	TargetURL   string `json:"target_url"`
+	Creator     struct {
 		Login string `json:"login"`
 	} `json:"creator"`
 }
@@ -351,7 +352,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	if created.ID < 1 || strings.TrimSpace(created.HTMLURL) == "" {
 		return errors.New("GitHub created the Codex review request without returning its ID and URL")
 	}
-	if err := registerCodexReviewRequest(client, owner, repo, opts.pr, pr.HeadSHA, created); err != nil {
+	if err := registerCodexReviewRequest(client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, created); err != nil {
 		deletePath := fmt.Sprintf("repos/%s/%s/issues/comments/%d", owner, repo, created.ID)
 		if deleteErr := client.Delete(deletePath, nil); deleteErr != nil {
 			return fmt.Errorf("registering the Codex review request: %v; deleting unregistered request comment %d: %w", err, created.ID, deleteErr)
@@ -368,13 +369,13 @@ func registerCodexReviewRequest(
 	client restAPI,
 	owner, repo string,
 	prNumber int,
-	headSHA string,
+	headSHA, baseSHA string,
 	request reviewTriggerComment,
 ) error {
 	payload, err := jsonBody(map[string]string{
 		"state":       "success",
 		"context":     codexReviewRequestRegistryContext,
-		"description": fmt.Sprintf("SFL Codex request comment %d for PR #%d", request.ID, prNumber),
+		"description": fmt.Sprintf("SFL Codex request comment %d for PR #%d base %s", request.ID, prNumber, strings.ToLower(baseSHA)),
 		"target_url":  request.HTMLURL,
 	})
 	if err != nil {
@@ -720,7 +721,7 @@ func findConflictingCodexBaseRequest(
 	prNumber int,
 	headSHA, currentBaseMarker string,
 ) (string, error) {
-	historical, err := findRegisteredCodexRequestIDsWithAuthorization(client, owner, repo, prNumber, headSHA, false)
+	historical, err := findRegisteredCodexRequestRecords(client, owner, repo, prNumber, headSHA, false)
 	if err != nil {
 		return "", err
 	}
@@ -737,10 +738,16 @@ func findConflictingCodexBaseRequest(
 			// GitHub does not expose the prior body after an edit. Retain every
 			// edited owner comment conservatively so a removed command or marker
 			// cannot bypass the Codex completion wait.
-			if strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentBaseMarker) {
-				if historical[comment.ID] {
+			if registration, exists := historical[comment.ID]; exists {
+				prefix := fmt.Sprintf("SFL Codex request comment %d for PR #%d base ", comment.ID, prNumber)
+				originalBase := strings.TrimPrefix(registration.Description, prefix)
+				knownBase := strings.HasPrefix(registration.Description, prefix) && regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(originalBase)
+				if (knownBase && codexReviewBaseMarker(headSHA, originalBase) != currentBaseMarker) ||
+					(!knownBase && (reviewCommentWasEdited(comment, comment.Body) || !strings.Contains(comment.Body, currentBaseMarker))) {
 					return comment.HTMLURL, nil
 				}
+			}
+			if strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentBaseMarker) {
 				allowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
 				if err != nil {
 					return "", err
@@ -897,7 +904,19 @@ func findRegisteredCodexRequestIDs(
 // Durable registrations remain ordering barriers after permission revocation.
 // Only the authorization-enabled path may establish publication eligibility.
 func findRegisteredCodexRequestIDsWithAuthorization(client restAPI, owner, repo string, prNumber int, headSHA string, requireAuthorization bool) (map[int64]bool, error) {
-	registered := map[int64]bool{}
+	records, err := findRegisteredCodexRequestRecords(client, owner, repo, prNumber, headSHA, requireAuthorization)
+	if err != nil {
+		return nil, err
+	}
+	ids := map[int64]bool{}
+	for id := range records {
+		ids[id] = true
+	}
+	return ids, nil
+}
+
+func findRegisteredCodexRequestRecords(client restAPI, owner, repo string, prNumber int, headSHA string, requireAuthorization bool) (map[int64]reviewRequestStatus, error) {
+	registered := map[int64]reviewRequestStatus{}
 	targetMarker := strings.ToLower(fmt.Sprintf("/%s/%s/pull/%d#issuecomment-", owner, repo, prNumber))
 	for page := 1; ; page++ {
 		var statuses []reviewRequestStatus
@@ -951,7 +970,8 @@ func findRegisteredCodexRequestIDsWithAuthorization(client restAPI, owner, repo 
 					}
 				}
 			}
-			registered[id] = true
+			// GitHub returns newest first; preserve the original registration.
+			registered[id] = status
 		}
 		if len(statuses) < 100 {
 			return registered, nil

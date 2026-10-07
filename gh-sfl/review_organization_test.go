@@ -183,3 +183,27 @@ func TestDeauthorizedRegistrationStillBlocksChangedBase(t *testing.T) {
 		t.Fatalf("forged registration conflict=%q error=%v", conflict, err)
 	}
 }
+
+func TestEditedRegisteredRequestKeepsItsOriginalBase(t *testing.T) {
+	head, base := strings.Repeat("b", 40), strings.Repeat("a", 40)
+	comment := reviewTriggerComment{ID: 123, Body: "original marker removed", HTMLURL: "https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-123", CreatedAt: "2026-08-19T00:00:00Z", UpdatedAt: "2026-08-19T00:00:01Z"}
+	comment.User.Login = "departed"
+	status := reviewRequestStatus{Context: codexReviewRequestRegistryContext, TargetURL: comment.HTMLURL}
+	status.Creator.Login = "departed"
+	rest := &organizationReviewREST{reviewREST: &reviewREST{comments: []reviewTriggerComment{comment}, statuses: []reviewRequestStatus{status}}, author: "departed", role: "none"}
+	// Old registries cannot prove the original base after a body edit.
+	conflict, err := findConflictingCodexBaseRequest(rest, "hemsoft-dev", "consumer", 94, head, codexReviewBaseMarker(head, base))
+	if err != nil || conflict != comment.HTMLURL {
+		t.Fatalf("legacy edited conflict=%q err=%v", conflict, err)
+	}
+	status.Description = fmt.Sprintf("SFL Codex request comment 123 for PR #94 base %s", base)
+	rest.statuses = []reviewRequestStatus{status}
+	conflict, err = findConflictingCodexBaseRequest(rest, "hemsoft-dev", "consumer", 94, head, codexReviewBaseMarker(head, base))
+	if err != nil || conflict != "" {
+		t.Fatalf("durably same base conflict=%q err=%v", conflict, err)
+	}
+	conflict, err = findConflictingCodexBaseRequest(rest, "hemsoft-dev", "consumer", 94, head, codexReviewBaseMarker(head, strings.Repeat("c", 40)))
+	if err != nil || conflict != comment.HTMLURL {
+		t.Fatalf("durably changed base conflict=%q err=%v", conflict, err)
+	}
+}
