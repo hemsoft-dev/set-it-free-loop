@@ -420,6 +420,25 @@ SHA256 from those bytes and the actual SHA256 from the destination bytes.
 The two hashes and installed bytes must agree. A local compiler output or a
 successful workflow run does not replace the released execution-file capture.
 
+Runtime scope exceptions use the same raw owner-comment checks. Save
+`owner_comment_evidence_url` in the independent exception capture, with its
+`observed_at` after the actual comment GET. The issue138 or issue139 comment's
+structured marker must match `repository_id`, `repository`,
+`exclude_runtime_rollout` disposition and `reason`. Keep the claimed receipt and
+the actual API response separate. Approval creation, latest edit and raw capture
+must precede the exception observation.
+
+For live pilot scenarios, both Actions run creation and the current attempt start
+must follow App cutover and the deployed observer observation. Capturing an old
+run or its artifact afterward cannot satisfy a post-cutover scenario.
+
+Runner service evidence must name the sealed systemd unit from
+[the runner baseline](yahtzee-runner-owner-evidence.json). Record the exact
+`systemctl show UNIT --property=Id,ActiveState --no-pager` argument list in `argv`
+and its parsed `Id` and `ActiveState` output in `systemctl_show`. The returned ID
+must equal the sealed unit, and both recorded states must be active. An unrelated
+active service cannot establish runner health.
+
 The unlinked Supabase dashboard-recovery project is explicitly accounted for as
 an account-owned resource with no established repository link. Its preservation
 record remains pending; final completion requires an independent post-transfer

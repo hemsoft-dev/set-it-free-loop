@@ -472,6 +472,9 @@ from an authenticated `GET /apps/sfl-app` after the completed tree capture. It m
 still show the approved personally owned App/client/permission identity. The later
 organization-owned registration capture must follow this observation, bracketing
 the ownership change after every gate rather than merely observing it afterward.
+That later capture also records the exact registration GET request URL and its
+successful HTTP status. Preserve the returned owner metadata while checking the
+approved organization ID, login and type.
 
 Terminal archive outcomes load actual destination repository metadata. Active
 consumer and protected-source outcomes additionally load full protection captures

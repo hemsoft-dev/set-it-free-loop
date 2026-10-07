@@ -153,7 +153,7 @@ class RolloutTests(unittest.TestCase):
 
     def additional_owner_comment(self, decision, directory):
         comment_id=int(decision['evidence_url'].rsplit('-',1)[1]);owner=decision['evidence_url'].split('/')[3]
-        approval={key:decision[key] for key in ('repository_id','repository','visibility','disposition','reason')}
+        approval={key:decision[key] for key in ('repository_id','repository','visibility','disposition','reason') if key in decision}
         decision['owner_comment_evidence_url']=self.capture({'http_status':200,
             'request_url':'https://api.github.com/repos/'+owner+'/set-it-free-loop/issues/comments/'+str(comment_id),
             'observed_at':decision['approved_at'],'comment':{'id':comment_id,'html_url':decision['evidence_url'],
@@ -414,7 +414,9 @@ class RolloutTests(unittest.TestCase):
         receipt={'author':'HemSoft','created_at':decision['approved_at'],
             'url':'https://github.com/HemSoft/set-it-free-loop/issues/139#issuecomment-123',
             'decision':{field:decision[field] for field in ('repository_id','repository','disposition','reason')}}
-        row['exception_evidence_url']=self.capture(dict(decision,owner_comment=receipt))
+        actual=dict(decision,evidence_url=receipt['url']);self.additional_owner_comment(actual,DIRECTORY)
+        row['exception_evidence_url']=self.capture(dict(decision,owner_comment=receipt,
+            owner_comment_evidence_url=actual['owner_comment_evidence_url'],observed_at='2026-10-07T02:00:00Z'))
         decision['evidence_url']=row['exception_evidence_url']
 
     def complete_transfer_gates(self):
@@ -486,7 +488,10 @@ class RolloutTests(unittest.TestCase):
                 runner['isolation_evidence_url']=self.capture(dict(common,tailscale_present=False,
                     public_dns_https='passed',isolation_checks=[{'target':t,'blocked':True} for t in
                         ('100.101.122.39:22','100.117.202.124:22','100.69.182.27:22','192.168.1.1:80','10.0.0.1:443','172.16.0.1:443')]))
-                runner['service_evidence_url']=self.capture(dict(common,unit='actions.runner.fixture.service',active_state='active'))
+                unit='actions.runner.HemSoft-yahtzee.mini-github-runner-01.service'
+                runner['service_evidence_url']=self.capture(dict(common,unit=unit,active_state='active',
+                    argv=['systemctl','show',unit,'--property=Id,ActiveState','--no-pager'],
+                    systemctl_show={'Id':unit,'ActiveState':'active'}))
                 runner['smoke_job_id']=1
                 runner['jobs_evidence_url']=self.capture({'request_url':'https://api.github.com/repos/'+repo['destination']+
                     '/actions/runs/1/attempts/1/jobs?per_page=100','all_pages':True,'total_count':1,
@@ -555,7 +560,8 @@ class RolloutTests(unittest.TestCase):
                 'owner':{'id':8227352,'login':'HemSoft','type':'User'},
                 'permissions':copy.deepcopy(self.inventory['known_owned_app']['data']['permissions'])}})
         self.matrix['owned_app_transfer'].update(status='verified',owner='hemsoft-dev',evidence_url=self.capture({
-            'phase':'post_transfer','observed_at':'2026-10-07T01:51:00Z','app':{'id':4448946,
+            'phase':'post_transfer','observed_at':'2026-10-07T01:51:00Z',
+            'request_url':'https://api.github.com/apps/sfl-app','http_status':200,'app':{'id':4448946,
             'client_id':'Iv23liwvwJJUh2bUIKLW','owner':{'id':338855369,'login':'hemsoft-dev','type':'Organization'},
             'permissions':self.inventory['known_owned_app']['data']['permissions']}}))
         path=DIRECTORY/'owned-app-organization-installation-evidence.json'
@@ -3177,6 +3183,49 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
                 with self.assertRaises(ValueError):validator.validate_final_inventory(proof,directory,{}, {})
             changed=copy.deepcopy(original);changed['comment']['html_url']=changed['comment']['html_url'].replace('/HemSoft/','/hemsoft-dev/')
             path.write_text(json.dumps(changed));validator.validate_final_inventory(proof,directory,{}, {})
+
+
+    def test_scope_exception_binds_actual_owner_comment_get(self):
+        row=self.complete_rollout();row.update(health='scope_exception',exception_evidence_url='https://example.com/exception')
+        self.matrix['summary']['verified_rollouts']-=1;self.complete_scope_decision(row);self.check()
+        decision=json.loads((DIRECTORY/row['exception_evidence_url']).read_text())
+        path=DIRECTORY/decision['owner_comment_evidence_url'];original=json.loads(path.read_text())
+        for mutate in (lambda c:c['comment']['user'].update(login='other'),lambda c:c['comment']['user'].update(id=42),
+                       lambda c:c.update(http_status=404),lambda c:c['comment'].update(body='Unrelated owner comment'),
+                       lambda c:c['comment'].update(body=c['comment']['body'].replace('exclude_runtime_rollout','include_final_inventory')),
+                       lambda c:c['comment'].update(updated_at='2026-10-07T03:00:00Z')):
+            changed=copy.deepcopy(original);mutate(changed);path.write_text(json.dumps(changed))
+            with self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_post_transfer_app_owner_needs_actual_registration_get(self):
+        self.complete_transfer_gates();self.complete_app_transfer();self.check()
+        path=DIRECTORY/self.matrix['owned_app_transfer']['evidence_url'];original=json.loads(path.read_text())
+        for mutate in (lambda c:c.pop('request_url'),lambda c:c.update(http_status=404),
+                       lambda c:c.update(request_url='https://api.github.com/apps/another-app')):
+            changed=copy.deepcopy(original);mutate(changed);path.write_text(json.dumps(changed))
+            with self.assertRaisesRegex(ValueError,'post-transfer registration metadata'):self.check()
+        original['app']['owner'].update(avatar_url='https://avatars.githubusercontent.com/u/338855369?v=4',node_id='O_fixture')
+        path.write_text(json.dumps(original));self.check()
+
+    def test_live_scenario_creation_must_follow_actual_pilot_cutoff(self):
+        self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0]
+        result,capture=self.bind_live_scenario(pilot);path=DIRECTORY/result['capture_evidence_url'];self.check()
+        capture['run']['created_at']='2026-10-07T01:50:00Z';path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'Live scenario run and attempt must start after'):self.check()
+        capture['run']['created_at']='2026-10-07T02:00:00Z';path.write_text(json.dumps(capture));self.check()
+
+    def test_runner_service_must_bind_preserved_unit_and_systemctl_output(self):
+        self.complete_pilots();row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
+        row.update(health='scope_exception',transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
+        self.complete_scope_decision(row);self.check()
+        path=DIRECTORY/row['post_transfer_runner']['service_evidence_url'];original=json.loads(path.read_text())
+        for mutate in (lambda c:c.update(unit='unrelated.service'),lambda c:c['systemctl_show'].update(Id='unrelated.service'),
+                       lambda c:c['systemctl_show'].update(ActiveState='inactive'),
+                       lambda c:c.update(argv=['systemctl','show','unrelated.service','--property=Id,ActiveState','--no-pager'])):
+            changed=copy.deepcopy(original);mutate(changed);path.write_text(json.dumps(changed))
+            with self.assertRaisesRegex(ValueError,'guest service is active'):self.check()
+        path.write_text(json.dumps(original));self.check()
 
 
 if __name__ == '__main__':

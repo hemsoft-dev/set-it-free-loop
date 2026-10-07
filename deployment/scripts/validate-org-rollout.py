@@ -728,27 +728,9 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
                                     decision.get('evidence_url', ''))
         require(receipt_match is not None,
                 'Additional repository needs an explicit owner issue receipt')
-        receipt = local_capture(decision.get('owner_comment_evidence_url'), directory, 'Additional repository owner comment')
-        comment = receipt.get('comment', {})
-        require(receipt.get('http_status') == 200 and receipt.get('request_url') ==
-                'https://api.github.com/repos/' + receipt_match[1] + '/set-it-free-loop/issues/comments/' + receipt_match[2] and
-                comment.get('id') == int(receipt_match[2]) and comment.get('user', {}).get('login') == 'HemSoft' and
-                comment['user'].get('id') == 8227352 and comment['user'].get('type') == 'User' and
-                comment.get('html_url') in {'https://github.com/' + owner + '/set-it-free-loop/issues/138#issuecomment-' + receipt_match[2]
-                                            for owner in ('HemSoft', 'hemsoft-dev')} and
-                observed_time(comment.get('created_at'), 'Additional repository approval') == approved_at and
-                approved_at <= observed_time(comment.get('updated_at'), 'Additional repository approval edit') <=
-                observed_time(receipt.get('observed_at'), 'Additional repository approval capture') <= captured_at,
-                'Additional repository approval must match the actual HemSoft comment identity and chronology')
-        markers = re.findall(r'<!-- sfl-migration-approval:(.*?) -->', comment.get('body', ''), re.DOTALL)
-        require(len(markers) == 1, 'Additional repository owner comment needs one explicit structured approval')
-        try:
-            approval = json.loads(markers[0])
-        except ValueError as exc:
-            raise ValueError('Additional repository owner approval must contain valid JSON') from exc
-        require(approval == {key: decision[key] for key in
-                            ('repository_id', 'repository', 'visibility', 'disposition', 'reason')},
-                'Additional repository owner comment must approve this exact repository decision')
+        validate_owner_approval_comment(decision.get('owner_comment_evidence_url'), directory,
+            decision['evidence_url'], approved_at,
+            {key: decision[key] for key in ('repository_id', 'repository', 'visibility', 'disposition', 'reason')}, captured_at)
         allowed[repo_id] = (repo['repository'], repo['visibility'])
     require(set(actual) == set(expected) | set(allowed), 'Final inventory contains unaccounted repository IDs')
     if pilot_branches is not None:
@@ -758,6 +740,30 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
     for repo_id, (name, visibility) in allowed.items():
         require(actual[repo_id]['full_name'] == name and actual[repo_id].get('private') == (visibility == 'private') and actual[repo_id].get('visibility') == visibility,
                 'Final inventory additions must match their recorded identity and visibility')
+
+
+def validate_owner_approval_comment(reference, directory, receipt_url, approved_at, decision, latest):
+    match = re.fullmatch(r'https://github.com/(HemSoft|hemsoft-dev)/set-it-free-loop/issues/(138|139)#issuecomment-([1-9][0-9]*)', receipt_url)
+    require(match is not None, 'Owner approval needs an explicit migration issue receipt')
+    receipt = local_capture(reference, directory, 'Owner approval comment')
+    comment = receipt.get('comment', {})
+    require(receipt.get('http_status') == 200 and receipt.get('request_url') ==
+            'https://api.github.com/repos/' + match[1] + '/set-it-free-loop/issues/comments/' + match[3] and
+            comment.get('id') == int(match[3]) and comment.get('user', {}).get('login') == 'HemSoft' and
+            comment['user'].get('id') == 8227352 and comment['user'].get('type') == 'User' and
+            comment.get('html_url') in {'https://github.com/' + owner + '/set-it-free-loop/issues/' + match[2] + '#issuecomment-' + match[3]
+                                        for owner in ('HemSoft', 'hemsoft-dev')} and
+            observed_time(comment.get('created_at'), 'Owner approval') == approved_at and
+            approved_at <= observed_time(comment.get('updated_at'), 'Owner approval edit') <=
+            observed_time(receipt.get('observed_at'), 'Owner approval capture') <= latest,
+            'Owner approval must match the actual HemSoft comment identity and chronology')
+    markers = re.findall(r'<!-- sfl-migration-approval:(.*?) -->', comment.get('body', ''), re.DOTALL)
+    require(len(markers) == 1, 'Owner comment needs one explicit structured approval')
+    try:
+        approval = json.loads(markers[0])
+    except ValueError as exc:
+        raise ValueError('Owner approval must contain valid JSON') from exc
+    require(approval == decision, 'Owner comment must approve this exact repository decision')
 
 
 def validate_app_coverage(coverage, directory, repository_id, repository, app_id, owner, cutover=None,
@@ -1178,8 +1184,10 @@ def validate_app_transfer(proof, directory, inventory, earliest):
     timestamp = observed_time(capture.get('observed_at'), 'App ownership transfer')
     app = capture.get('app', {})
     require(capture.get('phase') == 'post_transfer' and timestamp > before_at and
+            capture.get('request_url') == 'https://api.github.com/apps/sfl-app' and capture.get('http_status') == 200 and
             app.get('id') == 4448946 and app.get('client_id') == 'Iv23liwvwJJUh2bUIKLW' and
-            app.get('owner') == {'id':338855369,'login':'hemsoft-dev','type':'Organization'} and
+            app.get('owner', {}).get('id') == 338855369 and app['owner'].get('login') == 'hemsoft-dev' and
+            app['owner'].get('type') == 'Organization' and
             app.get('permissions') == inventory['known_owned_app']['data']['permissions'],
             'App ownership transfer needs post-transfer registration metadata with the original permission ceiling')
     return timestamp
@@ -1242,7 +1250,8 @@ def validate_source_default_head(proof, directory, repo, latest):
 def validate_runner_captures(proof, directory, earliest):
     registration = local_capture(proof.get('registration_evidence_url'), directory, 'Destination runner')
     runner = registration.get('runner', {})
-    baseline = local_capture('yahtzee-runner-owner-evidence.json', directory, 'Sealed runner')['runner']
+    sealed = local_capture('yahtzee-runner-owner-evidence.json', directory, 'Sealed runner')
+    baseline = sealed['runner']
     labels = {label['name'] if isinstance(label, dict) else label for label in runner.get('labels', [])}
     require(runner.get('id') == baseline['id'] and runner.get('name') == baseline['name'] and
             labels == set(baseline['labels']), 'Runner registration must preserve its sealed identity and labels')
@@ -1265,7 +1274,10 @@ def validate_runner_captures(proof, directory, earliest):
                     all(c.get('blocked') is True for c in checks) and capture.get('public_dns_https') == 'passed',
                     'Runner isolation capture must preserve the six blocked private routes and absence of Tailscale')
         elif field == 'service_evidence_url':
-            require(text(capture.get('unit')) and capture.get('active_state') == 'active',
+            unit = sealed['guest']['service']
+            require(capture.get('unit') == unit and capture.get('active_state') == 'active' and
+                    capture.get('argv') == ['systemctl', 'show', unit, '--property=Id,ActiveState', '--no-pager'] and
+                    capture.get('systemctl_show') == {'Id':unit, 'ActiveState':'active'},
                     'Runner service capture must prove the guest service is active')
         else:
             run = capture.get('run', {})
@@ -1431,6 +1443,10 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 run.get('status') == 'completed' and run.get('conclusion') in {'success','failure'},
                 'Live scenario needs its terminal deployed-observer Actions run')
         terminal_run_time(run, scenario_at, 'Live scenario')
+        if cutover is not None:
+            require(observed_time(run.get('created_at'), 'Live scenario creation') >= cutover and
+                    observed_time(run.get('run_started_at'), 'Live scenario attempt start') >= cutover,
+                    'Live scenario run and attempt must start after App cutover and deployed observer capture')
         run_id = int(result['evidence_url'].rsplit('/', 1)[1])
         require(type(run.get('id')) is int and run['id'] == run_id and
                 type(run.get('run_attempt')) is int and run['run_attempt'] > 0 and
@@ -2074,10 +2090,12 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Scope exception must match its independent owner decision capture')
             receipt = capture.get('owner_comment', {})
             require(receipt.get('author') == 'HemSoft' and receipt.get('created_at') == decision['approved_at'] and
-                    re.fullmatch(r'https://github.com/HemSoft/set-it-free-loop/issues/(?:138|139)#issuecomment-[1-9][0-9]*',
+                    re.fullmatch(r'https://github.com/(?:HemSoft|hemsoft-dev)/set-it-free-loop/issues/(?:138|139)#issuecomment-[1-9][0-9]*',
                                  receipt.get('url', '')) is not None and receipt.get('decision') == {
                         field: decision[field] for field in ('repository_id', 'repository', 'disposition', 'reason')},
                     'Scope exception needs its captured HemSoft issue decision with matching repository and disposition')
+            validate_owner_approval_comment(capture.get('owner_comment_evidence_url'), directory, receipt['url'],
+                approved_at, receipt['decision'], observed_time(capture.get('observed_at'), 'Scope exception capture'))
             evidence(row.get('transfer_evidence_url'), directory)
             evidence(row.get('status_evidence_url'), directory)
         elif health == 'archived_verified':
