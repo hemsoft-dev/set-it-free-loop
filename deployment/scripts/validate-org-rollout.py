@@ -919,12 +919,31 @@ def validate_source_refresh(proof, directory, inventory, credential):
             require(repo_id in expected and repo_id not in actual, 'Source refresh contains a new or duplicate repository')
             baseline = expected[repo_id]
             require(current.get('full_name', '').startswith(account['owner'] + '/') and
-                    all(current.get(k) == baseline[k] for k in ('full_name','private','archived','default_branch')),
+                    all(current.get(k) == baseline[k] for k in ('full_name','private','visibility','archived','default_branch')),
                     'Source repository metadata changed; reconcile the transfer baseline')
             require(current.get('protections') == protection_contract(baseline, directory),
                     'Source protections changed; reconcile the preservation baseline')
             actual[repo_id] = current
     require(set(actual) == set(expected), 'Source refresh must cover every sealed repository ID')
+    destination = capture.get('destination_account', {})
+    login = inventory['destination_login']
+    require(destination.get('owner') == login and destination.get('state') == 'observed' and
+            destination.get('all_pages') is True and isinstance(destination.get('repositories'), list) and
+            destination.get('request_url') == 'https://api.github.com/orgs/' + login + '/repos?type=all&per_page=100',
+            'Source refresh must include a complete destination repository enumeration')
+    mapped_names = {repo['destination'].casefold() for repo in expected.values()
+                    if repo['id'] not in APPROVED_RETAINED_IDS}
+    destination_ids, destination_names = set(), set()
+    for current in destination['repositories']:
+        repo_id, name = current.get('id'), current.get('full_name')
+        require(type(repo_id) is int and repo_id > 0 and repo_id not in destination_ids and
+                repo_id not in expected and text(name) and name.startswith(login + '/') and
+                name.casefold() not in destination_names,
+                'Destination refresh identities must be unique, account-bound and separate from source IDs')
+        require(name.casefold() not in mapped_names,
+                'Destination refresh contains a newly occupied mapped transfer name')
+        destination_ids.add(repo_id)
+        destination_names.add(name.casefold())
     app = capture.get('owned_app', {})
     require(app.get('id') == 4448946 and app.get('client_id') == 'Iv23liwvwJJUh2bUIKLW' and
             app.get('owner') == {'login':'HemSoft','type':'User'} and
@@ -1007,7 +1026,7 @@ def validate_post_transfer_access(access, directory, repo, earliest):
         require(observed_time(capture.get('observed_at'), 'Post-transfer access') > earliest and
                 observed_time(capture['observed_at'], 'Post-transfer access') <=
                 observed_time(access.get('verified_at'), 'Access verification'),
-                'Access and license captures must follow source refresh and precede verification')
+                'Access and license captures must follow repository transfer and precede verification')
 
 
 def validate_source_governance(proof, directory, repo, cutover):
@@ -1767,7 +1786,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 require(captured_at.tzinfo is not None, 'Post-transfer access receipt needs a timezone')
                 evidence(access.get('permission_evidence_url'), directory)
                 evidence(access.get('license_evidence_url'), directory)
-                validate_post_transfer_access(access, directory, repo, source_refreshed_at)
+                validate_post_transfer_access(access, directory, repo, transferred_at)
         coverage = row.get('destination_sfl_app_access')
         if (health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'} and
                 row['source_app_access_in_baseline']):

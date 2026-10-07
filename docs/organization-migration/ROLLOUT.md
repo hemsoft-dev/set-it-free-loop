@@ -607,3 +607,14 @@ and raw `data`. Its exact ref and commit SHA must match the verified `source_sha
 Product workflow runs must name that default branch and revision. A retained
 branch/tag run at an older release cannot verify a newer main revision. Capture
 and verify again if main advances during qualification.
+
+The mandatory pre-cutover source refresh compares exact `visibility` as well as
+the `private` boolean, archive state, default branch and protection contract.
+It also includes `destination_account` with `owner`, `state: observed`,
+`all_pages: true`, all repository IDs/names and the paginated request URL
+`https://api.github.com/orgs/hemsoft-dev/repos?type=all&per_page=100`. Reject any
+destination name that now occupies an approved transfer mapping, ignoring case.
+Unrelated destination repositories can coexist, but cannot claim a source ID.
+For fhemmer's access and one-seat verification, both independent captures must
+follow that repository's actual accepted transfer event, not merely the earlier
+source refresh. Recheck permission and licensing after the move.

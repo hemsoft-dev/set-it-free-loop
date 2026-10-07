@@ -389,11 +389,15 @@ class RolloutTests(unittest.TestCase):
                 'created_at':'2026-10-07T00:00:30Z','updated_at':'2026-10-07T00:00:30Z',
                 'digest':'sha256:'+hashlib.sha256(stream.getvalue()).hexdigest()}})
         accounts = [{'owner':owner,'state':'observed','all_pages':True,'repositories':[
-            {**{k:repo[k] for k in ('id','full_name','private','archived','default_branch')},
+            {**{k:repo[k] for k in ('id','full_name','private','visibility','archived','default_branch')},
              'protections':validator.protection_contract(repo)} for repo in self.inventory['repositories']
             if repo['full_name'].startswith(owner+'/')]} for owner in ('HemSoft','fhemmer')]
         self.matrix['pre_cutover_source_evidence_url']=self.capture({'phase':'pre_cutover',
             'observed_at':'2026-10-07T01:50:00Z','accounts':accounts,
+            'destination_account':{'owner':'hemsoft-dev','state':'observed','all_pages':True,
+                'request_url':'https://api.github.com/orgs/hemsoft-dev/repos?type=all&per_page=100',
+                'repositories':[{'id':p['repository_id'],'full_name':p['repository']}
+                    for p in self.matrix['disposable_validation_repositories']]},
             'owned_app':{'id':4448946,'client_id':'Iv23liwvwJJUh2bUIKLW','owner':{'login':'HemSoft','type':'User'},
                          'permissions':self.inventory['known_owned_app']['data']['permissions']},
             'source_installation':{'id':150383874,'app_id':4448946,'owner':'HemSoft','repository_selection':'all'},
@@ -2904,6 +2908,52 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         capture['run']['head_branch']='main';run_path.write_text(json.dumps(capture));self.check()
         del proof['default_branch_evidence_url']
         with self.assertRaisesRegex(ValueError,'Missing evidence'):self.check()
+
+
+    def test_pre_cutover_source_refresh_preserves_exact_visibility(self):
+        self.complete_transfer_gates();self.check();path=DIRECTORY/self.matrix['pre_cutover_source_evidence_url']
+        original=json.loads(path.read_text());capture=copy.deepcopy(original)
+        private=next(r for a in capture['accounts'] for r in a['repositories'] if r['private'])
+        private['visibility']='internal';path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'metadata changed'):self.check()
+        del private['visibility'];path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'metadata changed'):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_access_and_license_capture_follow_actual_repository_transfer(self):
+        row=self.complete_rollout();self.assertEqual(row['repository_id'],1143951439);self.check()
+        transfer_path=DIRECTORY/row['transfer_evidence_url'];capture=json.loads(transfer_path.read_text())
+        milliseconds=int(validator.observed_time('2026-10-07T01:56:00Z','test').timestamp()*1000)
+        capture['event'].update({'@timestamp':milliseconds,'created_at':milliseconds})
+        capture['observed_at']='2026-10-07T01:56:30Z';transfer_path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'follow repository transfer'):self.check()
+        access=row['post_transfer_access'];captures={}
+        for field in ('permission_evidence_url','license_evidence_url'):
+            path=DIRECTORY/access[field];current=json.loads(path.read_text());current['observed_at']='2026-10-07T01:57:00Z'
+            path.write_text(json.dumps(current));captures[field]=current
+        self.check()
+        for field,original in captures.items():
+            path=DIRECTORY/access[field]
+            for timestamp in ('2026-10-07T01:55:00Z','2026-10-07T01:56:00Z'):
+                current=copy.deepcopy(original);current['observed_at']=timestamp;path.write_text(json.dumps(current))
+                with self.subTest(field=field,timestamp=timestamp),self.assertRaisesRegex(ValueError,'follow repository transfer'):
+                    self.check()
+            path.write_text(json.dumps(original))
+        self.check()
+
+    def test_pre_cutover_refresh_rechecks_destination_name_collisions(self):
+        self.complete_transfer_gates();self.check();path=DIRECTORY/self.matrix['pre_cutover_source_evidence_url']
+        original=json.loads(path.read_text());target=next(r for r in self.inventory['repositories'] if r['id'] not in validator.APPROVED_RETAINED_IDS)
+        for name in (target['destination'],target['destination'].split('/')[0]+'/'+target['destination'].split('/')[1].upper()):
+            capture=copy.deepcopy(original);capture['destination_account']['repositories'].append({'id':999,'full_name':name})
+            path.write_text(json.dumps(capture))
+            with self.subTest(name=name),self.assertRaisesRegex(ValueError,'newly occupied mapped transfer name'):self.check()
+        capture=copy.deepcopy(original);capture['destination_account']['all_pages']=False;path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'complete destination'):self.check()
+        capture=copy.deepcopy(original);del capture['destination_account'];path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'complete destination'):self.check()
+        capture=copy.deepcopy(original);capture['destination_account']['repositories'].append({'id':999,'full_name':'hemsoft-dev/unrelated-new-repo'})
+        path.write_text(json.dumps(capture));self.check()
 
 
 if __name__ == '__main__':
