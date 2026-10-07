@@ -39,10 +39,10 @@ class RolloutTests(unittest.TestCase):
     def verify_source_ledger(self, repo_id):
         for row in self.rows:
             if int(row['repository_id']) == repo_id:
-                row.update(status='verified', provider='Vercel' if row.get('resource_kind') == 'vercel_project' else ('GitHub Actions' if row.get('resource_kind') == 'repository_runner' else 'none'), absence_reason='Synthetic owner absence receipt',
+                row.update(status='verified', provider={'vercel_project':'Vercel','repository_runner':'GitHub Actions','github_pages':'GitHub Pages','supabase_project':'Supabase'}.get(row.get('resource_kind'),'none'), absence_reason='Synthetic owner absence receipt',
                            verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
                            evidence_url='https://github.com/HemSoft/set-it-free-loop/issues/138')
-                if row.get('resource_kind') == 'vercel_project':
+                if row.get('resource_kind') in {'vercel_project','github_pages','supabase_project'}:
                     row.update(resource_owner='Synthetic verified project owner', credential_source='Provider-owned integration',
                                credential_validity='verified', affected_reference='Existing Git project link',
                                transfer_action='Reconnect after gated transfer', smoke_test='Synthetic deployment succeeds',
@@ -53,6 +53,11 @@ class RolloutTests(unittest.TestCase):
                                credential_validity='verified',affected_reference='Runner 21',
                                transfer_action='Verify registration continuity',smoke_test='Manual smoke succeeds',
                                recovery_action='Restore exact registration if needed')
+
+    def complete_app_coverage(self, row):
+        row['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
+            'repository_id':row['repository_id'],'repository':row['destination'],'installation_id':123,
+            'evidence_url':'https://example.com/app-access'}
 
     def complete_post_transfer_access(self, row):
         if row['repository_id'] == 1143951439:
@@ -84,6 +89,10 @@ class RolloutTests(unittest.TestCase):
                    destination_sfl_app_access='verified', transfer_evidence_url='https://example.com/transfer',
                    review_pr_url='https://example.com/review', gate_run_url='https://example.com/gate',
                    status_evidence_url='https://example.com/status')
+        self.complete_app_coverage(row)
+        row['pre_sync_installation'] = {'state':'absent','tier':'not_installed',
+            'repository_id':row['repository_id'],'repository':row['destination'],'revision_sha':'d'*40,
+            'manifest_paths':['.sfl/sfl.json','sfl.json'],'evidence_url':'https://example.com/pre-sync'}
         row['gate_policy'] = {'state': 'required', 'context': 'SFL Reviewer Gate Runner', 'app_id': 15368,
                               'strict': True, 'evidence_url': 'https://example.com/rule'}
         row['review_registration_url'] = 'https://example.com/registration'
@@ -112,7 +121,7 @@ class RolloutTests(unittest.TestCase):
         self.complete_app_transfer()
         for pilot in self.matrix['disposable_validation_repositories']:
             pilot['validation_status'] = 'verified'
-            pilot['validation_evidence'] = {field: 'https://example.com/' + field for field in
+            pilot['validation_evidence'] = {field: 'https://github.com/' + pilot['repository'] + '/issues/1#' + field for field in
                 ('init_pr_url', 'sync_pr_url', 'repeat_sync_evidence_url',
                  'repeat_onboarding_evidence_url', 'review_registration_url',
                  'review_registry_status_url', 'review_artifact_url', 'gate_run_url',
@@ -124,6 +133,13 @@ class RolloutTests(unittest.TestCase):
                 manifest_evidence_url='https://example.com/manifest',
                 release_download_verification_url='https://example.com/checksum')
             receipts=pilot['validation_evidence']
+            receipts['init_pr_url']='https://github.com/'+pilot['repository']+'/pull/1'
+            receipts['sync_pr_url']='https://github.com/'+pilot['repository']+'/pull/2'
+            receipts['operation_receipts']={field:{'repository_id':pilot['repository_id'],'repository':pilot['repository'],
+                'deployment_sha':receipts['deployment_sha'],'release_version':receipts['release_version'],'evidence_url':receipts[field]}
+                for field in ('init_pr_url','sync_pr_url','repeat_sync_evidence_url','repeat_onboarding_evidence_url',
+                    'review_registration_url','review_registry_status_url','review_artifact_url','gate_run_url',
+                    'status_evidence_url','gate_uninstall_evidence_url')}
             receipts.update(review_requester='HemSoft',review_pr_url='https://github.com/'+pilot['repository']+'/pull/1',
                 review_head_sha='b'*40,review_base_sha='c'*40,requester_permission='admin',
                 requester_permission_evidence_url='https://example.com/permission',
@@ -155,6 +171,7 @@ class RolloutTests(unittest.TestCase):
                    review_head_sha='b'*40, review_base_sha='c'*40,
                    gate_policy={'state':'required','context':'SFL Reviewer Gate Runner','app_id':15368,
                                 'strict':True,'evidence_url':'https://example.com/rule'})
+        self.complete_app_coverage(row)
         for field in ('review_pr_url','gate_run_url','review_registration_url',
                       'review_registry_status_url','review_artifact_url'):
             row[field] = 'https://example.com/' + field
@@ -375,6 +392,7 @@ class RolloutTests(unittest.TestCase):
         row['selected_tier'] = 'custom'
         row['manifest_identity']['tier'] = 'custom'
         row['installed_tier'] = 'custom'
+        row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['installed_components'] = ['sfl-auditor']
         row['wider_workflow_run_urls'] = ['https://example.com/auditor-run']
         for components in (None, [], ['unknown-workflow']):
@@ -388,6 +406,7 @@ class RolloutTests(unittest.TestCase):
     def test_legacy_installed_review_tier_recorded_truthfully(self):
         row = self.complete_rollout()
         row['installed_tier'] = 'review'
+        row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         self.check()
         row['selected_tier'] = 'review'
         with self.assertRaisesRegex(ValueError, 'canonical reviewer'):
@@ -405,6 +424,7 @@ class RolloutTests(unittest.TestCase):
     def test_review_only_custom_tier_needs_no_unrelated_workflow_run(self):
         row = self.complete_rollout()
         row.update(selected_tier='custom', installed_tier='custom', installed_components=['sfl-pr-review-auto'],selected_components=['sfl-pr-review-auto'])
+        row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['manifest_identity']['tier']='custom'
         row['wider_workflow_run_urls'] = []
         self.check()
@@ -536,6 +556,7 @@ class RolloutTests(unittest.TestCase):
     def test_observed_custom_tier_requires_components(self):
         row = self.complete_rollout()
         row['installed_tier'] = 'custom'
+        row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         for invalid in (None, []):
             row['installed_components'] = invalid
             with self.assertRaisesRegex(ValueError, 'Installed custom tier'):
@@ -621,6 +642,7 @@ class RolloutTests(unittest.TestCase):
         row['manifest_identity']['tier']='custom'
         for tier in ('not_installed','reviewer','full'):
             row['installed_tier']=tier
+            row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
             with self.subTest(tier=tier),self.assertRaisesRegex(ValueError,'existing custom'): self.check()
 
     def test_pilot_required_policy_and_authorized_review_context(self):
@@ -670,6 +692,7 @@ class RolloutTests(unittest.TestCase):
     def test_installed_configuration_is_preserved(self):
         row=self.complete_rollout()
         row.update(installed_tier='full',installed_addons=['pr-review'])
+        row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
         row['selected_tier']='full';row['manifest_identity']['tier']='full'
         with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
@@ -701,6 +724,7 @@ class RolloutTests(unittest.TestCase):
         row = self.complete_rollout()
         row.update(installed_tier='minimal', selected_tier='minimal', installed_addons=['pr-review'],
                    selected_addons=['pr-review'], wider_workflow_run_urls=['https://example.com/run'])
+        row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['manifest_identity']['tier'] = 'minimal'
         for addons in (None, [], ['policy-manager']):
             row['manifest_identity']['addons'] = addons
@@ -710,6 +734,7 @@ class RolloutTests(unittest.TestCase):
         self.check()
         row.update(installed_tier='custom', selected_tier='custom', installed_components=['sfl-pr-review-auto'],
                    selected_components=['sfl-pr-review-auto'])
+        row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['manifest_identity']['tier'] = 'custom'
         for components in (None, [], ['sfl-auditor']):
             row['manifest_identity']['components'] = components
@@ -825,6 +850,58 @@ class RolloutTests(unittest.TestCase):
                             ('evidence_url','https://example.com/unrelated')]:
             row['scope_exception_decision']=copy.deepcopy(original);row['scope_exception_decision'][field]=value
             with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+
+    def test_not_installed_requires_absence_and_preserves_known_manifests(self):
+        row=self.complete_rollout(); self.check()
+        original=copy.deepcopy(row['pre_sync_installation'])
+        for field,value in [('repository_id',1),('repository','hemsoft-dev/other'),('revision_sha','main'),('state','present'),('manifest_paths',[])]:
+            with self.subTest(field=field):
+                row['pre_sync_installation']=copy.deepcopy(original);row['pre_sync_installation'][field]=value
+                with self.assertRaises(ValueError):self.check()
+        row['pre_sync_installation']=original
+        for source in ('HemSoft/hs-buddy','HemSoft/buddy-ios'):
+            inventory=next(r for r in self.inventory['repositories'] if r['full_name']==source)
+            candidate=next(r for r in self.matrix['repositories'] if r['source']==source)
+            replacement=copy.deepcopy(row)
+            for field in ('repository_id','source','destination','visibility','archived','source_app_access_in_baseline','rollout_action'):
+                replacement[field]=candidate[field]
+            replacement.pop('post_transfer_access',None)
+            replacement['destination_sfl_app_access'].update(repository_id=inventory['id'],repository=inventory['destination'])
+            replacement['pre_sync_installation'].update(repository_id=inventory['id'],repository=inventory['destination'])
+            index=self.matrix['repositories'].index(candidate);self.matrix['repositories'][index]=replacement
+            with self.assertRaisesRegex(ValueError,'cannot erase a captured'):self.check()
+            self.matrix['repositories'][index]=candidate
+
+    def test_source_and_consumer_app_coverage_require_bound_installation(self):
+        row=self.complete_rollout();self.check();original=copy.deepcopy(row['destination_sfl_app_access'])
+        for value in ['verified',{'status':'verified'},{**original,'repository_id':1},{**original,'repository':'hemsoft-dev/other'},{**original,'installation_id':0}]:
+            row['destination_sfl_app_access']=value
+            with self.assertRaisesRegex(ValueError,'repository-bound'):self.check()
+        row['destination_sfl_app_access']=original
+        source=self.complete_source();source['destination_sfl_app_access']='verified'
+        with self.assertRaisesRegex(ValueError,'repository-bound'):self.check()
+
+    def test_pilot_operations_bind_repository_release_and_deployment(self):
+        self.complete_pilots();self.check();receipts=self.matrix['disposable_validation_repositories'][0]['validation_evidence']
+        original=copy.deepcopy(receipts['operation_receipts'])
+        for field in original:
+            receipts['operation_receipts']=copy.deepcopy(original)
+            receipts['operation_receipts'][field]['deployment_sha']='d'*40
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(ValueError,'operation receipt'):self.check()
+        receipts['operation_receipts']=original
+        receipts['init_pr_url']='https://github.com/hemsoft-dev/other/pull/1'
+        receipts['operation_receipts']['init_pr_url']['evidence_url']=receipts['init_pr_url']
+        with self.assertRaisesRegex(ValueError,'designated repository'):self.check()
+
+    def test_known_pages_and_supabase_resources_cannot_disappear(self):
+        original=copy.deepcopy(self.rows)
+        for kind in ('github_pages','supabase_project'):
+            self.rows=[r for r in original if r.get('resource_kind')!=kind]
+            with self.subTest(kind=kind):
+                with self.assertRaisesRegex(ValueError,'every captured Pages/Supabase'):self.check()
+        self.rows=original;row=next(r for r in self.rows if r.get('resource_kind')=='supabase_project');row['provider']='none'
+        with self.assertRaisesRegex(ValueError,'provider absence'):self.check()
 
 
 if __name__ == '__main__':

@@ -74,6 +74,15 @@ def immutable_sha(value):
     return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{40}', value) is not None
 
 
+def validate_app_coverage(coverage, directory, repository_id, repository, app_id, owner):
+    require(isinstance(coverage, dict) and coverage.get('status') == 'verified' and
+            coverage.get('app_id') == app_id and coverage.get('owner') == owner and
+            coverage.get('repository_id') == repository_id and coverage.get('repository') == repository and
+            type(coverage.get('installation_id')) is int and coverage['installation_id'] > 0,
+            'Verified destination needs repository-bound post-transfer SFL App coverage')
+    evidence(coverage.get('evidence_url'), directory)
+
+
 def validate_registered_review(row, directory, repository):
     policy = row.get('gate_policy')
     require(isinstance(policy, dict) and policy.get('state') == 'required' and
@@ -211,6 +220,20 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     for record in workflow_capture['records']:
         workflow_refs.setdefault(record['source'], set()).update(record.get('referenced_secret_names', []))
     legacy_names = {'SFL_APP_PRIVATE_KEY', 'OPENROUTER_API_KEY'}
+    pages_resources = {(repo_id, str(repo_id)) for repo_id, repo in expected.items() if repo['has_pages']}
+    vercel_projects = json.loads((directory / 'vercel-provider-evidence.json').read_text())['projects']
+    supabase_resources = set()
+    for project in json.loads((directory / 'supabase-provider-evidence.json').read_text())['projects']:
+        connection = project.get('vercel_project_connection')
+        if connection:
+            linked = [item for item in vercel_projects if item['name'] == connection]
+            require(len(linked) == 1, 'Supabase connection must match one captured Vercel project')
+            supabase_resources.add((linked[0]['link']['repoId'], project['reference']))
+    other_resources = {'github_pages': ('GitHub Pages', pages_resources),
+                       'supabase_project': ('Supabase', supabase_resources)}
+    seen_other_resources = {kind: set() for kind in other_resources}
+    captured_manifests = {record['repository_id'] for record in workflow_capture.get('records', [])
+                          if record.get('path') in {'.sfl/sfl.json', 'sfl.json'} and record.get('state') == 'observed'}
     expected_unused = {}
     for repo_id, repo in expected.items():
         names = set(repo['settings']['secret_names'].get('data', [])) & legacy_names
@@ -254,6 +277,14 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Unexpected or duplicate Vercel project resource')
             require(row.get('provider') == 'Vercel', 'Known Vercel project cannot be recorded as provider absence')
             seen_vercel_resources.add(resource)
+        kind = row.get('resource_kind')
+        if kind in other_resources:
+            provider, resources = other_resources[kind]
+            resource = (repo_id, row.get('resource_id'))
+            require(resource in resources and resource not in seen_other_resources[kind],
+                    'Unexpected or duplicate known Pages/Supabase resource')
+            require(row.get('provider') == provider, 'Known Pages/Supabase resource cannot be provider absence')
+            seen_other_resources[kind].add(resource)
         names = row.get('unused_repository_credential_names')
         require(isinstance(names, str), 'Ledger needs explicit unused credential names')
         listed_unused = [name.strip() for name in names.split(';') if name.strip()]
@@ -292,6 +323,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     require(seen_ledger == set(expected), 'Ledger must cover every baseline ID')
     require(seen_runner_resources == runner_resources, 'Ledger must preserve every observed repository runner resource')
     require(seen_vercel_resources == vercel_resources, 'Ledger must preserve every captured Vercel project resource')
+    require(all(seen_other_resources[kind] == resources for kind, (_, resources) in other_resources.items()),
+            'Ledger must preserve every captured Pages/Supabase resource')
     all_transfer_gates_verified = all(all(status == 'verified' for status in ledger_statuses[repo_id])
                                       for repo_id in expected if repo_id not in retained)
 
@@ -358,8 +391,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 require(captured_at.tzinfo is not None, 'Post-transfer access receipt needs a timezone')
                 evidence(access.get('permission_evidence_url'), directory)
                 evidence(access.get('license_evidence_url'), directory)
-        if row.get('destination_sfl_app_access') == 'verified':
+        coverage = row.get('destination_sfl_app_access')
+        if coverage == 'verified' or (isinstance(coverage, dict) and coverage.get('status') == 'verified'):
             require(app_transfer['status'] == 'verified', 'Destination private SFL App access requires verified App transfer')
+            validate_app_coverage(coverage, directory, repo_id, repo['destination'], owned_app_id, inventory['destination_login'])
         if health in {'verified', 'archived_verified', 'scope_exception', 'source_verified'}:
             require(all(status == 'verified' for status in ledger_statuses[repo_id]),
                     'Completed rollout requires every integration row verified')
@@ -397,7 +432,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 evidence(run, directory)
             for field in ('transfer_evidence_url', 'status_evidence_url'):
                 evidence(row.get(field), directory)
-            require(row.get('destination_codex_access') == 'verified' and row.get('destination_sfl_app_access') == 'verified',
+            require(row.get('destination_codex_access') == 'verified' and isinstance(coverage, dict) and coverage.get('status') == 'verified',
                     'Protected source needs verified App coverage')
             # The source owns its workflows; it must not acquire a consumer manifest through init/sync.
             require(row['installed_tier'] is None and row['selected_tier'] is None,
@@ -432,6 +467,18 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 require(text(row.get(field)), f'Verified rollout needs {field}')
             require(semantic_version(row.get('manifest_version')), 'Verified rollout needs a semantic manifest release version')
             require(text(row.get('installed_tier')), 'Verified rollout needs the observed pre-sync installed tier')
+            observed = row.get('pre_sync_installation')
+            require(isinstance(observed, dict) and observed.get('repository_id') == repo_id and
+                    observed.get('repository') == row['destination'] and immutable_sha(observed.get('revision_sha')) and
+                    observed.get('manifest_paths') == ['.sfl/sfl.json', 'sfl.json'],
+                    'Verified rollout needs repository-bound pre-sync installation evidence')
+            evidence(observed.get('evidence_url'), directory)
+            require(observed.get('tier') == row['installed_tier'], 'Pre-sync receipt must match the observed tier')
+            if row['installed_tier'] == 'not_installed':
+                require(observed.get('state') == 'absent' and repo_id not in captured_manifests,
+                        'Not-installed requires proven absence and cannot erase a captured installation')
+            else:
+                require(observed.get('state') == 'present', 'Existing deployment needs a present pre-sync receipt')
             if row['installed_tier'] == 'custom':
                 require(string_list(row['installed_components']) and bool(row['installed_components']),
                         'Installed custom tier needs observed components')
@@ -480,7 +527,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             for field in ('manifest_evidence_url', 'release_url', 'release_download_verification_url'):
                 evidence(row.get(field), directory)
             require(row.get('destination_codex_access') == 'verified', 'Codex coverage must be verified')
-            require(row.get('destination_sfl_app_access') == 'verified', 'SFL App coverage must be verified')
+            validate_app_coverage(coverage, directory, repo_id, repo['destination'], owned_app_id, inventory['destination_login'])
             for field in ('transfer_evidence_url', 'review_pr_url', 'gate_run_url', 'status_evidence_url'):
                 evidence(row.get(field), directory)
             for field in ('review_registration_url', 'review_registry_status_url', 'review_artifact_url'):
@@ -548,13 +595,28 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Verified pilot manifest must match its deployment source, SHA and version')
             for field in ('manifest_evidence_url', 'release_download_verification_url'):
                 evidence(receipts.get(field), directory)
-            coverage = receipts.get('destination_sfl_app_access')
-            require(isinstance(coverage, dict) and coverage.get('status') == 'verified' and
-                    coverage.get('app_id') == owned_app_id and coverage.get('owner') == inventory['destination_login'] and
-                    coverage.get('repository_id') == extra_id and coverage.get('repository') == name and
-                    type(coverage.get('installation_id')) is int and coverage['installation_id'] > 0,
-                    'Verified pilot needs post-transfer per-repository SFL App coverage')
-            evidence(coverage.get('evidence_url'), directory)
+            validate_app_coverage(receipts.get('destination_sfl_app_access'), directory, extra_id, name,
+                                  owned_app_id, inventory['destination_login'])
+            operation_fields = ('init_pr_url', 'sync_pr_url', 'repeat_sync_evidence_url',
+                                'repeat_onboarding_evidence_url', 'review_registration_url',
+                                'review_registry_status_url', 'review_artifact_url', 'gate_run_url',
+                                'status_evidence_url', 'gate_uninstall_evidence_url')
+            operations = receipts.get('operation_receipts')
+            require(isinstance(operations, dict) and set(operations) == set(operation_fields),
+                    'Verified pilot needs repository-bound onboarding operation receipts')
+            for field in operation_fields:
+                operation = operations[field]
+                require(isinstance(operation, dict) and operation.get('repository_id') == extra_id and
+                        operation.get('repository') == name and operation.get('deployment_sha') == receipts['deployment_sha'] and
+                        operation.get('release_version') == receipts['release_version'] and
+                        operation.get('evidence_url') == receipts[field],
+                        'Pilot operation receipt must bind its repository, deployment and release')
+                if urllib.parse.urlsplit(receipts[field]).scheme:
+                    require(receipts[field].startswith('https://github.com/' + name + '/'),
+                            'Pilot operation URL must belong to its designated repository')
+            for field in ('init_pr_url', 'sync_pr_url'):
+                require(re.fullmatch('https://github.com/' + re.escape(name) + r'/pull/[1-9][0-9]*', receipts[field]) is not None,
+                        'Pilot onboarding PR must belong to its designated repository')
             scenarios = receipts.get('scenario_receipts')
             require(isinstance(scenarios, dict) and set(scenarios) == set(PILOT_SCENARIOS),
                     'Verified pilot needs every mandatory negative scenario receipt')
