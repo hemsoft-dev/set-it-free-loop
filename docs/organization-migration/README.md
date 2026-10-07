@@ -515,3 +515,9 @@ decoded Git blob bytes and the supported CLI rendering before accepting status.
 Final inventory additions also require the actual issue138 comment, its HemSoft
 author identity and an explicit structured approval matching the added repository.
 See the capture fields in [the rollout runbook](ROLLOUT.md).
+
+Before cutover, the [rollout capture contract](ROLLOUT.md) requires a fresh
+reference scan and head/branch comparison for every source, followed by ledger
+reconciliation and a current-main owned-App credential run. Provider success
+records carry service-specific GET responses, repository bindings and observed
+production state. Historical preparation checks do not clear these live gates.

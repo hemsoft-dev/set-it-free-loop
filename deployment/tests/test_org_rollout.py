@@ -163,12 +163,81 @@ class RolloutTests(unittest.TestCase):
 
     def bind_smoke(self, row, directory=DIRECTORY):
         row.update(smoke_outcome='success',smoke_phase='post_transfer')
-        row['smoke_evidence_url']=self.capture({'repository_id':int(row['repository_id']),
-            'repository':row['source'] if int(row['repository_id']) in validator.APPROVED_RETAINED_IDS else row['destination'],
-            'provider':row['provider'],
+        repository=row['source'] if int(row['repository_id']) in validator.APPROVED_RETAINED_IDS else row['destination']
+        smoke={'repository_id':int(row['repository_id']),'repository':repository,'provider':row['provider'],
             'resource_kind':row.get('resource_kind'),'resource_id':row.get('resource_id'),'outcome':'success',
             'phase':'post_transfer','destructive_changes':False,'continuity_verified':True,
-            'observed_at':'2026-10-07T02:00:00Z'},directory)
+            'observed_at':'2026-10-07T02:00:00Z','provider_responses':{}}
+        kind,resource=row.get('resource_kind'),row.get('resource_id')
+        def response(name,url,data,complete=False):
+            smoke['provider_responses'][name]={'method':'GET','request_url':url,'http_status':200,
+                'observed_at':smoke['observed_at'],'data':data}
+            if complete:smoke['provider_responses'][name]['all_pages']=True
+        if kind=='vercel_project':
+            project=copy.deepcopy(next(r for r in json.loads((directory/'vercel-provider-evidence.json').read_text())['projects'] if r['id']==resource))
+            if resource=='prj_hPjAbxtMlCi3A5waKxQpjATto0ae':project['link']=None
+            else:project['link'].update(org=repository.split('/')[0],repo=repository.split('/')[1])
+            response('project','https://api.vercel.com/v9/projects/'+resource+'?teamId='+project['accountId'],project)
+        elif kind=='github_pages':
+            baseline=validator.provider_preservation_baseline(row,self.inventory,directory)
+            owner,name=repository.split('/');site='https://'+(baseline['cname']+'/' if baseline['cname'] else owner.lower()+'.github.io/'+name+'/')
+            response('pages','https://api.github.com/repos/'+repository+'/pages',dict(baseline,html_url=site))
+            response('site',site,{'final_url':site})
+        elif kind=='cloudflare_zone':
+            baseline=validator.provider_preservation_baseline(row,self.inventory,directory)
+            base='https://api.cloudflare.com/client/v4/zones/'+resource
+            response('zone',base,{'success':True,'result':{'id':resource,'account':{'id':baseline['account_id']},'plan':{'name':baseline['plan']}}})
+            response('dns',base+'/dns_records?per_page=100',{'success':True,'result':baseline['website_records']},True)
+            response('routes',base+'/workers/routes',{'success':True,'result':baseline['workers_routes']})
+        elif kind=='cloudflare_worker':
+            baseline=validator.provider_preservation_baseline(row,self.inventory,directory)
+            base='https://api.cloudflare.com/client/v4/accounts/'+baseline['account_id']+'/workers/scripts'
+            response('scripts',base,{'success':True,'result':[{'id':resource}]},True)
+            response('subdomain',base+'/'+resource+'/subdomain',{'success':True,'result':{'enabled':True}})
+            response('account_subdomain','https://api.cloudflare.com/client/v4/accounts/'+baseline['account_id']+'/workers/subdomain',{'success':True,'result':{'subdomain':'nlg'}})
+            zone=json.loads((directory/'now-leadership-live-hosting-evidence.json').read_text())['cloudflare_owner_verification']['zone_id']
+            response('routes','https://api.cloudflare.com/client/v4/zones/'+zone+'/workers/routes',{'success':True,'result':baseline['workers_routes']})
+            smoke['observed_resource']=baseline
+        elif kind=='repository_runner':
+            response('runner','https://api.github.com/repos/'+repository+'/actions/runners/'+str(resource),
+                {'id':int(resource),'name':'mini-github-runner-01','status':'online','busy':False,
+                 'labels':[{'name':name} for name in ('self-hosted','Linux','X64','mini','yahtzee')]})
+        elif kind=='supabase_project':
+            baseline=validator.provider_preservation_baseline(row,self.inventory,directory)
+            row['smoke_outcome']=smoke['outcome']='baseline_preserved'
+            smoke.update(baseline=baseline,observed_resource=copy.deepcopy(baseline))
+        row['smoke_evidence_url']=self.capture(smoke,directory)
+
+    def bind_source_scan(self, accounts):
+        original=json.loads((DIRECTORY/'source-tree-recheck-evidence.json').read_text())
+        unresolved={r['repository_id']:r for r in original['records']}
+        scans=[]
+        for account in accounts:
+            for repo in account['repositories']:
+                baseline=unresolved.get(repo['id'],{})
+                head=None if baseline.get('state')=='uninitialized' else baseline.get('commit_sha','e'*40)
+                tree=None if head is None else baseline.get('tree_sha','f'*40)
+                branches=copy.deepcopy(baseline.get('branches',[{'name':repo['default_branch'],'commit':{'sha':head}}]))
+                base='https://api.github.com/repos/'+repo['full_name']
+                data={'state':'observed' if head else 'uninitialized','head_sha':head,'tree_sha':tree,
+                    'observed_at':'2026-10-07T01:48:00Z','branches_response':{'request_url':base+'/branches?per_page=100',
+                        'http_status':200,'all_pages':True,'data':branches},
+                    'ref_response':{'request_url':base+'/git/ref/heads/'+repo['default_branch'],'http_status':200 if head else 409,
+                        'data':{'ref':'refs/heads/'+repo['default_branch'],'object':{'type':'commit','sha':head}}},
+                    'commit_response':{'request_url':base+'/git/commits/'+str(head),'http_status':200,
+                        'data':{'sha':head,'tree':{'sha':tree}}}}
+                scans.append(dict(copy.deepcopy(data),repository_id=repo['id'],source=repo['full_name'],files=[],
+                    referenced_secret_names=[],tree_response={'request_url':base+'/git/trees/'+str(tree)+'?recursive=1',
+                    'http_status':200,'data':{'sha':tree,'truncated':False,'tree':[]}}))
+                repo['source_head']=dict(data,observed_at='2026-10-07T01:49:30Z')
+                for previous in json.loads((DIRECTORY/'workflow-reference-evidence.json').read_text())['records']:
+                    if previous['repository_id']!=repo['id'] or previous.get('state')!='observed' or 'manifest' not in previous:continue
+                    name=previous['path'];body=json.dumps(previous['manifest']).encode()
+                    file=json.loads((DIRECTORY/self.file_contents_capture(repo['id'],repo['full_name'],head,name,body)).read_text())
+                    file.update(path=name,observed_at=data['observed_at'],manifest=previous['manifest'])
+                    scans[-1]['files'].append(file)
+                    scans[-1]['tree_response']['data']['tree'].append({'path':name,'type':'blob','sha':file['contents_response']['data']['sha']})
+        return self.capture({'phase':'pre_cutover','observed_at':'2026-10-07T01:48:00Z','repositories':scans})
 
     def workflow_contents(self, repository, revision):
         content=(ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_bytes()
@@ -238,8 +307,8 @@ class RolloutTests(unittest.TestCase):
                 'repository_id':repository_id,'repository':repository,'branch':self.branch(repository_id),'evidence_url':path.name}
 
     def complete_provider(self):
-        row = self.rows[0]
-        row.update(status='verified', provider='example', resource_owner='HemSoft',
+        row = next(r for r in self.rows if r['resource_kind']=='vercel_project' and r['resource_id']=='prj_ee45BuJUXLIUX7vbxZM2Nos2CYHv')
+        row.update(status='verified', provider='Vercel', resource_owner='HemSoft',
                    resource_url='https://example.com/resource', billing_dependency='No purchase required',
                    credential_source='Provider-owned integration', credential_validity='verified',
                    affected_reference='Git repository link', transfer_action='Reconnect exact repository ID',
@@ -377,7 +446,8 @@ class RolloutTests(unittest.TestCase):
                 'request_url':'https://api.github.com/repos/'+name+'/installation','http_status':200,
                 'observed_at':timestamp,'installation':{'id':123,'app_id':4448946,
                     'account':{'id':338855369,'login':'hemsoft-dev','type':'Organization'},
-                    'target_type':'Organization','repository_selection':'all','suspended_at':None}},directory)}
+                    'target_type':'Organization','repository_selection':'all','suspended_at':None,
+                    'permissions':copy.deepcopy(self.inventory['known_owned_app']['data']['permissions'])}},directory)}
 
     def terminal_protections(self, row, revision):
         repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
@@ -430,20 +500,20 @@ class RolloutTests(unittest.TestCase):
             ('repository_id','repository','reviewed_sha','run_url','app_id','client_id','owner',
              'installation_id','repository_selection','permission_ceiling_verified')},
             'credential_verification':'success','installation_owner':'HemSoft','target_type':'User',
-            'observed_at':'2026-10-07T00:00:00Z'})
+            'observed_at':'2026-10-07T01:48:10Z'})
         proof['workflow_run_evidence_url']=self.capture({'repository':{'id':proof['repository_id'],'full_name':proof['repository']},
             'html_url':proof['run_url'],'head_sha':proof['reviewed_sha'],'path':proof['workflow'],
-            'head_branch':'main','id':1,'run_started_at':'2026-10-07T00:00:00Z','status':'completed','conclusion':'success',
-            'created_at':'2026-10-07T00:00:00Z','updated_at':'2026-10-07T00:01:00Z','captured_at':'2026-10-07T00:02:00Z'})
+            'head_branch':'main','id':1,'run_started_at':'2026-10-07T01:48:05Z','status':'completed','conclusion':'success',
+            'created_at':'2026-10-07T01:48:05Z','updated_at':'2026-10-07T01:48:20Z','captured_at':'2026-10-07T01:48:25Z'})
         metadata=json.loads((DIRECTORY/proof['credential_metadata_evidence_url']).read_text())
         stream=io.BytesIO()
         with zipfile.ZipFile(stream,'w') as archive:archive.writestr('sfl-app-credential-metadata.json',json.dumps(metadata))
         url='https://api.github.com/repos/HemSoft/set-it-free-loop/actions/artifacts/1'
         proof['credential_artifact_evidence_url']=self.capture({'request_url':url,'download_url':url+'/zip',
-            'observed_at':'2026-10-07T00:02:00Z','archive_base64':base64.b64encode(stream.getvalue()).decode(),
+            'observed_at':'2026-10-07T01:48:25Z','archive_base64':base64.b64encode(stream.getvalue()).decode(),
             'artifact':{'id':1,'name':'sfl-app-credential-metadata','expired':False,'archive_download_url':url+'/zip',
                 'workflow_run':{'id':1,'head_sha':proof['reviewed_sha']},
-                'created_at':'2026-10-07T00:00:30Z','updated_at':'2026-10-07T00:00:30Z',
+                'created_at':'2026-10-07T01:48:12Z','updated_at':'2026-10-07T01:48:12Z',
                 'digest':'sha256:'+hashlib.sha256(stream.getvalue()).hexdigest()}})
         accounts = [{'owner':owner,'state':'observed','all_pages':True,'repositories':[
             {**{k:repo[k] for k in ('id','full_name','private','visibility','archived','default_branch')},
@@ -451,6 +521,7 @@ class RolloutTests(unittest.TestCase):
             if repo['full_name'].startswith(owner+'/')]} for owner in ('HemSoft','fhemmer')]
         self.matrix['pre_cutover_source_evidence_url']=self.capture({'phase':'pre_cutover',
             'observed_at':'2026-10-07T01:50:00Z','accounts':accounts,
+            'reference_scan_evidence_url':self.bind_source_scan(accounts),
             'destination_account':{'owner':'hemsoft-dev','state':'observed','all_pages':True,
                 'request_url':'https://api.github.com/orgs/hemsoft-dev/repos?type=all&per_page=100',
                 'repositories':[{'id':p['repository_id'],'full_name':p['repository']}
@@ -519,6 +590,16 @@ class RolloutTests(unittest.TestCase):
             if row['provider']!='none':
                 smoke=json.loads((DIRECTORY/row['smoke_evidence_url']).read_text())
                 smoke.update(phase='pre_transfer',repository=row['source'],observed_at='2026-10-07T01:49:00Z')
+                for response in smoke.get('provider_responses',{}).values():
+                    response['observed_at']=smoke['observed_at']
+                    response['request_url']=response['request_url'].replace(row['destination'],row['source'])
+                if row['resource_kind']=='vercel_project' and smoke['provider_responses']['project']['data'].get('link'):
+                    smoke['provider_responses']['project']['data']['link'].update(org=row['source'].split('/')[0],repo=row['source'].split('/')[1])
+                if row['resource_kind']=='github_pages':
+                    old_site=smoke['provider_responses']['pages']['data']['html_url']
+                    new_site=old_site.replace('hemsoft-dev.github.io',row['source'].split('/')[0].lower()+'.github.io')
+                    smoke['provider_responses']['pages']['data']['html_url']=new_site
+                    smoke['provider_responses']['site'].update(request_url=new_site,data={'final_url':new_site})
                 row.update(smoke_phase='pre_transfer',smoke_evidence_url=self.capture(smoke))
         pinned={}
         for row in rows:
@@ -570,7 +651,8 @@ class RolloutTests(unittest.TestCase):
             self.addCleanup(path.write_text,self.original_owned_installation_capture)
         path.write_text(json.dumps({'verification_status':'verified','account':{'login':'hemsoft-dev'},
             'phase':'post_transfer','observed_at':'2026-10-07T01:52:00Z',
-            'installation':{'id':123,'app_id':4448946,'repository_selection':'all'}}))
+            'installation':{'id':123,'app_id':4448946,'repository_selection':'all',
+                'permissions':copy.deepcopy(self.inventory['known_owned_app']['data']['permissions'])}}))
 
     def complete_rollout(self):
         self.complete_pilots()
@@ -869,21 +951,22 @@ class RolloutTests(unittest.TestCase):
         self.check()
 
     def test_verified_provider_requires_each_completion_field(self):
-        complete = copy.deepcopy(self.complete_provider())
+        row=self.complete_provider();index=self.rows.index(row)
+        complete = copy.deepcopy(row)
         fields = ('resource_owner', 'resource_url', 'billing_dependency', 'credential_source',
                   'credential_validity', 'affected_reference', 'transfer_action', 'smoke_test',
                   'recovery_action', 'verified_by', 'verified_at', 'evidence_url')
         for field in fields:
             with self.subTest(field=field):
-                self.rows[0] = copy.deepcopy(complete)
-                self.rows[0][field] = ''
+                self.rows[index] = copy.deepcopy(complete)
+                self.rows[index][field] = ''
                 with self.assertRaises(ValueError):
                     self.check()
-        self.rows[0] = complete
+        self.rows[index] = complete
         self.check()
 
     def test_verified_absence_requires_reason(self):
-        row = self.complete_provider()
+        row=self.rows[0];row.update(status='verified',verified_by='HemSoft',evidence_url=validator.EXTERNAL_SCOPE_RECEIPT,verified_at='2026-10-07T02:00:00Z')
         row['provider'] = 'none'
         row['absence_reason'] = ''
         with self.assertRaisesRegex(ValueError, 'absence'):
@@ -1634,7 +1717,7 @@ class RolloutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'provider absence'):self.check()
 
     def test_provider_absence_requires_the_approved_owner_scope(self):
-        row = self.complete_provider()
+        row=self.rows[0];row.update(status='verified',verified_by='HemSoft')
         row.update(provider='none', absence_reason='No other resources', evidence_url='https://example.com',
                    verified_at='2026-10-07T02:00:00Z')
         with self.assertRaisesRegex(ValueError, 'approved owner receipt'):
@@ -1826,7 +1909,9 @@ class RolloutTests(unittest.TestCase):
         gate_capture['check_run'].update(started_at='2026-10-07T03:30:00Z',completed_at='2026-10-07T03:30:00Z');gate_path.write_text(json.dumps(gate_capture))
         proof['manifest_evidence_url']='post-status-manifest.json'
         (directory/proof['manifest_evidence_url']).write_text(json.dumps({'repository_id':42,'repository':name,'revision_sha':'f'*40,'manifest':proof['manifest_identity'],'observed_at':'2026-10-07T03:30:00Z'}))
-        capture={'metadata':{'id':42,'full_name':name,'private':True,'visibility':'private','archived':False,'created_at':'2026-10-07T03:00:00Z','default_branch':'main'}}
+        capture={'request_url':'https://api.github.com/repos/'+name,'http_status':200,
+            'observed_at':'2026-10-07T03:05:00Z',
+            'metadata':{'id':42,'full_name':name,'private':True,'visibility':'private','archived':False,'created_at':'2026-10-07T03:00:00Z','default_branch':'main'}}
         (directory/'metadata.json').write_text(json.dumps(capture));proof['metadata_evidence_url']='metadata.json'
         completion={'completed_at':proof['rollout_completed_at'],'organization':'hemsoft-dev',
                     'deployment_sha':proof['deployment_sha'],'release_version':proof['release_version'],'repositories':[]}
@@ -2339,7 +2424,9 @@ class RolloutTests(unittest.TestCase):
         resource=next(r for r in self.rows if r['source']=='HemSoft/yahtzee' and r.get('resource_kind')=='repository_runner');path=DIRECTORY/resource['smoke_evidence_url']
         original=json.loads(path.read_text())
         for timestamp in ('2026-10-07T00:05:00Z','2026-10-07T00:30:00Z','2026-10-07T01:30:00Z'):
-            path.write_text(json.dumps(dict(original,observed_at=timestamp)))
+            capture=copy.deepcopy(original);capture['observed_at']=timestamp
+            for response in capture['provider_responses'].values():response['observed_at']=timestamp
+            path.write_text(json.dumps(capture))
             with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'smoke observations must follow'):self.check()
         path.write_text(json.dumps(original));self.check()
 
@@ -2615,7 +2702,9 @@ class RolloutTests(unittest.TestCase):
         protection['observed_at']=cutoff;protection_path.write_text(json.dumps(protection))
         resource=next(r for r in self.rows if r['source']=='HemSoft/yahtzee' and r.get('resource_kind')=='repository_runner')
         smoke_path=DIRECTORY/resource['smoke_evidence_url'];smoke=json.loads(smoke_path.read_text())
-        smoke['observed_at']=cutoff;smoke_path.write_text(json.dumps(smoke))
+        smoke['observed_at']=cutoff
+        for response in smoke['provider_responses'].values():response['observed_at']=cutoff
+        smoke_path.write_text(json.dumps(smoke))
         runner=row['post_transfer_runner'];originals={field:json.loads((DIRECTORY/runner[field]).read_text()) for field in
             ('registration_evidence_url','isolation_evidence_url','service_evidence_url','run_evidence_url')}
         for field,capture in originals.items():
@@ -3227,6 +3316,163 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             with self.assertRaisesRegex(ValueError,'guest service is active'):self.check()
         path.write_text(json.dumps(original));self.check()
 
+
+    def test_final_status_preserves_repeated_sync_revision(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+            operation=proof['onboarding_operation_receipts']['status_url']
+            operation['revision_before']='d'*40;path=directory/operation['capture_evidence_url']
+            capture=json.loads(path.read_text());capture['revision_before']=operation['revision_before'];path.write_text(json.dumps(capture))
+            with self.assertRaisesRegex(ValueError,'Status needs captured healthy'):
+                validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+
+    def test_new_repository_creation_requires_successful_exact_metadata_get(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+            path=directory/proof['metadata_evidence_url'];original=json.loads(path.read_text())
+            for mutate in (lambda c:c.pop('request_url'),lambda c:c.update(http_status=404),
+                           lambda c:c.update(request_url='https://api.github.com/repos/hemsoft-dev/old-repository'),
+                           lambda c:c.update(observed_at='2026-10-07T02:00:00Z')):
+                changed=copy.deepcopy(original);mutate(changed);path.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):
+                    validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+            path.write_text(json.dumps(original));validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+
+    def test_sfl_installation_grants_match_approved_permissions(self):
+        row=self.complete_rollout();self.check()
+        references=[row['destination_sfl_app_access']['evidence_url'],'owned-app-organization-installation-evidence.json']
+        for reference in references:
+            path=DIRECTORY/reference;original=json.loads(path.read_text())
+            for mutate in (lambda c:c['installation'].pop('permissions'),
+                           lambda c:c['installation']['permissions'].update(checks='read'),
+                           lambda c:c['installation']['permissions'].update(contents='write')):
+                changed=copy.deepcopy(original);mutate(changed);path.write_text(json.dumps(changed))
+                with self.assertRaisesRegex(ValueError,'SFL coverage'):self.check()
+            path.write_text(json.dumps(original));self.check()
+
+
+    def test_every_source_head_and_branch_matches_the_fresh_reference_scan(self):
+        self.complete_transfer_gates();self.check()
+        path=DIRECTORY/self.matrix['pre_cutover_source_evidence_url'];original=json.loads(path.read_text())
+        for change in ('head','tree','branch','missing'):
+            capture=copy.deepcopy(original)
+            repo=next(r for a in capture['accounts'] for r in a['repositories'] if r['full_name']=='HemSoft/dashboard')
+            current=repo['source_head']
+            if change=='head':
+                current['head_sha']='d'*40;current['ref_response']['data']['object']['sha']='d'*40
+                current['commit_response']['request_url']=current['commit_response']['request_url'].replace('e'*40,'d'*40)
+                current['commit_response']['data']['sha']='d'*40
+                current['branches_response']['data'][0]['commit']['sha']='d'*40
+            elif change=='tree':
+                current['tree_sha']='c'*40;current['commit_response']['data']['tree']['sha']='c'*40
+            elif change=='branch':current['branches_response']['data'].append({'name':'new-integration','commit':{'sha':'d'*40}})
+            else:repo.pop('source_head')
+            path.write_text(json.dumps(capture))
+            with self.subTest(change=change),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_fresh_scan_reads_all_workflows_and_reconciles_legacy_credentials(self):
+        self.complete_transfer_gates();source=json.loads((DIRECTORY/self.matrix['pre_cutover_source_evidence_url']).read_text())
+        path=DIRECTORY/source['reference_scan_evidence_url'];original=json.loads(path.read_text())
+        row=next(r for r in original['repositories'] if r['source']=='HemSoft/dashboard')
+        name='.github/workflows/new-client.yml';content=b'name: new client\nrun: echo ${{ secrets.SFL_APP_PRIVATE_KEY }}\n'
+        file=json.loads((DIRECTORY/self.file_contents_capture(row['repository_id'],row['source'],row['head_sha'],name,content)).read_text())
+        file['path']=name;file['observed_at']=row['observed_at']
+        row['tree_response']['data']['tree']=[{'path':name,'type':'blob','sha':file['contents_response']['data']['sha']}]
+        path.write_text(json.dumps(original))
+        with self.assertRaisesRegex(ValueError,'read every workflow'):self.check()
+        row['files']=[file];row['referenced_secret_names']=['SFL_APP_PRIVATE_KEY'];path.write_text(json.dumps(original))
+        with self.assertRaisesRegex(ValueError,'newly referenced legacy credential'):self.check()
+        row['referenced_secret_names']=[];path.write_text(json.dumps(original))
+        with self.assertRaisesRegex(ValueError,'conclusions must derive'):self.check()
+
+    def test_pre_cutover_credential_run_is_fresh_and_executes_current_source_main(self):
+        self.complete_transfer_gates();self.check()
+        path=DIRECTORY/self.matrix['pre_transfer_credential_verification']['workflow_run_evidence_url']
+        original=json.loads(path.read_text());capture=copy.deepcopy(original)
+        capture.update(created_at='2026-10-07T00:00:00Z',run_started_at='2026-10-07T00:00:00Z')
+        path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'new successful run after the fresh scan'):self.check()
+        path.write_text(json.dumps(original))
+        source_path=DIRECTORY/self.matrix['pre_cutover_source_evidence_url'];source=json.loads(source_path.read_text())
+        source['observed_at']='2026-10-07T02:05:00Z';source_path.write_text(json.dumps(source))
+        with self.assertRaisesRegex(ValueError,'within 15 minutes'):self.check()
+        source['observed_at']='2026-10-07T01:50:00Z'
+        scan_path=DIRECTORY/source['reference_scan_evidence_url'];scan=json.loads(scan_path.read_text())
+        current=next(r for a in source['accounts'] for r in a['repositories'] if r['id']==1169772257)['source_head']
+        scanned=next(r for r in scan['repositories'] if r['repository_id']==1169772257)
+        for head in (current,scanned):
+            head['head_sha']='d'*40;head['ref_response']['data']['object']['sha']='d'*40
+            head['commit_response']['data']['sha']='d'*40
+            head['commit_response']['request_url']=head['commit_response']['request_url'].replace('e'*40,'d'*40)
+            head['branches_response']['data'][0]['commit']['sha']='d'*40
+            for file in head.get('files',[]):
+                file['revision_sha']='d'*40
+                file['contents_response']['request_url']=file['contents_response']['request_url'].replace('e'*40,'d'*40)
+        scan_path.write_text(json.dumps(scan));source_path.write_text(json.dumps(source))
+        with self.assertRaisesRegex(ValueError,'execute the current source main'):self.check()
+
+    def test_provider_success_checks_actual_vercel_binding_production_and_aliases(self):
+        row=self.complete_provider();self.check();path=DIRECTORY/row['smoke_evidence_url'];original=json.loads(path.read_text())
+        proxy=copy.deepcopy(original)
+        proxy['provider_responses']['project']['request_url']=proxy['provider_responses']['project']['request_url'].replace('https://api.vercel.com/','https://vercel.com/api/')
+        path.write_text(json.dumps(proxy));self.check();path.write_text(json.dumps(original))
+        mutations=(lambda c:c.pop('provider_responses'),lambda c:c['provider_responses']['project']['data'].update(link=None),
+            lambda c:c['provider_responses']['project']['data']['link'].update(org='HemSoft'),
+            lambda c:c['provider_responses']['project']['data']['targets']['production'].update(readyState='ERROR'),
+            lambda c:c['provider_responses']['project']['data']['targets']['production'].update(alias=[]),
+            lambda c:c['provider_responses']['project'].update(request_url='https://api.vercel.com/v9/projects/other'),
+            lambda c:c['provider_responses']['project'].update(http_status=404))
+        for mutate in mutations:
+            capture=copy.deepcopy(original);mutate(capture);path.write_text(json.dumps(capture))
+            with self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+        self.assertEqual(original['provider_responses']['project']['data']['targets']['preview']['readyState'],'ERROR')
+
+    def test_provider_success_primary_observations_must_follow_the_actual_transfer(self):
+        self.complete_pilots();row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
+        row.update(health='scope_exception',transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
+        self.complete_scope_decision(row);self.check()
+        resource=next(r for r in self.rows if r['source']=='HemSoft/yahtzee' and r.get('resource_kind')=='repository_runner')
+        capture=json.loads((DIRECTORY/resource['smoke_evidence_url']).read_text())
+        capture['provider_responses']['runner']['observed_at']='2026-10-07T01:00:00Z'
+        resource['smoke_evidence_url']=self.capture(capture)
+        with self.assertRaisesRegex(ValueError,'smoke observations must follow'):self.check()
+
+    def test_known_provider_success_rejects_broken_pages_cloudflare_and_runner_state(self):
+        cases=[('github_pages','pages',lambda d:d.update(https_enforced=False)),
+               ('cloudflare_zone','dns',lambda d:d['result'][0].update(proxied=False)),
+               ('cloudflare_worker','subdomain',lambda d:d['result'].update(enabled=False)),
+               ('cloudflare_worker','account_subdomain',lambda d:d['result'].update(subdomain='other')),
+               ('cloudflare_worker','routes',lambda d:d.update(result=[{'script':'other','pattern':'example.com/*'}])),
+               ('repository_runner','runner',lambda d:d.update(status='offline'))]
+        for kind,response,mutate in cases:
+            row=next(r for r in self.rows if r['resource_kind']==kind)
+            self.verify_source_ledger(int(row['repository_id']));self.check()
+            path=DIRECTORY/row['smoke_evidence_url'];original=json.loads(path.read_text())
+            proxy=copy.deepcopy(original)
+            for captured in proxy['provider_responses'].values():
+                captured['request_url']=captured['request_url'].replace('https://api.cloudflare.com/client/v4/','https://dash.cloudflare.com/api/v4/')
+            if kind=='cloudflare_zone':proxy['provider_responses']['zone']['data']['result']['plan']['name']='Free Website'
+            path.write_text(json.dumps(proxy));self.check();path.write_text(json.dumps(original))
+            capture=copy.deepcopy(original);mutate(capture['provider_responses'][response]['data']);path.write_text(json.dumps(capture))
+            with self.subTest(kind=kind,response=response),self.assertRaises(ValueError):self.check()
+            path.write_text(json.dumps(original))
+
+    def test_fresh_scanned_manifests_supply_the_current_installation_baseline(self):
+        self.complete_transfer_gates()
+        source=json.loads((DIRECTORY/self.matrix['pre_cutover_source_evidence_url']).read_text())
+        revisions,scanned_at,manifests=validator.validate_reference_scan(source['reference_scan_evidence_url'],DIRECTORY,self.inventory)
+        self.assertEqual(len(revisions),67)
+        self.assertEqual(manifests[1169772257]['tier'],'full')
+        scan_path=DIRECTORY/source['reference_scan_evidence_url'];scan=json.loads(scan_path.read_text())
+        row=next(r for r in scan['repositories'] if r['repository_id']==1169772257)
+        file=row['files'][0];file['manifest']=dict(file['manifest'],tier='reviewer')
+        scan_path.write_text(json.dumps(scan))
+        with self.assertRaisesRegex(ValueError,'derive from immutable bytes'):
+            validator.validate_reference_scan(source['reference_scan_evidence_url'],DIRECTORY,self.inventory)
 
 if __name__ == '__main__':
     unittest.main()

@@ -673,3 +673,38 @@ Unrelated destination repositories can coexist, but cannot claim a source ID.
 For fhemmer's access and one-seat verification, both independent captures must
 follow that repository's actual accepted transfer event, not merely the earlier
 source refresh. Recheck permission and licensing after the move.
+
+Immediately before cutover, `pre_cutover_source_evidence_url` must reference a
+fresh `reference_scan_evidence_url` covering all 67 source IDs. Each scanned
+repository records successful immutable commit and complete recursive tree GETs,
+the default Git reference, a complete branches GET and SHA-addressed contents
+GETs for every workflow, SFL manifest and supported provider configuration file.
+The file bytes must match the tree's blob IDs. Derive secret references and
+installation manifests from those bytes. A newly referenced credential covered
+by the legacy unused waiver requires reconciliation. The current source refresh
+must repeat each repository's default head, tree and complete branch list and
+match this scan. Keep the original sealed scan as historical evidence.
+
+Reconcile every pre-transfer ledger gate after that scan. Run the owned-App
+credential workflow on the current source main revision after the scan and
+complete source refresh within 15 minutes of its successful completion. A prior
+successful run cannot establish current credential validity.
+
+A provider `success` smoke requires `provider_responses`, with exact resource
+GET URLs, HTTP 200, raw response data and individual observation times. Vercel
+checks preserve project identity, the expected GitHub repository ID/name and
+production branch, READY production and existing production aliases. The retired
+modern-web-stack-poc Git connection remains disconnected. Existing preview
+failures do not substitute for production state. Pages checks preserve the build,
+domain and HTTPS configuration and verify the destination site's actual URL.
+Cloudflare checks preserve zone ownership, plan, website DNS/proxy values and
+Worker routes; the Worker checks also observe its script, enabled workers.dev
+subdomain and account subdomain. Runner checks observe its actual online idle
+registration and labels. These primary observations must follow the real
+transfer and destination metadata capture. Preserve the unused paused Supabase
+resources through baseline preservation without runtime database operations.
+
+Both shared and repository-specific SFL installation GETs must contain the
+approved granted permissions. Final healthy status must preserve the revision
+from repeated sync. New-repository creation metadata must come from its exact
+successful repository GET observed after creation.

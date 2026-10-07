@@ -32,6 +32,8 @@ APPROVED_RETAINED_IDS = {1162179521, 1169698740}
 RETENTION_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635'
 HEALTH = {'pending_transfer', 'pending_rollout', 'failed', 'verified', 'archived_verified', 'scope_exception', 'retained_source', 'source_verified'}
 LEDGER_STATUS = {'owner_verification_pending', 'partial_provider_verified', 'verified'}
+SFL_APP_PERMISSIONS = {'actions':'write', 'checks':'write', 'contents':'read',
+                       'issues':'write', 'metadata':'read', 'pull_requests':'write'}
 
 
 def require(condition, message):
@@ -186,7 +188,8 @@ def validate_terminal_operation(operation, directory, cutover=None):
                 result.get('revision_after') == operation['revision_after'],
                 'No-op needs captured zero changes at the observed unchanged revision')
     elif operation['outcome'] == 'healthy':
-        require(result.get('health') == 'healthy' and result.get('revision_sha') == operation['revision_after'] and
+        require(operation['command'] == 'status' and operation['revision_before'] == operation['revision_after'] and
+                result.get('health') == 'healthy' and result.get('revision_sha') == operation['revision_after'] and
                 result.get('missing_files') == [] and result.get('drifted_files') == [],
                 'Status needs captured healthy deployment checks at its revision')
     elif operation['outcome'] == 'gate_removed':
@@ -467,7 +470,8 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
     require(not urllib.parse.urlsplit(reference).scheme, 'New repository creation needs an independent metadata capture')
     capture = json.loads((directory / reference).read_text())
     metadata = capture.get('metadata', {})
-    require(metadata.get('id') == repo_id and metadata.get('full_name') == name and
+    require(capture.get('request_url') == 'https://api.github.com/repos/' + name and capture.get('http_status') == 200 and
+            metadata.get('id') == repo_id and metadata.get('full_name') == name and
             metadata.get('private') == (proof['visibility'] == 'private') and metadata.get('visibility') == proof['visibility'] and metadata.get('archived') is False,
             'Post-rollout onboarding must match independently captured repository identity and state')
     completion_reference = proof.get('rollout_completion_evidence_url')
@@ -501,6 +505,8 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
     rollout_at = datetime.datetime.fromisoformat(proof.get('rollout_completed_at', '').replace('Z', '+00:00'))
     require(created_at.tzinfo is not None and rollout_at.tzinfo is not None and created_at > rollout_at,
             'New onboarding repository must be created after the recorded rollout completion')
+    require(observed_time(capture.get('observed_at'), 'New repository creation capture') >= created_at,
+            'New repository metadata GET must be observed after its actual creation')
     require(proof.get('deployment_source') == organization + '/set-it-free-loop' and
             immutable_sha(proof.get('deployment_sha')) and semantic_version(proof.get('release_version')),
             'New onboarding needs the canonical immutable deployment and release')
@@ -550,6 +556,7 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
     require(operations['repeat_onboarding_url']['revision_before'] == operations['init_pr_url']['revision_after'] and
             operations['sync_pr_url']['revision_before'] == operations['repeat_onboarding_url']['revision_after'] and
             operations['repeat_sync_url']['revision_before'] == operations['sync_pr_url']['revision_after'] and
+            operations['status_url']['revision_before'] == operations['repeat_sync_url']['revision_after'] and
             operations['status_url']['revision_after'] == operations['repeat_sync_url']['revision_after'] == observed['revision_sha'],
             'New onboarding revisions must follow init, repeated init, sync and final status in order')
     validate_app_coverage(proof.get('destination_sfl_app_access'), directory, repo_id, name, app_id, organization,
@@ -784,6 +791,7 @@ def validate_app_coverage(coverage, directory, repository_id, repository, app_id
                 installation.get('account', {}).get('login') == owner and
                 installation['account'].get('id') == 338855369 and installation['account'].get('type') == 'Organization' and
                 installation.get('target_type') == 'Organization' and installation.get('repository_selection') == 'all' and
+                installation.get('permissions') == SFL_APP_PERMISSIONS and
                 'suspended_at' in installation and installation['suspended_at'] is None,
                 'SFL coverage needs an unsuspended repository-specific destination installation GET')
         cutoffs = [time for time in (cutover, repository_created_at) if time is not None]
@@ -800,7 +808,8 @@ def validate_app_coverage(coverage, directory, repository_id, repository, app_id
                 'Repository App access must follow the shared destination installation capture')
         require(capture.get('verification_status') == 'verified' and capture.get('account',{}).get('login') == owner and
                 capture.get('installation',{}).get('id') == coverage['installation_id'] and
-                capture['installation'].get('app_id') == app_id and capture['installation'].get('repository_selection') == 'all',
+                capture['installation'].get('app_id') == app_id and capture['installation'].get('repository_selection') == 'all' and
+                capture['installation'].get('permissions') == SFL_APP_PERMISSIONS,
                 'SFL coverage must match the captured all-repositories destination installation')
     if app_id == 1144995:
         capture = json.loads((directory / 'codex-organization-installation-evidence.json').read_text())
@@ -1025,6 +1034,101 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
 
 
 
+def source_revision(row, repo):
+    """Bind a complete branch list and default head to raw immutable Git data."""
+    base = 'https://api.github.com/repos/' + repo['full_name']
+    branches = row.get('branches_response', {})
+    require(branches.get('request_url') == base + '/branches?per_page=100' and
+            branches.get('http_status') == 200 and branches.get('all_pages') is True and
+            isinstance(branches.get('data'), list), 'Source heads need complete repository-bound branches GETs')
+    branch_heads = {}
+    for branch in branches['data']:
+        name, sha = branch.get('name'), branch.get('commit', {}).get('sha')
+        require(text(name) and name not in branch_heads and immutable_sha(sha),
+                'Source branches need unique names and immutable heads')
+        branch_heads[name] = sha
+    ref = row.get('ref_response', {})
+    require(ref.get('request_url') == base + '/git/ref/heads/' + repo['default_branch'],
+            'Source default head needs its exact Git reference GET')
+    if not branch_heads:
+        require(repo['id'] == 996911586 and row.get('state') == 'uninitialized' and
+                ref.get('http_status') in {404, 409} and row.get('head_sha') is None and row.get('tree_sha') is None,
+                'Only the sealed uninitialized repository may have no source revision')
+        return None, None, branch_heads
+    head, tree = row.get('head_sha'), row.get('tree_sha')
+    commit = row.get('commit_response', {})
+    require(immutable_sha(head) and immutable_sha(tree) and row.get('state') == 'observed' and
+            branch_heads.get(repo['default_branch']) == head and ref.get('http_status') == 200 and
+            ref.get('data', {}).get('ref') == 'refs/heads/' + repo['default_branch'] and
+            ref['data'].get('object', {}).get('type') == 'commit' and
+            ref['data']['object'].get('sha') == head and
+            commit.get('request_url') == base + '/git/commits/' + head and commit.get('http_status') == 200 and
+            commit.get('data', {}).get('sha') == head and commit['data'].get('tree', {}).get('sha') == tree,
+            'Source default branch must match its immutable commit and tree')
+    return head, tree, branch_heads
+
+
+def validate_reference_scan(reference, directory, inventory):
+    scan = local_capture(reference, directory, 'Fresh complete source reference scan')
+    timestamp = observed_time(scan.get('observed_at'), 'Fresh source scan')
+    expected = {repo['id']: repo for repo in inventory['repositories']}
+    rows = scan.get('repositories')
+    require(scan.get('phase') == 'pre_cutover' and isinstance(rows, list) and len(rows) == len(expected),
+            'Fresh reference scan must cover every sealed repository')
+    revisions, manifests = {}, {}
+    for row in rows:
+        repo_id = row.get('repository_id')
+        require(repo_id in expected and repo_id not in revisions, 'Fresh source scan has unexpected or duplicate IDs')
+        repo = expected[repo_id]
+        require(row.get('source') == repo['full_name'] and
+                observed_time(row.get('observed_at'), 'Repository reference scan') <= timestamp,
+                'Fresh reference scan needs exact source identities and capture times')
+        revision = source_revision(row, repo)
+        revisions[repo_id] = revision
+        if revision[0] is None:
+            require(row.get('files') == [], 'Uninitialized source cannot claim scanned files')
+            continue
+        tree = row.get('tree_response', {})
+        require(tree.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'] +
+                '/git/trees/' + revision[1] + '?recursive=1' and tree.get('http_status') == 200 and
+                tree.get('data', {}).get('sha') == revision[1] and tree['data'].get('truncated') is False and
+                isinstance(tree['data'].get('tree'), list), 'Fresh reference scan needs the complete immutable Git tree')
+        paths = {}
+        for entry in tree['data']['tree']:
+            path = entry.get('path')
+            require(text(path) and path not in paths, 'Fresh source tree paths must be unique')
+            paths[path] = entry
+        relevant = {p for p, entry in paths.items() if entry.get('type') == 'blob' and
+                    ((p.startswith('.github/workflows/') and p.endswith(('.yml', '.yaml', '.md'))) or
+                     p in {'.sfl/sfl.json', 'sfl.json', 'vercel.json', 'fly.toml', 'railway.json',
+                           'railway.toml', 'wrangler.toml', 'wrangler.json', 'wrangler.jsonc',
+                           'azure-pipelines.yml', 'azure-pipelines.yaml', 'supabase/config.toml'})}
+        files = row.get('files')
+        require(isinstance(files, list) and len(files) == len(relevant) and
+                {f.get('path') for f in files} == relevant, 'Fresh scan must read every workflow and installation manifest')
+        references = set()
+        for file in files:
+            path = file['path']
+            body = immutable_contents(file, repo_id, repo['full_name'], revision[0], path)
+            require(file['contents_response']['data']['sha'] == paths[path].get('sha') and
+                    observed_time(file.get('observed_at'), 'Source file capture') <=
+                    observed_time(row['observed_at'], 'Repository reference scan'),
+                    'Scanned file must match the complete Git tree blob')
+            references.update(re.findall(r'secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)', body.decode('utf-8')))
+            references.update(re.findall(r"secrets\s*\[\s*['\"]([^'\"]+)['\"]\s*\]", body.decode('utf-8')))
+            if path in {'.sfl/sfl.json', 'sfl.json'}:
+                require(file.get('manifest') == json.loads(body), 'Fresh installation manifest must derive from immutable bytes')
+                require(repo_id not in manifests or manifests[repo_id] == file['manifest'],
+                        'Fresh canonical and legacy installation manifests disagree')
+                manifests[repo_id] = file['manifest']
+        require(set(row.get('referenced_secret_names', [])) == references,
+                'Fresh credential reference conclusions must derive from every captured workflow')
+        unused = local_capture('legacy-unused-credential-owner-evidence.json', directory, 'Unused legacy credential scope')
+        waived = next((r['unused_repository_secret_names'] for r in unused['repositories'] if r['repository_id'] == repo_id), [])
+        require(not references.intersection(waived), 'A newly referenced legacy credential needs reconciliation and fresh validation')
+    return revisions, timestamp, manifests
+
+
 def validate_source_refresh(proof, directory, inventory, credential):
     capture = local_capture(proof, directory, 'Pre-cutover source refresh')
     require(capture.get('phase') == 'pre_cutover', 'Source refresh must precede cutover')
@@ -1036,6 +1140,11 @@ def validate_source_refresh(proof, directory, inventory, credential):
     require(timestamp >= observed_time(credential_run.get('captured_at'), 'App credential run capture'),
             'Source refresh must follow the captured completed credential workflow')
     expected = {r['id']: r for r in inventory['repositories']}
+    revisions, scanned_at, manifests = validate_reference_scan(capture.get('reference_scan_evidence_url'), directory, inventory)
+    run = credential_run.get('run', credential_run)
+    require(scanned_at <= observed_time(run.get('created_at'), 'Fresh credential run creation') and
+            timestamp - observed_time(run.get('updated_at'), 'Fresh credential run completion') <= datetime.timedelta(minutes=15),
+            'Pre-cutover credentials need a new successful run after the fresh scan and within 15 minutes of source refresh')
     accounts = capture.get('accounts')
     require(isinstance(accounts, list) and len(accounts) == 2 and
             {a.get('owner') for a in accounts} == {'HemSoft', 'fhemmer'}, 'Source refresh must enumerate both owners')
@@ -1052,6 +1161,13 @@ def validate_source_refresh(proof, directory, inventory, credential):
                     'Source repository metadata changed; reconcile the transfer baseline')
             require(current.get('protections') == protection_contract(baseline, directory),
                     'Source protections changed; reconcile the preservation baseline')
+            head = current.get('source_head', {})
+            require(scanned_at <= observed_time(head.get('observed_at'), 'Current source head') <= timestamp and
+                    source_revision(head, baseline) == revisions[repo_id],
+                    'Source head, tree or branches changed after reference scan; rescan and reconcile before transfer')
+            if repo_id == 1169772257:
+                require(head.get('head_sha') == credential['reviewed_sha'] == run.get('head_sha'),
+                        'Fresh credential proof must execute the current source main revision')
             actual[repo_id] = current
     require(set(actual) == set(expected), 'Source refresh must cover every sealed repository ID')
     destination = capture.get('destination_account', {})
@@ -1080,7 +1196,7 @@ def validate_source_refresh(proof, directory, inventory, credential):
             capture.get('source_installation') == {'id':150383874,'app_id':4448946,'owner':'HemSoft','repository_selection':'all'} and
             capture.get('source_organization_installations') == inventory['source_organization_apps'],
             'Source refresh must reconcile owned and installed App settings')
-    return timestamp
+    return timestamp, scanned_at, manifests
 
 
 def ledger_digest(rows):
@@ -1129,7 +1245,7 @@ def validate_tree_refresh(reference, directory, inventory, source_refreshed_at):
     return timestamp
 
 
-def validate_ledger_readiness(reference, current_rows, directory, context, source_refreshed_at):
+def validate_ledger_readiness(reference, current_rows, directory, context, source_refreshed_at, scanned_at):
     capture = local_capture(reference, directory, 'Pre-cutover ledger readiness')
     timestamp = observed_time(capture.get('observed_at'), 'Ledger readiness')
     rows = capture.get('rows')
@@ -1150,8 +1266,8 @@ def validate_ledger_readiness(reference, current_rows, directory, context, sourc
     for row in rows:
         if row['status'] != 'verified':
             continue
-        require(observed_time(row['verified_at'], 'Ledger verification') <= timestamp,
-                'Ledger readiness cannot precede any gate verification')
+        require(scanned_at <= observed_time(row['verified_at'], 'Ledger verification') <= timestamp,
+                'Ledger gates must be reconciled after the fresh source scan and before the readiness snapshot')
         if row['provider'] != 'none':
             require(row.get('smoke_phase') == 'pre_transfer', 'Ledger readiness needs pre-transfer provider evidence')
         for key, reference in row.items():
@@ -1484,6 +1600,102 @@ def provider_preservation_baseline(row, inventory, directory):
     raise ValueError('Baseline preservation requires a supported sealed provider resource')
 
 
+def validate_provider_success(smoke, row, inventory, directory, repository):
+    """Check provider state from successful, resource-bound read-only responses."""
+    observed = observed_time(smoke.get('observed_at'), 'Provider smoke')
+    responses = smoke.get('provider_responses', {})
+    times = []
+
+    def response(name, url):
+        capture = responses.get(name, {})
+        at = observed_time(capture.get('observed_at'), 'Provider response')
+        urls = {url}
+        if url.startswith('https://api.cloudflare.com/client/v4/'):
+            urls.add(url.replace('https://api.cloudflare.com/client/v4/', 'https://dash.cloudflare.com/api/v4/', 1))
+        if url.startswith('https://api.vercel.com/'):
+            urls.add(url.replace('https://api.vercel.com/', 'https://vercel.com/api/', 1))
+        require(capture.get('request_url') in urls and capture.get('http_status') == 200 and
+                capture.get('method') == 'GET' and at <= observed,
+                'Provider success needs successful exact resource GETs before its capture')
+        times.append(at)
+        return capture.get('data')
+
+    kind, resource = row.get('resource_kind'), row.get('resource_id')
+    if kind == 'vercel_project':
+        baseline = provider_preservation_baseline(row, inventory, directory)
+        project = response('project', 'https://api.vercel.com/v9/projects/' + resource +
+                           '?teamId=' + baseline['accountId'])
+        require(isinstance(project, dict) and all(project.get(k) == baseline[k] for k in
+                ('id', 'accountId', 'framework', 'name')), 'Vercel success must preserve the sealed project identity')
+        original = next(p for p in local_capture('vercel-provider-evidence.json', directory, 'Vercel baseline')['projects']
+                        if p['id'] == resource)
+        if resource == 'prj_hPjAbxtMlCi3A5waKxQpjATto0ae':
+            require(project.get('link') is None, 'Retired Vercel Git integration must remain disconnected')
+        else:
+            owner, name = repository.split('/')
+            link = project.get('link') or {}
+            require(link.get('type') == 'github' and link.get('org') == owner and link.get('repo') == name and
+                    link.get('repoId') == int(row['repository_id']) and
+                    link.get('productionBranch') == original['link']['productionBranch'],
+                    'Vercel success needs the actual expected repository binding and production branch')
+        production = project.get('targets', {}).get('production') or {}
+        aliases = production.get('alias')
+        require(production.get('readyState') == 'READY' and isinstance(aliases, list) and
+                set(baseline['targets']['production'].get('alias', [])).issubset(aliases),
+                'Vercel success needs READY production and preserved production aliases')
+    elif kind == 'github_pages':
+        baseline = provider_preservation_baseline(row, inventory, directory)
+        pages = response('pages', 'https://api.github.com/repos/' + repository + '/pages')
+        require(isinstance(pages, dict) and all(pages.get(k) == v for k, v in baseline.items()),
+                'Pages success must preserve the sealed HTTPS, domain and build configuration')
+        owner, name = repository.split('/')
+        site = 'https://' + (baseline['cname'] + '/' if baseline['cname'] else owner.lower() + '.github.io/' + name + '/')
+        require(pages.get('html_url') == site and response('site', site).get('final_url') == site,
+                'Pages success needs the actual destination Pages URL and successful site GET')
+    elif kind == 'cloudflare_zone':
+        baseline = provider_preservation_baseline(row, inventory, directory)
+        base = 'https://api.cloudflare.com/client/v4/zones/' + resource
+        zone = response('zone', base)
+        require(zone.get('success') is True and zone.get('result', {}).get('id') == resource and
+                zone['result'].get('account', {}).get('id') == baseline['account_id'] and
+                zone['result'].get('plan', {}).get('name') in {baseline['plan'], 'Free Website'} and
+                baseline['plan'] == 'Free',
+                'Cloudflare success must preserve zone ownership and plan')
+        dns, routes = response('dns', base + '/dns_records?per_page=100'), response('routes', base + '/workers/routes')
+        require(responses['dns'].get('all_pages') is True and dns.get('success') is True and
+                isinstance(dns.get('result'), list) and routes.get('success') is True and
+                routes.get('result') == baseline['workers_routes'], 'Cloudflare success needs complete DNS and unchanged Worker routes')
+        for record in baseline['website_records']:
+            require(any(all(current.get(k) == v for k, v in record.items()) for current in dns['result']),
+                    'Cloudflare website DNS content and proxy state must be preserved')
+    elif kind == 'cloudflare_worker':
+        baseline = provider_preservation_baseline(row, inventory, directory)
+        base = 'https://api.cloudflare.com/client/v4/accounts/' + baseline['account_id'] + '/workers/scripts'
+        scripts = response('scripts', base)
+        require(responses['scripts'].get('all_pages') is True and scripts.get('success') is True and
+                any(script.get('id') == resource for script in scripts.get('result', [])),
+                'Cloudflare Worker success must observe the actual script in its owner account')
+        subdomain = response('subdomain', base + '/' + resource + '/subdomain')
+        account_domain = response('account_subdomain', 'https://api.cloudflare.com/client/v4/accounts/' +
+                                  baseline['account_id'] + '/workers/subdomain')
+        zone = local_capture('now-leadership-live-hosting-evidence.json', directory, 'Cloudflare zone')['cloudflare_owner_verification']['zone_id']
+        routes = response('routes', 'https://api.cloudflare.com/client/v4/zones/' + zone + '/workers/routes')
+        require(subdomain.get('success') is True and subdomain.get('result', {}).get('enabled') is True and
+                account_domain.get('success') is True and
+                'https://' + resource + '.' + account_domain.get('result', {}).get('subdomain', '') + '.workers.dev' == baseline['url'] and
+                routes.get('success') is True and routes.get('result') == baseline['workers_routes'],
+                'Cloudflare Worker success needs its enabled preserved workers.dev URL and route configuration')
+    elif kind == 'repository_runner':
+        runner = response('runner', 'https://api.github.com/repos/' + repository + '/actions/runners/' + str(resource))
+        require(runner.get('id') == int(resource) and runner.get('name') == 'mini-github-runner-01' and
+                runner.get('status') == 'online' and runner.get('busy') is False and
+                {label.get('name') for label in runner.get('labels', [])} == {'self-hosted', 'Linux', 'X64', 'mini', 'yahtzee'},
+                'Runner success needs its actual online idle repository registration and preserved labels')
+    else:
+        raise ValueError('Provider success needs a supported provider-specific observation; preserve unused resources separately')
+    return min(times)
+
+
 def repository_terminal_times(records, ledger_rows, directory):
     """Collect timestamped local captures only after their contracts passed."""
     def references(value):
@@ -1652,8 +1864,6 @@ def validate_ledger_rows(rows, inventory, directory, expected, retained, candida
                     smoke.get('phase') == row['smoke_phase'] and smoke.get('destructive_changes') is False,
                     'Integration smoke must match its resource, phase and successful preservation outcome')
             smoke_observed_at = observed_time(smoke.get('observed_at'), 'Integration smoke')
-            if row['smoke_phase'] == 'post_transfer':
-                post_transfer_smokes.setdefault(repo_id, []).append(smoke_observed_at)
             if row['smoke_outcome'] == 'approved_recovery':
                 require(smoke.get('recovery_success') is True and smoke.get('approved_by') == 'HemSoft',
                         'Integration recovery needs owner approval and a successful result')
@@ -1668,6 +1878,9 @@ def validate_ledger_rows(rows, inventory, directory, expected, retained, candida
                         'Baseline preservation must match the sealed provider resource and independent observation')
             else:
                 require(smoke.get('continuity_verified') is True, 'Integration success needs verified continuity')
+                smoke_observed_at = validate_provider_success(smoke, row, inventory, directory, smoke_repository)
+            if row['smoke_phase'] == 'post_transfer':
+                post_transfer_smokes.setdefault(repo_id, []).append(smoke_observed_at)
             evidence(row['resource_url'], directory)
             require(row.get('credential_validity') in {'verified', 'not_required'},
                     'Credential presence alone does not establish validity')
@@ -1879,10 +2092,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                                       for repo_id in expected if repo_id not in retained)
     if all_transfer_gates_verified:
         validate_app_credential(matrix.get('pre_transfer_credential_verification'), directory)
-        source_refreshed_at = validate_source_refresh(matrix.get('pre_cutover_source_evidence_url'), directory, inventory,
+        source_refreshed_at, scanned_at, captured_manifests = validate_source_refresh(matrix.get('pre_cutover_source_evidence_url'), directory, inventory,
                                                        matrix['pre_transfer_credential_verification'])
         validate_ledger_readiness(matrix.get('pre_cutover_ledger_evidence_url'), rows, directory,
-                                 ledger_context, source_refreshed_at)
+                                 ledger_context, source_refreshed_at, scanned_at)
         source_capture = json.loads((directory / 'source-reference-evidence.json').read_text())
         unresolved = {x['repository_id']: x for x in source_capture['repositories'] if x.get('state') != 'observed'}
         tree_refresh = json.loads((directory / 'source-tree-recheck-evidence.json').read_text())
