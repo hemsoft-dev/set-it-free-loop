@@ -74,6 +74,13 @@ class RolloutTests(unittest.TestCase):
 
     def capture(self, value, directory=DIRECTORY, prefix='fixture-capture-'):
         self.bind_final_pages(value)
+        if 'effective_rules' in value and 'classic_protection' in value and 'branch' in value:
+            base='https://api.github.com/repos/'+value['repository'];branch=urllib.parse.quote(value['branch'],safe='')
+            for field,suffix in (('effective_rules','/rules/branches/'+branch),('classic_protection','/branches/'+branch+'/protection')):
+                response=value[field];absent=response.get('state')=='absent'
+                response.setdefault('method','GET');response.setdefault('request_url',base+suffix)
+                response.setdefault('http_status',404 if absent else 200);response.setdefault('observed_at',value['observed_at'])
+                if absent:response.setdefault('data',{'message':'Branch not protected'})
         if 'manifest' in value and all(k in value for k in ('repository_id','repository','revision_sha')):
             value.setdefault('manifest_path','.sfl/sfl.json')
             value.setdefault('contents_response',self.file_response(value['repository'],value['revision_sha'],
@@ -408,9 +415,7 @@ class RolloutTests(unittest.TestCase):
                    'effective_rules':{'state':'observed','data':[{'type':'required_status_checks','parameters':{
                        'strict_required_status_checks_policy':True,
                        'required_status_checks':[{'context':'SFL Reviewer Gate Runner','integration_id':15368}]}}]}}
-        with tempfile.NamedTemporaryFile(dir=directory,suffix='.json',prefix='fixture-gate-',delete=False) as stream:
-            path=pathlib.Path(stream.name)
-        path.write_text(json.dumps(capture));self.addCleanup(path.unlink,missing_ok=True)
+        path=pathlib.Path(self.capture(capture,directory,prefix='fixture-gate-'))
         return {'state':'required','context':'SFL Reviewer Gate Runner','app_id':15368,'strict':True,
                 'repository_id':repository_id,'repository':repository,'branch':self.branch(repository_id),'evidence_url':path.name}
 
@@ -516,6 +521,13 @@ class RolloutTests(unittest.TestCase):
                 'user':{'id':199175422},'performed_via_github_app':{'id':1144995},'created_at':timestamp,
                 'body':'**Reviewed commit:** `'+row['review_head_sha']+'`'}}}
         for field,value in raw.items():
+            base='https://api.github.com/repos/'+repository
+            if 'commit_status' in value:
+                value['status_pages']=[{'method':'GET','http_status':200,'request_url':base+'/commits/'+row['review_head_sha']+'/statuses?per_page=100',
+                    'response_headers':{},'observed_at':timestamp,'data':[copy.deepcopy(value['commit_status'])]}]
+            else:
+                data=value.get('comment',value.get('artifact'))
+                value.update(method='GET',http_status=200,request_url=base+'/issues/comments/'+str(data['id']),data=copy.deepcopy(data))
             row[field]=value.get('comment',value.get('artifact',{})).get('html_url',
                 'https://github.com/'+repository+'/commit/'+row['review_head_sha'])
             receipt=row['review_operation_receipts'][field];receipt['evidence_url']=row[field]
@@ -530,6 +542,8 @@ class RolloutTests(unittest.TestCase):
         row['requester_permission_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
             'actor':row['review_requester'],'pr_url':row['review_pr_url'],'head_sha':row['review_head_sha'],
             'base_sha':row['review_base_sha'],'http_status':200,'result':{'permission':'admin','role_name':'admin'},
+            'method':'GET','request_url':'https://api.github.com/repos/'+repository+'/collaborators/'+row['review_requester']+'/permission',
+            'data':{'permission':'admin','role_name':'admin'},
             'observed_at':timestamp},directory)
         row['gate_run_url']='https://github.com/'+repository+'/runs/1'
         gate=row['review_operation_receipts']['gate_run_url']
@@ -631,6 +645,19 @@ class RolloutTests(unittest.TestCase):
             {**{k:repo[k] for k in ('id','full_name','private','visibility','archived','default_branch')},
              'protections':validator.protection_contract(repo)} for repo in self.inventory['repositories']
             if repo['full_name'].startswith(owner+'/')]} for owner in ('HemSoft','fhemmer')]
+        for account in accounts:
+            for current in account['repositories']:
+                baseline=next(repo for repo in self.inventory['repositories'] if repo['id']==current['id'])
+                current['secret_pages']=[{'method':'GET','http_status':200,
+                    'request_url':'https://api.github.com/repos/'+current['full_name']+'/actions/secrets?per_page=100',
+                    'response_headers':{},'observed_at':'2026-10-07T01:49:30Z','data':{
+                        'total_count':len(baseline['settings']['secret_names']['data']),
+                        'secrets':[{'name':name} for name in baseline['settings']['secret_names']['data']]}}]
+                runners=[runner for item in json.loads((DIRECTORY/'runtime-metadata.json').read_text())['repositories']
+                    if item['source']==current['full_name'] for runner in (item['repository_runners'].get('data') or [])]
+                current['runner_pages']=[{'method':'GET','http_status':200,
+                    'request_url':'https://api.github.com/repos/'+current['full_name']+'/actions/runners?per_page=100',
+                    'response_headers':{},'observed_at':'2026-10-07T01:49:30Z','data':{'total_count':len(runners),'runners':runners}}]
         self.matrix['pre_cutover_source_evidence_url']=self.capture({'phase':'pre_cutover',
             'observed_at':'2026-10-07T01:50:00Z','accounts':accounts,
             'reference_scan_evidence_url':self.bind_source_scan(accounts),
@@ -886,6 +913,7 @@ class RolloutTests(unittest.TestCase):
             for scenario,result in receipts['scenario_receipts'].items():
                 output=self.capture({'repository_id':pilot['repository_id'],'repository':pilot['repository'],
                     'deployment_sha':receipts['deployment_sha'],'tested_revision_sha':'b'*40,'scenario':scenario,
+                    'release_version':receipts['release_version'],
                     'mode':result['mode'],'outcome':result['outcome'],'passed':True,'observed_at':'2026-10-07T02:00:00Z',
                     'runner_sha256':hashlib.sha256((ROOT/'deployment/tests/run-org-observer-fixtures.cjs').read_bytes()).hexdigest(),
                     'workflow_sha256':hashlib.sha256((ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_bytes()).hexdigest()})
@@ -2020,7 +2048,10 @@ class RolloutTests(unittest.TestCase):
             self.bind_terminal_capture(operation,directory,'2026-10-07T03:30:00Z')
         for field in ('gate_policy','requester_permission_evidence_url'):
             reference=proof[field]['evidence_url'] if field=='gate_policy' else proof[field]
-            path=directory/reference;capture=json.loads(path.read_text());capture['observed_at']='2026-10-07T03:30:00Z';path.write_text(json.dumps(capture))
+            path=directory/reference;capture=json.loads(path.read_text());capture['observed_at']='2026-10-07T03:30:00Z'
+            if field=='gate_policy':
+                for response in ('effective_rules','classic_protection'):capture[response]['observed_at']=capture['observed_at']
+            path.write_text(json.dumps(capture))
         gate_path=directory/proof['review_operation_receipts']['gate_run_url']['capture_evidence_url']
         gate_capture=json.loads(gate_path.read_text());gate_capture['observed_at']='2026-10-07T03:30:00Z'
         gate_capture['run'].update(created_at='2026-10-07T03:30:00Z',updated_at='2026-10-07T03:30:00Z')
@@ -2114,7 +2145,9 @@ class RolloutTests(unittest.TestCase):
             path.write_text(json.dumps(changed))
             with self.subTest(checks=checks),self.assertRaisesRegex(ValueError,'actually require'):self.check()
         changed=copy.deepcopy(baseline);changed['effective_rules']['data']=[]
-        changed['classic_protection']={'state':'observed','data':{'required_status_checks':{'strict':True,
+        changed['classic_protection']={'state':'observed','method':'GET','http_status':200,
+            'request_url':'https://api.github.com/repos/'+row['destination']+'/branches/main/protection',
+            'observed_at':changed['observed_at'],'data':{'required_status_checks':{'strict':True,
             'checks':[{'context':'SFL Reviewer Gate Runner','app_id':15368}]}}}
         path.write_text(json.dumps(changed));self.check()
 
@@ -2325,9 +2358,12 @@ class RolloutTests(unittest.TestCase):
         row=self.complete_rollout();original=json.loads((DIRECTORY/row['requester_permission_evidence_url']).read_text())
         for field,value in [('actor','other'),('repository_id',42),('pr_url','https://github.com/'+row['destination']+'/pull/2'),
                             ('head_sha','f'*40),('http_status',403),('result',{'permission':'read','role_name':'read'})]:
-            changed=copy.deepcopy(original);changed[field]=value;row['requester_permission_evidence_url']=self.capture(changed)
+            changed=copy.deepcopy(original);changed[field]=value
+            if field=='result':changed['data']=copy.deepcopy(value)
+            row['requester_permission_evidence_url']=self.capture(changed)
             with self.subTest(field=field),self.assertRaisesRegex(ValueError,'permission capture'):self.check()
         changed=copy.deepcopy(original);changed['result']={'permission':'write','role_name':'maintain'}
+        changed['data']=copy.deepcopy(changed['result'])
         row['requester_permission']='maintain';row['requester_permission_evidence_url']=self.capture(changed);self.check()
 
     def test_strict_gate_policy_must_cover_the_actual_default_branch(self):
@@ -2877,11 +2913,14 @@ class RolloutTests(unittest.TestCase):
         self.check()
         request_path=DIRECTORY/row['review_operation_receipts']['review_registration_url']['capture_evidence_url']
         request=json.loads(request_path.read_text());request['comment']['body']=request['comment']['body'].replace('context=fixture','context=fixture:with%encoding')
+        request['data']=copy.deepcopy(request['comment'])
         request_path.write_text(json.dumps(request))
         artifact_receipt=row['review_operation_receipts']['review_artifact_url'];artifact_path=DIRECTORY/artifact_receipt['capture_evidence_url']
         artifact=json.loads(artifact_path.read_text());row['review_artifact_url']=row['review_pr_url']+'#pullrequestreview-2'
         artifact_receipt['evidence_url']=row['review_artifact_url'];artifact['evidence_url']=row['review_artifact_url']
         artifact['kind']='pull_request_review';artifact['artifact'].update(html_url=row['review_artifact_url'],commit_id=row['review_head_sha'],submitted_at='2026-10-07T02:00:00Z')
+        artifact['request_url']='https://api.github.com/repos/'+row['destination']+'/pulls/'+row['review_pr_url'].rsplit('/',1)[1]+'/reviews/2'
+        artifact['data']=copy.deepcopy(artifact['artifact'])
         artifact_path.write_text(json.dumps(artifact))
         gate['check_run']['external_id']=external.replace(':context:fixture:',':context:fixture%3Awith%25encoding:').replace(':artifact:c2',':artifact:r2')
         gate_path.write_text(json.dumps(gate));self.bind_gate_execution(row);self.check()
@@ -2894,7 +2933,10 @@ class RolloutTests(unittest.TestCase):
         pr_path=DIRECTORY/receipts['review_pr_metadata_evidence_url'];pr=json.loads(pr_path.read_text())
         pr['pull_request']['base']['ref']='develop';pr_path.write_text(json.dumps(pr))
         receipts['gate_policy']['branch']='develop';policy_path=DIRECTORY/receipts['gate_policy']['evidence_url']
-        policy=json.loads(policy_path.read_text());policy['branch']='develop';policy_path.write_text(json.dumps(policy))
+        policy=json.loads(policy_path.read_text());policy['branch']='develop'
+        policy['effective_rules']['request_url']=policy['effective_rules']['request_url'].replace('/main','/develop')
+        policy['classic_protection']['request_url']=policy['classic_protection']['request_url'].replace('/main','/develop')
+        policy_path.write_text(json.dumps(policy))
         final_policy_path=DIRECTORY/receipts['final_gate_policy_evidence_url'];final_policy=json.loads(final_policy_path.read_text())
         final_policy['branch']='develop';final_policy_path.write_text(json.dumps(final_policy));self.check()
         repos=[{'id':rid,'full_name':name,'private':visibility=='private','visibility':visibility,'archived':False,'default_branch':'main'}
@@ -4098,6 +4140,7 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
 
     def test_global_owner_facts_need_raw_identity_and_exact_structured_scope(self):
         self.check()
+
         for filename in ('provider-absence-owner-evidence.json','external-resource-owner-scope-evidence.json',
                          'legacy-unused-credential-owner-evidence.json'):
             record=json.loads((DIRECTORY/filename).read_text());path=DIRECTORY/record['owner_comment_evidence_url']
@@ -4115,6 +4158,120 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
                 with self.subTest(filename=filename,mutation=mutation),self.assertRaises(ValueError):self.check()
             path.write_text(json.dumps(original))
         self.check()
+
+    def test_committed_empty_tree_404_is_distinct_from_an_unavailable_tree(self):
+        repo=next(r for r in self.inventory['repositories'] if r['full_name']=='fhemmer/hs-cli-confluence-search')
+        head='e'*40;tree=hashlib.sha1(b'tree 0\0').hexdigest();base='https://api.github.com/repos/'+repo['full_name']
+        branch={'head_sha':head,'tree_sha':tree,'files':[],'tree_response':{'request_url':base+'/git/trees/'+tree+'?recursive=1',
+            'http_status':404,'data':{'message':'Not Found','status':'404'}}}
+        at=validator.observed_time('2026-10-07T02:00:00Z','fixture')
+        self.assertEqual(validator.validate_branch_reference_files(branch,repo,at),(set(),False,[]))
+        for mutation in ('different-tree','unauthorized','wrong-endpoint','wrong-response','invented-file'):
+            changed=copy.deepcopy(branch)
+            if mutation=='different-tree':changed['tree_sha']='f'*40;changed['tree_response']['request_url']=base+'/git/trees/'+'f'*40+'?recursive=1'
+            elif mutation=='unauthorized':changed['tree_response']['http_status']=403
+            elif mutation=='wrong-endpoint':changed['tree_response']['request_url']=base+'/git/trees/'+head+'?recursive=1'
+            elif mutation=='wrong-response':changed['tree_response']['data']={'message':'Permission denied'}
+            else:changed['files']=[{'path':'.github/workflows/invented.yml'}]
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_branch_reference_files(changed,repo,at)
+
+
+    def test_registered_artifacts_require_resource_specific_successful_gets(self):
+        row=self.complete_rollout();validator.registered_review_external_id(row,DIRECTORY,row['repository_id'],row['destination'])
+        for field in ('review_registration_url','review_registry_status_url','review_artifact_url'):
+            path=DIRECTORY/row['review_operation_receipts'][field]['capture_evidence_url'];original=json.loads(path.read_text())
+            for mutation in ('missing','wrong-endpoint','failed-get','different-data'):
+                value=copy.deepcopy(original)
+                if field=='review_registry_status_url':
+                    if mutation=='missing':value.pop('status_pages')
+                    elif mutation=='wrong-endpoint':value['status_pages'][0]['request_url']=value['status_pages'][0]['request_url'].replace(row['review_head_sha'],'f'*40)
+                    elif mutation=='failed-get':value['status_pages'][0]['http_status']=403
+                    else:value['status_pages'][0]['data'][0]['id']=99
+                elif mutation=='missing':value.pop('request_url')
+                elif mutation=='wrong-endpoint':value['request_url']=value['request_url'].replace('/issues/comments/','/pulls/comments/')
+                elif mutation=='failed-get':value['http_status']=403
+                else:value['data']['body']='Fabricated summary'
+                path.write_text(json.dumps(value))
+                with self.subTest(field=field,mutation=mutation),self.assertRaises(ValueError):
+                    validator.registered_review_external_id(row,DIRECTORY,row['repository_id'],row['destination'])
+            path.write_text(json.dumps(original))
+
+    def test_effective_policy_sources_need_exact_gets_and_terminal_freshness(self):
+        row=self.complete_rollout();proof=row['gate_policy'];path=DIRECTORY/proof['evidence_url'];original=json.loads(path.read_text())
+        at=validator.observed_time(original['observed_at'],'fixture')
+        for field in ('effective_rules','classic_protection'):
+            for mutation in ('missing-method','wrong-branch','failed-get','stale-response'):
+                value=copy.deepcopy(original)
+                if mutation=='missing-method':value[field].pop('method')
+                elif mutation=='wrong-branch':value[field]['request_url']=value[field]['request_url'].replace('/main','/other')
+                elif mutation=='failed-get':value[field]['http_status']=403
+                else:value[field]['observed_at']='2026-10-07T01:00:00Z'
+                path.write_text(json.dumps(value))
+                with self.subTest(field=field,mutation=mutation),self.assertRaises(ValueError):
+                    validator.validate_gate_policy(proof,DIRECTORY,row['repository_id'],row['destination'],'main',at)
+        path.write_text(json.dumps(original));validator.validate_gate_policy(proof,DIRECTORY,row['repository_id'],row['destination'],'main',at)
+
+    def test_requester_permission_is_derived_from_its_exact_collaborator_get(self):
+        row=self.complete_rollout();path=DIRECTORY/row['requester_permission_evidence_url'];original=json.loads(path.read_text())
+        for mutation in ('missing-method','wrong-actor','wrong-repository','different-data'):
+            value=copy.deepcopy(original)
+            if mutation=='missing-method':value.pop('method')
+            elif mutation=='wrong-actor':value['request_url']=value['request_url'].replace('/'+row['review_requester']+'/permission','/other/permission')
+            elif mutation=='wrong-repository':value['request_url']=value['request_url'].replace(row['destination'],'hemsoft-dev/other')
+            else:value['data']={'permission':'read'}
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_registered_review(row,DIRECTORY,row['destination'],target_branch='main',deployment_revision='b'*40)
+        path.write_text(json.dumps(original))
+
+    def broken_observer_scenario(self):
+        self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0]
+        proof=pilot['validation_evidence'];result=proof['scenario_receipts']['findings'];path=DIRECTORY/result['capture_evidence_url']
+        capture=json.loads(path.read_text());workflow_path=DIRECTORY/capture['workflow_evidence_url'];workflow=json.loads(workflow_path.read_text())
+        marker='// BEGIN TESTABLE REQUESTER AUTHORIZATION';assert marker in workflow['content']
+        workflow['content']=workflow['content'].replace(marker,marker+"\nthrow new Error('synthetic broken observer');",1)
+        workflow['contents_response']=self.file_response(pilot['repository'],'b'*40,workflow['path'],workflow['content'].encode())
+        workflow_path.write_text(json.dumps(workflow));output_path=DIRECTORY/capture['output_evidence_url'];output=json.loads(output_path.read_text())
+        output['workflow_sha256']=hashlib.sha256(workflow['content'].encode()).hexdigest();output_path.write_text(json.dumps(output))
+        capture['output_sha256']=hashlib.sha256(output_path.read_bytes()).hexdigest();path.write_text(json.dumps(capture))
+        return pilot,proof,result
+
+    def test_fixture_success_is_reproduced_against_the_actual_observer(self):
+        pilot,proof,result=self.broken_observer_scenario()
+        with self.assertRaisesRegex(ValueError,'Independent observer fixture execution'):
+            validator.validate_pilot_scenario(result,'findings',DIRECTORY,pilot['repository_id'],pilot['repository'],
+                proof['deployment_sha'],proof['release_version'],'b'*40)
+
+    def test_pre_cutover_secret_names_are_complete_current_and_reconciled(self):
+        self.complete_transfer_gates();credential=self.matrix['pre_transfer_credential_verification'];ref=self.matrix['pre_cutover_source_evidence_url']
+        path=DIRECTORY/ref;original=json.loads(path.read_text());validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        for mutation in ('missing','failed-get','stale','new-secret','omitted-next'):
+            value=copy.deepcopy(original);row=value['accounts'][0]['repositories'][0];page=row['secret_pages'][0]
+            if mutation=='missing':row.pop('secret_pages')
+            elif mutation=='failed-get':page['http_status']=403
+            elif mutation=='stale':page['observed_at']='2026-10-07T01:00:00Z'
+            elif mutation=='new-secret':page['data']['secrets'].append({'name':'NEW_LEGACY_KEY'});page['data']['total_count']+=1
+            else:page['response_headers']['Link']='<'+page['request_url']+'&page=2>; rel="next"'
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        path.write_text(json.dumps(original))
+
+    def test_pre_cutover_runner_enumeration_is_fresh_complete_and_reconciled(self):
+        self.complete_transfer_gates();credential=self.matrix['pre_transfer_credential_verification'];ref=self.matrix['pre_cutover_source_evidence_url']
+        path=DIRECTORY/ref;original=json.loads(path.read_text());validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        for mutation in ('missing','failed-get','stale','new-runner','omitted-next'):
+            value=copy.deepcopy(original);row=value['accounts'][0]['repositories'][0];page=row['runner_pages'][0]
+            if mutation=='missing':row.pop('runner_pages')
+            elif mutation=='failed-get':page['http_status']=403
+            elif mutation=='stale':page['observed_at']='2026-10-07T01:00:00Z'
+            elif mutation=='new-runner':page['data']['runners'].append({'id':999,'name':'unreviewed-runner'});page['data']['total_count']+=1
+            else:page['response_headers']['Link']='<'+page['request_url']+'&page=2>; rel="next"'
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        path.write_text(json.dumps(original))
 
 
 if __name__ == '__main__':

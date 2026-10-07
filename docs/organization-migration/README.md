@@ -232,6 +232,18 @@ dynamic secret access are reconciled across all branches; the default branch
 alone supplies the installed manifest. An unscanned branch cannot clear a
 credential waiver.
 
+An exact immutable commit may point to Git's canonical empty tree,
+`4b825dc642cb6eb9a060e54bf8d69288fbee4904`. GitHub can return 404 for that tree.
+Accept only its exact tree endpoint and `Not Found` response, bound to the
+captured commit. Other failed or unavailable trees cannot establish emptiness.
+
+The final source refresh includes complete successful raw `secret_pages` and
+`runner_pages` for every repository. Each observation follows the branch scan
+and precedes the refresh completion time. Secret names must equal the sealed
+inventory; runner IDs must equal the reviewed runtime inventory. New names or
+registrations require credential and ledger reconciliation before any transfer.
+Never collect secret values for this inventory check.
+
 The source App credential receipt includes immutable contents captures for
 `.github/workflows/verify-sfl-app-credential.yml` and
 `deployment/scripts/SflGitHubAppBootstrap.psm1` at the successful run SHA. Both
@@ -367,6 +379,10 @@ or deleting the database, or waive active dashboard workflow credentials.
 
 Completed reviews require a repository-bound effective branch-policy capture.
 It must show the strict SFL gate actually required with GitHub Actions App 15368.
+Both effective rules and classic protection include their exact repository and
+branch GET endpoint, status, raw data and observation time. Only an explicit
+`Branch not protected` 404 establishes absent classic protection. Terminal
+response observations must follow the completed review and cutover boundary.
 Pilot scenario receipts identify their own repository, release and deployment.
 Successful workflow receipts name a workflow deployed by the selected tier or
 addons and its immutable run head. Pilot manifests must deploy the review
@@ -398,7 +414,8 @@ decisions; nonempty text that contradicts those decisions cannot clear a gate.
 Workflow run heads match the source release SHA or a separately captured
 consumer/pilot revision containing the recorded manifest. Review permission
 captures bind the human requester, repository, PR, head and base to a successful
-repository-permission GET. The required gate covers the inventory default
+GET of that actor's exact collaborator-permission endpoint. The recorded result
+must equal its raw response data. The required gate covers the inventory default
 branch, including `master` and `develop`. Its completed successful Actions
 check or run is reconciled with a separate result capture and review artifact;
 an issue URL or cancelled gate cannot verify a review. Every active consumer
@@ -424,6 +441,8 @@ gate. Pre-transfer readiness can preserve an unused database or retired Git
 connection without executing runtime operations; final completion requires
 post-transfer continuity captures. The modern-web-stack preservation capture
 records its existing approved disconnection and makes no post-transfer claim.
+Its fresh successful Vercel project GET verifies the preserved project ID,
+configuration, environment names, aliases and historical deployments.
 
 Reports preparation PR [63](https://github.com/HemSoft/reports/pull/63) is merged.
 Its [live read-only credential check](https://github.com/HemSoft/reports/actions/runs/37569272374)
@@ -459,6 +478,12 @@ artifact. The successful check's full external ID must match their context,
 request ID, creation time and artifact ID. Pilot metadata supplies the actual
 default branch; its required gate and final inventory must preserve that branch.
 All offline regression captures are synthetic and do not claim live transfers.
+Request comments and native artifacts derive from their exact successful GETs.
+Registry statuses derive from complete raw status pages for the reviewed head.
+Recorded fixture success also requires independently executing the reviewed
+observer fixture against the captured immutable workflow bytes in temporary
+storage. Compare the resulting identity, scenario, outcome and source digests;
+an output file that merely claims success cannot clear the pilot gate.
 Pending-record checks are offline. Completed release-download records additionally
 run the real GitHub signature verifier against file bytes, downloading the exact
 canonical asset when its captured local path is unavailable. Captured success

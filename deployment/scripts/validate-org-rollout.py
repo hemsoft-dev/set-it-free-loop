@@ -8,6 +8,7 @@ import csv
 import datetime
 import hashlib
 import gzip
+import functools
 import io
 import json
 import pathlib
@@ -258,7 +259,11 @@ def validate_gate_policy(policy, directory, repository_id, repository, target_br
     if earliest is not None:
         require(observed_at >= earliest, 'Effective gate policy must follow cutover and the completed review run')
     rules = capture.get('effective_rules', {})
-    require(rules.get('state') == 'observed' and isinstance(rules.get('data'), list),
+    base = 'https://api.github.com/repos/' + repository
+    branch = urllib.parse.quote(target_branch, safe='')
+    require(rules.get('state') == 'observed' and isinstance(rules.get('data'), list) and
+            rules.get('method') == 'GET' and rules.get('http_status') == 200 and
+            rules.get('request_url') == base + '/rules/branches/' + branch,
             'Gate policy capture needs observed effective branch rules')
     required = any(rule.get('type') == 'required_status_checks' and
                    rule.get('parameters', {}).get('strict_required_status_checks_policy') is True and
@@ -269,6 +274,16 @@ def validate_gate_policy(policy, directory, repository_id, repository, target_br
     require(classic.get('state') == 'observed' or
             (classic.get('state') == 'absent' and classic.get('http_status') == 404),
             'Gate policy capture needs resolved classic protection')
+    require(classic.get('method') == 'GET' and
+            classic.get('request_url') == base + '/branches/' + branch + '/protection' and
+            ((classic['state'] == 'observed' and classic.get('http_status') == 200 and isinstance(classic.get('data'), dict)) or
+             (classic['state'] == 'absent' and classic.get('http_status') == 404 and
+              classic.get('data', {}).get('message') == 'Branch not protected')),
+            'Gate policy needs exact successful protection GETs or an explicit unprotected-branch404')
+    for response in (rules, classic):
+        at = observed_time(response.get('observed_at'), 'Effective policy response')
+        require(at <= observed_at and (earliest is None or at >= earliest),
+                'Effective policy primary responses are outside the terminal freshness boundary')
     checks = classic.get('data', {}).get('required_status_checks') or {}
     required = required or (checks.get('strict') is True and
                            any(check.get('context') == policy['context'] and check.get('app_id') == 15368
@@ -1013,6 +1028,9 @@ def registered_review_external_id(row, directory, repository_id, repository):
         captures[field] = capture
     request = captures['review_registration_url'].get('comment', {})
     request_id = request.get('id')
+    request_capture = captures['review_registration_url']
+    validate_resource_response(request_capture, 'https://api.github.com/repos/' + repository +
+                               '/issues/comments/' + str(request_id), request)
     request_at = observed_time(request.get('created_at'), 'Registered request creation')
     require(type(request_id) is int and request_id > 0 and request.get('user', {}).get('login') == row['review_requester'] and
             request.get('html_url') == row['review_registration_url'] == row['review_pr_url'] + '#issuecomment-' + str(request_id) and
@@ -1024,6 +1042,12 @@ def registered_review_external_id(row, directory, repository_id, repository):
             '@codex review' in request.get('body', ''), 'Registered request must carry its exact head, base and context marker')
     number = row['review_pr_url'].rsplit('/', 1)[1]
     registry = captures['review_registry_status_url'].get('commit_status', {})
+    registry_capture = captures['review_registry_status_url']
+    statuses = validate_raw_page_chain(registry_capture.get('status_pages'),
+        'https://api.github.com/repos/' + repository + '/commits/' + row['review_head_sha'] + '/statuses?per_page=100',
+        observed_time(registry_capture['observed_at'], 'Registry status capture'), 'Registered commit statuses')
+    require([status for status in statuses if status.get('id') == registry.get('id')] == [registry],
+            'Registered status must derive from the complete head-bound status GETs')
     require(type(registry.get('id')) is int and registry['id'] > 0 and registry.get('state') == 'success' and
             registry.get('context') == 'SFL Codex Review Request Registry' and
             registry.get('target_url') == row['review_registration_url'] and
@@ -1034,6 +1058,9 @@ def registered_review_external_id(row, directory, repository_id, repository):
     artifact = artifact_capture.get('artifact', {})
     kind = artifact_capture.get('kind')
     artifact_id = artifact.get('id')
+    validate_resource_response(artifact_capture, 'https://api.github.com/repos/' + repository +
+        ('/issues/comments/' + str(artifact_id) if kind == 'issue_comment' else
+         '/pulls/' + row['review_pr_url'].rsplit('/', 1)[1] + '/reviews/' + str(artifact_id)), artifact)
     require(type(artifact_id) is int and artifact_id > 0 and kind in {'issue_comment', 'pull_request_review'} and
             artifact.get('user', {}).get('id') == 199175422 and artifact.get('performed_via_github_app', {}).get('id') == 1144995 and
             artifact.get('html_url') == row['review_artifact_url'] == row['review_pr_url'] +
@@ -1055,6 +1082,12 @@ def registered_review_external_id(row, directory, repository_id, repository):
         ':request:' + str(request_id) + ':at:' + str(int(request_at.timestamp() * 1000)) + \
         ':artifact:' + ('c' if kind == 'issue_comment' else 'r') + str(artifact_id)
     return external_id, request_at, artifact_at
+
+
+def validate_resource_response(capture, url, expected):
+    require(capture.get('method') == 'GET' and capture.get('http_status') == 200 and
+            capture.get('request_url') == url and capture.get('data') == expected,
+            'Resource capture must derive from its exact successful API GET response')
 
 
 def validate_observer_execution(capture, row, directory, repository_id, repository, deployment_revision):
@@ -1112,6 +1145,8 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
             permission.get('head_sha') == row['review_head_sha'] and permission.get('base_sha') == row['review_base_sha'] and
             permission.get('http_status') == 200 and isinstance(permission.get('result'), dict),
             'Requester permission capture must bind its actor, repository and reviewed PR context')
+    validate_resource_response(permission, 'https://api.github.com/repos/' + repository + '/collaborators/' +
+        row['review_requester'] + '/permission', permission['result'])
     result = permission['result']
     role = result.get('role_name') or result.get('permission')
     require(role == row['requester_permission'] and role in {'write', 'maintain', 'admin'} and
@@ -1308,12 +1343,15 @@ def validate_branch_reference_files(branch, repo, captured_at):
     repo_id = repo['id']
     head, tree_sha = branch['head_sha'], branch['tree_sha']
     tree = branch.get('tree_response', {})
+    empty_tree = tree_sha == hashlib.sha1(b'tree 0\0').hexdigest() and tree.get('http_status') == 404 and \
+        tree.get('data', {}).get('message') == 'Not Found'
     require(tree.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'] +
-            '/git/trees/' + tree_sha + '?recursive=1' and tree.get('http_status') == 200 and
-            tree.get('data', {}).get('sha') == tree_sha and tree['data'].get('truncated') is False and
-            isinstance(tree['data'].get('tree'), list), 'Fresh reference scan needs the complete immutable Git tree')
+            '/git/trees/' + tree_sha + '?recursive=1' and (empty_tree or
+            (tree.get('http_status') == 200 and tree.get('data', {}).get('sha') == tree_sha and
+             tree['data'].get('truncated') is False and isinstance(tree['data'].get('tree'), list))),
+            'Fresh reference scan needs the complete immutable Git tree or its committed canonical empty tree')
     paths = {}
-    for entry in tree['data']['tree']:
+    for entry in ([] if empty_tree else tree['data']['tree']):
         path = entry.get('path')
         require(text(path) and path not in paths, 'Fresh source tree paths must be unique')
         paths[path] = entry
@@ -1349,6 +1387,7 @@ def validate_branch_reference_files(branch, repo, captured_at):
                     'Fresh canonical and legacy installation manifests disagree')
             manifests.append(file['manifest'])
     return references, unresolved_secret_scope, manifests
+
 
 def validate_source_refresh(proof, directory, inventory, credential):
     capture = local_capture(proof, directory, 'Pre-cutover source refresh')
@@ -1387,6 +1426,29 @@ def validate_source_refresh(proof, directory, inventory, credential):
             require(scanned_at <= observed_time(head.get('observed_at'), 'Current source head') <= timestamp and
                     source_revision(head, baseline, scanned_at) == revisions[repo_id],
                     'Source head, tree or branches changed after reference scan; rescan and reconcile before transfer')
+            secret_rows = validate_raw_page_chain(current.get('secret_pages'),
+                'https://api.github.com/repos/' + baseline['full_name'] + '/actions/secrets?per_page=100',
+                timestamp, 'Fresh repository secret names', field='secrets', earliest=scanned_at)
+            names = [secret.get('name') for secret in secret_rows]
+            require(string_list(names) and len(names) == len(set(names)) and
+                    baseline['settings']['secret_names']['state'] == 'observed' and
+                    set(names) == set(baseline['settings']['secret_names']['data']),
+                    'Current repository secret names changed; reconcile credentials and owner waivers before cutover')
+            runner_rows = validate_raw_page_chain(current.get('runner_pages'),
+                'https://api.github.com/repos/' + baseline['full_name'] + '/actions/runners?per_page=100',
+                timestamp, 'Fresh repository runner inventory', field='runners', earliest=scanned_at)
+            runner_ids = [runner.get('id') for runner in runner_rows]
+            historical = local_capture('runtime-metadata.json', directory, 'Historical runners')
+            refreshed = local_capture('runtime-refresh-evidence.json', directory, 'Reviewed runner inventory')
+            expected_runners = {runner['id'] for repo in historical['repositories'] if repo['source'] == baseline['full_name']
+                for runner in (repo['repository_runners'].get('data') or [])}
+            expected_runners.update(runner['id'] for record in refreshed['records'] if
+                (record.get('repository_id') == repo_id or record.get('repository') == baseline['full_name']) and
+                record['kind'] == 'runners' and record.get('state') == 'observed'
+                for runner in record.get('data', {}).get('runners', []))
+            require(all(type(runner_id) is int and runner_id > 0 for runner_id in runner_ids) and
+                    len(runner_ids) == len(set(runner_ids)) and set(runner_ids) == expected_runners,
+                    'Current repository runner registrations changed; reconcile the runner ledger before cutover')
             if repo_id == 1169772257:
                 require(head.get('head_sha') == credential['reviewed_sha'] == run.get('head_sha'),
                         'Fresh credential proof must execute the current source main revision')
@@ -1883,6 +1945,12 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 text(capture.get('command')) and capture.get('conclusion') == 'success' and
                 result['evidence_url'] == result['capture_evidence_url'],
                 'Fixture scenario needs its successful executed command and captured output')
+        reproduced = replay_observer_fixture(json.dumps(workflow, sort_keys=True), repository_id, repository,
+            sha, version, revision, scenario, hashlib.sha256(runner.read_bytes()).hexdigest())
+        require(all(reproduced.get(key) == output.get(key) for key in (
+            'repository_id', 'repository', 'deployment_sha', 'release_version', 'tested_revision_sha',
+            'scenario', 'mode', 'outcome', 'passed', 'runner_sha256', 'workflow_sha256')),
+            'Recorded fixture output must equal the independently executed observer result')
     else:
         run = capture.get('run', {})
         require(re.fullmatch('https://github.com/' + re.escape(repository) + r'/actions/runs/[1-9][0-9]*',
@@ -1904,6 +1972,25 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 'Live scenario output must identify its exact run and attempt')
         validate_run_artifact(capture.get('artifact_evidence_url'), directory, repository, run,
                               'sfl-observer-scenario-' + scenario, 'scenario.json', output, scenario_at)
+
+
+@functools.lru_cache(maxsize=128)
+def replay_observer_fixture(workflow_json, repository_id, repository, sha, version, revision, scenario, runner_digest):
+    root = pathlib.Path(__file__).resolve().parents[2]
+    runner = root / 'deployment/tests/run-org-observer-fixtures.cjs'
+    require(hashlib.sha256(runner.read_bytes()).hexdigest() == runner_digest, 'Fixture runner changed before replay')
+    with tempfile.TemporaryDirectory(prefix='sfl-observer-replay-') as folder:
+        workflow, output = pathlib.Path(folder) / 'workflow.json', pathlib.Path(folder) / 'output.json'
+        workflow.write_text(workflow_json)
+        argv = ['node', str(runner), '--workflow', str(workflow), '--repository-id', str(repository_id),
+            '--repository', repository, '--deployment-sha', sha, '--release-version', version,
+            '--revision', revision, '--scenario', scenario, '--output', str(output)]
+        try:
+            completed = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=30, check=False)
+            require(completed.returncode == 0 and output.is_file(), 'Independent observer fixture execution failed')
+            return json.loads(output.read_text())
+        except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
+            raise ValueError('Independent observer fixture execution could not verify the result') from exc
 
 
 def provider_preservation_baseline(row, inventory, directory):
