@@ -898,13 +898,6 @@ func findRegisteredCodexRequestIDs(
 			if status.Context != codexReviewRequestRegistryContext {
 				continue
 			}
-			allowed, err := authorizeReviewRequester(client, owner, repo, status.Creator.Login)
-			if err != nil {
-				return nil, err
-			}
-			if !allowed {
-				continue
-			}
 			normalizedTargetURL := strings.ToLower(status.TargetURL)
 			targetPrefix := "https://github.com" + targetMarker
 			if !strings.HasPrefix(normalizedTargetURL, targetPrefix) {
@@ -912,25 +905,33 @@ func findRegisteredCodexRequestIDs(
 			}
 			idText := normalizedTargetURL[len(targetPrefix):]
 			id, parseErr := strconv.ParseInt(idText, 10, 64)
-			if parseErr == nil && id > 0 {
-				if strings.EqualFold(owner, "hemsoft-dev") {
-					var comment reviewTriggerComment
-					if err := client.Get(fmt.Sprintf("repos/%s/%s/issues/comments/%d", owner, repo, id), &comment); err != nil {
-						return nil, fmt.Errorf("cannot verify registered request author: %w", err)
-					}
-					if comment.ID != id || !strings.EqualFold(comment.User.Login, status.Creator.Login) {
-						continue
-					}
-					authorAllowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
-					if err != nil {
-						return nil, err
-					}
-					if !authorAllowed {
-						continue
-					}
-				}
-				registered[id] = true
+			if parseErr != nil || id <= 0 || strconv.FormatInt(id, 10) != idText {
+				continue
 			}
+			allowed, err := authorizeReviewRequester(client, owner, repo, status.Creator.Login)
+			if err != nil {
+				return nil, err
+			}
+			if !allowed {
+				continue
+			}
+			if strings.EqualFold(owner, "hemsoft-dev") {
+				var comment reviewTriggerComment
+				if err := client.Get(fmt.Sprintf("repos/%s/%s/issues/comments/%d", owner, repo, id), &comment); err != nil {
+					return nil, fmt.Errorf("cannot verify registered request author: %w", err)
+				}
+				if comment.ID != id || !strings.EqualFold(comment.User.Login, status.Creator.Login) {
+					continue
+				}
+				authorAllowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
+				if err != nil {
+					return nil, err
+				}
+				if !authorAllowed {
+					continue
+				}
+			}
+			registered[id] = true
 		}
 		if len(statuses) < 100 {
 			return registered, nil

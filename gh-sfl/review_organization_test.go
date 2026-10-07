@@ -137,3 +137,26 @@ func TestOrganizationReviewRejectsRedirectedRepository(t *testing.T) {
 		}
 	}
 }
+
+func TestOrganizationRegistryIgnoresUnrelatedTargetsBeforeAuthorization(t *testing.T) {
+	targets := []string{
+		"https://github.com/hemsoft-dev/consumer/pull/95#issuecomment-122",
+		"https://attacker.test/hemsoft-dev/consumer/pull/94#issuecomment-122",
+		"https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-not-an-id",
+		"https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-0",
+		"https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-+122",
+		"https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-0122",
+		"https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-122?extra=1",
+	}
+	for _, target := range targets {
+		irrelevant := reviewRequestStatus{Context: codexReviewRequestRegistryContext, TargetURL: target}
+		irrelevant.Creator.Login = "irrelevant"
+		valid := reviewRequestStatus{Context: codexReviewRequestRegistryContext, TargetURL: "https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-123"}
+		valid.Creator.Login = "member"
+		rest := &organizationReviewREST{reviewREST: &reviewREST{statuses: []reviewRequestStatus{irrelevant, valid}}, role: "write", author: "member", deniedLogins: map[string]int{"irrelevant": 500}}
+		ids, err := findRegisteredCodexRequestIDs(rest, "hemsoft-dev", "consumer", 94, strings.Repeat("b", 40))
+		if err != nil || len(ids) != 1 || !ids[123] || rest.permissionGets != 2 {
+			t.Fatalf("target=%s ids=%v permissions=%d error=%v", target, ids, rest.permissionGets, err)
+		}
+	}
+}
