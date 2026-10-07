@@ -356,6 +356,10 @@ canonical release/checksum verification, actual merged init PR, successful sync
 outcome and zero-change repeat results. Revision receipts follow the operation
 sequence through final status. A repeat or sync that changes no files records
 `no_changes`; it must not invent a new PR.
+The manifest capture names `.sfl/sfl.json` or `sfl.json` and includes its successful
+immutable contents response. Decode the repository bytes and verify their Git
+blob identity before deriving tier, addons, source, SHA and version. A local
+manifest summary cannot establish the installed configuration.
 
 All transferred SFL App coverage reconciles with the single destination
 installation in `owned-app-organization-installation-evidence.json`. Its current
@@ -565,3 +569,30 @@ receipt binds the same repository, provider, resource and approved operation to 
 successful terminal result. Execution follows the owner approval, and provider
 metadata GETs follow execution. A free-form reason or healthy final state cannot
 authorize a different operation.
+The effective approval time is the owner comment's `updated_at`, including when
+an earlier comment is edited to add the structured decision. The approved
+operation must start after that effective approval.
+
+Protected-source governance captures retain successful repository-specific GETs
+for Actions policy and workflow permissions, complete raw label pages, and the
+immutable `.github/CODEOWNERS` contents at the verified source revision. Their
+observations follow App cutover and derive the recorded governance summaries.
+
+Runner smoke jobs derive from complete successful raw pages of the exact run
+attempt's jobs API. Record each response body, HTTP status, observation time and
+pagination headers. The executed smoke job must identify the preserved runner;
+a manually supplied job summary cannot establish machine continuity.
+
+Transfer captures include the owner-authenticated JSON audit export request,
+ready response, successful truncation verification and downloaded gzip bytes.
+The request uses `action:repo.transfer`; bind all returned routes by SHA256 and
+retain only their origin, path and query parameter names, keeping signed routes
+outside Git. Require `truncated=false`, matching archive digest and the exact
+transfer event decoded from the complete raw export. Its timestamp must follow
+the final source/tree/ledger cutoff. The [organization audit export](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-security-settings-for-your-organization/reviewing-the-audit-log-for-your-organization)
+works with Team; the audit REST API requires Enterprise Cloud.
+
+Fresh workflow scans reject an unused-credential waiver when `secrets: inherit`
+or computed `secrets[...]` leaves its scope unresolved. Reconcile the reusable
+workflow or dynamic access and obtain the required credential evidence before
+cutover. Static dot and literal bracket references remain explicitly enumerated.

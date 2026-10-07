@@ -7,6 +7,7 @@ import contextlib
 import csv
 import datetime
 import hashlib
+import gzip
 import io
 import json
 import pathlib
@@ -139,6 +140,7 @@ def deployed_revision(proof, directory, repository_id, repository, manifest):
             immutable_sha(capture.get('revision_sha')) and capture.get('manifest') == manifest,
             'Deployed revision capture must match its repository and installed manifest')
     observed_time(capture.get('observed_at'), 'Deployed revision')
+    validate_manifest_contents(capture, repository_id, repository, manifest)
     return capture['revision_sha']
 
 
@@ -566,6 +568,7 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
     require(observed.get('repository_id') == repo_id and observed.get('repository') == name and
             observed.get('manifest') == manifest and immutable_sha(observed.get('revision_sha')),
             'New onboarding manifest capture must match its repository and deployed configuration')
+    validate_manifest_contents(observed, repo_id, name, manifest)
     require(proof.get('release_url') == 'https://github.com/'+proof['deployment_source']+'/releases/tag/v'+proof['release_version'],
             'New onboarding release verification must use its canonical version')
     validate_release_download(proof, directory, repo_id, name, proof['deployment_source'], proof['deployment_sha'], proof['release_version'])
@@ -665,6 +668,13 @@ def immutable_contents(capture, repository_id, repository, revision, path):
             body.get('git_url') == 'https://api.github.com/repos/' + repository + '/git/blobs/' + blob,
             'Installed file bytes must match their independent immutable Git blob identity')
     return content
+
+
+def validate_manifest_contents(capture, repository_id, repository, manifest):
+    path = capture.get('manifest_path')
+    require(path in {'.sfl/sfl.json', 'sfl.json'}, 'Installed manifest needs its actual repository path')
+    content = immutable_contents(capture, repository_id, repository, capture['revision_sha'], path)
+    require(json.loads(content) == manifest, 'Installed manifest identity must derive from immutable repository bytes')
 
 
 def validate_installation_file(check, row, directory, revision, status_at):
@@ -908,8 +918,9 @@ def validate_owner_approval_comment(reference, directory, receipt_url, approved_
             comment['user'].get('id') == 8227352 and comment['user'].get('type') == 'User' and
             comment.get('html_url') in {'https://github.com/' + owner + '/set-it-free-loop/issues/' + match[2] + '#issuecomment-' + match[3]
                                         for owner in ('HemSoft', 'hemsoft-dev')} and
-            observed_time(comment.get('created_at'), 'Owner approval') == approved_at and
-            approved_at <= observed_time(comment.get('updated_at'), 'Owner approval edit') <=
+            observed_time(comment.get('created_at'), 'Owner approval creation') <= approved_at and
+            observed_time(comment.get('updated_at'), 'Owner effective approval') == approved_at and
+            approved_at <=
             observed_time(receipt.get('observed_at'), 'Owner approval capture') <= latest,
             'Owner approval must match the actual HemSoft comment identity and chronology')
     markers = re.findall(r'<!-- sfl-migration-approval:(.*?) -->', comment.get('body', ''), re.DOTALL)
@@ -1258,6 +1269,7 @@ def validate_reference_scan(reference, directory, inventory):
         require(isinstance(files, list) and len(files) == len(relevant) and
                 {f.get('path') for f in files} == relevant, 'Fresh scan must read every workflow and installation manifest')
         references = set()
+        unresolved_secret_scope = False
         for file in files:
             path = file['path']
             body = immutable_contents(file, repo_id, repo['full_name'], revision[0], path)
@@ -1265,18 +1277,27 @@ def validate_reference_scan(reference, directory, inventory):
                     observed_time(file.get('observed_at'), 'Source file capture') <=
                     observed_time(row['observed_at'], 'Repository reference scan'),
                     'Scanned file must match the complete Git tree blob')
-            references.update(re.findall(r'secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)', body.decode('utf-8')))
-            references.update(re.findall(r"secrets\s*\[\s*['\"]([^'\"]+)['\"]\s*\]", body.decode('utf-8')))
+            source = body.decode('utf-8')
+            references.update(name.upper() for name in re.findall(r'secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)', source, re.I))
+            references.update(name.upper() for name in re.findall(r"secrets\s*\[\s*['\"]([^'\"]+)['\"]\s*\]", source, re.I))
+            unresolved_secret_scope |= bool(re.search(r"(?im)^\s*secrets\s*:\s*(['\"]?)inherit\1\s*(?:#.*)?$", source))
+            unresolved_secret_scope |= any(re.fullmatch(r"\s*['\"][A-Za-z_][A-Za-z0-9_]*['\"]\s*", match[1]) is None
+                for match in re.finditer(r'\bsecrets\s*\[([^\]]*)\]', source, re.I))
+            unresolved_secret_scope |= any(re.search(r'\bsecrets\b(?!\s*(?:\.[A-Za-z_]|\[))', expression, re.I)
+                for expression in re.findall(r'\$\{\{(.*?)\}\}', source, re.S))
             if path in {'.sfl/sfl.json', 'sfl.json'}:
                 require(file.get('manifest') == json.loads(body), 'Fresh installation manifest must derive from immutable bytes')
                 require(repo_id not in manifests or manifests[repo_id] == file['manifest'],
                         'Fresh canonical and legacy installation manifests disagree')
                 manifests[repo_id] = file['manifest']
-        require(set(row.get('referenced_secret_names', [])) == references,
+        require({name.upper() for name in row.get('referenced_secret_names', [])} == references,
                 'Fresh credential reference conclusions must derive from every captured workflow')
         unused = local_capture('legacy-unused-credential-owner-evidence.json', directory, 'Unused legacy credential scope')
         waived = next((r['unused_repository_secret_names'] for r in unused['repositories'] if r['repository_id'] == repo_id), [])
-        require(not references.intersection(waived), 'A newly referenced legacy credential needs reconciliation and fresh validation')
+        require(not waived or not unresolved_secret_scope,
+                'Inherited or dynamic secret scope needs reconciliation before an unused-credential waiver')
+        require(not references.intersection(name.upper() for name in waived),
+                'A newly referenced legacy credential needs reconciliation and fresh validation')
     return revisions, timestamp, manifests
 
 
@@ -1495,8 +1516,25 @@ def validate_source_governance(proof, directory, repo, cutover):
     require(capture.get('phase') == 'post_transfer' and capture.get('repository_id') == repo['id'] and
             capture.get('repository') == repo['destination'] and capture.get('revision_sha') == proof['source_sha'],
             'Source governance capture must match its transferred repository and release revision')
-    require(observed_time(capture.get('observed_at'), 'Source governance') > cutover,
+    observed_at = observed_time(capture.get('observed_at'), 'Source governance')
+    require(observed_at > cutover,
             'Source governance must be captured after App cutover')
+    base = 'https://api.github.com/repos/' + repo['destination']
+    for field, suffix in (('actions_policy', '/actions/permissions'),
+                          ('workflow_permissions', '/actions/permissions/workflow')):
+        response = capture.get(field + '_response', {})
+        require(response.get('method') == 'GET' and response.get('http_status') == 200 and
+                response.get('request_url') == base + suffix and response.get('data') == capture.get(field) and
+                cutover < observed_time(response.get('observed_at'), 'Source governance GET') <= observed_at,
+                'Source governance policy must derive from successful repository-specific API responses')
+    raw_labels = validate_raw_page_chain(capture.get('labels_pages'), base + '/labels?per_page=100',
+        observed_at, 'Source governance labels', earliest=cutover)
+    require(raw_labels == capture.get('labels'), 'Source governance labels must derive from complete raw API pages')
+    codeowners = capture.get('codeowners_contents', {})
+    content = immutable_contents(codeowners, repo['id'], repo['destination'], proof['source_sha'], '.github/CODEOWNERS')
+    require(content.decode('utf-8') == capture.get('codeowners') and
+            cutover < observed_time(codeowners.get('observed_at'), 'Source CODEOWNERS GET') <= observed_at,
+            'Source CODEOWNERS must derive from current revision-bound repository contents')
     root = pathlib.Path(__file__).resolve().parents[2]
     labels = json.loads((root / 'deployment/governance/labels.json').read_text())
     actual = capture.get('labels')
@@ -1591,7 +1629,11 @@ def validate_runner_captures(proof, directory, earliest):
                     observed_time(jobs.get('observed_at'), 'Runner jobs capture') <=
                     observed_time(capture['observed_at'], 'Runner capture'),
                     'Runner jobs must be captured from the completed current run attempt')
-            matches = [job for job in jobs['jobs'] if job.get('id') == proof.get('smoke_job_id')]
+            raw_jobs = validate_raw_page_chain(jobs.get('pages'), jobs['request_url'],
+                observed_time(jobs['observed_at'], 'Runner jobs capture'), 'Runner jobs', field='jobs',
+                earliest=observed_time(run['updated_at'], 'Runner smoke completion'))
+            require(raw_jobs == jobs['jobs'], 'Runner job conclusions must derive from complete successful API pages')
+            matches = [job for job in raw_jobs if job.get('id') == proof.get('smoke_job_id')]
             require(type(proof.get('smoke_job_id')) is int and proof['smoke_job_id'] > 0 and len(matches) == 1,
                     'Runner smoke needs its unique executed job')
             job = matches[0]
@@ -1607,10 +1649,62 @@ def validate_runner_captures(proof, directory, earliest):
                     'Runner smoke job must execute successfully on the preserved self-hosted runner and labels')
 
 
+def validate_transfer_audit_export(export, organization, captured_at):
+    require(isinstance(export, dict) and export.get('organization') == organization and
+            export.get('organization_id') == 338855369, 'Transfer chronology needs its actual organization audit export')
+    request = export.get('request', {})
+    require(request.get('method') == 'POST' and request.get('http_status') == 201 and
+            request.get('request_url') == 'https://github.com/orgs/' + organization + '/audit-log/export.json' and
+            request.get('parameters') == {'q':'action:repo.transfer', 'format':'json'},
+            'Transfer audit export needs its successful resource-bound JSON export request')
+    previous = observed_time(request.get('observed_at'), 'Audit export request')
+    paths = [('status_response', 'status_url_sha256', 'export_status', ['export_id']),
+             ('verification_response', 'verify_url_sha256', 'export', ['export_id','verify_truncate']),
+             ('download_response', 'export_url_sha256', 'export', ['export_id'])]
+    for field, digest, suffix, parameters in paths:
+        response = export.get(field, {})
+        expected_digest = request.get('response', {}).get(digest)
+        require(isinstance(expected_digest, str) and re.fullmatch(r'[0-9a-f]{64}', expected_digest) and
+                response.get('method') == 'GET' and response.get('http_status') == 200 and
+                response.get('request_origin') == 'https://github.com' and
+                response.get('request_path') == '/orgs/' + organization + '/audit-log/' + suffix and
+                sorted(response.get('query_parameter_names', [])) == sorted(parameters) and
+                response.get('request_url_sha256') == expected_digest,
+                'Transfer audit export responses must match the successful request and exact GitHub routes')
+        at = observed_time(response.get('observed_at'), 'Audit export response')
+        require(previous <= at <= captured_at, 'Audit export responses must follow request, readiness, verification and download order')
+        previous = at
+    require(export['status_response'].get('body') == '' and
+            export['verification_response'].get('data', {}).get('truncated') is False,
+            'Transfer audit export must finish without truncation')
+    download = export['download_response']
+    try:
+        archive = base64.b64decode(download.get('body_base64', ''), validate=True)
+        require(0 < len(archive) <= 1024 * 1024 and download.get('content_type') == 'application/gzip' and
+                hashlib.sha256(archive).hexdigest() == download.get('body_sha256'),
+                'Transfer audit export must retain its actual downloaded bytes and digest')
+        with gzip.GzipFile(fileobj=io.BytesIO(archive)) as stream:
+            raw = stream.read(10 * 1024 * 1024 + 1)
+        require(len(raw) <= 10 * 1024 * 1024, 'Transfer audit export exceeds its bounded evidence size')
+        try:
+            events = json.loads(raw or b'[]')
+        except ValueError:
+            events = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        if isinstance(events, dict):
+            events = [events]
+        require(isinstance(events, list) and all(isinstance(event, dict) and event.get('action') == 'repo.transfer'
+                for event in events), 'Transfer audit export must decode every filtered event from its raw JSON bytes')
+    except (ValueError, TypeError, OSError, EOFError) as exc:
+        raise ValueError('Transfer audit export needs valid complete raw gzip JSON bytes') from exc
+    return events
+
+
 def validate_repository_transfer(reference, directory, repo, cutoff):
     capture = local_capture(reference, directory, 'Repository transfer')
     event = capture.get('event', {})
     organization = repo['destination'].split('/')[0]
+    captured_at = observed_time(capture.get('observed_at'), 'Repository transfer capture')
+    events = validate_transfer_audit_export(capture.get('audit_export'), organization, captured_at)
     require(capture.get('phase') == 'post_transfer' and capture.get('source') == repo['full_name'] and
             capture.get('repository_id') == repo['id'] and capture.get('repository') == repo['destination'] and
             capture.get('audit_log_url') == 'https://github.com/organizations/' + organization + '/settings/audit-log' and
@@ -1620,12 +1714,14 @@ def validate_repository_transfer(reference, directory, repo, cutoff):
             event.get('actor') == 'HemSoft' and
             ('repo_was' not in event or event['repo_was'] == repo['full_name']),
             'Repository transfer must match its captured GitHub acceptance event and source/destination identities')
+    require(sum(actual == event for actual in events) == 1,
+            'Repository transfer event and timestamp must derive from the successful raw audit export')
     milliseconds = event.get('@timestamp')
     require(type(milliseconds) is int and milliseconds > 0 and
             ('created_at' not in event or event['created_at'] == milliseconds),
             'Repository transfer needs the actual audit event timestamp')
     transferred_at = datetime.datetime.fromtimestamp(milliseconds / 1000, datetime.timezone.utc)
-    require(cutoff < transferred_at <= observed_time(capture.get('observed_at'), 'Repository transfer capture'),
+    require(cutoff < transferred_at <= observed_time(capture['audit_export']['request']['observed_at'], 'Audit export request') <= captured_at,
             'Repository transfer must follow immutable ledger readiness and source recheck')
     return transferred_at
 

@@ -7,6 +7,7 @@ import csv
 import importlib.util
 import json
 import hashlib
+import gzip
 import io
 import zipfile
 import urllib.parse
@@ -51,6 +52,24 @@ class RolloutTests(unittest.TestCase):
 
     def capture(self, value, directory=DIRECTORY, prefix='fixture-capture-'):
         self.bind_final_pages(value)
+        if 'manifest' in value and all(k in value for k in ('repository_id','repository','revision_sha')):
+            value.setdefault('manifest_path','.sfl/sfl.json')
+            value.setdefault('contents_response',self.file_response(value['repository'],value['revision_sha'],
+                value['manifest_path'],json.dumps(value['manifest']).encode()))
+        if 'codeowners' in value:
+            base='https://api.github.com/repos/'+value['repository']
+            for field,suffix in (('actions_policy','/actions/permissions'),('workflow_permissions','/actions/permissions/workflow')):
+                value.setdefault(field+'_response',{'method':'GET','http_status':200,'request_url':base+suffix,
+                    'observed_at':value['observed_at'],'data':copy.deepcopy(value[field])})
+            value.setdefault('labels_pages',[{'method':'GET','http_status':200,'request_url':base+'/labels?per_page=100',
+                'observed_at':value['observed_at'],'response_headers':{},'data':copy.deepcopy(value['labels'])}])
+            value.setdefault('codeowners_contents',{'repository_id':value['repository_id'],'repository':value['repository'],
+                'revision_sha':value['revision_sha'],'observed_at':value['observed_at'],
+                'contents_response':self.file_response(value['repository'],value['revision_sha'],'.github/CODEOWNERS',value['codeowners'].encode())})
+        if 'jobs' in value and 'request_url' in value:
+            value.setdefault('pages',[{'method':'GET','http_status':200,'request_url':value['request_url'],
+                'observed_at':value['observed_at'],'response_headers':{},
+                'data':{'total_count':value['total_count'],'jobs':copy.deepcopy(value['jobs'])}}])
         def branch_pages(node):
             if isinstance(node,dict):
                 if isinstance(node.get('branches_response'),dict):
@@ -76,14 +95,28 @@ class RolloutTests(unittest.TestCase):
 
     def transfer_capture(self, row, timestamp='2026-10-07T01:50:30Z'):
         milliseconds=int(validator.observed_time(timestamp,'fixture').timestamp()*1000)
+        event={'action':'repo.transfer','_document_id':'synthetic-transfer-'+str(row['repository_id']),
+            'repo_id':row['repository_id'],'repo':row['destination'],'repo_was':row['source'],
+            'org':'hemsoft-dev','org_id':338855369,'actor':'HemSoft','@timestamp':milliseconds,'created_at':milliseconds}
         return self.capture({'phase':'post_transfer','source':row['source'],
             'repository_id':row['repository_id'],'repository':row['destination'],
             'audit_log_url':'https://github.com/organizations/hemsoft-dev/settings/audit-log',
-            'observed_at':'2026-10-07T01:50:45Z','event':{'action':'repo.transfer',
-                '_document_id':'synthetic-transfer-'+str(row['repository_id']),
-                'repo_id':row['repository_id'],'repo':row['destination'],'repo_was':row['source'],
-                'org':'hemsoft-dev','org_id':338855369,'actor':'HemSoft',
-                '@timestamp':milliseconds,'created_at':milliseconds}})
+            'observed_at':'2026-10-07T01:50:45Z','event':event,
+            'audit_export':self.audit_export_fixture([event],'2026-10-07T01:50:45Z')})
+
+    def audit_export_fixture(self, events, timestamp):
+        archive=gzip.compress(json.dumps(events).encode(),mtime=0)
+        request={'method':'POST','http_status':201,'request_url':'https://github.com/orgs/hemsoft-dev/audit-log/export.json',
+            'parameters':{'q':'action:repo.transfer','format':'json'},'observed_at':timestamp,
+            'response':{'status_url_sha256':'a'*64,'verify_url_sha256':'b'*64,'export_url_sha256':'c'*64}}
+        def response(suffix,digest,parameters):return {'method':'GET','http_status':200,'request_origin':'https://github.com',
+            'request_path':'/orgs/hemsoft-dev/audit-log/'+suffix,'query_parameter_names':parameters,
+            'request_url_sha256':digest,'observed_at':timestamp}
+        return {'organization':'hemsoft-dev','organization_id':338855369,'request':request,
+            'status_response':dict(response('export_status','a'*64,['export_id']),body=''),
+            'verification_response':dict(response('export','b'*64,['export_id','verify_truncate']),data={'truncated':False}),
+            'download_response':dict(response('export','c'*64,['export_id']),content_type='application/gzip',
+                body_base64=base64.b64encode(archive).decode(),body_sha256=hashlib.sha256(archive).hexdigest())}
 
     def pilots_before_rollout(self):
         # Keep complete_pilots' deliberate timing fixtures, then build a coherent
@@ -176,13 +209,15 @@ class RolloutTests(unittest.TestCase):
                 'file_checks':checks,
                 'missing_files':[],'drifted_files':[]},directory)
 
-    def file_contents_capture(self, repository_id, repository, revision, path, content, directory=DIRECTORY):
+    def file_response(self, repository, revision, path, content):
         blob=hashlib.sha1(b'blob '+str(len(content)).encode()+b'\0'+content).hexdigest()
+        return {'http_status':200,'request_url':'https://api.github.com/repos/'+repository+'/contents/'+path+'?ref='+revision,
+            'data':{'path':path,'type':'file','encoding':'base64','content':base64.b64encode(content).decode(),
+                'size':len(content),'sha':blob,'git_url':'https://api.github.com/repos/'+repository+'/git/blobs/'+blob}}
+
+    def file_contents_capture(self, repository_id, repository, revision, path, content, directory=DIRECTORY):
         return self.capture({'repository_id':repository_id,'repository':repository,'revision_sha':revision,
-            'observed_at':'2026-10-07T02:00:00Z','contents_response':{'http_status':200,
-                'request_url':'https://api.github.com/repos/'+repository+'/contents/'+path+'?ref='+revision,
-                'data':{'path':path,'type':'file','encoding':'base64','content':base64.b64encode(content).decode(),
-                    'size':len(content),'sha':blob,'git_url':'https://api.github.com/repos/'+repository+'/git/blobs/'+blob}}},directory)
+            'observed_at':'2026-10-07T02:00:00Z','contents_response':self.file_response(repository,revision,path,content)},directory)
 
     def additional_owner_comment(self, decision, directory):
         comment_id=int(decision['evidence_url'].rsplit('-',1)[1]);owner=decision['evidence_url'].split('/')[3]
@@ -1954,7 +1989,9 @@ class RolloutTests(unittest.TestCase):
         gate_capture['run'].update(created_at='2026-10-07T03:30:00Z',updated_at='2026-10-07T03:30:00Z')
         gate_capture['check_run'].update(started_at='2026-10-07T03:30:00Z',completed_at='2026-10-07T03:30:00Z');gate_path.write_text(json.dumps(gate_capture))
         proof['manifest_evidence_url']='post-status-manifest.json'
-        (directory/proof['manifest_evidence_url']).write_text(json.dumps({'repository_id':42,'repository':name,'revision_sha':'f'*40,'manifest':proof['manifest_identity'],'observed_at':'2026-10-07T03:30:00Z'}))
+        (directory/proof['manifest_evidence_url']).write_text(json.dumps({'repository_id':42,'repository':name,'revision_sha':'f'*40,
+            'manifest':proof['manifest_identity'],'manifest_path':'.sfl/sfl.json','observed_at':'2026-10-07T03:30:00Z',
+            'contents_response':self.file_response(name,'f'*40,'.sfl/sfl.json',json.dumps(proof['manifest_identity']).encode())}))
         capture={'request_url':'https://api.github.com/repos/'+name,'http_status':200,
             'observed_at':'2026-10-07T03:05:00Z',
             'metadata':{'id':42,'full_name':name,'private':True,'visibility':'private','archived':False,'created_at':'2026-10-07T03:00:00Z','default_branch':'main'}}
@@ -2769,6 +2806,8 @@ class RolloutTests(unittest.TestCase):
         jobs_path=DIRECTORY/runner['jobs_evidence_url'];jobs=json.loads(jobs_path.read_text())
         jobs['observed_at']=cutoff
         for job in jobs['jobs']:job.update(started_at=cutoff,completed_at=cutoff)
+        jobs['pages'][0]['observed_at']=cutoff
+        jobs['pages'][0]['data']['jobs']=copy.deepcopy(jobs['jobs'])
         jobs_path.write_text(json.dumps(jobs))
         self.check()
         for field,original in originals.items():
@@ -3060,7 +3099,8 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         for field,value in [('runner_id',22),('runner_name','GitHub Actions 1'),('labels',['ubuntu-latest']),
                             ('run_id',2),('run_attempt',2),('head_sha','f'*40),('conclusion','skipped'),
                             ('completed_at','2026-10-07T02:01:00Z')]:
-            capture=copy.deepcopy(original);capture['jobs'][0][field]=value;path.write_text(json.dumps(capture))
+            capture=copy.deepcopy(original);capture['jobs'][0][field]=value
+            capture['pages'][0]['data']['jobs'][0][field]=value;path.write_text(json.dumps(capture))
             with self.subTest(field=field),self.assertRaisesRegex(ValueError,'preserved self-hosted runner'):self.check()
         path.write_text(json.dumps(original));self.check()
         capture=copy.deepcopy(original);capture['request_url']=capture['request_url'].replace('/attempts/1/','/attempts/2/')
@@ -3076,7 +3116,8 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         path=DIRECTORY/row['transfer_evidence_url'];original=json.loads(path.read_text())
         for timestamp in ('2026-10-07T01:48:00Z','2026-10-07T01:49:30Z'):
             capture=copy.deepcopy(original);milliseconds=int(validator.observed_time(timestamp,'test').timestamp()*1000)
-            capture['event'].update({'@timestamp':milliseconds,'created_at':milliseconds});path.write_text(json.dumps(capture))
+            capture['event'].update({'@timestamp':milliseconds,'created_at':milliseconds})
+            capture['audit_export']=self.audit_export_fixture([capture['event']],capture['observed_at']);path.write_text(json.dumps(capture))
             with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'immutable ledger readiness and source recheck'):
                 self.check()
         for field,value in [('action','repo.transfer_start'),('repo_id',1),('repo','hemsoft-dev/other'),
@@ -3160,7 +3201,9 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         transfer_path=DIRECTORY/row['transfer_evidence_url'];capture=json.loads(transfer_path.read_text())
         milliseconds=int(validator.observed_time('2026-10-07T01:56:00Z','test').timestamp()*1000)
         capture['event'].update({'@timestamp':milliseconds,'created_at':milliseconds})
-        capture['observed_at']='2026-10-07T01:56:30Z';transfer_path.write_text(json.dumps(capture))
+        capture['observed_at']='2026-10-07T01:56:30Z'
+        capture['audit_export']=self.audit_export_fixture([capture['event']],capture['observed_at'])
+        transfer_path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'follow repository transfer'):self.check()
         access=row['post_transfer_access'];captures={}
         for field in ('permission_evidence_url','license_evidence_url'):
@@ -3322,7 +3365,7 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             validator.validate_final_inventory(proof,directory,{}, {})
             path=directory/decision['owner_comment_evidence_url'];original=json.loads(path.read_text())
             mutations=(lambda c:c['comment']['user'].update(login='other'),lambda c:c['comment']['user'].update(id=42),
-                lambda c:c['comment'].update(created_at='2026-10-07T01:59:00Z'),
+                lambda c:c['comment'].update(created_at='2026-10-07T02:01:00Z'),
                 lambda c:c['comment'].update(updated_at='2026-10-07T04:00:00Z'),lambda c:c.update(http_status=404),
                 lambda c:c['comment'].update(body='Unrelated owner comment'),
                 lambda c:c['comment'].update(body=c['comment']['body'].replace('"repository_id": 42','"repository_id": 43')))
@@ -3825,6 +3868,127 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
                             ('started_at','2026-10-07T01:59:00Z'),('completed_at','2026-10-07T02:01:00Z')]:
             capture=copy.deepcopy(execution);capture[field]=value;(DIRECTORY/reference).write_text(json.dumps(capture))
             with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+
+
+    def test_onboarding_manifest_derives_from_immutable_repository_contents(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            path=directory/proof['manifest_evidence_url'];original=json.loads(path.read_text())
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+            for mutation in ('missing','absent','wrong-ref','wrong-tier','wrong-path','wrong-blob'):
+                capture=copy.deepcopy(original)
+                if mutation=='missing':capture.pop('contents_response')
+                elif mutation=='absent':capture['contents_response']['http_status']=404
+                elif mutation=='wrong-ref':capture['contents_response']['request_url']=capture['contents_response']['request_url'].replace('f'*40,'a'*40)
+                elif mutation=='wrong-tier':
+                    manifest=dict(proof['manifest_identity'],tier='full')
+                    capture['contents_response']=self.file_response(proof['repository'],'f'*40,'.sfl/sfl.json',json.dumps(manifest).encode())
+                elif mutation=='wrong-path':capture['manifest_path']='other.json'
+                else:capture['contents_response']['data']['sha']='a'*40
+                path.write_text(json.dumps(capture))
+                with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                    validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+            path.write_text(json.dumps(original))
+
+    def test_source_governance_derives_from_primary_repository_responses(self):
+        row=self.complete_source();proof=row['in_place_evidence']
+        repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        path=DIRECTORY/proof['governance_evidence_url'];original=json.loads(path.read_text())
+        cutoff=validator.observed_time('2026-10-07T01:51:00Z','fixture')
+        validator.validate_source_governance(proof,DIRECTORY,repo,cutoff)
+        for mutation in ('missing-policy','wrong-policy','failed-policy','wrong-repo','early-policy','missing-labels','wrong-codeowners','wrong-revision'):
+            capture=copy.deepcopy(original)
+            if mutation=='missing-policy':capture.pop('actions_policy_response')
+            elif mutation=='wrong-policy':capture['workflow_permissions_response']['data']={'default_workflow_permissions':'write'}
+            elif mutation=='failed-policy':capture['actions_policy_response']['http_status']=403
+            elif mutation=='wrong-repo':capture['actions_policy_response']['request_url']=capture['actions_policy_response']['request_url'].replace(repo['destination'],'hemsoft-dev/other')
+            elif mutation=='early-policy':capture['actions_policy_response']['observed_at']='2026-10-07T01:50:00Z'
+            elif mutation=='missing-labels':capture.pop('labels_pages')
+            elif mutation=='wrong-codeowners':capture['codeowners_contents']['contents_response']=self.file_response(repo['destination'],proof['source_sha'],'.github/CODEOWNERS',b'* @other\n')
+            else:capture['codeowners_contents']['revision_sha']='f'*40
+            path.write_text(json.dumps(capture))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_source_governance(proof,DIRECTORY,repo,cutoff)
+        path.write_text(json.dumps(original))
+
+    def test_transfer_event_derives_from_complete_successful_audit_export(self):
+        row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/dashboard')
+        repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        path=DIRECTORY/self.transfer_capture(row);original=json.loads(path.read_text())
+        cutoff=validator.observed_time('2026-10-07T01:50:00Z','fixture')
+        validator.validate_repository_transfer(path.name,DIRECTORY,repo,cutoff)
+        for mutation in ('missing','truncated','failed-download','wrong-route','different-export','bad-bytes','missing-event','invented-time','duplicate-event'):
+            capture=copy.deepcopy(original);export=capture['audit_export']
+            if mutation=='missing':capture.pop('audit_export')
+            elif mutation=='truncated':export['verification_response']['data']['truncated']=True
+            elif mutation=='failed-download':export['download_response']['http_status']=403
+            elif mutation=='wrong-route':export['request']['request_url']=export['request']['request_url'].replace('hemsoft-dev','other')
+            elif mutation=='different-export':export['download_response']['request_url_sha256']='d'*64
+            elif mutation=='bad-bytes':export['download_response']['body_sha256']='0'*64
+            elif mutation=='missing-event':capture['audit_export']=self.audit_export_fixture([],capture['observed_at'])
+            elif mutation=='invented-time':capture['event']['@timestamp']+=1000;capture['event']['created_at']+=1000
+            else:capture['audit_export']=self.audit_export_fixture([capture['event'],capture['event']],capture['observed_at'])
+            path.write_text(json.dumps(capture))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_repository_transfer(path.name,DIRECTORY,repo,cutoff)
+        path.write_text(json.dumps(original))
+
+    def test_runner_job_derives_from_complete_successful_api_pages(self):
+        self.complete_transfer_gates();row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
+        proof=row['post_transfer_runner'];path=DIRECTORY/proof['jobs_evidence_url'];original=json.loads(path.read_text())
+        cutoff=validator.observed_time('2026-10-07T01:51:00Z','fixture')
+        validator.validate_runner_captures(proof,DIRECTORY,cutoff)
+        for mutation in ('missing','failed-get','wrong-attempt','omitted-next','wrong-total','wrong-runner','early-get'):
+            capture=copy.deepcopy(original)
+            if mutation=='missing':capture.pop('pages')
+            elif mutation=='failed-get':capture['pages'][0]['http_status']=403
+            elif mutation=='wrong-attempt':capture['pages'][0]['request_url']=capture['request_url'].replace('/attempts/1/','/attempts/2/')
+            elif mutation=='omitted-next':capture['pages'][0]['response_headers']['Link']='<'+capture['request_url']+'&page=2>; rel="next"'
+            elif mutation=='wrong-total':capture['pages'][0]['data']['total_count']=2
+            elif mutation=='wrong-runner':capture['pages'][0]['data']['jobs'][0]['runner_id']=22
+            else:capture['pages'][0]['observed_at']='2026-10-07T01:59:00Z'
+            path.write_text(json.dumps(capture))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):validator.validate_runner_captures(proof,DIRECTORY,cutoff)
+        capture=copy.deepcopy(original);job=capture['jobs'][0]
+        capture['jobs']=[dict(job,id=n+2) for n in range(100)]+[job];capture['total_count']=101
+        first=copy.deepcopy(capture['pages'][0]);first['data']={'total_count':101,'jobs':copy.deepcopy(capture['jobs'][:100])}
+        first['response_headers']['Link']='<'+capture['request_url']+'&page=2>; rel="next"'
+        second=copy.deepcopy(first);second.update(request_url=capture['request_url']+'&page=2',response_headers={})
+        second['data']['jobs']=copy.deepcopy(capture['jobs'][100:]);capture['pages']=[first,second];path.write_text(json.dumps(capture))
+        validator.validate_runner_captures(proof,DIRECTORY,cutoff)
+        path.write_text(json.dumps(original))
+
+    def test_owner_effective_approval_time_is_the_comment_edit(self):
+        at='2026-10-07T02:00:00Z';later='2026-10-07T02:01:00Z'
+        decision={'repository_id':42,'repository':'hemsoft-dev/example','disposition':'approved_recovery'}
+        url='https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-123'
+        capture={'http_status':200,'request_url':'https://api.github.com/repos/HemSoft/set-it-free-loop/issues/comments/123',
+            'observed_at':later,'comment':{'id':123,'html_url':url,'created_at':at,'updated_at':later,
+                'user':{'id':8227352,'login':'HemSoft','type':'User'},'body':'Approved. <!-- sfl-migration-approval:'+json.dumps(decision)+' -->'}}
+        reference=self.capture(capture);latest=validator.observed_time(later,'fixture')
+        with self.assertRaises(ValueError):validator.validate_owner_approval_comment(reference,DIRECTORY,url,
+            validator.observed_time(at,'fixture'),decision,latest)
+        validator.validate_owner_approval_comment(reference,DIRECTORY,url,latest,decision,latest)
+
+    def test_inherited_and_dynamic_secret_scope_cannot_use_unused_waiver(self):
+        self.complete_transfer_gates();source=json.loads((DIRECTORY/self.matrix['pre_cutover_source_evidence_url']).read_text())
+        scan_path=DIRECTORY/source['reference_scan_evidence_url'];original=json.loads(scan_path.read_text())
+        unused=json.loads((DIRECTORY/'legacy-unused-credential-owner-evidence.json').read_text())['repositories'][0]
+        repo=next(r for r in self.inventory['repositories'] if r['id']==unused['repository_id'])
+        for workflow in ('jobs:\n  call:\n    uses: other/repo/.github/workflows/build.yml@main\n    secrets: inherit\n',
+                         "jobs:\n  call:\n    uses: other/repo/.github/workflows/build.yml@main\n    secrets: 'inherit'\n",
+                         "steps:\n  - run: echo '${{ secrets[inputs.key] }}'\n",
+                         "steps:\n  - run: echo '${{ Secrets[format('KEY_{0}', inputs.key)] }}'\n",
+                         "steps:\n  - run: echo '${{ toJSON(secrets) }}'\n"):
+            scan=copy.deepcopy(original);row=next(r for r in scan['repositories'] if r['repository_id']==repo['id'])
+            name='.github/workflows/inherited.yml';body=workflow.encode()
+            file={'repository_id':repo['id'],'repository':repo['full_name'],'revision_sha':row['head_sha'],
+                'path':name,'observed_at':row['observed_at'],'contents_response':self.file_response(repo['full_name'],row['head_sha'],name,body)}
+            row['files'].append(file);row['tree_response']['data']['tree'].append({'path':name,'type':'blob','sha':file['contents_response']['data']['sha']})
+            scan_path.write_text(json.dumps(scan))
+            with self.subTest(workflow=workflow),self.assertRaisesRegex(ValueError,'Inherited or dynamic secret scope'):
+                validator.validate_reference_scan(scan_path.name,DIRECTORY,self.inventory)
+        scan_path.write_text(json.dumps(original))
 
 
 if __name__ == '__main__':
