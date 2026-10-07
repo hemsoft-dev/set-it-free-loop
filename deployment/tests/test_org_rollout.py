@@ -1,6 +1,8 @@
 """Regression tests for offline ledger and rollout completion gates."""
 
 import copy
+import base64
+import datetime
 import csv
 import importlib.util
 import json
@@ -63,6 +65,13 @@ class RolloutTests(unittest.TestCase):
         repository_id=repository_id or row['repository_id'];repository=repository or row['destination']
         row['manifest_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
             'revision_sha':revision,'manifest':row['manifest_identity'],'observed_at':'2026-10-07T02:00:00Z'},directory)
+        if row.get('health') == 'verified':
+            row['status_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
+                'revision_sha':revision,'command':'status','status':'completed','exit_code':0,'health':'healthy',
+                'manifest_identity':row['manifest_identity'],'observed_at':'2026-10-07T02:00:00Z',
+                'file_checks':[{'path':path,'present':True,'expected_sha256':'a'*64,'actual_sha256':'a'*64}
+                    for path in sorted(validator.deployed_workflow_paths(row['selected_tier'],row['selected_addons'],row['selected_components']))],
+                'missing_files':[],'drifted_files':[]},directory)
 
     def bind_smoke(self, row, directory=DIRECTORY):
         row.update(smoke_outcome='success',smoke_phase='post_transfer')
@@ -167,7 +176,7 @@ class RolloutTests(unittest.TestCase):
             for run in row['wider_workflow_run_urls']]
         for operation in row['wider_operation_receipts']:self.bind_workflow_capture(operation)
 
-    def bind_review_operations(self, row, repository_id=None, repository=None, directory=DIRECTORY, revision="b"*40):
+    def bind_review_operations(self, row, repository_id=None, repository=None, directory=DIRECTORY, revision="b"*40, timestamp="2026-10-07T02:00:00Z"):
         repository_id = repository_id or row['repository_id']
         repository = repository or row['destination']
         row['gate_policy']=self.gate_policy(repository_id,repository,directory)
@@ -179,6 +188,25 @@ class RolloutTests(unittest.TestCase):
                 'head_sha':row['review_head_sha'],'base_sha':row['review_base_sha'],'pr_url':row['review_pr_url'],
                 'evidence_url':row[field]}
 
+        number=row['review_pr_url'].rsplit('/',1)[1]
+        context='fixture'
+        raw={
+            'review_registration_url':{'comment':{'id':1,'html_url':row['review_pr_url']+'#issuecomment-1',
+                'user':{'login':row['review_requester']},'created_at':timestamp,'updated_at':timestamp,
+                'body':'@codex review\n\n<!-- sfl-codex-review:head='+row['review_head_sha']+';base='+row['review_base_sha']+';context='+context+' -->'}},
+            'review_registry_status_url':{'commit_status':{'id':1,'state':'success',
+                'context':'SFL Codex Review Request Registry','target_url':row['review_pr_url']+'#issuecomment-1',
+                'creator':{'login':row['review_requester']},
+                'description':'SFL Codex request comment 1 for PR #'+number+' base '+row['review_base_sha']}},
+            'review_artifact_url':{'kind':'issue_comment','artifact':{'id':2,'html_url':row['review_pr_url']+'#issuecomment-2',
+                'user':{'id':199175422},'performed_via_github_app':{'id':1144995},'created_at':timestamp,
+                'body':'**Reviewed commit:** `'+row['review_head_sha']+'`'}}}
+        for field,value in raw.items():
+            row[field]=value.get('comment',value.get('artifact',{})).get('html_url',
+                'https://github.com/'+repository+'/commit/'+row['review_head_sha'])
+            receipt=row['review_operation_receipts'][field];receipt['evidence_url']=row[field]
+            receipt['capture_evidence_url']=self.capture({**receipt,**value,'observed_at':timestamp},directory)
+        external_id='sfl-codex-review:pull:'+number+':base:'+row['review_base_sha']+':context:fixture:request:1:at:'+str(int(datetime.datetime.fromisoformat(timestamp.replace('Z','+00:00')).timestamp()*1000))+':artifact:c2'
         row['review_deployment_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
             'deployed_revision':revision,'reviewed_base_sha':row['review_base_sha'],'pr_url':row['review_pr_url'],
             'head_sha':row['review_head_sha'],'observed_at':'2026-10-07T03:30:00Z',
@@ -188,20 +216,20 @@ class RolloutTests(unittest.TestCase):
         row['requester_permission_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
             'actor':row['review_requester'],'pr_url':row['review_pr_url'],'head_sha':row['review_head_sha'],
             'base_sha':row['review_base_sha'],'http_status':200,'result':{'permission':'admin','role_name':'admin'},
-            'observed_at':'2026-10-07T02:00:00Z'},directory)
+            'observed_at':timestamp},directory)
         row['gate_run_url']='https://github.com/'+repository+'/runs/1'
         gate=row['review_operation_receipts']['gate_run_url']
         gate.update(evidence_url=row['gate_run_url'],status='completed',conclusion='success',
             workflow='.github/workflows/sfl-pr-review-auto.yml',app_id=15368,context='SFL Reviewer Gate Runner')
         gate['capture_evidence_url']=self.capture(dict(gate,artifact_identity=row['review_artifact_identity'],
-            observed_at='2026-10-07T02:00:00Z',run={'repository':{'id':repository_id,'full_name':repository},
+            observed_at=timestamp,run={'repository':{'id':repository_id,'full_name':repository},
                 'head_sha':row['review_head_sha'],'path':gate['workflow'],'status':'completed','conclusion':'success',
                 'html_url':'https://github.com/'+repository+'/actions/runs/1',
-                'created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'},
+                'created_at':timestamp,'updated_at':timestamp},
             check_run={'head_sha':row['review_head_sha'],'name':gate['context'],'app':{'id':15368},
                 'status':'completed','conclusion':'success','html_url':row['gate_run_url'],
-                'external_id':'sfl-codex-review:pull:'+row['review_pr_url'].rsplit('/',1)[1]+':base:'+row['review_base_sha']+':context:fixture:request:1',
-                'started_at':'2026-10-07T02:00:00Z','completed_at':'2026-10-07T02:00:00Z'}),directory)
+                'external_id':external_id,
+                'started_at':timestamp,'completed_at':timestamp}),directory)
 
     def complete_app_coverage(self, row):
         row['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
@@ -275,7 +303,7 @@ class RolloutTests(unittest.TestCase):
                 runner['service_evidence_url']=self.capture(dict(common,unit='actions.runner.fixture.service',active_state='active'))
                 runner['run_evidence_url']=self.capture(dict(common,read_only=True,run={'repository':{'id':repo['id'],
                     'full_name':repo['destination']},'html_url':runner['run_url'],'head_sha':runner['run_head_sha'],
-                    'status':'completed','conclusion':'success'}))
+                    'status':'completed','conclusion':'success','created_at':'2026-10-07T02:00:00Z'}))
             row['destination_protections'] = dict(validator.protection_contract(repo),
                 repository_id=repo['id'],repository=repo['destination'],revision_sha='e'*40,
                 observed_at='2026-10-07T02:00:00Z')
@@ -362,6 +390,9 @@ class RolloutTests(unittest.TestCase):
                 manifest_evidence_url='https://example.com/manifest',
                 release_download_verification_url='https://example.com/checksum')
             receipts=pilot['validation_evidence']
+            receipts['metadata_evidence_url']=self.capture({'observed_at':'2026-10-07T02:00:00Z',
+                'metadata':{'id':pilot['repository_id'],'full_name':pilot['repository'],
+                    'private':pilot['visibility']=='private','archived':False,'default_branch':'main'}})
             receipts['init_pr_url']='https://github.com/'+pilot['repository']+'/pull/1'
             receipts['sync_pr_url']='https://github.com/'+pilot['repository']+'/pull/2'
             receipts['operation_receipts']={field:{'repository_id':pilot['repository_id'],'repository':pilot['repository'],
@@ -393,9 +424,15 @@ class RolloutTests(unittest.TestCase):
                 'repository':pilot['repository'],'release_version':receipts['release_version'],
                 'evidence_url':'https://github.com/'+pilot['repository']+'/issues/1#scenario-'+name}
                 for name,outcome in validator.PILOT_SCENARIOS.items()}
+            workflow_content=(ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_bytes()
+            blob_sha=hashlib.sha1(b'blob '+str(len(workflow_content)).encode()+b'\0'+workflow_content).hexdigest()
             workflow_source=self.capture({'repository_id':pilot['repository_id'],'repository':pilot['repository'],
                 'revision_sha':'b'*40,'path':'.github/workflows/sfl-pr-review-auto.yml',
-                'content':(ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_text()})
+                'content':workflow_content.decode(),'contents_response':{'http_status':200,
+                    'request_url':'https://api.github.com/repos/'+pilot['repository']+'/contents/.github/workflows/sfl-pr-review-auto.yml?ref='+'b'*40,
+                    'data':{'path':'.github/workflows/sfl-pr-review-auto.yml','type':'file','encoding':'base64',
+                        'content':base64.b64encode(workflow_content).decode(),'size':len(workflow_content),'sha':blob_sha,
+                        'git_url':'https://api.github.com/repos/'+pilot['repository']+'/git/blobs/'+blob_sha}}})
             for scenario,result in receipts['scenario_receipts'].items():
                 output=self.capture({'repository_id':pilot['repository_id'],'repository':pilot['repository'],
                     'deployment_sha':receipts['deployment_sha'],'tested_revision_sha':'b'*40,'scenario':scenario,
@@ -1500,7 +1537,7 @@ class RolloutTests(unittest.TestCase):
         proof['review_artifact_identity'].update(review_pr_url=proof['review_pr_url'])
         proof['destination_sfl_app_access'].update(repository_id=42,repository=name)
         proof['destination_codex_access']=dict(proof['destination_sfl_app_access'],app_id=1144995,installation_id=168678981)
-        self.bind_review_operations(proof,directory=directory,revision='f'*40)
+        self.bind_review_operations(proof,directory=directory,revision='f'*40,timestamp='2026-10-07T03:30:00Z')
         proof['gate_policy']=self.gate_policy(42,name,directory)
         (directory/'owned-app-organization-installation-evidence.json').write_text((DIRECTORY/'owned-app-organization-installation-evidence.json').read_text())
         (directory/'codex-organization-installation-evidence.json').write_text((DIRECTORY/'codex-organization-installation-evidence.json').read_text())
@@ -2258,6 +2295,123 @@ class RolloutTests(unittest.TestCase):
             smoke.update(baseline={'invented':'unchanged'},observed_resource={'invented':'unchanged'});row['smoke_evidence_url']=self.capture(smoke)
             with self.subTest(kind=kind),self.assertRaisesRegex(ValueError,'sealed provider resource'):self.check()
             row.clear();row.update(original)
+
+
+    def test_final_inventory_follows_terminal_status_not_only_manifest(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);onboarding=self.onboarding_fixture(directory)
+            repos=[{'id':rid,'full_name':name,'private':visibility=='private','archived':False,'default_branch':'main'}
+                   for rid,(name,visibility) in validator.APPROVED_PILOTS.items()]
+            repos.append({'id':42,'full_name':onboarding['repository'],'private':True,'archived':False,'default_branch':'main'})
+            capture={'observed_at':'2026-10-07T04:00:00Z','accounts':[{'owner':o,'state':'observed','all_pages':True,
+                'repositories':repos if o=='hemsoft-dev' else []} for o in ('HemSoft','fhemmer','hemsoft-dev')]}
+            proof={'observed_at':capture['observed_at'],'evidence_url':self.capture(capture,directory),'additional_repositories':[]}
+            validator.validate_final_inventory(proof,directory,{}, {},onboarding)
+            operation=onboarding['onboarding_operation_receipts']['status_url']
+            path=directory/operation['capture_evidence_url'];status=json.loads(path.read_text())
+            status['observed_at']='2026-10-07T05:00:00Z';path.write_text(json.dumps(status))
+            with self.assertRaisesRegex(ValueError,'final status'):
+                validator.validate_final_inventory(proof,directory,{}, {},onboarding)
+
+    def test_fixture_source_reconciles_immutable_github_contents(self):
+        self.complete_pilots();result=self.matrix['disposable_validation_repositories'][0]['validation_evidence']['scenario_receipts']['findings']
+        execution=json.loads((DIRECTORY/result['capture_evidence_url']).read_text())
+        path=DIRECTORY/execution['workflow_evidence_url'];original=json.loads(path.read_text());self.check()
+        mutations=[lambda c:c.pop('contents_response'),
+            lambda c:c['contents_response'].update(request_url=c['contents_response']['request_url'].replace('ref='+'b'*40,'ref=main')),
+            lambda c:c['contents_response']['data'].update(content=base64.b64encode(b'fabricated source').decode()),
+            lambda c:c['contents_response']['data'].update(sha='f'*40),
+            lambda c:c['contents_response']['data'].update(size=1)]
+        for index,mutate in enumerate(mutations):
+            capture=copy.deepcopy(original);mutate(capture);path.write_text(json.dumps(capture))
+            with self.subTest(index=index),self.assertRaisesRegex(ValueError,'immutable|Git blob'):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_consumer_status_requires_actual_healthy_installed_files(self):
+        row=self.complete_rollout();path=DIRECTORY/row['status_evidence_url'];original=json.loads(path.read_text());self.check()
+        for field,value in [('revision_sha','f'*40),('exit_code',1),('health','drifted'),('manifest_identity',{}),
+                            ('observed_at','2026-10-07T00:00:00Z'),('file_checks',[]),('missing_files',['sfl-pr-review-auto.yml'])]:
+            capture=copy.deepcopy(original);capture[field]=value;path.write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'Consumer status'):self.check()
+        capture=copy.deepcopy(original);capture['file_checks'][0]['actual_sha256']='f'*64;path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'Consumer status'):self.check()
+        path.write_text(json.dumps(original));self.check()
+        row['status_evidence_url']='https://example.com/claimed-status'
+        with self.assertRaisesRegex(ValueError,'Consumer status'):self.check()
+
+    def test_runner_registration_and_execution_follow_destination_cutover(self):
+        self.complete_pilots();row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
+        row.update(health='scope_exception',transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+        self.complete_scope_decision(row)
+        cutoff='2026-10-07T03:00:00Z';row['destination_protections']['observed_at']=cutoff
+        protection_path=DIRECTORY/row['destination_protections']['evidence_url'];protection=json.loads(protection_path.read_text())
+        protection['observed_at']=cutoff;protection_path.write_text(json.dumps(protection))
+        resource=next(r for r in self.rows if r['source']=='HemSoft/yahtzee' and r.get('resource_kind')=='repository_runner')
+        smoke_path=DIRECTORY/resource['smoke_evidence_url'];smoke=json.loads(smoke_path.read_text())
+        smoke['observed_at']=cutoff;smoke_path.write_text(json.dumps(smoke))
+        runner=row['post_transfer_runner'];originals={field:json.loads((DIRECTORY/runner[field]).read_text()) for field in
+            ('registration_evidence_url','isolation_evidence_url','service_evidence_url','run_evidence_url')}
+        for field,capture in originals.items():
+            capture['observed_at']=cutoff
+            if field=='run_evidence_url':capture['run']['created_at']=cutoff
+            (DIRECTORY/runner[field]).write_text(json.dumps(capture))
+        self.check()
+        for field,original in originals.items():
+            capture=copy.deepcopy(original);capture['observed_at']='2026-10-07T02:00:00Z'
+            (DIRECTORY/runner[field]).write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'cutover'):self.check()
+            (DIRECTORY/runner[field]).write_text(json.dumps(original))
+        capture=copy.deepcopy(originals['run_evidence_url']);capture['run']['created_at']='2026-10-07T02:00:00Z'
+        (DIRECTORY/runner['run_evidence_url']).write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'destination run'):self.check()
+
+    def test_gate_binds_complete_registered_request_and_native_artifact(self):
+        row=self.complete_rollout();gate_path=DIRECTORY/row['review_operation_receipts']['gate_run_url']['capture_evidence_url']
+        gate=json.loads(gate_path.read_text());self.check()
+        external=gate['check_run']['external_id']
+        for value in [external.replace(':request:1:',':request:9:'),external.replace(':artifact:c2',':artifact:c9'),
+                      external.replace(':context:fixture:',':context:other:'),external.replace(':at:1791338400000',':at:1')]:
+            capture=copy.deepcopy(gate);capture['check_run']['external_id']=value;gate_path.write_text(json.dumps(capture))
+            with self.subTest(external_id=value),self.assertRaisesRegex(ValueError,'actual reviewed PR head'):self.check()
+        gate_path.write_text(json.dumps(gate))
+        mutations=[('review_registration_url',lambda c:c['comment'].update(updated_at='2026-10-07T03:00:00Z')),
+            ('review_registry_status_url',lambda c:c['commit_status'].update(target_url=row['review_pr_url']+'#issuecomment-9')),
+            ('review_artifact_url',lambda c:c['artifact']['performed_via_github_app'].update(id=1)),
+            ('review_artifact_url',lambda c:c['artifact'].update(body='**Reviewed commit:** `'+('f'*40)+'`'))]
+        for field,mutate in mutations:
+            path=DIRECTORY/row['review_operation_receipts'][field]['capture_evidence_url'];original=json.loads(path.read_text())
+            capture=copy.deepcopy(original);mutate(capture);path.write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+            path.write_text(json.dumps(original))
+        self.check()
+        request_path=DIRECTORY/row['review_operation_receipts']['review_registration_url']['capture_evidence_url']
+        request=json.loads(request_path.read_text());request['comment']['body']=request['comment']['body'].replace('context=fixture','context=fixture:with%encoding')
+        request_path.write_text(json.dumps(request))
+        artifact_receipt=row['review_operation_receipts']['review_artifact_url'];artifact_path=DIRECTORY/artifact_receipt['capture_evidence_url']
+        artifact=json.loads(artifact_path.read_text());row['review_artifact_url']=row['review_pr_url']+'#pullrequestreview-2'
+        artifact_receipt['evidence_url']=row['review_artifact_url'];artifact['evidence_url']=row['review_artifact_url']
+        artifact['kind']='pull_request_review';artifact['artifact'].update(html_url=row['review_artifact_url'],commit_id=row['review_head_sha'],submitted_at='2026-10-07T02:00:00Z')
+        artifact_path.write_text(json.dumps(artifact))
+        gate['check_run']['external_id']=external.replace(':context:fixture:',':context:fixture%3Awith%25encoding:').replace(':artifact:c2',':artifact:r2')
+        gate_path.write_text(json.dumps(gate));self.check()
+
+    def test_pilots_use_actual_metadata_default_branch_and_preserve_it(self):
+        self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0];receipts=pilot['validation_evidence']
+        metadata_path=DIRECTORY/receipts['metadata_evidence_url'];metadata=json.loads(metadata_path.read_text());self.check()
+        metadata['metadata']['default_branch']='develop';metadata_path.write_text(json.dumps(metadata))
+        with self.assertRaisesRegex(ValueError,'repository-bound required strict'):self.check()
+        receipts['gate_policy']['branch']='develop';policy_path=DIRECTORY/receipts['gate_policy']['evidence_url']
+        policy=json.loads(policy_path.read_text());policy['branch']='develop';policy_path.write_text(json.dumps(policy));self.check()
+        repos=[{'id':rid,'full_name':name,'private':visibility=='private','archived':False,'default_branch':'main'}
+            for rid,(name,visibility) in validator.APPROVED_PILOTS.items()]
+        capture={'observed_at':'2026-10-07T04:00:00Z','accounts':[{'owner':o,'state':'observed','all_pages':True,
+            'repositories':repos if o=='hemsoft-dev' else []} for o in ('HemSoft','fhemmer','hemsoft-dev')]}
+        proof={'observed_at':capture['observed_at'],'evidence_url':self.capture(capture),'additional_repositories':[]}
+        branches={rid:'develop' if rid==pilot['repository_id'] else 'main' for rid in validator.APPROVED_PILOTS}
+        with self.assertRaisesRegex(ValueError,'pilot.*branch'):
+            validator.validate_final_inventory(proof,DIRECTORY,{}, {},pilot_branches=branches)
+        next(r for r in repos if r['id']==pilot['repository_id'])['default_branch']='develop'
+        proof['evidence_url']=self.capture(capture);validator.validate_final_inventory(proof,DIRECTORY,{}, {},pilot_branches=branches)
 
 
 if __name__ == '__main__':

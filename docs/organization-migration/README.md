@@ -408,3 +408,20 @@ contains the deployed revision; a coherent older review cannot validate a newer
 deployment. Classic protection comparisons normalize only the known source to
 destination URL prefixes, preserving checks on every semantic setting. Both PR
 and main-push validation run for changes to any source workflow YAML.
+
+Completion now loads each active consumer's successful `gh sfl status` capture
+at its deployed revision. The capture reconciles the exact manifest and every
+installed workflow's presence and matching content hash. A final inventory must
+follow all terminal new-repository operations and registered-review captures,
+including the actual status command rather than only its manifest observation.
+Runner registration, isolation, service and smoke execution follow both the
+App transfer and independently captured destination cutover.
+
+Workflow-fixture inputs include GitHub's contents response requested at the
+immutable deployed revision. Decoded bytes, size, Git blob SHA and repository
+blob URL must match the tested workflow. Registered-review captures load the
+unedited request comment, requester-created registry status and native Codex
+artifact. The successful check's full external ID must match their context,
+request ID, creation time and artifact ID. Pilot metadata supplies the actual
+default branch; its required gate and final inventory must preserve that branch.
+All offline regression captures are synthetic and do not claim live transfers.

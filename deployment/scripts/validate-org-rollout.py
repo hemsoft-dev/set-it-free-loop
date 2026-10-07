@@ -2,6 +2,7 @@
 """Validate offline migration work records without treating pending work as complete."""
 
 import argparse
+import base64
 import csv
 import datetime
 import hashlib
@@ -442,7 +443,55 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
     return proof
 
 
-def validate_final_inventory(proof, directory, expected, retained, approved_onboarding=None):
+def final_onboarding_terminal_time(proof, directory):
+    references = [op['capture_evidence_url'] for op in proof['onboarding_operation_receipts'].values()]
+    references += [proof['gate_policy']['evidence_url'], proof['requester_permission_evidence_url'],
+                   proof['review_deployment_evidence_url'],
+                   proof['manifest_evidence_url'], proof['release_download_verification_url']]
+    references += [op['capture_evidence_url'] for op in proof['review_operation_receipts'].values()]
+    return max(observed_time(local_capture(ref, directory, 'Final onboarding terminal evidence').get('observed_at'),
+                             'Final onboarding terminal evidence') for ref in references)
+
+
+def validate_consumer_status(row, directory, revision, cutover):
+    capture = local_capture(row.get('status_evidence_url'), directory, 'Consumer status')
+    require(capture.get('repository_id') == row['repository_id'] and capture.get('repository') == row['destination'] and
+            capture.get('revision_sha') == revision and capture.get('command') == 'status' and
+            capture.get('status') == 'completed' and type(capture.get('exit_code')) is int and capture['exit_code'] == 0 and
+            capture.get('health') == 'healthy' and capture.get('manifest_identity') == row['manifest_identity'],
+            'Consumer status must prove a successful healthy command at the deployed manifest revision')
+    timestamp = observed_time(capture.get('observed_at'), 'Consumer status')
+    manifest = local_capture(row['manifest_evidence_url'], directory, 'Consumer manifest')
+    require(timestamp >= max(cutover, observed_time(manifest['observed_at'], 'Consumer manifest')),
+            'Consumer status must follow cutover and deployed manifest observation')
+    checks = capture.get('file_checks')
+    paths = deployed_workflow_paths(row['selected_tier'], row['selected_addons'], row['selected_components'])
+    require(isinstance(checks, list) and len(checks) == len(paths) and {c.get('path') for c in checks} == paths and
+            all(c.get('present') is True and re.fullmatch(r'[0-9a-f]{64}', c.get('expected_sha256', '')) and
+                c.get('actual_sha256') == c['expected_sha256'] for c in checks) and
+            capture.get('missing_files') == [] and capture.get('drifted_files') == [],
+            'Consumer status must corroborate every installed workflow without missing or drifted files')
+
+
+def validate_fixture_source(workflow, repository_id, repository, revision):
+    response = workflow.get('contents_response', {})
+    body = response.get('data', {})
+    path = '.github/workflows/sfl-pr-review-auto.yml'
+    require(response.get('http_status') == 200 and response.get('request_url') ==
+            'https://api.github.com/repos/' + repository + '/contents/' + path + '?ref=' + revision and
+            body.get('path') == path and body.get('type') == 'file' and body.get('encoding') == 'base64',
+            'Fixture source needs the captured immutable repository contents response')
+    try:
+        content = base64.b64decode(''.join(body.get('content', '').split()), validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError('Fixture contents response needs valid encoded source bytes') from exc
+    blob_sha = hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
+    require(content == workflow['content'].encode() and body.get('sha') == blob_sha and body.get('size') == len(content) and
+            body.get('git_url') == 'https://api.github.com/repos/' + repository + '/git/blobs/' + blob_sha,
+            'Fixture source must match its independently captured immutable Git blob identity')
+
+
+def validate_final_inventory(proof, directory, expected, retained, approved_onboarding=None, pilot_branches=None):
     require(isinstance(proof, dict), 'Final completion needs a fresh independent repository inventory')
     reference = proof.get('evidence_url')
     evidence(reference, directory)
@@ -457,7 +506,8 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
         status = local_capture(approved_onboarding['manifest_evidence_url'], directory, 'New repository status')
         require(captured_at >= max(observed_time(approved_onboarding['rollout_completed_at'], 'Rollout completion'),
                                   observed_time(metadata['created_at'], 'New repository creation'),
-                                  observed_time(status.get('observed_at'), 'New repository status')),
+                                  observed_time(status.get('observed_at'), 'New repository status'),
+                                  final_onboarding_terminal_time(approved_onboarding, directory)),
                 'Final inventory must follow rollout completion, new repository creation and final status')
     accounts = capture.get('accounts')
     require(isinstance(accounts, list) and {x.get('owner') for x in accounts} == {'HemSoft', 'fhemmer', 'hemsoft-dev'} and
@@ -512,6 +562,10 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
                 'Additional repository needs an explicit owner issue receipt')
         allowed[repo_id] = (repo['repository'], repo['visibility'])
     require(set(actual) == set(expected) | set(allowed), 'Final inventory contains unaccounted repository IDs')
+    if pilot_branches is not None:
+        require(set(pilot_branches) == set(APPROVED_PILOTS) and
+                all(actual[rid].get('default_branch') == branch for rid, branch in pilot_branches.items()),
+                'Final pilot default branches must match their independently captured and gated branches')
     for repo_id, (name, visibility) in allowed.items():
         require(actual[repo_id]['full_name'] == name and actual[repo_id].get('private') == (visibility == 'private'),
                 'Final inventory additions must match their recorded identity and visibility')
@@ -539,6 +593,62 @@ def validate_app_coverage(coverage, directory, repository_id, repository, app_id
         require(coverage['installation_id'] == capture['installation']['id'] and
                 capture['installation']['app_id'] == app_id and capture['account']['login'] == owner,
                 'Codex coverage must match the independently captured organization installation')
+
+
+def registered_review_external_id(row, directory, repository_id, repository):
+    captures = {}
+    for field in ('review_registration_url', 'review_registry_status_url', 'review_artifact_url'):
+        receipt = row['review_operation_receipts'][field]
+        capture = local_capture(receipt.get('capture_evidence_url'), directory, 'Registered review artifact')
+        require(all(capture.get(key) == receipt.get(key) for key in
+                    ('repository_id', 'repository', 'head_sha', 'base_sha', 'pr_url', 'evidence_url')),
+                'Registered review capture must bind the exact request and review context')
+        observed_time(capture.get('observed_at'), 'Registered review artifact')
+        captures[field] = capture
+    request = captures['review_registration_url'].get('comment', {})
+    request_id = request.get('id')
+    request_at = observed_time(request.get('created_at'), 'Registered request creation')
+    require(type(request_id) is int and request_id > 0 and request.get('user', {}).get('login') == row['review_requester'] and
+            request.get('html_url') == row['review_registration_url'] == row['review_pr_url'] + '#issuecomment-' + str(request_id) and
+            request.get('updated_at') == request.get('created_at'),
+            'Registered request must be the actual unedited requester-authored PR comment')
+    marker = re.search(r'<!-- sfl-codex-review:head=([0-9a-f]{40});base=([0-9a-f]{40});context=([^\s]+) -->',
+                       request.get('body', ''))
+    require(marker is not None and marker.group(1) == row['review_head_sha'] and marker.group(2) == row['review_base_sha'] and
+            '@codex review' in request.get('body', ''), 'Registered request must carry its exact head, base and context marker')
+    number = row['review_pr_url'].rsplit('/', 1)[1]
+    registry = captures['review_registry_status_url'].get('commit_status', {})
+    require(type(registry.get('id')) is int and registry['id'] > 0 and registry.get('state') == 'success' and
+            registry.get('context') == 'SFL Codex Review Request Registry' and
+            registry.get('target_url') == row['review_registration_url'] and
+            registry.get('creator', {}).get('login') == row['review_requester'] and
+            registry.get('description') == 'SFL Codex request comment ' + str(request_id) + ' for PR #' + number + ' base ' + row['review_base_sha'],
+            'Captured registry status must register that exact requester, request ID, PR and base')
+    artifact_capture = captures['review_artifact_url']
+    artifact = artifact_capture.get('artifact', {})
+    kind = artifact_capture.get('kind')
+    artifact_id = artifact.get('id')
+    require(type(artifact_id) is int and artifact_id > 0 and kind in {'issue_comment', 'pull_request_review'} and
+            artifact.get('user', {}).get('id') == 199175422 and artifact.get('performed_via_github_app', {}).get('id') == 1144995 and
+            artifact.get('html_url') == row['review_artifact_url'] == row['review_pr_url'] +
+                ('#issuecomment-' if kind == 'issue_comment' else '#pullrequestreview-') + str(artifact_id),
+            'Captured native Codex artifact must prove its immutable ID, App, author and PR')
+    if kind == 'issue_comment':
+        reviewed = re.search(r'\*\*Reviewed commit:\*\*\s+`([0-9a-f]{7,40})`', artifact.get('body', ''), re.I)
+        require(reviewed is not None and row['review_head_sha'].startswith(reviewed.group(1).lower()),
+                'Native comment must name the actual reviewed head')
+        artifact_at = observed_time(artifact.get('created_at'), 'Native Codex artifact creation')
+    else:
+        require(artifact.get('commit_id') == row['review_head_sha'], 'Native review must name the actual reviewed head')
+        artifact_at = observed_time(artifact.get('submitted_at'), 'Native Codex artifact creation')
+    require(artifact_at >= request_at and all(observed_time(c['observed_at'], 'Registered review artifact') >= request_at for c in captures.values()) and
+            observed_time(artifact_capture['observed_at'], 'Native artifact observation') >= artifact_at,
+            'Registered review captures must follow their actual request and native artifact')
+    context = urllib.parse.quote(marker.group(3), safe="-_.!~*'()")
+    external_id = 'sfl-codex-review:pull:' + number + ':base:' + row['review_base_sha'] + ':context:' + context + \
+        ':request:' + str(request_id) + ':at:' + str(int(request_at.timestamp() * 1000)) + \
+        ':artifact:' + ('c' if kind == 'issue_comment' else 'r') + str(artifact_id)
+    return external_id, request_at, artifact_at
 
 
 def validate_registered_review(row, directory, repository, repository_id=None, target_branch=None, deployment_revision=None, cutover=None):
@@ -625,20 +735,23 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
                          run.get('html_url', '')) is not None,
             'Gate capture must include its actual successful repository-bound Actions workflow run')
     check = captured_gate.get('check_run', {})
+    external_id, request_at, artifact_at = registered_review_external_id(row, directory, repository_id, repository)
     require(check.get('head_sha') == row['review_head_sha'] and check.get('name') == gate['context'] and
             check.get('app', {}).get('id') == 15368 and check.get('status') == 'completed' and
             check.get('conclusion') == 'success' and check.get('html_url') == row['gate_run_url'] and
-            check.get('external_id', '').startswith('sfl-codex-review:pull:' + row['review_pr_url'].rsplit('/', 1)[1] +
-                ':base:' + row['review_base_sha'] + ':context:'),
+            check.get('external_id') == external_id,
             'Actions-owned check capture must prove the actual reviewed PR head and successful gate')
     created = observed_time(run.get('created_at'), 'Registered review run creation')
     completed = observed_time(run.get('updated_at'), 'Registered review run completion')
     check_started = observed_time(check.get('started_at'), 'Gate check creation')
     check_completed = observed_time(check.get('completed_at'), 'Gate check completion')
+    require(request_at <= check_started and artifact_at <= check_completed,
+            'Successful gate must follow its exact registered request and native artifact')
     require(created <= check_started <= check_completed <= gate_at and created <= completed <= gate_at,
             'Gate capture must follow actual workflow and check completion')
     if cutover is not None:
-        require(created >= cutover and check_started >= cutover, 'Registered review must execute after destination/App cutover')
+        require(created >= cutover and check_started >= cutover and request_at >= cutover,
+                'Registered review must execute after destination/App cutover')
     validate_gate_policy(row.get('gate_policy'), directory, repository_id, repository, target_branch,
                          max(completed, check_completed, cutover) if cutover is not None else max(completed, check_completed))
 
@@ -738,8 +851,8 @@ def validate_runner_captures(proof, directory, earliest):
         require(capture.get('phase') == 'post_transfer' and
                 capture.get('repository_id') == proof['repository_id'] and capture.get('repository') == proof['repository'] and
                 capture.get('runner_id') == proof['runner_id'] and
-                observed_time(capture.get('observed_at'), 'Destination runner') > earliest,
-                'Runner captures must match the destination identity after source refresh')
+                observed_time(capture.get('observed_at'), 'Destination runner') >= earliest,
+                'Runner captures must match the destination identity after actual destination/App cutover')
         if field == 'registration_evidence_url':
             require(capture.get('runner',{}).get('id') == proof['runner_id'] and
                     capture['runner'].get('status') == 'online' and capture['runner'].get('busy') is False,
@@ -759,7 +872,8 @@ def validate_runner_captures(proof, directory, earliest):
             require(run.get('repository',{}).get('id') == proof['repository_id'] and
                     run['repository'].get('full_name') == proof['repository'] and run.get('html_url') == proof['run_url'] and
                     run.get('head_sha') == proof['run_head_sha'] and run.get('status') == 'completed' and
-                    run.get('conclusion') == 'success' and capture.get('read_only') is True,
+                    run.get('conclusion') == 'success' and capture.get('read_only') is True and
+                    observed_time(run.get('created_at'), 'Runner smoke creation') >= earliest,
                     'Runner smoke capture must prove a completed destination run at the recorded revision')
 
 
@@ -841,6 +955,7 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 text(workflow.get('content')), 'Fixture observer source must bind its actual deployed workflow and revision')
         require(observed_time(output.get('observed_at'), 'Fixture output') <= scenario_at,
                 'Fixture execution capture must follow generated output')
+        validate_fixture_source(workflow, repository_id, repository, revision)
         runner = pathlib.Path(__file__).resolve().parents[2] / 'deployment/tests/run-org-observer-fixtures.cjs'
         argv = ['node', 'deployment/tests/run-org-observer-fixtures.cjs', '--workflow', 'docs/organization-migration/' + capture['workflow_evidence_url'],
                 '--repository-id', str(repository_id), '--repository', repository, '--deployment-sha', sha,
@@ -1351,7 +1466,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         'Runner smoke must belong to its destination repository')
                 for field in ('registration_evidence_url', 'isolation_evidence_url', 'service_evidence_url', 'run_url'):
                     evidence(proof.get(field), directory)
-                validate_runner_captures(proof, directory, source_refreshed_at)
+                validate_runner_captures(proof, directory, max(source_refreshed_at,
+                    app_transferred_at if app_transfer['status'] == 'verified' else source_refreshed_at,
+                    observed_time(row['destination_protections']['observed_at'], 'Runner destination transfer')))
         if health == 'retained_source':
             decision = retained[repo_id]
             require(row.get('actual_repository') == decision['retained_repository'] and
@@ -1537,6 +1654,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             validate_release_download(row, directory, repo_id, row['destination'], canonical_source,
                                       row['deployment_sha'], row['manifest_version'])
             revision = deployed_revision(row, directory, repo_id, row['destination'], manifest)
+            validate_consumer_status(row, directory, revision, max(app_transferred_at,
+                observed_time(row['destination_protections']['observed_at'], 'Consumer transfer')))
             operations = row.get('wider_operation_receipts', [])
             require(isinstance(operations, list) and len(operations) == len(runs),
                     'Consumer wider workflows need bound operation receipts')
@@ -1561,6 +1680,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     require(isinstance(extras, list) and bool(extras), 'Disposable validation inventory must remain present')
     extra_ids, extra_names, verified_pilot_visibilities = set(), set(), set()
     verified_wider_pilot = False
+    pilot_branches = {}
     for extra in extras:
         extra_id, name = extra.get('repository_id'), extra.get('repository')
         require(type(extra_id) is int and extra_id > 0 and extra_id not in expected and
@@ -1580,6 +1700,14 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(app_transfer['status'] == 'verified', 'Verified pilot requires completed owned App transfer')
             receipts = extra.get('validation_evidence')
             require(isinstance(receipts, dict), 'Verified pilot needs onboarding and SFL receipts')
+            metadata_capture = local_capture(receipts.get('metadata_evidence_url'), directory, 'Pilot metadata')
+            metadata = metadata_capture.get('metadata', {})
+            require(metadata.get('id') == extra_id and metadata.get('full_name') == name and
+                    metadata.get('private') == (extra['visibility'] == 'private') and metadata.get('archived') is False and
+                    text(metadata.get('default_branch')) and
+                    observed_time(metadata_capture.get('observed_at'), 'Pilot metadata') >= app_transferred_at,
+                    'Pilot metadata must prove its current destination identity and actual default branch after cutover')
+            pilot_branches[extra_id] = metadata['default_branch']
             for field in ('init_pr_url', 'sync_pr_url', 'repeat_sync_evidence_url',
                           'repeat_onboarding_evidence_url', 'review_registration_url',
                           'review_registry_status_url', 'review_artifact_url', 'gate_run_url',
@@ -1618,7 +1746,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         operation.get('evidence_url') == receipts[field],
                         'Pilot operation receipt must bind its repository, deployment and release')
                 if urllib.parse.urlsplit(receipts[field]).scheme:
-                    require(receipts[field].startswith('https://github.com/' + name + '/'),
+                    require(receipts[field].startswith('https://github.com/' + name + '/') or
+                            receipts[field].startswith('https://api.github.com/repos/' + name + '/'),
                             'Pilot operation URL must belong to its designated repository')
             for field in ('init_pr_url', 'sync_pr_url'):
                 require(re.fullmatch('https://github.com/' + re.escape(name) + r'/pull/[1-9][0-9]*', receipts[field]) is not None,
@@ -1673,7 +1802,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         re.fullmatch(r'[0-9a-f]{40}', identity[field])
                         for field in ('reviewed_head_sha', 'reviewed_base_sha')),
                     'Verified pilot needs immutable SFL registered Codex review identity')
-            validate_registered_review(receipts, directory, name, extra_id, target_branch="main", deployment_revision=revision, cutover=app_transferred_at)
+            validate_registered_review(receipts, directory, name, extra_id, target_branch=metadata['default_branch'], deployment_revision=revision, cutover=app_transferred_at)
             require(receipts.get('requester_permission') in {'write', 'maintain', 'admin'},
                     'Verified pilot needs an authorized human requester')
             require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,38}', receipts['review_requester']) is not None,
@@ -1741,7 +1870,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     capture.get('resource_changes_made') is False and capture.get('operation') == 'read_only_preservation',
                     'Unlinked Supabase post-transfer capture must preserve the exact account resource and paused state')
         proof = matrix.get('final_inventory')
-        validate_final_inventory(proof, directory, expected, retained, onboarding)
+        validate_final_inventory(proof, directory, expected, retained, onboarding, pilot_branches)
         require(datetime.datetime.fromisoformat(proof['observed_at'].replace('Z', '+00:00')) >
                 datetime.datetime.fromisoformat(inventory['captured_at'].replace('Z', '+00:00')),
                 'Final inventory must be fresher than the sealed source baseline')
