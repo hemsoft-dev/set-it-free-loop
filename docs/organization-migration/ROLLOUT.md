@@ -591,3 +591,19 @@ on runner 21 named `mini-github-runner-01`, request self-hosted labels drawn fro
 the preserved registration, and finish within the captured run. Compare the
 registration name and full label set with the sealed runner baseline. A passing
 GitHub-hosted job cannot establish this runner's continuity.
+
+Every registered review, including consumer, pilot, source and final onboarding,
+loads `review_pr_metadata_evidence_url`. This local capture contains the exact
+PR REST `request_url`, `observed_at` and raw `pull_request`. Match the PR number,
+URL, same-repository head/base IDs and SHAs, and `base.ref` to the actual branch
+whose required policy was captured. Query it after cutover and before the final
+gate observation. Policy on main cannot qualify a review targeting develop.
+
+Protected-source `in_place_evidence.default_branch_evidence_url` independently
+captures `GET /repos/{owner}/{repo}/git/ref/heads/{default_branch}` after all
+source workflow, review, governance and release checks. Record repository ID/name,
+branch, `phase: post_transfer`, `http_status: 200`, `request_url`, `observed_at`
+and raw `data`. Its exact ref and commit SHA must match the verified `source_sha`.
+Product workflow runs must name that default branch and revision. A retained
+branch/tag run at an older release cannot verify a newer main revision. Capture
+and verify again if main advances during qualification.

@@ -799,6 +799,19 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
     require(re.fullmatch('https://github.com/' + re.escape(repository) + r'/pull/[1-9][0-9]*',
                         row.get('review_pr_url','')) is not None,
             'Completed review needs a same-destination-repository PR')
+    pr_capture = local_capture(row.get('review_pr_metadata_evidence_url'), directory, 'Reviewed PR metadata')
+    pr = pr_capture.get('pull_request', {})
+    number = int(row['review_pr_url'].rsplit('/', 1)[1])
+    require(pr_capture.get('request_url') == 'https://api.github.com/repos/' + repository + '/pulls/' + str(number) and
+            pr.get('number') == number and pr.get('html_url') == row['review_pr_url'] and
+            pr.get('base', {}).get('ref') == target_branch and pr['base'].get('sha') == row['review_base_sha'] and
+            pr['base'].get('repo', {}).get('id') == repository_id and pr['base']['repo'].get('full_name') == repository and
+            pr.get('head', {}).get('sha') == row['review_head_sha'] and
+            pr['head'].get('repo', {}).get('id') == repository_id and pr['head']['repo'].get('full_name') == repository,
+            'Reviewed PR metadata must target the gated branch and bind its actual repository/head/base')
+    pr_at = observed_time(pr_capture.get('observed_at'), 'Reviewed PR metadata')
+    if cutover is not None:
+        require(pr_at >= cutover, 'Reviewed PR metadata must follow destination/App cutover')
     for field in ('review_pr_url', 'gate_run_url', 'review_registration_url',
                   'review_registry_status_url', 'review_artifact_url'):
         evidence(row.get(field), directory)
@@ -850,6 +863,7 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
             captured_gate.get('artifact_identity') == identity,
             'Gate result capture must match the completed gate and recorded immutable review artifact')
     gate_at = observed_time(captured_gate.get('observed_at'), 'Gate result')
+    require(pr_at <= gate_at, 'Gate observation must follow its current PR metadata capture')
     run = captured_gate.get('run', {})
     require(run.get('repository', {}).get('id') == repository_id and
             run['repository'].get('full_name') == repository and immutable_sha(run.get('head_sha')) and
@@ -1015,6 +1029,20 @@ def validate_source_governance(proof, directory, repo, cutover):
             capture.get('actions_policy') == repo['settings']['actions_policy'].get('data') and
             capture.get('workflow_permissions') == repo['settings']['workflow_permissions'].get('data'),
             'Source governance must match authoritative CODEOWNERS and baseline Actions policies')
+
+
+def validate_source_default_head(proof, directory, repo, latest):
+    capture = local_capture(proof.get('default_branch_evidence_url'), directory, 'Source default-branch head')
+    require(capture.get('phase') == 'post_transfer' and capture.get('repository_id') == repo['id'] and
+            capture.get('repository') == repo['destination'] and capture.get('branch') == repo['default_branch'] and
+            capture.get('http_status') == 200 and capture.get('request_url') ==
+                'https://api.github.com/repos/' + repo['destination'] + '/git/ref/heads/' + repo['default_branch'] and
+            capture.get('data', {}).get('ref') == 'refs/heads/' + repo['default_branch'] and
+            capture['data'].get('object', {}).get('type') == 'commit' and
+            capture['data']['object'].get('sha') == proof['source_sha'],
+            'Protected source proof must match its independently captured current default-branch head')
+    require(observed_time(capture.get('observed_at'), 'Source current head') >= latest,
+            'Source default-branch head capture must follow all validated source evidence')
 
 
 def validate_runner_captures(proof, directory, earliest):
@@ -1815,6 +1843,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 bound_workflow_operation(operation, directory, repo_id, row['destination'],
                                          proof['source_sha'], proof['release_version'], run, source_workflows, proof['source_sha'],
                                          max(app_transferred_at, observed_time(row['destination_protections']['observed_at'], 'Source transfer')))
+                execution = local_capture(operation['capture_evidence_url'], directory, 'Source workflow execution')
+                require(execution['run'].get('head_branch') == repo['default_branch'],
+                        'Protected source workflow must execute on its actual default branch')
             for field in ('transfer_evidence_url', 'status_evidence_url'):
                 evidence(row.get(field), directory)
             require(row.get('destination_codex_access') == 'verified' and isinstance(coverage, dict) and coverage.get('status') == 'verified',
@@ -1823,6 +1854,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(row['installed_tier'] is None and row['selected_tier'] is None,
                     'Protected source must not be recorded as a deployed consumer')
             validate_registered_review(row, directory, row["destination"], target_branch=repo["default_branch"], deployment_revision=proof["source_sha"], cutover=max(app_transferred_at, observed_time(row["destination_protections"]["observed_at"], "Source transfer")))
+            validate_source_default_head(proof, directory, repo,
+                repository_terminal_times([row], rows, directory)[repo_id])
             verified_rollouts += 1
         elif health == 'scope_exception':
             require(not protected_source, 'Protected source cannot omit in-place verification through an exception')

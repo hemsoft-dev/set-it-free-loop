@@ -258,6 +258,7 @@ class RolloutTests(unittest.TestCase):
         operation['capture_evidence_url']=self.capture({'observed_at':'2026-10-07T02:00:00Z','run':{
             'repository':{'id':operation['repository_id'],'full_name':operation['repository']},
             'html_url':operation['evidence_url'],'head_sha':operation['run_head_sha'],'path':operation['workflow'],
+            'head_branch':self.branch(operation['repository_id']),
             'status':'completed','conclusion':'success','created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'}})
 
     def bind_consumer_runs(self, row):
@@ -284,6 +285,11 @@ class RolloutTests(unittest.TestCase):
                 'evidence_url':row[field]}
 
         number=row['review_pr_url'].rsplit('/',1)[1]
+        row['review_pr_metadata_evidence_url']=self.capture({'request_url':'https://api.github.com/repos/'+repository+'/pulls/'+number,
+            'observed_at':timestamp,'pull_request':{'number':int(number),'html_url':row['review_pr_url'],
+                'base':{'ref':self.branch(repository_id),'sha':row['review_base_sha'],
+                    'repo':{'id':repository_id,'full_name':repository}},
+                'head':{'sha':row['review_head_sha'],'repo':{'id':repository_id,'full_name':repository}}}},directory)
         context='fixture'
         raw={
             'review_registration_url':{'comment':{'id':1,'html_url':row['review_pr_url']+'#issuecomment-1',
@@ -671,6 +677,11 @@ class RolloutTests(unittest.TestCase):
             source='hemsoft-dev/set-it-free-loop',sha=proof['source_sha'],version=proof['release_version'],field='release_verification_url')
         self.verify_source_ledger(row['repository_id'])
         self.matrix['summary']['verified_rollouts'] += 1
+        proof['default_branch_evidence_url']=self.capture({'phase':'post_transfer','repository_id':row['repository_id'],
+            'repository':row['destination'],'branch':repo['default_branch'],'http_status':200,
+            'request_url':'https://api.github.com/repos/'+row['destination']+'/git/ref/heads/'+repo['default_branch'],
+            'observed_at':'2026-10-07T03:40:00Z','data':{'ref':'refs/heads/'+repo['default_branch'],
+                'object':{'type':'commit','sha':proof['source_sha']}}})
         self.pilots_before_rollout()
         return row
 
@@ -2568,7 +2579,9 @@ class RolloutTests(unittest.TestCase):
         self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0];receipts=pilot['validation_evidence']
         metadata_path=DIRECTORY/receipts['metadata_evidence_url'];metadata=json.loads(metadata_path.read_text());self.check()
         metadata['metadata']['default_branch']='develop';metadata_path.write_text(json.dumps(metadata))
-        with self.assertRaisesRegex(ValueError,'repository-bound required strict'):self.check()
+        with self.assertRaisesRegex(ValueError,'target the gated branch'):self.check()
+        pr_path=DIRECTORY/receipts['review_pr_metadata_evidence_url'];pr=json.loads(pr_path.read_text())
+        pr['pull_request']['base']['ref']='develop';pr_path.write_text(json.dumps(pr))
         receipts['gate_policy']['branch']='develop';policy_path=DIRECTORY/receipts['gate_policy']['evidence_url']
         policy=json.loads(policy_path.read_text());policy['branch']='develop';policy_path.write_text(json.dumps(policy))
         final_policy_path=DIRECTORY/receipts['final_gate_policy_evidence_url'];final_policy=json.loads(final_policy_path.read_text())
@@ -2846,6 +2859,51 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
                     self.check()
             dependency['verified_at']=original
         self.check()
+
+
+    def test_registered_review_binds_actual_pr_target_in_every_completion_mode(self):
+        for mode in ('consumer','pilot','source','onboarding'):
+            test=RolloutTests();test.setUp()
+            try:
+                if mode=='consumer':row=test.complete_rollout();directory=DIRECTORY;check=test.check
+                elif mode=='pilot':
+                    test.complete_pilots();row=test.matrix['disposable_validation_repositories'][0]['validation_evidence']
+                    directory=DIRECTORY;check=test.check
+                elif mode=='source':row=test.complete_source();directory=DIRECTORY;check=test.check
+                else:
+                    temporary=tempfile.TemporaryDirectory();test.addCleanup(temporary.cleanup)
+                    directory=pathlib.Path(temporary.name);row=test.onboarding_fixture(directory)
+                    check=lambda:validator.validate_final_onboarding(row,directory,{},'hemsoft-dev',4448946)
+                check();path=directory/row['review_pr_metadata_evidence_url'];original=json.loads(path.read_text())
+                for change in (lambda p:p['pull_request']['base'].update(ref='develop'),
+                               lambda p:p['pull_request']['base'].update(sha='f'*40),
+                               lambda p:p['pull_request']['head'].update(sha='f'*40),
+                               lambda p:p['pull_request']['base']['repo'].update(id=1),
+                               lambda p:p.update(request_url=p['request_url']+'/unrelated')):
+                    capture=copy.deepcopy(original);change(capture);path.write_text(json.dumps(capture))
+                    with self.subTest(mode=mode),self.assertRaisesRegex(ValueError,'target the gated branch'):check()
+                path.write_text(json.dumps(original));check()
+                row['review_pr_metadata_evidence_url']='https://example.com/pr-metadata'
+                with self.subTest(mode=mode),self.assertRaisesRegex(ValueError,'independent local capture'):check()
+            finally:test.doCleanups()
+
+    def test_source_verifies_current_default_ref_after_its_actual_runs(self):
+        row=self.complete_source();self.check();proof=row['in_place_evidence']
+        path=DIRECTORY/proof['default_branch_evidence_url'];original=json.loads(path.read_text())
+        for change in (lambda c:c['data']['object'].update(sha='f'*40),
+                       lambda c:c['data'].update(ref='refs/heads/retained-branch'),
+                       lambda c:c.update(branch='retained-branch'),
+                       lambda c:c.update(observed_at='2026-10-07T02:00:00Z'),
+                       lambda c:c.update(http_status=403)):
+            capture=copy.deepcopy(original);change(capture);path.write_text(json.dumps(capture))
+            with self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+        operation=proof['workflow_operation_receipts'][0];run_path=DIRECTORY/operation['capture_evidence_url']
+        capture=json.loads(run_path.read_text());capture['run']['head_branch']='retained-branch';run_path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'actual default branch'):self.check()
+        capture['run']['head_branch']='main';run_path.write_text(json.dumps(capture));self.check()
+        del proof['default_branch_evidence_url']
+        with self.assertRaisesRegex(ValueError,'Missing evidence'):self.check()
 
 
 if __name__ == '__main__':
