@@ -15,6 +15,8 @@ APPROVED_PILOTS = {1408025382: ('hemsoft-dev/sfl-migration-pilot-private', 'priv
                    1408029795: ('hemsoft-dev/sfl-migration-pilot-public', 'public')}
 FHEMMER_REPOSITORY_ID = 1143951439
 LEGACY_UNUSED_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028911622'
+EXTERNAL_SCOPE_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048'
+PROVIDER_ABSENCE_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028753359'
 PILOT_SCENARIOS = {'findings':'gate_failed', 'pending_request':'gate_blocked', 'malformed_output':'gate_blocked',
                    'revoked_permission':'gate_blocked', 'permission_lookup_failure':'gate_blocked',
                    'forged_registration':'gate_blocked', 'edited_registration':'gate_blocked',
@@ -177,6 +179,21 @@ def validate_final_inventory(proof, directory, expected, retained):
                 repo.get('approved_by') == 'HemSoft' and text(repo.get('repository')) and
                 repo.get('visibility') in {'public', 'private'}, 'Additional final repositories need a bound owner decision')
         evidence(repo.get('evidence_url'), directory)
+        decision_reference = repo.get('decision_artifact')
+        evidence(decision_reference, directory)
+        require(not urllib.parse.urlsplit(decision_reference).scheme and decision_reference != reference,
+                'Additional repository needs an independent owner decision artifact')
+        decision = json.loads((directory / decision_reference).read_text())
+        require(all(decision.get(key) == repo.get(key) for key in
+                    ('repository_id', 'repository', 'visibility', 'approved_by', 'evidence_url')) and
+                decision.get('disposition') == 'include_final_inventory' and text(decision.get('reason')),
+                'Additional repository must match its independent owner decision')
+        approved_at = datetime.datetime.fromisoformat(decision.get('approved_at', '').replace('Z', '+00:00'))
+        require(approved_at.tzinfo is not None and approved_at <= captured_at,
+                'Additional repository needs a dated owner approval before final capture')
+        require(re.fullmatch(r'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-[1-9][0-9]*',
+                             decision.get('evidence_url', '')) is not None,
+                'Additional repository needs an explicit owner issue receipt')
         allowed[repo_id] = (repo['repository'], repo['visibility'])
     require(set(actual) == set(expected) | set(allowed), 'Final inventory contains unaccounted repository IDs')
     for repo_id, (name, visibility) in allowed.items():
@@ -293,6 +310,20 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 metadata.get('archived') == repo['archived'], 'Retained source metadata differs from baseline')
         retained[repo_id] = decision
     require(set(retained) == APPROVED_RETAINED_IDS, 'Retention differs from fixed owner-approved set')
+    absence = json.loads((directory / 'provider-absence-owner-evidence.json').read_text())
+    external_scope = json.loads((directory / 'external-resource-owner-scope-evidence.json').read_text())
+    require(absence.get('evidence_url') == PROVIDER_ABSENCE_RECEIPT and
+            absence.get('confirmed_by') == 'Franz (HemSoft owner)' and
+            absence.get('scope') == '65 approved transfer targets' and
+            set(absence.get('providers', [])) == {'Azure Pipelines', 'Fly.io', 'Railway'} and
+            absence.get('disposition') == 'none uses these providers' and
+            external_scope.get('evidence_url') == EXTERNAL_SCOPE_RECEIPT and
+            external_scope.get('confirmed_by') == 'Franz (HemSoft owner)' and
+            external_scope.get('scope') == '65 approved transfer targets' and
+            external_scope.get('blacksmith_usage') == 'none' and
+            external_scope.get('active_external_resources') ==
+            'Only the inventoried Vercel, Cloudflare, Supabase, GitHub Pages and yahtzee runner resources',
+            'Provider absence must match the approved owner evidence and exact transfer scope')
     provider_apps = {'Azure Pipelines', 'Railway App', 'Fly.io', 'Vercel'}
     candidates = {repo_id: set() for repo_id in expected}
     for repo_id, repo in expected.items():
@@ -339,8 +370,14 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             linked = [item for item in vercel_projects if item['name'] == connection]
             require(len(linked) == 1, 'Supabase connection must match one captured Vercel project')
             supabase_resources.add((linked[0]['link']['repoId'], project['reference']))
+    cloudflare = json.loads((directory / 'now-leadership-live-hosting-evidence.json').read_text())['cloudflare_owner_verification']
+    cloudflare_zones = {(1162179521, cloudflare['zone_id'])}
+    cloudflare_workers = {(1162179521, app['name']) for app in cloudflare['workers_and_pages']['applications']
+                          if app['type'] == 'Worker'}
     other_resources = {'github_pages': ('GitHub Pages', pages_resources),
-                       'supabase_project': ('Supabase', supabase_resources)}
+                       'supabase_project': ('Supabase', supabase_resources),
+                       'cloudflare_zone': ('Cloudflare', cloudflare_zones),
+                       'cloudflare_worker': ('Cloudflare', cloudflare_workers)}
     seen_other_resources = {kind: set() for kind in other_resources}
     captured_manifests = {}
     for record in workflow_capture.get('records', []):
@@ -430,6 +467,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         require(text(row.get('provider')), 'Verified ledger row needs a provider or explicit none')
         if row['provider'] == 'none':
             require(text(row.get('absence_reason')), 'Verified absence needs an evidence-backed reason')
+            require(repo_id not in retained and row.get('verified_by') == 'HemSoft' and
+                    row.get('evidence_url') == EXTERNAL_SCOPE_RECEIPT and
+                    verified_at >= datetime.datetime.fromisoformat(external_scope['confirmed_at'].replace('Z', '+00:00')),
+                    'Verified provider absence needs the approved owner receipt for this transfer target')
         else:
             for field in ('resource_owner', 'resource_url', 'billing_dependency', 'credential_source',
                           'affected_reference', 'transfer_action', 'smoke_test', 'recovery_action'):
@@ -441,7 +482,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     require(seen_runner_resources == runner_resources, 'Ledger must preserve every observed repository runner resource')
     require(seen_vercel_resources == vercel_resources, 'Ledger must preserve every captured Vercel project resource')
     require(all(seen_other_resources[kind] == resources for kind, (_, resources) in other_resources.items()),
-            'Ledger must preserve every captured Pages/Supabase resource')
+            'Ledger must preserve every captured Pages/Supabase/Cloudflare resource')
     all_transfer_gates_verified = all(all(status == 'verified' for status in ledger_statuses[repo_id])
                                       for repo_id in expected if repo_id not in retained)
     if all_transfer_gates_verified:
@@ -684,8 +725,12 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 row['selected_tier'] == 'custom' and
                 bool(set(row['selected_components']) & (supported_components - {'sfl-pr-review-auto'})))
             require(not wider or bool(runs), 'Wider tier needs workflow evidence')
-            for run in runs:
-                evidence(run, directory)
+            operations = row.get('wider_operation_receipts', [])
+            require(isinstance(operations, list) and len(operations) == len(runs),
+                    'Consumer wider workflows need bound operation receipts')
+            for run, operation in zip(runs, operations):
+                bound_operation(operation, directory, repo_id, row['destination'],
+                                row['deployment_sha'], row['manifest_version'], run)
             validate_registered_review(row, directory, row['destination'])
             verified_rollouts += 1
     if app_transfer['status'] == 'verified':
@@ -815,6 +860,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 'Active rollout requires verified public and private onboarding pilots first')
         require(verified_wider_pilot, 'Active rollout requires a verified wider-workflow and auditor pilot')
     if source_complete:
+        require(all(status == 'verified' for statuses in ledger_statuses.values() for status in statuses),
+                'Final completion needs every retained and transferred resource verified')
         proof = matrix.get('final_inventory')
         validate_final_inventory(proof, directory, expected, retained)
         require(datetime.datetime.fromisoformat(proof['observed_at'].replace('Z', '+00:00')) >

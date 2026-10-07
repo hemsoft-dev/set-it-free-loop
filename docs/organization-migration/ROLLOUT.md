@@ -363,3 +363,20 @@ Match all 65 destinations and both retained personal sources; preserve both
 recorded disposable pilots. Explicitly account for any additional repository
 through its owner-approved identity/visibility receipt. Planned mappings and
 per-row prose cannot replace this actual-location reconciliation.
+
+Provider-absence ledger rows must use the exact approved all-target owner receipt,
+with HemSoft as verifier and a timestamp after confirmation. The independent
+Azure/Fly/Railway and inventoried-resource/Blacksmith owner artifacts are matched
+before those claims can clear transfer gates. A provider-absence row means no
+additional active external resources; it never replaces a mandatory captured
+resource row. Cloudflare production DNS/proxy and the nlg-contact-form Worker
+have separate mandatory ledger identities derived from the authenticated capture,
+even though now-leadership-group remains personal. Final completion requires
+retained resources' continuity records as well as transferred resources.
+
+Consumer `wider_operation_receipts` must match each wider workflow URL, repository
+ID/name, deployment SHA and release version. Final inventory additions require a
+separate local `decision_artifact` matching the added ID/name/visibility and owner
+issue-comment receipt, with a reason, `include_final_inventory` disposition and
+approval timestamp preceding the final capture. The inventory itself cannot
+serve as its own approval artifact.

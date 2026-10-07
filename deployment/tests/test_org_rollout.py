@@ -41,10 +41,12 @@ class RolloutTests(unittest.TestCase):
     def verify_source_ledger(self, repo_id):
         for row in self.rows:
             if int(row['repository_id']) == repo_id:
-                row.update(status='verified', provider={'vercel_project':'Vercel','repository_runner':'GitHub Actions','github_pages':'GitHub Pages','supabase_project':'Supabase'}.get(row.get('resource_kind'),'none'), absence_reason='Synthetic owner absence receipt',
+                row.update(status='verified', provider={'vercel_project':'Vercel','repository_runner':'GitHub Actions','github_pages':'GitHub Pages','supabase_project':'Supabase','cloudflare_zone':'Cloudflare','cloudflare_worker':'Cloudflare'}.get(row.get('resource_kind'),'none'), absence_reason='Synthetic owner absence receipt',
                            verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
                            evidence_url='https://github.com/HemSoft/set-it-free-loop/issues/138')
-                if row.get('resource_kind') in {'vercel_project','github_pages','supabase_project'}:
+                if row['provider'] == 'none':
+                    row.update(evidence_url=validator.EXTERNAL_SCOPE_RECEIPT, verified_at='2026-10-07T02:00:00Z')
+                if row.get('resource_kind') in {'vercel_project','github_pages','supabase_project','cloudflare_zone','cloudflare_worker'}:
                     row.update(resource_owner='Synthetic verified project owner', credential_source='Provider-owned integration',
                                credential_validity='verified', affected_reference='Existing Git project link',
                                transfer_action='Reconnect after gated transfer', smoke_test='Synthetic deployment succeeds',
@@ -55,6 +57,13 @@ class RolloutTests(unittest.TestCase):
                                credential_validity='verified',affected_reference='Runner 21',
                                transfer_action='Verify registration continuity',smoke_test='Manual smoke succeeds',
                                recovery_action='Restore exact registration if needed')
+
+    def bind_consumer_runs(self, row):
+        row['wider_workflow_run_urls'] = ['https://github.com/'+row['destination']+'/actions/runs/'+str(i+1)
+                                         for i,_ in enumerate(row['wider_workflow_run_urls'])]
+        row['wider_operation_receipts'] = [{'repository_id':row['repository_id'],'repository':row['destination'],
+            'deployment_sha':row['deployment_sha'],'release_version':row['manifest_version'],'evidence_url':run}
+            for run in row['wider_workflow_run_urls']]
 
     def complete_app_coverage(self, row):
         row['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
@@ -319,7 +328,8 @@ class RolloutTests(unittest.TestCase):
         row['absence_reason'] = ''
         with self.assertRaisesRegex(ValueError, 'absence'):
             self.check()
-        row['absence_reason'] = 'Owner dashboard and source references verified absent'
+        row['absence_reason'] = 'Owner confirms no other active external resources'
+        row.update(evidence_url=validator.EXTERNAL_SCOPE_RECEIPT,verified_at='2026-10-07T02:00:00Z')
         self.check()
 
     def test_credential_presence_is_not_validity(self):
@@ -357,6 +367,7 @@ class RolloutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Wider tier'):
             self.check()
         row['wider_workflow_run_urls'] = ['https://example.com/run']
+        self.bind_consumer_runs(row)
         self.check()
 
     def test_stale_summary_rejected(self):
@@ -411,6 +422,7 @@ class RolloutTests(unittest.TestCase):
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['installed_components'] = ['sfl-auditor']
         row['wider_workflow_run_urls'] = ['https://example.com/auditor-run']
+        self.bind_consumer_runs(row)
         for components in (None, [], ['unknown-workflow']):
             row['selected_components'] = components
             with self.assertRaisesRegex(ValueError, 'Custom tier'):
@@ -435,6 +447,7 @@ class RolloutTests(unittest.TestCase):
             self.check()
         row['selected_addons'] = ['pr-review']
         row['manifest_identity']['addons'] = ['pr-review']
+        self.bind_consumer_runs(row)
         self.check()
 
     def test_review_only_custom_tier_needs_no_unrelated_workflow_run(self):
@@ -713,6 +726,7 @@ class RolloutTests(unittest.TestCase):
         row['selected_tier']='full';row['manifest_identity']['tier']='full'
         with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
         row['selected_addons']=['pr-review'];row['wider_workflow_run_urls']=['https://example.com/run']
+        self.bind_consumer_runs(row)
         row['manifest_identity']['addons']=['pr-review']
         self.check()
 
@@ -747,6 +761,7 @@ class RolloutTests(unittest.TestCase):
             with self.subTest(addons=addons), self.assertRaisesRegex(ValueError, 'manifest must match the selected addons'):
                 self.check()
         row['manifest_identity']['addons'] = ['pr-review']
+        self.bind_consumer_runs(row)
         self.check()
         row.update(installed_tier='custom', selected_tier='custom', installed_components=['sfl-pr-review-auto'],
                    selected_components=['sfl-pr-review-auto'])
@@ -1015,6 +1030,80 @@ class RolloutTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError,'every captured Pages/Supabase'):self.check()
         self.rows=original;row=next(r for r in self.rows if r.get('resource_kind')=='supabase_project');row['provider']='none'
         with self.assertRaisesRegex(ValueError,'provider absence'):self.check()
+
+    def test_provider_absence_requires_the_approved_owner_scope(self):
+        row = self.complete_provider()
+        row.update(provider='none', absence_reason='No other resources', evidence_url='https://example.com',
+                   verified_at='2026-10-07T02:00:00Z')
+        with self.assertRaisesRegex(ValueError, 'approved owner receipt'):
+            self.check()
+        row['evidence_url'] = validator.EXTERNAL_SCOPE_RECEIPT
+        self.check()
+        row['verified_at'] = '2026-10-06T20:00:00-04:00'
+        with self.assertRaisesRegex(ValueError, 'approved owner receipt'):
+            self.check()
+
+    def test_cloudflare_zone_and_worker_cannot_be_omitted(self):
+        original = copy.deepcopy(self.rows)
+        for kind in ('cloudflare_zone', 'cloudflare_worker'):
+            self.rows = [r for r in original if r.get('resource_kind') != kind]
+            with self.subTest(kind=kind), self.assertRaisesRegex(ValueError, 'every captured Pages/Supabase/Cloudflare'):
+                self.check()
+        self.rows = original
+        row = next(r for r in self.rows if r.get('resource_kind') == 'cloudflare_worker')
+        row['provider'] = 'none'
+        with self.assertRaisesRegex(ValueError, 'provider absence'):
+            self.check()
+
+    def test_consumer_wider_receipts_bind_repository_release_and_sha(self):
+        row = self.complete_rollout()
+        row.update(selected_tier='full', wider_workflow_run_urls=['https://example.com/unrelated'])
+        row['manifest_identity']['tier'] = 'full'
+        with self.assertRaisesRegex(ValueError, 'bound operation receipts'):
+            self.check()
+        self.bind_consumer_runs(row)
+        self.check()
+        original = copy.deepcopy(row['wider_operation_receipts'])
+        for field, value in [('repository_id', 1), ('repository', 'hemsoft-dev/other'),
+                             ('deployment_sha', 'd'*40), ('release_version', '2.0.0')]:
+            row['wider_operation_receipts'] = copy.deepcopy(original)
+            row['wider_operation_receipts'][0][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'Operation receipt'):
+                self.check()
+        row['wider_operation_receipts'] = original
+        row['wider_workflow_run_urls'] = ['https://github.com/hemsoft-dev/other/actions/runs/1']
+        row['wider_operation_receipts'][0]['evidence_url'] = row['wider_workflow_run_urls'][0]
+        with self.assertRaisesRegex(ValueError, 'designated repository'):
+            self.check()
+
+    def test_final_addition_needs_an_independent_dated_owner_decision(self):
+        accounts = [{'owner':owner, 'state':'observed', 'all_pages':True, 'repositories':[]}
+                    for owner in ('HemSoft', 'fhemmer', 'hemsoft-dev')]
+        for repo_id, (name, visibility) in validator.APPROVED_PILOTS.items():
+            accounts[2]['repositories'].append({'id':repo_id, 'full_name':name, 'private':visibility=='private'})
+        accounts[2]['repositories'].append({'id':42, 'full_name':'hemsoft-dev/addition', 'private':True})
+        capture = {'observed_at':'2026-10-07T03:00:00Z', 'accounts':accounts}
+        extra = {'repository_id':42, 'repository':'hemsoft-dev/addition', 'visibility':'private',
+                 'approved_by':'HemSoft', 'evidence_url':'https://example.com/approval'}
+        with tempfile.TemporaryDirectory() as folder:
+            directory = pathlib.Path(folder)
+            (directory/'capture.json').write_text(json.dumps(capture))
+            proof = {'observed_at':capture['observed_at'], 'evidence_url':'capture.json',
+                     'additional_repositories':[extra]}
+            with self.assertRaisesRegex(ValueError, 'Missing evidence reference'):
+                validator.validate_final_inventory(proof, directory, {}, {})
+            extra.update(decision_artifact='decision.json', evidence_url=
+                'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-123')
+            decision = dict(extra, approved_at='2026-10-07T02:00:00Z',
+                            reason='Synthetic owner-approved fixture', disposition='include_final_inventory')
+            (directory/'decision.json').write_text(json.dumps(decision))
+            validator.validate_final_inventory(proof, directory, {}, {})
+            for field, value in [('repository_id',1), ('visibility','public'), ('reason',''),
+                                 ('approved_at','2026-10-08T02:00:00Z'), ('disposition','ignore')]:
+                changed = dict(decision); changed[field] = value
+                (directory/'decision.json').write_text(json.dumps(changed))
+                with self.subTest(field=field), self.assertRaises(ValueError):
+                    validator.validate_final_inventory(proof, directory, {}, {})
 
 
 if __name__ == '__main__':
