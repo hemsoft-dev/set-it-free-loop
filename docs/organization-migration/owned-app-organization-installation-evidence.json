@@ -8,5 +8,7 @@
     "app_id": 4448946,
     "repository_selection": null
   },
-  "limits": "No destination SFL installation is claimed. Populate from the reviewed GET-only workflow or owner installation API capture only after applicable transfer gates and actual App ownership/installation cutover."
+  "limits": "No destination SFL installation is claimed. Populate from the reviewed GET-only workflow or owner installation API capture only after applicable transfer gates and actual App ownership/installation cutover.",
+  "phase": null,
+  "observed_at": null
 }

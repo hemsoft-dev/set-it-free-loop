@@ -493,3 +493,28 @@ head SHA, successful conclusion and creation time. Source and consumer runs must
 be created after their independently captured destination/App cutover; pilot runs
 must follow App cutover. The observation cannot precede run creation. Source
 governance configuration is likewise observed after App cutover.
+
+Destination SFL installation evidence records `phase: post_transfer` and a
+zoned `observed_at` after the independent App ownership capture. An installation
+observed before transfer cannot establish coverage after transfer.
+
+Registered review gate captures also include raw Actions `run` metadata with
+repository ID/name, immutable reviewed head, workflow path, successful terminal
+state, run URL, `created_at` and `updated_at`. Run creation follows the relevant
+App and destination cutover. The effective default-branch gate policy is
+observed after that cutover and the completed review run. The final inventory
+preserves each baseline repository's actual default branch as well as its
+identity, location, privacy and archive state.
+
+Pilot and final onboarding CLI operation receipts load `capture_evidence_url`
+with matching repository, release, command, revisions and terminal result. The
+capture records a completed execution with exit code zero. A mutation includes
+independent closed/merged PR metadata and the matching merge revision; a no-op
+includes captured zero changes and unchanged revisions; status includes healthy
+file checks at the observed revision. Gate uninstall includes the observed gate
+absence and preservation of unrelated rules. Issue fragments and self-declared
+booleans alone do not prove these outcomes.
+
+Protected-source runtime proof uses checked-in distributed SFL product
+workflows from the full deployment catalog. Successful migration validation,
+credential verification and other ancillary workflows remain separate checks.

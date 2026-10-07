@@ -122,6 +122,21 @@ class RolloutTests(unittest.TestCase):
 
                 if row['provider']!='none':self.bind_smoke(row)
 
+    def bind_terminal_capture(self, operation, directory=DIRECTORY, timestamp='2026-10-07T02:00:00Z'):
+        result={}
+        if operation['outcome']=='pull_request_merged':
+            result={'pull_request':{'html_url':operation['evidence_url'],'merged':True,'state':'closed',
+                'merge_commit_sha':operation['revision_after'],'merged_at':timestamp,
+                'base':{'repo':{'id':operation['repository_id'],'full_name':operation['repository']}}}}
+        elif operation['outcome']=='no_changes':
+            result={'change_count':0,'revision_before':operation['revision_before'],'revision_after':operation['revision_after']}
+        elif operation['outcome']=='healthy':
+            result={'health':'healthy','revision_sha':operation['revision_after'],'missing_files':[],'drifted_files':[]}
+        elif operation['outcome']=='gate_removed':
+            result={'gate_required':False,'unrelated_change_count':0,'preserved_unrelated_rules':True}
+        operation['capture_evidence_url']=self.capture({**operation,'status':'completed','exit_code':0,
+            'observed_at':timestamp,'result':result},directory)
+
     def bind_workflow_capture(self, operation):
         operation['capture_evidence_url']=self.capture({'observed_at':'2026-10-07T02:00:00Z','run':{
             'repository':{'id':operation['repository_id'],'full_name':operation['repository']},
@@ -166,7 +181,10 @@ class RolloutTests(unittest.TestCase):
         gate.update(evidence_url=row['gate_run_url'],status='completed',conclusion='success',
             workflow='.github/workflows/sfl-pr-review-auto.yml',app_id=15368,context='SFL Reviewer Gate Runner')
         gate['capture_evidence_url']=self.capture(dict(gate,artifact_identity=row['review_artifact_identity'],
-            observed_at='2026-10-07T02:00:00Z'),directory)
+            observed_at='2026-10-07T02:00:00Z',run={'repository':{'id':repository_id,'full_name':repository},
+                'head_sha':row['review_head_sha'],'path':gate['workflow'],'status':'completed','conclusion':'success',
+                'html_url':'https://github.com/'+repository+'/actions/runs/1',
+                'created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'}),directory)
 
     def complete_app_coverage(self, row):
         row['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
@@ -258,6 +276,7 @@ class RolloutTests(unittest.TestCase):
             self.original_owned_installation_capture=path.read_text()
             self.addCleanup(path.write_text,self.original_owned_installation_capture)
         path.write_text(json.dumps({'verification_status':'verified','account':{'login':'hemsoft-dev'},
+            'phase':'post_transfer','observed_at':'2026-10-07T01:30:00Z',
             'installation':{'id':123,'app_id':4448946,'repository_selection':'all'}}))
 
     def complete_rollout(self):
@@ -380,6 +399,7 @@ class RolloutTests(unittest.TestCase):
                 outcome='pull_request_merged' if field in {'init_pr_url','sync_pr_url'} else 'healthy' if command=='status' else 'gate_removed' if command=='uninstall-gate' else 'no_changes'
                 operation.update(command=command,outcome=outcome,revision_before='b'*40,revision_after='b'*40,
                     change_count=0,merged=outcome=='pull_request_merged',gate_only=True,unrelated_change_count=0)
+                self.bind_terminal_capture(operation)
 
 
     def complete_source(self):
@@ -419,7 +439,7 @@ class RolloutTests(unittest.TestCase):
         proof=row['in_place_evidence'];proof['workflow_run_urls']=['https://github.com/'+row['destination']+'/actions/runs/1']
         proof['workflow_operation_receipts']=[{'repository_id':row['repository_id'],'repository':row['destination'],
             'deployment_sha':proof['source_sha'],'release_version':proof['release_version'],'evidence_url':proof['workflow_run_urls'][0],
-            'conclusion':'success','workflow':'.github/workflows/validate-gh-sfl.yml','run_head_sha':proof['source_sha']}]
+            'conclusion':'success','workflow':'.github/workflows/sfl-dispatcher.yml','run_head_sha':proof['source_sha']}]
         for operation in proof['workflow_operation_receipts']:self.bind_workflow_capture(operation)
         self.bind_download(proof,repository_id=row['repository_id'],repository=row['destination'],
             source='hemsoft-dev/set-it-free-loop',sha=proof['source_sha'],version=proof['release_version'],field='release_verification_url')
@@ -1237,7 +1257,7 @@ class RolloutTests(unittest.TestCase):
         accounts={owner:{'owner':owner,'state':'observed','all_pages':True,'repositories':[]} for owner in ('HemSoft','fhemmer','hemsoft-dev')}
         for repo_id,repo in expected.items():
             name=repo['full_name'] if repo_id in retained else repo['destination']
-            accounts[name.split('/')[0]]['repositories'].append({'id':repo_id,'full_name':name,'private':repo['private'],'archived':repo['archived']})
+            accounts[name.split('/')[0]]['repositories'].append({'id':repo_id,'full_name':name,'private':repo['private'],'archived':repo['archived'],'default_branch':repo['default_branch']})
         for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
             accounts['hemsoft-dev']['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private','archived':False})
         capture={'observed_at':'2026-10-07T03:00:00Z','accounts':list(accounts.values())}
@@ -1467,6 +1487,13 @@ class RolloutTests(unittest.TestCase):
         for field,operation in proof['onboarding_operation_receipts'].items():
             command='init' if field in {'init_pr_url','repeat_onboarding_url'} else 'status' if field=='status_url' else 'sync'
             operation.update(command=command,outcome='pull_request_merged' if field=='init_pr_url' else 'healthy' if field=='status_url' else 'no_changes',revision_before='f'*40,revision_after='f'*40,change_count=0,merged=field=='init_pr_url',evidence_url=proof[field])
+            self.bind_terminal_capture(operation,directory,'2026-10-07T03:30:00Z')
+        for field in ('gate_policy','requester_permission_evidence_url'):
+            reference=proof[field]['evidence_url'] if field=='gate_policy' else proof[field]
+            path=directory/reference;capture=json.loads(path.read_text());capture['observed_at']='2026-10-07T03:30:00Z';path.write_text(json.dumps(capture))
+        gate_path=directory/proof['review_operation_receipts']['gate_run_url']['capture_evidence_url']
+        gate_capture=json.loads(gate_path.read_text());gate_capture['observed_at']='2026-10-07T03:30:00Z'
+        gate_capture['run'].update(created_at='2026-10-07T03:30:00Z',updated_at='2026-10-07T03:30:00Z');gate_path.write_text(json.dumps(gate_capture))
         proof['manifest_evidence_url']='post-status-manifest.json'
         (directory/proof['manifest_evidence_url']).write_text(json.dumps({'repository_id':42,'repository':name,'revision_sha':'f'*40,'manifest':proof['manifest_identity'],'observed_at':'2026-10-07T03:30:00Z'}))
         capture={'metadata':{'id':42,'full_name':name,'private':True,'archived':False,'created_at':'2026-10-07T03:00:00Z','default_branch':'main'}}
@@ -1512,7 +1539,7 @@ class RolloutTests(unittest.TestCase):
         for repo in self.inventory['repositories']:
             name=repo['full_name'] if repo['id'] in validator.APPROVED_RETAINED_IDS else repo['destination']
             accounts[name.split('/')[0]]['repositories'].append({'id':repo['id'],'full_name':name,
-                'private':repo['private'],'archived':repo['archived']})
+                'private':repo['private'],'archived':repo['archived'],'default_branch':repo['default_branch']})
         for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
             accounts['hemsoft-dev']['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private'})
         with tempfile.TemporaryDirectory(dir=DIRECTORY) as folder:
@@ -1622,7 +1649,7 @@ class RolloutTests(unittest.TestCase):
                     validator.validate_final_onboarding(changed,directory,{},'hemsoft-dev',4448946)
             changed=copy.deepcopy(proof);changed['init_pr_url']='https://github.com/'+proof['repository']+'/issues/1'
             changed['onboarding_operation_receipts']['init_pr_url']['evidence_url']=changed['init_pr_url']
-            with self.assertRaisesRegex(ValueError,'actual merged deployment PR'):
+            with self.assertRaisesRegex(ValueError,'Terminal operation capture|actual merged deployment PR'):
                 validator.validate_final_onboarding(changed,directory,{},'hemsoft-dev',4448946)
             capture=json.loads((directory/'post-status-manifest.json').read_text());capture['manifest']['sourceSha']='c'*40
             (directory/'post-status-manifest.json').write_text(json.dumps(capture))
@@ -2066,6 +2093,68 @@ class RolloutTests(unittest.TestCase):
         row=self.complete_source();proof=row['in_place_evidence'];path=DIRECTORY/proof['governance_evidence_url']
         capture=json.loads(path.read_text());capture['observed_at']='2026-10-07T00:30:00Z';path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'governance must be captured after'):self.check()
+
+
+    def test_destination_installation_capture_follows_app_transfer(self):
+        self.complete_rollout();path=DIRECTORY/'owned-app-organization-installation-evidence.json'
+        original=json.loads(path.read_text());self.check()
+        for field,value in [('phase','pre_transfer'),('observed_at','2026-10-07T00:30:00Z'),('observed_at',None)]:
+            capture=copy.deepcopy(original);capture[field]=value;path.write_text(json.dumps(capture))
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_pilot_terminal_execution_corroborates_each_result(self):
+        self.complete_pilots();receipts=self.matrix['disposable_validation_repositories'][0]['validation_evidence']
+        cases=[('init_pr_url',lambda c:c['result']['pull_request'].update(merged=False)),
+               ('sync_pr_url',lambda c:c['result']['pull_request'].update(merge_commit_sha='f'*40)),
+               ('repeat_onboarding_evidence_url',lambda c:c['result'].update(change_count=1)),
+               ('repeat_sync_evidence_url',lambda c:c.update(exit_code=1)),
+               ('status_evidence_url',lambda c:c['result'].update(drifted_files=['workflow.yml'])),
+               ('gate_uninstall_evidence_url',lambda c:c['result'].update(gate_required=True))]
+        self.check()
+        for field,mutate in cases:
+            operation=receipts['operation_receipts'][field];path=DIRECTORY/operation['capture_evidence_url']
+            original=json.loads(path.read_text());capture=copy.deepcopy(original);mutate(capture);path.write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+            path.write_text(json.dumps(original))
+        self.check()
+
+    def test_effective_gate_policy_is_current_for_terminal_review(self):
+        row=self.complete_rollout();path=DIRECTORY/row['gate_policy']['evidence_url']
+        original=json.loads(path.read_text());self.check()
+        for timestamp in ['2026-10-07T00:30:00Z','2026-10-07T01:59:59Z']:
+            capture=copy.deepcopy(original);capture['observed_at']=timestamp;path.write_text(json.dumps(capture))
+            with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'Effective gate policy must follow'):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_registered_review_raw_run_executes_after_cutover(self):
+        row=self.complete_rollout();gate=row['review_operation_receipts']['gate_run_url']
+        path=DIRECTORY/gate['capture_evidence_url'];original=json.loads(path.read_text());self.check()
+        for field,value in [('created_at','2026-10-07T01:59:59Z'),('created_at',None),('head_sha','f'*40),('path','.github/workflows/validate-gh-sfl.yml')]:
+            capture=copy.deepcopy(original);capture['run'][field]=value;path.write_text(json.dumps(capture))
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_source_runtime_rejects_ancillary_successful_workflow(self):
+        row=self.complete_source();self.check();operation=row['in_place_evidence']['workflow_operation_receipts'][0]
+        operation['workflow']='.github/workflows/validate-org-migration.yml';self.bind_workflow_capture(operation)
+        with self.assertRaisesRegex(ValueError,'expected deployed workflow'):self.check()
+
+    def test_final_inventory_preserves_default_branch(self):
+        expected={r['id']:r for r in self.inventory['repositories']};retained=set(validator.APPROVED_RETAINED_IDS)
+        accounts={o:{'owner':o,'state':'observed','all_pages':True,'repositories':[]} for o in ('HemSoft','fhemmer','hemsoft-dev')}
+        for rid,repo in expected.items():
+            name=repo['full_name'] if rid in retained else repo['destination']
+            accounts[name.split('/')[0]]['repositories'].append({'id':rid,'full_name':name,'private':repo['private'],
+                'archived':repo['archived'],'default_branch':repo['default_branch']})
+        for rid,(name,visibility) in validator.APPROVED_PILOTS.items():
+            accounts['hemsoft-dev']['repositories'].append({'id':rid,'full_name':name,'private':visibility=='private','archived':False})
+        capture={'observed_at':'2026-10-07T04:00:00Z','accounts':list(accounts.values())}
+        proof={'observed_at':capture['observed_at'],'evidence_url':self.capture(capture),'additional_repositories':[]}
+        validator.validate_final_inventory(proof,DIRECTORY,expected,retained)
+        target=next(r for r in capture['accounts'][2]['repositories'] if r['id'] in expected)
+        target['default_branch']='different-branch';proof['evidence_url']=self.capture(capture)
+        with self.assertRaisesRegex(ValueError,'preserve state'):validator.validate_final_inventory(proof,DIRECTORY,expected,retained)
 
 
 if __name__ == '__main__':
