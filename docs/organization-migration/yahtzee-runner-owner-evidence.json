@@ -39,8 +39,24 @@
     "GitHub REST GET repository runners and workflow runs"
   ],
   "last_existing_smoke_url": "https://github.com/HemSoft/yahtzee/actions/runs/32323195241",
-  "fresh_smoke_and_post_transfer_continuity": "pending",
+  "fresh_smoke_and_post_transfer_continuity": "pre-transfer smoke/isolation verified; post-transfer continuity pending",
   "credential_values_read": false,
   "registration_changed": false,
-  "isolation_retested": false
+  "isolation_retested": true,
+  "fresh_pre_transfer_smoke": {
+    "url": "https://github.com/HemSoft/yahtzee/actions/runs/37556410101",
+    "job_id": 112583580282,
+    "runner_id": 21,
+    "runner_name": "mini-github-runner-01",
+    "head_sha": "0e3f2fec20148a0f09c14874fae6fe7efe798e60",
+    "conclusion": "success",
+    "completed_at": "2026-10-07T01:18:21Z"
+  },
+  "isolation_result": {
+    "result": "ISOLATION_OK",
+    "public_dns_https": "passed",
+    "tested_private_routes": "all six blocked",
+    "tailscale": "absent",
+    "method": "Strict guest SSH runs existing verify-guest-isolation.sh; no network mutation"
+  }
 }

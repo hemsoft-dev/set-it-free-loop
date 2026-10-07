@@ -53,9 +53,13 @@ class RolloutTests(unittest.TestCase):
         for repo in self.inventory['repositories']:
             self.verify_source_ledger(repo['id'])
 
+    def complete_app_transfer(self):
+        self.matrix['owned_app_transfer'].update(status='verified',owner='hemsoft-dev',evidence_url='https://example.com/app-transfer')
+
     def complete_rollout(self):
         self.complete_pilots()
         self.complete_transfer_gates()
+        self.complete_app_transfer()
         row = next(row for row in self.matrix['repositories'] if not row['archived'])
         row.update(health='verified', selected_tier='reviewer', installed_tier='not_installed', installed_addons=[], selected_addons=[],
                    manifest_version='2.1.0-rc.14', review_requester='HemSoft',
@@ -69,8 +73,11 @@ class RolloutTests(unittest.TestCase):
         row['review_registration_url'] = 'https://example.com/registration'
         row['review_registry_status_url'] = 'https://example.com/registry-status'
         row['review_artifact_url'] = 'https://example.com/sfl-review-artifact'
-        row['review_artifact_identity'] = {'runtime': 'sfl_owned', 'app_id': 4448946,
+        row['review_artifact_identity'] = {'runtime': 'sfl_registered_codex', 'app_id': 1144995, 'bot_user_id': 199175422,
                                            'reviewed_head_sha': 'b'*40, 'reviewed_base_sha': 'c'*40}
+        row.update(requester_permission='admin',requester_permission_evidence_url='https://example.com/permission')
+        row['review_pr_url']='https://github.com/'+row['destination']+'/pull/1'
+        row['review_artifact_identity'].update(requester=row['review_requester'],review_pr_url=row['review_pr_url'])
         self.verify_source_ledger(row['repository_id'])
         row.update(manifest_identity={'source':row['deployment_source'],'sourceSha':row['deployment_sha'],
                                       'version':row['manifest_version'],'tier':row['selected_tier']},
@@ -105,13 +112,14 @@ class RolloutTests(unittest.TestCase):
                 receipts['wider_workflow_run_urls']=['https://example.com/workflow']
                 receipts['auditor_run_url']='https://example.com/auditor'
             pilot['validation_evidence']['review_artifact_identity'] = {
-                'runtime': 'sfl_owned', 'app_id': 4448946,
+                'runtime': 'sfl_registered_codex', 'app_id': 1144995, 'bot_user_id': 199175422,
                 'reviewed_head_sha': 'b'*40, 'reviewed_base_sha': 'c'*40,
                 'review_pr_url':receipts['review_pr_url'],'requester':receipts['review_requester']}
 
     def complete_source(self):
         self.complete_pilots()
         self.complete_transfer_gates()
+        self.complete_app_transfer()
         row = next(row for row in self.matrix['repositories'] if row['source'] == 'HemSoft/set-it-free-loop')
         row.update(health='source_verified', transfer_evidence_url='https://example.com/transfer',
                    status_evidence_url='https://example.com/status', destination_codex_access='verified',
@@ -122,8 +130,11 @@ class RolloutTests(unittest.TestCase):
         for field in ('review_pr_url','gate_run_url','review_registration_url',
                       'review_registry_status_url','review_artifact_url'):
             row[field] = 'https://example.com/' + field
-        row['review_artifact_identity']={'runtime':'sfl_owned','app_id':4448946,
+        row['review_artifact_identity']={'runtime':'sfl_registered_codex','app_id':1144995,'bot_user_id':199175422,
                                         'reviewed_head_sha':'b'*40,'reviewed_base_sha':'c'*40}
+        row.update(requester_permission='admin',requester_permission_evidence_url='https://example.com/permission')
+        row['review_pr_url']='https://github.com/'+row['destination']+'/pull/1'
+        row['review_artifact_identity'].update(requester=row['review_requester'],review_pr_url=row['review_pr_url'])
         row['in_place_evidence']={'workflow_run_urls':['https://example.com/run'],
             'release_version':'2.1.0-rc.14','source_sha':'a'*40,
             'release_url':'https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.14',
@@ -366,6 +377,7 @@ class RolloutTests(unittest.TestCase):
         row['wider_workflow_run_urls'] = []
         self.check()
         row['selected_components'].append('sfl-auditor')
+        row['installed_components'].append('sfl-auditor')
         with self.assertRaisesRegex(ValueError, 'Wider tier'):
             self.check()
 
@@ -470,10 +482,10 @@ class RolloutTests(unittest.TestCase):
     def test_native_or_stale_artifact_cannot_claim_sfl_runtime(self):
         row = self.complete_rollout()
         identity = copy.deepcopy(row['review_artifact_identity'])
-        for invalid in (dict(identity, runtime='native_codex'), dict(identity, app_id=1144995),
+        for invalid in (dict(identity, runtime='native_codex'), dict(identity, app_id=4448946), dict(identity, bot_user_id=1),
                         dict(identity, reviewed_head_sha='c'*40), dict(identity, reviewed_base_sha='b'*40)):
             row['review_artifact_identity'] = invalid
-            with self.assertRaisesRegex(ValueError, 'SFL-owned immutable'):
+            with self.assertRaisesRegex(ValueError, 'SFL registered Codex immutable'):
                 self.check()
         row['review_artifact_identity'] = identity
         self.check()
@@ -491,7 +503,10 @@ class RolloutTests(unittest.TestCase):
             row['installed_components'] = invalid
             with self.assertRaisesRegex(ValueError, 'Installed custom tier'):
                 self.check()
-        row['installed_components'] = ['historical-workflow']
+        row['installed_components'] = ['sfl-pr-review-auto']
+        row['selected_tier']='custom'
+        row['selected_components']=['sfl-pr-review-auto']
+        row['manifest_identity']['tier']='custom'
         self.check()
 
     def test_retention_cannot_expand_or_shrink_owner_approved_scope(self):
@@ -602,6 +617,46 @@ class RolloutTests(unittest.TestCase):
                             ('release_download_verification_url',None),('deployment_sha','d'*40)]:
             row.clear();row.update(copy.deepcopy(original));row[field]=value
             with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+
+
+    def test_app_transfer_requires_retained_dependency_proof(self):
+        self.complete_transfer_gates();self.complete_app_transfer()
+        retained=next(row for row in self.matrix['repositories'] if row['health']=='retained_source')
+        retained['retained_app_dependency']['status']='pending'
+        with self.assertRaisesRegex(ValueError,'App transfer requires verified retained'): self.check()
+
+    def test_completed_destination_app_access_requires_transfer(self):
+        self.complete_rollout()
+        self.matrix['owned_app_transfer']['status']='pending'
+        with self.assertRaisesRegex(ValueError,'requires verified App transfer'):self.check()
+
+    def test_installed_configuration_is_preserved(self):
+        row=self.complete_rollout()
+        row.update(installed_tier='full',installed_addons=['pr-review'])
+        with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
+        row['selected_tier']='full';row['manifest_identity']['tier']='full'
+        with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
+        row['selected_addons']=['pr-review'];row['wider_workflow_run_urls']=['https://example.com/run']
+        self.check()
+
+    def test_completed_review_requires_authorized_destination_pr(self):
+        row=self.complete_rollout();original=copy.deepcopy(row)
+        for field,value in [('requester_permission','read'),('requester_permission_evidence_url',None),
+                            ('review_pr_url','https://github.com/hemsoft-dev/other/pull/1')]:
+            row.clear();row.update(copy.deepcopy(original));row[field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+        row.clear();row.update(original);row['review_artifact_identity']['requester']='other'
+        with self.assertRaises(ValueError):self.check()
+
+    def test_destination_codex_installation_cannot_lose_identity_or_proof(self):
+        original=copy.deepcopy(self.matrix['destination_codex_installation'])
+        for field,value in [('id',1),('app_id',4448946),('slug','other'),('repository_selection','selected'),
+                            ('smoke_review_url','https://example.com/review'),('smoke_review_head','a'*40)]:
+            self.matrix['destination_codex_installation']=copy.deepcopy(original)
+            self.matrix['destination_codex_installation'][field]=value
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'Destination Codex'):self.check()
+        del self.matrix['destination_codex_installation']
+        with self.assertRaisesRegex(ValueError,'Destination Codex'):self.check()
 
 
 if __name__ == '__main__':

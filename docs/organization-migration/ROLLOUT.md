@@ -46,12 +46,12 @@ Selected addons must be in the CLI's authoritative catalog. Completed rollout,
 archive and scope-exception rows require every integration row verified. Exceptions
 also need transfer and destination-settings evidence; they waive only rollout scope.
 A verified active row requires a structured strict gate policy bound to GitHub
-Actions and SFL-owned App artifact identity at the recorded head and base, with
+Actions and SFL registered Codex artifact identity at the recorded head and base, with
 registration, registry-status and artifact receipts. Native Codex connection proof
 alone cannot fill those SFL runtime fields. Baseline SFL App coverage is checked
 against owner-verification.json; disposable pilot identities must remain recorded.
 Disposable pilots retain explicit pending/failed/verified validation status. Verified
-pilots need initial and repeated onboarding/sync, registration, SFL-owned artifact,
+pilots need initial and repeated onboarding/sync, registration, SFL registered Codex artifact,
 gate, status and safe gate/uninstall receipts. Both public and private pilots must
 pass before any active rollout row can claim verification. Verified pilot receipts
 include deployment_source, release_version, deployment_sha, manifest_identity
@@ -180,10 +180,7 @@ installation tokens. A failure stays visible and requires correcting the credent
 or installation through the owner. It does not clear provider/model credentials,
 all-repository coverage or actual PR runtime gates.
 
-Do not count native Codex installation or a clean external Codex comment as proof
-that the intended SFL PR Reviewer runtime is restored. The
-[reviewer baseline](README.md#reviewer-baseline) records its discontinued state.
-Define and validate that SFL-owned runtime before claiming #139 complete.
+Do not count native Codex installation or a standalone clean comment as completed SFL reviewer proof. The current [reviewer contract](../SFL-REVIEWER.md) uses Codex App 1144995 and bot user 199175422, plus an SFL registered request tied to the immutable head/base and a required Actions App15368 gate. Collect that complete observer/registration/gate path for #139. The owned private SFL App4448946 is a separate prerequisite for wider App-backed workflows; it does not author the native reviewer artifact. The [historical baseline](README.md#reviewer-baseline) remains a record of discontinued prior private rollout, not a new artifact-provenance requirement.
 The August stop instruction applies to the prior private HemSoft rollout; this
 October organization request authorizes preparation for hemsoft-dev. It does not
 authorize new billing, publishing credentials, or weakening the required gates.
@@ -239,7 +236,7 @@ Record disposable repositories separately from transferred source IDs.
 3. On a same-repository PR targeting the default branch, request review as an
    authorized write-or-higher human using `gh sfl review --repo ... --pr ...`.
    Record requester, registry comment/status, immutable head and base, Codex
-   artifact identity, the SFL-owned review artifact and its immutable identity,
+   artifact identity, the SFL registered Codex review artifact and its immutable identity,
    gate run, and required status target. Installation selection
    alone does not prove this account can request or receive review.
 4. Exercise clean and findings results, pending requests, malformed output,
@@ -273,7 +270,7 @@ receipt, not a default skip. Archived rows need transfer/settings evidence, not
 unarchiving or new workflow runs. The protected distribution repository uses
 health=source_verified with in_place_evidence for workflow run URLs, canonical
 release/version/SHA, release verification, governance, transfer/status receipts
-and verified App coverage, plus a strict review gate and registered SFL-owned
+and verified App coverage, plus a strict review gate and registered Codex-backed SFL
 review artifact at the recorded head/base. It has no consumer installed/selected tier and must
 never be initialized, synced, gated or uninstalled through consumer commands. Reconcile any inventory additions explicitly.
 
@@ -316,8 +313,10 @@ onboarding passes, or an explicitly accepted scope exception is linked. An empty
 rollout evidence field never establishes completion.
 
 
-Additional mandatory record checks: every transfer-target ledger row must be verified before any source transfer or App cutover. A selected custom tier requires an existing custom manifest. Completed consumers must record matching manifest source/sourceSha/version/tier and canonical release/download verification receipts. Verified pilots require a strict required Actions-bound SFL gate, the human requester and write-or-higher permission receipt, the same-repository review PR, and an SFL-owned artifact bound to that requester, PR, head and base. At least one verified pilot must deploy a wider tier and supply wider workflow and auditor run receipts before organization rollout.
+Additional mandatory record checks: every transfer-target ledger row must be verified before any source transfer or App cutover. A selected custom tier requires an existing custom manifest. Completed consumers must record matching manifest source/sourceSha/version/tier and canonical release/download verification receipts. Verified pilots require a strict required Actions-bound SFL gate, the human requester and write-or-higher permission receipt, the same-repository review PR, and an SFL registered Codex artifact bound to that requester, PR, head and base. At least one verified pilot must deploy a wider tier and supply wider workflow and auditor run receipts before organization rollout.
 
-The known yahtzee runner is a separate resource row reconciled with both runner captures. Its current registration and guest service are recorded in `yahtzee-runner-owner-evidence.json`; fresh smoke and post-transfer continuity remain pending. Preserve the existing registration first and replace it only if continuity fails. Never infer runner absence from an empty external-provider dashboard.
+The known yahtzee runner is a separate resource row reconciled with both runner captures. Its current registration and guest service are recorded in `yahtzee-runner-owner-evidence.json`; fresh pre-transfer smoke and isolation checks passed; post-transfer continuity remains pending. Preserve the existing registration first and replace it only if continuity fails. Never infer runner absence from an empty external-provider dashboard.
 
 Franz confirmed [none of the 65 transfer targets uses Azure Pipelines, Fly.io or Railway](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028753359). `provider-absence-owner-evidence.json` clears those usage candidates without changing historical App selections or clearing other mandatory gates.
+
+Verified App transfer requires verified retained-site App dependency receipts. Destination private-App access cannot be marked verified before ownership transfer. Existing tiers, addons and custom components are preserved; completed source/consumer/pilot reviews all bind a write-or-higher human, same-repository PR and artifact to the same immutable head/base. The native Codex installation/coverage and smoke identity are checked against the independent `codex-organization-installation-evidence.json` capture.

@@ -76,7 +76,8 @@ jobs:
           "${{ steps.actionlint.outputs.executable }}" -color \
             .github/workflows/publish-private-prerelease.yml \
             .github/workflows/validate-gh-sfl.yml \
-            .github/workflows/validate-release-workflow.yml
+            .github/workflows/validate-release-workflow.yml \
+            .github/workflows/verify-sfl-app-credential.yml
 
       - name: Validate synchronized release contract
         shell: pwsh

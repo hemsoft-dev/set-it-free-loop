@@ -1,0 +1,24 @@
+{
+  "observed_at": "2026-10-07T01:24:55.966726+00:00",
+  "method": "GitHub REST GET as HemSoft; installation metadata and native smoke artifact identity only",
+  "installation": {
+    "id": 168678981,
+    "app_id": 1144995,
+    "app_slug": "chatgpt-codex-connector",
+    "repository_selection": "all"
+  },
+  "account": {
+    "id": 338855369,
+    "login": "hemsoft-dev",
+    "type": "Organization"
+  },
+  "smoke_review": {
+    "url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/pull/1#issuecomment-6027603864",
+    "head_sha": "f225d94d49a5951d6b2b205ad08990337aff040f",
+    "bot_user_id": 199175422,
+    "app_id": 1144995,
+    "result": "Codex Review: Didn't find any major issues. Hooray!",
+    "reviewed_commit_prefix": "f225d94d49",
+    "commit_resolution_url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/commits/f225d94d49"
+  }
+}

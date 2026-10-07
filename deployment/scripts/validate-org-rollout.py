@@ -65,22 +65,31 @@ def immutable_sha(value):
     return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{40}', value) is not None
 
 
-def validate_source_review(row, directory, app_id):
+def validate_registered_review(row, directory, repository):
     policy = row.get('gate_policy')
     require(isinstance(policy, dict) and policy.get('state') == 'required' and
             policy.get('context') == 'SFL Reviewer Gate Runner' and policy.get('app_id') == 15368 and
-            policy.get('strict') is True, 'Protected source needs a strict Actions-bound review gate')
+            policy.get('strict') is True, 'Completed review needs a required strict SFL gate bound to Actions')
     evidence(policy.get('evidence_url'), directory)
     require(text(row.get('review_requester')) and immutable_sha(row.get('review_head_sha')) and
-            immutable_sha(row.get('review_base_sha')), 'Protected source needs immutable registered review context')
+            immutable_sha(row.get('review_base_sha')), 'Completed review needs immutable registered review context')
+    require(row.get('requester_permission') in {'write','maintain','admin'} and
+            re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,38}', row['review_requester']) is not None,
+            'Completed review needs a write-or-higher human requester')
+    evidence(row.get('requester_permission_evidence_url'), directory)
+    require(re.fullmatch('https://github.com/' + re.escape(repository) + r'/pull/[1-9][0-9]*',
+                        row.get('review_pr_url','')) is not None,
+            'Completed review needs a same-destination-repository PR')
     for field in ('review_pr_url', 'gate_run_url', 'review_registration_url',
                   'review_registry_status_url', 'review_artifact_url'):
         evidence(row.get(field), directory)
     identity = row.get('review_artifact_identity')
-    require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_owned' and
-            identity.get('app_id') == app_id and identity.get('reviewed_head_sha') == row['review_head_sha'] and
-            identity.get('reviewed_base_sha') == row['review_base_sha'],
-            'Protected source needs an SFL-owned immutable review artifact')
+    require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
+            identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and identity.get('reviewed_head_sha') == row['review_head_sha'] and
+            identity.get('reviewed_base_sha') == row['review_base_sha'] and
+            identity.get('review_pr_url') == row['review_pr_url'] and
+            identity.get('requester') == row['review_requester'],
+            'SFL registered Codex immutable artifact must bind its requester, PR, head and base')
 
 
 def validate(inventory, rows, matrix, directory, scope_decisions=None):
@@ -97,6 +106,26 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     supported_addons, supported_components = workflow_catalog()
     owned_app_id = inventory['known_owned_app']['data']['id']
     canonical_source = inventory['destination_login'] + '/set-it-free-loop'
+    codex = matrix.get('destination_codex_installation')
+    captured_codex = json.loads((directory / 'codex-organization-installation-evidence.json').read_text())
+    installation = captured_codex['installation']
+    smoke = captured_codex['smoke_review']
+    require(isinstance(codex, dict) and codex.get('id') == installation['id'] and
+            codex.get('app_id') == installation['app_id'] == 1144995 and
+            codex.get('slug') == installation['app_slug'] == 'chatgpt-codex-connector' and
+            codex.get('repository_selection') == installation['repository_selection'] == 'all' and
+            captured_codex['account']['login'] == inventory['destination_login'] and
+            captured_codex['account']['type'] == 'Organization',
+            'Destination Codex installation must match its independent captured identity and coverage')
+    require(codex.get('connection_status') == 'verified_by_real_private_organization_review' and
+            codex.get('smoke_review_url') == smoke['url'] and
+            codex.get('smoke_review_head') == smoke['head_sha'] and immutable_sha(smoke['head_sha']) and
+            smoke.get('bot_user_id') == 199175422 and smoke.get('app_id') == 1144995 and
+            smoke['url'].startswith('https://github.com/' + inventory['destination_login'] + '/') and
+            smoke.get('result','').startswith("Codex Review: Didn't find any major issues."),
+            'Destination Codex connection needs its immutable authenticated organization smoke review')
+    evidence(codex.get('smoke_review_url'), directory)
+
     if scope_decisions is None:
         scope_decisions = json.loads((directory / 'scope-decisions.json').read_text())
     require(scope_decisions.get('schema_version') == 1, 'Unsupported scope decision schema')
@@ -257,6 +286,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         if repo_id not in retained and (health != 'pending_transfer' or text(row.get('transfer_evidence_url'))):
             require(all_transfer_gates_verified,
                     'All transfer-target ledger gates must be verified before any transfer advances')
+        if row.get('destination_sfl_app_access') == 'verified':
+            require(app_transfer['status'] == 'verified', 'Destination private SFL App access requires verified App transfer')
         if health in {'verified', 'archived_verified', 'scope_exception', 'source_verified'}:
             require(all(status == 'verified' for status in ledger_statuses[repo_id]),
                     'Completed rollout requires every integration row verified')
@@ -299,7 +330,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             # The source owns its workflows; it must not acquire a consumer manifest through init/sync.
             require(row['installed_tier'] is None and row['selected_tier'] is None,
                     'Protected source must not be recorded as a deployed consumer')
-            validate_source_review(row, directory, owned_app_id)
+            validate_registered_review(row, directory, row["destination"])
             verified_rollouts += 1
         elif health == 'scope_exception':
             require(not protected_source, 'Protected source cannot omit in-place verification through an exception')
@@ -329,6 +360,13 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 require(components is not None and bool(set(components) & supported_components) and
                         set(components) <= supported_components | {'labels', 'governance'},
                         'Custom tier needs recognized selected workflow components')
+            if row['installed_tier'] != 'not_installed':
+                require(row['selected_tier'] == ('reviewer' if row['installed_tier'] == 'review' else row['installed_tier']) and
+                        set(row['selected_addons']) == set(row['installed_addons']),
+                        'Existing deployment must preserve its installed tier and addons')
+                if row['installed_tier'] == 'custom':
+                    require(set(row['selected_components']) == set(row['installed_components']),
+                            'Custom deployment must preserve its observed components')
             policy = row.get('gate_policy')
             require(isinstance(policy, dict) and policy.get('state') == 'required' and
                     policy.get('context') == 'SFL Reviewer Gate Runner' and
@@ -357,11 +395,11 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             for field in ('review_registration_url', 'review_registry_status_url', 'review_artifact_url'):
                 evidence(row.get(field), directory)
             identity = row.get('review_artifact_identity')
-            require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_owned' and
-                    identity.get('app_id') == owned_app_id and
+            require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
+                    identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and
                     identity.get('reviewed_head_sha') == row['review_head_sha'] and
                     identity.get('reviewed_base_sha') == row['review_base_sha'],
-                    'Verified rollout needs an SFL-owned immutable review artifact identity')
+                    'Verified rollout needs an SFL registered Codex immutable review artifact identity')
             runs = row.get('wider_workflow_run_urls')
             require(isinstance(runs, list), 'Wider workflow evidence must be a list')
             wider = row['selected_tier'] not in {'reviewer', 'custom'} or (
@@ -370,7 +408,12 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(not wider or bool(runs), 'Wider tier needs workflow evidence')
             for run in runs:
                 evidence(run, directory)
+            validate_registered_review(row, directory, row['destination'])
             verified_rollouts += 1
+    if app_transfer['status'] == 'verified':
+        require(all(row.get('retained_app_dependency', {}).get('status') == 'verified'
+                    for row in records if row['repository_id'] in retained),
+                'App transfer requires verified retained App dependencies')
     require(seen_matrix == set(expected), 'Matrix must cover every baseline ID exactly once')
     summary = {'repositories': len(expected), 'active': sum(not repo['archived'] for repo in expected.values()),
                'archived': sum(repo['archived'] for repo in expected.values()), 'verified_rollouts': verified_rollouts,
@@ -412,13 +455,13 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             for field in ('manifest_evidence_url', 'release_download_verification_url'):
                 evidence(receipts.get(field), directory)
             identity = receipts.get('review_artifact_identity')
-            require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_owned' and
-                    identity.get('app_id') == owned_app_id and
+            require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
+                    identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and
                     all(isinstance(identity.get(field), str) and
                         re.fullmatch(r'[0-9a-f]{40}', identity[field])
                         for field in ('reviewed_head_sha', 'reviewed_base_sha')),
-                    'Verified pilot needs immutable SFL-owned review identity')
-            validate_source_review(receipts, directory, owned_app_id)
+                    'Verified pilot needs immutable SFL registered Codex review identity')
+            validate_registered_review(receipts, directory, name)
             require(receipts.get('requester_permission') in {'write', 'maintain', 'admin'},
                     'Verified pilot needs an authorized human requester')
             require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,38}', receipts['review_requester']) is not None,
