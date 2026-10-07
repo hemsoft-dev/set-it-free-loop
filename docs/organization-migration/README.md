@@ -438,7 +438,33 @@ This provenance output ships with the next release containing these templates.
 Release download proofs load a separate successful `gh release verify-asset`
 result and its signed GitHub release statement. The canonical repository ID,
 release tag, source commit and signed asset digest must match the download.
+The download must name the executable for its recorded platform,
+`gh-sfl_<version>_linux_amd64` or `gh-sfl_<version>_windows_amd64.exe`.
 Equal local expected/actual hashes and verification flags alone cannot clear
 this gate. Final inventory also compares the exact `visibility` value for every
 baseline repository, pilot and additional repository, preserving public or
 private access rather than accepting internal visibility through a private flag.
+
+Before the final source refresh, save an independent pre-cutover ledger readiness
+capture and set `pre_cutover_ledger_evidence_url` in the matrix. It contains the
+complete rows, their canonical JSON SHA256, owner identity, organization ID,
+observation time and SHA256 pins for every referenced local evidence file. Run
+the same integration contracts against these frozen rows. All transfer gates
+must already be verified, with pre-transfer provider smokes and verification
+and evidence times no later than the snapshot. Source refresh and App transfer
+follow this capture. Preserve it when the current ledger gains post-transfer
+smokes; current status strings alone cannot establish earlier readiness.
+
+Every terminal Actions capture includes the API run's `created_at` and
+`updated_at`. Captures follow actual completion, and final rollout chronology
+includes that completion time. The raw source credential run also records its
+local `captured_at`, before the final source refresh.
+
+Live negative scenario proof requires a downloaded immutable Actions artifact
+named `sfl-observer-scenario-<scenario>`. Save its GET metadata, repository-bound
+request/download URLs, archive bytes and GitHub SHA256 digest separately. Its
+only file, `scenario.json`, must equal the scenario output and identify the exact
+run and attempt. The captured artifact ID belongs to that observer run and
+deployed revision. A run without a matching scenario artifact does not establish
+live proof; the tracked executed workflow fixture remains an explicitly labeled
+alternative for the supported scenarios.

@@ -6,10 +6,12 @@ import base64
 import csv
 import datetime
 import hashlib
+import io
 import json
 import pathlib
 import re
 import urllib.parse
+import zipfile
 
 TIERS = {'review', 'reviewer', 'minimal', 'standard', 'full', 'custom'}
 INIT_TIERS = {'reviewer', 'minimal', 'standard', 'full'}
@@ -83,6 +85,14 @@ def observed_time(value, label):
         raise ValueError(label + ' needs a valid observation timestamp') from exc
     require(timestamp.tzinfo is not None, label + ' timestamp needs a timezone')
     return timestamp
+
+
+def terminal_run_time(run, observed_at, label):
+    created = observed_time(run.get('created_at'), label + ' creation')
+    completed = observed_time(run.get('updated_at'), label + ' completion')
+    require(created <= completed <= observed_at,
+            label + ' capture must follow actual run completion')
+    return completed
 
 
 def deployed_revision(proof, directory, repository_id, repository, manifest):
@@ -183,7 +193,7 @@ def bound_workflow_operation(operation, directory, repository_id, repository, sh
             run.get('conclusion') == 'success', 'Workflow execution capture must prove the successful expected Actions run')
     timestamp = observed_time(capture.get('observed_at'), 'Workflow execution')
     created = observed_time(run.get('created_at'), 'Workflow creation')
-    require(created <= timestamp, 'Workflow capture cannot precede its run creation')
+    terminal_run_time(run, timestamp, 'Workflow execution')
     if cutover is not None:
         require(created >= cutover, 'Workflow must execute after its independent destination/App cutover capture')
 
@@ -254,6 +264,8 @@ def validate_app_credential(proof, directory):
             run.get('path') == proof['workflow'] and run.get('head_branch') == 'main' and
             run.get('status') == 'completed' and run.get('conclusion') == 'success',
             'App credential capture must come from its successful reviewed main workflow run')
+    terminal_run_time(run, observed_time(run.get('captured_at'), 'App credential run capture'),
+                      'App credential workflow')
 
 
 def protection_semantics(value, repo, url_field=False):
@@ -327,6 +339,10 @@ def validate_protection_preservation(proof, directory, repo, cutover=None):
 def validate_release_download(proof, directory, repository_id, repository, source, sha, version):
     release_url = 'https://github.com/' + source + '/releases/tag/v' + version
     download = local_capture(proof.get('release_download_verification_url'), directory, 'Release download')
+    assets = {'linux_amd64': 'gh-sfl_' + version + '_linux_amd64',
+              'windows_amd64': 'gh-sfl_' + version + '_windows_amd64.exe'}
+    require(download.get('platform') in assets and download.get('asset_name') == assets[download['platform']],
+            'Release download must verify the versioned installable CLI asset for its platform')
     require(download.get('release_url') == release_url and
             download.get('source_repository') == source and
             download.get('source_sha') == sha and
@@ -837,6 +853,9 @@ def validate_source_refresh(proof, directory, inventory, credential):
     metadata = local_capture(credential.get('credential_metadata_evidence_url'), directory, 'App credential metadata')
     require(timestamp >= observed_time(metadata.get('observed_at'), 'App credential metadata'),
             'Source refresh must follow the credential check')
+    credential_run = local_capture(credential.get('workflow_run_evidence_url'), directory, 'App credential workflow run')
+    require(timestamp >= observed_time(credential_run.get('captured_at'), 'App credential run capture'),
+            'Source refresh must follow the captured completed credential workflow')
     expected = {r['id']: r for r in inventory['repositories']}
     accounts = capture.get('accounts')
     require(isinstance(accounts, list) and len(accounts) == 2 and
@@ -863,6 +882,50 @@ def validate_source_refresh(proof, directory, inventory, credential):
             capture.get('source_installation') == {'id':150383874,'app_id':4448946,'owner':'HemSoft','repository_selection':'all'} and
             capture.get('source_organization_installations') == inventory['source_organization_apps'],
             'Source refresh must reconcile owned and installed App settings')
+    return timestamp
+
+
+def ledger_digest(rows):
+    return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def validate_ledger_readiness(reference, current_rows, directory, context, source_refreshed_at):
+    capture = local_capture(reference, directory, 'Pre-cutover ledger readiness')
+    timestamp = observed_time(capture.get('observed_at'), 'Ledger readiness')
+    rows = capture.get('rows')
+    require(capture.get('phase') == 'pre_cutover' and capture.get('verified_by') == 'HemSoft' and
+            capture.get('organization_id') == 338855369 and isinstance(rows, list) and
+            capture.get('ledger_sha256') == ledger_digest(rows) and timestamp <= source_refreshed_at,
+            'Ledger readiness must preserve an owner-verified snapshot before source refresh and App transfer')
+    statuses, _ = validate_ledger_rows(rows, *context)
+    retained = context[3]
+    require(all(all(status == 'verified' for status in values) for repo_id, values in statuses.items() if repo_id not in retained),
+            'Immutable pre-cutover ledger must verify every transfer-target gate')
+    changing = {'status', 'verified_at', 'evidence_url', 'smoke_outcome', 'smoke_phase', 'smoke_evidence_url'}
+    def identities(values):
+        return sorted(json.dumps({k:v for k,v in row.items() if k not in changing}, sort_keys=True) for row in values)
+    require(identities(rows) == identities(current_rows),
+            'Pre-cutover ledger must retain the current provider, resource, credential and transfer identities')
+    pinned = {}
+    for row in rows:
+        if row['status'] != 'verified':
+            continue
+        require(observed_time(row['verified_at'], 'Ledger verification') <= timestamp,
+                'Ledger readiness cannot precede any gate verification')
+        if row['provider'] != 'none':
+            require(row.get('smoke_phase') == 'pre_transfer', 'Ledger readiness needs pre-transfer provider evidence')
+        for key, reference in row.items():
+            if key.endswith('evidence_url') and text(reference) and not urllib.parse.urlsplit(reference).scheme:
+                evidence(reference, directory)
+                path = directory / reference
+                pinned[reference] = hashlib.sha256(path.read_bytes()).hexdigest()
+                data = json.loads(path.read_text())
+                for field in ('observed_at', 'confirmed_at', 'approved_at'):
+                    if data.get(field):
+                        require(observed_time(data[field], 'Readiness evidence') <= timestamp,
+                                'Ledger readiness must follow all pinned pre-transfer evidence')
+    require(capture.get('evidence_sha256') == pinned,
+            'Immutable ledger readiness must pin every local pre-transfer evidence capture')
     return timestamp
 
 
@@ -948,6 +1011,7 @@ def validate_runner_captures(proof, directory, earliest):
                     run.get('conclusion') == 'success' and capture.get('read_only') is True and
                     observed_time(run.get('created_at'), 'Runner smoke creation') >= earliest,
                     'Runner smoke capture must prove a completed destination run at the recorded revision')
+            terminal_run_time(run, observed_time(capture['observed_at'], 'Runner capture'), 'Runner smoke')
 
 
 def validate_pre_sync_installation(proof, directory, row):
@@ -1052,6 +1116,38 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 run.get('path') == '.github/workflows/sfl-pr-review-auto.yml' and
                 run.get('status') == 'completed' and run.get('conclusion') in {'success','failure'},
                 'Live scenario needs its terminal deployed-observer Actions run')
+        terminal_run_time(run, scenario_at, 'Live scenario')
+        artifact_capture = local_capture(capture.get('artifact_evidence_url'), directory, 'Live scenario artifact')
+        artifact = artifact_capture.get('artifact', {})
+        run_id = int(result['evidence_url'].rsplit('/', 1)[1])
+        artifact_id = artifact.get('id')
+        require(type(artifact_id) is int and artifact_id > 0 and type(run.get('id')) is int and run['id'] == run_id and
+                type(run.get('run_attempt')) is int and run['run_attempt'] > 0 and
+                artifact.get('name') == 'sfl-observer-scenario-' + scenario and artifact.get('expired') is False and
+                artifact.get('workflow_run', {}).get('id') == run_id and
+                artifact['workflow_run'].get('head_sha') == revision and
+                artifact_capture.get('request_url') == 'https://api.github.com/repos/' + repository + '/actions/artifacts/' + str(artifact_id) and
+                artifact.get('archive_download_url') == artifact_capture.get('download_url') ==
+                    'https://api.github.com/repos/' + repository + '/actions/artifacts/' + str(artifact_id) + '/zip' and
+                all(output.get(k) == v for k, v in {'run_id':run_id, 'run_attempt':run['run_attempt']}.items()),
+                'Live scenario output must identify its exact run, attempt and scenario artifact')
+        require(observed_time(run['created_at'], 'Live scenario creation') <=
+                observed_time(artifact.get('created_at'), 'Scenario artifact creation') <=
+                observed_time(artifact.get('updated_at'), 'Scenario artifact completion') <=
+                observed_time(run['updated_at'], 'Live scenario completion') and
+                observed_time(artifact.get('updated_at'), 'Scenario artifact completion') <=
+                    observed_time(artifact_capture.get('observed_at'), 'Scenario artifact capture') <= scenario_at,
+                'Live scenario capture must follow its immutable artifact observation')
+        try:
+            archive = base64.b64decode(artifact_capture.get('archive_base64', ''), validate=True)
+            require(artifact.get('digest') == 'sha256:' + hashlib.sha256(archive).hexdigest(),
+                    'Live scenario artifact archive must match its GitHub digest')
+            with zipfile.ZipFile(io.BytesIO(archive)) as files:
+                require(files.namelist() == ['scenario.json'], 'Live scenario artifact needs one scenario output')
+                require(json.loads(files.read('scenario.json')) == output,
+                        'Live scenario output must equal the downloaded immutable artifact contents')
+        except (ValueError, zipfile.BadZipFile, KeyError) as exc:
+            raise ValueError('Live scenario artifact must contain the independently downloaded output') from exc
 
 
 def provider_preservation_baseline(row, inventory, directory):
@@ -1105,9 +1201,135 @@ def repository_terminal_times(records, ledger_rows, directory):
             timestamp = capture.get('observed_at') or capture.get('approved_at')
             if timestamp:
                 observations.append(observed_time(timestamp, 'Terminal repository evidence'))
+            run = capture.get('run', {})
+            if run.get('status') == 'completed':
+                observations.append(observed_time(run.get('updated_at'), 'Terminal workflow completion'))
         require(bool(observations), 'Terminal repository needs independently timestamped completion evidence')
         times[row['repository_id']] = max(observations)
     return times
+
+
+def validate_ledger_rows(rows, inventory, directory, expected, retained, candidates, expected_unused,
+                         runner_resources, vercel_resources, other_resources, external_scope):
+    seen_vercel_resources = set()
+    seen_other_resources = {kind: set() for kind in other_resources}
+    seen_runner_resources = set()
+    seen_ledger = set()
+    ledger_statuses = {}
+    post_transfer_smokes = {}
+    for row in rows:
+        try:
+            repo_id = int(row['repository_id'])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise ValueError('Invalid ledger repository ID') from exc
+        require(repo_id in expected, 'Unexpected ledger repository ID')
+        repo = expected[repo_id]
+        require(row.get('source') == repo['full_name'] and row.get('destination') == repo['destination'],
+                'Ledger identity or collision mapping mismatch')
+        if row.get('resource_kind') == 'repository_runner':
+            resource = (repo_id, row.get('resource_id'))
+            require(resource in runner_resources and resource not in seen_runner_resources,
+                    'Unexpected or duplicate repository runner resource')
+            require(row.get('provider') == 'GitHub Actions', 'Known runner cannot be recorded as provider absence')
+            seen_runner_resources.add(resource)
+        if row.get('resource_kind') == 'vercel_project':
+            resource = (repo_id, row.get('resource_id'))
+            require(resource in vercel_resources and resource not in seen_vercel_resources,
+                    'Unexpected or duplicate Vercel project resource')
+            require(row.get('provider') == 'Vercel', 'Known Vercel project cannot be recorded as provider absence')
+            seen_vercel_resources.add(resource)
+        kind = row.get('resource_kind')
+        if kind in other_resources:
+            provider, resources = other_resources[kind]
+            resource = (repo_id, row.get('resource_id'))
+            require(resource in resources and resource not in seen_other_resources[kind],
+                    'Unexpected or duplicate known Pages/Supabase resource')
+            require(row.get('provider') == provider, 'Known Pages/Supabase resource cannot be provider absence')
+            seen_other_resources[kind].add(resource)
+        names = row.get('unused_repository_credential_names')
+        require(isinstance(names, str), 'Ledger needs explicit unused credential names')
+        listed_unused = [name.strip() for name in names.split(';') if name.strip()]
+        require(len(listed_unused) == len(set(listed_unused)) and set(listed_unused) == expected_unused.get(repo_id, set()),
+                'Ledger unused credential names differ from owner-confirmed scope')
+        expected_reference = 'legacy-unused-credential-owner-evidence.json' if repo_id in expected_unused else ''
+        require(row.get('unused_repository_credential_evidence_url') == expected_reference,
+                'Ledger unused credential reference differs from owner evidence')
+        captured = row.get('provider_candidates_from_app_access', '')
+        require(isinstance(captured, str), 'Invalid provider candidate list')
+        listed = [name.strip() for name in captured.split(';') if name.strip()]
+        require(len(listed) == len(set(listed)) and set(listed) == candidates[repo_id],
+                'Provider candidates differ from captured App selections')
+        require(row.get('status') in LEDGER_STATUS, 'Invalid ledger status')
+        seen_ledger.add(repo_id)
+        ledger_statuses.setdefault(repo_id, []).append(row['status'])
+        if row['status'] != 'verified':
+            continue
+        require(text(row.get('verified_by')), 'Verified ledger row needs owner identity')
+        try:
+            verified_at = datetime.datetime.fromisoformat(row.get('verified_at', '').replace('Z', '+00:00'))
+        except ValueError as exc:
+            raise ValueError('Verified ledger row needs an ISO timestamp') from exc
+        require(verified_at.tzinfo is not None, 'Verification timestamp needs a timezone')
+        evidence(row.get('evidence_url'), directory)
+        require(text(row.get('provider')), 'Verified ledger row needs a provider or explicit none')
+        if row['provider'] == 'none':
+            require(text(row.get('absence_reason')), 'Verified absence needs an evidence-backed reason')
+            require(repo_id not in retained and row.get('verified_by') == 'HemSoft' and
+                    row.get('evidence_url') == EXTERNAL_SCOPE_RECEIPT and
+                    verified_at >= datetime.datetime.fromisoformat(external_scope['confirmed_at'].replace('Z', '+00:00')),
+                    'Verified provider absence needs the approved owner receipt for this transfer target')
+        else:
+            if row.get('resource_kind') == 'supabase_project' and row.get('resource_id') == 'cevpnetigzotgstxxjpm':
+                decision = json.loads((directory/'dashboard-database-owner-disposition.json').read_text())
+                require(decision.get('repository_id') == repo_id and decision.get('resource_id') == row['resource_id'] and
+                        decision.get('disposition') == 'preserve_paused_database_and_configuration' and
+                        decision.get('resume_authorized') is False and decision.get('delete_authorized') is False and
+                        row.get('transfer_action') == 'Preserve paused database and configuration; no project/database transfer, resume, query or deletion',
+                        'Dashboard database action must preserve its approved paused disposition')
+            if row.get('resource_kind') == 'vercel_project' and row.get('resource_id') == 'prj_hPjAbxtMlCi3A5waKxQpjATto0ae':
+                decision = json.loads((directory/'modern-web-stack-git-retirement-evidence.json').read_text())
+                require(decision.get('repository_id') == repo_id and decision.get('project_id') == row['resource_id'] and
+                        decision.get('result') == 'disconnected' and decision.get('project_deleted') is False and
+                        row.get('transfer_action') == 'Git connection retired before transfer; transfer GitHub repository without reconnecting Vercel',
+                        'Retired Vercel project action must preserve its approved disconnected disposition')
+            for field in ('resource_owner', 'resource_url', 'billing_dependency', 'credential_source',
+                          'affected_reference', 'transfer_action', 'smoke_test', 'recovery_action'):
+                require(text(row.get(field)), f'Verified integration needs {field}')
+            smoke = local_capture(row.get('smoke_evidence_url'), directory, 'Integration smoke')
+            smoke_repository = repo['full_name'] if row.get('smoke_phase') == 'pre_transfer' or repo_id in retained else repo['destination']
+            require(row.get('smoke_outcome') in {'success', 'approved_recovery', 'preserved_unused', 'baseline_preserved'} and
+                    row.get('smoke_phase') in {'pre_transfer', 'post_transfer'} and
+                    smoke.get('repository_id') == repo_id and smoke.get('repository') == smoke_repository and
+                    smoke.get('provider') == row['provider'] and smoke.get('resource_kind') == row.get('resource_kind') and
+                    smoke.get('resource_id') == row.get('resource_id') and smoke.get('outcome') == row['smoke_outcome'] and
+                    smoke.get('phase') == row['smoke_phase'] and smoke.get('destructive_changes') is False,
+                    'Integration smoke must match its resource, phase and successful preservation outcome')
+            smoke_observed_at = observed_time(smoke.get('observed_at'), 'Integration smoke')
+            if row['smoke_phase'] == 'post_transfer':
+                post_transfer_smokes.setdefault(repo_id, []).append(smoke_observed_at)
+            if row['smoke_outcome'] == 'approved_recovery':
+                require(smoke.get('recovery_success') is True and smoke.get('approved_by') == 'HemSoft',
+                        'Integration recovery needs owner approval and a successful result')
+                evidence(smoke.get('owner_receipt_url'), directory)
+            elif row['smoke_outcome'] == 'preserved_unused':
+                require(smoke.get('resource_unchanged') is True and smoke.get('runtime_actions') == [],
+                        'Unused integration must remain preserved without runtime operations')
+                evidence(smoke.get('owner_receipt_url'), directory)
+            elif row['smoke_outcome'] == 'baseline_preserved':
+                baseline = provider_preservation_baseline(row, inventory, directory)
+                require(smoke.get('baseline') == baseline and smoke.get('observed_resource') == baseline,
+                        'Baseline preservation must match the sealed provider resource and independent observation')
+            else:
+                require(smoke.get('continuity_verified') is True, 'Integration success needs verified continuity')
+            evidence(row['resource_url'], directory)
+            require(row.get('credential_validity') in {'verified', 'not_required'},
+                    'Credential presence alone does not establish validity')
+    require(seen_ledger == set(expected), 'Ledger must cover every baseline ID')
+    require(seen_runner_resources == runner_resources, 'Ledger must preserve every observed repository runner resource')
+    require(seen_vercel_resources == vercel_resources, 'Ledger must preserve every captured Vercel project resource')
+    require(all(seen_other_resources[kind] == resources for kind, (_, resources) in other_resources.items()),
+            'Ledger must preserve every captured Pages/Supabase/Cloudflare resource')
+    return ledger_statuses, post_transfer_smokes
 
 
 def validate_preservation_time(capture, cutoff):
@@ -1303,128 +1525,17 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 set(names) == expected_unused[repo_id], 'Unused credential artifact identity or names differ from scanned owner scope')
         captured_unused[repo_id] = set(names)
     require(captured_unused == expected_unused, 'Unused credential artifact must retain the exact 42-repository scope')
-    seen_runner_resources = set()
-    seen_ledger = set()
-    ledger_statuses = {}
-    post_transfer_smokes = {}
-    for row in rows:
-        try:
-            repo_id = int(row['repository_id'])
-        except (ValueError, TypeError, KeyError) as exc:
-            raise ValueError('Invalid ledger repository ID') from exc
-        require(repo_id in expected, 'Unexpected ledger repository ID')
-        repo = expected[repo_id]
-        require(row.get('source') == repo['full_name'] and row.get('destination') == repo['destination'],
-                'Ledger identity or collision mapping mismatch')
-        if row.get('resource_kind') == 'repository_runner':
-            resource = (repo_id, row.get('resource_id'))
-            require(resource in runner_resources and resource not in seen_runner_resources,
-                    'Unexpected or duplicate repository runner resource')
-            require(row.get('provider') == 'GitHub Actions', 'Known runner cannot be recorded as provider absence')
-            seen_runner_resources.add(resource)
-        if row.get('resource_kind') == 'vercel_project':
-            resource = (repo_id, row.get('resource_id'))
-            require(resource in vercel_resources and resource not in seen_vercel_resources,
-                    'Unexpected or duplicate Vercel project resource')
-            require(row.get('provider') == 'Vercel', 'Known Vercel project cannot be recorded as provider absence')
-            seen_vercel_resources.add(resource)
-        kind = row.get('resource_kind')
-        if kind in other_resources:
-            provider, resources = other_resources[kind]
-            resource = (repo_id, row.get('resource_id'))
-            require(resource in resources and resource not in seen_other_resources[kind],
-                    'Unexpected or duplicate known Pages/Supabase resource')
-            require(row.get('provider') == provider, 'Known Pages/Supabase resource cannot be provider absence')
-            seen_other_resources[kind].add(resource)
-        names = row.get('unused_repository_credential_names')
-        require(isinstance(names, str), 'Ledger needs explicit unused credential names')
-        listed_unused = [name.strip() for name in names.split(';') if name.strip()]
-        require(len(listed_unused) == len(set(listed_unused)) and set(listed_unused) == expected_unused.get(repo_id, set()),
-                'Ledger unused credential names differ from owner-confirmed scope')
-        expected_reference = 'legacy-unused-credential-owner-evidence.json' if repo_id in expected_unused else ''
-        require(row.get('unused_repository_credential_evidence_url') == expected_reference,
-                'Ledger unused credential reference differs from owner evidence')
-        captured = row.get('provider_candidates_from_app_access', '')
-        require(isinstance(captured, str), 'Invalid provider candidate list')
-        listed = [name.strip() for name in captured.split(';') if name.strip()]
-        require(len(listed) == len(set(listed)) and set(listed) == candidates[repo_id],
-                'Provider candidates differ from captured App selections')
-        require(row.get('status') in LEDGER_STATUS, 'Invalid ledger status')
-        seen_ledger.add(repo_id)
-        ledger_statuses.setdefault(repo_id, []).append(row['status'])
-        if row['status'] != 'verified':
-            continue
-        require(text(row.get('verified_by')), 'Verified ledger row needs owner identity')
-        try:
-            verified_at = datetime.datetime.fromisoformat(row.get('verified_at', '').replace('Z', '+00:00'))
-        except ValueError as exc:
-            raise ValueError('Verified ledger row needs an ISO timestamp') from exc
-        require(verified_at.tzinfo is not None, 'Verification timestamp needs a timezone')
-        evidence(row.get('evidence_url'), directory)
-        require(text(row.get('provider')), 'Verified ledger row needs a provider or explicit none')
-        if row['provider'] == 'none':
-            require(text(row.get('absence_reason')), 'Verified absence needs an evidence-backed reason')
-            require(repo_id not in retained and row.get('verified_by') == 'HemSoft' and
-                    row.get('evidence_url') == EXTERNAL_SCOPE_RECEIPT and
-                    verified_at >= datetime.datetime.fromisoformat(external_scope['confirmed_at'].replace('Z', '+00:00')),
-                    'Verified provider absence needs the approved owner receipt for this transfer target')
-        else:
-            if row.get('resource_kind') == 'supabase_project' and row.get('resource_id') == 'cevpnetigzotgstxxjpm':
-                decision = json.loads((directory/'dashboard-database-owner-disposition.json').read_text())
-                require(decision.get('repository_id') == repo_id and decision.get('resource_id') == row['resource_id'] and
-                        decision.get('disposition') == 'preserve_paused_database_and_configuration' and
-                        decision.get('resume_authorized') is False and decision.get('delete_authorized') is False and
-                        row.get('transfer_action') == 'Preserve paused database and configuration; no project/database transfer, resume, query or deletion',
-                        'Dashboard database action must preserve its approved paused disposition')
-            if row.get('resource_kind') == 'vercel_project' and row.get('resource_id') == 'prj_hPjAbxtMlCi3A5waKxQpjATto0ae':
-                decision = json.loads((directory/'modern-web-stack-git-retirement-evidence.json').read_text())
-                require(decision.get('repository_id') == repo_id and decision.get('project_id') == row['resource_id'] and
-                        decision.get('result') == 'disconnected' and decision.get('project_deleted') is False and
-                        row.get('transfer_action') == 'Git connection retired before transfer; transfer GitHub repository without reconnecting Vercel',
-                        'Retired Vercel project action must preserve its approved disconnected disposition')
-            for field in ('resource_owner', 'resource_url', 'billing_dependency', 'credential_source',
-                          'affected_reference', 'transfer_action', 'smoke_test', 'recovery_action'):
-                require(text(row.get(field)), f'Verified integration needs {field}')
-            smoke = local_capture(row.get('smoke_evidence_url'), directory, 'Integration smoke')
-            smoke_repository = repo['full_name'] if row.get('smoke_phase') == 'pre_transfer' or repo_id in retained else repo['destination']
-            require(row.get('smoke_outcome') in {'success', 'approved_recovery', 'preserved_unused', 'baseline_preserved'} and
-                    row.get('smoke_phase') in {'pre_transfer', 'post_transfer'} and
-                    smoke.get('repository_id') == repo_id and smoke.get('repository') == smoke_repository and
-                    smoke.get('provider') == row['provider'] and smoke.get('resource_kind') == row.get('resource_kind') and
-                    smoke.get('resource_id') == row.get('resource_id') and smoke.get('outcome') == row['smoke_outcome'] and
-                    smoke.get('phase') == row['smoke_phase'] and smoke.get('destructive_changes') is False,
-                    'Integration smoke must match its resource, phase and successful preservation outcome')
-            smoke_observed_at = observed_time(smoke.get('observed_at'), 'Integration smoke')
-            if row['smoke_phase'] == 'post_transfer':
-                post_transfer_smokes.setdefault(repo_id, []).append(smoke_observed_at)
-            if row['smoke_outcome'] == 'approved_recovery':
-                require(smoke.get('recovery_success') is True and smoke.get('approved_by') == 'HemSoft',
-                        'Integration recovery needs owner approval and a successful result')
-                evidence(smoke.get('owner_receipt_url'), directory)
-            elif row['smoke_outcome'] == 'preserved_unused':
-                require(smoke.get('resource_unchanged') is True and smoke.get('runtime_actions') == [],
-                        'Unused integration must remain preserved without runtime operations')
-                evidence(smoke.get('owner_receipt_url'), directory)
-            elif row['smoke_outcome'] == 'baseline_preserved':
-                baseline = provider_preservation_baseline(row, inventory, directory)
-                require(smoke.get('baseline') == baseline and smoke.get('observed_resource') == baseline,
-                        'Baseline preservation must match the sealed provider resource and independent observation')
-            else:
-                require(smoke.get('continuity_verified') is True, 'Integration success needs verified continuity')
-            evidence(row['resource_url'], directory)
-            require(row.get('credential_validity') in {'verified', 'not_required'},
-                    'Credential presence alone does not establish validity')
-    require(seen_ledger == set(expected), 'Ledger must cover every baseline ID')
-    require(seen_runner_resources == runner_resources, 'Ledger must preserve every observed repository runner resource')
-    require(seen_vercel_resources == vercel_resources, 'Ledger must preserve every captured Vercel project resource')
-    require(all(seen_other_resources[kind] == resources for kind, (_, resources) in other_resources.items()),
-            'Ledger must preserve every captured Pages/Supabase/Cloudflare resource')
+    ledger_context = (inventory, directory, expected, retained, candidates, expected_unused,
+                      runner_resources, vercel_resources, other_resources, external_scope)
+    ledger_statuses, post_transfer_smokes = validate_ledger_rows(rows, *ledger_context)
     all_transfer_gates_verified = all(all(status == 'verified' for status in ledger_statuses[repo_id])
                                       for repo_id in expected if repo_id not in retained)
     if all_transfer_gates_verified:
         validate_app_credential(matrix.get('pre_transfer_credential_verification'), directory)
         source_refreshed_at = validate_source_refresh(matrix.get('pre_cutover_source_evidence_url'), directory, inventory,
                                                        matrix['pre_transfer_credential_verification'])
+        validate_ledger_readiness(matrix.get('pre_cutover_ledger_evidence_url'), rows, directory,
+                                 ledger_context, source_refreshed_at)
         source_capture = json.loads((directory / 'source-reference-evidence.json').read_text())
         unresolved = {x['repository_id']: x for x in source_capture['repositories'] if x.get('state') != 'observed'}
         tree_refresh = json.loads((directory / 'source-tree-recheck-evidence.json').read_text())
