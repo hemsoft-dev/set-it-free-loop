@@ -451,3 +451,19 @@ and `run_evidence_url` captures. Each binds the destination repository and runne
 21 after the source refresh. Require online/idle registration, an active service,
 public DNS/HTTPS success, the six existing private-route checks blocked, no
 Tailscale, and the successful read-only Actions run at the recorded revision.
+
+Each pilot scenario now needs a local `capture_evidence_url` and a separate local
+`output_evidence_url` in that capture. Bind repository ID/name, source release
+SHA/version, `tested_revision_sha` from the deployed manifest capture, scenario,
+mode, expected outcome and completed execution. The output must record the
+same identity and a passing assertion for the expected scenario result. For
+`workflow_fixture`, record the command, zero exit code and successful conclusion;
+its `evidence_url` names that execution capture. For `live`, use an actual
+same-repository Actions run URL and captured completed deployed-observer run
+metadata. An issue fragment or a declared expected result is not execution proof.
+
+Post-transfer integration observations must follow the independently captured
+source refresh and, when transferred, App registration observation. For terminal
+transferred repositories they also cannot precede the independently captured
+destination metadata/protection observation. Pre-transfer readiness observations
+remain distinct and cannot establish final resource continuity.

@@ -337,6 +337,14 @@ class RolloutTests(unittest.TestCase):
                 'repository':pilot['repository'],'release_version':receipts['release_version'],
                 'evidence_url':'https://github.com/'+pilot['repository']+'/issues/1#scenario-'+name}
                 for name,outcome in validator.PILOT_SCENARIOS.items()}
+            for scenario,result in receipts['scenario_receipts'].items():
+                output=self.capture({'repository_id':pilot['repository_id'],'repository':pilot['repository'],
+                    'deployment_sha':receipts['deployment_sha'],'tested_revision_sha':'b'*40,'scenario':scenario,
+                    'mode':result['mode'],'outcome':result['outcome'],'passed':True})
+                result['capture_evidence_url']=self.capture({**result,'scenario':scenario,'tested_revision_sha':'b'*40,
+                    'status':'completed','conclusion':'success','command':'synthetic fixture command','exit_code':0,
+                    'observed_at':'2026-10-07T02:00:00Z','output_evidence_url':output})
+                result['evidence_url']=result['capture_evidence_url']
             pilot['validation_evidence']['review_artifact_identity'] = {
                 'runtime': 'sfl_registered_codex', 'app_id': 1144995, 'bot_user_id': 199175422,
                 'reviewed_head_sha': 'b'*40, 'reviewed_base_sha': 'c'*40,
@@ -1899,6 +1907,50 @@ class RolloutTests(unittest.TestCase):
             changed[field]=value;path.write_text(json.dumps(changed))
             with self.subTest(field=field),self.assertRaises(ValueError):self.check()
             path.write_text(json.dumps(original))
+
+
+    def test_pilot_scenarios_load_executed_fixture_output(self):
+        self.complete_pilots();self.check()
+        result=self.matrix['disposable_validation_repositories'][0]['validation_evidence']['scenario_receipts']['findings']
+        path=DIRECTORY/result['capture_evidence_url'];original=json.loads(path.read_text())
+        for field,value in [('status','pending'),('exit_code',1),('tested_revision_sha','f'*40),
+                            ('scenario','new_head'),('command',''),('conclusion','failure')]:
+            changed=copy.deepcopy(original);changed[field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));output_path=DIRECTORY/original['output_evidence_url']
+        output=json.loads(output_path.read_text());output_path.write_text(json.dumps(dict(output,passed=False)))
+        with self.assertRaisesRegex(ValueError,'output must prove'):self.check()
+        output_path.write_text(json.dumps(output));result['evidence_url']='https://github.com/'+result['repository']+'/issues/1#scenario'
+        with self.assertRaisesRegex(ValueError,'successful executed command'):self.check()
+
+    def test_live_pilot_scenario_requires_terminal_observer_run(self):
+        self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0]
+        result=pilot['validation_evidence']['scenario_receipts']['findings']
+        path=DIRECTORY/result['capture_evidence_url'];capture=json.loads(path.read_text())
+        result.update(mode='live',evidence_url='https://github.com/'+pilot['repository']+'/actions/runs/99')
+        capture.update(mode='live',run={'repository':{'id':pilot['repository_id'],'full_name':pilot['repository']},
+            'html_url':result['evidence_url'],'head_sha':'b'*40,'path':'.github/workflows/sfl-pr-review-auto.yml',
+            'status':'completed','conclusion':'success'})
+        output_path=DIRECTORY/capture['output_evidence_url'];output=json.loads(output_path.read_text());output['mode']='live'
+        output_path.write_text(json.dumps(output));path.write_text(json.dumps(capture));self.check()
+        for field,value in [('status','in_progress'),('conclusion','cancelled'),('head_sha','f'*40),
+                            ('path','.github/workflows/unrelated.yml')]:
+            changed=copy.deepcopy(capture);changed['run'][field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'terminal deployed-observer'):self.check()
+        path.write_text(json.dumps(capture));result['evidence_url']='https://github.com/'+pilot['repository']+'/issues/1#scenario'
+        with self.assertRaisesRegex(ValueError,'terminal deployed-observer'):self.check()
+
+    def test_post_transfer_smokes_follow_source_app_and_destination_captures(self):
+        self.complete_transfer_gates();self.complete_app_transfer()
+        row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
+        row.update(health='scope_exception',transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+        self.complete_scope_decision(row);self.check()
+        resource=next(r for r in self.rows if r['source']=='HemSoft/yahtzee');path=DIRECTORY/resource['smoke_evidence_url']
+        original=json.loads(path.read_text())
+        for timestamp in ('2026-10-07T00:05:00Z','2026-10-07T00:30:00Z','2026-10-07T01:30:00Z'):
+            path.write_text(json.dumps(dict(original,observed_at=timestamp)))
+            with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'smoke observations must follow'):self.check()
+        path.write_text(json.dumps(original));self.check()
 
 
 if __name__ == '__main__':

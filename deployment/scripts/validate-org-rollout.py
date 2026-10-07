@@ -670,6 +670,36 @@ def validate_runner_captures(proof, directory, earliest):
                     'Runner smoke capture must prove a completed destination run at the recorded revision')
 
 
+def validate_pilot_scenario(result, scenario, directory, repository_id, repository, sha, version, revision):
+    capture = local_capture(result.get('capture_evidence_url'), directory, 'Pilot scenario execution')
+    require(capture.get('repository_id') == repository_id and capture.get('repository') == repository and
+            capture.get('deployment_sha') == sha and capture.get('release_version') == version and
+            capture.get('tested_revision_sha') == revision and capture.get('scenario') == scenario and
+            capture.get('mode') == result['mode'] and capture.get('outcome') == result['outcome'] and
+            capture.get('status') == 'completed', 'Pilot scenario capture must match the executed observer and terminal result')
+    observed_time(capture.get('observed_at'), 'Pilot scenario execution')
+    output = local_capture(capture.get('output_evidence_url'), directory, 'Pilot scenario output')
+    require(output.get('repository_id') == repository_id and output.get('repository') == repository and
+            output.get('deployment_sha') == sha and output.get('tested_revision_sha') == revision and
+            output.get('scenario') == scenario and output.get('mode') == result['mode'] and
+            output.get('outcome') == PILOT_SCENARIOS[scenario] and output.get('passed') is True,
+            'Pilot scenario output must prove the expected result for the tested observer revision')
+    if result['mode'] == 'workflow_fixture':
+        require(type(capture.get('exit_code')) is int and capture['exit_code'] == 0 and
+                text(capture.get('command')) and capture.get('conclusion') == 'success' and
+                result['evidence_url'] == result['capture_evidence_url'],
+                'Fixture scenario needs its successful executed command and captured output')
+    else:
+        run = capture.get('run', {})
+        require(re.fullmatch('https://github.com/' + re.escape(repository) + r'/actions/runs/[1-9][0-9]*',
+                             result.get('evidence_url','')) is not None and
+                run.get('html_url') == result['evidence_url'] and run.get('repository',{}).get('id') == repository_id and
+                run['repository'].get('full_name') == repository and run.get('head_sha') == revision and
+                run.get('path') == '.github/workflows/sfl-pr-review-auto.yml' and
+                run.get('status') == 'completed' and run.get('conclusion') in {'success','failure'},
+                'Live scenario needs its terminal deployed-observer Actions run')
+
+
 def validate_preservation_time(capture, cutoff):
     require(capture.get('phase') == 'post_transfer' and
             observed_time(capture.get('observed_at'), 'Account preservation') > cutoff,
@@ -866,6 +896,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     seen_runner_resources = set()
     seen_ledger = set()
     ledger_statuses = {}
+    post_transfer_smokes = {}
     for row in rows:
         try:
             repo_id = int(row['repository_id'])
@@ -953,7 +984,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     smoke.get('resource_id') == row.get('resource_id') and smoke.get('outcome') == row['smoke_outcome'] and
                     smoke.get('phase') == row['smoke_phase'] and smoke.get('destructive_changes') is False,
                     'Integration smoke must match its resource, phase and successful preservation outcome')
-            observed_time(smoke.get('observed_at'), 'Integration smoke')
+            smoke_observed_at = observed_time(smoke.get('observed_at'), 'Integration smoke')
+            if row['smoke_phase'] == 'post_transfer':
+                post_transfer_smokes.setdefault(repo_id, []).append(smoke_observed_at)
             if row['smoke_outcome'] == 'approved_recovery':
                 require(smoke.get('recovery_success') is True and smoke.get('approved_by') == 'HemSoft',
                         'Integration recovery needs owner approval and a successful result')
@@ -1003,6 +1036,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         require(all_transfer_gates_verified, 'All transfer-target ledger gates must be verified before App transfer')
         require(app_transfer.get('owner') == inventory['destination_login'], 'Transferred App needs its canonical organization owner')
         app_transferred_at = validate_app_transfer(app_transfer, directory, inventory, source_refreshed_at)
+    if all_transfer_gates_verified:
+        cutoff = app_transferred_at if app_transfer['status'] == 'verified' else source_refreshed_at
+        require(all(timestamp > cutoff for times in post_transfer_smokes.values() for timestamp in times),
+                'Post-transfer smoke observations must follow the independently captured source/App cutover')
 
     records = matrix.get('repositories')
     require(isinstance(records, list), 'Matrix needs repository records')
@@ -1035,6 +1072,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         require(not (row['archived'] and health == 'verified'), 'Archived repository needs archive-preserving verification')
         if health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'}:
             validate_protection_preservation(row.get('destination_protections'), directory, repo)
+            destination = local_capture(row['destination_protections']['evidence_url'], directory, 'Destination protections')
+            require(all(timestamp >= observed_time(destination['observed_at'], 'Destination protections')
+                        for timestamp in post_transfer_smokes.get(repo_id, [])),
+                    'Post-transfer smoke observations must follow captured destination metadata')
         require((health == 'retained_source') == (repo_id in retained), 'Matrix must honor retained source decisions')
         protected_source = repo['full_name'] == 'HemSoft/set-it-free-loop'
         require((row.get('rollout_action') == 'protected_source_verify_workflows_in_place') == protected_source,
@@ -1395,6 +1436,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 if urllib.parse.urlsplit(result['evidence_url']).scheme:
                     require(result['evidence_url'].startswith('https://github.com/' + name + '/'),
                             'Pilot scenario URL must belong to its designated repository')
+                validate_pilot_scenario(result, scenario, directory, extra_id, name, receipts['deployment_sha'],
+                                        receipts['release_version'], revision)
             identity = receipts.get('review_artifact_identity')
             require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
                     identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and
