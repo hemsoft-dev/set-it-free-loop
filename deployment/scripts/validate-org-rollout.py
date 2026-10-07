@@ -11,6 +11,7 @@ import gzip
 import functools
 import io
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -236,6 +237,10 @@ def bound_workflow_operation(operation, directory, repository_id, repository, sh
     timestamp = observed_time(capture.get('observed_at'), 'Workflow execution')
     created = observed_time(run.get('created_at'), 'Workflow creation')
     terminal_run_time(run, timestamp, 'Workflow execution')
+    run_id = int(url.rsplit('/', 1)[1])
+    require(run.get('id') == run_id, 'Workflow execution needs its actual run ID')
+    validate_resource_response(capture.get('run_response', {}), 'https://api.github.com/repos/' + repository +
+        '/actions/runs/' + str(run_id), run)
     if cutover is not None:
         require(created >= cutover, 'Workflow must execute after its independent destination/App cutover capture')
 
@@ -399,6 +404,53 @@ def validate_protection_preservation(proof, directory, repo, cutover=None):
     timestamp = observed_time(capture.get('observed_at'), 'Destination protections')
     if cutover is not None:
         require(timestamp > cutover, 'Destination protections must be captured after source/App cutover')
+    base = 'https://api.github.com/repos/' + repo['destination']
+    metadata = capture.get('repository_response', {})
+    validate_resource_response(metadata, base, metadata.get('data'))
+    require(all(metadata['data'].get(field) == value for field, value in
+        (('id', repo['id']), ('full_name', repo['destination']), ('default_branch', repo['default_branch']),
+         ('private', repo['private']), ('visibility', repo['visibility']), ('archived', repo['archived']))),
+        'Destination protection metadata must derive from its actual preserved repository identity')
+    ref = capture.get('revision_response', {})
+    validate_resource_response(ref, base + '/git/ref/heads/' + urllib.parse.quote(repo['default_branch'], safe=''), ref.get('data'))
+    require(ref['data'].get('ref') == 'refs/heads/' + repo['default_branch'] and
+            ref['data'].get('object', {}).get('sha') == proof['revision_sha'],
+            'Destination protections need their current default branch revision')
+    rules = validate_raw_page_chain(capture.get('ruleset_pages'), base + '/rulesets?includes_parents=true&per_page=100',
+        timestamp, 'Destination rulesets', earliest=cutover)
+    details = capture.get('ruleset_responses', {})
+    ids = [rule.get('id') for rule in rules]
+    require(all(type(rule_id) is int and rule_id > 0 for rule_id in ids) and len(ids) == len(set(ids)) and
+            isinstance(details, dict) and set(details) == {str(rule_id) for rule_id in ids},
+            'Destination rulesets need complete unique detail responses')
+    actual_rules = []
+    for rule_id in ids:
+        response = details[str(rule_id)];value = response.get('data')
+        validate_resource_response(response, base + '/rulesets/' + str(rule_id), value)
+        require(isinstance(value, dict) and value.get('id') == rule_id, 'Destination ruleset detail identity mismatch')
+        actual_rules.append({key: value.get(key) for key in
+            ('id', 'name', 'target', 'enforcement', 'conditions', 'rules', 'bypass_actors')})
+    branches = validate_raw_page_chain(capture.get('protected_branch_pages'), base + '/branches?protected=true&per_page=100',
+        timestamp, 'Destination protected branches', earliest=cutover)
+    names = [branch.get('name') for branch in branches]
+    classic = capture.get('classic_responses', {})
+    require(string_list(names) and len(names) == len(set(names)) and isinstance(classic, dict) and set(classic) == set(names),
+            'Destination classic protection needs every protected branch response')
+    actual_classic = {}
+    for name in names:
+        response = classic[name];value = response.get('data')
+        require(response.get('method') == 'GET' and response.get('request_url') ==
+            base + '/branches/' + urllib.parse.quote(name, safe='') + '/protection' and
+            ((response.get('http_status') == 200 and isinstance(value, dict)) or
+             (response.get('http_status') == 404 and isinstance(value, dict) and value.get('message') == 'Branch not protected')),
+            'Destination classic protection needs exact successful GETs or explicit unprotected responses')
+        if response['http_status'] == 200:actual_classic[name] = value
+    require(actual_rules == proof['rulesets'] and actual_classic == proof['classic'],
+            'Destination preservation collections must derive from complete primary API responses')
+    for response in [metadata, ref, *details.values(), *classic.values()]:
+        at = observed_time(response.get('observed_at'), 'Destination preservation response')
+        require(at <= timestamp and (cutover is None or at > cutover),
+                'Destination preservation responses must follow the cutover boundary')
     baseline = protection_contract(repo, directory)
     for rule in baseline['rulesets']:
         require(rule in proof['rulesets'], 'Destination must preserve every unrelated baseline ruleset')
@@ -939,7 +991,7 @@ def validate_owner_approval_comment(reference, directory, receipt_url, approved_
     require(match is not None, 'Owner approval needs an explicit migration issue receipt')
     receipt = local_capture(reference, directory, 'Owner approval comment')
     comment = receipt.get('comment', {})
-    require(receipt.get('http_status') == 200 and receipt.get('request_url') ==
+    require(receipt.get('method') == 'GET' and receipt.get('http_status') == 200 and receipt.get('request_url') ==
             'https://api.github.com/repos/' + match[1] + '/set-it-free-loop/issues/comments/' + match[3] and
             comment.get('id') == int(match[3]) and comment.get('user', {}).get('login') == 'HemSoft' and
             comment['user'].get('id') == 8227352 and comment['user'].get('type') == 'User' and
@@ -1085,7 +1137,8 @@ def registered_review_external_id(row, directory, repository_id, repository):
 
 
 def validate_resource_response(capture, url, expected):
-    require(capture.get('method') == 'GET' and capture.get('http_status') == 200 and
+    require(isinstance(capture, dict) and isinstance(expected, (dict, list)) and
+            capture.get('method') == 'GET' and capture.get('http_status') == 200 and
             capture.get('request_url') == url and capture.get('data') == expected,
             'Resource capture must derive from its exact successful API GET response')
 
@@ -1165,6 +1218,7 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
             pr.get('head', {}).get('sha') == row['review_head_sha'] and
             pr['head'].get('repo', {}).get('id') == repository_id and pr['head']['repo'].get('full_name') == repository,
             'Reviewed PR metadata must target the gated branch and bind its actual repository/head/base')
+    validate_resource_response(pr_capture, 'https://api.github.com/repos/' + repository + '/pulls/' + str(number), pr)
     pr_at = observed_time(pr_capture.get('observed_at'), 'Reviewed PR metadata')
     if cutover is not None:
         require(pr_at >= cutover, 'Reviewed PR metadata must follow destination/App cutover')
@@ -1236,6 +1290,10 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
             check.get('external_id') == external_id,
             'Actions-owned check capture must prove the actual reviewed PR head and successful gate')
     validate_observer_execution(captured_gate, row, directory, repository_id, repository, deployment_revision)
+    validate_resource_response(captured_gate.get('run_response', {}), 'https://api.github.com/repos/' + repository +
+        '/actions/runs/' + str(run.get('id')), run)
+    validate_resource_response(captured_gate.get('check_response', {}), 'https://api.github.com/repos/' + repository +
+        '/check-runs/' + str(check.get('id')), check)
     created = observed_time(run.get('created_at'), 'Registered review run creation')
     completed = observed_time(run.get('updated_at'), 'Registered review run completion')
     check_started = observed_time(check.get('started_at'), 'Gate check creation')
@@ -1810,7 +1868,7 @@ def validate_transfer_audit_export(export, organization, captured_at):
     return events
 
 
-def validate_repository_transfer(reference, directory, repo, cutoff):
+def validate_repository_transfer(reference, directory, repo, cutoff, scanned_revision):
     capture = local_capture(reference, directory, 'Repository transfer')
     event = capture.get('event', {})
     organization = repo['destination'].split('/')[0]
@@ -1834,6 +1892,18 @@ def validate_repository_transfer(reference, directory, repo, cutoff):
     transferred_at = datetime.datetime.fromtimestamp(milliseconds / 1000, datetime.timezone.utc)
     require(cutoff < transferred_at <= observed_time(capture['audit_export']['request']['observed_at'], 'Audit export request') <= captured_at,
             'Repository transfer must follow immutable ledger readiness and source recheck')
+    heads = local_capture(capture.get('destination_heads_evidence_url'), directory, 'Transferred branch heads')
+    require(heads.get('repository_id') == repo['id'] and heads.get('repository') == repo['destination'] and
+            heads.get('phase') == 'post_transfer' and
+            transferred_at <= observed_time(heads.get('observed_at'), 'Transferred branch heads') <= captured_at,
+            'Transfer needs repository-bound branch observations after its acceptance event')
+    response = heads.get('repository_response', {})
+    validate_resource_response(response, 'https://api.github.com/repos/' + repo['destination'], response.get('data'))
+    require(response['data'].get('id') == repo['id'] and response['data'].get('full_name') == repo['destination'],
+            'Transferred branch observations need their actual destination repository identity')
+    destination = dict(repo, full_name=repo['destination'])
+    require(source_revision(heads, destination, transferred_at) == scanned_revision,
+            'Transferred branch heads changed after the credential/reference scan; reconcile before proceeding')
     return transferred_at
 
 
@@ -1979,6 +2049,22 @@ def replay_observer_fixture(workflow_json, repository_id, repository, sha, versi
     root = pathlib.Path(__file__).resolve().parents[2]
     runner = root / 'deployment/tests/run-org-observer-fixtures.cjs'
     require(hashlib.sha256(runner.read_bytes()).hexdigest() == runner_digest, 'Fixture runner changed before replay')
+    source = json.loads(workflow_json)['content']
+    canonical = (root / 'deployment/infrastructure/sfl-pr-review-auto.yml').read_text()
+    markers = [('// BEGIN TESTABLE ' + name, '// END TESTABLE ' + name) for name in
+        ('CODEX OBSERVER', 'REQUESTER AUTHORIZATION', 'REQUESTER REFRESH', 'REQUEST REGISTRATION',
+         'REQUEST ELIGIBILITY', 'REQUIRED GATE REPAIR')]
+    markers.append(('const existing = latestRequestChecks.find(', 'const detailsURL = artifact.html_url'))
+    for begin, end in markers:
+        require(source.count(begin) == canonical.count(begin) > 0 and
+                source.count(end) == canonical.count(end) > 0,
+                'Independent observer fixture execution requires unique reviewed source markers')
+        start = source.index(begin) + len(begin)
+        reviewed_start = canonical.index(begin) + len(begin)
+        finish, reviewed_finish = source.find(end, start), canonical.find(end, reviewed_start)
+        require(start <= finish and reviewed_start <= reviewed_finish and
+                source[start:finish] == canonical[reviewed_start:reviewed_finish],
+                'Independent observer fixture execution requires reviewed canonical code blocks')
     with tempfile.TemporaryDirectory(prefix='sfl-observer-replay-') as folder:
         workflow, output = pathlib.Path(folder) / 'workflow.json', pathlib.Path(folder) / 'output.json'
         workflow.write_text(workflow_json)
@@ -1986,7 +2072,9 @@ def replay_observer_fixture(workflow_json, repository_id, repository, sha, versi
             '--repository', repository, '--deployment-sha', sha, '--release-version', version,
             '--revision', revision, '--scenario', scenario, '--output', str(output)]
         try:
-            completed = subprocess.run(argv, cwd=root, capture_output=True, text=True, timeout=30, check=False)
+            environment = {key: os.environ[key] for key in ('PATH', 'SystemRoot', 'WINDIR') if key in os.environ}
+            completed = subprocess.run(argv, cwd=folder, env=environment,
+                capture_output=True, text=True, timeout=30, check=False)
             require(completed.returncode == 0 and output.is_file(), 'Independent observer fixture execution failed')
             return json.loads(output.read_text())
         except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
@@ -2589,6 +2677,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         validate_app_credential(matrix.get('pre_transfer_credential_verification'), directory)
         source_refreshed_at, scanned_at, captured_manifests = validate_source_refresh(matrix.get('pre_cutover_source_evidence_url'), directory, inventory,
                                                        matrix['pre_transfer_credential_verification'])
+        refreshed_sources = local_capture(matrix['pre_cutover_source_evidence_url'], directory, 'Verified source heads')
+        scanned_revisions = {current['id']: source_revision(current['source_head'], expected[current['id']], scanned_at)
+            for account in refreshed_sources['accounts'] for current in account['repositories']}
         require(all(at <= source_refreshed_at for at in owner_scope_times),
                 'Global owner scope must be authenticated before the pre-cutover source refresh')
         validate_ledger_readiness(matrix.get('pre_cutover_ledger_evidence_url'), rows, directory,
@@ -2665,7 +2756,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         if repo_id not in retained and (health != 'pending_transfer' or text(row.get('transfer_evidence_url'))):
             require(all_transfer_gates_verified,
                     'All transfer-target ledger gates must be verified before any transfer advances')
-            transferred_at = validate_repository_transfer(row.get('transfer_evidence_url'), directory, repo, tree_refreshed_at)
+            transferred_at = validate_repository_transfer(row.get('transfer_evidence_url'), directory, repo, tree_refreshed_at,
+                scanned_revisions[repo_id])
             if health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'}:
                 require(transferred_at <= observed_time(destination['observed_at'], 'Destination protections'),
                         'Destination protections must be observed after actual repository transfer')
@@ -2737,6 +2829,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 except ValueError as exc:
                     raise ValueError('Retained App dependency needs a verification timestamp') from exc
                 require(verified_at.tzinfo is not None, 'Retained App dependency needs a timezone')
+                decision_at = observed_time(dependency.get('decision_recorded_at'), 'Retained App owner decision')
+                validate_owner_approval_comment(dependency.get('owner_comment_evidence_url'), directory,
+                    RETAINED_APP_RECEIPT, decision_at,
+                    {'repository_ids': sorted(APPROVED_RETAINED_IDS), 'disposition': RETAINED_APP_DISPOSITION}, verified_at)
                 if app_transfer['status'] == 'verified':
                     require(verified_at < app_transferred_at,
                             'Retained App dependency verification must precede App transfer')

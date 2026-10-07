@@ -1,0 +1,23 @@
+{
+  "method": "GET",
+  "http_status": 200,
+  "request_url": "https://api.github.com/repos/HemSoft/set-it-free-loop/issues/comments/6028536416",
+  "observed_at": "2026-10-07T22:51:20.159189+00:00",
+  "comment": {
+    "id": 6028536416,
+    "html_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028536416",
+    "created_at": "2026-10-07T00:58:00Z",
+    "updated_at": "2026-10-07T22:51:19Z",
+    "body": "Franz confirmed that neither retained repository uses the private SFL App outside GitHub workflows, and the remaining SFL credentials are unused.\n\nThis resolves the retained repositories' shared-App dependency verification for the private App's automatic personal-account uninstall warning. Keep HemSoft/now-leadership-group and HemSoft/set-it-free-loop-site at their existing personal locations, preserving privacy, archive state and hosting. No credentials were read, removed or copied, and no App transfer occurred. All other applicable mandatory pre-transfer gates remain required.\n\nMachine-readable record of the same previously confirmed owner fact. This adds no new permission or scope.\n\n<!-- sfl-migration-approval:{\"repository_ids\":[1162179521,1169698740],\"disposition\":\"No SFL App dependency; existing SFL credentials unused. Preserve personal hosting.\"} -->\n",
+    "user": {
+      "id": 8227352,
+      "login": "HemSoft",
+      "type": "User"
+    }
+  },
+  "response_headers": {
+    "Content-Type": "application/json; charset=utf-8",
+    "Date": "Wed, 07 Oct 2026 22:51:20 GMT",
+    "X-Github-Request-Id": "AB56:238995:8E4D0:1D645B:6AC6CCE7"
+  }
+}

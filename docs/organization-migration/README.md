@@ -261,6 +261,11 @@ shared owner identity and structured-decision checks bind their exact scope to
 the existing HemSoft receipts. These captures must precede the final source
 refresh. A local summary or comment URL alone cannot establish an owner fact.
 
+The two retained repositories' no-App-dependency waiver also loads the actual
+HemSoft comment. Its structured decision lists both immutable repository IDs
+and the approved disposition. Verification follows the effective comment edit
+and precedes App transfer; a local `verified` flag cannot establish this waiver.
+
 ## Current execution scope
 
 Franz's [October 6 retention decision](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635)
@@ -383,6 +388,12 @@ Both effective rules and classic protection include their exact repository and
 branch GET endpoint, status, raw data and observation time. Only an explicit
 `Branch not protected` 404 establishes absent classic protection. Terminal
 response observations must follow the completed review and cutover boundary.
+The reviewed PR, terminal observer run/check and wider workflow runs also derive
+from their exact successful GET responses. Their recorded objects must equal
+the response data. Preserved destination protections derive from complete
+ruleset-list/detail and protected-branch/protection responses, with independent
+repository identity and current default-head GETs. Copying the old collections
+into a local summary cannot establish preservation.
 Pilot scenario receipts identify their own repository, release and deployment.
 Successful workflow receipts name a workflow deployed by the selected tier or
 addons and its immutable run head. Pilot manifests must deploy the review
@@ -484,6 +495,9 @@ Recorded fixture success also requires independently executing the reviewed
 observer fixture against the captured immutable workflow bytes in temporary
 storage. Compare the resulting identity, scenario, outcome and source digests;
 an output file that merely claims success cannot clear the pilot gate.
+Every executed observer block and its marker counts must match the reviewed
+canonical template. The replay child runs in temporary storage and receives only
+runtime path/system settings, with no inherited credentials or Node options.
 Pending-record checks are offline. Completed release-download records additionally
 run the real GitHub signature verifier against file bytes, downloading the exact
 canonical asset when its captured local path is unavailable. Captured success
@@ -517,6 +531,13 @@ must already be verified, with pre-transfer provider smokes and verification
 and evidence times no later than the snapshot. Source refresh and App transfer
 follow this capture. Preserve it when the current ledger gains post-transfer
 smokes; current status strings alone cannot establish earlier readiness.
+
+After each repository transfer, capture `destination_heads_evidence_url` before
+continuing cutover. Its exact destination repository GET and complete branch
+pages must follow the acceptance event. The default head/tree and every named
+branch must still equal the validated source scan. New, deleted or advanced
+branches require fresh workflow/credential reconciliation. A transfer event
+after an old refresh cannot establish this continuity by itself.
 
 After the complete source refresh, save `pre_cutover_tree_evidence_url` with fresh
 canonical metadata and complete branch GETs for both originally unavailable trees.
