@@ -721,7 +721,7 @@ var (
 )
 
 func sourceReadClient(owner, repo string) (restAPI, bool, error) {
-	if owner != motherRepoOwner || repo != motherRepoName {
+	if _, _, err := parseSourceRepository(owner + "/" + repo); err != nil {
 		return nil, false, nil
 	}
 	token := strings.TrimSpace(os.Getenv("SFL_SOURCE_TOKEN"))
