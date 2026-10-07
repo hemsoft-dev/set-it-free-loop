@@ -25,6 +25,9 @@ func TestOrganizationPermissionPreflight(t *testing.T) {
 				if strings.Join(args, " ") == "api user --jq .login" {
 					return *bytes.NewBufferString("member"), bytes.Buffer{}, nil
 				}
+				if strings.Join(args, " ") == "api --method GET repos/hemsoft-dev/consumer" {
+					return *bytes.NewBufferString(`{"full_name":"hemsoft-dev/consumer"}`), bytes.Buffer{}, nil
+				}
 				if strings.Join(args, " ") != "api --method GET repos/hemsoft-dev/consumer/collaborators/member/permission" {
 					t.Fatalf("unexpected authorization call %v", args)
 				}
@@ -86,6 +89,9 @@ func TestOrganizationGateRequiresAdminBeforeMutation(t *testing.T) {
 		if strings.Join(args, " ") == "api user --jq .login" {
 			return *bytes.NewBufferString("member"), bytes.Buffer{}, nil
 		}
+		if strings.Join(args, " ") == "api --method GET repos/hemsoft-dev/consumer" {
+			return *bytes.NewBufferString(`{"full_name":"hemsoft-dev/consumer"}`), bytes.Buffer{}, nil
+		}
 		if strings.Join(args, " ") != "api --method GET repos/hemsoft-dev/consumer/collaborators/member/permission" {
 			t.Fatalf("unexpected call %v", args)
 		}
@@ -101,6 +107,9 @@ func TestSourceCutoverRefreshesSyncAudit(t *testing.T) {
 	t.Cleanup(func() { motherRepoOwner = previous })
 	motherRepoOwner = "hemsoft-dev"
 	release := deploymentRelease{Version: "2.1.0-rc.13", SHA: strings.Repeat("a", 40)}
+	if shouldPreserveSyncAudit(nil, release, "reviewer") {
+		t.Fatal("missing manifest preserved audit")
+	}
 	manifest := &sflManifest{MotherRepo: "HemSoft/set-it-free-loop", Version: release.Version, SourceSHA: release.SHA, Tier: "reviewer"}
 	if shouldPreserveSyncAudit(manifest, release, "reviewer") {
 		t.Fatal("source cutover retained an earlier deployment audit")
@@ -118,6 +127,9 @@ func TestOrganizationStatusAllowsReadAccess(t *testing.T) {
 		ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
 			if strings.Join(args, " ") == "api user --jq .login" {
 				return *bytes.NewBufferString("reader"), bytes.Buffer{}, nil
+			}
+			if strings.Join(args, " ") == "api --method GET repos/hemsoft-dev/consumer" {
+				return *bytes.NewBufferString(`{"full_name":"hemsoft-dev/consumer"}`), bytes.Buffer{}, nil
 			}
 			if strings.Join(args, " ") != "api --method GET repos/hemsoft-dev/consumer/collaborators/reader/permission" {
 				t.Fatalf("unexpected call: %v", args)
@@ -146,5 +158,47 @@ func TestAddonRequiresSyncBeforeSourceCutover(t *testing.T) {
 	t.Setenv("SFL_SOURCE_REPOSITORY", "HEMSOFT-DEV/set-it-free-loop")
 	if err := configureSourceRepository(); err != nil || motherRepoOwner != "hemsoft-dev" {
 		t.Fatalf("source not canonical: %s %v", motherRepoOwner, err)
+	}
+}
+
+func TestRepositoryRedirectRejectedBeforePermissionOrMutation(t *testing.T) {
+	previous := ghExec
+	t.Cleanup(func() { ghExec = previous })
+	for _, owner := range []string{"HemSoft", "hemsoft-dev"} {
+		for _, metadata := range []string{`{"full_name":"other/consumer"}`, `{"full_name":"hemsoft-dev/renamed"}`, `{}`, `invalid`} {
+			t.Run(owner+"/"+metadata, func(t *testing.T) {
+				ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
+					switch strings.Join(args, " ") {
+					case "api user --jq .login":
+						return *bytes.NewBufferString("HemSoft"), bytes.Buffer{}, nil
+					case "api --method GET repos/" + owner + "/consumer":
+						return *bytes.NewBufferString(metadata), bytes.Buffer{}, nil
+					default:
+						t.Fatalf("permission or mutation reached after redirect: %v", args)
+						return bytes.Buffer{}, bytes.Buffer{}, nil
+					}
+				}
+				if err := validateDeploymentTarget(owner, "consumer"); err == nil {
+					t.Fatal("accepted noncanonical repository")
+				}
+			})
+		}
+	}
+}
+
+func TestCanonicalRepositoryLookupFailsClosed(t *testing.T) {
+	previous := ghExec
+	t.Cleanup(func() { ghExec = previous })
+	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
+		return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("metadata service unavailable")
+	}
+	if verifyCanonicalRepository("hemsoft-dev", "consumer") == nil {
+		t.Fatal("accepted failed lookup")
+	}
+	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
+		return *bytes.NewBufferString(`{"full_name":"HEMSOFT-DEV/Consumer"}`), bytes.Buffer{}, nil
+	}
+	if err := verifyCanonicalRepository("hemsoft-dev", "consumer"); err != nil {
+		t.Fatalf("rejected case-insensitive canonical target: %v", err)
 	}
 }

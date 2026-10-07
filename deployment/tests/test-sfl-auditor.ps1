@@ -186,8 +186,8 @@ try {
     $reviewOutputPath = Join-Path $temporaryDirectory 'review-output'
     $issueLogPath = Join-Path $temporaryDirectory 'issue-log'
     $sourceSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-    "{`"components`": [`"sfl-pr-review-auto`"], `"sourceSha`": `"$sourceSha`"}" | Set-Content -LiteralPath $manifestPath
-    "{`"components`": [`"sfl-pr-review-auto`"], `"sourceSha`": `"$sourceSha`"}" | Set-Content -LiteralPath $rootManifestPath
+    "{`"source`": `"HemSoft/set-it-free-loop`", `"components`": [`"sfl-pr-review-auto`"], `"sourceSha`": `"$sourceSha`"}" | Set-Content -LiteralPath $manifestPath
+    "{`"source`": `"HemSoft/set-it-free-loop`", `"components`": [`"sfl-pr-review-auto`"], `"sourceSha`": `"$sourceSha`"}" | Set-Content -LiteralPath $rootManifestPath
     $reviewMock = @'
 gh() {
   if [ "$1" = "api" ]; then
@@ -281,6 +281,11 @@ name: "SFL Reviewer Gate Runner"
     Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
     $organizationObserver = (Get-Content -Raw -LiteralPath $observerPath).Replace('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop')
     $organizationObserver | Set-Content -LiteralPath $observerPath
+    $ownerMismatchRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    Assert-True ($ownerMismatchRun.ExitCode -eq 0) 'Cross-owner prerequisite script failed.'
+    Assert-True ((Get-Content -Raw -LiteralPath $reviewOutputPath) -match 'sfl_review_prerequisites_missing=1') 'Auditor accepted organization observer with legacy manifest source at the same SHA.'
+    Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
+    (Get-Content -Raw -LiteralPath $manifestPath).Replace('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop') | Set-Content -LiteralPath $manifestPath
     $organizationRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
     Assert-True ($organizationRun.ExitCode -eq 0) 'Organization provenance check failed.'
     Assert-True ((Get-Content -Raw -LiteralPath $reviewOutputPath) -match 'sfl_review_prerequisites_missing=0') 'Auditor rejected supported organization provenance.'
@@ -312,6 +317,12 @@ name: "SFL Reviewer Gate Runner"
     Assert-True ($missingObserverIssue -match 'created') 'Auditor did not create an issue for a missing observer file.'
 
     Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
+    $organizationObserver.Replace('hemsoft-dev/set-it-free-loop', 'HemSoft/set-it-free-loop') | Set-Content -LiteralPath $observerPath
+    $reverseMismatchRun = Invoke-BashScript -Script "$reviewMock`n$reviewScript" -Environment $reviewEnvironment
+    Assert-True ($reverseMismatchRun.ExitCode -eq 0) 'Reverse source mismatch script failed.'
+    Assert-True ((Get-Content -Raw -LiteralPath $reviewOutputPath) -match 'sfl_review_prerequisites_missing=1') 'Auditor accepted legacy observer with organization manifest source at the same SHA.'
+    Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
+    (Get-Content -Raw -LiteralPath $manifestPath).Replace('hemsoft-dev/set-it-free-loop', 'HemSoft/set-it-free-loop') | Set-Content -LiteralPath $manifestPath
     $reviewEnvironment.DEFAULT_BRANCH_FIXTURE = "release/o'brien"
     @'
 # Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

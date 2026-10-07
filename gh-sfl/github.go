@@ -181,7 +181,7 @@ func validateHemSoftTarget(owner, repo string) error {
 		return requireRepositoryPermission(owner, repo, login, false)
 	}
 
-	return nil
+	return verifyCanonicalRepository(owner, repo)
 }
 
 const organizationOwner = "hemsoft-dev"
@@ -224,9 +224,27 @@ func configureSourceRepository() error {
 	return nil
 }
 
+// verifyCanonicalRepository rejects GitHub redirects before a target is used.
+func verifyCanonicalRepository(owner, repo string) error {
+	stdout, _, err := ghExec("api", "--method", "GET", fmt.Sprintf("repos/%s/%s", owner, repo))
+	if err != nil {
+		return fmt.Errorf("cannot verify canonical repository %s/%s", owner, repo)
+	}
+	var metadata struct {
+		FullName string `json:"full_name"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &metadata); err != nil || !strings.EqualFold(metadata.FullName, owner+"/"+repo) {
+		return fmt.Errorf("canonical repository does not match requested target %s/%s", owner, repo)
+	}
+	return nil
+}
+
 func repositoryPermission(owner, repo, login string) (string, error) {
 	if login == "" || strings.ContainsAny(login, "/?# \r\n") {
 		return "", fmt.Errorf("invalid authenticated GitHub login")
+	}
+	if err := verifyCanonicalRepository(owner, repo); err != nil {
+		return "", err
 	}
 	endpoint := fmt.Sprintf("repos/%s/%s/collaborators/%s/permission", owner, repo, login)
 	stdout, _, err := ghExec("api", "--method", "GET", endpoint)

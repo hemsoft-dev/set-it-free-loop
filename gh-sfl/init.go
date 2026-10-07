@@ -272,10 +272,7 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Manifest
 	deployedAt := time.Now().UTC()
 	deployedBy := getCurrentUser()
-	if existingManifest != nil &&
-		existingManifest.Version == release.Version &&
-		existingManifest.Tier == opts.tier &&
-		existingManifest.SourceSHA == release.SHA {
+	if shouldPreserveSyncAudit(existingManifest, release, opts.tier) {
 		deployedAt = existingManifest.DeployedAt
 		deployedBy = existingManifest.DeployedBy
 	}
