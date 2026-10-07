@@ -53,6 +53,21 @@ $incomingReview = [pscustomobject]@{
     }
 }
 
+foreach ($field in @('source', 'sourceSha', 'version')) {
+    $existing = $incomingReview | ConvertTo-Json -Depth 6 | ConvertFrom-Json
+    $existing.tier = 'full'
+    $existing.$field = if ($field -eq 'source') { 'hemsoft-dev/set-it-free-loop' } else { 'different' }
+    $rejected = $false
+    try { $null = Merge-SflManifest -ExistingManifest $existing -IncomingManifest $incomingReview }
+    catch {
+        if ($_.Exception.Message -notmatch 'Reviewer-only deployment cannot change') { throw }
+        $rejected = $true
+    }
+    if (-not $rejected) { throw "Partial deployment silently changed global $field provenance." }
+}
+$existingFull.sourceSha = $incomingReview.sourceSha
+$existingFull.version = $incomingReview.version
+
 $merged = Merge-SflManifest -ExistingManifest $existingFull -IncomingManifest $incomingReview
 
 if ($merged.tier -ne 'full') {
@@ -88,11 +103,11 @@ if ($newInstall.tier -ne 'review') {
 }
 
 $legacyManifest = [pscustomobject]@{
-    version = '1.0.0'
+    version = $incomingReview.version
     deployedAt = '2025-01-01T00:00:00Z'
     tier = 'standard'
     source = 'HemSoft/set-it-free-loop'
-    sourceSha = '3333333333333333333333333333333333333333'
+    sourceSha = $incomingReview.sourceSha
 }
 
 $legacyMerged = Merge-SflManifest `

@@ -19,6 +19,18 @@ function Merge-SflManifest {
         [string] $IncomingManifest.tier
     }
 
+    if ($existingTier -notin @('review', 'reviewer')) {
+        foreach ($field in @('source', 'sourceSha', 'version')) {
+            $existing = $ExistingManifest.PSObject.Properties[$field]
+            $incoming = $IncomingManifest.PSObject.Properties[$field]
+            if ($null -eq $existing -or $null -eq $incoming -or
+                [string]::IsNullOrWhiteSpace([string] $existing.Value) -or
+                [string] $existing.Value -ine [string] $incoming.Value) {
+                throw "Reviewer-only deployment cannot change $field for existing $existingTier workflows. Run gh sfl sync with the intended source release to update the complete installed tier."
+            }
+        }
+    }
+
     $existingComponentsProperty = $ExistingManifest.PSObject.Properties['components']
     $existingComponents = if ($null -ne $existingComponentsProperty) {
         @($existingComponentsProperty.Value) |

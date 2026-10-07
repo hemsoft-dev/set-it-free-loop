@@ -169,11 +169,9 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	manifest.DeployedAt = deployedAt
 	manifest.DeployedBy = deployedBy
 	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
-	manifestJSON, err := marshalManifest(manifest)
-	if err != nil {
+	if err := writeManifestFiles(fileMap, manifest); err != nil {
 		return fmt.Errorf("marshaling manifest: %w", err)
 	}
-	fileMap[".sfl/sfl.json"] = manifestJSON
 	fmt.Fprintf(stdout, "    .sfl/sfl.json ✓\n")
 
 	// Deploy all files in a single atomic commit.

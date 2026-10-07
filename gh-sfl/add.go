@@ -131,11 +131,9 @@ func runAdd(args []string, stdout io.Writer, stderr io.Writer) error {
 		manifest.EnginePolicy,
 		hemSoftEnginePolicyManifestForFileMap(fileMap),
 	)
-	manifestJSON, err := marshalManifest(manifest)
-	if err != nil {
+	if err := writeManifestFiles(fileMap, manifest); err != nil {
 		return fmt.Errorf("marshaling manifest: %w", err)
 	}
-	fileMap[".sfl/sfl.json"] = manifestJSON
 
 	// Deploy
 	commitMsg := fmt.Sprintf("chore: add SFL add-on %q\n\nDeployed by gh-sfl add", opts.addon)

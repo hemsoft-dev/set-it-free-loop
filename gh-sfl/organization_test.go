@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -237,7 +238,10 @@ func TestCanonicalManifestPreventsStaleRootFallback(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			manifest, err := readRemoteManifestWithFetcher("hemsoft-dev", "consumer", func(owner, repo, path, ref string) (string, error) {
 				if path != ".sfl/sfl.json" {
-					t.Fatalf("read stale root after canonical response: %s", path)
+					if tc.wantError {
+						t.Fatalf("read stale root after failed canonical response: %s", path)
+					}
+					return `{"tier":"full"}`, nil
 				}
 				return tc.raw, tc.err
 			})
@@ -248,5 +252,47 @@ func TestCanonicalManifestPreventsStaleRootFallback(t *testing.T) {
 				t.Fatal("canonical tier not preserved")
 			}
 		})
+	}
+}
+
+func TestManifestMutationsKeepLegacyCopiesConsistent(t *testing.T) {
+	for _, canonicalExists := range []bool{false, true} {
+		t.Run(fmt.Sprintf("canonical=%t", canonicalExists), func(t *testing.T) {
+			manifest, err := readRemoteManifestWithFetcher("hemsoft-dev", "consumer", func(_, _, path, _ string) (string, error) {
+				if path == ".sfl/sfl.json" && !canonicalExists {
+					return "", fmt.Errorf("HTTP 404")
+				}
+				return `{"tier":"review","version":"old","source":"HemSoft/set-it-free-loop"}`, nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest.Version = "new"
+			manifest.MotherRepo = "hemsoft-dev/set-it-free-loop"
+			files := map[string]string{}
+			if err := writeManifestFiles(files, manifest); err != nil {
+				t.Fatal(err)
+			}
+			if len(files) != 2 || files["sfl.json"] != files[".sfl/sfl.json"] ||
+				!strings.Contains(files["sfl.json"], `"version": "new"`) ||
+				!strings.Contains(files["sfl.json"], `"source": "hemsoft-dev/set-it-free-loop"`) ||
+				strings.Contains(files["sfl.json"], "RemotePaths") {
+				t.Fatalf("inconsistent manifest writes: %v", files)
+			}
+			removed, err := uninstallFiles(manifest, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Contains(removed, "sfl.json") || !slices.Contains(removed, ".sfl/sfl.json") {
+				t.Fatalf("uninstall leaves manifest copy: %v", removed)
+			}
+		})
+	}
+	files := map[string]string{}
+	if err := writeManifestFiles(files, &sflManifest{Tier: "reviewer"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[".sfl/sfl.json"] == "" {
+		t.Fatalf("wrong fresh manifest paths: %v", files)
 	}
 }

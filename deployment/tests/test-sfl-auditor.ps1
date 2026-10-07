@@ -221,7 +221,7 @@ gh() {
     return
   fi
   if [ "$1 $2" = "issue create" ]; then
-    printf 'created\n' >> "$ISSUE_LOG"
+    printf 'created %s\n' "$*" >> "$ISSUE_LOG"
     return
   fi
   if [ "$1 $2" = "issue close" ]; then
@@ -315,6 +315,7 @@ name: "SFL Reviewer Gate Runner"
     Assert-True ($missingObserverRun.ExitCode -eq 0) "Missing-observer prerequisite script failed: $($missingObserverRun.Output)"
     Assert-True ($missingObserverOutput -match 'sfl_review_prerequisites_missing=1') 'Auditor did not report a missing observer file.'
     Assert-True ($missingObserverIssue -match 'created') 'Auditor did not create an issue for a missing observer file.'
+    Assert-True ($missingObserverIssue -match '-SourceRepository hemsoft-dev/set-it-free-loop') 'Organization recovery silently selected the legacy source.'
 
     Remove-Item -LiteralPath $reviewOutputPath, $issueLogPath -Force -ErrorAction SilentlyContinue
     $organizationObserver.Replace('hemsoft-dev/set-it-free-loop', 'HemSoft/set-it-free-loop') | Set-Content -LiteralPath $observerPath

@@ -287,11 +287,12 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 		Addons:       opts.addons,
 		EnginePolicy: hemSoftEnginePolicyManifestForFileMap(fileMap),
 	}
-	manifestJSON, err := marshalManifest(manifest)
-	if err != nil {
+	if existingManifest != nil {
+		manifest.RemotePaths = existingManifest.RemotePaths
+	}
+	if err := writeManifestFiles(fileMap, manifest); err != nil {
 		return fmt.Errorf("marshaling manifest: %w", err)
 	}
-	fileMap[".sfl/sfl.json"] = manifestJSON
 	fmt.Fprintf(stdout, "    .sfl/sfl.json ✓\n")
 
 	shortSHA := release.SHA

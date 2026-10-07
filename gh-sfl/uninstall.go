@@ -195,6 +195,7 @@ func uninstallFiles(manifest *sflManifest, forceFallback bool) ([]string, error)
 			add(path)
 		}
 		add(".sfl/sfl.json")
+		add("sfl.json")
 		add(".sfl/sfl-config.yml")
 	} else {
 		workflows, err := workflowsForInstalledManifest(manifest)
@@ -207,7 +208,9 @@ func uninstallFiles(manifest *sflManifest, forceFallback bool) ([]string, error)
 		for _, workflow := range addonWorkflowFiles(manifest.Addons) {
 			add(".github/workflows/" + workflow)
 		}
-		add(".sfl/sfl.json")
+		for _, path := range manifestMutationPaths(manifest) {
+			add(path)
+		}
 		if canonicalDeploymentTier(manifest.Tier) != "reviewer" {
 			add(".sfl/sfl-config.yml")
 			add(".sfl/governance/policy.md")

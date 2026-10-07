@@ -416,11 +416,18 @@ jobs:
             --jq ".[] | select(.title == \"$ISSUE_TITLE\") | .number" |
             head -n 1)
 
+          RECOVERY="Verify the manifest source before redeploying from a supported SFL release."
+          case "$EXPECTED_SOURCE_REPO" in
+            HemSoft/set-it-free-loop|hemsoft-dev/set-it-free-loop)
+              RECOVERY="Run \`deployment/scripts/deploy-workflow.ps1 -Tier review -SourceRepository $EXPECTED_SOURCE_REPO\` and \`deployment/governance/setup-labels.ps1\` from \`$EXPECTED_SOURCE_REPO\`. For an installed wider tier, use the matching source CLI's \`gh sfl sync\` to update all components together."
+              ;;
+          esac
+
           if [ "$MISSING" -gt 0 ] && [ -z "$EXISTING_ISSUE" ]; then
             ISSUE_BODY=$(printf '%s\n\n## Missing prerequisites\n\n%s## Recovery\n\n%s' \
               "The repository declares standalone SFL review in \`sfl.json\`, but the standalone reviewer is missing or malformed." \
               "$MISSING_ITEMS" \
-              "Run \`deployment/scripts/deploy-workflow.ps1 -Tier review\` and \`deployment/governance/setup-labels.ps1\` from \`HemSoft/set-it-free-loop\`.")
+              "$RECOVERY")
             gh issue create --repo "$REPO" \
               --title "$ISSUE_TITLE" \
               --label report \

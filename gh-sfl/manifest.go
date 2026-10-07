@@ -10,6 +10,7 @@ import (
 
 // sflManifest represents the .sfl/sfl.json file in a consumer repo.
 type sflManifest struct {
+	RemotePaths  []string                 `json:"-"`
 	Version      string                   `json:"version"`
 	Tier         string                   `json:"tier"`
 	MotherRepo   string                   `json:"source"`
@@ -108,7 +109,42 @@ func readRemoteManifestWithFetcher(owner, repo string, fetch func(string, string
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
 		return nil, fmt.Errorf("parsing remote %s: %w", manifestPath, err)
 	}
+	m.RemotePaths = []string{manifestPath}
+	if manifestPath == ".sfl/sfl.json" {
+		// The PowerShell deployer may retain a root copy alongside the canonical
+		// manifest. Keep its metadata synchronized without using it as authority.
+		if _, rootErr := fetch(owner, repo, "sfl.json", ""); rootErr == nil {
+			m.RemotePaths = append(m.RemotePaths, "sfl.json")
+		} else if !isNotFoundError(rootErr) {
+			return nil, fmt.Errorf("checking legacy manifest copy: %w", rootErr)
+		}
+	}
 	return &m, nil
+}
+
+// Every mutation writes the canonical manifest and any observed legacy copy.
+// A fresh installation creates only the canonical file.
+func manifestMutationPaths(manifest *sflManifest) []string {
+	paths := []string{".sfl/sfl.json"}
+	if manifest != nil {
+		for _, path := range manifest.RemotePaths {
+			if path == "sfl.json" {
+				return append(paths, path)
+			}
+		}
+	}
+	return paths
+}
+
+func writeManifestFiles(files map[string]string, manifest *sflManifest) error {
+	raw, err := marshalManifest(manifest)
+	if err != nil {
+		return err
+	}
+	for _, path := range manifestMutationPaths(manifest) {
+		files[path] = raw
+	}
+	return nil
 }
 
 // marshalManifest serializes a manifest to pretty-printed JSON.
