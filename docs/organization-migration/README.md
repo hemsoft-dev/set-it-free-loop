@@ -360,3 +360,40 @@ reported by the owner. The wider pilot executes a successful non-Auditor
 workflow distinct from its Auditor run. Known provider actions must preserve
 the captured dashboard paused-database and modern-web-stack Git-retirement
 decisions; nonempty text that contradicts those decisions cannot clear a gate.
+
+Workflow run heads match the source release SHA or a separately captured
+consumer/pilot revision containing the recorded manifest. Review permission
+captures bind the human requester, repository, PR, head and base to a successful
+repository-permission GET. The required gate covers the inventory default
+branch, including `master` and `develop`. Its completed successful Actions
+check or run is reconciled with a separate result capture and review artifact;
+an issue URL or cancelled gate cannot verify a review. Every active consumer
+configuration must deploy the observer, including minimal and standard tiers.
+
+Pilot init/sync operations record merged PR outcomes. Repeat operations record
+zero changes, status records a healthy result, and gate uninstall records only
+gate removal with zero unrelated changes. Their revisions follow the actual
+operation order. Final new-repository checksum evidence binds the canonical
+release, asset URL, source repository ID/SHA, target ID, matching SHA256 and
+successful checksum/attestation verification. Runtime scope exceptions need a
+separate captured HemSoft decision on issue 138 or 139 with matching repository,
+disposition, reason and approval time; the matrix cannot authorize its own
+exception. Destination protection proofs reconcile with independent captures
+of post-transfer identity, revision, observation time, rulesets and classic
+protection before comparing the preserved baseline.
+
+Integration rows record `smoke_outcome`, `smoke_phase` and a local
+`smoke_evidence_url`. Captures bind the resource and repository to successful
+continuity, approved recovery, preservation of an unused resource, or unchanged
+baseline observations. Destructive changes and unsuccessful results fail the
+gate. Pre-transfer readiness can preserve an unused database or retired Git
+connection without executing runtime operations; final completion requires
+post-transfer continuity captures. The modern-web-stack preservation capture
+records its existing approved disconnection and makes no post-transfer claim.
+
+Reports preparation PR [63](https://github.com/HemSoft/reports/pull/63) is merged.
+Its [live read-only credential check](https://github.com/HemSoft/reports/actions/runs/37569272374)
+now verifies HemSoft identity, classic repo scope and private organization
+access, completing Reports issue [62](https://github.com/HemSoft/reports/issues/62).
+The organization Actions API scope block is also cleared; this does not claim
+that organization secrets have been distributed or transfer gates completed.

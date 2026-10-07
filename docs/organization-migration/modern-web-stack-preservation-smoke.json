@@ -1,0 +1,17 @@
+{
+  "repository_id": 1119892824,
+  "repository": "HemSoft/modern-web-stack-poc",
+  "provider": "Vercel",
+  "resource_kind": "vercel_project",
+  "resource_id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+  "outcome": "preserved_unused",
+  "phase": "pre_transfer",
+  "destructive_changes": false,
+  "resource_unchanged": true,
+  "runtime_actions": [],
+  "owner_receipt_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048",
+  "observed_at": "2026-10-07T01:58:32.693283+00:00",
+  "resource_capture_url": "modern-web-stack-git-retirement-evidence.json",
+  "observation": "This Project is not connected to a Git repository. To be able to set up a Deploy Hook, you need to set up a new connection in the Connected Git Repository section above.",
+  "limits": "Preservation after approved Git disconnection; no post-transfer continuity or runtime check claimed"
+}
