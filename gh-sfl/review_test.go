@@ -93,7 +93,7 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 		if defaultBranch == "" {
 			defaultBranch = "main"
 		}
-		return decodeTestResponse(response, map[string]any{"default_branch": defaultBranch})
+		return decodeTestResponse(response, map[string]any{"full_name": "HemSoft/consumer", "default_branch": defaultBranch})
 	case strings.Contains(path, "/check-runs?"):
 		for page, runs := range f.checkRunPages {
 			if strings.Contains(path, fmt.Sprintf("page=%d", page)) {

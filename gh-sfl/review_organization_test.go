@@ -11,12 +11,16 @@ import (
 type organizationReviewREST struct {
 	*reviewREST
 	role, author, responseUser, authenticatedUser string
+	canonicalRepo                                 string
 	lookupError                                   bool
 	permissionGets                                int
 	deniedLogins                                  map[string]int
 }
 
 func (f *organizationReviewREST) Get(path string, response interface{}) error {
+	if path == "repos/hemsoft-dev/consumer" {
+		return decodeTestResponse(response, map[string]string{"full_name": f.canonicalRepo, "default_branch": "main"})
+	}
 	if path == "user" {
 		return decodeTestResponse(response, map[string]string{"login": f.authenticatedUser})
 	}
@@ -117,5 +121,19 @@ func TestOrganizationRequesterHTTPDenialsDoNotPoisonAuthorizedRegistry(t *testin
 	rest := &organizationReviewREST{reviewREST: &reviewREST{}, deniedLogins: map[string]int{"member": 500}}
 	if allowed, err := authorizeReviewRequester(rest, "hemsoft-dev", "consumer", "member"); err == nil || allowed {
 		t.Fatal("server failure must remain an error")
+	}
+}
+
+func TestOrganizationReviewRejectsRedirectedRepository(t *testing.T) {
+	for _, canonical := range []string{"other/consumer", "hemsoft-dev/renamed", "", "HEMSOFT-DEV/Consumer"} {
+		rest := &organizationReviewREST{reviewREST: &reviewREST{}, canonicalRepo: canonical}
+		branch, err := fetchRepositoryDefaultBranchWithClient(rest, "hemsoft-dev", "consumer")
+		allowed := strings.EqualFold(canonical, "hemsoft-dev/consumer")
+		if (err == nil) != allowed || (allowed && branch != "main") {
+			t.Fatalf("canonical=%q branch=%q error=%v", canonical, branch, err)
+		}
+		if rest.posts != 0 || rest.statusPosts != 0 {
+			t.Fatal("repository metadata check mutated review state")
+		}
 	}
 }

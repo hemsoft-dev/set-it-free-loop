@@ -682,10 +682,14 @@ func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number i
 
 func fetchRepositoryDefaultBranchWithClient(client restAPI, owner, repo string) (string, error) {
 	var response struct {
+		FullName      string `json:"full_name"`
 		DefaultBranch string `json:"default_branch"`
 	}
 	if err := client.Get(fmt.Sprintf("repos/%s/%s", owner, repo), &response); err != nil {
 		return "", fmt.Errorf("reading the default branch for %s/%s: %w", owner, repo, err)
+	}
+	if !strings.EqualFold(response.FullName, owner+"/"+repo) {
+		return "", fmt.Errorf("canonical repository does not match requested review target %s/%s", owner, repo)
 	}
 	if strings.TrimSpace(response.DefaultBranch) == "" {
 		return "", fmt.Errorf("repository %s/%s has no default branch", owner, repo)
