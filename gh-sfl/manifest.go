@@ -89,13 +89,24 @@ func readLocalManifest() (*sflManifest, error) {
 
 // readRemoteManifest reads .sfl/sfl.json from a remote repo.
 func readRemoteManifest(owner, repo string) (*sflManifest, error) {
-	raw, err := fetchFileRaw(owner, repo, ".sfl/sfl.json", "")
+	return readRemoteManifestWithFetcher(owner, repo, fetchFileRaw)
+}
+
+// Prefer the canonical manifest, but retain legacy root deployments. Failed or
+// malformed canonical reads must never fall back to stale root configuration.
+func readRemoteManifestWithFetcher(owner, repo string, fetch func(string, string, string, string) (string, error)) (*sflManifest, error) {
+	manifestPath := ".sfl/sfl.json"
+	raw, err := fetch(owner, repo, manifestPath, "")
+	if err != nil && isNotFoundError(err) {
+		manifestPath = "sfl.json"
+		raw, err = fetch(owner, repo, manifestPath, "")
+	}
 	if err != nil {
 		return nil, err
 	}
 	var m sflManifest
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		return nil, fmt.Errorf("parsing remote .sfl/sfl.json: %w", err)
+		return nil, fmt.Errorf("parsing remote %s: %w", manifestPath, err)
 	}
 	return &m, nil
 }

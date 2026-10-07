@@ -202,3 +202,51 @@ func TestCanonicalRepositoryLookupFailsClosed(t *testing.T) {
 		t.Fatalf("rejected case-insensitive canonical target: %v", err)
 	}
 }
+
+func TestLegacyRootManifestPreservesExistingDeployment(t *testing.T) {
+	var paths []string
+	manifest, err := readRemoteManifestWithFetcher("hemsoft-dev", "consumer", func(owner, repo, path, ref string) (string, error) {
+		paths = append(paths, path)
+		if path == ".sfl/sfl.json" {
+			return "", fmt.Errorf("HTTP 404")
+		}
+		return `{"version":"2.1.0-rc.13","tier":"full","source":"HemSoft/set-it-free-loop","addons":["pr-review"]}`, nil
+	})
+	if err != nil || manifest == nil || manifest.Tier != "full" || len(manifest.Addons) != 1 || manifest.Addons[0] != "pr-review" {
+		t.Fatalf("legacy deployment not preserved: %v %v", manifest, err)
+	}
+	if strings.Join(paths, ",") != ".sfl/sfl.json,sfl.json" {
+		t.Fatalf("wrong lookup sequence %v", paths)
+	}
+	if err := validateInitTierTransition(manifest, initOptions{tier: "reviewer"}, "hemsoft-dev/consumer"); err == nil {
+		t.Fatal("legacy full deployment mistaken for fresh reviewer consumer")
+	}
+}
+
+func TestCanonicalManifestPreventsStaleRootFallback(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		err       error
+		wantError bool
+	}{
+		{name: "current canonical", raw: `{"tier":"minimal","addons":[]}`},
+		{name: "malformed canonical", raw: `invalid`, wantError: true},
+		{name: "forbidden canonical", err: fmt.Errorf("HTTP 403"), wantError: true},
+		{name: "server failure", err: fmt.Errorf("HTTP 500"), wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			manifest, err := readRemoteManifestWithFetcher("hemsoft-dev", "consumer", func(owner, repo, path, ref string) (string, error) {
+				if path != ".sfl/sfl.json" {
+					t.Fatalf("read stale root after canonical response: %s", path)
+				}
+				return tc.raw, tc.err
+			})
+			if (err != nil) != tc.wantError {
+				t.Fatalf("manifest=%v error=%v", manifest, err)
+			}
+			if !tc.wantError && manifest.Tier != "minimal" {
+				t.Fatal("canonical tier not preserved")
+			}
+		})
+	}
+}
