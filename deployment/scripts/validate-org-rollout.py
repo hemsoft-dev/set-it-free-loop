@@ -13,7 +13,7 @@ TIERS = {'review', 'reviewer', 'minimal', 'standard', 'full', 'custom'}
 # Franz's recorded October 6 decision. Expanding this set requires a new owner decision.
 APPROVED_RETAINED_IDS = {1162179521, 1169698740}
 RETENTION_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635'
-HEALTH = {'pending_transfer', 'pending_rollout', 'failed', 'verified', 'archived_verified', 'scope_exception', 'retained_source'}
+HEALTH = {'pending_transfer', 'pending_rollout', 'failed', 'verified', 'archived_verified', 'scope_exception', 'retained_source', 'source_verified'}
 LEDGER_STATUS = {'owner_verification_pending', 'partial_provider_verified', 'verified'}
 
 
@@ -56,6 +56,33 @@ def string_list(value):
     return isinstance(value, list) and all(text(item) for item in value) and len(set(value)) == len(value)
 
 
+def semantic_version(value):
+    pattern = r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?'
+    return isinstance(value, str) and re.fullmatch(pattern, value) is not None
+
+
+def immutable_sha(value):
+    return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{40}', value) is not None
+
+
+def validate_source_review(row, directory, app_id):
+    policy = row.get('gate_policy')
+    require(isinstance(policy, dict) and policy.get('state') == 'required' and
+            policy.get('context') == 'SFL Reviewer Gate Runner' and policy.get('app_id') == 15368 and
+            policy.get('strict') is True, 'Protected source needs a strict Actions-bound review gate')
+    evidence(policy.get('evidence_url'), directory)
+    require(text(row.get('review_requester')) and immutable_sha(row.get('review_head_sha')) and
+            immutable_sha(row.get('review_base_sha')), 'Protected source needs immutable registered review context')
+    for field in ('review_pr_url', 'gate_run_url', 'review_registration_url',
+                  'review_registry_status_url', 'review_artifact_url'):
+        evidence(row.get(field), directory)
+    identity = row.get('review_artifact_identity')
+    require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_owned' and
+            identity.get('app_id') == app_id and identity.get('reviewed_head_sha') == row['review_head_sha'] and
+            identity.get('reviewed_base_sha') == row['review_base_sha'],
+            'Protected source needs an SFL-owned immutable review artifact')
+
+
 def validate(inventory, rows, matrix, directory, scope_decisions=None):
     expected = {repo['id']: repo for repo in inventory['repositories']}
     require(len(expected) == len(inventory['repositories']), 'Duplicate baseline ID')
@@ -69,6 +96,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     source_app_repos = set(source_apps[0]['repositories'])
     supported_addons, supported_components = workflow_catalog()
     owned_app_id = inventory['known_owned_app']['data']['id']
+    canonical_source = inventory['destination_login'] + '/set-it-free-loop'
     if scope_decisions is None:
         scope_decisions = json.loads((directory / 'scope-decisions.json').read_text())
     require(scope_decisions.get('schema_version') == 1, 'Unsupported scope decision schema')
@@ -88,7 +116,20 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         require(decision.get('decision_evidence_url') == RETENTION_RECEIPT,
                 'Retention must reference the recorded owner decision')
         evidence(decision.get('decision_evidence_url'), directory)
-        evidence(decision.get('status_evidence_url'), directory)
+        reference = decision.get('status_evidence_url')
+        evidence(reference, directory)
+        require(not urllib.parse.urlsplit(reference).scheme and reference != 'scope-decisions.json',
+                'Retention needs a separate captured API status artifact')
+        status_capture = json.loads((directory / reference).read_text())
+        require(status_capture.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'],
+                'Retained status artifact targets another repository')
+        try:
+            observed_at = datetime.datetime.fromisoformat(status_capture.get('observed_at', '').replace('Z', '+00:00'))
+        except ValueError as exc:
+            raise ValueError('Retained status artifact needs a capture timestamp') from exc
+        require(observed_at.tzinfo is not None, 'Retained status capture needs a timezone')
+        require(status_capture.get('metadata') == decision.get('observed_metadata'),
+                'Retained status metadata differs from independent API capture')
         metadata = decision.get('observed_metadata', {})
         require(metadata.get('id') == repo_id and metadata.get('full_name') == repo['full_name'] and
                 metadata.get('private') == (repo['visibility'] == 'private') and
@@ -180,7 +221,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         health = row.get('health')
         require(health in HEALTH, 'Invalid matrix health')
         require((health == 'retained_source') == (repo_id in retained), 'Matrix must honor retained source decisions')
-        if health in {'verified', 'archived_verified', 'scope_exception'}:
+        protected_source = repo['full_name'] == 'HemSoft/set-it-free-loop'
+        require((row.get('rollout_action') == 'protected_source_verify_workflows_in_place') == protected_source,
+                'Protected source completion mode must match the distribution repository')
+        if health in {'verified', 'archived_verified', 'scope_exception', 'source_verified'}:
             require(all(status == 'verified' for status in ledger_statuses[repo_id]),
                     'Completed rollout requires every integration row verified')
         if health == 'retained_source':
@@ -189,7 +233,43 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     row.get('retention_evidence_url') == decision['decision_evidence_url'] and
                     row.get('status_evidence_url') == decision['status_evidence_url'],
                     'Retained source needs matching owner and current source receipts')
+            dependency = row.get('retained_app_dependency')
+            require(isinstance(dependency, dict) and dependency.get('status') in {'pending', 'verified'},
+                    'Retained source needs an explicit App dependency status')
+            if dependency['status'] == 'verified':
+                require(text(dependency.get('verified_by')) and text(dependency.get('disposition')),
+                        'Verified retained App dependency needs owner and disposition')
+                evidence(dependency.get('evidence_url'), directory)
+                try:
+                    verified_at = datetime.datetime.fromisoformat(dependency.get('verified_at', '').replace('Z', '+00:00'))
+                except ValueError as exc:
+                    raise ValueError('Retained App dependency needs a verification timestamp') from exc
+                require(verified_at.tzinfo is not None, 'Retained App dependency needs a timezone')
+        elif health == 'source_verified':
+            require(protected_source and not row['archived'], 'Only the protected distribution source can verify in place')
+            proof = row.get('in_place_evidence')
+            require(isinstance(proof, dict), 'Protected source needs in-place workflow, release and governance evidence')
+            require(semantic_version(proof.get('release_version')) and immutable_sha(proof.get('source_sha')),
+                    'Protected source needs an immutable semantic release identity')
+            require(proof.get('release_url') == 'https://github.com/' + canonical_source + '/releases/tag/v' + proof['release_version'],
+                    'Protected source release must belong to its canonical destination')
+            for field in ('release_url', 'release_verification_url', 'governance_evidence_url'):
+                evidence(proof.get(field), directory)
+            runs = proof.get('workflow_run_urls')
+            require(isinstance(runs, list) and bool(runs), 'Protected source needs in-place workflow runs')
+            for run in runs:
+                evidence(run, directory)
+            for field in ('transfer_evidence_url', 'status_evidence_url'):
+                evidence(row.get(field), directory)
+            require(row.get('destination_codex_access') == 'verified' and row.get('destination_sfl_app_access') == 'verified',
+                    'Protected source needs verified App coverage')
+            # The source owns its workflows; it must not acquire a consumer manifest through init/sync.
+            require(row['installed_tier'] is None and row['selected_tier'] is None,
+                    'Protected source must not be recorded as a deployed consumer')
+            validate_source_review(row, directory, owned_app_id)
+            verified_rollouts += 1
         elif health == 'scope_exception':
+            require(not protected_source, 'Protected source cannot omit in-place verification through an exception')
             evidence(row.get('exception_evidence_url'), directory)
             evidence(row.get('transfer_evidence_url'), directory)
             evidence(row.get('status_evidence_url'), directory)
@@ -198,9 +278,11 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             evidence(row.get('transfer_evidence_url'), directory)
             evidence(row.get('status_evidence_url'), directory)
         elif health == 'verified':
+            require(not protected_source, 'Protected source must use in-place source verification')
             require(row['archived'] is False, 'Archived repository needs archive-preserving verification')
             for field in ('selected_tier', 'manifest_version', 'review_requester'):
                 require(text(row.get(field)), f'Verified rollout needs {field}')
+            require(semantic_version(row.get('manifest_version')), 'Verified rollout needs a semantic manifest release version')
             require(text(row.get('installed_tier')), 'Verified rollout needs the observed pre-sync installed tier')
             if row['installed_tier'] == 'custom':
                 require(string_list(row['installed_components']) and bool(row['installed_components']),
@@ -274,6 +356,16 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                           'review_registry_status_url', 'review_artifact_url', 'gate_run_url',
                           'status_evidence_url', 'gate_uninstall_evidence_url'):
                 evidence(receipts.get(field), directory)
+            require(receipts.get('deployment_source') == canonical_source and
+                    semantic_version(receipts.get('release_version')) and immutable_sha(receipts.get('deployment_sha')),
+                    'Verified pilot needs canonical immutable deployment release identity')
+            manifest = receipts.get('manifest_identity')
+            require(isinstance(manifest, dict) and manifest.get('source') == receipts['deployment_source'] and
+                    manifest.get('sourceSha') == receipts['deployment_sha'] and
+                    manifest.get('version') == receipts['release_version'] and manifest.get('tier') in TIERS,
+                    'Verified pilot manifest must match its deployment source, SHA and version')
+            for field in ('manifest_evidence_url', 'release_download_verification_url'):
+                evidence(receipts.get(field), directory)
             identity = receipts.get('review_artifact_identity')
             require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_owned' and
                     identity.get('app_id') == owned_app_id and
@@ -284,8 +376,11 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)
         extra_names.add(name.casefold())
-    source_complete = all(row['health'] in {'verified', 'archived_verified', 'scope_exception', 'retained_source'} for row in records)
+    source_complete = all(row['health'] in {'verified', 'archived_verified', 'scope_exception', 'retained_source', 'source_verified'} for row in records)
     if verified_rollouts or source_complete:
+        require(all(row['retained_app_dependency']['status'] == 'verified' for row in records
+                    if row['health'] == 'retained_source'),
+                'Completed rollout requires verified retained App dependencies')
         require(verified_pilot_visibilities == {'public', 'private'},
                 'Active rollout requires verified public and private onboarding pilots first')
     return summary

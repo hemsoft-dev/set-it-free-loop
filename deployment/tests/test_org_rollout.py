@@ -72,9 +72,101 @@ class RolloutTests(unittest.TestCase):
                  'repeat_onboarding_evidence_url', 'review_registration_url',
                  'review_registry_status_url', 'review_artifact_url', 'gate_run_url',
                  'status_evidence_url', 'gate_uninstall_evidence_url')}
+            pilot['validation_evidence'].update(deployment_source='hemsoft-dev/set-it-free-loop',
+                release_version='2.1.0-rc.14', deployment_sha='a'*40,
+                manifest_identity={'source':'hemsoft-dev/set-it-free-loop','sourceSha':'a'*40,
+                                   'version':'2.1.0-rc.14','tier':'reviewer'},
+                manifest_evidence_url='https://example.com/manifest',
+                release_download_verification_url='https://example.com/checksum')
             pilot['validation_evidence']['review_artifact_identity'] = {
                 'runtime': 'sfl_owned', 'app_id': 4448946,
                 'reviewed_head_sha': 'b'*40, 'reviewed_base_sha': 'c'*40}
+
+    def complete_source(self):
+        self.complete_pilots()
+        row = next(row for row in self.matrix['repositories'] if row['source'] == 'HemSoft/set-it-free-loop')
+        row.update(health='source_verified', transfer_evidence_url='https://example.com/transfer',
+                   status_evidence_url='https://example.com/status', destination_codex_access='verified',
+                   destination_sfl_app_access='verified', review_requester='HemSoft',
+                   review_head_sha='b'*40, review_base_sha='c'*40,
+                   gate_policy={'state':'required','context':'SFL Reviewer Gate Runner','app_id':15368,
+                                'strict':True,'evidence_url':'https://example.com/rule'})
+        for field in ('review_pr_url','gate_run_url','review_registration_url',
+                      'review_registry_status_url','review_artifact_url'):
+            row[field] = 'https://example.com/' + field
+        row['review_artifact_identity']={'runtime':'sfl_owned','app_id':4448946,
+                                        'reviewed_head_sha':'b'*40,'reviewed_base_sha':'c'*40}
+        row['in_place_evidence']={'workflow_run_urls':['https://example.com/run'],
+            'release_version':'2.1.0-rc.14','source_sha':'a'*40,
+            'release_url':'https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.14',
+            'release_verification_url':'https://example.com/checksum',
+            'governance_evidence_url':'https://example.com/governance'}
+        self.verify_source_ledger(row['repository_id'])
+        self.matrix['summary']['verified_rollouts'] += 1
+        return row
+
+    def test_protected_source_can_complete_without_consumer_manifest(self):
+        row = self.complete_source()
+        self.assertIsNone(row['installed_tier'])
+        self.assertIsNone(row['manifest_version'])
+        self.assertEqual(self.check()['verified_rollouts'], 1)
+
+    def test_protected_source_requires_in_place_proof_and_owned_review(self):
+        row = self.complete_source()
+        original = copy.deepcopy(row)
+        for field in row['in_place_evidence']:
+            row.clear(); row.update(copy.deepcopy(original))
+            del row['in_place_evidence'][field]
+            with self.subTest(field=field), self.assertRaises(ValueError): self.check()
+        for field in ('gate_policy','review_artifact_identity','review_registration_url'):
+            row.clear(); row.update(copy.deepcopy(original)); row[field]=None
+            with self.subTest(field=field), self.assertRaises(ValueError): self.check()
+        row.clear(); row.update(original); row['health']='scope_exception'
+        with self.assertRaisesRegex(ValueError, 'cannot omit in-place'): self.check()
+
+    def test_protected_mode_cannot_be_applied_to_another_repository(self):
+        row=self.complete_rollout()
+        row['rollout_action']='protected_source_verify_workflows_in_place'
+        with self.assertRaisesRegex(ValueError, 'completion mode'): self.check()
+
+    def test_completed_rollout_requires_retained_app_dependencies_verified(self):
+        self.complete_rollout()
+        row=next(row for row in self.matrix['repositories'] if row['health']=='retained_source')
+        row['retained_app_dependency']['status']='pending'
+        with self.assertRaisesRegex(ValueError, 'verified retained App dependencies'): self.check()
+
+    def test_pilot_requires_immutable_matching_deployment_and_manifest(self):
+        self.complete_pilots()
+        pilot=self.matrix['disposable_validation_repositories'][0]
+        original=copy.deepcopy(pilot['validation_evidence'])
+        for field in ('deployment_source','release_version','deployment_sha','manifest_identity',
+                      'manifest_evidence_url','release_download_verification_url'):
+            pilot['validation_evidence']=copy.deepcopy(original)
+            del pilot['validation_evidence'][field]
+            with self.subTest(field=field), self.assertRaises(ValueError): self.check()
+        for field,value in (('source','HemSoft/set-it-free-loop'),('sourceSha','d'*40),
+                            ('version','2.1.0-rc.13'),('tier','unknown')):
+            pilot['validation_evidence']=copy.deepcopy(original)
+            pilot['validation_evidence']['manifest_identity'][field]=value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'manifest must match'): self.check()
+        pilot['validation_evidence']=original
+        self.check()
+
+    def test_manifest_release_version_must_be_semantic(self):
+        row=self.complete_rollout()
+        for value in ('unknown','main','v2.1.0','01.2.3','2.1.0-rc.01','2.1.0-'):
+            row['manifest_version']=value
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'semantic manifest'): self.check()
+        for value in ('2.1.0','2.1.0-rc.14','2.1.0-rc.14+build.1'):
+            row['manifest_version']=value
+            self.check()
+
+    def test_retained_status_cannot_reference_scope_decision_itself(self):
+        self.scope['retained_repositories'][0]['status_evidence_url']='scope-decisions.json'
+        with self.assertRaisesRegex(ValueError, 'separate captured API'): self.check()
+        decision=self.scope['retained_repositories'][0]
+        decision['status_evidence_url']=self.scope['retained_repositories'][1]['status_evidence_url']
+        with self.assertRaisesRegex(ValueError, 'another repository'): self.check()
 
     def test_pending_records_do_not_claim_completion(self):
         self.assertEqual(self.check()['verified_rollouts'], 0)
@@ -271,12 +363,15 @@ class RolloutTests(unittest.TestCase):
 
     def test_terminal_exceptions_cannot_skip_new_repository_onboarding(self):
         for row in self.matrix['repositories']:
-            if row['health'] == 'retained_source':
+            if row['health'] == 'retained_source' or row['source'] == 'HemSoft/set-it-free-loop':
                 continue
             self.verify_source_ledger(row['repository_id'])
             row.update(health='scope_exception', exception_evidence_url='https://example.com/exception',
                        transfer_evidence_url='https://example.com/transfer',
                        status_evidence_url='https://example.com/settings')
+        self.complete_source()
+        for pilot in self.matrix['disposable_validation_repositories']:
+            pilot['validation_status'] = 'pending'
         with self.assertRaisesRegex(ValueError, 'public and private onboarding pilots'):
             self.check()
 

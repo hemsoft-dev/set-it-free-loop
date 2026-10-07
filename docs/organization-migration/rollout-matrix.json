@@ -1434,7 +1434,7 @@
       "review_requester": null,
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
-      "status_evidence_url": "scope-decisions.json",
+      "status_evidence_url": "retained-now-leadership-group-status-evidence.json",
       "exception_evidence_url": null,
       "installed_addons": null,
       "selected_addons": null,
@@ -1445,7 +1445,14 @@
       "review_artifact_url": null,
       "review_artifact_identity": null,
       "actual_repository": "HemSoft/now-leadership-group",
-      "retention_evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635"
+      "retention_evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635",
+      "retained_app_dependency": {
+        "status": "verified",
+        "verified_by": "HemSoft",
+        "verified_at": "2026-10-07T00:58:31.929393+00:00",
+        "evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028536416",
+        "disposition": "No SFL App dependency; existing SFL credentials unused. Preserve personal hosting."
+      }
     },
     {
       "repository_id": 579605475,
@@ -1996,7 +2003,7 @@
       "review_requester": null,
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
-      "status_evidence_url": "scope-decisions.json",
+      "status_evidence_url": "retained-set-it-free-loop-site-status-evidence.json",
       "exception_evidence_url": null,
       "installed_addons": null,
       "selected_addons": null,
@@ -2007,7 +2014,14 @@
       "review_artifact_url": null,
       "review_artifact_identity": null,
       "actual_repository": "HemSoft/set-it-free-loop-site",
-      "retention_evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635"
+      "retention_evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635",
+      "retained_app_dependency": {
+        "status": "verified",
+        "verified_by": "HemSoft",
+        "verified_at": "2026-10-07T00:58:32.227956+00:00",
+        "evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028536416",
+        "disposition": "No SFL App dependency; existing SFL credentials unused. Preserve personal hosting."
+      }
     },
     {
       "repository_id": 1120321254,

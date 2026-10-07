@@ -53,7 +53,11 @@ against owner-verification.json; disposable pilot identities must remain recorde
 Disposable pilots retain explicit pending/failed/verified validation status. Verified
 pilots need initial and repeated onboarding/sync, registration, SFL-owned artifact,
 gate, status and safe gate/uninstall receipts. Both public and private pilots must
-pass before any active rollout row can claim verification. Review-only custom
+pass before any active rollout row can claim verification. Verified pilot receipts
+include deployment_source, release_version, deployment_sha, manifest_identity
+with matching source/sourceSha/version/tier, manifest_evidence_url and
+release_download_verification_url. Semantic release versions are validated for
+active manifests, pilot deployments and the protected source release. Review-only custom
 components need no unrelated wider-workflow run; custom selections containing
 wider workflows require those run receipts.
 Use `health=verified` for a completed active rollout, `archived_verified` for
@@ -135,7 +139,11 @@ no Pro purchase is selected for either project. The site repository remains arch
 Keep the sealed 67-ID baseline and original destination mappings as historical
 planning evidence. The execution plan now has 65 transfers and 2 retained sources,
 including 52 active and 13 archived transfer targets. Matrix health retained_source
-requires a matching owner decision and current source metadata. It does not masquerade
+requires a matching owner decision and a separate captured API metadata artifact.
+Its App dependency status may remain pending during preparation, but no completed
+rollout or final report can pass with an unresolved retained App dependency.
+Franz confirmed that neither retained site uses the App and its remaining
+credentials are unused in [the owner receipt](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028536416). It does not masquerade
 as a completed transfer. Other rollout exceptions still require actual transfer proof.
 Validation pins the two retained IDs and their owner receipt. Changing the
 retained set requires a new owner decision and a deliberate validator update.
@@ -253,7 +261,12 @@ App access, gate policy, health, and immutable evidence links. Run status and
 compare its manifest, source pin, and effective branch rules with the row. A failed
 check remains failed or pending; a scope exception requires an explicit owner
 receipt, not a default skip. Archived rows need transfer/settings evidence, not
-unarchiving or new workflow runs. Reconcile any inventory additions explicitly.
+unarchiving or new workflow runs. The protected distribution repository uses
+health=source_verified with in_place_evidence for workflow run URLs, canonical
+release/version/SHA, release verification, governance, transfer/status receipts
+and verified App coverage, plus a strict review gate and registered SFL-owned
+review artifact at the recorded head/base. It has no consumer installed/selected tier and must
+never be initialized, synced, gated or uninstalled through consumer commands. Reconcile any inventory additions explicitly.
 
 Create a disposable new organization repository and apply the same onboarding
 procedure twice. Native Codex's all-repository selection should include it; verify
