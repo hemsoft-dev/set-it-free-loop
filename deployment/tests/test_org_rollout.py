@@ -35,15 +35,30 @@ class RolloutTests(unittest.TestCase):
                    evidence_url='https://github.com/HemSoft/set-it-free-loop/issues/138')
         return row
 
+    def verify_source_ledger(self, repo_id):
+        for row in self.rows:
+            if int(row['repository_id']) == repo_id:
+                row.update(status='verified', provider='none', absence_reason='Synthetic owner absence receipt',
+                           verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
+                           evidence_url='https://github.com/HemSoft/set-it-free-loop/issues/138')
+
     def complete_rollout(self):
         row = next(row for row in self.matrix['repositories'] if not row['archived'])
         row.update(health='verified', selected_tier='reviewer', installed_addons=[], selected_addons=[],
-                   manifest_version='2.1.0-rc.14', gate_policy='required current-head gate', review_requester='HemSoft',
+                   manifest_version='2.1.0-rc.14', review_requester='HemSoft',
                    deployment_source='hemsoft-dev/set-it-free-loop', deployment_sha='a'*40,
                    review_head_sha='b'*40, review_base_sha='c'*40, destination_codex_access='verified',
                    destination_sfl_app_access='verified', transfer_evidence_url='https://example.com/transfer',
                    review_pr_url='https://example.com/review', gate_run_url='https://example.com/gate',
                    status_evidence_url='https://example.com/status')
+        row['gate_policy'] = {'state': 'required', 'context': 'SFL Reviewer Gate Runner', 'app_id': 15368,
+                              'strict': True, 'evidence_url': 'https://example.com/rule'}
+        row['review_registration_url'] = 'https://example.com/registration'
+        row['review_registry_status_url'] = 'https://example.com/registry-status'
+        row['review_artifact_url'] = 'https://example.com/sfl-review-artifact'
+        row['review_artifact_identity'] = {'runtime': 'sfl_owned', 'app_id': 4448946,
+                                           'reviewed_head_sha': 'b'*40, 'reviewed_base_sha': 'c'*40}
+        self.verify_source_ledger(row['repository_id'])
         self.matrix['summary']['verified_rollouts'] += 1
         return row
 
@@ -109,7 +124,8 @@ class RolloutTests(unittest.TestCase):
         for field in ('installed_addons', 'selected_addons', 'deployment_sha', 'review_head_sha',
                       'review_base_sha', 'gate_run_url', 'review_pr_url', 'transfer_evidence_url',
                       'status_evidence_url', 'selected_tier', 'destination_codex_access',
-                      'destination_sfl_app_access'):
+                      'destination_sfl_app_access', 'review_registration_url', 'review_registry_status_url',
+                      'review_artifact_url', 'review_artifact_identity', 'gate_policy'):
             with self.subTest(field=field):
                 row.clear()
                 row.update(complete)
@@ -141,6 +157,7 @@ class RolloutTests(unittest.TestCase):
     def test_archived_repository_not_treated_as_active_rollout(self):
         row = next(row for row in self.matrix['repositories'] if row['archived'])
         row['health'] = 'verified'
+        self.verify_source_ledger(row['repository_id'])
         with self.assertRaisesRegex(ValueError, 'archive-preserving'):
             self.check()
         row.update(health='archived_verified', transfer_evidence_url='https://example.com/transfer',
@@ -150,13 +167,16 @@ class RolloutTests(unittest.TestCase):
     def test_scope_exception_needs_owner_receipt(self):
         row = self.matrix['repositories'][0]
         row['health'] = 'scope_exception'
+        self.verify_source_ledger(row['repository_id'])
+        row['transfer_evidence_url'] = 'https://example.com/transfer'
+        row['status_evidence_url'] = 'https://example.com/settings'
         with self.assertRaises(ValueError):
             self.check()
         row['exception_evidence_url'] = 'https://github.com/HemSoft/set-it-free-loop/issues/139'
         self.check()
 
     def test_invalid_addon_lists_rejected(self):
-        for addons in (['auditor', 'auditor'], [''], 'auditor', [123]):
+        for addons in (['pr-review', 'pr-review'], [''], 'pr-review', [123]):
             self.matrix['repositories'][0]['selected_addons'] = addons
             with self.assertRaisesRegex(ValueError, 'selected_addons'):
                 self.check()
@@ -170,6 +190,95 @@ class RolloutTests(unittest.TestCase):
         self.complete_provider()['evidence_url'] = '../ORGANIZATION-DEPLOYMENT.md'
         with self.assertRaisesRegex(ValueError, 'inside the migration'):
             self.check()
+
+    def test_custom_tier_requires_recognized_component_evidence(self):
+        row = self.complete_rollout()
+        row['selected_tier'] = 'custom'
+        row['installed_tier'] = 'custom'
+        row['installed_components'] = ['sfl-auditor']
+        row['wider_workflow_run_urls'] = ['https://example.com/auditor-run']
+        for components in (None, [], ['unknown-workflow']):
+            row['selected_components'] = components
+            with self.assertRaisesRegex(ValueError, 'Custom tier'):
+                self.check()
+        row['selected_components'] = ['sfl-auditor']
+        self.check()
+
+    def test_legacy_installed_review_tier_recorded_truthfully(self):
+        row = self.complete_rollout()
+        row['installed_tier'] = 'review'
+        self.check()
+        row['selected_tier'] = 'review'
+        with self.assertRaisesRegex(ValueError, 'canonical reviewer'):
+            self.check()
+
+    def test_unknown_selected_addon_rejected(self):
+        row = self.complete_rollout()
+        row['selected_addons'] = ['auditor']
+        with self.assertRaisesRegex(ValueError, 'Unsupported selected addon'):
+            self.check()
+        row['selected_addons'] = ['pr-review']
+        self.check()
+
+    def test_completed_rollout_requires_all_provider_rows_verified(self):
+        row = self.complete_rollout()
+        pending = copy.deepcopy(self.rows[0])
+        pending['repository_id'] = str(row['repository_id'])
+        pending['status'] = 'partial_provider_verified'
+        pending['provider'] = 'additional provider'
+        self.rows.append(pending)
+        with self.assertRaisesRegex(ValueError, 'every integration row verified'):
+            self.check()
+
+    def test_exception_does_not_waive_transfer_or_settings_evidence(self):
+        row = self.matrix['repositories'][0]
+        self.verify_source_ledger(row['repository_id'])
+        row.update(health='scope_exception', exception_evidence_url='https://example.com/owner-exception')
+        with self.assertRaises(ValueError):
+            self.check()
+        row['transfer_evidence_url'] = 'https://example.com/transfer'
+        with self.assertRaises(ValueError):
+            self.check()
+        row['status_evidence_url'] = 'https://example.com/settings'
+        self.check()
+
+    def test_optional_or_unbound_gate_cannot_claim_verified_rollout(self):
+        row = self.complete_rollout()
+        policy = copy.deepcopy(row['gate_policy'])
+        for invalid in ('disabled', 'optional', {}, dict(policy, state='optional'),
+                        dict(policy, strict=False), dict(policy, app_id=-1),
+                        dict(policy, context='Other check')):
+            row['gate_policy'] = invalid
+            with self.assertRaisesRegex(ValueError, 'required strict SFL gate'):
+                self.check()
+        row['gate_policy'] = policy
+        self.check()
+
+    def test_native_or_stale_artifact_cannot_claim_sfl_runtime(self):
+        row = self.complete_rollout()
+        identity = copy.deepcopy(row['review_artifact_identity'])
+        for invalid in (dict(identity, runtime='native_codex'), dict(identity, app_id=1144995),
+                        dict(identity, reviewed_head_sha='c'*40), dict(identity, reviewed_base_sha='b'*40)):
+            row['review_artifact_identity'] = invalid
+            with self.assertRaisesRegex(ValueError, 'SFL-owned immutable'):
+                self.check()
+        row['review_artifact_identity'] = identity
+        self.check()
+
+    def test_source_app_selection_must_match_sealed_owner_baseline(self):
+        row = self.matrix['repositories'][0]
+        row['source_app_access_in_baseline'] = not row['source_app_access_in_baseline']
+        with self.assertRaisesRegex(ValueError, 'App access differs'):
+            self.check()
+
+    def test_disposable_inventory_cannot_be_removed_or_duplicated(self):
+        extras = copy.deepcopy(self.matrix['disposable_validation_repositories'])
+        for invalid in (None, [], [extras[0], extras[0]], [extras[0], dict(extras[0], repository_id=42)]):
+            self.matrix['disposable_validation_repositories'] = invalid
+            with self.assertRaises(ValueError):
+                self.check()
+        self.matrix['disposable_validation_repositories'] = extras
+        self.check()
 
 
 if __name__ == '__main__':

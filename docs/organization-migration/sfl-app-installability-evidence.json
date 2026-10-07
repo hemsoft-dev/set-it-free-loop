@@ -1,0 +1,27 @@
+{
+  "observed_at": "2026-10-07T00:24:38.878506+00:00",
+  "app_id": 4448946,
+  "app_slug": "sfl-app",
+  "owner": "HemSoft",
+  "installation_id": 150383874,
+  "selected_repositories": 64,
+  "private_installable_accounts": [
+    "HemSoft"
+  ],
+  "organization_installation_status": "blocked_until_gated_app_ownership_transfer",
+  "permissions": {
+    "contents": "read",
+    "metadata": "read",
+    "actions": "write",
+    "checks": "write",
+    "issues": "write",
+    "pull_requests": "write"
+  },
+  "owner_settings_url": "https://github.com/settings/apps/sfl-app/installations",
+  "source_installation_url": "https://github.com/settings/installations/150383874",
+  "policy_source": "https://docs.github.com/en/apps/using-github-apps/installing-your-own-github-app",
+  "limitations": [
+    "No installation setting, App visibility, credential or ownership changed.",
+    "User installation APIs returned403 for current OAuth credential; authenticated owner UI supplied this observation."
+  ]
+}

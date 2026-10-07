@@ -1,0 +1,299 @@
+{
+  "observed_at": "2026-10-07T00:20:22.785200+00:00",
+  "dns": [
+    {
+      "host": "nowleadershipgroup.com",
+      "type": "A",
+      "resolver": "google",
+      "status": 0,
+      "answers": [
+        {
+          "name": "nowleadershipgroup.com.",
+          "type": 1,
+          "TTL": 300,
+          "data": "104.21.24.178"
+        },
+        {
+          "name": "nowleadershipgroup.com.",
+          "type": 1,
+          "TTL": 300,
+          "data": "172.67.219.222"
+        }
+      ]
+    },
+    {
+      "host": "nowleadershipgroup.com",
+      "type": "A",
+      "resolver": "cloudflare",
+      "status": 0,
+      "answers": [
+        {
+          "name": "nowleadershipgroup.com",
+          "type": 1,
+          "TTL": 300,
+          "data": "172.67.219.222"
+        },
+        {
+          "name": "nowleadershipgroup.com",
+          "type": 1,
+          "TTL": 300,
+          "data": "104.21.24.178"
+        }
+      ]
+    },
+    {
+      "host": "nowleadershipgroup.com",
+      "type": "AAAA",
+      "resolver": "google",
+      "status": 0,
+      "answers": [
+        {
+          "name": "nowleadershipgroup.com.",
+          "type": 28,
+          "TTL": 300,
+          "data": "2606:4700:3037::ac43:dbde"
+        },
+        {
+          "name": "nowleadershipgroup.com.",
+          "type": 28,
+          "TTL": 300,
+          "data": "2606:4700:3030::6815:18b2"
+        }
+      ]
+    },
+    {
+      "host": "nowleadershipgroup.com",
+      "type": "AAAA",
+      "resolver": "cloudflare",
+      "status": 0,
+      "answers": [
+        {
+          "name": "nowleadershipgroup.com",
+          "type": 28,
+          "TTL": 300,
+          "data": "2606:4700:3037::ac43:dbde"
+        },
+        {
+          "name": "nowleadershipgroup.com",
+          "type": 28,
+          "TTL": 300,
+          "data": "2606:4700:3030::6815:18b2"
+        }
+      ]
+    },
+    {
+      "host": "nowleadershipgroup.com",
+      "type": "CNAME",
+      "resolver": "google",
+      "status": 0,
+      "answers": []
+    },
+    {
+      "host": "nowleadershipgroup.com",
+      "type": "CNAME",
+      "resolver": "cloudflare",
+      "status": 0,
+      "answers": []
+    },
+    {
+      "host": "nowleadershipgroup.com",
+      "type": "NS",
+      "resolver": "google",
+      "status": 0,
+      "answers": [
+        {
+          "name": "nowleadershipgroup.com.",
+          "type": 2,
+          "TTL": 21600,
+          "data": "blakely.ns.cloudflare.com."
+        },
+        {
+          "name": "nowleadershipgroup.com.",
+          "type": 2,
+          "TTL": 21600,
+          "data": "hasslo.ns.cloudflare.com."
+        }
+      ]
+    },
+    {
+      "host": "nowleadershipgroup.com",
+      "type": "NS",
+      "resolver": "cloudflare",
+      "status": 0,
+      "answers": [
+        {
+          "name": "nowleadershipgroup.com",
+          "type": 2,
+          "TTL": 86400,
+          "data": "blakely.ns.cloudflare.com."
+        },
+        {
+          "name": "nowleadershipgroup.com",
+          "type": 2,
+          "TTL": 86400,
+          "data": "hasslo.ns.cloudflare.com."
+        }
+      ]
+    },
+    {
+      "host": "www.nowleadershipgroup.com",
+      "type": "A",
+      "resolver": "google",
+      "status": 0,
+      "answers": [
+        {
+          "name": "www.nowleadershipgroup.com.",
+          "type": 1,
+          "TTL": 300,
+          "data": "104.21.24.178"
+        },
+        {
+          "name": "www.nowleadershipgroup.com.",
+          "type": 1,
+          "TTL": 300,
+          "data": "172.67.219.222"
+        }
+      ]
+    },
+    {
+      "host": "www.nowleadershipgroup.com",
+      "type": "A",
+      "resolver": "cloudflare",
+      "status": 0,
+      "answers": [
+        {
+          "name": "www.nowleadershipgroup.com",
+          "type": 1,
+          "TTL": 300,
+          "data": "172.67.219.222"
+        },
+        {
+          "name": "www.nowleadershipgroup.com",
+          "type": 1,
+          "TTL": 300,
+          "data": "104.21.24.178"
+        }
+      ]
+    },
+    {
+      "host": "www.nowleadershipgroup.com",
+      "type": "AAAA",
+      "resolver": "google",
+      "status": 0,
+      "answers": [
+        {
+          "name": "www.nowleadershipgroup.com.",
+          "type": 28,
+          "TTL": 300,
+          "data": "2606:4700:3030::6815:18b2"
+        },
+        {
+          "name": "www.nowleadershipgroup.com.",
+          "type": 28,
+          "TTL": 300,
+          "data": "2606:4700:3037::ac43:dbde"
+        }
+      ]
+    },
+    {
+      "host": "www.nowleadershipgroup.com",
+      "type": "AAAA",
+      "resolver": "cloudflare",
+      "status": 0,
+      "answers": [
+        {
+          "name": "www.nowleadershipgroup.com",
+          "type": 28,
+          "TTL": 300,
+          "data": "2606:4700:3030::6815:18b2"
+        },
+        {
+          "name": "www.nowleadershipgroup.com",
+          "type": 28,
+          "TTL": 300,
+          "data": "2606:4700:3037::ac43:dbde"
+        }
+      ]
+    },
+    {
+      "host": "www.nowleadershipgroup.com",
+      "type": "CNAME",
+      "resolver": "google",
+      "status": 0,
+      "answers": []
+    },
+    {
+      "host": "www.nowleadershipgroup.com",
+      "type": "CNAME",
+      "resolver": "cloudflare",
+      "status": 0,
+      "answers": []
+    },
+    {
+      "host": "www.nowleadershipgroup.com",
+      "type": "NS",
+      "resolver": "google",
+      "status": 0,
+      "answers": []
+    },
+    {
+      "host": "www.nowleadershipgroup.com",
+      "type": "NS",
+      "resolver": "cloudflare",
+      "status": 0,
+      "answers": []
+    }
+  ],
+  "http": [
+    {
+      "url": "https://nowleadershipgroup.com",
+      "http_status": 403,
+      "headers": {
+        "Server": "cloudflare",
+        "CF-RAY": "a468bd59ff2bbd48-ATL"
+      }
+    },
+    {
+      "url": "https://www.nowleadershipgroup.com",
+      "http_status": 403,
+      "headers": {
+        "Server": "cloudflare",
+        "CF-RAY": "a468bd5a0d605df7-IAD"
+      }
+    },
+    {
+      "url": "https://now-leadership-group.vercel.app",
+      "final_url": "https://now-leadership-group.vercel.app",
+      "http_status": 200,
+      "headers": {
+        "Content-Type": "text/html; charset=utf-8",
+        "Etag": "\"2f4cd94f7b82906fa26b44d3ab6ad7be\"",
+        "Last-Modified": "Wed, 30 Sep 2026 19:37:35 GMT",
+        "Server": "Vercel",
+        "X-Vercel-Cache": "HIT",
+        "X-Vercel-Id": "iad1::c7zb5-1791332422674-dd06ca8b9352"
+      },
+      "body_sha256": "451e4dd7c2c3edb2f7e24f028d6b546655432afdff4e25001d7774254daa7a09",
+      "body_bytes": 38458
+    },
+    {
+      "url": "https://now-leadership-group-no14k6299-franz-hemmers-projects.vercel.app",
+      "final_url": "https://now-leadership-group-no14k6299-franz-hemmers-projects.vercel.app",
+      "http_status": 200,
+      "headers": {
+        "Content-Type": "text/html; charset=utf-8",
+        "Etag": "\"2f4cd94f7b82906fa26b44d3ab6ad7be\"",
+        "Last-Modified": "Wed, 30 Sep 2026 19:37:35 GMT",
+        "Server": "Vercel",
+        "X-Vercel-Cache": "HIT",
+        "X-Vercel-Id": "iad1::gwmmp-1791332422739-ace3e1a5fadc"
+      },
+      "body_sha256": "451e4dd7c2c3edb2f7e24f028d6b546655432afdff4e25001d7774254daa7a09",
+      "body_bytes": 38458
+    }
+  ],
+  "limitations": [
+    "A Cloudflare DNS or proxy response does not identify the origin hosting provider.",
+    "Vercel project aliases alone do not establish that they serve the current live site."
+  ]
+}

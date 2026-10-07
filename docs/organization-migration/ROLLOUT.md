@@ -37,6 +37,16 @@ CI also runs `validate-org-rollout.py` against the ledger and matrix. It rejects
 missing or changed baseline mappings, invalid statuses, verified rows without
 owner/evidence fields, and completed rollouts without immutable deployment/review
 receipts. Pending addon lists are `null`; an observed empty list is `[]`.
+Installed tier `review` is a legacy alias for selected `reviewer`; `custom` tiers
+retain their observed manifest components and need recognized selected workflows.
+Selected addons must be in the CLI's authoritative catalog. Completed rollout,
+archive and scope-exception rows require every integration row verified. Exceptions
+also need transfer and destination-settings evidence; they waive only rollout scope.
+A verified active row requires a structured strict gate policy bound to GitHub
+Actions and SFL-owned App artifact identity at the recorded head and base, with
+registration, registry-status and artifact receipts. Native Codex connection proof
+alone cannot fill those SFL runtime fields. Baseline SFL App coverage is checked
+against owner-verification.json; disposable pilot identities must remain recorded.
 Use `health=verified` for a completed active rollout, `archived_verified` for
 archive-preserving transfer/settings evidence, or `scope_exception` with an
 explicit owner receipt. A verified provider row requires every integration field
@@ -64,7 +74,12 @@ This exceeds the four repository selections in the historical App snapshot.
 organization Git deployments. Franz selected retirement of the modern-web-stack-poc Vercel project. Retain its
 GitHub repository in the migration. Record the retirement receipt and associated
 Supabase resource treatment before clearing its provider gate; no resource has
-been deleted. Hosting treatment for the other two private projects remains pending.
+been deleted. Hosting treatment for the other two private projects remains pending. The
+[now-leadership-group live-hosting check](now-leadership-live-hosting-evidence.json)
+confirms Cloudflare DNS/proxy and a live Vercel copy. Vercel reports Proxy Detected
+for both custom domains. The Cloudflare origin or Workers/Pages deployment still
+needs owner verification. A Vercel alias does not establish that the current live
+site depends on Vercel; do not infer a Pro requirement from that alias alone.
 Project IDs, Git repository IDs, domains, variable names and deployment states
 are observed; credential validity remains pending. The owner Shared tab and API both show no
 shared variables in this workspace.
@@ -79,6 +94,24 @@ accounts shown; they do not establish absence in other accounts or complete the
 per-repository ledger. Railway's terms dialog prevented further workspace
 inspection; no legal terms, upgrade or resource creation was submitted.
 
+The [Supabase owner observation](supabase-provider-evidence.json) records two
+paused projects in HemSoft's Org, Free, with Franz's account as sole Owner. One
+has a Vercel dashboard connection. The modern-web-stack-poc public deployment
+references a different Supabase project, whose ownership remains pending.
+Do not resume or delete databases as a consequence of retiring a Vercel project.
+The [Blacksmith owner observation](blacksmith-provider-evidence.json) records
+zero October jobs, runner minutes and spend, with no payment method or invoices.
+Neither provider observation establishes credential validity or global absence.
+
+The [source-reference scan](source-reference-evidence.json) observed 65 complete
+default-branch trees; fhemmer's previous 404 and n8n-workflows' 409 remain
+unverified. The [workflow/manifest scan](workflow-reference-evidence.json) read
+100 SHA-addressed blobs successfully, including 96 workflow files. Record source
+references and secret names, not values. hs-buddy has a canonical full-tier
+manifest; buddy-ios has only a legacy root manifest with tier review. Preserve
+these observations and resolve their runtime migration before rollout. Text
+markers and configuration files do not establish provider resource ownership.
+
 ## Runtime prerequisites
 
 Native Codex is OpenAI-owned App 1144995. Organization installation 168678981 is
@@ -88,7 +121,10 @@ completed clean at `f225d94d49a5951d6b2b205ad08990337aff040f`. Check the organiz
 and authenticate the requester through their connected account.
 
 The owned SFL App is a separate registration, App 4448946. Its ownership transfer
-and organization installation must follow #138's gates. Verify App/client
+and organization installation must follow #138's gates. Its
+[private installability observation](sfl-app-installability-evidence.json) offers
+only the owning HemSoft account, not hemsoft-dev. Keep visibility private; do not
+make the App public to bypass the gated ownership transfer. Verify App/client
 identity, intended permissions, and actual per-repository operations afterward.
 Do not count native Codex installation or a clean external Codex comment as proof
 that the intended SFL PR Reviewer runtime is restored. The
@@ -110,12 +146,19 @@ Record disposable repositories separately from transferred source IDs.
 ## Pilot sequence
 
 1. After the gates and transfer checks pass, choose one public and one private
-   active repository. Record the existing manifest tier and addons first; keep
+   active consumer repository. The SFL distribution repository is protected from
+   CLI init, sync, gate and uninstall. Verify its checked-in workflows, release
+   and governance in place, with separate evidence in its matrix row. Never use
+   a consumer command against the source or silently skip its coverage.
+   Record the existing canonical or legacy root manifest tier and addons first; keep
    them during sync. A fresh consumer defaults to reviewer, while wider autonomous
    tiers require deliberate configuration. Archived repositories remain archived.
 2. Install the reviewed CLI package and choose an immutable release from the
    canonical source. Follow [organization deployment](../ORGANIZATION-DEPLOYMENT.md)
-   once #136 is merged. Verify its checksum and version, then run:
+   once #136 is merged. Verify its checksum and version. For a genuinely empty
+   repository, first establish the intended default branch through a reviewed
+   bootstrap commit and record it; init needs that branch to create its PR.
+   Then run:
 
    ```text
    gh sfl init --repo hemsoft-dev/<pilot> --source-ref v<version> --pr
@@ -142,7 +185,8 @@ Record disposable repositories separately from transferred source IDs.
 3. On a same-repository PR targeting the default branch, request review as an
    authorized write-or-higher human using `gh sfl review --repo ... --pr ...`.
    Record requester, registry comment/status, immutable head and base, Codex
-   artifact identity, gate run, and required status target. Installation selection
+   artifact identity, the SFL-owned review artifact and its immutable identity,
+   gate run, and required status target. Installation selection
    alone does not prove this account can request or receive review.
 4. Exercise clean and findings results, pending requests, malformed output,
    revoked/denied permission, lookup failure, forged/edited registration, duplicate

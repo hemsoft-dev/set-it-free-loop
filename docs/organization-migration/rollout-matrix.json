@@ -46,7 +46,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1349305052,
@@ -75,7 +81,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1127994043,
@@ -104,7 +116,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1107806657,
@@ -133,7 +151,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1126133188,
@@ -162,7 +186,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1136522036,
@@ -191,7 +221,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1318635011,
@@ -200,7 +236,7 @@
       "visibility": "private",
       "archived": false,
       "rollout_action": "preserve_existing_tier_else_reviewer",
-      "installed_tier": null,
+      "installed_tier": "review",
       "selected_tier": null,
       "source_app_access_in_baseline": true,
       "destination_sfl_app_access": "pending",
@@ -219,8 +255,22 @@
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
       "exception_evidence_url": null,
-      "installed_addons": null,
-      "selected_addons": null
+      "installed_addons": [],
+      "selected_addons": null,
+      "installed_components": [
+        "governance",
+        "labels",
+        "sfl-pr-review",
+        "sfl-pr-review-auto",
+        "sfl-pr-review-recovery"
+      ],
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null,
+      "installed_manifest_path": "sfl.json",
+      "installed_manifest_blob_sha": "3140ed9f66c1fc5bf23e6bfddba9fdf26f911d6f"
     },
     {
       "repository_id": 987895155,
@@ -249,7 +299,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1214914496,
@@ -278,7 +334,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1285058368,
@@ -307,7 +369,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1298365902,
@@ -336,7 +404,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1120402599,
@@ -365,7 +439,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1096201366,
@@ -394,7 +474,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 987270315,
@@ -423,7 +509,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 804681121,
@@ -452,7 +544,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 46445245,
@@ -481,7 +579,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1234389239,
@@ -510,7 +614,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1262580000,
@@ -539,7 +649,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1141008729,
@@ -568,7 +684,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 941842262,
@@ -597,7 +719,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1398757511,
@@ -626,7 +754,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1107323158,
@@ -655,7 +789,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1271503908,
@@ -684,7 +824,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1229335234,
@@ -693,7 +839,7 @@
       "visibility": "public",
       "archived": false,
       "rollout_action": "preserve_existing_tier_else_reviewer",
-      "installed_tier": null,
+      "installed_tier": "full",
       "selected_tier": null,
       "source_app_access_in_baseline": true,
       "destination_sfl_app_access": "pending",
@@ -712,8 +858,30 @@
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
       "exception_evidence_url": null,
-      "installed_addons": null,
-      "selected_addons": null
+      "installed_addons": [],
+      "selected_addons": null,
+      "installed_components": [
+        "daily-repo-status",
+        "governance",
+        "issue-processor",
+        "labels",
+        "pr-analyzer-a",
+        "pr-analyzer-b",
+        "pr-analyzer-c",
+        "pr-fixer",
+        "pr-promoter",
+        "repo-audit",
+        "sfl-auditor",
+        "sfl-dispatcher",
+        "simplisticate"
+      ],
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null,
+      "installed_manifest_path": ".sfl/sfl.json",
+      "installed_manifest_blob_sha": "8c0a3c94cbf137dcfe72e55f31179d7c6e395685"
     },
     {
       "repository_id": 1169875606,
@@ -742,7 +910,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1143972745,
@@ -771,7 +945,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1141615583,
@@ -800,7 +980,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1141507514,
@@ -829,7 +1015,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1145574258,
@@ -858,7 +1050,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1122850110,
@@ -887,7 +1085,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1360796394,
@@ -916,7 +1120,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1255413023,
@@ -945,7 +1155,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 992260357,
@@ -974,7 +1190,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1353177297,
@@ -1003,7 +1225,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1119892824,
@@ -1032,7 +1260,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1106290960,
@@ -1061,7 +1295,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 996911586,
@@ -1090,7 +1330,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1086124099,
@@ -1119,7 +1365,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 982944435,
@@ -1148,7 +1400,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1162179521,
@@ -1177,7 +1435,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 579605475,
@@ -1206,7 +1470,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 945738366,
@@ -1235,7 +1505,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 223800408,
@@ -1264,7 +1540,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1135799306,
@@ -1293,7 +1575,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1148500296,
@@ -1322,7 +1610,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 133669754,
@@ -1351,7 +1645,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 173613643,
@@ -1380,7 +1680,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 124155847,
@@ -1409,7 +1715,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 133668217,
@@ -1438,7 +1750,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 85017515,
@@ -1467,7 +1785,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1002223819,
@@ -1496,7 +1820,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1266823833,
@@ -1525,7 +1855,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 286901159,
@@ -1554,7 +1890,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1358408598,
@@ -1583,7 +1925,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1169772257,
@@ -1591,7 +1939,7 @@
       "destination": "hemsoft-dev/set-it-free-loop",
       "visibility": "private",
       "archived": false,
-      "rollout_action": "preserve_existing_tier_else_reviewer",
+      "rollout_action": "protected_source_verify_workflows_in_place",
       "installed_tier": null,
       "selected_tier": null,
       "source_app_access_in_baseline": true,
@@ -1612,7 +1960,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1169698740,
@@ -1641,7 +1995,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1120321254,
@@ -1670,7 +2030,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1070353109,
@@ -1699,7 +2065,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1104960030,
@@ -1728,7 +2100,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1076389234,
@@ -1757,7 +2135,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1399232444,
@@ -1786,7 +2170,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 193121052,
@@ -1815,7 +2205,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1039658773,
@@ -1844,7 +2240,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 223324060,
@@ -1873,7 +2275,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 995371240,
@@ -1902,7 +2310,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1188676172,
@@ -1931,7 +2345,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     },
     {
       "repository_id": 1332684620,
@@ -1960,7 +2380,13 @@
       "status_evidence_url": null,
       "exception_evidence_url": null,
       "installed_addons": null,
-      "selected_addons": null
+      "selected_addons": null,
+      "installed_components": null,
+      "selected_components": null,
+      "review_registration_url": null,
+      "review_registry_status_url": null,
+      "review_artifact_url": null,
+      "review_artifact_identity": null
     }
   ],
   "disposable_validation_repositories": [

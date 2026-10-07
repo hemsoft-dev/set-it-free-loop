@@ -1,0 +1,1655 @@
+{
+  "observed_at": "2026-10-07T00:17:52.586543+00:00",
+  "method": "Read-only SHA-addressed workflow and manifest blobs; sanitized metadata only",
+  "records": [
+    {
+      "repository_id": 1136522036,
+      "source": "HemSoft/ai-conductor",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "4373cb2840632e8bae85bd1dbcae9f225417a913",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "${{ matrix.os }}",
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1318635011,
+      "source": "HemSoft/buddy-ios",
+      "path": ".github/workflows/ios.yml",
+      "blob_sha": "c52339382b3084b57a90875a1255f1f4011a6fd6",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "macos-26"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1318635011,
+      "source": "HemSoft/buddy-ios",
+      "path": ".github/workflows/sfl-pr-review-auto.yml",
+      "blob_sha": "8d243afac88cbadbfd4139a052b90227e704a95a",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "SFL_APP_PRIVATE_KEY"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1318635011,
+      "source": "HemSoft/buddy-ios",
+      "path": ".github/workflows/sfl-pr-review-recovery.yml",
+      "blob_sha": "0f6588a319b1c69212d20c092491ace85863eeae",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "SFL_APP_PRIVATE_KEY"
+      ],
+      "runner_labels": [
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1318635011,
+      "source": "HemSoft/buddy-ios",
+      "path": ".github/workflows/sfl-pr-review.lock.yml",
+      "blob_sha": "4d4c0dea6a20561074bc0ac1866d205b61b71981",
+      "state": "observed",
+      "provider_markers": [
+        "openrouter",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENROUTER_API_KEY",
+        "SFL_APP_PRIVATE_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1318635011,
+      "source": "HemSoft/buddy-ios",
+      "path": ".github/workflows/sfl-pr-review.md",
+      "blob_sha": "08c1a079c74bcb21541ebad7219ae6577a69c784",
+      "state": "observed",
+      "provider_markers": [
+        "openrouter"
+      ],
+      "referenced_secret_names": [
+        "OPENROUTER_API_KEY",
+        "SFL_APP_PRIVATE_KEY"
+      ],
+      "runner_labels": [
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1318635011,
+      "source": "HemSoft/buddy-ios",
+      "path": "sfl.json",
+      "blob_sha": "3140ed9f66c1fc5bf23e6bfddba9fdf26f911d6f",
+      "state": "observed",
+      "manifest": {
+        "version": "2.1.0-rc.13",
+        "tier": "review",
+        "source": "HemSoft/set-it-free-loop",
+        "sourceSha": "25be595c148a27a195178a4ec9d73225ea3924cd",
+        "motherRepo": null,
+        "sourceSHA": null,
+        "addons": [],
+        "components": [
+          "governance",
+          "labels",
+          "sfl-pr-review",
+          "sfl-pr-review-auto",
+          "sfl-pr-review-recovery"
+        ]
+      }
+    },
+    {
+      "repository_id": 1214914496,
+      "source": "HemSoft/codexbar",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "ea4ce248d55d8cdecb906e03bd40fd5b00d2d5f3",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "windows-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1285058368,
+      "source": "HemSoft/codexbar-ios",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "b2a52682aefdc48878ce665ae40269fe84645076",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "macos-26",
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1285058368,
+      "source": "HemSoft/codexbar-ios",
+      "path": ".github/workflows/security-analysis.yml",
+      "blob_sha": "66f50b9ae68a268f03b7208d5d0279941cf9618d",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "macos-26"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1285058368,
+      "source": "HemSoft/codexbar-ios",
+      "path": ".github/workflows/usage-history-performance.yml",
+      "blob_sha": "ca08aee2868f76009b9e7855dcbb7417e73b849a",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "macos-26"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1298365902,
+      "source": "HemSoft/codexbar-mac",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "4db92183bc2e1414c3fca0492f44ddbcf62732dd",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "macos-26"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1120402599,
+      "source": "HemSoft/dashboard",
+      "path": ".github/workflows/bump-version.yml",
+      "blob_sha": "79d2841ebe22da97b450a659f192ffe2cbfb0e5b",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "VERSION_BUMP_TOKEN"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1120402599,
+      "source": "HemSoft/dashboard",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "865429a36d28511e2090ba81cd996ca70d92650e",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1120402599,
+      "source": "HemSoft/dashboard",
+      "path": ".github/workflows/fetch-news.yml",
+      "blob_sha": "0bf870c2eb6ab44eb726c90579817108a50b60ec",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "CRON_SECRET",
+        "SITE_URL"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 987270315,
+      "source": "HemSoft/dashcam",
+      "path": ".github/workflows/powershell-lint.yml",
+      "blob_sha": "252ce39a514ade598951296028a576ca75c5eb5b",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1234389239,
+      "source": "HemSoft/gh-prx",
+      "path": ".github/workflows/auto-release.yml",
+      "blob_sha": "08a174c767a48904f042d79ebef56ef5692bdfbc",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "GITHUB_TOKEN"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1262580000,
+      "source": "HemSoft/gh-x",
+      "path": ".github/workflows/auto-release.yml",
+      "blob_sha": "f85bd43e9e28d782c353a9243be75468957c3643",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "CODEX_REVIEW_TOKEN",
+        "GITHUB_TOKEN"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1262580000,
+      "source": "HemSoft/gh-x",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "85776b7ea21cdf5d9d800203648036b47e72adbb",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest",
+        "windows-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1262580000,
+      "source": "HemSoft/gh-x",
+      "path": ".github/workflows/copilot-setup-steps.yml",
+      "blob_sha": "3a9fb8ffa101c6b0dfbc29425d42d5ac152b8d4e",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/ai-review-automerge.yml",
+      "blob_sha": "c4b80e10b15fb977ecf41c417decda3876d59768",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "SFL_APP_PRIVATE_KEY"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/benchmarks.yml",
+      "blob_sha": "c6e0f255ebf3f09361ba61d35b48b81f882eadbb",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "5de2e6fe9d90a156588e1dd3958d230fcb722687",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "${{ matrix.os }}",
+        "${{ matrix.runner }}",
+        "ubuntu-latest",
+        "windows-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/daily-repo-status.lock.yml",
+      "blob_sha": "1d690f38d1848d568f45e05a5cdbccaa21bc7ca0",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/daily-repo-status.md",
+      "blob_sha": "9f0cbf4a509da1efd6382357ed51b49042398cc4",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/dependabot-lockfile.yml",
+      "blob_sha": "555c7768a7af3ef4922b751b1819ae34ad0d5a20",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "GITHUB_TOKEN"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-a.lock.yml",
+      "blob_sha": "0e581e2e21209da01706e648ce8e260f7bbf4b57",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-a.md",
+      "blob_sha": "4ab42363a9781437d4523316d74e351a499c7c61",
+      "state": "observed",
+      "provider_markers": [
+        "openai"
+      ],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-b.lock.yml",
+      "blob_sha": "43375868e281e8f00cb34e92fd6a8f6d362b44cd",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-b.md",
+      "blob_sha": "c865ae4596849c014f0e5cc7c257185cd03df52f",
+      "state": "observed",
+      "provider_markers": [
+        "openai"
+      ],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-c.lock.yml",
+      "blob_sha": "d033a1fccd25cad0bebc922e242c74aeee657bcb",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-c.md",
+      "blob_sha": "1d7e2f6c2fffcbfdc8139c0332d6c37c67f9baa1",
+      "state": "observed",
+      "provider_markers": [
+        "openai"
+      ],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-general.md",
+      "blob_sha": "95f935b9c79fa4511f83e25b035f8655e0d154f0",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-quality.md",
+      "blob_sha": "da4253fa5d99148d74b7018fba66822c4a7d3c76",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-security.md",
+      "blob_sha": "c4af3719d019c1f043f48899b3bb4b3405362455",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-analyzer-testing.md",
+      "blob_sha": "de22fdd11f82e3981266ddae54f81714c54c94dd",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-fixer.lock.yml",
+      "blob_sha": "751d699b7703a4fa13beb4a92da15d1f6db3b730",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_CI_TRIGGER_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-fixer.md",
+      "blob_sha": "9fd315a401227223a8a81eb9e7a3e53f0cecf3da",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-promoter.lock.yml",
+      "blob_sha": "d2f9d9cf464d8ee397dd868a430e8755154c0fa1",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/pr-promoter.md",
+      "blob_sha": "d5ff04b44212c78d89a69842c81ce17041c00735",
+      "state": "observed",
+      "provider_markers": [
+        "copilot"
+      ],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/release.yml",
+      "blob_sha": "cb8ea2942a056d41265be71c9126187bed495b90",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "GITHUB_TOKEN"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/repo-audit.lock.yml",
+      "blob_sha": "1d10cd1b4342ebf3bb6c285fc2803b0d2fd03f78",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/repo-audit.md",
+      "blob_sha": "659e69e0c865e3561694b1dd77adc469da4a1d43",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/security.yml",
+      "blob_sha": "da63f01b8ce5d5663180947cb4282279de7ad0b5",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/sfl-auditor.yml",
+      "blob_sha": "bd93e1368657d98c64955695865d26c43b5b9a73",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "SFL_APP_PRIVATE_KEY"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/sfl-dispatcher.yml",
+      "blob_sha": "8cf2a36968ee3f1b3e40e47017247fb30d90313c",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "SFL_APP_PRIVATE_KEY"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/simplisticate.lock.yml",
+      "blob_sha": "86837ef5f0da5f5f5bbb06e526be1b9839dda107",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".github/workflows/simplisticate.md",
+      "blob_sha": "57592f4ea789c3fe0b9e4ded67206ae675ef4420",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": ".sfl/sfl.json",
+      "blob_sha": "8c0a3c94cbf137dcfe72e55f31179d7c6e395685",
+      "state": "observed",
+      "manifest": {
+        "version": "2.1.0-rc.13",
+        "tier": "full",
+        "source": "HemSoft/set-it-free-loop",
+        "sourceSha": "82819b273b9f9878cf8c4c7b3b5e5ddec9dcd873",
+        "motherRepo": null,
+        "sourceSHA": null,
+        "addons": [],
+        "components": [
+          "daily-repo-status",
+          "governance",
+          "issue-processor",
+          "labels",
+          "pr-analyzer-a",
+          "pr-analyzer-b",
+          "pr-analyzer-c",
+          "pr-fixer",
+          "pr-promoter",
+          "repo-audit",
+          "sfl-auditor",
+          "sfl-dispatcher",
+          "simplisticate"
+        ]
+      }
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "path": "sfl.json",
+      "blob_sha": "8c0a3c94cbf137dcfe72e55f31179d7c6e395685",
+      "state": "observed",
+      "manifest": {
+        "version": "2.1.0-rc.13",
+        "tier": "full",
+        "source": "HemSoft/set-it-free-loop",
+        "sourceSha": "82819b273b9f9878cf8c4c7b3b5e5ddec9dcd873",
+        "motherRepo": null,
+        "sourceSHA": null,
+        "addons": [],
+        "components": [
+          "daily-repo-status",
+          "governance",
+          "issue-processor",
+          "labels",
+          "pr-analyzer-a",
+          "pr-analyzer-b",
+          "pr-analyzer-c",
+          "pr-fixer",
+          "pr-promoter",
+          "repo-audit",
+          "sfl-auditor",
+          "sfl-dispatcher",
+          "simplisticate"
+        ]
+      }
+    },
+    {
+      "repository_id": 1360796394,
+      "source": "HemSoft/hs-pi-dashboard",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "4ab22c7ca92a18e250ae96420c82db3fc1ad1b93",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "windows-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1360796394,
+      "source": "HemSoft/hs-pi-dashboard",
+      "path": ".github/workflows/pin-check.yml",
+      "blob_sha": "af7ae7ad99f20f75bfdc98fbcb14197c5383b777",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1255413023,
+      "source": "HemSoft/hs-tui-launcher",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "02affc653572855be1a02b8e0249000c7907142f",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "${{ matrix.os }}",
+        "ubuntu-latest",
+        "windows-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1135799306,
+      "source": "HemSoft/prs",
+      "path": ".github/workflows/ci.yml",
+      "blob_sha": "f1137e308f39f3aefe3c90ebd54ef500103b798e",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1358408598,
+      "source": "HemSoft/reports",
+      "path": ".github/workflows/benchmark.yml",
+      "blob_sha": "3c2ffcb28fde091191072afc594303d391195b61",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1358408598,
+      "source": "HemSoft/reports",
+      "path": ".github/workflows/pages.yml",
+      "blob_sha": "0c086b59af8ad05fa39545dc7d8525ef2886acb1",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "REPORTS_PAT"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1358408598,
+      "source": "HemSoft/reports",
+      "path": ".github/workflows/validate.yml",
+      "blob_sha": "90382b05e45f793be0e1c72c4afdb338319f1a27",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "${{ matrix.os }}",
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/agentics-maintenance.yml",
+      "blob_sha": "ab60a44a8109152ccdc1f2a3406fa0fe5aa11b28",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "GITHUB_TOKEN"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/daily-repo-status.lock.yml",
+      "blob_sha": "aa9ef2ffb6f6c91dc0e033c41f297a95181a8e8e",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/daily-repo-status.md",
+      "blob_sha": "d2695e253ed40d5793de35f50a1fb982dfe19b43",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/issue-processor.lock.yml",
+      "blob_sha": "5664e95e79b7a758de95ef2f878e92c53e961fe8",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_CI_TRIGGER_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/issue-processor.md",
+      "blob_sha": "8445c06e32330cf6bb1bd04ea61f06e3fdf7bca6",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-analyzer-general.lock.yml",
+      "blob_sha": "d74358f22e5e5e05d00b97a8be718371c07cd7d1",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-analyzer-general.md",
+      "blob_sha": "1024de817db35e35d9226a6a9f3f61586d336086",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-analyzer-quality.lock.yml",
+      "blob_sha": "90a7d525f9d9d9c698226495af2ee98cab931f06",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-analyzer-quality.md",
+      "blob_sha": "04cde7cdf3df06aa78c379b871eb5b4620926ba0",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-analyzer-security.lock.yml",
+      "blob_sha": "454c4020d1e44b968a2f379cf8f3ef5b756ac293",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-analyzer-security.md",
+      "blob_sha": "012f4b6e21ecb4d8b3a8e3526d20324fb5da883f",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-analyzer-testing.lock.yml",
+      "blob_sha": "371ae35d9faca7629669b2e564c3f1bf9450d045",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-analyzer-testing.md",
+      "blob_sha": "83bf41f6ab8248e93d829410d7255fa6b5e9bf9b",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-fixer.lock.yml",
+      "blob_sha": "185a2c3c5cab80071da4ec973db9291eb8596598",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_CI_TRIGGER_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-fixer.md",
+      "blob_sha": "302f55065b6d7bd85c4b779a2f0990fbe37a9eb1",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-promoter.lock.yml",
+      "blob_sha": "2a9b61b3ce14a81d8b5cb5c822adde86f46afa4a",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/pr-promoter.md",
+      "blob_sha": "fa29f223bebc29c4d9237cfff8d2ec4cfcfd2f4c",
+      "state": "observed",
+      "provider_markers": [
+        "copilot"
+      ],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/publish-private-prerelease.yml",
+      "blob_sha": "24fc55cb13850d62d69215564c5bcfe8ea08651f",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/repo-audit.lock.yml",
+      "blob_sha": "3b6415b8c009d2d02362d1e145808c95ef2bcf81",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/repo-audit.md",
+      "blob_sha": "7241fb66c91cca3cce9bc9872aa49f62ceb131e6",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/sfl-auditor.lock.yml",
+      "blob_sha": "8b340f3ec4accb81b0a58e2d2cd82768705170f4",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "SFL_APP_PRIVATE_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/sfl-auditor.md",
+      "blob_sha": "a1e31c7a09ac9751281953d7b67100c456e24d02",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "SFL_APP_PRIVATE_KEY"
+      ],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/sfl-dispatcher.yml",
+      "blob_sha": "ed1ba487188f1638fbcf588428b021dfd1fc6227",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [
+        "GH_AW_GITHUB_TOKEN"
+      ],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/sfl-pr-review-auto.yml",
+      "blob_sha": "767b78408cbbd04cb304a5501ab8f2131bf4db69",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": true
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/simplisticate.lock.yml",
+      "blob_sha": "7632d44b41a0ed49ba3b040695af30114e5a9020",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/simplisticate.md",
+      "blob_sha": "87670306f2a6b2ee4fa45dd738abc305b1ce875f",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/validate-gh-sfl.yml",
+      "blob_sha": "b89cda83607bafb93543d470471359a3afbbd5f3",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/validate-org-migration.yml",
+      "blob_sha": "2f42885cb075d5cc83e3ef3f91910367a2cf3106",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": ".github/workflows/validate-release-workflow.yml",
+      "blob_sha": "4f9448f3e5ff088843f67f25c102add572bc78b7",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "path": "sfl.json",
+      "blob_sha": "cac847f4bb028019f226d7c2201b22c87e2f863b",
+      "state": "observed",
+      "manifest": {
+        "version": "2.1.0-rc.13",
+        "tier": "full",
+        "source": "HemSoft/set-it-free-loop",
+        "sourceSha": "self",
+        "motherRepo": null,
+        "sourceSHA": null,
+        "addons": [],
+        "components": [
+          "labels",
+          "governance",
+          "sfl-dispatcher",
+          "sfl-auditor",
+          "daily-repo-status",
+          "repo-audit",
+          "issue-processor",
+          "simplisticate",
+          "sfl-pr-review-auto",
+          "pr-analyzer-general",
+          "pr-analyzer-quality",
+          "pr-analyzer-security",
+          "pr-analyzer-testing",
+          "pr-fixer",
+          "pr-promoter"
+        ]
+      }
+    },
+    {
+      "repository_id": 1120321254,
+      "source": "HemSoft/skills",
+      "path": ".github/workflows/copilot-setup-steps.yml",
+      "blob_sha": "f4d08ffbe8031a332d7a786d2462f4aa52c09303",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1120321254,
+      "source": "HemSoft/skills",
+      "path": ".github/workflows/powershell-quality.yml",
+      "blob_sha": "c263775591714eb74542a38ce55f6cad835e140c",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest",
+        "windows-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1120321254,
+      "source": "HemSoft/skills",
+      "path": ".github/workflows/quality-check.yml",
+      "blob_sha": "34cf19f4f4ec01087be763c56b160b0c18a56b4c",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "${{ matrix.os }}",
+        "ubuntu-latest",
+        "windows-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1120321254,
+      "source": "HemSoft/skills",
+      "path": ".github/workflows/repo-status.lock.yml",
+      "blob_sha": "08e5016761d15b0d73a5e67db9795ca5781cab8a",
+      "state": "observed",
+      "provider_markers": [
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "cjs"
+      ],
+      "runner_labels": [
+        "ubuntu-latest",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1120321254,
+      "source": "HemSoft/skills",
+      "path": ".github/workflows/repo-status.md",
+      "blob_sha": "e510a3dfa61627e1660254ce5e240bad45e3ee90",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1076389234,
+      "source": "HemSoft/summarist",
+      "path": ".github/workflows/deploy.yml",
+      "blob_sha": "ae23eeb9df7ebedd3afdde727249e4659c29af33",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1039658773,
+      "source": "HemSoft/tickdown",
+      "path": ".github/workflows/windows-quality.yml",
+      "blob_sha": "a8edb15499fc03c163bcfca557644777c97f8fbf",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "windows-2025"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1188676172,
+      "source": "HemSoft/yahtzee",
+      "path": ".github/workflows/dependencies.yml",
+      "blob_sha": "5e417ad42e1905c8eec7b1a5cf0f355336277283",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1188676172,
+      "source": "HemSoft/yahtzee",
+      "path": ".github/workflows/quality.yml",
+      "blob_sha": "563918dbdd19694c7da2527f4398f71129862b4c",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "${{ matrix.os }}",
+        "macos-26",
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1188676172,
+      "source": "HemSoft/yahtzee",
+      "path": ".github/workflows/self-hosted-agentic-smoke.lock.yml",
+      "blob_sha": "ee4618f3f8b33ca6f898a20414b19a425e2fed32",
+      "state": "observed",
+      "provider_markers": [
+        "openai",
+        "copilot"
+      ],
+      "referenced_secret_names": [
+        "CODEX_API_KEY",
+        "COPILOT_GITHUB_TOKEN",
+        "GH_AW_GITHUB_MCP_SERVER_TOKEN",
+        "GH_AW_GITHUB_TOKEN",
+        "GITHUB_TOKEN",
+        "OPENAI_API_KEY",
+        "cjs"
+      ],
+      "runner_labels": [
+        "- self-hosted",
+        "ubuntu-slim"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1188676172,
+      "source": "HemSoft/yahtzee",
+      "path": ".github/workflows/self-hosted-agentic-smoke.md",
+      "blob_sha": "1de5dfa40e141f35b9a214766e9c6df697dd8bdc",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "[self-hosted, Linux, X64, mini, yahtzee]"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1188676172,
+      "source": "HemSoft/yahtzee",
+      "path": ".github/workflows/self-hosted-smoke.yml",
+      "blob_sha": "e943e0c24038f167f8214334a48bfbbba8011eb2",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "[self-hosted, Linux, X64, mini, yahtzee]"
+      ],
+      "legacy_owner_reference": false
+    },
+    {
+      "repository_id": 1188676172,
+      "source": "HemSoft/yahtzee",
+      "path": ".github/workflows/site-preview.yml",
+      "blob_sha": "99c4a239344099a9760af0b1af40022bc1bb7ef9",
+      "state": "observed",
+      "provider_markers": [],
+      "referenced_secret_names": [],
+      "runner_labels": [
+        "ubuntu-latest"
+      ],
+      "legacy_owner_reference": false
+    }
+  ],
+  "limitations": [
+    "Text markers and secret references do not prove provider deployments or credential validity.",
+    "Only successfully enumerated default-branch trees and selected workflow/manifest paths covered."
+  ]
+}
