@@ -391,6 +391,9 @@ if (-not $CurrentSha) {
     Write-Error "Could not determine current git SHA. Is this repo initialized?"
     exit 1
 }
+if (-not $Local -and -not $DryRun) {
+    Assert-SflSourceCheckout -Repository $SourceRepository -CheckoutRoot $RepoRoot -Commit $CurrentSha
+}
 
 $EnginePolicyManifest = New-SflEnginePolicyManifest $WorkflowsToDeploy
 
@@ -418,12 +421,7 @@ function Assert-SflReviewCredentials([string]$TargetRepo) {
         return
     }
 
-    $secretNames = @(
-        & gh secret list --repo $TargetRepo --app actions --json name --jq '.[].name' 2>&1
-    )
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to list Actions secrets on ${TargetRepo}: $($secretNames -join [Environment]::NewLine)"
-    }
+    $secretNames = @(Get-SflActionsSecretNames -Repository $TargetRepo)
 
     foreach ($workflowName in $WorkflowsToDeploy) {
         $profile = Resolve-SflEngineProfile $workflowName

@@ -180,6 +180,11 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if opts.slackWebhook != "" {
+		if err := requireOrganizationAdmin(owner, repo); err != nil {
+			return fmt.Errorf("Slack secret setup requires repository admin before deployment: %w", err)
+		}
+	}
 	existingManifest, err := readRemoteManifest(owner, repo)
 	if err != nil && !isNotFoundError(err) {
 		return fmt.Errorf("checking existing SFL deployment in %s/%s: %w", owner, repo, err)

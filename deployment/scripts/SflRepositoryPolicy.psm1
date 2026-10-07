@@ -45,4 +45,36 @@ function Get-SflRepositoryContext {
     return [pscustomobject]@{ Login = $login; Metadata = $metadata; Permission = $permission.permission }
 }
 
-Export-ModuleMember -Function Assert-SflSourceRepository, Assert-SflTargetScope, Get-SflRepositoryContext
+function Assert-SflSourceCheckout {
+    param([string] $Repository, [string] $CheckoutRoot, [string] $Commit)
+    Assert-SflSourceRepository $Repository
+    if ($Commit -cnotmatch '^[0-9a-f]{40}$') { throw 'Source checkout needs an immutable commit.' }
+    $localCommit = (& git -C $CheckoutRoot rev-parse HEAD).Trim()
+    if ($LASTEXITCODE -ne 0 -or $localCommit -cne $Commit) { throw 'Source checkout HEAD does not match selected commit.' }
+    $dirty = @(& git -C $CheckoutRoot status --porcelain --untracked-files=all)
+    if ($LASTEXITCODE -ne 0 -or $dirty.Count -gt 0) {
+        throw 'Source checkout must have clean tracked files before deployment.'
+    }
+    $raw = & gh api --method GET "repos/$Repository"
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot verify selected source repository.' }
+    $metadata = $raw | ConvertFrom-Json
+    if ($metadata.full_name -ine $Repository) { throw 'Selected source redirected to another repository.' }
+    $raw = & gh api --method GET "repos/$Repository/git/commits/$Commit"
+    if ($LASTEXITCODE -ne 0) { throw 'Source checkout commit is unavailable in selected repository.' }
+    $commitMetadata = $raw | ConvertFrom-Json
+    if ($commitMetadata.sha -cne $Commit) { throw 'Source checkout commit identity mismatch.' }
+}
+
+function Get-SflActionsSecretNames {
+    param([string] $Repository)
+    $names = @(& gh secret list --repo $Repository --app actions --json name --jq '.[].name')
+    if ($LASTEXITCODE -ne 0) { throw "Cannot list repository Actions secrets for $Repository." }
+    if ($Repository.StartsWith('hemsoft-dev/', [StringComparison]::OrdinalIgnoreCase)) {
+        $inherited = @(& gh api --method GET --paginate "repos/$Repository/actions/organization-secrets?per_page=100" --jq '.secrets[].name')
+        if ($LASTEXITCODE -ne 0) { throw "Cannot establish inherited Actions secret access for $Repository." }
+        $names += $inherited
+    }
+    return @($names | Sort-Object -Unique)
+}
+
+Export-ModuleMember -Function Assert-SflSourceRepository, Assert-SflTargetScope, Get-SflRepositoryContext, Assert-SflSourceCheckout, Get-SflActionsSecretNames

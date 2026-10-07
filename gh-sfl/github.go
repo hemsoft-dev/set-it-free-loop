@@ -199,6 +199,18 @@ func allowedTargetOwner(owner string) bool {
 	return strings.EqualFold(owner, "HemSoft") || strings.EqualFold(owner, organizationOwner)
 }
 
+func parseSourceRepository(source string) (string, string, error) {
+	parts := strings.Split(source, "/")
+	if len(parts) != 2 || !allowedTargetOwner(parts[0]) || parts[1] != motherRepoName {
+		return "", "", fmt.Errorf("unsupported SFL source repository %q", source)
+	}
+	owner := "HemSoft"
+	if strings.EqualFold(parts[0], organizationOwner) {
+		owner = organizationOwner
+	}
+	return owner, motherRepoName, nil
+}
+
 func configureSourceRepository() error {
 	source := os.Getenv("SFL_SOURCE_REPOSITORY")
 	if source == "" {

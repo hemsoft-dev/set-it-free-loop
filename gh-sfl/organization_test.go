@@ -296,3 +296,60 @@ func TestManifestMutationsKeepLegacyCopiesConsistent(t *testing.T) {
 		t.Fatalf("wrong fresh manifest paths: %v", files)
 	}
 }
+
+func TestInstalledStatusUsesManifestSourceIndependentlyOfSelectedSource(t *testing.T) {
+	previous := motherRepoOwner
+	t.Cleanup(func() { motherRepoOwner = previous })
+	raw, err := os.ReadFile("../deployment/infrastructure/sfl-pr-review-auto.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, source := range []string{"HemSoft/set-it-free-loop", "hemsoft-dev/set-it-free-loop"} {
+		t.Run(source, func(t *testing.T) {
+			motherRepoOwner = "HemSoft"
+			if strings.HasPrefix(source, "HemSoft/") {
+				motherRepoOwner = "hemsoft-dev"
+			}
+			manifest := &sflManifest{MotherRepo: source, SourceSHA: strings.Repeat("a", 40), Version: "2.1.0-rc.14"}
+			calls := 0
+			expected, err := expectedInstalledReviewerSource(manifest, "sfl-pr-review-auto.yml", "hemsoft-dev/consumer", "main", func(owner, repo, path, ref string) (string, error) {
+				calls++
+				if owner+"/"+repo != source || path != "deployment/infrastructure/sfl-pr-review-auto.yml" || ref != manifest.SourceSHA {
+					t.Fatalf("wrong installed source read %s/%s/%s@%s", owner, repo, path, ref)
+				}
+				return string(raw), nil
+			})
+			if err != nil || calls != 1 || !strings.Contains(expected, "# Source: "+source+"/deployment/infrastructure/sfl-pr-review-auto.yml@"+manifest.SourceSHA) {
+				t.Fatalf("incorrect status provenance: %v %s", err, expected)
+			}
+		})
+	}
+	if _, err := expectedInstalledReviewerSource(&sflManifest{MotherRepo: "other/source"}, "sfl-pr-review-auto.yml", "hemsoft-dev/consumer", "main", func(string, string, string, string) (string, error) {
+		t.Fatal("fetched unsupported manifest source")
+		return "", nil
+	}); err == nil {
+		t.Fatal("accepted unsupported installed source")
+	}
+}
+
+func TestInitSlackSecretDenialPrecedesAnyDeployment(t *testing.T) {
+	previous := ghExec
+	t.Cleanup(func() { ghExec = previous })
+	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
+		switch strings.Join(args, " ") {
+		case "api user --jq .login":
+			return *bytes.NewBufferString("member"), bytes.Buffer{}, nil
+		case "api --method GET repos/hemsoft-dev/consumer":
+			return *bytes.NewBufferString(`{"full_name":"hemsoft-dev/consumer"}`), bytes.Buffer{}, nil
+		case "api --method GET repos/hemsoft-dev/consumer/collaborators/member/permission":
+			return *bytes.NewBufferString(`{"permission":"write","user":{"login":"member"}}`), bytes.Buffer{}, nil
+		default:
+			t.Fatalf("continued after secret permission denial: %v", args)
+			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected")
+		}
+	}
+	err := runInit([]string{"--repo", "hemsoft-dev/consumer", "--tier", "minimal", "--slack-webhook", "https://example.com/test"}, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "Slack secret setup requires repository admin before deployment") {
+		t.Fatalf("wrong preflight result: %v", err)
+	}
+}
