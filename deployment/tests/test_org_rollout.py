@@ -5,7 +5,9 @@ import csv
 import importlib.util
 import json
 import pathlib
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).parents[2]
 DIRECTORY = ROOT / 'docs' / 'organization-migration'
@@ -71,6 +73,16 @@ class RolloutTests(unittest.TestCase):
             'disposition':'exclude_runtime_rollout','evidence_url':row['exception_evidence_url']}
 
     def complete_transfer_gates(self):
+        self.matrix['pre_transfer_credential_verification'] = {'repository_id':1169772257,
+            'repository':'HemSoft/set-it-free-loop','workflow':'.github/workflows/verify-sfl-app-credential.yml',
+            'conclusion':'success','reviewed_sha':'e'*40,'app_id':4448946,'client_id':'Iv23liwvwJJUh2bUIKLW',
+            'owner':'HemSoft','installation_id':123,'permission_ceiling_verified':True,
+            'run_url':'https://github.com/HemSoft/set-it-free-loop/actions/runs/1'}
+        for row in self.matrix['repositories']:
+            repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+            row['destination_protections'] = dict(validator.protection_contract(repo),
+                repository_id=repo['id'],repository=repo['destination'],revision_sha='e'*40,
+                evidence_url='https://github.com/'+repo['destination']+'/rules')
         for repo in self.inventory['repositories']:
             self.verify_source_ledger(repo['id'])
 
@@ -147,8 +159,12 @@ class RolloutTests(unittest.TestCase):
                              'strict':True,'evidence_url':'https://example.com/rule'},wider_workflow_run_urls=[])
             if pilot['visibility']=='private':
                 receipts['manifest_identity']['tier']='full'
-                receipts['wider_workflow_run_urls']=['https://example.com/workflow']
-                receipts['auditor_run_url']='https://example.com/auditor'
+                receipts['wider_workflow_run_urls']=['https://github.com/'+pilot['repository']+'/actions/runs/1']
+                receipts['auditor_run_url']='https://github.com/'+pilot['repository']+'/actions/runs/2'
+                receipts['wider_operation_receipts']=[{'repository_id':pilot['repository_id'],'repository':pilot['repository'],
+                    'deployment_sha':receipts['deployment_sha'],'release_version':receipts['release_version'],
+                    'evidence_url':receipts['wider_workflow_run_urls'][0]}]
+                receipts['auditor_operation_receipt']=dict(receipts['wider_operation_receipts'][0],evidence_url=receipts['auditor_run_url'])
             receipts['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
                 'repository_id':pilot['repository_id'],'repository':pilot['repository'],'installation_id':123,
                 'evidence_url':'https://example.com/pilot-app-access'}
@@ -867,10 +883,107 @@ class RolloutTests(unittest.TestCase):
                 replacement[field]=candidate[field]
             replacement.pop('post_transfer_access',None)
             replacement['destination_sfl_app_access'].update(repository_id=inventory['id'],repository=inventory['destination'])
+            replacement['destination_protections']=copy.deepcopy(candidate['destination_protections'])
             replacement['pre_sync_installation'].update(repository_id=inventory['id'],repository=inventory['destination'])
             index=self.matrix['repositories'].index(candidate);self.matrix['repositories'][index]=replacement
             with self.assertRaisesRegex(ValueError,'cannot erase a captured'):self.check()
             self.matrix['repositories'][index]=candidate
+
+    def test_present_installation_cannot_downgrade_a_captured_manifest(self):
+        row = self.complete_rollout()
+        target = next(r for r in self.matrix['repositories'] if r['source'] == 'HemSoft/hs-buddy')
+        replacement = copy.deepcopy(row)
+        for field in ('repository_id', 'source', 'destination', 'visibility', 'archived',
+                      'source_app_access_in_baseline', 'rollout_action', 'destination_protections'):
+            replacement[field] = target[field]
+        replacement.pop('post_transfer_access', None)
+        replacement['destination_sfl_app_access'].update(repository_id=target['repository_id'],repository=target['destination'])
+        replacement.update(installed_tier='reviewer', selected_tier='reviewer', installed_components=[])
+        replacement['review_pr_url']='https://github.com/'+target['destination']+'/pull/1'
+        replacement['review_artifact_identity']['review_pr_url']=replacement['review_pr_url']
+        replacement['pre_sync_installation'].update(repository_id=target['repository_id'],repository=target['destination'],
+                                                    state='present',tier='reviewer')
+        index = self.matrix['repositories'].index(target)
+        self.matrix['repositories'][index] = replacement
+        with self.assertRaisesRegex(ValueError, 'independently captured manifest'): self.check()
+
+    def test_wider_and_auditor_operations_bind_the_pilot_release(self):
+        self.complete_pilots()
+        pilot = next(p for p in self.matrix['disposable_validation_repositories'] if p['visibility']=='private')
+        receipts = pilot['validation_evidence']
+        original = copy.deepcopy(receipts)
+        for field, value in [('repository_id',42),('repository','hemsoft-dev/other'),
+                             ('deployment_sha','d'*40),('release_version','2.1.0-rc.13'),('evidence_url',None)]:
+            for key in ('wider_operation_receipts','auditor_operation_receipt'):
+                pilot['validation_evidence']=copy.deepcopy(original)
+                operation=pilot['validation_evidence'][key]
+                if isinstance(operation,list): operation=operation[0]
+                operation[field]=value
+                with self.subTest(key=key,field=field),self.assertRaises(ValueError):self.check()
+        pilot['validation_evidence']=copy.deepcopy(original)
+        pilot['validation_evidence']['wider_workflow_run_urls']=['https://github.com/hemsoft-dev/other/actions/runs/1']
+        with self.assertRaises(ValueError):self.check()
+
+    def test_transfer_gates_require_owned_app_credential_workflow_proof(self):
+        self.complete_transfer_gates()
+        original=copy.deepcopy(self.matrix['pre_transfer_credential_verification'])
+        for field,value in [('reviewed_sha','main'),('workflow','other.yml'),('conclusion','failure'),
+                            ('app_id',1144995),('owner','other'),('client_id','wrong'),('installation_id',0),
+                            ('permission_ceiling_verified',False),('run_url','https://github.com/other/repo/actions/runs/1')]:
+            self.matrix['pre_transfer_credential_verification']=copy.deepcopy(original)
+            self.matrix['pre_transfer_credential_verification'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+        self.matrix['pre_transfer_credential_verification']=None
+        with self.assertRaises(ValueError):self.check()
+
+    def test_unverified_trees_need_independent_repository_bound_resolution(self):
+        self.complete_transfer_gates()
+        path=DIRECTORY/'source-tree-recheck-evidence.json'
+        original=json.loads(path.read_text())
+        original_read=pathlib.Path.read_text
+        for field,value in [('repository_id',42),('source','HemSoft/other'),('state','assumed'),('tree_sha','a'*40)]:
+            capture=copy.deepcopy(original);capture['records'][0][field]=value
+            def read(file,*args,**kwargs):
+                return json.dumps(capture) if file.name==path.name else original_read(file,*args,**kwargs)
+            with self.subTest(field=field),patch.object(pathlib.Path,'read_text',read),self.assertRaises(ValueError):self.check()
+
+    def test_completed_transfer_preserves_unrelated_effective_protections(self):
+        self.complete_transfer_gates()
+        repo=next(r for r in self.inventory['repositories'] if r['full_name']=='HemSoft/dashboard')
+        proof=dict(validator.protection_contract(repo), repository_id=repo['id'],repository=repo['destination'],
+                   revision_sha='d'*40,evidence_url='https://github.com/'+repo['destination']+'/rules')
+        validator.validate_protection_preservation(proof,DIRECTORY,repo)
+        original=copy.deepcopy(proof)
+        for field,value in [('repository_id',42),('repository','HemSoft/dashboard'),('rulesets',[]),('revision_sha','main')]:
+            proof=copy.deepcopy(original);proof[field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                validator.validate_protection_preservation(proof,DIRECTORY,repo)
+        proof=copy.deepcopy(original);proof['rulesets'][0]['rules'][0]['parameters']['required_status_checks']=[]
+        with self.assertRaisesRegex(ValueError,'every unrelated baseline ruleset'):
+            validator.validate_protection_preservation(proof,DIRECTORY,repo)
+
+    def test_final_inventory_reconciles_locations_state_and_additions(self):
+        expected={r['id']:r for r in self.inventory['repositories']}
+        retained={r['repository_id'] for r in self.scope['retained_repositories']}
+        accounts={owner:{'owner':owner,'state':'observed','all_pages':True,'repositories':[]} for owner in ('HemSoft','fhemmer','hemsoft-dev')}
+        for repo_id,repo in expected.items():
+            name=repo['full_name'] if repo_id in retained else repo['destination']
+            accounts[name.split('/')[0]]['repositories'].append({'id':repo_id,'full_name':name,'private':repo['private'],'archived':repo['archived']})
+        for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
+            accounts['hemsoft-dev']['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private','archived':False})
+        capture={'observed_at':'2026-10-07T03:00:00Z','accounts':list(accounts.values())}
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);path=directory/'final-inventory.json'
+            proof={'observed_at':capture['observed_at'],'evidence_url':path.name,'additional_repositories':[]}
+            path.write_text(json.dumps(capture));validator.validate_final_inventory(proof,directory,expected,retained)
+            original=copy.deepcopy(capture)
+            for field,value in [('full_name','HemSoft/.github'),('private',True),('id',1)]:
+                capture=copy.deepcopy(original);capture['accounts'][2]['repositories'][1][field]=value
+                path.write_text(json.dumps(capture))
+                with self.subTest(field=field),self.assertRaises(ValueError):
+                    validator.validate_final_inventory(proof,directory,expected,retained)
+            capture=copy.deepcopy(original);capture['accounts'][2]['all_pages']=False;path.write_text(json.dumps(capture))
+            with self.assertRaises(ValueError):validator.validate_final_inventory(proof,directory,expected,retained)
 
     def test_source_and_consumer_app_coverage_require_bound_installation(self):
         row=self.complete_rollout();self.check();original=copy.deepcopy(row['destination_sfl_app_access'])

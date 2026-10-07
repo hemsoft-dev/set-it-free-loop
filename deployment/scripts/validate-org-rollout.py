@@ -74,6 +74,116 @@ def immutable_sha(value):
     return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{40}', value) is not None
 
 
+def bound_operation(operation, directory, repository_id, repository, sha, version, url):
+    require(isinstance(operation, dict) and operation.get('repository_id') == repository_id and
+            operation.get('repository') == repository and operation.get('deployment_sha') == sha and
+            operation.get('release_version') == version and operation.get('evidence_url') == url,
+            'Operation receipt must bind its repository, deployment and release')
+    evidence(url, directory)
+    if urllib.parse.urlsplit(url).scheme:
+        require(url.startswith('https://github.com/' + repository + '/'),
+                'Operation URL must belong to its designated repository')
+
+
+def validate_app_credential(proof, directory):
+    require(isinstance(proof, dict) and proof.get('repository_id') == 1169772257 and
+            proof.get('repository') == 'HemSoft/set-it-free-loop' and
+            proof.get('workflow') == '.github/workflows/verify-sfl-app-credential.yml' and
+            proof.get('conclusion') == 'success' and immutable_sha(proof.get('reviewed_sha')) and
+            proof.get('app_id') == 4448946 and proof.get('client_id') == 'Iv23liwvwJJUh2bUIKLW' and
+            proof.get('owner') == 'HemSoft' and type(proof.get('installation_id')) is int and
+            proof['installation_id'] > 0 and proof.get('permission_ceiling_verified') is True,
+            'Transfer gates need a successful reviewed owned-App credential workflow receipt')
+    require(re.fullmatch(r'https://github.com/HemSoft/set-it-free-loop/actions/runs/[1-9][0-9]*',
+                        proof.get('run_url', '')) is not None,
+            'Owned-App credential run must belong to the source workflow')
+    evidence(proof['run_url'], directory)
+
+
+def protection_contract(repo):
+    rulesets = repo['settings']['rulesets']
+    if rulesets.get('state') == 'unverified':
+        require(repo['id'] == FHEMMER_REPOSITORY_ID, 'Unverified baseline rulesets need independent resolution')
+        # The separate owner-browser artifact records this exact source's empty settings.
+        rules = []
+    else:
+        rules = []
+        for rule in rulesets.get('data', []):
+            detail = rule.get('details', {})
+            require(detail.get('state') == 'observed', 'Baseline ruleset details must be observed')
+            value = detail['data']
+            rules.append({key: value.get(key) for key in
+                          ('id', 'name', 'target', 'enforcement', 'conditions', 'rules', 'bypass_actors')})
+    branches = repo['settings']['protected_branches']
+    require(branches.get('state') == 'observed', 'Baseline protected branches must be observed')
+    classic = {}
+    for branch in branches.get('data', []):
+        protection = branch.get('protection', {})
+        if protection.get('state') == 'observed':
+            classic[branch['name']] = protection['data']
+        else:
+            require(protection.get('http_status') == 404, 'Unknown classic protection needs resolution')
+    return {'rulesets': rules, 'classic': classic}
+
+
+def validate_protection_preservation(proof, directory, repo):
+    require(isinstance(proof, dict) and proof.get('repository_id') == repo['id'] and
+            proof.get('repository') == repo['destination'] and immutable_sha(proof.get('revision_sha')) and
+            isinstance(proof.get('rulesets'), list) and isinstance(proof.get('classic'), dict),
+            'Completed transfer needs structured destination effective-policy evidence')
+    evidence(proof.get('evidence_url'), directory)
+    baseline = protection_contract(repo)
+    for rule in baseline['rulesets']:
+        require(rule in proof['rulesets'], 'Destination must preserve every unrelated baseline ruleset')
+    for name, protection in baseline['classic'].items():
+        require(proof['classic'].get(name) == protection,
+                'Destination must preserve every unrelated classic branch protection')
+
+
+def validate_final_inventory(proof, directory, expected, retained):
+    require(isinstance(proof, dict), 'Final completion needs a fresh independent repository inventory')
+    reference = proof.get('evidence_url')
+    evidence(reference, directory)
+    require(not urllib.parse.urlsplit(reference).scheme and reference != 'inventory.json',
+            'Final inventory needs a separate captured enumeration artifact')
+    capture = json.loads((directory / reference).read_text())
+    require(capture.get('observed_at') == proof.get('observed_at'), 'Final inventory timestamp must match its capture')
+    captured_at = datetime.datetime.fromisoformat(capture['observed_at'].replace('Z', '+00:00'))
+    require(captured_at.tzinfo is not None, 'Final inventory timestamp needs a timezone')
+    accounts = capture.get('accounts')
+    require(isinstance(accounts, list) and {x.get('owner') for x in accounts} == {'HemSoft', 'fhemmer', 'hemsoft-dev'} and
+            len(accounts) == 3, 'Final inventory must enumerate both sources and the destination')
+    actual = {}
+    for account in accounts:
+        require(account.get('state') == 'observed' and account.get('all_pages') is True and
+                isinstance(account.get('repositories'), list), 'Final inventory enumeration must be complete')
+        for repo in account['repositories']:
+            repo_id = repo.get('id')
+            require(type(repo_id) is int and repo_id not in actual and
+                    text(repo.get('full_name')) and repo['full_name'].startswith(account['owner'] + '/'),
+                    'Final inventory repository IDs must be unique and bound to their account')
+            actual[repo_id] = repo
+    for repo_id, repo in expected.items():
+        current = actual.get(repo_id, {})
+        require(current.get('full_name') == (repo['full_name'] if repo_id in retained else repo['destination']) and
+                current.get('private') == repo['private'] and current.get('archived') == repo['archived'],
+                'Final inventory must prove each baseline ID at its actual mapped location and preserve state')
+    extras = proof.get('additional_repositories')
+    require(isinstance(extras, list), 'Final inventory needs explicit additional-repository accounting')
+    allowed = dict(APPROVED_PILOTS)
+    for repo in extras:
+        repo_id = repo.get('repository_id')
+        require(type(repo_id) is int and repo_id not in expected and repo_id not in allowed and
+                repo.get('approved_by') == 'HemSoft' and text(repo.get('repository')) and
+                repo.get('visibility') in {'public', 'private'}, 'Additional final repositories need a bound owner decision')
+        evidence(repo.get('evidence_url'), directory)
+        allowed[repo_id] = (repo['repository'], repo['visibility'])
+    require(set(actual) == set(expected) | set(allowed), 'Final inventory contains unaccounted repository IDs')
+    for repo_id, (name, visibility) in allowed.items():
+        require(actual[repo_id]['full_name'] == name and actual[repo_id].get('private') == (visibility == 'private'),
+                'Final inventory additions must match their recorded identity and visibility')
+
+
 def validate_app_coverage(coverage, directory, repository_id, repository, app_id, owner):
     require(isinstance(coverage, dict) and coverage.get('status') == 'verified' and
             coverage.get('app_id') == app_id and coverage.get('owner') == owner and
@@ -232,8 +342,15 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     other_resources = {'github_pages': ('GitHub Pages', pages_resources),
                        'supabase_project': ('Supabase', supabase_resources)}
     seen_other_resources = {kind: set() for kind in other_resources}
-    captured_manifests = {record['repository_id'] for record in workflow_capture.get('records', [])
-                          if record.get('path') in {'.sfl/sfl.json', 'sfl.json'} and record.get('state') == 'observed'}
+    captured_manifests = {}
+    for record in workflow_capture.get('records', []):
+        if record.get('path') in {'.sfl/sfl.json', 'sfl.json'} and record.get('state') == 'observed':
+            manifest = record.get('manifest')
+            require(isinstance(manifest, dict), 'Captured installation needs its manifest content')
+            repo_id = record['repository_id']
+            require(repo_id not in captured_manifests or captured_manifests[repo_id] == manifest,
+                    'Captured canonical and legacy manifests disagree')
+            captured_manifests[repo_id] = manifest
     expected_unused = {}
     for repo_id, repo in expected.items():
         names = set(repo['settings']['secret_names'].get('data', [])) & legacy_names
@@ -327,6 +444,21 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             'Ledger must preserve every captured Pages/Supabase resource')
     all_transfer_gates_verified = all(all(status == 'verified' for status in ledger_statuses[repo_id])
                                       for repo_id in expected if repo_id not in retained)
+    if all_transfer_gates_verified:
+        validate_app_credential(matrix.get('pre_transfer_credential_verification'), directory)
+        source_capture = json.loads((directory / 'source-reference-evidence.json').read_text())
+        unresolved = {x['repository_id']: x for x in source_capture['repositories'] if x.get('state') != 'observed'}
+        tree_refresh = json.loads((directory / 'source-tree-recheck-evidence.json').read_text())
+        resolutions = {x.get('repository_id'): x for x in tree_refresh.get('records', [])}
+        for repo_id, original in unresolved.items():
+            current = resolutions.get(repo_id, {})
+            require(current.get('source') == original['source'] and
+                    ((current.get('state') == 'empty_tree' and immutable_sha(current.get('commit_sha')) and
+                      current.get('tree_sha') == '4b825dc642cb6eb9a060e54bf8d69288fbee4904') or
+                     (current.get('state') == 'uninitialized' and current.get('metadata_size') == 0 and
+                      current.get('branches') == [])),
+                    'Unverified source trees need a repository-bound independent resolution before transfer')
+            evidence(current.get('evidence_url'), directory)
 
     app_transfer = matrix.get('owned_app_transfer')
     require(isinstance(app_transfer, dict) and app_transfer.get('app_id') == owned_app_id and
@@ -364,6 +496,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(field in row and (row[field] is None or string_list(row[field])), f'Invalid {field}')
         health = row.get('health')
         require(health in HEALTH, 'Invalid matrix health')
+        if health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'}:
+            validate_protection_preservation(row.get('destination_protections'), directory, repo)
         require((health == 'retained_source') == (repo_id in retained), 'Matrix must honor retained source decisions')
         protected_source = repo['full_name'] == 'HemSoft/set-it-free-loop'
         require((row.get('rollout_action') == 'protected_source_verify_workflows_in_place') == protected_source,
@@ -479,6 +613,12 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         'Not-installed requires proven absence and cannot erase a captured installation')
             else:
                 require(observed.get('state') == 'present', 'Existing deployment needs a present pre-sync receipt')
+                manifest = captured_manifests.get(repo_id)
+                if manifest is not None:
+                    require(row['installed_tier'] == manifest.get('tier') and
+                            row['installed_addons'] == manifest.get('addons', []) and
+                            row['installed_components'] == manifest.get('components', []),
+                            'Present installation must preserve its independently captured manifest configuration')
             if row['installed_tier'] == 'custom':
                 require(string_list(row['installed_components']) and bool(row['installed_components']),
                         'Installed custom tier needs observed components')
@@ -653,6 +793,14 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 for run in runs:
                     evidence(run, directory)
                 evidence(receipts.get('auditor_run_url'), directory)
+                wider_receipts = receipts.get('wider_operation_receipts')
+                require(isinstance(wider_receipts, list) and len(wider_receipts) == len(runs),
+                        'Wider pilot needs bound workflow operation receipts')
+                for run, operation in zip(runs, wider_receipts):
+                    bound_operation(operation, directory, extra_id, name, receipts['deployment_sha'],
+                                    receipts['release_version'], run)
+                bound_operation(receipts.get('auditor_operation_receipt'), directory, extra_id, name,
+                                receipts['deployment_sha'], receipts['release_version'], receipts['auditor_run_url'])
                 verified_wider_pilot = True
             verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)
@@ -666,6 +814,12 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         require(verified_pilot_visibilities == {'public', 'private'},
                 'Active rollout requires verified public and private onboarding pilots first')
         require(verified_wider_pilot, 'Active rollout requires a verified wider-workflow and auditor pilot')
+    if source_complete:
+        proof = matrix.get('final_inventory')
+        validate_final_inventory(proof, directory, expected, retained)
+        require(datetime.datetime.fromisoformat(proof['observed_at'].replace('Z', '+00:00')) >
+                datetime.datetime.fromisoformat(inventory['captured_at'].replace('Z', '+00:00')),
+                'Final inventory must be fresher than the sealed source baseline')
     return summary
 
 

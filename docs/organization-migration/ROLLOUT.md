@@ -335,3 +335,31 @@ The [latest owner resource confirmation](external-resource-owner-scope-evidence.
 The validator reconciles all five captured Vercel project IDs, including retained and disconnected projects. The 42 unused Actions credential records must match the exact scanned repository IDs, names and owner receipt. Verified pilots require completed owned-App transfer and repository-bound post-transfer App coverage. A wider pilot must use standard or full tier so it actually deploys the Auditor. Every required negative scenario records its expected outcome, deployment SHA, execution mode and evidence. Use `live` for observed GitHub behavior and `workflow_fixture` for a fixture executing the deployed observer logic; never describe fixture execution as a live provider test. Scope exceptions require the matching repository ID/name, HemSoft approval identity, time, reason and disposition linked to the owner decision.
 
 Completion also reconciles the two enabled GitHub Pages sites and the Supabase project bound to the dashboard Vercel connection. Their separate resource rows remain pending until their owner, credential, cutover, smoke and recovery gates are verified. Consumer and protected-source App coverage requires the exact destination ID/name, transferred App identity, positive installation ID and evidence. A verified consumer must carry repository-bound pre-sync evidence for both manifest locations; `not_installed` cannot erase a manifest already observed in the source scan. Every pilot onboarding/status/uninstall/review operation has matching repository ID/name, deployment SHA, release version and evidence; applicable GitHub URLs must belong to that pilot.
+
+## Completion evidence binding
+
+Before marking all transfer gates verified, populate
+`pre_transfer_credential_verification` with the successful main-only owned-App
+credential workflow run, its reviewed SHA, App/client/owner/installation identity
+and permission-ceiling result. Original source-tree failures remain visible;
+[source-tree-recheck-evidence.json](source-tree-recheck-evidence.json) independently
+resolves the empty fhemmer tree and uninitialized n8n repository.
+
+For existing installations, the captured manifest tier, add-ons and components
+remain authoritative. A present receipt cannot relabel an existing full deployment
+as reviewer. A verified wider pilot also needs `wider_operation_receipts` and
+`auditor_operation_receipt` bound to its repository ID, canonical name, deployment
+SHA, release version and matching run URL.
+
+Each terminal transfer row needs `destination_protections` with the repository
+ID/name, observed revision, ruleset contracts, classic protection settings and
+owner evidence. Preserve every unrelated baseline rule while adding the required
+SFL gate separately. Do not replace the existing ruleset with the new gate.
+
+Final completion requires `final_inventory` pointing to a separate fresh captured
+JSON enumeration of HemSoft, fhemmer and hemsoft-dev. Each account must record
+all pages and observed repository IDs, canonical names, privacy and archive state.
+Match all 65 destinations and both retained personal sources; preserve both
+recorded disposable pilots. Explicitly account for any additional repository
+through its owner-approved identity/visibility receipt. Planned mappings and
+per-row prose cannot replace this actual-location reconciliation.

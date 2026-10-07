@@ -2448,5 +2448,7 @@
     "status": "pending",
     "owner": "HemSoft",
     "evidence_url": null
-  }
+  },
+  "pre_transfer_credential_verification": null,
+  "final_inventory": null
 }
