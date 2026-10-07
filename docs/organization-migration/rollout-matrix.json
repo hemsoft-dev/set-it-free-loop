@@ -54,7 +54,19 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "post_transfer_access": {
+        "status": "pending",
+        "repository": "hemsoft-dev/hs-cli-confluence-search-fhemmer",
+        "account": "fhemmerrelias",
+        "effective_permission": null,
+        "filled_seats": null,
+        "paid_seats": null,
+        "verified_by": null,
+        "verified_at": null,
+        "permission_evidence_url": null,
+        "license_evidence_url": null
+      }
     },
     {
       "repository_id": 1349305052,

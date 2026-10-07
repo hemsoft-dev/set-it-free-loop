@@ -10,6 +10,10 @@ import re
 import urllib.parse
 
 TIERS = {'review', 'reviewer', 'minimal', 'standard', 'full', 'custom'}
+INIT_TIERS = {'reviewer', 'minimal', 'standard', 'full'}
+APPROVED_PILOTS = {1408025382: ('hemsoft-dev/sfl-migration-pilot-private', 'private'),
+                   1408029795: ('hemsoft-dev/sfl-migration-pilot-public', 'public')}
+FHEMMER_REPOSITORY_ID = 1143951439
 # Franz's recorded October 6 decision. Expanding this set requires a new owner decision.
 APPROVED_RETAINED_IDS = {1162179521, 1169698740}
 RETENTION_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635'
@@ -286,6 +290,26 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         if repo_id not in retained and (health != 'pending_transfer' or text(row.get('transfer_evidence_url'))):
             require(all_transfer_gates_verified,
                     'All transfer-target ledger gates must be verified before any transfer advances')
+        if repo_id == FHEMMER_REPOSITORY_ID:
+            access = row.get('post_transfer_access')
+            require(isinstance(access, dict) and access.get('status') in {'pending', 'verified'},
+                    'fhemmer needs an explicit post-transfer access and seat state')
+            if health != 'pending_transfer' or text(row.get('transfer_evidence_url')):
+                require(access['status'] == 'verified', 'fhemmer transfer needs post-transfer access and seat proof')
+            if access['status'] == 'verified':
+                require(text(row.get('transfer_evidence_url')) and access.get('repository') == repo['destination'] and
+                        access.get('account') == 'fhemmerrelias' and access.get('effective_permission') == 'none' and
+                        type(access.get('filled_seats')) is int and access['filled_seats'] == 1 and
+                        type(access.get('paid_seats')) is int and access['paid_seats'] == 1,
+                        'fhemmer post-transfer receipt must prove no access and the existing one-seat license')
+                require(text(access.get('verified_by')), 'Post-transfer access receipt needs its verifier')
+                try:
+                    captured_at = datetime.datetime.fromisoformat(access.get('verified_at', '').replace('Z', '+00:00'))
+                except ValueError as exc:
+                    raise ValueError('Post-transfer access receipt needs a verification timestamp') from exc
+                require(captured_at.tzinfo is not None, 'Post-transfer access receipt needs a timezone')
+                evidence(access.get('permission_evidence_url'), directory)
+                evidence(access.get('license_evidence_url'), directory)
         if row.get('destination_sfl_app_access') == 'verified':
             require(app_transfer['status'] == 'verified', 'Destination private SFL App access requires verified App transfer')
         if health in {'verified', 'archived_verified', 'scope_exception', 'source_verified'}:
@@ -384,6 +408,13 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     manifest.get('version') == row['manifest_version'] and
                     manifest.get('tier') == row['selected_tier'],
                     'Verified rollout manifest must bind source, release version, SHA and selected tier')
+            require(string_list(manifest.get('addons')) and
+                    set(manifest['addons']) == set(row['selected_addons']),
+                    'Verified rollout manifest must match the selected addons')
+            if row['selected_tier'] == 'custom':
+                require(string_list(manifest.get('components')) and
+                        set(manifest['components']) == set(row['selected_components']),
+                        'Verified custom manifest must match the selected components')
             require(row.get('release_url') == 'https://github.com/' + canonical_source + '/releases/tag/v' + row['manifest_version'],
                     'Verified rollout release must match its canonical source and version')
             for field in ('manifest_evidence_url', 'release_url', 'release_download_verification_url'):
@@ -434,6 +465,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         require(extra_id not in extra_ids and name.casefold() not in extra_names,
                 'Duplicate disposable repository identity')
         require(extra.get('visibility') in {'public', 'private'}, 'Invalid disposable repository visibility')
+        require(extra_id in APPROVED_PILOTS and (name, extra.get('visibility')) == APPROVED_PILOTS[extra_id],
+                'Disposable pilot ID, repository and visibility must match the designated identities')
         require(extra.get('validation_status') in {'pending', 'failed', 'verified'},
                 'Disposable pilot needs an explicit validation status')
         if extra['validation_status'] == 'verified':
@@ -450,7 +483,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             manifest = receipts.get('manifest_identity')
             require(isinstance(manifest, dict) and manifest.get('source') == receipts['deployment_source'] and
                     manifest.get('sourceSha') == receipts['deployment_sha'] and
-                    manifest.get('version') == receipts['release_version'] and manifest.get('tier') in TIERS,
+                    manifest.get('version') == receipts['release_version'] and manifest.get('tier') in INIT_TIERS,
                     'Verified pilot manifest must match its deployment source, SHA and version')
             for field in ('manifest_evidence_url', 'release_download_verification_url'):
                 evidence(receipts.get(field), directory)
@@ -484,6 +517,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)
         extra_names.add(name.casefold())
+    require(extra_ids == set(APPROVED_PILOTS), 'Both designated disposable pilot identities must remain recorded')
     source_complete = all(row['health'] in {'verified', 'archived_verified', 'scope_exception', 'retained_source', 'source_verified'} for row in records)
     if verified_rollouts or source_complete:
         require(all(row['retained_app_dependency']['status'] == 'verified' for row in records

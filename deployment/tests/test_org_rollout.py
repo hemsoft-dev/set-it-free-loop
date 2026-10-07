@@ -49,6 +49,12 @@ class RolloutTests(unittest.TestCase):
                                transfer_action='Verify registration continuity',smoke_test='Manual smoke succeeds',
                                recovery_action='Restore exact registration if needed')
 
+    def complete_post_transfer_access(self, row):
+        if row['repository_id'] == 1143951439:
+            row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
+                paid_seats=1, verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
+                permission_evidence_url='https://example.com/access', license_evidence_url='https://example.com/license')
+
     def complete_transfer_gates(self):
         for repo in self.inventory['repositories']:
             self.verify_source_ledger(repo['id'])
@@ -79,8 +85,12 @@ class RolloutTests(unittest.TestCase):
         row['review_pr_url']='https://github.com/'+row['destination']+'/pull/1'
         row['review_artifact_identity'].update(requester=row['review_requester'],review_pr_url=row['review_pr_url'])
         self.verify_source_ledger(row['repository_id'])
+        if row['repository_id'] == 1143951439:
+            row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
+                paid_seats=1, verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
+                permission_evidence_url='https://example.com/access', license_evidence_url='https://example.com/license')
         row.update(manifest_identity={'source':row['deployment_source'],'sourceSha':row['deployment_sha'],
-                                      'version':row['manifest_version'],'tier':row['selected_tier']},
+                                      'version':row['manifest_version'],'tier':row['selected_tier'],'addons':[],'components':['sfl-pr-review-auto']},
                    manifest_evidence_url='https://example.com/manifest',
                    release_url='https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v'+row['manifest_version'],
                    release_download_verification_url='https://example.com/checksum')
@@ -322,6 +332,7 @@ class RolloutTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.check()
         row['exception_evidence_url'] = 'https://github.com/HemSoft/set-it-free-loop/issues/139'
+        self.complete_post_transfer_access(row)
         self.check()
 
     def test_invalid_addon_lists_rejected(self):
@@ -352,6 +363,7 @@ class RolloutTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Custom tier'):
                 self.check()
         row['selected_components'] = ['sfl-auditor']
+        row['manifest_identity']['components'] = ['sfl-auditor']
         self.check()
 
     def test_legacy_installed_review_tier_recorded_truthfully(self):
@@ -368,6 +380,7 @@ class RolloutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Unsupported selected addon'):
             self.check()
         row['selected_addons'] = ['pr-review']
+        row['manifest_identity']['addons'] = ['pr-review']
         self.check()
 
     def test_review_only_custom_tier_needs_no_unrelated_workflow_run(self):
@@ -378,6 +391,7 @@ class RolloutTests(unittest.TestCase):
         self.check()
         row['selected_components'].append('sfl-auditor')
         row['installed_components'].append('sfl-auditor')
+        row['manifest_identity']['components'].append('sfl-auditor')
         with self.assertRaisesRegex(ValueError, 'Wider tier'):
             self.check()
 
@@ -415,6 +429,7 @@ class RolloutTests(unittest.TestCase):
             row.update(health='scope_exception', exception_evidence_url='https://example.com/exception',
                        transfer_evidence_url='https://example.com/transfer',
                        status_evidence_url='https://example.com/settings')
+            self.complete_post_transfer_access(row)
         self.complete_source()
         for pilot in self.matrix['disposable_validation_repositories']:
             pilot['validation_status'] = 'pending'
@@ -465,6 +480,7 @@ class RolloutTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.check()
         row['status_evidence_url'] = 'https://example.com/settings'
+        self.complete_post_transfer_access(row)
         self.check()
 
     def test_optional_or_unbound_gate_cannot_claim_verified_rollout(self):
@@ -637,6 +653,7 @@ class RolloutTests(unittest.TestCase):
         row['selected_tier']='full';row['manifest_identity']['tier']='full'
         with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
         row['selected_addons']=['pr-review'];row['wider_workflow_run_urls']=['https://example.com/run']
+        row['manifest_identity']['addons']=['pr-review']
         self.check()
 
     def test_completed_review_requires_authorized_destination_pr(self):
@@ -657,6 +674,63 @@ class RolloutTests(unittest.TestCase):
             with self.subTest(field=field),self.assertRaisesRegex(ValueError,'Destination Codex'):self.check()
         del self.matrix['destination_codex_installation']
         with self.assertRaisesRegex(ValueError,'Destination Codex'):self.check()
+
+
+    def test_manifest_must_observe_selected_addons_and_custom_components(self):
+        row = self.complete_rollout()
+        row.update(installed_tier='minimal', selected_tier='minimal', installed_addons=['pr-review'],
+                   selected_addons=['pr-review'], wider_workflow_run_urls=['https://example.com/run'])
+        row['manifest_identity']['tier'] = 'minimal'
+        for addons in (None, [], ['policy-manager']):
+            row['manifest_identity']['addons'] = addons
+            with self.subTest(addons=addons), self.assertRaisesRegex(ValueError, 'manifest must match the selected addons'):
+                self.check()
+        row['manifest_identity']['addons'] = ['pr-review']
+        self.check()
+        row.update(installed_tier='custom', selected_tier='custom', installed_components=['sfl-pr-review-auto'],
+                   selected_components=['sfl-pr-review-auto'])
+        row['manifest_identity']['tier'] = 'custom'
+        for components in (None, [], ['sfl-auditor']):
+            row['manifest_identity']['components'] = components
+            with self.subTest(components=components), self.assertRaisesRegex(ValueError, 'custom manifest must match'):
+                self.check()
+        row['manifest_identity']['components'] = ['sfl-pr-review-auto']
+        self.check()
+
+    def test_fresh_pilot_only_accepts_init_supported_tiers(self):
+        self.complete_pilots()
+        public = next(p for p in self.matrix['disposable_validation_repositories'] if p['visibility'] == 'public')
+        for tier in ('custom', 'review'):
+            public['validation_evidence']['manifest_identity']['tier'] = tier
+            with self.subTest(tier=tier), self.assertRaisesRegex(ValueError, 'pilot manifest'):
+                self.check()
+
+    def test_designated_pilot_identity_and_visibility_cannot_be_replaced(self):
+        original = copy.deepcopy(self.matrix['disposable_validation_repositories'])
+        for field, value in [('repository_id', 42), ('repository', 'hemsoft-dev/replacement'), ('visibility', 'public')]:
+            self.matrix['disposable_validation_repositories'] = copy.deepcopy(original)
+            self.matrix['disposable_validation_repositories'][0][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'designated identities'):
+                self.check()
+        self.matrix['disposable_validation_repositories'] = original[:1]
+        with self.assertRaisesRegex(ValueError, 'Both designated'): self.check()
+
+    def test_fhemmer_transfer_requires_effective_access_and_one_seat_receipt(self):
+        self.complete_transfer_gates()
+        row = next(r for r in self.matrix['repositories'] if r['repository_id'] == 1143951439)
+        row.update(health='pending_rollout', transfer_evidence_url='https://example.com/transfer')
+        with self.assertRaisesRegex(ValueError, 'post-transfer access and seat proof'): self.check()
+        row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
+            paid_seats=1, verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
+            permission_evidence_url='https://example.com/access', license_evidence_url='https://example.com/license')
+        self.check()
+        original = copy.deepcopy(row['post_transfer_access'])
+        for field, value in [('effective_permission','admin'), ('account','HemSoft'), ('repository','fhemmer/hs-cli-confluence-search'),
+                             ('filled_seats',2), ('paid_seats',2), ('paid_seats',True), ('permission_evidence_url',None),
+                             ('license_evidence_url',None), ('verified_at','2026-10-06T20:00:00')]:
+            row['post_transfer_access'] = copy.deepcopy(original)
+            row['post_transfer_access'][field] = value
+            with self.subTest(field=field,value=value), self.assertRaises(ValueError): self.check()
 
 
 if __name__ == '__main__':
