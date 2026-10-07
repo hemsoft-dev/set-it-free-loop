@@ -340,7 +340,40 @@ def validate_release_download(proof, directory, repository_id, repository, sourc
             download.get('actual_sha256') == download['expected_sha256'] and
             download.get('checksum_verified') is True and download.get('attestation_verified') is True,
             'Release download capture must verify its canonical asset, source SHA and matching SHA256')
-    observed_time(download.get('observed_at'), 'Release download')
+    downloaded_at = observed_time(download.get('observed_at'), 'Release download')
+    attestation = local_capture(download.get('attestation_evidence_url'), directory, 'Release asset attestation')
+    argv = ['gh', 'release', 'verify-asset', 'v' + version, attestation.get('asset_path'), '--repo', source, '--format', 'json']
+    require(text(attestation.get('asset_path')) and pathlib.PurePosixPath(attestation['asset_path']).name == download['asset_name'] and
+            attestation.get('argv') == argv and type(attestation.get('exit_code')) is int and attestation['exit_code'] == 0 and
+            attestation.get('command') == 'gh release verify-asset' and attestation.get('status') == 'completed' and
+            observed_time(attestation.get('observed_at'), 'Release asset attestation') <= downloaded_at,
+            'Release asset attestation needs the actual successful canonical asset verification command')
+    result = attestation.get('result', {})
+    verified = result.get('verificationResult', {})
+    statement = verified.get('statement', {})
+    envelope = result.get('attestation', {}).get('bundle', {}).get('dsseEnvelope', {})
+    try:
+        signed = json.loads(base64.b64decode(envelope.get('payload', ''), validate=True))
+    except (ValueError, TypeError) as exc:
+        raise ValueError('Release asset attestation needs its signed statement payload') from exc
+    require(signed == statement and statement.get('_type') == 'https://in-toto.io/Statement/v1' and
+            statement.get('predicateType') == 'https://in-toto.io/attestation/release/v0.2' and
+            envelope.get('payloadType') == 'application/vnd.in-toto+json' and bool(envelope.get('signatures')) and
+            verified.get('signature', {}).get('certificate', {}).get('subjectAlternativeName') == 'https://dotcom.releases.github.com' and
+            bool(verified.get('verifiedTimestamps')),
+            'Release asset attestation must contain the GitHub-verified signed release statement')
+    predicate = statement.get('predicate', {})
+    purl = 'pkg:github/' + source + '@v' + version
+    require(predicate.get('repository') == source and predicate.get('repositoryId') == '1169772257' and
+            predicate.get('tag') == 'v' + version and predicate.get('purl') == purl and
+            re.fullmatch(r'[1-9][0-9]*', predicate.get('databaseId', '')) is not None,
+            'Signed release statement must bind its canonical repository ID, release and tag')
+    subjects = statement.get('subject', [])
+    source_subjects = [x for x in subjects if x.get('uri') == purl]
+    asset_subjects = [x for x in subjects if x.get('name') == download['asset_name']]
+    require(len(source_subjects) == len(asset_subjects) == 1 and source_subjects[0].get('digest', {}).get('sha1') == sha and
+            asset_subjects[0].get('digest', {}).get('sha256') == download['expected_sha256'],
+            'Downloaded digest must match the independently verified signed asset and source commit')
 
 
 def validate_final_onboarding(proof, directory, expected, organization, app_id, cutover=None, terminal_times=None):
@@ -357,7 +390,7 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
     capture = json.loads((directory / reference).read_text())
     metadata = capture.get('metadata', {})
     require(metadata.get('id') == repo_id and metadata.get('full_name') == name and
-            metadata.get('private') == (proof['visibility'] == 'private') and metadata.get('archived') is False,
+            metadata.get('private') == (proof['visibility'] == 'private') and metadata.get('visibility') == proof['visibility'] and metadata.get('archived') is False,
             'Post-rollout onboarding must match independently captured repository identity and state')
     completion_reference = proof.get('rollout_completion_evidence_url')
     evidence(completion_reference, directory)
@@ -473,7 +506,7 @@ def validate_consumer_status(row, directory, revision, cutover):
             'Consumer status must corroborate every installed workflow without missing or drifted files')
 
 
-def validate_fixture_source(workflow, repository_id, repository, revision):
+def validate_workflow_contents(workflow, repository, revision):
     response = workflow.get('contents_response', {})
     body = response.get('data', {})
     path = '.github/workflows/sfl-pr-review-auto.yml'
@@ -525,7 +558,7 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
     for repo_id, repo in expected.items():
         current = actual.get(repo_id, {})
         require(current.get('full_name') == (repo['full_name'] if repo_id in retained else repo['destination']) and
-                current.get('private') == repo['private'] and current.get('archived') == repo['archived'] and
+                current.get('private') == repo['private'] and current.get('visibility') == repo['visibility'] and current.get('archived') == repo['archived'] and
                 current.get('default_branch') == repo['default_branch'],
                 'Final inventory must prove each baseline ID at its actual mapped location and preserve state')
     extras = proof.get('additional_repositories')
@@ -567,7 +600,7 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
                 all(actual[rid].get('default_branch') == branch for rid, branch in pilot_branches.items()),
                 'Final pilot default branches must match their independently captured and gated branches')
     for repo_id, (name, visibility) in allowed.items():
-        require(actual[repo_id]['full_name'] == name and actual[repo_id].get('private') == (visibility == 'private'),
+        require(actual[repo_id]['full_name'] == name and actual[repo_id].get('private') == (visibility == 'private') and actual[repo_id].get('visibility') == visibility,
                 'Final inventory additions must match their recorded identity and visibility')
 
 
@@ -649,6 +682,45 @@ def registered_review_external_id(row, directory, repository_id, repository):
         ':request:' + str(request_id) + ':at:' + str(int(request_at.timestamp() * 1000)) + \
         ':artifact:' + ('c' if kind == 'issue_comment' else 'r') + str(artifact_id)
     return external_id, request_at, artifact_at
+
+
+def validate_observer_execution(capture, row, directory, repository_id, repository, deployment_revision):
+    run, check = capture['run'], capture['check_run']
+    summaries = re.findall(r'<!-- sfl-gate-execution:([A-Za-z0-9+/=]+) -->', check.get('output', {}).get('summary', ''))
+    require(len(summaries) == 1, 'Successful gate needs its durable observer execution identity')
+    try:
+        execution = json.loads(base64.b64decode(summaries[0], validate=True))
+    except (ValueError, TypeError) as exc:
+        raise ValueError('Observer execution identity needs valid encoded JSON') from exc
+    require(type(run.get('id')) is int and run['id'] > 0 and type(check.get('id')) is int and check['id'] > 0 and
+            run['html_url'] == 'https://github.com/' + repository + '/actions/runs/' + str(run['id']) and
+            run.get('event') in {'issue_comment', 'pull_request_review'} and
+            execution.get('repository_id') == repository_id and execution.get('repository') == repository and
+            execution.get('run_id') == run['id'] and execution.get('run_attempt') == run.get('run_attempt') and
+            type(execution.get('run_attempt')) is int and execution['run_attempt'] > 0 and
+            execution.get('check_run_id') == check['id'] and execution.get('external_id') == check['external_id'] and
+            execution.get('execution_sha') == run['head_sha'] and execution.get('event') == run['event'] and
+            execution.get('workflow_path') == run['path'] and immutable_sha(execution.get('workflow_sha')),
+            'Successful check must bind its exact observer run, attempt, check ID and executed workflow')
+    proof = local_capture(capture.get('execution_evidence_url'), directory, 'Executed observer workflow')
+    require(proof.get('repository_id') == repository_id and proof.get('repository') == repository and
+            proof.get('run_id') == run['id'] and proof.get('run_attempt') == run['run_attempt'] and
+            proof.get('workflow_sha') == execution['workflow_sha'] and proof.get('deployment_revision') == deployment_revision,
+            'Executed workflow proof must bind its actual run and deployed revision')
+    require(observed_time(run.get('created_at'), 'Observer run creation') <=
+            observed_time(proof.get('observed_at'), 'Executed observer workflow') <=
+            observed_time(capture.get('observed_at'), 'Observer gate observation'),
+            'Executed workflow capture must follow its run and precede the completed gate observation')
+    for key, revision in [('executed_workflow', execution['workflow_sha']), ('deployed_workflow', deployment_revision)]:
+        workflow = proof.get(key, {})
+        require(text(workflow.get('content')), 'Executed observer needs actual workflow bytes')
+        validate_workflow_contents(workflow, repository, revision)
+    comparison = proof.get('comparison', {})
+    require(comparison.get('status') in {'ahead', 'identical'} and comparison.get('base_commit', {}).get('sha') == deployment_revision and
+            comparison.get('merge_base_commit', {}).get('sha') == deployment_revision and
+            comparison.get('html_url') == 'https://github.com/' + repository + '/compare/' + deployment_revision + '...' + execution['workflow_sha'] and
+            proof['executed_workflow']['content'] == proof['deployed_workflow']['content'],
+            'Actually executed observer must preserve the deployed workflow bytes and descend from its revision')
 
 
 def validate_registered_review(row, directory, repository, repository_id=None, target_branch=None, deployment_revision=None, cutover=None):
@@ -741,6 +813,7 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
             check.get('conclusion') == 'success' and check.get('html_url') == row['gate_run_url'] and
             check.get('external_id') == external_id,
             'Actions-owned check capture must prove the actual reviewed PR head and successful gate')
+    validate_observer_execution(captured_gate, row, directory, repository_id, repository, deployment_revision)
     created = observed_time(run.get('created_at'), 'Registered review run creation')
     completed = observed_time(run.get('updated_at'), 'Registered review run completion')
     check_started = observed_time(check.get('started_at'), 'Gate check creation')
@@ -955,7 +1028,7 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 text(workflow.get('content')), 'Fixture observer source must bind its actual deployed workflow and revision')
         require(observed_time(output.get('observed_at'), 'Fixture output') <= scenario_at,
                 'Fixture execution capture must follow generated output')
-        validate_fixture_source(workflow, repository_id, repository, revision)
+        validate_workflow_contents(workflow, repository, revision)
         runner = pathlib.Path(__file__).resolve().parents[2] / 'deployment/tests/run-org-observer-fixtures.cjs'
         argv = ['node', 'deployment/tests/run-org-observer-fixtures.cjs', '--workflow', 'docs/organization-migration/' + capture['workflow_evidence_url'],
                 '--repository-id', str(repository_id), '--repository', repository, '--deployment-sha', sha,
@@ -1703,7 +1776,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             metadata_capture = local_capture(receipts.get('metadata_evidence_url'), directory, 'Pilot metadata')
             metadata = metadata_capture.get('metadata', {})
             require(metadata.get('id') == extra_id and metadata.get('full_name') == name and
-                    metadata.get('private') == (extra['visibility'] == 'private') and metadata.get('archived') is False and
+                    metadata.get('private') == (extra['visibility'] == 'private') and metadata.get('visibility') == extra['visibility'] and metadata.get('archived') is False and
                     text(metadata.get('default_branch')) and
                     observed_time(metadata_capture.get('observed_at'), 'Pilot metadata') >= app_transferred_at,
                     'Pilot metadata must prove its current destination identity and actual default branch after cutover')

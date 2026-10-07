@@ -425,3 +425,20 @@ artifact. The successful check's full external ID must match their context,
 request ID, creation time and artifact ID. Pilot metadata supplies the actual
 default branch; its required gate and final inventory must preserve that branch.
 All offline regression captures are synthetic and do not claim live transfers.
+
+Successful observer checks now publish an execution record containing their
+Actions run ID and attempt, execution/workflow revisions, exact check ID and
+registered external ID. Completion reconciles that record with the actual
+successful observer run and independently captured executed/deployed workflow
+contents. The executed workflow must preserve the deployed bytes and descend
+from the deployed revision. Custom reviewed-head checks can have a different
+check suite from an issue-comment execution; suite equality is not required.
+This provenance output ships with the next release containing these templates.
+
+Release download proofs load a separate successful `gh release verify-asset`
+result and its signed GitHub release statement. The canonical repository ID,
+release tag, source commit and signed asset digest must match the download.
+Equal local expected/actual hashes and verification flags alone cannot clear
+this gate. Final inventory also compares the exact `visibility` value for every
+baseline repository, pilot and additional repository, preserving public or
+private access rather than accepting internal visibility through a private flag.
