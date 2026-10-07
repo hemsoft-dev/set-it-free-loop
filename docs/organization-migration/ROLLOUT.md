@@ -171,6 +171,15 @@ The [owner transfer preparation warning](sfl-app-transfer-warning-evidence.json)
 explicitly states that transfer automatically uninstalls the App from the personal
 account. Reconcile all 64 selected repositories and the two retained personal
 repositories before proceeding. No transfer has been submitted.
+The manual [owned App credential check](../../.github/workflows/verify-sfl-app-credential.yml)
+uses the existing source repository secret inside GitHub Actions to authenticate
+GET-only App identity and installation checks. Dispatch it on reviewed main and
+record its exact run/SHA. It checks the approved App/client IDs, owner, source
+installation and permission ceiling without reading keys into the agent or issuing
+installation tokens. A failure stays visible and requires correcting the credential
+or installation through the owner. It does not clear provider/model credentials,
+all-repository coverage or actual PR runtime gates.
+
 Do not count native Codex installation or a clean external Codex comment as proof
 that the intended SFL PR Reviewer runtime is restored. The
 [reviewer baseline](README.md#reviewer-baseline) records its discontinued state.
@@ -305,3 +314,10 @@ Close #138 only after data/settings/integration checks and new-source release
 installation pass. Close #139 only after every active target and new-repository
 onboarding passes, or an explicitly accepted scope exception is linked. An empty
 rollout evidence field never establishes completion.
+
+
+Additional mandatory record checks: every transfer-target ledger row must be verified before any source transfer or App cutover. A selected custom tier requires an existing custom manifest. Completed consumers must record matching manifest source/sourceSha/version/tier and canonical release/download verification receipts. Verified pilots require a strict required Actions-bound SFL gate, the human requester and write-or-higher permission receipt, the same-repository review PR, and an SFL-owned artifact bound to that requester, PR, head and base. At least one verified pilot must deploy a wider tier and supply wider workflow and auditor run receipts before organization rollout.
+
+The known yahtzee runner is a separate resource row reconciled with both runner captures. Its current registration and guest service are recorded in `yahtzee-runner-owner-evidence.json`; fresh smoke and post-transfer continuity remain pending. Preserve the existing registration first and replace it only if continuity fails. Never infer runner absence from an empty external-provider dashboard.
+
+Franz confirmed [none of the 65 transfer targets uses Azure Pipelines, Fly.io or Railway](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028753359). `provider-absence-owner-evidence.json` clears those usage candidates without changing historical App selections or clearing other mandatory gates.

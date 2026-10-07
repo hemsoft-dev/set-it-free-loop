@@ -152,6 +152,19 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     require(app['repository_selection'] == 'all',
                             'Cannot establish selected organization provider coverage')
                     candidates[repo_id].add('Blacksmith')
+    # Reconcile every observed repository runner, including the independent refresh.
+    runner_resources = set()
+    runtime = json.loads((directory / 'runtime-metadata.json').read_text())
+    refresh = json.loads((directory / 'runtime-refresh-evidence.json').read_text())
+    by_source = {repo['full_name']: repo_id for repo_id, repo in expected.items()}
+    for capture in runtime['repositories']:
+        for runner in capture['repository_runners'].get('data', []) or []:
+            runner_resources.add((by_source[capture['source']], str(runner['id'])))
+    for capture in refresh['records']:
+        if capture['kind'] == 'runners' and capture.get('state') == 'observed':
+            for runner in capture.get('data', {}).get('runners', []):
+                runner_resources.add((by_source[capture['repository']], str(runner['id'])))
+    seen_runner_resources = set()
     seen_ledger = set()
     ledger_statuses = {}
     for row in rows:
@@ -163,6 +176,12 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         repo = expected[repo_id]
         require(row.get('source') == repo['full_name'] and row.get('destination') == repo['destination'],
                 'Ledger identity or collision mapping mismatch')
+        if row.get('resource_kind') == 'repository_runner':
+            resource = (repo_id, row.get('resource_id'))
+            require(resource in runner_resources and resource not in seen_runner_resources,
+                    'Unexpected or duplicate repository runner resource')
+            require(row.get('provider') == 'GitHub Actions', 'Known runner cannot be recorded as provider absence')
+            seen_runner_resources.add(resource)
         captured = row.get('provider_candidates_from_app_access', '')
         require(isinstance(captured, str), 'Invalid provider candidate list')
         listed = [name.strip() for name in captured.split(';') if name.strip()]
@@ -191,6 +210,17 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(row.get('credential_validity') in {'verified', 'not_required'},
                     'Credential presence alone does not establish validity')
     require(seen_ledger == set(expected), 'Ledger must cover every baseline ID')
+    require(seen_runner_resources == runner_resources, 'Ledger must preserve every observed repository runner resource')
+    all_transfer_gates_verified = all(all(status == 'verified' for status in ledger_statuses[repo_id])
+                                      for repo_id in expected if repo_id not in retained)
+
+    app_transfer = matrix.get('owned_app_transfer')
+    require(isinstance(app_transfer, dict) and app_transfer.get('app_id') == owned_app_id and
+            app_transfer.get('status') in {'pending', 'verified'}, 'Owned App needs an explicit transfer state')
+    if app_transfer['status'] == 'verified':
+        require(all_transfer_gates_verified, 'All transfer-target ledger gates must be verified before App transfer')
+        require(app_transfer.get('owner') == inventory['destination_login'], 'Transferred App needs its canonical organization owner')
+        evidence(app_transfer.get('evidence_url'), directory)
 
     records = matrix.get('repositories')
     require(isinstance(records, list), 'Matrix needs repository records')
@@ -224,6 +254,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         protected_source = repo['full_name'] == 'HemSoft/set-it-free-loop'
         require((row.get('rollout_action') == 'protected_source_verify_workflows_in_place') == protected_source,
                 'Protected source completion mode must match the distribution repository')
+        if repo_id not in retained and (health != 'pending_transfer' or text(row.get('transfer_evidence_url'))):
+            require(all_transfer_gates_verified,
+                    'All transfer-target ledger gates must be verified before any transfer advances')
         if health in {'verified', 'archived_verified', 'scope_exception', 'source_verified'}:
             require(all(status == 'verified' for status in ledger_statuses[repo_id]),
                     'Completed rollout requires every integration row verified')
@@ -291,6 +324,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Verified rollout needs observed and selected addon lists')
             require(row['selected_tier'] != 'review', 'Verified selected tier must use canonical reviewer spelling')
             if row['selected_tier'] == 'custom':
+                require(row['installed_tier'] == 'custom', 'Selected custom tier requires an existing custom installation')
                 components = row['selected_components']
                 require(components is not None and bool(set(components) & supported_components) and
                         set(components) <= supported_components | {'labels', 'governance'},
@@ -306,6 +340,16 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             for field in ('deployment_sha', 'review_head_sha', 'review_base_sha'):
                 require(isinstance(row.get(field), str) and re.fullmatch(r'[0-9a-f]{40}', row[field]),
                         f'Verified rollout needs immutable {field}')
+            manifest = row.get('manifest_identity')
+            require(isinstance(manifest, dict) and manifest.get('source') == canonical_source and
+                    manifest.get('sourceSha') == row['deployment_sha'] and
+                    manifest.get('version') == row['manifest_version'] and
+                    manifest.get('tier') == row['selected_tier'],
+                    'Verified rollout manifest must bind source, release version, SHA and selected tier')
+            require(row.get('release_url') == 'https://github.com/' + canonical_source + '/releases/tag/v' + row['manifest_version'],
+                    'Verified rollout release must match its canonical source and version')
+            for field in ('manifest_evidence_url', 'release_url', 'release_download_verification_url'):
+                evidence(row.get(field), directory)
             require(row.get('destination_codex_access') == 'verified', 'Codex coverage must be verified')
             require(row.get('destination_sfl_app_access') == 'verified', 'SFL App coverage must be verified')
             for field in ('transfer_evidence_url', 'review_pr_url', 'gate_run_url', 'status_evidence_url'):
@@ -335,6 +379,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     extras = matrix.get('disposable_validation_repositories')
     require(isinstance(extras, list) and bool(extras), 'Disposable validation inventory must remain present')
     extra_ids, extra_names, verified_pilot_visibilities = set(), set(), set()
+    verified_wider_pilot = False
     for extra in extras:
         extra_id, name = extra.get('repository_id'), extra.get('repository')
         require(type(extra_id) is int and extra_id > 0 and extra_id not in expected and
@@ -373,6 +418,26 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         re.fullmatch(r'[0-9a-f]{40}', identity[field])
                         for field in ('reviewed_head_sha', 'reviewed_base_sha')),
                     'Verified pilot needs immutable SFL-owned review identity')
+            validate_source_review(receipts, directory, owned_app_id)
+            require(receipts.get('requester_permission') in {'write', 'maintain', 'admin'},
+                    'Verified pilot needs an authorized human requester')
+            require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,38}', receipts['review_requester']) is not None,
+                    'Verified pilot requester must be a human GitHub login')
+            evidence(receipts.get('requester_permission_evidence_url'), directory)
+            require(re.fullmatch('https://github.com/' + re.escape(name) + r'/pull/[1-9][0-9]*', receipts['review_pr_url']) is not None,
+                    'Verified pilot review must use a same-repository PR')
+            require(identity.get('review_pr_url') == receipts['review_pr_url'] and
+                    identity.get('requester') == receipts['review_requester'],
+                    'Pilot artifact must bind its recorded requester and reviewed PR')
+            runs = receipts.get('wider_workflow_run_urls')
+            require(isinstance(runs, list), 'Pilot needs an explicit wider workflow receipt list')
+            if runs:
+                require(manifest['tier'] in {'minimal', 'standard', 'full'},
+                        'Wider pilot must declare a wider deployed configuration')
+                for run in runs:
+                    evidence(run, directory)
+                evidence(receipts.get('auditor_run_url'), directory)
+                verified_wider_pilot = True
             verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)
         extra_names.add(name.casefold())
@@ -383,6 +448,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 'Completed rollout requires verified retained App dependencies')
         require(verified_pilot_visibilities == {'public', 'private'},
                 'Active rollout requires verified public and private onboarding pilots first')
+        require(verified_wider_pilot, 'Active rollout requires a verified wider-workflow and auditor pilot')
     return summary
 
 

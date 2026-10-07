@@ -2430,5 +2430,11 @@
       "validation_status": "pending",
       "validation_evidence": null
     }
-  ]
+  ],
+  "owned_app_transfer": {
+    "app_id": 4448946,
+    "status": "pending",
+    "owner": "HemSoft",
+    "evidence_url": null
+  }
 }

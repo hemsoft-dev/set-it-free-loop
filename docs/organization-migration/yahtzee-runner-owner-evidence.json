@@ -1,0 +1,46 @@
+{
+  "observed_at": "2026-10-07T01:15:01.403987+00:00",
+  "observer": "HemSoft on mini",
+  "repository": "HemSoft/yahtzee",
+  "runner": {
+    "id": 21,
+    "name": "mini-github-runner-01",
+    "status": "online",
+    "busy": false,
+    "labels": [
+      "self-hosted",
+      "Linux",
+      "X64",
+      "mini",
+      "yahtzee"
+    ],
+    "installed_version": "2.337.0"
+  },
+  "guest": {
+    "name": "github-runner-01",
+    "state": "running",
+    "vcpus": 4,
+    "memory_kib": 5242880,
+    "network": "default NAT",
+    "network_filter": "github-runner-locked",
+    "service": "actions.runner.HemSoft-yahtzee.mini-github-runner-01.service",
+    "service_state": "active",
+    "service_enabled": true
+  },
+  "non_secret_registration": {
+    "agentId": 21,
+    "agentName": "mini-github-runner-01",
+    "gitHubUrl": "https://github.com/HemSoft/yahtzee",
+    "workFolder": "_work"
+  },
+  "read_only_routes": [
+    "virsh qemu:///system dominfo/net-info/nwfilter-binding-list/domifaddr",
+    "strict guest SSH systemctl and selected .runner metadata",
+    "GitHub REST GET repository runners and workflow runs"
+  ],
+  "last_existing_smoke_url": "https://github.com/HemSoft/yahtzee/actions/runs/32323195241",
+  "fresh_smoke_and_post_transfer_continuity": "pending",
+  "credential_values_read": false,
+  "registration_changed": false,
+  "isolation_retested": false
+}
