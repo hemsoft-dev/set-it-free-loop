@@ -115,6 +115,11 @@ def validate_run_artifact(reference, directory, repository, run, artifact_name, 
             artifact.get('archive_download_url') == capture.get('download_url') ==
                 'https://api.github.com/repos/' + repository + '/actions/artifacts/' + str(artifact_id) + '/zip',
             'Actions output artifact must belong to the exact repository run and named output')
+    validate_resource_response(capture.get('artifact_response', {}), capture['request_url'], artifact)
+    require(observed_time(artifact.get('updated_at'), 'Artifact completion') <=
+            observed_time(capture['artifact_response'].get('observed_at'), 'Artifact metadata GET') <=
+            observed_time(capture.get('observed_at'), 'Artifact capture'),
+            'Artifact metadata GET must follow completion and precede the archive capture')
     require(observed_time(run['created_at'], 'Artifact workflow creation') <=
             observed_time(run.get('run_started_at'), 'Artifact run attempt start') <=
             observed_time(payload.get('observed_at'), 'Artifact output creation') <=
@@ -246,6 +251,29 @@ def bound_workflow_operation(operation, directory, repository_id, repository, sh
 
 
 
+def validate_branch_policy_responses(capture, repository, target_branch, earliest=None):
+    observed_at = observed_time(capture.get('observed_at'), 'Effective branch policy')
+    rules = capture.get('effective_rules', {})
+    classic = capture.get('classic_protection', {})
+    base = 'https://api.github.com/repos/' + repository
+    branch = urllib.parse.quote(target_branch, safe='')
+    require(rules.get('state') == 'observed' and isinstance(rules.get('data'), list) and
+            rules.get('method') == 'GET' and rules.get('http_status') == 200 and
+            rules.get('request_url') == base + '/rules/branches/' + branch,
+            'Branch policy needs its exact successful effective-rules GET')
+    require(classic.get('method') == 'GET' and
+            classic.get('request_url') == base + '/branches/' + branch + '/protection' and
+            ((classic.get('state') == 'observed' and classic.get('http_status') == 200 and isinstance(classic.get('data'), dict)) or
+             (classic.get('state') == 'absent' and classic.get('http_status') == 404 and
+              classic.get('data', {}).get('message') == 'Branch not protected')),
+            'Branch policy needs its exact protection GET or explicit unprotected-branch404')
+    for response in (rules, classic):
+        at = observed_time(response.get('observed_at'), 'Effective policy response')
+        require(at <= observed_at and (earliest is None or at >= earliest),
+                'Effective policy primary responses are outside the terminal freshness boundary')
+    return rules, classic
+
+
 def validate_gate_policy(policy, directory, repository_id, repository, target_branch, earliest=None):
     require(isinstance(policy, dict) and policy.get('state') == 'required' and
             policy.get('context') == 'SFL Reviewer Gate Runner' and policy.get('app_id') == 15368 and
@@ -263,32 +291,12 @@ def validate_gate_policy(policy, directory, repository_id, repository, target_br
     require(observed_at.tzinfo is not None, 'Gate policy capture needs a timezone')
     if earliest is not None:
         require(observed_at >= earliest, 'Effective gate policy must follow cutover and the completed review run')
-    rules = capture.get('effective_rules', {})
-    base = 'https://api.github.com/repos/' + repository
-    branch = urllib.parse.quote(target_branch, safe='')
-    require(rules.get('state') == 'observed' and isinstance(rules.get('data'), list) and
-            rules.get('method') == 'GET' and rules.get('http_status') == 200 and
-            rules.get('request_url') == base + '/rules/branches/' + branch,
-            'Gate policy capture needs observed effective branch rules')
+    rules, classic = validate_branch_policy_responses(capture, repository, target_branch, earliest)
     required = any(rule.get('type') == 'required_status_checks' and
                    rule.get('parameters', {}).get('strict_required_status_checks_policy') is True and
                    any(check.get('context') == policy['context'] and check.get('integration_id') == 15368
                        for check in rule.get('parameters', {}).get('required_status_checks', []))
                    for rule in rules['data'])
-    classic = capture.get('classic_protection', {})
-    require(classic.get('state') == 'observed' or
-            (classic.get('state') == 'absent' and classic.get('http_status') == 404),
-            'Gate policy capture needs resolved classic protection')
-    require(classic.get('method') == 'GET' and
-            classic.get('request_url') == base + '/branches/' + branch + '/protection' and
-            ((classic['state'] == 'observed' and classic.get('http_status') == 200 and isinstance(classic.get('data'), dict)) or
-             (classic['state'] == 'absent' and classic.get('http_status') == 404 and
-              classic.get('data', {}).get('message') == 'Branch not protected')),
-            'Gate policy needs exact successful protection GETs or an explicit unprotected-branch404')
-    for response in (rules, classic):
-        at = observed_time(response.get('observed_at'), 'Effective policy response')
-        require(at <= observed_at and (earliest is None or at >= earliest),
-                'Effective policy primary responses are outside the terminal freshness boundary')
     checks = classic.get('data', {}).get('required_status_checks') or {}
     required = required or (checks.get('strict') is True and
                            any(check.get('context') == policy['context'] and check.get('app_id') == 15368
@@ -391,33 +399,27 @@ def protection_contract(repo, directory=None):
     return {'rulesets': rules, 'classic': classic}
 
 
-def validate_protection_preservation(proof, directory, repo, cutover=None):
-    require(isinstance(proof, dict) and proof.get('repository_id') == repo['id'] and
-            proof.get('repository') == repo['destination'] and immutable_sha(proof.get('revision_sha')) and
-            isinstance(proof.get('rulesets'), list) and isinstance(proof.get('classic'), dict),
-            'Completed transfer needs structured destination effective-policy evidence')
-    capture = local_capture(proof.get('evidence_url'), directory, 'Destination protections')
-    require(capture.get('phase') == 'post_transfer' and
-            all(capture.get(field) == proof.get(field) for field in
-                ('repository_id', 'repository', 'revision_sha', 'observed_at', 'rulesets', 'classic')),
-            'Destination protections must match the independent post-transfer capture')
-    timestamp = observed_time(capture.get('observed_at'), 'Destination protections')
-    if cutover is not None:
-        require(timestamp > cutover, 'Destination protections must be captured after source/App cutover')
-    base = 'https://api.github.com/repos/' + repo['destination']
+def validate_protection_responses(capture, repo, repository, revision, timestamp, earliest=None, strict_after=False):
+    base = 'https://api.github.com/repos/' + repository
     metadata = capture.get('repository_response', {})
     validate_resource_response(metadata, base, metadata.get('data'))
     require(all(metadata['data'].get(field) == value for field, value in
-        (('id', repo['id']), ('full_name', repo['destination']), ('default_branch', repo['default_branch']),
+        (('id', repo['id']), ('full_name', repository), ('default_branch', repo['default_branch']),
          ('private', repo['private']), ('visibility', repo['visibility']), ('archived', repo['archived']))),
         'Destination protection metadata must derive from its actual preserved repository identity')
     ref = capture.get('revision_response', {})
-    validate_resource_response(ref, base + '/git/ref/heads/' + urllib.parse.quote(repo['default_branch'], safe=''), ref.get('data'))
-    require(ref['data'].get('ref') == 'refs/heads/' + repo['default_branch'] and
-            ref['data'].get('object', {}).get('sha') == proof['revision_sha'],
-            'Destination protections need their current default branch revision')
+    ref_url = base + '/git/ref/heads/' + urllib.parse.quote(repo['default_branch'], safe='')
+    if revision is None:
+        require(repo['id'] == 996911586 and ref.get('method') == 'GET' and ref.get('request_url') == ref_url and
+                ref.get('http_status') in {404,409} and ref.get('data',{}).get('message') in {'Not Found','Git Repository is empty.'},
+                'Only the sealed uninitialized source may have an unavailable protection revision')
+    else:
+        validate_resource_response(ref, ref_url, ref.get('data'))
+        require(ref['data'].get('ref') == 'refs/heads/' + repo['default_branch'] and
+                ref['data'].get('object', {}).get('sha') == revision,
+                'Protection responses need their current default branch revision')
     rules = validate_raw_page_chain(capture.get('ruleset_pages'), base + '/rulesets?includes_parents=true&per_page=100',
-        timestamp, 'Destination rulesets', earliest=cutover)
+        timestamp, 'Destination rulesets', earliest=earliest)
     details = capture.get('ruleset_responses', {})
     ids = [rule.get('id') for rule in rules]
     require(all(type(rule_id) is int and rule_id > 0 for rule_id in ids) and len(ids) == len(set(ids)) and
@@ -431,7 +433,7 @@ def validate_protection_preservation(proof, directory, repo, cutover=None):
         actual_rules.append({key: value.get(key) for key in
             ('id', 'name', 'target', 'enforcement', 'conditions', 'rules', 'bypass_actors')})
     branches = validate_raw_page_chain(capture.get('protected_branch_pages'), base + '/branches?protected=true&per_page=100',
-        timestamp, 'Destination protected branches', earliest=cutover)
+        timestamp, 'Destination protected branches', earliest=earliest)
     names = [branch.get('name') for branch in branches]
     classic = capture.get('classic_responses', {})
     require(string_list(names) and len(names) == len(set(names)) and isinstance(classic, dict) and set(classic) == set(names),
@@ -445,12 +447,29 @@ def validate_protection_preservation(proof, directory, repo, cutover=None):
              (response.get('http_status') == 404 and isinstance(value, dict) and value.get('message') == 'Branch not protected')),
             'Destination classic protection needs exact successful GETs or explicit unprotected responses')
         if response['http_status'] == 200:actual_classic[name] = value
-    require(actual_rules == proof['rulesets'] and actual_classic == proof['classic'],
-            'Destination preservation collections must derive from complete primary API responses')
     for response in [metadata, ref, *details.values(), *classic.values()]:
         at = observed_time(response.get('observed_at'), 'Destination preservation response')
-        require(at <= timestamp and (cutover is None or at > cutover),
-                'Destination preservation responses must follow the cutover boundary')
+        require(at <= timestamp and (earliest is None or (at > earliest if strict_after else at >= earliest)),
+                'Destination preservation responses must follow the earliest boundary')
+    return {'rulesets':actual_rules, 'classic':actual_classic}
+
+
+def validate_protection_preservation(proof, directory, repo, cutover=None):
+    require(isinstance(proof, dict) and proof.get('repository_id') == repo['id'] and
+            proof.get('repository') == repo['destination'] and immutable_sha(proof.get('revision_sha')) and
+            isinstance(proof.get('rulesets'), list) and isinstance(proof.get('classic'), dict),
+            'Completed transfer needs structured destination effective-policy evidence')
+    capture = local_capture(proof.get('evidence_url'), directory, 'Destination protections')
+    require(capture.get('phase') == 'post_transfer' and
+            all(capture.get(field) == proof.get(field) for field in
+                ('repository_id', 'repository', 'revision_sha', 'observed_at', 'rulesets', 'classic')),
+            'Destination protections must match the independent post-transfer capture')
+    timestamp = observed_time(capture.get('observed_at'), 'Destination protections')
+    if cutover is not None:
+        require(timestamp > cutover, 'Destination protections must be captured after source/App cutover')
+    actual = validate_protection_responses(capture, repo, repo['destination'], proof['revision_sha'], timestamp, cutover, True)
+    require(actual == {'rulesets':proof['rulesets'], 'classic':proof['classic']},
+            'Destination preservation collections must derive from complete primary API responses')
     baseline = protection_contract(repo, directory)
     for rule in baseline['rulesets']:
         require(rule in proof['rulesets'], 'Destination must preserve every unrelated baseline ruleset')
@@ -1310,6 +1329,52 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
 
 
 
+def source_tag_heads(row, repo, earliest=None):
+    base = 'https://api.github.com/repos/' + repo['full_name']
+    response = row.get('tag_refs_response', {})
+    timestamp = observed_time(row.get('observed_at'), 'Source tag capture')
+    at = observed_time(response.get('observed_at'), 'Source tag refs GET')
+    require(response.get('method') == 'GET' and response.get('request_url') == base + '/git/matching-refs/tags/' and
+            at <= timestamp and (earliest is None or at >= earliest),
+            'Source tags need their exact current matching-refs GET')
+    if response.get('http_status') == 409:
+        require(repo['id'] == 996911586 and row.get('state') == 'uninitialized' and
+                response.get('data', {}).get('message') == 'Git Repository is empty.',
+                'Only the sealed empty repository may have an unavailable tag namespace')
+        refs = []
+    else:
+        refs = response.get('data')
+        validate_resource_response(response, base + '/git/matching-refs/tags/', refs)
+        require(isinstance(refs, list) and 'rel="next"' not in response.get('response_headers', {}).get('Link', ''),
+                'Source tag namespace must be the complete matching-refs array')
+    objects = row.get('tag_object_responses', {})
+    require(isinstance(objects, dict), 'Annotated source tags need their immutable object responses')
+    tags, used_objects = {}, set()
+    for ref in refs:
+        name, obj = ref.get('ref'), ref.get('object', {})
+        require(text(name) and name.startswith('refs/tags/') and len(name) > len('refs/tags/') and
+                name not in tags and obj.get('type') in {'commit','tag','tree','blob'} and immutable_sha(obj.get('sha')),
+                'Source tags need unique complete names and immutable object identities')
+        original = dict(obj)
+        visited = set()
+        while obj['type'] == 'tag':
+            sha = obj['sha']
+            require(sha not in visited and len(visited) < 64, 'Annotated tag resolution must terminate without cycles')
+            visited.add(sha);used_objects.add(sha)
+            primary = objects.get(sha, {});value = primary.get('data')
+            validate_resource_response(primary, base + '/git/tags/' + sha, value)
+            object_at = observed_time(primary.get('observed_at'), 'Annotated tag object GET')
+            require(at <= object_at <= timestamp and isinstance(value, dict) and value.get('sha') == sha and
+                    value.get('object', {}).get('type') in {'commit','tag','tree','blob'} and
+                    immutable_sha(value.get('object', {}).get('sha')),
+                    'Annotated tag objects must match their exact immutable identities and capture interval')
+            obj = value['object']
+        tags[name] = {'type':original['type'], 'sha':original['sha'], 'target_type':obj['type'],
+                      'commit_sha':obj['sha'] if obj['type'] == 'commit' else None}
+    require(set(objects) == used_objects, 'Tag object captures must cover exactly every traversed annotation')
+    return tags
+
+
 def source_revision(row, repo, earliest=None):
     """Bind a complete branch list and default head to raw immutable Git data."""
     base = 'https://api.github.com/repos/' + repo['full_name']
@@ -1326,6 +1391,7 @@ def source_revision(row, repo, earliest=None):
         require(text(name) and name not in branch_heads and immutable_sha(sha),
                 'Source branches need unique names and immutable heads')
         branch_heads[name] = sha
+    tags = source_tag_heads(row, repo, earliest)
     ref = row.get('ref_response', {})
     require(ref.get('request_url') == base + '/git/ref/heads/' + repo['default_branch'],
             'Source default head needs its exact Git reference GET')
@@ -1333,7 +1399,8 @@ def source_revision(row, repo, earliest=None):
         require(repo['id'] == 996911586 and row.get('state') == 'uninitialized' and
                 ref.get('http_status') in {404, 409} and row.get('head_sha') is None and row.get('tree_sha') is None,
                 'Only the sealed uninitialized repository may have no source revision')
-        return None, None, branch_heads
+        require(not tags, 'Uninitialized source cannot hide an existing tag namespace')
+        return None, None, branch_heads, tags
     head, tree = row.get('head_sha'), row.get('tree_sha')
     commit = row.get('commit_response', {})
     require(immutable_sha(head) and immutable_sha(tree) and row.get('state') == 'observed' and
@@ -1344,7 +1411,7 @@ def source_revision(row, repo, earliest=None):
             commit.get('request_url') == base + '/git/commits/' + head and commit.get('http_status') == 200 and
             commit.get('data', {}).get('sha') == head and commit['data'].get('tree', {}).get('sha') == tree,
             'Source default branch must match its immutable commit and tree')
-    return head, tree, branch_heads
+    return head, tree, branch_heads, tags
 
 
 def validate_reference_scan(reference, directory, inventory):
@@ -1368,10 +1435,10 @@ def validate_reference_scan(reference, directory, inventory):
             require(row.get('files') == [], 'Uninitialized source cannot claim scanned files')
             continue
         branch_scans = row.get('branch_scans')
-        other_heads = set(revision[2].values()) - {revision[0]}
+        other_heads = (set(revision[2].values()) | {tag['commit_sha'] for tag in revision[3].values() if tag['commit_sha']}) - {revision[0]}
         require(isinstance(branch_scans, list) and len(branch_scans) == len(other_heads) and
                 {branch.get('head_sha') for branch in branch_scans} == other_heads,
-                'Fresh scan must inspect every distinct non-default branch head')
+                'Fresh scan must inspect every distinct non-default branch and tagged commit')
         references, unresolved_secret_scope = set(), False
         for branch in [row] + branch_scans:
             head, tree_sha = branch.get('head_sha'), branch.get('tree_sha')
@@ -1478,12 +1545,19 @@ def validate_source_refresh(proof, directory, inventory, credential):
             require(current.get('full_name', '').startswith(account['owner'] + '/') and
                     all(current.get(k) == baseline[k] for k in ('full_name','private','visibility','archived','default_branch')),
                     'Source repository metadata changed; reconcile the transfer baseline')
-            require(current.get('protections') == protection_contract(baseline, directory),
-                    'Source protections changed; reconcile the preservation baseline')
             head = current.get('source_head', {})
             require(scanned_at <= observed_time(head.get('observed_at'), 'Current source head') <= timestamp and
                     source_revision(head, baseline, scanned_at) == revisions[repo_id],
-                    'Source head, tree or branches changed after reference scan; rescan and reconcile before transfer')
+                    'Source head, tree, branch or tag refs changed after reference scan; rescan and reconcile before transfer')
+            policy = local_capture(current.get('protection_evidence_url'), directory, 'Fresh source protection')
+            policy_at = observed_time(policy.get('observed_at'), 'Fresh source protection')
+            require(policy.get('phase') == 'pre_cutover' and policy.get('repository_id') == repo_id and
+                    policy.get('repository') == baseline['full_name'] and policy.get('revision_sha') == head.get('head_sha') and
+                    scanned_at <= policy_at <= timestamp,
+                    'Fresh source policy must bind its repository revision and current refresh boundary')
+            actual_policy = validate_protection_responses(policy, baseline, baseline['full_name'], head.get('head_sha'), policy_at, scanned_at)
+            require(current.get('protections') == actual_policy == protection_contract(baseline, directory),
+                    'Source protections must derive from complete current primary GETs and match the reviewed preservation baseline')
             secret_rows = validate_raw_page_chain(current.get('secret_pages'),
                 'https://api.github.com/repos/' + baseline['full_name'] + '/actions/secrets?per_page=100',
                 timestamp, 'Fresh repository secret names', field='secrets', earliest=scanned_at)
@@ -1903,7 +1977,7 @@ def validate_repository_transfer(reference, directory, repo, cutoff, scanned_rev
             'Transferred branch observations need their actual destination repository identity')
     destination = dict(repo, full_name=repo['destination'])
     require(source_revision(heads, destination, transferred_at) == scanned_revision,
-            'Transferred branch heads changed after the credential/reference scan; reconcile before proceeding')
+            'Transferred branch heads or tag refs changed after the credential/reference scan; reconcile before proceeding')
     return transferred_at
 
 
@@ -2030,6 +2104,11 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 run.get('path') == '.github/workflows/sfl-pr-review-auto.yml' and
                 run.get('status') == 'completed' and run.get('conclusion') in {'success','failure'},
                 'Live scenario needs its terminal deployed-observer Actions run')
+        validate_resource_response(capture.get('run_response', {}), 'https://api.github.com/repos/' + repository +
+            '/actions/runs/' + str(run.get('id')), run)
+        require(observed_time(run.get('updated_at'), 'Live scenario completion') <=
+                observed_time(capture['run_response'].get('observed_at'), 'Live scenario run GET') <= scenario_at,
+                'Live scenario run GET must follow completion and precede its capture')
         terminal_run_time(run, scenario_at, 'Live scenario')
         if cutover is not None:
             require(observed_time(run.get('created_at'), 'Live scenario creation') >= cutover and
@@ -2298,12 +2377,7 @@ def validate_pilot_cleanup(receipts, directory, repository_id, repository, branc
     require(policy.get('repository_id') == repository_id and policy.get('repository') == repository and
             policy.get('branch') == branch and observed_time(policy.get('observed_at'), 'Final pilot policy') >= removed_at,
             'Final pilot policy must follow gate removal on the actual default branch')
-    classic = policy.get('classic_protection', {})
-    rules = policy.get('effective_rules', {})
-    require((classic.get('state') == 'observed' or
-             (classic.get('state') == 'absent' and classic.get('http_status') == 404)) and
-            rules.get('state') == 'observed' and isinstance(rules.get('data'), list),
-            'Final pilot gate policy needs independently observed classic and effective rules')
+    rules, classic = validate_branch_policy_responses(policy, repository, branch, removed_at)
     checks = classic.get('data', {}).get('required_status_checks') or {}
     contexts = list(checks.get('contexts', [])) + [c.get('context') for c in checks.get('checks', [])]
     contexts += [c.get('context') for r in rules['data'] if r.get('type') == 'required_status_checks'

@@ -736,3 +736,26 @@ Both shared and repository-specific SFL installation GETs must contain the
 approved granted permissions. Final healthy status must preserve the revision
 from repeated sync. New-repository creation metadata must come from its exact
 successful repository GET observed after creation.
+
+
+Before cutover, capture the complete `/git/matching-refs/tags/` array for every
+source and immutable `/git/tags/{sha}` responses for each annotated tag chain.
+Include every distinct tagged commit in the workflow/manifest scan. Repeat the
+tag capture during source refresh and after each transfer; object identities
+and peeled targets must match the scan. The sealed empty n8n-workflows repository
+may return its exact empty-repository409 response, confirmed by an owner GET.
+Other failed tag collections remain blockers.
+
+Capture each source's current protection contract from complete raw policy
+responses, including repository/default-ref metadata, every ruleset detail and
+classic branch protection. Compare it with the reviewed preservation baseline
+before proceeding. This rejects a newly strengthened source rule until its
+preservation is reconciled. Keep the original inventory seal and unavailable
+endpoint records unchanged.
+
+For live scenario proof, capture the exact Actions run and artifact metadata
+GETs and the immutable downloaded archive. Both metadata responses must match
+those recorded objects and follow their terminal observations. After pilot
+uninstall-gate, capture successful default-branch effective rules plus successful
+classic protection or the exact unprotected-branch404 response. Both observations
+must follow the actual removal and precede the final policy capture.

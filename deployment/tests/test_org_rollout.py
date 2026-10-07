@@ -85,6 +85,9 @@ class RolloutTests(unittest.TestCase):
     def capture(self, value, directory=DIRECTORY, prefix='fixture-capture-'):
         self.bind_final_pages(value)
         if 'comment' in value and 'request_url' in value:value.setdefault('method','GET')
+        if 'artifact' in value and 'request_url' in value:
+            value.setdefault('artifact_response',{'method':'GET','http_status':200,'request_url':value['request_url'],
+                'observed_at':value['observed_at'],'data':copy.deepcopy(value['artifact'])})
         if 'pull_request' in value and 'request_url' in value:
             value.setdefault('method','GET');value.setdefault('http_status',200);value.setdefault('data',copy.deepcopy(value['pull_request']))
         if isinstance(value.get('run'),dict) and value['run'].get('html_url'):
@@ -96,7 +99,7 @@ class RolloutTests(unittest.TestCase):
                 check=value['check_run'];check.setdefault('id',int(check['html_url'].rsplit('/',1)[1]))
                 value.setdefault('check_response',{'method':'GET','http_status':200,'observed_at':value['observed_at'],
                     'request_url':'https://api.github.com/repos/'+name+'/check-runs/'+str(check['id']),'data':copy.deepcopy(check)})
-        if value.get('phase')=='post_transfer' and 'rulesets' in value and 'classic' in value and any(
+        if value.get('phase') in {'post_transfer','pre_cutover'} and 'rulesets' in value and 'classic' in value and any(
                 r['id']==value.get('repository_id') for r in self.inventory['repositories']):
             repo=next(r for r in self.inventory['repositories'] if r['id']==value['repository_id'])
             base='https://api.github.com/repos/'+value['repository'];at=value['observed_at']
@@ -106,6 +109,9 @@ class RolloutTests(unittest.TestCase):
             value.setdefault('repository_response',response('',metadata))
             value.setdefault('revision_response',response('/git/ref/heads/'+urllib.parse.quote(repo['default_branch'],safe=''),
                 {'ref':'refs/heads/'+repo['default_branch'],'object':{'sha':value['revision_sha']}}))
+            if value['revision_sha'] is None:
+                value['revision_response']=response('/git/ref/heads/'+urllib.parse.quote(repo['default_branch'],safe=''),
+                    {'message':'Git Repository is empty.'},409)
             value.setdefault('ruleset_pages',[response('/rulesets?includes_parents=true&per_page=100',[{'id':r['id']} for r in value['rulesets']])])
             value.setdefault('ruleset_responses',{str(r['id']):response('/rulesets/'+str(r['id']),r) for r in value['rulesets']})
             names=sorted(set(value['classic'])|({value['branch']} if 'effective_rules' in value else set()))
@@ -141,6 +147,10 @@ class RolloutTests(unittest.TestCase):
             if isinstance(node,dict):
                 if isinstance(node.get('branches_response'),dict):
                     branches=node['branches_response']
+                    node.setdefault('tag_refs_response',{'method':'GET','http_status':200,
+                        'request_url':branches['request_url'].split('/branches?')[0]+'/git/matching-refs/tags/',
+                        'observed_at':node.get('observed_at',value.get('observed_at')),'response_headers':{},'data':[]})
+                    node.setdefault('tag_object_responses',{})
                     if 'pages' not in branches:
                         branches['pages']=[{'method':'GET','http_status':branches.get('http_status'),
                             'request_url':branches.get('request_url'),'data':copy.deepcopy(branches.get('data')),
@@ -166,6 +176,8 @@ class RolloutTests(unittest.TestCase):
         heads=json.loads(json.dumps(original).replace(row['source'],row['destination']))
         heads.update(phase='post_transfer',repository_id=row['repository_id'],repository=row['destination'],observed_at='2026-10-07T01:50:45Z')
         for page in heads['branches_response']['pages']:page['observed_at']=heads['observed_at']
+        heads['tag_refs_response']['observed_at']=heads['observed_at']
+        for primary in heads['tag_object_responses'].values():primary['observed_at']=heads['observed_at']
         heads['repository_response']={'method':'GET','http_status':200,'observed_at':heads['observed_at'],
             'request_url':'https://api.github.com/repos/'+row['destination'],'data':{'id':row['repository_id'],'full_name':row['destination']}}
         head_evidence=self.capture(heads)
@@ -388,6 +400,9 @@ class RolloutTests(unittest.TestCase):
                         'tree_response':{'request_url':base+'/git/trees/'+str(tree)+'?recursive=1','http_status':200,
                             'data':{'sha':tree,'truncated':False,'tree':[]}},'files':[]})
                 repo['source_head']=dict(data,observed_at='2026-10-07T01:49:30Z')
+                repo['protection_evidence_url']=self.capture({'phase':'pre_cutover','repository_id':repo['id'],
+                    'repository':repo['full_name'],'revision_sha':head,'observed_at':'2026-10-07T01:49:30Z',
+                    **copy.deepcopy(repo['protections'])})
                 for previous in json.loads((DIRECTORY/'workflow-reference-evidence.json').read_text())['records']:
                     if previous['repository_id']!=repo['id'] or previous.get('state')!='observed' or 'manifest' not in previous:continue
                     name=previous['path'];body=json.dumps(previous['manifest']).encode()
@@ -808,6 +823,9 @@ class RolloutTests(unittest.TestCase):
             'id':run_id,'run_attempt':1,'run_started_at':'2026-10-07T02:00:00Z','html_url':result['evidence_url'],'head_sha':'b'*40,
             'path':'.github/workflows/sfl-pr-review-auto.yml','status':'completed','conclusion':'success',
             'created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'})
+        capture['run_response']={'method':'GET','http_status':200,
+            'request_url':'https://api.github.com/repos/'+pilot['repository']+'/actions/runs/'+str(run_id),
+            'observed_at':capture['observed_at'],'data':copy.deepcopy(capture['run'])}
         output_path=DIRECTORY/capture['output_evidence_url'];output=json.loads(output_path.read_text())
         output.update(mode='live',run_id=run_id,run_attempt=1);output_path.write_text(json.dumps(output))
         stream=io.BytesIO()
@@ -2917,6 +2935,8 @@ class RolloutTests(unittest.TestCase):
         self.bind_terminal_capture(cleanup,timestamp=output['observed_at'])
         final_policy_path=DIRECTORY/pilot['validation_evidence']['final_gate_policy_evidence_url']
         final_policy=json.loads(final_policy_path.read_text());final_policy['observed_at']=output['observed_at']
+        for field in ('effective_rules','classic_protection'):
+            final_policy[field]['observed_at']=output['observed_at']
         final_policy_path.write_text(json.dumps(final_policy))
         path.write_text(json.dumps(original));self.check()
 
@@ -3066,7 +3086,10 @@ class RolloutTests(unittest.TestCase):
         policy['classic_protection']['request_url']=policy['classic_protection']['request_url'].replace('/main','/develop')
         policy_path.write_text(json.dumps(policy))
         final_policy_path=DIRECTORY/receipts['final_gate_policy_evidence_url'];final_policy=json.loads(final_policy_path.read_text())
-        final_policy['branch']='develop';final_policy_path.write_text(json.dumps(final_policy));self.check()
+        final_policy['branch']='develop'
+        for field in ('effective_rules','classic_protection'):
+            final_policy[field]['request_url']=final_policy[field]['request_url'].replace('/main','/develop')
+        final_policy_path.write_text(json.dumps(final_policy));self.check()
         repos=[{'id':rid,'full_name':name,'private':visibility=='private','visibility':visibility,'archived':False,'default_branch':'main'}
             for rid,(name,visibility) in validator.APPROVED_PILOTS.items()]
         capture={'observed_at':'2026-10-07T04:00:00Z','accounts':[{'owner':o,'state':'observed','all_pages':True,
@@ -3232,7 +3255,8 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         metadata['repository_selection']='selected';stream=io.BytesIO()
         with zipfile.ZipFile(stream,'w') as archive:archive.writestr('sfl-app-credential-metadata.json',json.dumps(metadata))
         capture['archive_base64']=base64.b64encode(stream.getvalue()).decode()
-        capture['artifact']['digest']='sha256:'+hashlib.sha256(stream.getvalue()).hexdigest();artifact_path.write_text(json.dumps(capture))
+        capture['artifact']['digest']='sha256:'+hashlib.sha256(stream.getvalue()).hexdigest()
+        capture['artifact_response']['data']=copy.deepcopy(capture['artifact']);artifact_path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'independently downloaded output'):self.check()
         artifact_path.write_text(json.dumps(original));self.check()
         run_path=DIRECTORY/proof['workflow_run_evidence_url'];run=json.loads(run_path.read_text())
@@ -3296,7 +3320,10 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         path.write_text(json.dumps(capture))
         self.bind_terminal_capture(receipts['operation_receipts']['gate_uninstall_evidence_url'],timestamp='2026-10-07T02:02:00Z')
         path=DIRECTORY/receipts['final_gate_policy_evidence_url'];capture=json.loads(path.read_text())
-        capture['observed_at']='2026-10-07T02:03:00Z';path.write_text(json.dumps(capture))
+        capture['observed_at']='2026-10-07T02:03:00Z'
+        for field in ('effective_rules','classic_protection'):
+            capture[field]['observed_at']=capture['observed_at']
+        path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'Both pilots must finish'):self.check()
 
     def test_runner_smoke_executes_on_preserved_runner(self):
@@ -3416,6 +3443,8 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         head_path=DIRECTORY/capture['destination_heads_evidence_url'];heads=json.loads(head_path.read_text())
         heads['observed_at']=capture['observed_at'];heads['repository_response']['observed_at']=capture['observed_at']
         for page in heads['branches_response']['pages']:page['observed_at']=capture['observed_at']
+        heads['tag_refs_response']['observed_at']=capture['observed_at']
+        for response in heads['tag_object_responses'].values():response['observed_at']=capture['observed_at']
         head_path.write_text(json.dumps(heads))
         transfer_path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'follow repository transfer'):self.check()
@@ -3616,9 +3645,11 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
     def test_live_scenario_creation_must_follow_actual_pilot_cutoff(self):
         self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0]
         result,capture=self.bind_live_scenario(pilot);path=DIRECTORY/result['capture_evidence_url'];self.check()
-        capture['run']['created_at']='2026-10-07T01:50:00Z';path.write_text(json.dumps(capture))
+        capture['run']['created_at']='2026-10-07T01:50:00Z'
+        capture['run_response']['data']=copy.deepcopy(capture['run']);path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'Live scenario run and attempt must start after'):self.check()
-        capture['run']['created_at']='2026-10-07T02:00:00Z';path.write_text(json.dumps(capture));self.check()
+        capture['run']['created_at']='2026-10-07T02:00:00Z'
+        capture['run_response']['data']=copy.deepcopy(capture['run']);path.write_text(json.dumps(capture));self.check()
 
     def test_runner_service_must_bind_preserved_unit_and_systemctl_output(self):
         self.complete_pilots();row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
@@ -3729,6 +3760,10 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
                 file['revision_sha']='d'*40
                 file['contents_response']['request_url']=file['contents_response']['request_url'].replace('e'*40,'d'*40)
         scan_path.write_text(json.dumps(scan));source_path.write_text(json.dumps(source))
+        current_row=next(r for a in source['accounts'] for r in a['repositories'] if r['id']==1169772257)
+        policy_path=DIRECTORY/current_row['protection_evidence_url'];policy=json.loads(policy_path.read_text())
+        policy['revision_sha']='d'*40;policy['revision_response']['data']['object']['sha']='d'*40
+        policy_path.write_text(json.dumps(policy))
         with self.assertRaisesRegex(ValueError,'execute the current source main'):self.check()
 
     def test_provider_success_checks_actual_vercel_binding_production_and_aliases(self):
@@ -4543,6 +4578,131 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             head_path.write_text(json.dumps(value))
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):validator.validate_repository_transfer(path.name,DIRECTORY,repo,cutoff,revision)
         head_path.write_text(json.dumps(original))
+
+
+    def test_final_pilot_policy_needs_exact_fresh_primary_responses(self):
+        self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0]
+        proof=pilot['validation_evidence'];operations=proof['operation_receipts']
+        times={key:validator.validate_terminal_operation(operations[key],DIRECTORY) for key in (
+            'init_pr_url','repeat_onboarding_evidence_url','sync_pr_url','repeat_sync_evidence_url',
+            'status_evidence_url','gate_uninstall_evidence_url')}
+        path=DIRECTORY/proof['final_gate_policy_evidence_url'];original=json.loads(path.read_text())
+        def check():validator.validate_pilot_cleanup(proof,DIRECTORY,pilot['repository_id'],pilot['repository'],'main',operations,times)
+        check()
+        for field in ('effective_rules','classic_protection'):
+            for mutation in ('missing-method','wrong-branch','failed-get','stale-response','future-response'):
+                value=copy.deepcopy(original)
+                if mutation=='missing-method':value[field].pop('method')
+                elif mutation=='wrong-branch':value[field]['request_url']=value[field]['request_url'].replace('/main','/other')
+                elif mutation=='failed-get':value[field]['http_status']=403
+                else:value[field]['observed_at']='2026-10-07T01:00:00Z' if mutation=='stale-response' else '2026-10-07T04:00:00Z'
+                path.write_text(json.dumps(value))
+                with self.subTest(field=field,mutation=mutation),self.assertRaises(ValueError):check()
+        path.write_text(json.dumps(original));check()
+
+    def test_live_scenario_run_requires_exact_fresh_primary_get(self):
+        self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0]
+        result,capture=self.bind_live_scenario(pilot);proof=pilot['validation_evidence']
+        path=DIRECTORY/result['capture_evidence_url'];original=json.loads(path.read_text())
+        def check():validator.validate_pilot_scenario(result,'findings',DIRECTORY,pilot['repository_id'],pilot['repository'],proof['deployment_sha'],proof['release_version'],'b'*40)
+        check()
+        for mutation in ('missing','wrong-endpoint','failed-get','different-run','stale-response','future-response'):
+            value=copy.deepcopy(original)
+            if mutation=='missing':value.pop('run_response')
+            elif mutation=='wrong-endpoint':value['run_response']['request_url']=value['run_response']['request_url'].replace('/99','/98')
+            elif mutation=='failed-get':value['run_response']['http_status']=403
+            elif mutation=='different-run':value['run_response']['data']['id']=98
+            else:value['run_response']['observed_at']='2026-10-07T01:00:00Z' if mutation=='stale-response' else '2026-10-07T04:00:00Z'
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):check()
+        path.write_text(json.dumps(original));check()
+
+    def test_actions_artifact_metadata_requires_exact_fresh_primary_get(self):
+        self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0]
+        result,capture=self.bind_live_scenario(pilot);proof=pilot['validation_evidence']
+        path=DIRECTORY/capture['artifact_evidence_url'];original=json.loads(path.read_text())
+        def check():validator.validate_pilot_scenario(result,'findings',DIRECTORY,pilot['repository_id'],pilot['repository'],proof['deployment_sha'],proof['release_version'],'b'*40)
+        check()
+        for mutation in ('missing','wrong-endpoint','failed-get','different-data','stale-response','future-response'):
+            value=copy.deepcopy(original)
+            if mutation=='missing':value.pop('artifact_response')
+            elif mutation=='wrong-endpoint':value['artifact_response']['request_url']=value['artifact_response']['request_url'].replace('/100','/101')
+            elif mutation=='failed-get':value['artifact_response']['http_status']=403
+            elif mutation=='different-data':value['artifact_response']['data']['digest']='sha256:'+'f'*64
+            else:value['artifact_response']['observed_at']='2026-10-07T01:00:00Z' if mutation=='stale-response' else '2026-10-07T04:00:00Z'
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):check()
+        path.write_text(json.dumps(original));check()
+
+
+    def test_fresh_source_protections_require_complete_current_primary_gets(self):
+        self.complete_transfer_gates();credential=self.matrix['pre_transfer_credential_verification']
+        ref=self.matrix['pre_cutover_source_evidence_url'];path=DIRECTORY/ref;original=json.loads(path.read_text())
+        def check():validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        check();row=original['accounts'][0]['repositories'][0]
+        policy_path=DIRECTORY/row['protection_evidence_url'];baseline=json.loads(policy_path.read_text())
+        for mutation in ('missing-evidence','failed-page','wrong-endpoint','stale-response','new-rule'):
+            source=copy.deepcopy(original);policy=copy.deepcopy(baseline)
+            if mutation=='missing-evidence':source['accounts'][0]['repositories'][0].pop('protection_evidence_url')
+            elif mutation=='failed-page':policy['ruleset_pages'][0]['http_status']=403
+            elif mutation=='wrong-endpoint':policy['ruleset_pages'][0]['request_url']=policy['ruleset_pages'][0]['request_url'].replace('/rulesets','/invented')
+            elif mutation=='stale-response':policy['ruleset_pages'][0]['observed_at']='2026-10-07T01:00:00Z'
+            else:
+                rule={'id':999,'name':'new source rule','target':'branch','enforcement':'active','conditions':{},'rules':[{'type':'deletion'}],'bypass_actors':[]}
+                policy['ruleset_pages'][0]['data'].append({'id':999})
+                policy['ruleset_responses']['999']={'method':'GET','http_status':200,'observed_at':policy['observed_at'],
+                    'request_url':'https://api.github.com/repos/'+row['full_name']+'/rulesets/999','data':rule}
+            path.write_text(json.dumps(source));policy_path.write_text(json.dumps(policy))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):check()
+        path.write_text(json.dumps(original));policy_path.write_text(json.dumps(baseline));check()
+
+
+    def test_tag_only_commits_are_part_of_the_complete_credential_scan(self):
+        self.complete_transfer_gates();ref=self.matrix['pre_cutover_source_evidence_url']
+        source=json.loads((DIRECTORY/ref).read_text());scan_ref=source['reference_scan_evidence_url']
+        path=DIRECTORY/scan_ref;original=json.loads(path.read_text());value=copy.deepcopy(original)
+        row=next(r for r in value['repositories'] if r['source']=='HemSoft/dashboard');repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        row['tag_refs_response']['data']=[{'ref':'refs/tags/tag-only','object':{'type':'commit','sha':'d'*40}}]
+        path.write_text(json.dumps(value))
+        with self.assertRaisesRegex(ValueError,'branch and tagged commit'):validator.validate_reference_scan(scan_ref,DIRECTORY,self.inventory)
+        row['branch_scans'].append({'head_sha':'d'*40,'tree_sha':'f'*40,
+            'commit_response':{'http_status':200,'request_url':'https://api.github.com/repos/'+repo['full_name']+'/git/commits/'+'d'*40,'data':{'sha':'d'*40,'tree':{'sha':'f'*40}}},
+            'tree_response':{'http_status':200,'request_url':'https://api.github.com/repos/'+repo['full_name']+'/git/trees/'+'f'*40+'?recursive=1','data':{'sha':'f'*40,'truncated':False,'tree':[]}},'files':[]})
+        path.write_text(json.dumps(value));validator.validate_reference_scan(scan_ref,DIRECTORY,self.inventory)
+        path.write_text(json.dumps(original))
+
+    def test_tag_ref_capture_and_annotation_resolution_are_authenticated(self):
+        self.complete_transfer_gates();source=json.loads((DIRECTORY/self.matrix['pre_cutover_source_evidence_url']).read_text())
+        row=copy.deepcopy(source['accounts'][0]['repositories'][0]['source_head'])
+        repo=next(r for r in self.inventory['repositories'] if r['full_name']==source['accounts'][0]['repositories'][0]['full_name'])
+        base='https://api.github.com/repos/'+repo['full_name'];at=row['observed_at']
+        row['tag_refs_response']['data']=[{'ref':'refs/tags/release','object':{'type':'tag','sha':'a'*40}}]
+        row['tag_object_responses']={'a'*40:{'method':'GET','http_status':200,'observed_at':at,'request_url':base+'/git/tags/'+'a'*40,
+            'data':{'sha':'a'*40,'object':{'type':'commit','sha':row['head_sha']}}}}
+        tags=validator.source_revision(row,repo)[3];self.assertEqual(tags['refs/tags/release']['commit_sha'],row['head_sha'])
+        for mutation in ('missing-refs','failed-get','wrong-endpoint','stale-ref','missing-annotation','different-object','cyclic-annotation'):
+            value=copy.deepcopy(row)
+            if mutation=='missing-refs':value.pop('tag_refs_response')
+            elif mutation=='failed-get':value['tag_refs_response']['http_status']=403
+            elif mutation=='wrong-endpoint':value['tag_refs_response']['request_url']=base+'/git/matching-refs/heads/'
+            elif mutation=='stale-ref':value['tag_refs_response']['observed_at']='2026-10-07T01:00:00Z'
+            elif mutation=='missing-annotation':value['tag_object_responses'].clear()
+            elif mutation=='different-object':value['tag_object_responses']['a'*40]['data']['sha']='b'*40
+            else:value['tag_object_responses']['a'*40]['data']['object']={'type':'tag','sha':'a'*40}
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):validator.source_revision(value,repo,validator.observed_time('2026-10-07T01:48:00Z','fixture'))
+
+    def test_new_or_retargeted_tags_require_rescan_at_refresh_and_transfer(self):
+        self.complete_transfer_gates();credential=self.matrix['pre_transfer_credential_verification'];ref=self.matrix['pre_cutover_source_evidence_url']
+        path=DIRECTORY/ref;original=json.loads(path.read_text());row=next(r for a in original['accounts'] for r in a['repositories'] if r['full_name']=='HemSoft/dashboard')
+        value=copy.deepcopy(original);changed=next(r for a in value['accounts'] for r in a['repositories'] if r['id']==row['id'])
+        changed['source_head']['tag_refs_response']['data']=[{'ref':'refs/tags/new','object':{'type':'commit','sha':row['source_head']['head_sha']}}]
+        path.write_text(json.dumps(value))
+        with self.assertRaisesRegex(ValueError,'changed after reference scan'):validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        path.write_text(json.dumps(original))
+        rollout=next(r for r in self.matrix['repositories'] if r['repository_id']==row['id']);repo=next(r for r in self.inventory['repositories'] if r['id']==row['id'])
+        transfer_ref=self.transfer_capture(rollout);transfer=json.loads((DIRECTORY/transfer_ref).read_text());heads_path=DIRECTORY/transfer['destination_heads_evidence_url'];heads=json.loads(heads_path.read_text())
+        heads['tag_refs_response']['data']=[{'ref':'refs/tags/new','object':{'type':'commit','sha':row['source_head']['head_sha']}}];heads_path.write_text(json.dumps(heads))
+        with self.assertRaisesRegex(ValueError,'changed after the credential/reference scan'):validator.validate_repository_transfer(transfer_ref,DIRECTORY,repo,validator.observed_time('2026-10-07T01:50:00Z','fixture'),validator.source_revision(row['source_head'],repo))
 
 
 if __name__ == '__main__':

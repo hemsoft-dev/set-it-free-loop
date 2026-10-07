@@ -674,3 +674,21 @@ default-head GET, with `started_at` in each pilot's successful first-init captur
 Missing or late source verification cannot qualify earlier pilots. Source-only
 verification may be recorded while pilots remain pending; both completed pilots
 remain prerequisites for the first active consumer deployment.
+
+
+Fresh reference scans enumerate the complete tag namespace with the matching-refs
+GET and resolve every annotated tag through its immutable tag-object GETs.
+Scan workflow and manifest bytes at every distinct branch or tagged commit.
+The source refresh and each post-transfer comparison preserve exact tag object
+identities and targets, including non-commit tags. A new or retargeted tag needs
+another scan before proceeding.
+
+Fresh source protection contracts derive from current repository/ref GETs,
+complete ruleset and protected-branch collections, and all detail responses.
+Any new or strengthened source policy must be reconciled with the reviewed
+preservation baseline. The original sealed inventory stays intact.
+
+Live pilot scenarios need exact successful Actions-run and artifact metadata
+GETs, bound to their terminal run, archive digest and captured output. Final
+pilot cleanup authenticates both effective-rule and classic-protection GETs on
+the actual default branch, captured after gate removal.
