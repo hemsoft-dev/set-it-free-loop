@@ -1,0 +1,44 @@
+name: Validate selected organization credential sealing
+
+on:
+  pull_request:
+    paths:
+      - 'deployment/orgseal/**'
+      - 'deployment/scripts/deliver-sfl-org-credential.py'
+      - 'deployment/tests/test_org_credential_delivery.py'
+      - '.github/workflows/seal-sfl-org-credential.yml'
+      - '.github/workflows/validate-org-seal.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'deployment/orgseal/**'
+      - 'deployment/scripts/deliver-sfl-org-credential.py'
+      - 'deployment/tests/test_org_credential_delivery.py'
+      - '.github/workflows/seal-sfl-org-credential.yml'
+      - '.github/workflows/validate-org-seal.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  seal-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: deployment/orgseal/go.mod
+          cache-dependency-path: deployment/orgseal/go.sum
+      - name: Install independent synthetic interoperability verifier
+        run: sudo apt-get update && sudo apt-get install -y libsodium23
+      - name: Verify pinned modules and security contracts without credentials
+        working-directory: deployment/orgseal
+        run: |
+          go mod verify
+          go vet ./...
+          go test -mod=readonly ./...
+      - name: Verify ciphertext delivery provenance and recipient restrictions without credentials
+        run: python3 -B -m unittest discover -s deployment/tests -p test_org_credential_delivery.py -v
