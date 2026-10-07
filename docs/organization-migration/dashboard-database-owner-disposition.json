@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-10-07T03:24:43.044627+00:00",
+  "repository_id": 1120402599,
+  "source": "HemSoft/dashboard",
+  "resource_id": "cevpnetigzotgstxxjpm",
+  "resource_url": "https://supabase.com/dashboard/project/cevpnetigzotgstxxjpm",
+  "approved_by": "HemSoft",
+  "owner_receipt_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6030145370",
+  "active_dependency": false,
+  "disposition": "preserve_paused_database_and_configuration",
+  "resume_authorized": false,
+  "delete_authorized": false,
+  "database_query_authorized": false,
+  "limits": "Unused database does not waive dashboard active workflow credentials or its Vercel Git connection transfer gate."
+}

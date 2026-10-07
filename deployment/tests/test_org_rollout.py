@@ -27,6 +27,18 @@ class RolloutTests(unittest.TestCase):
     def check(self):
         return validator.validate(self.inventory, self.rows, self.matrix, DIRECTORY, self.scope)
 
+    def gate_policy(self, repository_id, repository, directory=DIRECTORY):
+        capture = {'repository_id':repository_id,'repository':repository,'branch':'main',
+                   'observed_at':'2026-10-07T02:00:00Z','classic_protection':{'state':'absent','http_status':404},
+                   'effective_rules':{'state':'observed','data':[{'type':'required_status_checks','parameters':{
+                       'strict_required_status_checks_policy':True,
+                       'required_status_checks':[{'context':'SFL Reviewer Gate Runner','integration_id':15368}]}}]}}
+        with tempfile.NamedTemporaryFile(dir=directory,suffix='.json',prefix='fixture-gate-',delete=False) as stream:
+            path=pathlib.Path(stream.name)
+        path.write_text(json.dumps(capture));self.addCleanup(path.unlink,missing_ok=True)
+        return {'state':'required','context':'SFL Reviewer Gate Runner','app_id':15368,'strict':True,
+                'repository_id':repository_id,'repository':repository,'branch':'main','evidence_url':path.name}
+
     def complete_provider(self):
         row = self.rows[0]
         row.update(status='verified', provider='example', resource_owner='HemSoft',
@@ -61,13 +73,16 @@ class RolloutTests(unittest.TestCase):
     def bind_consumer_runs(self, row):
         row['wider_workflow_run_urls'] = ['https://github.com/'+row['destination']+'/actions/runs/'+str(i+1)
                                          for i,_ in enumerate(row['wider_workflow_run_urls'])]
+        paths=validator.deployed_workflow_paths(row['selected_tier'],row['selected_addons'],row['selected_components']) - {'.github/workflows/sfl-pr-review-auto.yml'}
         row['wider_operation_receipts'] = [{'repository_id':row['repository_id'],'repository':row['destination'],
-            'deployment_sha':row['deployment_sha'],'release_version':row['manifest_version'],'evidence_url':run}
+            'deployment_sha':row['deployment_sha'],'release_version':row['manifest_version'],'evidence_url':run,
+            'conclusion':'success','run_head_sha':'b'*40,'workflow':next(iter(sorted(paths)),'.github/workflows/sfl-auditor.yml')}
             for run in row['wider_workflow_run_urls']]
 
     def bind_review_operations(self, row, repository_id=None, repository=None):
         repository_id = repository_id or row['repository_id']
         repository = repository or row['destination']
+        row['gate_policy']=self.gate_policy(repository_id,repository)
         fields = ('gate_run_url','review_registration_url','review_registry_status_url','review_artifact_url')
         row['review_operation_receipts'] = {}
         for field in fields:
@@ -88,6 +103,8 @@ class RolloutTests(unittest.TestCase):
                 permission_evidence_url='https://example.com/access', license_evidence_url='https://example.com/license')
 
     def complete_scope_decision(self, row):
+        if row['source_app_access_in_baseline']:
+            self.complete_app_transfer();self.complete_app_coverage(row)
         row['scope_exception_decision'] = {'repository_id':row['repository_id'],'repository':row['destination'],
             'approved_by':'HemSoft','approved_at':'2026-10-06T20:00:00-04:00','reason':'Synthetic owner-approved fixture',
             'disposition':'exclude_runtime_rollout','evidence_url':row['exception_evidence_url']}
@@ -130,7 +147,8 @@ class RolloutTests(unittest.TestCase):
         self.complete_app_coverage(row)
         row['pre_sync_installation'] = {'state':'absent','tier':'not_installed',
             'repository_id':row['repository_id'],'repository':row['destination'],'revision_sha':'d'*40,
-            'manifest_paths':['.sfl/sfl.json','sfl.json'],'evidence_url':'https://example.com/pre-sync'}
+            'manifest_paths':['.sfl/sfl.json','sfl.json'],'evidence_url':'https://example.com/pre-sync',
+            'addons':[],'components':[]}
         row['gate_policy'] = {'state': 'required', 'context': 'SFL Reviewer Gate Runner', 'app_id': 15368,
                               'strict': True, 'evidence_url': 'https://example.com/rule'}
         row['review_registration_url'] = 'https://example.com/registration'
@@ -168,7 +186,7 @@ class RolloutTests(unittest.TestCase):
             pilot['validation_evidence'].update(deployment_source='hemsoft-dev/set-it-free-loop',
                 release_version='2.1.0-rc.14', deployment_sha='a'*40,
                 manifest_identity={'source':'hemsoft-dev/set-it-free-loop','sourceSha':'a'*40,
-                                   'version':'2.1.0-rc.14','tier':'reviewer'},
+                                   'version':'2.1.0-rc.14','tier':'reviewer','addons':[]},
                 manifest_evidence_url='https://example.com/manifest',
                 release_download_verification_url='https://example.com/checksum')
             receipts=pilot['validation_evidence']
@@ -190,13 +208,16 @@ class RolloutTests(unittest.TestCase):
                 receipts['auditor_run_url']='https://github.com/'+pilot['repository']+'/actions/runs/2'
                 receipts['wider_operation_receipts']=[{'repository_id':pilot['repository_id'],'repository':pilot['repository'],
                     'deployment_sha':receipts['deployment_sha'],'release_version':receipts['release_version'],
-                    'evidence_url':receipts['wider_workflow_run_urls'][0]}]
-                receipts['auditor_operation_receipt']=dict(receipts['wider_operation_receipts'][0],evidence_url=receipts['auditor_run_url'])
+                    'evidence_url':receipts['wider_workflow_run_urls'][0],'conclusion':'success',
+                    'workflow':'.github/workflows/sfl-dispatcher.yml','run_head_sha':'b'*40}]
+                receipts['auditor_operation_receipt']=dict(receipts['wider_operation_receipts'][0],evidence_url=receipts['auditor_run_url'],workflow='.github/workflows/sfl-auditor.yml')
             receipts['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
                 'repository_id':pilot['repository_id'],'repository':pilot['repository'],'installation_id':123,
                 'evidence_url':'https://example.com/pilot-app-access'}
             receipts['scenario_receipts'] = {name:{'outcome':outcome,'mode':'workflow_fixture',
-                'deployment_sha':receipts['deployment_sha'],'evidence_url':'https://example.com/scenario/'+name}
+                'deployment_sha':receipts['deployment_sha'],'repository_id':pilot['repository_id'],
+                'repository':pilot['repository'],'release_version':receipts['release_version'],
+                'evidence_url':'https://github.com/'+pilot['repository']+'/issues/1#scenario-'+name}
                 for name,outcome in validator.PILOT_SCENARIOS.items()}
             pilot['validation_evidence']['review_artifact_identity'] = {
                 'runtime': 'sfl_registered_codex', 'app_id': 1144995, 'bot_user_id': 199175422,
@@ -234,7 +255,8 @@ class RolloutTests(unittest.TestCase):
         self.bind_review_operations(row)
         proof=row['in_place_evidence'];proof['workflow_run_urls']=['https://github.com/'+row['destination']+'/actions/runs/1']
         proof['workflow_operation_receipts']=[{'repository_id':row['repository_id'],'repository':row['destination'],
-            'deployment_sha':proof['source_sha'],'release_version':proof['release_version'],'evidence_url':proof['workflow_run_urls'][0]}]
+            'deployment_sha':proof['source_sha'],'release_version':proof['release_version'],'evidence_url':proof['workflow_run_urls'][0],
+            'conclusion':'success','workflow':'.github/workflows/validate-gh-sfl.yml','run_head_sha':proof['source_sha']}]
         self.verify_source_ledger(row['repository_id'])
         self.matrix['summary']['verified_rollouts'] += 1
         return row
@@ -408,6 +430,7 @@ class RolloutTests(unittest.TestCase):
             self.check()
         row.update(health='archived_verified', transfer_evidence_url='https://example.com/transfer',
                    status_evidence_url='https://example.com/settings')
+        self.complete_app_transfer();self.complete_app_coverage(row)
         self.check()
 
     def test_scope_exception_needs_owner_receipt(self):
@@ -446,6 +469,7 @@ class RolloutTests(unittest.TestCase):
         row['installed_tier'] = 'custom'
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['installed_components'] = ['sfl-auditor']
+        row['pre_sync_installation']['components']=['sfl-auditor']
         row['wider_workflow_run_urls'] = ['https://example.com/auditor-run']
         self.bind_consumer_runs(row)
         for components in (None, [], ['unknown-workflow']):
@@ -454,6 +478,7 @@ class RolloutTests(unittest.TestCase):
                 self.check()
         row['selected_components'] = ['sfl-auditor']
         row['manifest_identity']['components'] = ['sfl-auditor']
+        self.bind_consumer_runs(row)
         self.check()
 
     def test_legacy_installed_review_tier_recorded_truthfully(self):
@@ -480,6 +505,7 @@ class RolloutTests(unittest.TestCase):
         row.update(selected_tier='custom', installed_tier='custom', installed_components=['sfl-pr-review-auto'],selected_components=['sfl-pr-review-auto'])
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['manifest_identity']['tier']='custom'
+        row['pre_sync_installation']['components']=row['installed_components']
         row['wider_workflow_run_urls'] = []
         self.check()
         row['selected_components'].append('sfl-auditor')
@@ -619,6 +645,7 @@ class RolloutTests(unittest.TestCase):
         row['selected_tier']='custom'
         row['selected_components']=['sfl-pr-review-auto']
         row['manifest_identity']['tier']='custom'
+        row['pre_sync_installation']['components']=row['installed_components']
         self.check()
 
     def test_retention_cannot_expand_or_shrink_owner_approved_scope(self):
@@ -746,6 +773,7 @@ class RolloutTests(unittest.TestCase):
     def test_installed_configuration_is_preserved(self):
         row=self.complete_rollout()
         row.update(installed_tier='full',installed_addons=['pr-review'])
+        row['pre_sync_installation'].update(addons=['pr-review'])
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
         row['selected_tier']='full';row['manifest_identity']['tier']='full'
@@ -781,6 +809,7 @@ class RolloutTests(unittest.TestCase):
                    selected_addons=['pr-review'], wider_workflow_run_urls=['https://example.com/run'])
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['manifest_identity']['tier'] = 'minimal'
+        row['pre_sync_installation']['addons']=row['installed_addons']
         for addons in (None, [], ['policy-manager']):
             row['manifest_identity']['addons'] = addons
             with self.subTest(addons=addons), self.assertRaisesRegex(ValueError, 'manifest must match the selected addons'):
@@ -792,11 +821,14 @@ class RolloutTests(unittest.TestCase):
                    selected_components=['sfl-pr-review-auto'])
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
         row['manifest_identity']['tier'] = 'custom'
+        row['pre_sync_installation']['components']=row['installed_components']
         for components in (None, [], ['sfl-auditor']):
             row['manifest_identity']['components'] = components
             with self.subTest(components=components), self.assertRaisesRegex(ValueError, 'custom manifest must match'):
                 self.check()
         row['manifest_identity']['components'] = ['sfl-pr-review-auto']
+        row['wider_workflow_run_urls']=[]
+        self.bind_consumer_runs(row)
         self.check()
 
     def test_fresh_pilot_only_accepts_init_supported_tiers(self):
@@ -839,6 +871,7 @@ class RolloutTests(unittest.TestCase):
         self.complete_pilots()
         pilot = next(p for p in self.matrix['disposable_validation_repositories'] if p['visibility']=='private')
         pilot['validation_evidence']['manifest_identity']['tier']='minimal'
+        pilot['validation_evidence']['manifest_identity']['addons']=['pr-review']
         with self.assertRaisesRegex(ValueError, 'wider deployed configuration'): self.check()
 
     def test_unused_credentials_remain_bound_to_exact_owner_scope(self):
@@ -1214,34 +1247,40 @@ class RolloutTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'destination repository'):
             self.check()
 
-    def test_post_rollout_onboarding_requires_distinct_dynamic_app_coverage(self):
-        with self.assertRaisesRegex(ValueError, 'separate post-rollout'):
-            validator.validate_final_onboarding(None,DIRECTORY,{},'hemsoft-dev',4448946)
-        row = self.complete_rollout()
-        name='hemsoft-dev/sfl-migration-new-repository'
+    def onboarding_fixture(self, directory):
+        row=self.complete_rollout();name='hemsoft-dev/sfl-migration-new-repository'
         proof=copy.deepcopy(row)
         proof.update(status='verified',repository_id=42,repository=name,destination=name,visibility='private',
                      rollout_completed_at='2026-10-07T02:00:00Z',release_version=row['manifest_version'])
         proof['review_pr_url']='https://github.com/'+name+'/pull/2'
         proof['review_artifact_identity'].update(review_pr_url=proof['review_pr_url'])
         proof['destination_sfl_app_access'].update(repository_id=42,repository=name)
-        proof['destination_codex_access']=dict(proof['destination_sfl_app_access'],app_id=1144995)
+        proof['destination_codex_access']=dict(proof['destination_sfl_app_access'],app_id=1144995,installation_id=168678981)
         self.bind_review_operations(proof)
+        proof['gate_policy']=self.gate_policy(42,name,directory)
+        (directory/'codex-organization-installation-evidence.json').write_text((DIRECTORY/'codex-organization-installation-evidence.json').read_text())
         fields=('init_pr_url','repeat_onboarding_url','sync_pr_url','repeat_sync_url','status_url')
         proof['onboarding_operation_receipts']={}
         for field in fields:
             proof[field]='https://github.com/'+name+'/issues/1#'+field
             proof['onboarding_operation_receipts'][field]={'repository_id':42,'repository':name,
                 'deployment_sha':proof['deployment_sha'],'release_version':proof['release_version'],'evidence_url':proof[field]}
+        capture={'metadata':{'id':42,'full_name':name,'private':True,'archived':False,'created_at':'2026-10-07T03:00:00Z'}}
+        (directory/'metadata.json').write_text(json.dumps(capture));proof['metadata_evidence_url']='metadata.json'
+        completion={'completed_at':proof['rollout_completed_at'],'organization':'hemsoft-dev',
+                    'deployment_sha':proof['deployment_sha'],'release_version':proof['release_version'],'repositories':[]}
+        (directory/'completion.json').write_text(json.dumps(completion));proof['rollout_completion_evidence_url']='completion.json'
+        return proof
+
+    def test_post_rollout_onboarding_requires_distinct_dynamic_app_coverage(self):
+        with self.assertRaisesRegex(ValueError,'separate post-rollout'):
+            validator.validate_final_onboarding(None,DIRECTORY,{},'hemsoft-dev',4448946)
         with tempfile.TemporaryDirectory() as folder:
-            directory=pathlib.Path(folder)
-            capture={'metadata':{'id':42,'full_name':name,'private':True,'archived':False,'created_at':'2026-10-07T03:00:00Z'}}
-            (directory/'metadata.json').write_text(json.dumps(capture));proof['metadata_evidence_url']='metadata.json'
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
             validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
-            original=copy.deepcopy(proof)
             for field,value in [('repository_id',1408025382),('destination_codex_access',{'status':'verified'}),
                                 ('rollout_completed_at','2026-10-08T02:00:00Z'),('onboarding_operation_receipts',{})]:
-                changed=copy.deepcopy(original);changed[field]=value
+                changed=copy.deepcopy(proof);changed[field]=value
                 with self.subTest(field=field),self.assertRaises(ValueError):
                     validator.validate_final_onboarding(changed,directory,{},'hemsoft-dev',4448946)
 
@@ -1253,6 +1292,7 @@ class RolloutTests(unittest.TestCase):
             row.update(health='archived_verified' if row['archived'] else 'scope_exception',
                        transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
             self.complete_post_transfer_access(row)
+            self.complete_app_coverage(row)
             if not row['archived']:
                 row['exception_evidence_url']='https://example.com/exception'
                 self.complete_scope_decision(row)
@@ -1277,6 +1317,82 @@ class RolloutTests(unittest.TestCase):
             resource.update(status='verified',post_transfer_evidence_url=str(path.relative_to(DIRECTORY)))
             with self.assertRaisesRegex(ValueError,'separate post-rollout new-repository'):
                 self.check()
+
+
+    def test_effective_gate_capture_rejects_optional_other_repository_and_unbound_app(self):
+        row=self.complete_rollout();policy=row['gate_policy'];path=DIRECTORY/policy['evidence_url']
+        baseline=json.loads(path.read_text());self.check()
+        for field,value in [('repository_id',42),('repository','hemsoft-dev/other'),('branch','other')]:
+            changed=copy.deepcopy(baseline);changed[field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'capture must match'):self.check()
+        for checks in ([],[{'context':'SFL Reviewer Gate Runner','integration_id':42}]):
+            changed=copy.deepcopy(baseline)
+            changed['effective_rules']['data'][0]['parameters']['required_status_checks']=checks
+            path.write_text(json.dumps(changed))
+            with self.subTest(checks=checks),self.assertRaisesRegex(ValueError,'actually require'):self.check()
+        changed=copy.deepcopy(baseline);changed['effective_rules']['data']=[]
+        changed['classic_protection']={'state':'observed','data':{'required_status_checks':{'strict':True,
+            'checks':[{'context':'SFL Reviewer Gate Runner','app_id':15368}]}}}
+        path.write_text(json.dumps(changed));self.check()
+
+    def test_public_pilot_cannot_reuse_private_scenario_receipts(self):
+        self.complete_pilots();private,public=self.matrix['disposable_validation_repositories']
+        if private['visibility']!='private':private,public=public,private
+        public['validation_evidence']['scenario_receipts']=copy.deepcopy(private['validation_evidence']['scenario_receipts'])
+        with self.assertRaisesRegex(ValueError,'Pilot scenario'):self.check()
+
+    def test_new_repository_cannot_precede_independent_rollout_completion(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            metadata=json.loads((directory/'metadata.json').read_text())
+            metadata['metadata']['created_at']='2026-10-07T01:30:00Z'
+            (directory/'metadata.json').write_text(json.dumps(metadata))
+            proof['rollout_completed_at']='2026-10-07T01:00:00Z'
+            with self.assertRaisesRegex(ValueError,'independently captured deployment'):
+                validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+
+    def test_newly_observed_manifest_cannot_drop_addons_or_custom_components(self):
+        row=self.complete_rollout();row['installed_tier']='reviewer'
+        row['pre_sync_installation'].update(state='present',tier='reviewer',addons=['pr-review'])
+        with self.assertRaisesRegex(ValueError,'pre-sync receipt'):self.check()
+        row['pre_sync_installation']['addons']=[]
+        row['pre_sync_installation']['components']=['sfl-auditor']
+        with self.assertRaisesRegex(ValueError,'pre-sync receipt'):self.check()
+
+    def test_pilot_manifest_must_install_review_observer(self):
+        self.complete_pilots();public=next(p for p in self.matrix['disposable_validation_repositories'] if p['visibility']=='public')
+        manifest=public['validation_evidence']['manifest_identity']
+        for tier in ('minimal','standard'):
+            manifest.update(tier=tier,addons=[])
+            with self.subTest(tier=tier),self.assertRaisesRegex(ValueError,'actually deploy the review observer'):self.check()
+            manifest['addons']=['pr-review'];self.check()
+
+    def test_failed_or_unrelated_workflow_cannot_complete_source_consumer_and_auditor(self):
+        row=self.complete_rollout();row['selected_tier']='full';row['manifest_identity']['tier']='full'
+        row['wider_workflow_run_urls']=['https://example.com/run'];self.bind_consumer_runs(row)
+        operation=row['wider_operation_receipts'][0];baseline=copy.deepcopy(operation);self.check()
+        for field,value in [('conclusion','failure'),('conclusion','cancelled'),('workflow','.github/workflows/unrelated.yml'),('run_head_sha',None)]:
+            operation.clear();operation.update(baseline);operation[field]=value
+            with self.subTest(field=field,value=value),self.assertRaisesRegex(ValueError,'successful expected'):self.check()
+        operation.clear();operation.update(baseline)
+        private=next(p for p in self.matrix['disposable_validation_repositories'] if p['visibility']=='private')
+        private['validation_evidence']['auditor_operation_receipt']['workflow']='.github/workflows/sfl-dispatcher.yml'
+        with self.assertRaisesRegex(ValueError,'successful expected'):self.check()
+
+    def test_new_onboarding_codex_coverage_must_use_actual_org_installation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            proof['destination_codex_access']['installation_id']=42
+            with self.assertRaisesRegex(ValueError,'captured organization installation'):
+                validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+
+    def test_archived_baseline_app_coverage_cannot_remain_pending(self):
+        self.complete_transfer_gates();self.complete_app_transfer()
+        row=next(r for r in self.matrix['repositories'] if r['archived'] and r['source_app_access_in_baseline'])
+        row.update(health='archived_verified',transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+        self.complete_app_coverage(row);self.check()
+        row['destination_sfl_app_access']['status']='pending'
+        with self.assertRaisesRegex(ValueError,'baseline-covered terminal'):self.check()
 
 
 if __name__ == '__main__':

@@ -320,3 +320,28 @@ Use the [per-repository integration ledger](integration-ledger.csv),
 [rollout matrix](rollout-matrix.json), and [operator sequence](ROLLOUT.md) to
 complete #138 and #139. Their pending entries are not new verified baseline
 evidence. The original snapshot and its integrity manifest remain unchanged.
+
+## Later owner updates
+
+The owner changed source SFL App installation 150383874 to all repositories.
+`source-app-selection-owner-update.json` records that report and its issue
+receipt. The original selected-repository capture remains historical evidence.
+Fresh saved-selection verification is pending. The GET-only App credential
+workflow publishes an allowlisted public metadata artifact with installation
+identity and repository selection. It does not mint an installation token.
+
+The dashboard Supabase database `cevpnetigzotgstxxjpm` is unused.
+`dashboard-database-owner-disposition.json` records the instruction to preserve
+its paused database and configuration. This does not authorize resuming, querying
+or deleting the database, or waive active dashboard workflow credentials.
+
+Completed reviews require a repository-bound effective branch-policy capture.
+It must show the strict SFL gate actually required with GitHub Actions App 15368.
+Pilot scenario receipts identify their own repository, release and deployment.
+Successful workflow receipts name a workflow deployed by the selected tier or
+addons and its immutable run head. Pilot manifests must deploy the review
+observer. Newly observed pre-sync manifests bind their installed addons and
+custom components, including repositories without a manifest in the original
+scan. Final new-repository onboarding follows an independent completion capture
+for every baseline repository and uses the captured Codex installation ID.
+Baseline-covered archived repositories must preserve destination SFL App access.

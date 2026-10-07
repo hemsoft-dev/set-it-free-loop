@@ -89,6 +89,64 @@ def bound_operation(operation, directory, repository_id, repository, sha, versio
                 'Operation URL must belong to its designated repository')
 
 
+def deployed_workflow_paths(tier, addons=(), components=None):
+    root = pathlib.Path(__file__).resolve().parents[2]
+    source = (root / 'gh-sfl/init.go').read_text().split('var tierWorkflows =', 1)[1].split('var tierComponents', 1)[0]
+    tiers = {name: re.findall(r'"([^"\n]+)"', body)
+             for name, body in re.findall(r'"([^"\n]+)":\s*\{([^}]+)\}', source)}
+    files = tiers.get(tier, []) if tier != 'custom' else [
+        name for name in tiers['full'] if name.removesuffix('.md').removesuffix('.yml') in (components or [])]
+    addon_source = (root / 'gh-sfl/addons.go').read_text().split('var addonWorkflows =', 1)[1].split('var addonDescriptions', 1)[0]
+    addon_files = {name: re.findall(r'"([^"\n]+)"', body)
+                   for name, body in re.findall(r'"([^"\n]+)":\s*\{([^}]+)\}', addon_source)}
+    files = list(files) + [name for addon in addons for name in addon_files.get(addon, [])]
+    return {'.github/workflows/' + (name[:-3] + '.lock.yml' if name.endswith('.md') else name)
+            for name in files}
+
+
+def bound_workflow_operation(operation, directory, repository_id, repository, sha, version, url, workflows):
+    bound_operation(operation, directory, repository_id, repository, sha, version, url)
+    require(operation.get('conclusion') == 'success' and operation.get('workflow') in workflows and
+            immutable_sha(operation.get('run_head_sha')),
+            'Workflow operation must identify a successful expected deployed workflow and immutable run head')
+    require(re.fullmatch('https://github.com/' + re.escape(repository) + r'/actions/runs/[1-9][0-9]*', url) is not None,
+            'Workflow operation must reference its repository Actions run')
+
+
+def validate_gate_policy(policy, directory, repository_id, repository):
+    require(isinstance(policy, dict) and policy.get('state') == 'required' and
+            policy.get('context') == 'SFL Reviewer Gate Runner' and policy.get('app_id') == 15368 and
+            policy.get('strict') is True and policy.get('repository_id') == repository_id and
+            policy.get('repository') == repository and text(policy.get('branch')),
+            'Completed review needs a repository-bound required strict SFL gate bound to Actions')
+    reference = policy.get('evidence_url')
+    evidence(reference, directory)
+    require(not urllib.parse.urlsplit(reference).scheme,
+            'Gate policy needs an independent local effective-policy capture')
+    capture = json.loads((directory / reference).read_text())
+    require(capture.get('repository_id') == repository_id and capture.get('repository') == repository and
+            capture.get('branch') == policy['branch'], 'Gate policy capture must match its destination repository and branch')
+    observed_at = datetime.datetime.fromisoformat(capture.get('observed_at', '').replace('Z', '+00:00'))
+    require(observed_at.tzinfo is not None, 'Gate policy capture needs a timezone')
+    rules = capture.get('effective_rules', {})
+    require(rules.get('state') == 'observed' and isinstance(rules.get('data'), list),
+            'Gate policy capture needs observed effective branch rules')
+    required = any(rule.get('type') == 'required_status_checks' and
+                   rule.get('parameters', {}).get('strict_required_status_checks_policy') is True and
+                   any(check.get('context') == policy['context'] and check.get('integration_id') == 15368
+                       for check in rule.get('parameters', {}).get('required_status_checks', []))
+                   for rule in rules['data'])
+    classic = capture.get('classic_protection', {})
+    require(classic.get('state') == 'observed' or
+            (classic.get('state') == 'absent' and classic.get('http_status') == 404),
+            'Gate policy capture needs resolved classic protection')
+    checks = classic.get('data', {}).get('required_status_checks') or {}
+    required = required or (checks.get('strict') is True and
+                           any(check.get('context') == policy['context'] and check.get('app_id') == 15368
+                               for check in checks.get('checks', [])))
+    require(required, 'Effective destination policy must actually require the strict Actions-owned SFL gate')
+
+
 def validate_app_credential(proof, directory):
     require(isinstance(proof, dict) and proof.get('repository_id') == 1169772257 and
             proof.get('repository') == 'HemSoft/set-it-free-loop' and
@@ -168,6 +226,30 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id):
     require(metadata.get('id') == repo_id and metadata.get('full_name') == name and
             metadata.get('private') == (proof['visibility'] == 'private') and metadata.get('archived') is False,
             'Post-rollout onboarding must match independently captured repository identity and state')
+    completion_reference = proof.get('rollout_completion_evidence_url')
+    evidence(completion_reference, directory)
+    require(not urllib.parse.urlsplit(completion_reference).scheme and completion_reference != reference,
+            'Rollout completion needs an independent baseline completion capture')
+    completion = json.loads((directory / completion_reference).read_text())
+    require(completion.get('organization') == organization and
+            completion.get('completed_at') == proof.get('rollout_completed_at') and
+            completion.get('deployment_sha') == proof.get('deployment_sha') and
+            completion.get('release_version') == proof.get('release_version'),
+            'Rollout completion timestamp must match its independently captured deployment')
+    completed = completion.get('repositories')
+    require(isinstance(completed, list) and len(completed) == len(expected) and
+            {entry.get('repository_id') for entry in completed} == set(expected),
+            'Rollout completion capture must account for every baseline repository')
+    for entry in completed:
+        baseline = expected[entry['repository_id']]
+        name_at_completion = baseline['full_name'] if baseline['id'] in APPROVED_RETAINED_IDS else baseline['destination']
+        require(entry.get('repository') == name_at_completion and
+                entry.get('health') in {'verified', 'archived_verified', 'scope_exception', 'retained_source', 'source_verified'},
+                'Rollout completion capture needs terminal repository-bound outcomes')
+        completed_at = datetime.datetime.fromisoformat(entry.get('completed_at', '').replace('Z', '+00:00'))
+        cutoff = datetime.datetime.fromisoformat(completion['completed_at'].replace('Z', '+00:00'))
+        require(completed_at.tzinfo is not None and cutoff.tzinfo is not None and completed_at <= cutoff,
+                'Baseline completion timestamps cannot follow the recorded rollout completion')
     created_at = datetime.datetime.fromisoformat(metadata.get('created_at', '').replace('Z', '+00:00'))
     rollout_at = datetime.datetime.fromisoformat(proof.get('rollout_completed_at', '').replace('Z', '+00:00'))
     require(created_at.tzinfo is not None and rollout_at.tzinfo is not None and created_at > rollout_at,
@@ -256,16 +338,17 @@ def validate_app_coverage(coverage, directory, repository_id, repository, app_id
             type(coverage.get('installation_id')) is int and coverage['installation_id'] > 0,
             'Verified destination needs repository-bound post-transfer SFL App coverage')
     evidence(coverage.get('evidence_url'), directory)
+    if app_id == 1144995:
+        capture = json.loads((directory / 'codex-organization-installation-evidence.json').read_text())
+        require(coverage['installation_id'] == capture['installation']['id'] and
+                capture['installation']['app_id'] == app_id and capture['account']['login'] == owner,
+                'Codex coverage must match the independently captured organization installation')
 
 
 def validate_registered_review(row, directory, repository, repository_id=None):
     if repository_id is None:
         repository_id = row.get('repository_id')
-    policy = row.get('gate_policy')
-    require(isinstance(policy, dict) and policy.get('state') == 'required' and
-            policy.get('context') == 'SFL Reviewer Gate Runner' and policy.get('app_id') == 15368 and
-            policy.get('strict') is True, 'Completed review needs a required strict SFL gate bound to Actions')
-    evidence(policy.get('evidence_url'), directory)
+    validate_gate_policy(row.get('gate_policy'), directory, repository_id, repository)
     require(text(row.get('review_requester')) and immutable_sha(row.get('review_head_sha')) and
             immutable_sha(row.get('review_base_sha')), 'Completed review needs immutable registered review context')
     require(row.get('requester_permission') in {'write','maintain','admin'} and
@@ -617,6 +700,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(field in row and (row[field] is None or string_list(row[field])), f'Invalid {field}')
         health = row.get('health')
         require(health in HEALTH, 'Invalid matrix health')
+        require(not (row['archived'] and health == 'verified'), 'Archived repository needs archive-preserving verification')
         if health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'}:
             validate_protection_preservation(row.get('destination_protections'), directory, repo)
         require((health == 'retained_source') == (repo_id in retained), 'Matrix must honor retained source decisions')
@@ -647,6 +731,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 evidence(access.get('permission_evidence_url'), directory)
                 evidence(access.get('license_evidence_url'), directory)
         coverage = row.get('destination_sfl_app_access')
+        if (health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'} and
+                row['source_app_access_in_baseline']):
+            require(isinstance(coverage, dict) and coverage.get('status') == 'verified',
+                    'Every baseline-covered terminal repository must resolve repository-bound destination App coverage')
         if coverage == 'verified' or (isinstance(coverage, dict) and coverage.get('status') == 'verified'):
             require(app_transfer['status'] == 'verified', 'Destination private SFL App access requires verified App transfer')
             validate_app_coverage(coverage, directory, repo_id, repo['destination'], owned_app_id, inventory['destination_login'])
@@ -702,8 +790,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(isinstance(operations, list) and len(operations) == len(runs),
                     'Protected source needs bound workflow operation receipts')
             for run, operation in zip(runs, operations):
-                bound_operation(operation, directory, repo_id, row['destination'],
-                                proof['source_sha'], proof['release_version'], run)
+                source_workflows = {'.github/workflows/' + path.name for path in
+                                    (pathlib.Path(__file__).resolve().parents[2] / '.github/workflows').glob('*.yml')}
+                bound_workflow_operation(operation, directory, repo_id, row['destination'],
+                                         proof['source_sha'], proof['release_version'], run, source_workflows)
             for field in ('transfer_evidence_url', 'status_evidence_url'):
                 evidence(row.get(field), directory)
             require(row.get('destination_codex_access') == 'verified' and isinstance(coverage, dict) and coverage.get('status') == 'verified',
@@ -753,6 +843,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         'Not-installed requires proven absence and cannot erase a captured installation')
             else:
                 require(observed.get('state') == 'present', 'Existing deployment needs a present pre-sync receipt')
+                require(string_list(observed.get('addons')) and string_list(observed.get('components')) and
+                        observed['addons'] == row['installed_addons'] and
+                        observed['components'] == (row['installed_components'] or []),
+                        'Existing deployment must preserve its installed tier and addons/components from its pre-sync receipt')
                 manifest = captured_manifests.get(repo_id)
                 if manifest is not None:
                     require(row['installed_tier'] == manifest.get('tier') and
@@ -828,8 +922,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(isinstance(operations, list) and len(operations) == len(runs),
                     'Consumer wider workflows need bound operation receipts')
             for run, operation in zip(runs, operations):
-                bound_operation(operation, directory, repo_id, row['destination'],
-                                row['deployment_sha'], row['manifest_version'], run)
+                bound_workflow_operation(operation, directory, repo_id, row['destination'],
+                                         row['deployment_sha'], row['manifest_version'], run,
+                                         deployed_workflow_paths(row['selected_tier'], row['selected_addons'],
+                                                                 row['selected_components']) - {'.github/workflows/sfl-pr-review-auto.yml'})
             validate_registered_review(row, directory, row['destination'])
             verified_rollouts += 1
     if app_transfer['status'] == 'verified':
@@ -877,6 +973,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     manifest.get('sourceSha') == receipts['deployment_sha'] and
                     manifest.get('version') == receipts['release_version'] and manifest.get('tier') in INIT_TIERS,
                     'Verified pilot manifest must match its deployment source, SHA and version')
+            require(string_list(manifest.get('addons')) and set(manifest['addons']) <= supported_addons and
+                    '.github/workflows/sfl-pr-review-auto.yml' in deployed_workflow_paths(manifest['tier'], manifest['addons']),
+                    'Verified pilot configuration must actually deploy the review observer')
             for field in ('manifest_evidence_url', 'release_download_verification_url'):
                 evidence(receipts.get(field), directory)
             validate_app_coverage(receipts.get('destination_sfl_app_access'), directory, extra_id, name,
@@ -908,9 +1007,14 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 result = scenarios[scenario]
                 require(isinstance(result, dict) and result.get('outcome') == outcome and
                         result.get('mode') in {'live', 'workflow_fixture'} and
-                        result.get('deployment_sha') == receipts['deployment_sha'],
+                        result.get('deployment_sha') == receipts['deployment_sha'] and
+                        result.get('repository_id') == extra_id and result.get('repository') == name and
+                        result.get('release_version') == receipts['release_version'],
                         'Pilot scenario outcome must match the tested deployment and declared execution mode')
                 evidence(result.get('evidence_url'), directory)
+                if urllib.parse.urlsplit(result['evidence_url']).scheme:
+                    require(result['evidence_url'].startswith('https://github.com/' + name + '/'),
+                            'Pilot scenario URL must belong to its designated repository')
             identity = receipts.get('review_artifact_identity')
             require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
                     identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and
@@ -941,10 +1045,13 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 require(isinstance(wider_receipts, list) and len(wider_receipts) == len(runs),
                         'Wider pilot needs bound workflow operation receipts')
                 for run, operation in zip(runs, wider_receipts):
-                    bound_operation(operation, directory, extra_id, name, receipts['deployment_sha'],
-                                    receipts['release_version'], run)
-                bound_operation(receipts.get('auditor_operation_receipt'), directory, extra_id, name,
-                                receipts['deployment_sha'], receipts['release_version'], receipts['auditor_run_url'])
+                    bound_workflow_operation(operation, directory, extra_id, name, receipts['deployment_sha'],
+                                             receipts['release_version'], run,
+                                             deployed_workflow_paths(manifest['tier'], manifest['addons']) -
+                                             {'.github/workflows/sfl-pr-review-auto.yml'})
+                bound_workflow_operation(receipts.get('auditor_operation_receipt'), directory, extra_id, name,
+                                         receipts['deployment_sha'], receipts['release_version'], receipts['auditor_run_url'],
+                                         {'.github/workflows/sfl-auditor.yml'})
                 verified_wider_pilot = True
             verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)

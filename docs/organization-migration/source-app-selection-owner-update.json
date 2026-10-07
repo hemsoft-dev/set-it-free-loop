@@ -1,0 +1,12 @@
+{
+  "recorded_at": "2026-10-07T03:24:43.044627+00:00",
+  "installation_id": 150383874,
+  "account": "HemSoft",
+  "app_id": 4448946,
+  "reported_repository_selection": "all",
+  "reported_by": "HemSoft",
+  "owner_receipt_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6030236415",
+  "verification_status": "pending",
+  "historical_snapshot_preserved": true,
+  "limits": "Owner reports saved selection. Shared browser still requires sudo mode and CLI installation repository enumeration returns 403. Reviewed GET-only App workflow must independently capture current saved selection before transfer."
+}
