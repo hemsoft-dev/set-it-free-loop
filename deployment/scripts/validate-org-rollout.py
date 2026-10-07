@@ -588,6 +588,56 @@ def validate_consumer_status(row, directory, revision, cutover):
                 c.get('actual_sha256') == c['expected_sha256'] for c in checks) and
             capture.get('missing_files') == [] and capture.get('drifted_files') == [],
             'Consumer status must corroborate every installed workflow without missing or drifted files')
+    for check in checks:
+        validate_installation_file(check, row, directory, revision, timestamp)
+
+
+def immutable_contents(capture, repository_id, repository, revision, path):
+    response = capture.get('contents_response', {})
+    body = response.get('data', {})
+    require(capture.get('repository_id') == repository_id and capture.get('repository') == repository and
+            capture.get('revision_sha') == revision and response.get('http_status') == 200 and
+            response.get('request_url') == 'https://api.github.com/repos/' + repository + '/contents/' + path + '?ref=' + revision and
+            body.get('path') == path and body.get('type') == 'file' and body.get('encoding') == 'base64',
+            'Installed file needs repository/revision-bound immutable contents GETs')
+    try:
+        content = base64.b64decode(''.join(body.get('content', '').split()), validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValueError('Installed file contents need valid encoded source bytes') from exc
+    blob = hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
+    require(body.get('sha') == blob and body.get('size') == len(content) and
+            body.get('git_url') == 'https://api.github.com/repos/' + repository + '/git/blobs/' + blob,
+            'Installed file bytes must match their independent immutable Git blob identity')
+    return content
+
+
+def validate_installation_file(check, row, directory, revision, status_at):
+    name = check['path'].removeprefix('.github/workflows/')
+    source_path = ('.github/workflows/' + name if name.endswith('.lock.yml') else
+                   ('deployment/infrastructure/' if name in {'sfl-pr-review-auto.yml', 'sfl-dispatcher.yml', 'sfl-auditor.yml'}
+                    else 'deployment/workflows/') + name)
+    source = local_capture(check.get('source_contents_evidence_url'), directory, 'Canonical installed workflow')
+    deployed = local_capture(check.get('deployed_contents_evidence_url'), directory, 'Actual installed workflow')
+    source_bytes = immutable_contents(source, 1169772257, row['deployment_source'], row['deployment_sha'], source_path)
+    actual = immutable_contents(deployed, row['repository_id'], row['destination'], revision, check['path'])
+    require(observed_time(source.get('observed_at'), 'Canonical installed workflow') <= status_at and
+            observed_time(deployed.get('observed_at'), 'Actual installed workflow') <= status_at,
+            'Consumer status must follow independent canonical and actual file captures')
+    expected = source_bytes.decode('utf-8')
+    if name == 'sfl-pr-review-auto.yml':
+        placeholders = ('# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main',
+                        '    branches: [main]', '  SFL_REVIEW_BASE_BRANCH: main')
+        require(all(value in expected for value in placeholders), 'Canonical reviewer source needs supported deployment placeholders')
+        source_ref = row['deployment_source'] + '/' + source_path + '@' + row['deployment_sha']
+        branch = row['gate_policy']['branch'].replace("'", "''")
+        for old, new in zip(placeholders, ('# Source: ' + source_ref, "    branches: ['" + branch + "']",
+                                           "  SFL_REVIEW_BASE_BRANCH: '" + branch + "'")):
+            expected = expected.replace(old, new, 1)
+        expected = '# Deployed from: ' + source_ref + '\n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA\n' + expected
+    expected = expected.replace('__SFL_VERSION__', row['manifest_version']).encode('utf-8')
+    require(actual == expected and check['expected_sha256'] == hashlib.sha256(expected).hexdigest() and
+            check['actual_sha256'] == hashlib.sha256(actual).hexdigest(),
+            'Installed workflow hashes must derive from the pinned canonical source and actual deployed bytes')
 
 
 def validate_workflow_contents(workflow, repository, revision):
@@ -674,9 +724,31 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
         approved_at = datetime.datetime.fromisoformat(decision.get('approved_at', '').replace('Z', '+00:00'))
         require(approved_at.tzinfo is not None and approved_at <= captured_at,
                 'Additional repository needs a dated owner approval before final capture')
-        require(re.fullmatch(r'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-[1-9][0-9]*',
-                             decision.get('evidence_url', '')) is not None,
+        receipt_match = re.fullmatch(r'https://github.com/(HemSoft|hemsoft-dev)/set-it-free-loop/issues/138#issuecomment-([1-9][0-9]*)',
+                                    decision.get('evidence_url', ''))
+        require(receipt_match is not None,
                 'Additional repository needs an explicit owner issue receipt')
+        receipt = local_capture(decision.get('owner_comment_evidence_url'), directory, 'Additional repository owner comment')
+        comment = receipt.get('comment', {})
+        require(receipt.get('http_status') == 200 and receipt.get('request_url') ==
+                'https://api.github.com/repos/' + receipt_match[1] + '/set-it-free-loop/issues/comments/' + receipt_match[2] and
+                comment.get('id') == int(receipt_match[2]) and comment.get('user', {}).get('login') == 'HemSoft' and
+                comment['user'].get('id') == 8227352 and comment['user'].get('type') == 'User' and
+                comment.get('html_url') in {'https://github.com/' + owner + '/set-it-free-loop/issues/138#issuecomment-' + receipt_match[2]
+                                            for owner in ('HemSoft', 'hemsoft-dev')} and
+                observed_time(comment.get('created_at'), 'Additional repository approval') == approved_at and
+                approved_at <= observed_time(comment.get('updated_at'), 'Additional repository approval edit') <=
+                observed_time(receipt.get('observed_at'), 'Additional repository approval capture') <= captured_at,
+                'Additional repository approval must match the actual HemSoft comment identity and chronology')
+        markers = re.findall(r'<!-- sfl-migration-approval:(.*?) -->', comment.get('body', ''), re.DOTALL)
+        require(len(markers) == 1, 'Additional repository owner comment needs one explicit structured approval')
+        try:
+            approval = json.loads(markers[0])
+        except ValueError as exc:
+            raise ValueError('Additional repository owner approval must contain valid JSON') from exc
+        require(approval == {key: decision[key] for key in
+                            ('repository_id', 'repository', 'visibility', 'disposition', 'reason')},
+                'Additional repository owner comment must approve this exact repository decision')
         allowed[repo_id] = (repo['repository'], repo['visibility'])
     require(set(actual) == set(expected) | set(allowed), 'Final inventory contains unaccounted repository IDs')
     if pilot_branches is not None:
@@ -1092,10 +1164,20 @@ def validate_ledger_readiness(reference, current_rows, directory, context, sourc
 
 
 def validate_app_transfer(proof, directory, inventory, earliest):
+    before = local_capture(proof.get('pre_transfer_owner_evidence_url'), directory, 'Pre-transfer App owner')
+    before_at = observed_time(before.get('observed_at'), 'Pre-transfer App owner')
+    app_before = before.get('app', {})
+    require(before.get('phase') == 'pre_transfer' and before_at > earliest and
+            before.get('request_url') == 'https://api.github.com/apps/sfl-app' and before.get('http_status') == 200 and
+            app_before.get('id') == 4448946 and app_before.get('client_id') == 'Iv23liwvwJJUh2bUIKLW' and
+            app_before.get('owner', {}).get('login') == 'HemSoft' and app_before['owner'].get('type') == 'User' and
+            app_before['owner'].get('id') == 8227352 and
+            app_before.get('permissions') == inventory['known_owned_app']['data']['permissions'],
+            'App transfer needs a still-personally-owned registration GET after every pre-transfer gate')
     capture = local_capture(proof.get('evidence_url'), directory, 'App ownership transfer')
     timestamp = observed_time(capture.get('observed_at'), 'App ownership transfer')
     app = capture.get('app', {})
-    require(capture.get('phase') == 'post_transfer' and timestamp > earliest and
+    require(capture.get('phase') == 'post_transfer' and timestamp > before_at and
             app.get('id') == 4448946 and app.get('client_id') == 'Iv23liwvwJJUh2bUIKLW' and
             app.get('owner') == {'id':338855369,'login':'hemsoft-dev','type':'Organization'} and
             app.get('permissions') == inventory['known_owned_app']['data']['permissions'],

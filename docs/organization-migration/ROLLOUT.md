@@ -395,6 +395,31 @@ issue-comment receipt, with a reason, `include_final_inventory` disposition and
 approval timestamp preceding the final capture. The inventory itself cannot
 serve as its own approval artifact.
 
+Each decision also needs `owner_comment_evidence_url`, a local capture of the
+authenticated issue-comment GET. Record its exact request URL, HTTP status,
+observation time and raw comment. The comment must belong to issue138, have
+HemSoft's user ID8227352 and match the decision's approval timestamp. Capture
+the comment after its latest edit and before the final inventory. Its body must
+contain exactly one `<!-- sfl-migration-approval:{JSON} -->` marker. The JSON
+must match the decision's `repository_id`, `repository`, `visibility`,
+`disposition` and `reason`. An agent-authored comment or a matching URL alone
+cannot supply owner approval. Accept the source issue URL before or after its
+transfer, preserving the same comment ID.
+
+Every consumer status `file_checks` entry needs `source_contents_evidence_url`
+and `deployed_contents_evidence_url`. Each local capture records the repository
+ID/name, immutable revision, observation time and raw `contents_response` from
+an exact SHA-addressed contents GET. Decode and verify the Git blob identity,
+size and URL before comparing bytes. Both captures must precede status.
+Canonical compiled `.lock.yml` files come from the released source's
+`.github/workflows`; handwritten reviewer, dispatcher and Auditor files come
+from `deployment/infrastructure`, and other templates come from
+`deployment/workflows`. Apply the CLI's version substitution and reviewer
+source/default-branch rendering to the canonical bytes. Derive the expected
+SHA256 from those bytes and the actual SHA256 from the destination bytes.
+The two hashes and installed bytes must agree. A local compiler output or a
+successful workflow run does not replace the released execution-file capture.
+
 The unlinked Supabase dashboard-recovery project is explicitly accounted for as
 an account-owned resource with no established repository link. Its preservation
 record remains pending; final completion requires an independent post-transfer

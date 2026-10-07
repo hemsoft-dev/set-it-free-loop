@@ -467,6 +467,11 @@ must still have no branches. Preserve the original recheck as historical evidenc
 Every observation follows source refresh, and the completed tree capture precedes
 every repository or App transfer. New commits or branches require a new source
 scan and reconciliation rather than reusing an earlier empty classification.
+Immediately before App transfer, save `owned_app_transfer.pre_transfer_owner_evidence_url`
+from an authenticated `GET /apps/sfl-app` after the completed tree capture. It must
+still show the approved personally owned App/client/permission identity. The later
+organization-owned registration capture must follow this observation, bracketing
+the ownership change after every gate rather than merely observing it afterward.
 
 Terminal archive outcomes load actual destination repository metadata. Active
 consumer and protected-source outcomes additionally load full protection captures
@@ -500,3 +505,10 @@ Final account preservation compares the full observed unlinked Supabase project
 record with the sealed project, including reference, name, region, paused state
 and resource URL. A no-change flag alone is insufficient. This remains a
 read-only configuration check and does not authorize a database operation.
+
+Consumer status hashes must derive from separate immutable canonical-source and
+destination contents GETs for every selected workflow. The validator checks
+decoded Git blob bytes and the supported CLI rendering before accepting status.
+Final inventory additions also require the actual issue138 comment, its HemSoft
+author identity and an explicit structured approval matching the added repository.
+See the capture fields in [the rollout runbook](ROLLOUT.md).

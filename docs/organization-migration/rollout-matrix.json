@@ -2514,7 +2514,8 @@
     "app_id": 4448946,
     "status": "pending",
     "owner": "HemSoft",
-    "evidence_url": null
+    "evidence_url": null,
+    "pre_transfer_owner_evidence_url": null
   },
   "pre_transfer_credential_verification": null,
   "final_inventory": null,

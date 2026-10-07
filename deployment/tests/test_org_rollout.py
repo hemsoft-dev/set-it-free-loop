@@ -118,12 +118,48 @@ class RolloutTests(unittest.TestCase):
         row['manifest_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
             'revision_sha':revision,'manifest':row['manifest_identity'],'observed_at':'2026-10-07T02:00:00Z'},directory)
         if row.get('health') == 'verified':
+            checks=[]
+            for path in sorted(validator.deployed_workflow_paths(row['selected_tier'],row['selected_addons'],row['selected_components'])):
+                name=path.rsplit('/',1)[1]
+                source_path=('.github/workflows/'+name if name.endswith('.lock.yml') else
+                    ('deployment/infrastructure/' if name in {'sfl-pr-review-auto.yml','sfl-dispatcher.yml','sfl-auditor.yml'}
+                     else 'deployment/workflows/')+name)
+                source=(ROOT/source_path).read_bytes();installed=source.decode()
+                if name=='sfl-pr-review-auto.yml':
+                    ref=row['deployment_source']+'/'+source_path+'@'+row['deployment_sha']
+                    branch=row['gate_policy']['branch'].replace("'","''")
+                    installed=installed.replace('# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main','# Source: '+ref,1)
+                    installed=installed.replace('    branches: [main]',"    branches: ['"+branch+"']",1)
+                    installed=installed.replace('  SFL_REVIEW_BASE_BRANCH: main',"  SFL_REVIEW_BASE_BRANCH: '"+branch+"'",1)
+                    installed='# Deployed from: '+ref+'\n# To upgrade: re-run deploy-workflow.ps1 at the desired SHA\n'+installed
+                installed=installed.replace('__SFL_VERSION__',row['manifest_version']).encode()
+                checks.append({'path':path,'present':True,'expected_sha256':hashlib.sha256(installed).hexdigest(),
+                    'actual_sha256':hashlib.sha256(installed).hexdigest(),
+                    'source_contents_evidence_url':self.file_contents_capture(1169772257,row['deployment_source'],row['deployment_sha'],source_path,source,directory),
+                    'deployed_contents_evidence_url':self.file_contents_capture(repository_id,repository,revision,path,installed,directory)})
             row['status_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
                 'revision_sha':revision,'command':'status','status':'completed','exit_code':0,'health':'healthy',
                 'manifest_identity':row['manifest_identity'],'observed_at':'2026-10-07T02:00:00Z',
-                'file_checks':[{'path':path,'present':True,'expected_sha256':'a'*64,'actual_sha256':'a'*64}
-                    for path in sorted(validator.deployed_workflow_paths(row['selected_tier'],row['selected_addons'],row['selected_components']))],
+                'file_checks':checks,
                 'missing_files':[],'drifted_files':[]},directory)
+
+    def file_contents_capture(self, repository_id, repository, revision, path, content, directory=DIRECTORY):
+        blob=hashlib.sha1(b'blob '+str(len(content)).encode()+b'\0'+content).hexdigest()
+        return self.capture({'repository_id':repository_id,'repository':repository,'revision_sha':revision,
+            'observed_at':'2026-10-07T02:00:00Z','contents_response':{'http_status':200,
+                'request_url':'https://api.github.com/repos/'+repository+'/contents/'+path+'?ref='+revision,
+                'data':{'path':path,'type':'file','encoding':'base64','content':base64.b64encode(content).decode(),
+                    'size':len(content),'sha':blob,'git_url':'https://api.github.com/repos/'+repository+'/git/blobs/'+blob}}},directory)
+
+    def additional_owner_comment(self, decision, directory):
+        comment_id=int(decision['evidence_url'].rsplit('-',1)[1]);owner=decision['evidence_url'].split('/')[3]
+        approval={key:decision[key] for key in ('repository_id','repository','visibility','disposition','reason')}
+        decision['owner_comment_evidence_url']=self.capture({'http_status':200,
+            'request_url':'https://api.github.com/repos/'+owner+'/set-it-free-loop/issues/comments/'+str(comment_id),
+            'observed_at':decision['approved_at'],'comment':{'id':comment_id,'html_url':decision['evidence_url'],
+                'created_at':decision['approved_at'],'updated_at':decision['approved_at'],
+                'user':{'id':8227352,'login':'HemSoft','type':'User'},
+                'body':'Approved. <!-- sfl-migration-approval:'+json.dumps(approval)+' -->'}},directory)
 
     def bind_smoke(self, row, directory=DIRECTORY):
         row.update(smoke_outcome='success',smoke_phase='post_transfer')
@@ -512,6 +548,12 @@ class RolloutTests(unittest.TestCase):
         return result,capture
 
     def complete_app_transfer(self):
+        self.matrix['owned_app_transfer']['pre_transfer_owner_evidence_url']=self.capture({
+            'phase':'pre_transfer','observed_at':'2026-10-07T01:50:15Z',
+            'request_url':'https://api.github.com/apps/sfl-app','http_status':200,
+            'app':{'id':4448946,'client_id':'Iv23liwvwJJUh2bUIKLW',
+                'owner':{'id':8227352,'login':'HemSoft','type':'User'},
+                'permissions':copy.deepcopy(self.inventory['known_owned_app']['data']['permissions'])}})
         self.matrix['owned_app_transfer'].update(status='verified',owner='hemsoft-dev',evidence_url=self.capture({
             'phase':'post_transfer','observed_at':'2026-10-07T01:51:00Z','app':{'id':4448946,
             'client_id':'Iv23liwvwJJUh2bUIKLW','owner':{'id':338855369,'login':'hemsoft-dev','type':'Organization'},
@@ -1651,6 +1693,7 @@ class RolloutTests(unittest.TestCase):
                 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-123')
             decision = dict(extra, approved_at='2026-10-07T02:00:00Z',
                             reason='Synthetic owner-approved fixture', disposition='include_final_inventory')
+            self.additional_owner_comment(decision,directory)
             (directory/'decision.json').write_text(json.dumps(decision))
             validator.validate_final_inventory(proof, directory, {}, {})
             for field, value in [('repository_id',1), ('visibility','public'), ('reason',''),
@@ -3073,6 +3116,67 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         row['terminal_protections']=original;path.write_text(json.dumps(original_capture));self.check()
         capture=copy.deepcopy(original_capture);capture['effective_rules']['data']=[];path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'actually require the strict'):self.check()
+
+
+    def test_app_transfer_brackets_ownership_after_all_pre_transfer_gates(self):
+        self.complete_transfer_gates();self.complete_app_transfer();self.check()
+        proof=self.matrix['owned_app_transfer'];path=DIRECTORY/proof['pre_transfer_owner_evidence_url']
+        original=json.loads(path.read_text())
+        mutations=(lambda c:c.update(observed_at='2026-10-07T01:50:10Z'),lambda c:c.update(http_status=404),
+            lambda c:c['app']['owner'].update(login='hemsoft-dev',type='Organization'),
+            lambda c:c['app']['owner'].update(id=42),lambda c:c['app'].update(client_id='other'))
+        for mutate in mutations:
+            capture=copy.deepcopy(original);mutate(capture);path.write_text(json.dumps(capture))
+            with self.assertRaisesRegex(ValueError,'still-personally-owned registration GET'):self.check()
+        path.write_text(json.dumps(original));self.check()
+        after_path=DIRECTORY/proof['evidence_url'];capture=json.loads(after_path.read_text())
+        capture['observed_at']='2026-10-07T01:50:14Z';after_path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'post-transfer registration metadata'):self.check()
+
+
+    def test_consumer_workflow_hashes_derive_from_canonical_and_deployed_contents(self):
+        row=self.complete_rollout();row.update(selected_tier='full',wider_workflow_run_urls=['https://example.com/run'])
+        row['manifest_identity']['tier']='full';self.bind_consumer_runs(row);self.check()
+        path=DIRECTORY/row['status_evidence_url'];original=json.loads(path.read_text())
+        capture=copy.deepcopy(original);check=next(c for c in capture['file_checks'] if c['path'].endswith('/sfl-auditor.yml'))
+        substituted=b'name: Substituted workflow\non: workflow_dispatch\n'
+        check['expected_sha256']=check['actual_sha256']=hashlib.sha256(substituted).hexdigest()
+        check['deployed_contents_evidence_url']=self.file_contents_capture(row['repository_id'],row['destination'],'b'*40,check['path'],substituted)
+        path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'hashes must derive from the pinned canonical'):self.check()
+        path.write_text(json.dumps(original));self.check()
+        reference=original['file_checks'][0]['source_contents_evidence_url'];source_path=DIRECTORY/reference
+        source=json.loads(source_path.read_text());baseline=copy.deepcopy(source)
+        for mutate in (lambda c:c['contents_response']['data'].update(sha='f'*40),
+                       lambda c:c.update(revision_sha='d'*40),lambda c:c.update(repository_id=42)):
+            changed=copy.deepcopy(baseline);mutate(changed);source_path.write_text(json.dumps(changed))
+            with self.assertRaises(ValueError):self.check()
+
+    def test_final_addition_loads_actual_owner_comment_author_and_decision(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder)
+            repositories=[{'id':rid,'full_name':name,'private':visibility=='private','visibility':visibility}
+                for rid,(name,visibility) in validator.APPROVED_PILOTS.items()]
+            repositories.append({'id':42,'full_name':'hemsoft-dev/addition','private':True,'visibility':'private'})
+            capture={'observed_at':'2026-10-07T03:00:00Z','accounts':[{'owner':owner,'state':'observed','all_pages':True,
+                'repositories':repositories if owner=='hemsoft-dev' else []} for owner in ('HemSoft','fhemmer','hemsoft-dev')]}
+            extra={'repository_id':42,'repository':'hemsoft-dev/addition','visibility':'private','approved_by':'HemSoft',
+                'evidence_url':'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-123'}
+            decision=dict(extra,approved_at='2026-10-07T02:00:00Z',reason='Owner approved addition',disposition='include_final_inventory')
+            self.additional_owner_comment(decision,directory);extra['decision_artifact']=self.capture(decision,directory)
+            proof={'evidence_url':self.capture(capture,directory),'observed_at':capture['observed_at'],'additional_repositories':[extra]}
+            validator.validate_final_inventory(proof,directory,{}, {})
+            path=directory/decision['owner_comment_evidence_url'];original=json.loads(path.read_text())
+            mutations=(lambda c:c['comment']['user'].update(login='other'),lambda c:c['comment']['user'].update(id=42),
+                lambda c:c['comment'].update(created_at='2026-10-07T01:59:00Z'),
+                lambda c:c['comment'].update(updated_at='2026-10-07T04:00:00Z'),lambda c:c.update(http_status=404),
+                lambda c:c['comment'].update(body='Unrelated owner comment'),
+                lambda c:c['comment'].update(body=c['comment']['body'].replace('"repository_id": 42','"repository_id": 43')))
+            for mutate in mutations:
+                changed=copy.deepcopy(original);mutate(changed);path.write_text(json.dumps(changed))
+                with self.assertRaises(ValueError):validator.validate_final_inventory(proof,directory,{}, {})
+            changed=copy.deepcopy(original);changed['comment']['html_url']=changed['comment']['html_url'].replace('/HemSoft/','/hemsoft-dev/')
+            path.write_text(json.dumps(changed));validator.validate_final_inventory(proof,directory,{}, {})
 
 
 if __name__ == '__main__':
