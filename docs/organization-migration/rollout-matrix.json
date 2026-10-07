@@ -2450,5 +2450,18 @@
     "evidence_url": null
   },
   "pre_transfer_credential_verification": null,
-  "final_inventory": null
+  "final_inventory": null,
+  "account_resource_preservation": [
+    {
+      "provider": "Supabase",
+      "resource_id": "tbarcuxvolatxdcubfec",
+      "resource_owner": "tigijbtmewljfqdmdskh",
+      "resource_url": "https://supabase.com/dashboard/project/tbarcuxvolatxdcubfec",
+      "association": "account_owned_no_repository_link",
+      "status": "pending",
+      "planned_treatment": "Preserve existing paused account-owned project; no GitHub link established; no database operation authorized",
+      "post_transfer_evidence_url": null
+    }
+  ],
+  "post_rollout_onboarding": null
 }

@@ -17,6 +17,8 @@ FHEMMER_REPOSITORY_ID = 1143951439
 LEGACY_UNUSED_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028911622'
 EXTERNAL_SCOPE_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048'
 PROVIDER_ABSENCE_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028753359'
+RETAINED_APP_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028536416'
+RETAINED_APP_DISPOSITION = 'No SFL App dependency; existing SFL credentials unused. Preserve personal hosting.'
 PILOT_SCENARIOS = {'findings':'gate_failed', 'pending_request':'gate_blocked', 'malformed_output':'gate_blocked',
                    'revoked_permission':'gate_blocked', 'permission_lookup_failure':'gate_blocked',
                    'forged_registration':'gate_blocked', 'edited_registration':'gate_blocked',
@@ -102,11 +104,19 @@ def validate_app_credential(proof, directory):
     evidence(proof['run_url'], directory)
 
 
-def protection_contract(repo):
+def protection_contract(repo, directory=None):
     rulesets = repo['settings']['rulesets']
     if rulesets.get('state') == 'unverified':
         require(repo['id'] == FHEMMER_REPOSITORY_ID, 'Unverified baseline rulesets need independent resolution')
-        # The separate owner-browser artifact records this exact source's empty settings.
+        if directory is None:
+            directory = pathlib.Path(__file__).resolve().parents[2] / 'docs/organization-migration'
+        capture = json.loads((directory / 'fhemmer-protection-evidence.json').read_text())
+        require(capture.get('repository_id') == repo['id'] and capture.get('repository') == repo['full_name'] and
+                capture.get('identity') == 'HemSoft authenticated GitHub owner browser' and
+                capture.get('classic', {}).get('observation') == 'Classic branch protections have not been configured' and
+                capture.get('rulesets', {}).get('observation') ==
+                "You haven't created any rulesets; rulesets won't be enforced on this private repository until source organization upgrades to GitHub Team",
+                'Unverified fhemmer protection contract needs its independent owner capture')
         rules = []
     else:
         rules = []
@@ -134,7 +144,7 @@ def validate_protection_preservation(proof, directory, repo):
             isinstance(proof.get('rulesets'), list) and isinstance(proof.get('classic'), dict),
             'Completed transfer needs structured destination effective-policy evidence')
     evidence(proof.get('evidence_url'), directory)
-    baseline = protection_contract(repo)
+    baseline = protection_contract(repo, directory)
     for rule in baseline['rulesets']:
         require(rule in proof['rulesets'], 'Destination must preserve every unrelated baseline ruleset')
     for name, protection in baseline['classic'].items():
@@ -142,7 +152,43 @@ def validate_protection_preservation(proof, directory, repo):
                 'Destination must preserve every unrelated classic branch protection')
 
 
-def validate_final_inventory(proof, directory, expected, retained):
+def validate_final_onboarding(proof, directory, expected, organization, app_id):
+    require(isinstance(proof, dict) and proof.get('status') == 'verified',
+            'Final completion needs the separate post-rollout new-repository onboarding proof')
+    repo_id = proof.get('repository_id')
+    name = proof.get('repository')
+    require(type(repo_id) is int and repo_id > 0 and repo_id not in expected and repo_id not in APPROVED_PILOTS and
+            name == organization + '/sfl-migration-new-repository' and proof.get('visibility') in {'public', 'private'},
+            'Final onboarding must use a distinct designated organization repository')
+    reference = proof.get('metadata_evidence_url')
+    evidence(reference, directory)
+    require(not urllib.parse.urlsplit(reference).scheme, 'New repository creation needs an independent metadata capture')
+    capture = json.loads((directory / reference).read_text())
+    metadata = capture.get('metadata', {})
+    require(metadata.get('id') == repo_id and metadata.get('full_name') == name and
+            metadata.get('private') == (proof['visibility'] == 'private') and metadata.get('archived') is False,
+            'Post-rollout onboarding must match independently captured repository identity and state')
+    created_at = datetime.datetime.fromisoformat(metadata.get('created_at', '').replace('Z', '+00:00'))
+    rollout_at = datetime.datetime.fromisoformat(proof.get('rollout_completed_at', '').replace('Z', '+00:00'))
+    require(created_at.tzinfo is not None and rollout_at.tzinfo is not None and created_at > rollout_at,
+            'New onboarding repository must be created after the recorded rollout completion')
+    require(proof.get('deployment_source') == organization + '/set-it-free-loop' and
+            immutable_sha(proof.get('deployment_sha')) and semantic_version(proof.get('release_version')),
+            'New onboarding needs the canonical immutable deployment and release')
+    operations = proof.get('onboarding_operation_receipts')
+    fields = ('init_pr_url', 'repeat_onboarding_url', 'sync_pr_url', 'repeat_sync_url', 'status_url')
+    require(isinstance(operations, dict) and set(operations) == set(fields),
+            'New onboarding needs initial and repeated onboarding/sync/status operation receipts')
+    for field in fields:
+        bound_operation(operations[field], directory, repo_id, name, proof['deployment_sha'],
+                        proof['release_version'], proof.get(field))
+    validate_app_coverage(proof.get('destination_sfl_app_access'), directory, repo_id, name, app_id, organization)
+    validate_app_coverage(proof.get('destination_codex_access'), directory, repo_id, name, 1144995, organization)
+    validate_registered_review(proof, directory, name)
+    return proof
+
+
+def validate_final_inventory(proof, directory, expected, retained, approved_onboarding=None):
     require(isinstance(proof, dict), 'Final completion needs a fresh independent repository inventory')
     reference = proof.get('evidence_url')
     evidence(reference, directory)
@@ -173,6 +219,8 @@ def validate_final_inventory(proof, directory, expected, retained):
     extras = proof.get('additional_repositories')
     require(isinstance(extras, list), 'Final inventory needs explicit additional-repository accounting')
     allowed = dict(APPROVED_PILOTS)
+    if approved_onboarding is not None:
+        allowed[approved_onboarding['repository_id']] = (approved_onboarding['repository'], approved_onboarding['visibility'])
     for repo in extras:
         repo_id = repo.get('repository_id')
         require(type(repo_id) is int and repo_id not in expected and repo_id not in allowed and
@@ -210,7 +258,9 @@ def validate_app_coverage(coverage, directory, repository_id, repository, app_id
     evidence(coverage.get('evidence_url'), directory)
 
 
-def validate_registered_review(row, directory, repository):
+def validate_registered_review(row, directory, repository, repository_id=None):
+    if repository_id is None:
+        repository_id = row.get('repository_id')
     policy = row.get('gate_policy')
     require(isinstance(policy, dict) and policy.get('state') == 'required' and
             policy.get('context') == 'SFL Reviewer Gate Runner' and policy.get('app_id') == 15368 and
@@ -228,6 +278,19 @@ def validate_registered_review(row, directory, repository):
     for field in ('review_pr_url', 'gate_run_url', 'review_registration_url',
                   'review_registry_status_url', 'review_artifact_url'):
         evidence(row.get(field), directory)
+    receipts = row.get('review_operation_receipts')
+    fields = ('gate_run_url', 'review_registration_url', 'review_registry_status_url', 'review_artifact_url')
+    require(isinstance(receipts, dict) and set(receipts) == set(fields),
+            'Completed review needs repository/head/base-bound operation receipts')
+    for field in fields:
+        proof = receipts[field]
+        require(isinstance(proof, dict) and proof.get('repository_id') == repository_id and
+                proof.get('repository') == repository and proof.get('head_sha') == row['review_head_sha'] and
+                proof.get('base_sha') == row['review_base_sha'] and proof.get('pr_url') == row['review_pr_url'] and
+                proof.get('evidence_url') == row[field], 'Review operation receipt must bind its repository, PR, head and base')
+        require(row[field].startswith('https://github.com/' + repository + '/') or
+                row[field].startswith('https://api.github.com/repos/' + repository + '/'),
+                'Review operation URL must belong to its designated repository')
     identity = row.get('review_artifact_identity')
     require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
             identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and identity.get('reviewed_head_sha') == row['review_head_sha'] and
@@ -364,12 +427,29 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     pages_resources = {(repo_id, str(repo_id)) for repo_id, repo in expected.items() if repo['has_pages']}
     vercel_projects = json.loads((directory / 'vercel-provider-evidence.json').read_text())['projects']
     supabase_resources = set()
+    unlinked_supabase = {}
     for project in json.loads((directory / 'supabase-provider-evidence.json').read_text())['projects']:
         connection = project.get('vercel_project_connection')
         if connection:
             linked = [item for item in vercel_projects if item['name'] == connection]
             require(len(linked) == 1, 'Supabase connection must match one captured Vercel project')
             supabase_resources.add((linked[0]['link']['repoId'], project['reference']))
+        else:
+            unlinked_supabase[project['reference']] = project
+    account_resources = matrix.get('account_resource_preservation')
+    require(isinstance(account_resources, list) and len(account_resources) == len(unlinked_supabase),
+            'Every unlinked Supabase account resource needs explicit preservation accounting')
+    seen_account_resources = set()
+    supabase_owner = json.loads((directory / 'supabase-provider-evidence.json').read_text())['organization']['slug']
+    for resource in account_resources:
+        resource_id = resource.get('resource_id')
+        require(resource_id in unlinked_supabase and resource_id not in seen_account_resources and
+                resource.get('provider') == 'Supabase' and resource.get('resource_owner') == supabase_owner and
+                resource.get('association') == 'account_owned_no_repository_link' and
+                resource.get('resource_url') == unlinked_supabase[resource_id]['resource_url'] and
+                resource.get('status') in {'pending', 'verified'},
+                'Unlinked Supabase resource must match its independently captured account ownership')
+        seen_account_resources.add(resource_id)
     cloudflare = json.loads((directory / 'now-leadership-live-hosting-evidence.json').read_text())['cloudflare_owner_verification']
     cloudflare_zones = {(1162179521, cloudflare['zone_id'])}
     cloudflare_workers = {(1162179521, app['name']) for app in cloudflare['workers_and_pages']['applications']
@@ -573,6 +653,19 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         if health in {'verified', 'archived_verified', 'scope_exception', 'source_verified'}:
             require(all(status == 'verified' for status in ledger_statuses[repo_id]),
                     'Completed rollout requires every integration row verified')
+            for resource_id in (rid for source_id, rid in runner_resources if source_id == repo_id):
+                proof = row.get('post_transfer_runner')
+                require(isinstance(proof, dict) and proof.get('repository_id') == repo_id and
+                        proof.get('repository') == repo['destination'] and str(proof.get('runner_id')) == resource_id and
+                        proof.get('online') is True and proof.get('idle') is True and proof.get('isolated') is True and
+                        proof.get('service_active') is True and proof.get('run_conclusion') == 'success' and
+                        immutable_sha(proof.get('run_head_sha')),
+                        'Completed runner transfer needs structured destination continuity and smoke evidence')
+                require(re.fullmatch('https://github.com/' + re.escape(repo['destination']) + r'/actions/runs/[1-9][0-9]*',
+                                     proof.get('run_url', '')) is not None,
+                        'Runner smoke must belong to its destination repository')
+                for field in ('registration_evidence_url', 'isolation_evidence_url', 'service_evidence_url', 'run_url'):
+                    evidence(proof.get(field), directory)
         if health == 'retained_source':
             decision = retained[repo_id]
             require(row.get('actual_repository') == decision['retained_repository'] and
@@ -583,8 +676,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(isinstance(dependency, dict) and dependency.get('status') in {'pending', 'verified'},
                     'Retained source needs an explicit App dependency status')
             if dependency['status'] == 'verified':
-                require(text(dependency.get('verified_by')) and text(dependency.get('disposition')),
-                        'Verified retained App dependency needs owner and disposition')
+                require(dependency.get('verified_by') == 'HemSoft' and
+                        dependency.get('disposition') == RETAINED_APP_DISPOSITION and
+                        dependency.get('evidence_url') == RETAINED_APP_RECEIPT,
+                        'Verified retained App dependency needs the approved no-dependency disposition and owner receipt')
                 evidence(dependency.get('evidence_url'), directory)
                 try:
                     verified_at = datetime.datetime.fromisoformat(dependency.get('verified_at', '').replace('Z', '+00:00'))
@@ -603,8 +698,12 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 evidence(proof.get(field), directory)
             runs = proof.get('workflow_run_urls')
             require(isinstance(runs, list) and bool(runs), 'Protected source needs in-place workflow runs')
-            for run in runs:
-                evidence(run, directory)
+            operations = proof.get('workflow_operation_receipts')
+            require(isinstance(operations, list) and len(operations) == len(runs),
+                    'Protected source needs bound workflow operation receipts')
+            for run, operation in zip(runs, operations):
+                bound_operation(operation, directory, repo_id, row['destination'],
+                                proof['source_sha'], proof['release_version'], run)
             for field in ('transfer_evidence_url', 'status_evidence_url'):
                 evidence(row.get(field), directory)
             require(row.get('destination_codex_access') == 'verified' and isinstance(coverage, dict) and coverage.get('status') == 'verified',
@@ -819,7 +918,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         re.fullmatch(r'[0-9a-f]{40}', identity[field])
                         for field in ('reviewed_head_sha', 'reviewed_base_sha')),
                     'Verified pilot needs immutable SFL registered Codex review identity')
-            validate_registered_review(receipts, directory, name)
+            validate_registered_review(receipts, directory, name, extra_id)
             require(receipts.get('requester_permission') in {'write', 'maintain', 'admin'},
                     'Verified pilot needs an authorized human requester')
             require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9-]{0,38}', receipts['review_requester']) is not None,
@@ -862,8 +961,20 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     if source_complete:
         require(all(status == 'verified' for statuses in ledger_statuses.values() for status in statuses),
                 'Final completion needs every retained and transferred resource verified')
+        for resource in account_resources:
+            require(resource['status'] == 'verified', 'Final completion needs verified unlinked Supabase preservation')
+            reference = resource.get('post_transfer_evidence_url')
+            evidence(reference, directory)
+            require(not urllib.parse.urlsplit(reference).scheme and reference != 'supabase-provider-evidence.json',
+                    'Unlinked resource needs an independent post-transfer account capture')
+            capture = json.loads((directory / reference).read_text())
+            require(capture.get('resource_id') == resource['resource_id'] and capture.get('resource_owner') == resource['resource_owner'] and
+                    capture.get('state') == unlinked_supabase[resource['resource_id']]['state'] and
+                    capture.get('resource_changes_made') is False and capture.get('operation') == 'read_only_preservation',
+                    'Unlinked Supabase post-transfer capture must preserve the exact account resource and paused state')
+        onboarding = validate_final_onboarding(matrix.get('post_rollout_onboarding'), directory, expected, inventory['destination_login'], owned_app_id)
         proof = matrix.get('final_inventory')
-        validate_final_inventory(proof, directory, expected, retained)
+        validate_final_inventory(proof, directory, expected, retained, onboarding)
         require(datetime.datetime.fromisoformat(proof['observed_at'].replace('Z', '+00:00')) >
                 datetime.datetime.fromisoformat(inventory['captured_at'].replace('Z', '+00:00')),
                 'Final inventory must be fresher than the sealed source baseline')

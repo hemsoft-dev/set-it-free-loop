@@ -380,3 +380,30 @@ separate local `decision_artifact` matching the added ID/name/visibility and own
 issue-comment receipt, with a reason, `include_final_inventory` disposition and
 approval timestamp preceding the final capture. The inventory itself cannot
 serve as its own approval artifact.
+
+The unlinked Supabase dashboard-recovery project is explicitly accounted for as
+an account-owned resource with no established repository link. Its preservation
+record remains pending; final completion requires an independent post-transfer
+read-only capture of the same resource owner, identity and paused state. Do not
+invent a repository association or resume/delete the database to fill the record.
+
+Verified retained App dependencies must match the exact approved no-dependency
+receipt and safe disposition. An unverified fhemmer ruleset contract requires the
+independent authenticated owner capture before an empty baseline is accepted.
+Completed source workflow runs use `workflow_operation_receipts` bound to source
+repository, immutable SHA and release. All completed registered reviews use
+`review_operation_receipts` bound to repository ID/name, PR, head/base and each
+registry, registration, artifact and gate URL.
+
+The yahtzee completion row needs `post_transfer_runner` proving runner21's
+registration, online/idle state, active service, isolation and successful
+same-destination smoke run. Pre-transfer runner evidence cannot fill this field.
+
+After baseline rollout, create the designated disposable
+`hemsoft-dev/sfl-migration-new-repository` and fill `post_rollout_onboarding`.
+Record independent creation metadata after `rollout_completed_at`, canonical
+release/SHA, dynamic Codex and owned-App/credential coverage, registered review
+and strict gate, and repository-bound initial/repeated init, sync and status
+receipts. The final inventory separately accounts for this third operational test
+repository; other additions still need owner decisions. Final completion cannot
+reuse one of the two original pilots for this test.

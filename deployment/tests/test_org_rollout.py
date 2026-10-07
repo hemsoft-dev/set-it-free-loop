@@ -65,6 +65,17 @@ class RolloutTests(unittest.TestCase):
             'deployment_sha':row['deployment_sha'],'release_version':row['manifest_version'],'evidence_url':run}
             for run in row['wider_workflow_run_urls']]
 
+    def bind_review_operations(self, row, repository_id=None, repository=None):
+        repository_id = repository_id or row['repository_id']
+        repository = repository or row['destination']
+        fields = ('gate_run_url','review_registration_url','review_registry_status_url','review_artifact_url')
+        row['review_operation_receipts'] = {}
+        for field in fields:
+            row[field] = 'https://github.com/'+repository+'/issues/1#'+field
+            row['review_operation_receipts'][field] = {'repository_id':repository_id,'repository':repository,
+                'head_sha':row['review_head_sha'],'base_sha':row['review_base_sha'],'pr_url':row['review_pr_url'],
+                'evidence_url':row[field]}
+
     def complete_app_coverage(self, row):
         row['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
             'repository_id':row['repository_id'],'repository':row['destination'],'installation_id':123,
@@ -89,6 +100,12 @@ class RolloutTests(unittest.TestCase):
             'run_url':'https://github.com/HemSoft/set-it-free-loop/actions/runs/1'}
         for row in self.matrix['repositories']:
             repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+            if repo['full_name']=='HemSoft/yahtzee':
+                row['post_transfer_runner']={'repository_id':repo['id'],'repository':repo['destination'],'runner_id':21,
+                    'online':True,'idle':True,'isolated':True,'service_active':True,'run_conclusion':'success',
+                    'run_head_sha':'e'*40,'run_url':'https://github.com/'+repo['destination']+'/actions/runs/1',
+                    'registration_evidence_url':'https://example.com/registration','isolation_evidence_url':'https://example.com/isolation',
+                    'service_evidence_url':'https://example.com/service'}
             row['destination_protections'] = dict(validator.protection_contract(repo),
                 repository_id=repo['id'],repository=repo['destination'],revision_sha='e'*40,
                 evidence_url='https://github.com/'+repo['destination']+'/rules')
@@ -124,6 +141,7 @@ class RolloutTests(unittest.TestCase):
         row.update(requester_permission='admin',requester_permission_evidence_url='https://example.com/permission')
         row['review_pr_url']='https://github.com/'+row['destination']+'/pull/1'
         row['review_artifact_identity'].update(requester=row['review_requester'],review_pr_url=row['review_pr_url'])
+        self.bind_review_operations(row)
         self.verify_source_ledger(row['repository_id'])
         if row['repository_id'] == 1143951439:
             row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
@@ -184,6 +202,9 @@ class RolloutTests(unittest.TestCase):
                 'runtime': 'sfl_registered_codex', 'app_id': 1144995, 'bot_user_id': 199175422,
                 'reviewed_head_sha': 'b'*40, 'reviewed_base_sha': 'c'*40,
                 'review_pr_url':receipts['review_pr_url'],'requester':receipts['review_requester']}
+            self.bind_review_operations(receipts, pilot['repository_id'], pilot['repository'])
+            for field in receipts['review_operation_receipts']:
+                receipts['operation_receipts'][field]['evidence_url']=receipts[field]
 
     def complete_source(self):
         self.complete_pilots()
@@ -210,6 +231,10 @@ class RolloutTests(unittest.TestCase):
             'release_url':'https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.14',
             'release_verification_url':'https://example.com/checksum',
             'governance_evidence_url':'https://example.com/governance'}
+        self.bind_review_operations(row)
+        proof=row['in_place_evidence'];proof['workflow_run_urls']=['https://github.com/'+row['destination']+'/actions/runs/1']
+        proof['workflow_operation_receipts']=[{'repository_id':row['repository_id'],'repository':row['destination'],
+            'deployment_sha':proof['source_sha'],'release_version':proof['release_version'],'evidence_url':proof['workflow_run_urls'][0]}]
         self.verify_source_ledger(row['repository_id'])
         self.matrix['summary']['verified_rollouts'] += 1
         return row
@@ -1104,6 +1129,154 @@ class RolloutTests(unittest.TestCase):
                 (directory/'decision.json').write_text(json.dumps(changed))
                 with self.subTest(field=field), self.assertRaises(ValueError):
                     validator.validate_final_inventory(proof, directory, {}, {})
+
+    def test_every_unlinked_supabase_project_requires_account_accounting(self):
+        original = copy.deepcopy(self.matrix['account_resource_preservation'])
+        for resources in ([], [dict(original[0], resource_id='wrong')],
+                          [dict(original[0], resource_owner='wrong')],
+                          [dict(original[0], association='guessed_dashboard_link')]):
+            self.matrix['account_resource_preservation'] = resources
+            with self.subTest(resources=resources), self.assertRaisesRegex(ValueError, 'Supabase'):
+                self.check()
+        self.matrix['account_resource_preservation'] = original
+        self.check()
+
+    def test_retained_app_dependencies_require_approved_safe_disposition(self):
+        retained = next(r for r in self.matrix['repositories'] if r['health']=='retained_source')
+        original = copy.deepcopy(retained['retained_app_dependency'])
+        for field, value in [('disposition','site depends on the App and will break'),
+                             ('evidence_url','https://example.com/unrelated'), ('verified_by','other')]:
+            retained['retained_app_dependency'] = dict(original)
+            retained['retained_app_dependency'][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'approved no-dependency'):
+                self.check()
+
+    def test_source_workflows_require_repository_release_sha_receipts(self):
+        row = self.complete_source()
+        proof = row['in_place_evidence']
+        operations = proof.pop('workflow_operation_receipts')
+        with self.assertRaisesRegex(ValueError, 'bound workflow operation receipts'):
+            self.check()
+        proof['workflow_operation_receipts'] = operations
+        self.check()
+        for field, value in [('repository','hemsoft-dev/other'), ('deployment_sha','e'*40),
+                             ('release_version','2.0.0')]:
+            proof['workflow_operation_receipts'] = copy.deepcopy(operations)
+            proof['workflow_operation_receipts'][0][field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, 'Operation receipt'):
+                self.check()
+
+    def test_review_gate_receipts_require_repository_head_base_binding(self):
+        row = self.complete_rollout()
+        original = copy.deepcopy(row['review_operation_receipts'])
+        for key in original:
+            for field, value in [('repository','hemsoft-dev/other'), ('head_sha','d'*40), ('base_sha','e'*40)]:
+                row['review_operation_receipts'] = copy.deepcopy(original)
+                row['review_operation_receipts'][key][field] = value
+                with self.subTest(key=key,field=field), self.assertRaisesRegex(ValueError, 'Review operation receipt'):
+                    self.check()
+        row['review_operation_receipts'] = original
+        row['gate_run_url']='https://example.com/unrelated'
+        row['review_operation_receipts']['gate_run_url']['evidence_url']=row['gate_run_url']
+        with self.assertRaisesRegex(ValueError, 'designated repository'):
+            self.check()
+
+    def test_unverified_fhemmer_rules_need_the_independent_owner_capture(self):
+        repo = next(r for r in self.inventory['repositories'] if r['id']==validator.FHEMMER_REPOSITORY_ID)
+        capture_path = DIRECTORY/'fhemmer-protection-evidence.json'
+        original = json.loads(capture_path.read_text())
+        original_read = pathlib.Path.read_text
+        for field, value in [('repository_id',1), ('repository','other/repo'),
+                             ('rulesets',{'observation':'Source has a required ruleset'})]:
+            changed = dict(original); changed[field]=value
+            def read(path,*args,**kwargs):
+                return json.dumps(changed) if path.name==capture_path.name else original_read(path,*args,**kwargs)
+            with self.subTest(field=field), patch.object(pathlib.Path,'read_text',read), self.assertRaisesRegex(ValueError,'independent owner capture'):
+                validator.protection_contract(repo)
+
+    def test_yahtzee_completion_requires_destination_runner_smoke(self):
+        self.complete_transfer_gates(); self.complete_app_transfer()
+        row = next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
+        row.update(health='scope_exception',exception_evidence_url='https://example.com/exception',
+                   transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+        self.complete_scope_decision(row)
+        original = row.pop('post_transfer_runner')
+        with self.assertRaisesRegex(ValueError,'structured destination continuity'):
+            self.check()
+        row['post_transfer_runner'] = original
+        self.check()
+        for field, value in [('runner_id',22),('repository','HemSoft/yahtzee'),('online',False),
+                             ('isolated',False),('service_active',False),('run_conclusion','failure')]:
+            row['post_transfer_runner']=dict(original);row['post_transfer_runner'][field]=value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError,'structured destination continuity'):
+                self.check()
+        row['post_transfer_runner']=dict(original,run_url='https://github.com/HemSoft/yahtzee/actions/runs/1')
+        with self.assertRaisesRegex(ValueError,'destination repository'):
+            self.check()
+
+    def test_post_rollout_onboarding_requires_distinct_dynamic_app_coverage(self):
+        with self.assertRaisesRegex(ValueError, 'separate post-rollout'):
+            validator.validate_final_onboarding(None,DIRECTORY,{},'hemsoft-dev',4448946)
+        row = self.complete_rollout()
+        name='hemsoft-dev/sfl-migration-new-repository'
+        proof=copy.deepcopy(row)
+        proof.update(status='verified',repository_id=42,repository=name,destination=name,visibility='private',
+                     rollout_completed_at='2026-10-07T02:00:00Z',release_version=row['manifest_version'])
+        proof['review_pr_url']='https://github.com/'+name+'/pull/2'
+        proof['review_artifact_identity'].update(review_pr_url=proof['review_pr_url'])
+        proof['destination_sfl_app_access'].update(repository_id=42,repository=name)
+        proof['destination_codex_access']=dict(proof['destination_sfl_app_access'],app_id=1144995)
+        self.bind_review_operations(proof)
+        fields=('init_pr_url','repeat_onboarding_url','sync_pr_url','repeat_sync_url','status_url')
+        proof['onboarding_operation_receipts']={}
+        for field in fields:
+            proof[field]='https://github.com/'+name+'/issues/1#'+field
+            proof['onboarding_operation_receipts'][field]={'repository_id':42,'repository':name,
+                'deployment_sha':proof['deployment_sha'],'release_version':proof['release_version'],'evidence_url':proof[field]}
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder)
+            capture={'metadata':{'id':42,'full_name':name,'private':True,'archived':False,'created_at':'2026-10-07T03:00:00Z'}}
+            (directory/'metadata.json').write_text(json.dumps(capture));proof['metadata_evidence_url']='metadata.json'
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+            original=copy.deepcopy(proof)
+            for field,value in [('repository_id',1408025382),('destination_codex_access',{'status':'verified'}),
+                                ('rollout_completed_at','2026-10-08T02:00:00Z'),('onboarding_operation_receipts',{})]:
+                changed=copy.deepcopy(original);changed[field]=value
+                with self.subTest(field=field),self.assertRaises(ValueError):
+                    validator.validate_final_onboarding(changed,directory,{},'hemsoft-dev',4448946)
+
+    def test_terminal_inventory_cannot_omit_the_post_rollout_new_repository(self):
+        self.complete_source()
+        for row in self.matrix['repositories']:
+            if row['health'] in {'retained_source','source_verified'}:
+                continue
+            row.update(health='archived_verified' if row['archived'] else 'scope_exception',
+                       transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+            self.complete_post_transfer_access(row)
+            if not row['archived']:
+                row['exception_evidence_url']='https://example.com/exception'
+                self.complete_scope_decision(row)
+        accounts={owner:{'owner':owner,'state':'observed','all_pages':True,'repositories':[]}
+                  for owner in ('HemSoft','fhemmer','hemsoft-dev')}
+        for repo in self.inventory['repositories']:
+            name=repo['full_name'] if repo['id'] in validator.APPROVED_RETAINED_IDS else repo['destination']
+            accounts[name.split('/')[0]]['repositories'].append({'id':repo['id'],'full_name':name,
+                'private':repo['private'],'archived':repo['archived']})
+        for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
+            accounts['hemsoft-dev']['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private'})
+        with tempfile.TemporaryDirectory(dir=DIRECTORY) as folder:
+            directory=pathlib.Path(folder)
+            capture={'observed_at':'2026-10-07T03:00:00Z','accounts':list(accounts.values())}
+            path=directory/'final.json';path.write_text(json.dumps(capture))
+            self.matrix['final_inventory']={'observed_at':capture['observed_at'],
+                'evidence_url':str(path.relative_to(DIRECTORY)),'additional_repositories':[]}
+            resource=self.matrix['account_resource_preservation'][0]
+            path=directory/'supabase.json';path.write_text(json.dumps({'resource_id':resource['resource_id'],
+                'resource_owner':resource['resource_owner'],'state':'paused','resource_changes_made':False,
+                'operation':'read_only_preservation'}))
+            resource.update(status='verified',post_transfer_evidence_url=str(path.relative_to(DIRECTORY)))
+            with self.assertRaisesRegex(ValueError,'separate post-rollout new-repository'):
+                self.check()
 
 
 if __name__ == '__main__':
