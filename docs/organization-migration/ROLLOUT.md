@@ -499,7 +499,7 @@ zoned `observed_at` after the independent App ownership capture. An installation
 observed before transfer cannot establish coverage after transfer.
 
 Registered review gate captures also include raw Actions `run` metadata with
-repository ID/name, immutable reviewed head, workflow path, successful terminal
+repository ID/name, immutable execution SHA, workflow path, successful terminal
 state, run URL, `created_at` and `updated_at`. Run creation follows the relevant
 App and destination cutover. The effective default-branch gate policy is
 observed after that cutover and the completed review run. The final inventory
@@ -518,3 +518,41 @@ booleans alone do not prove these outcomes.
 Protected-source runtime proof uses checked-in distributed SFL product
 workflows from the full deployment catalog. Successful migration validation,
 credential verification and other ancillary workflows remain separate checks.
+
+Baseline rollout completion is checked against each repository's latest
+validated local evidence timestamp, including protection, manifest, review,
+workflow, provider-smoke and owner-decision captures. A completion artifact
+cannot backdate the aggregate cutoff to make an earlier repository creation
+qualify as post-rollout onboarding. The final designated onboarding repository
+must retain the default branch used by its captured effective gate policy.
+
+An observer Actions run can have a default-branch or merge execution SHA.
+Capture the resulting Actions-owned `check_run` separately: its reviewed head,
+context, successful terminal state, URL, App ID15368 and registered PR/base
+`external_id` must match the review receipt. Raw run creation/completion still
+prove execution chronology. Do not substitute the run's execution SHA for the
+reviewed PR head. See [GitHub event semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+
+Workflow-fixture proof uses the tracked `deployment/tests/run-org-observer-fixtures.cjs`
+runner and exact structured `argv`. Its workflow input is a local captured JSON
+with repository ID/name, deployed revision, workflow path and source content.
+The runner executes extracted observer functions against synthetic API responses
+and writes a scenario result. Bind its output file digest, runner digest and
+workflow-content digest to the execution capture. An arbitrary successful
+command or separately authored passing result is insufficient. Fixture execution
+is distinguished from live provider events.
+
+Pre-sync captures include the current default-branch ref GET result and a
+separate `deployment_input_evidence_url`: repository ID/name, input revision,
+result revision and captured compare metadata showing that the result contains
+the inspected input. Capture that input after pre-sync inspection and before
+final deployed status. A historical manifest query cannot describe the actual
+configuration consumed by deployment.
+
+For `baseline_preserved`, both the claimed baseline and observed resource must
+match the provider-specific projection of sealed records. Vercel preserves its
+project/account/framework/name and existing deployment targets; Pages preserves
+publication configuration; Supabase preserves the recorded account project;
+Cloudflare preserves the captured zone routing or Worker identity and routing.
+Use actual successful continuity or approved recovery when a deployment changes;
+do not invent equal before/after dictionaries.

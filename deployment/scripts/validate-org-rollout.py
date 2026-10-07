@@ -4,6 +4,7 @@
 import argparse
 import csv
 import datetime
+import hashlib
 import json
 import pathlib
 import re
@@ -341,7 +342,7 @@ def validate_release_download(proof, directory, repository_id, repository, sourc
     observed_time(download.get('observed_at'), 'Release download')
 
 
-def validate_final_onboarding(proof, directory, expected, organization, app_id, cutover=None):
+def validate_final_onboarding(proof, directory, expected, organization, app_id, cutover=None, terminal_times=None):
     require(isinstance(proof, dict) and proof.get('status') == 'verified',
             'Final completion needs the separate post-rollout new-repository onboarding proof')
     repo_id = proof.get('repository_id')
@@ -379,6 +380,9 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
                 'Rollout completion capture needs terminal repository-bound outcomes')
         completed_at = datetime.datetime.fromisoformat(entry.get('completed_at', '').replace('Z', '+00:00'))
         cutoff = datetime.datetime.fromisoformat(completion['completed_at'].replace('Z', '+00:00'))
+        require(terminal_times is not None and entry['repository_id'] in terminal_times and
+                completed_at >= terminal_times[entry['repository_id']],
+                'Repository completion must follow its latest independently validated terminal evidence')
         require(completed_at.tzinfo is not None and cutoff.tzinfo is not None and completed_at <= cutoff,
                 'Baseline completion timestamps cannot follow the recorded rollout completion')
     created_at = datetime.datetime.fromisoformat(metadata.get('created_at', '').replace('Z', '+00:00'))
@@ -477,6 +481,9 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
     extras = proof.get('additional_repositories')
     require(isinstance(extras, list), 'Final inventory needs explicit additional-repository accounting')
     if approved_onboarding is not None:
+        metadata = local_capture(approved_onboarding['metadata_evidence_url'], directory, 'New repository metadata')['metadata']
+        require(actual.get(approved_onboarding['repository_id'], {}).get('default_branch') == metadata['default_branch'] ==
+                approved_onboarding['gate_policy']['branch'], 'Final onboarding must preserve its actually gated default branch')
         require(actual.get(approved_onboarding['repository_id'], {}).get('archived') is False,
                 'Final onboarding repository must remain unarchived in the final inventory')
     allowed = dict(APPROVED_PILOTS)
@@ -611,19 +618,29 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
     gate_at = observed_time(captured_gate.get('observed_at'), 'Gate result')
     run = captured_gate.get('run', {})
     require(run.get('repository', {}).get('id') == repository_id and
-            run['repository'].get('full_name') == repository and run.get('head_sha') == row['review_head_sha'] and
+            run['repository'].get('full_name') == repository and immutable_sha(run.get('head_sha')) and
             run.get('path') == gate['workflow'] and run.get('status') == 'completed' and
             run.get('conclusion') == 'success' and
             re.fullmatch('https://github.com/' + re.escape(repository) + r'/actions/runs/[1-9][0-9]*',
                          run.get('html_url', '')) is not None,
             'Gate capture must include its actual successful repository-bound Actions workflow run')
+    check = captured_gate.get('check_run', {})
+    require(check.get('head_sha') == row['review_head_sha'] and check.get('name') == gate['context'] and
+            check.get('app', {}).get('id') == 15368 and check.get('status') == 'completed' and
+            check.get('conclusion') == 'success' and check.get('html_url') == row['gate_run_url'] and
+            check.get('external_id', '').startswith('sfl-codex-review:pull:' + row['review_pr_url'].rsplit('/', 1)[1] +
+                ':base:' + row['review_base_sha'] + ':context:'),
+            'Actions-owned check capture must prove the actual reviewed PR head and successful gate')
     created = observed_time(run.get('created_at'), 'Registered review run creation')
     completed = observed_time(run.get('updated_at'), 'Registered review run completion')
-    require(created <= completed <= gate_at, 'Gate capture must follow the actual completed workflow')
+    check_started = observed_time(check.get('started_at'), 'Gate check creation')
+    check_completed = observed_time(check.get('completed_at'), 'Gate check completion')
+    require(created <= check_started <= check_completed <= gate_at and created <= completed <= gate_at,
+            'Gate capture must follow actual workflow and check completion')
     if cutover is not None:
-        require(created >= cutover, 'Registered review must execute after destination/App cutover')
+        require(created >= cutover and check_started >= cutover, 'Registered review must execute after destination/App cutover')
     validate_gate_policy(row.get('gate_policy'), directory, repository_id, repository, target_branch,
-                         max(completed, cutover) if cutover is not None else completed)
+                         max(completed, check_completed, cutover) if cutover is not None else max(completed, check_completed))
 
 
 
@@ -757,6 +774,29 @@ def validate_pre_sync_installation(proof, directory, row):
     require(observed_time(destination['observed_at'], 'Destination metadata') <= timestamp <=
             observed_time(deployed['observed_at'], 'Deployed manifest'),
             'Pre-sync capture must follow destination verification and precede deployed status')
+    require(isinstance(row.get('gate_policy'), dict) and text(row['gate_policy'].get('branch')),
+            'Completed review needs a required strict SFL gate policy')
+    head = capture.get('default_branch_head', {})
+    require(head.get('http_status') == 200 and
+            head.get('request_url') == 'https://api.github.com/repos/' + row['destination'] + '/git/ref/heads/' + row['gate_policy']['branch'] and
+            head.get('data', {}).get('object', {}).get('sha') == proof['revision_sha'],
+            'Pre-sync input must match the independently read current default-branch ref')
+    operation = local_capture(capture.get('deployment_input_evidence_url'), directory, 'Deployment input')
+    require(head.get('branch') == row['gate_policy']['branch'] and head.get('sha') == proof['revision_sha'] and
+            operation.get('repository_id') == row['repository_id'] and operation.get('repository') == row['destination'] and
+            operation.get('input_revision_sha') == proof['revision_sha'] and
+            operation.get('result_revision_sha') == deployed['revision_sha'],
+            'Pre-sync revision must be the observed default branch and actual deployment input')
+    comparison = operation.get('comparison', {})
+    require(comparison.get('status') in {'ahead', 'identical'} and
+            comparison.get('base_commit', {}).get('sha') == proof['revision_sha'] and
+            comparison.get('merge_base_commit', {}).get('sha') == proof['revision_sha'] and
+            comparison.get('html_url') == 'https://github.com/' + row['destination'] + '/compare/' +
+                proof['revision_sha'] + '...' + deployed['revision_sha'],
+            'Deployed revision must contain the independently captured pre-sync input')
+    input_at = observed_time(operation.get('observed_at'), 'Deployment input')
+    require(timestamp <= input_at <= observed_time(deployed['observed_at'], 'Deployed manifest'),
+            'Deployment input proof must follow pre-sync inspection and precede final deployment status')
     files = capture.get('manifest_files')
     require(isinstance(files, dict) and set(files) == {'.sfl/sfl.json','sfl.json'} and
             set(proof['manifest_paths']) == set(files), 'Pre-sync capture must inspect both manifest locations')
@@ -778,14 +818,16 @@ def validate_pre_sync_installation(proof, directory, row):
                 'Present installation must match independently captured manifest contents')
 
 
-def validate_pilot_scenario(result, scenario, directory, repository_id, repository, sha, version, revision):
+def validate_pilot_scenario(result, scenario, directory, repository_id, repository, sha, version, revision, cutover=None):
     capture = local_capture(result.get('capture_evidence_url'), directory, 'Pilot scenario execution')
     require(capture.get('repository_id') == repository_id and capture.get('repository') == repository and
             capture.get('deployment_sha') == sha and capture.get('release_version') == version and
             capture.get('tested_revision_sha') == revision and capture.get('scenario') == scenario and
             capture.get('mode') == result['mode'] and capture.get('outcome') == result['outcome'] and
             capture.get('status') == 'completed', 'Pilot scenario capture must match the executed observer and terminal result')
-    observed_time(capture.get('observed_at'), 'Pilot scenario execution')
+    scenario_at = observed_time(capture.get('observed_at'), 'Pilot scenario execution')
+    if cutover is not None:
+        require(scenario_at >= cutover, 'Pilot scenario must execute after App cutover and deployed observer capture')
     output = local_capture(capture.get('output_evidence_url'), directory, 'Pilot scenario output')
     require(output.get('repository_id') == repository_id and output.get('repository') == repository and
             output.get('deployment_sha') == sha and output.get('tested_revision_sha') == revision and
@@ -793,6 +835,22 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
             output.get('outcome') == PILOT_SCENARIOS[scenario] and output.get('passed') is True,
             'Pilot scenario output must prove the expected result for the tested observer revision')
     if result['mode'] == 'workflow_fixture':
+        workflow = local_capture(capture.get('workflow_evidence_url'), directory, 'Fixture observer source')
+        require(workflow.get('repository_id') == repository_id and workflow.get('repository') == repository and
+                workflow.get('revision_sha') == revision and workflow.get('path') == '.github/workflows/sfl-pr-review-auto.yml' and
+                text(workflow.get('content')), 'Fixture observer source must bind its actual deployed workflow and revision')
+        require(observed_time(output.get('observed_at'), 'Fixture output') <= scenario_at,
+                'Fixture execution capture must follow generated output')
+        runner = pathlib.Path(__file__).resolve().parents[2] / 'deployment/tests/run-org-observer-fixtures.cjs'
+        argv = ['node', 'deployment/tests/run-org-observer-fixtures.cjs', '--workflow', 'docs/organization-migration/' + capture['workflow_evidence_url'],
+                '--repository-id', str(repository_id), '--repository', repository, '--deployment-sha', sha,
+                '--release-version', version, '--revision', revision, '--scenario', scenario,
+                '--output', 'docs/organization-migration/' + capture['output_evidence_url']]
+        require(capture.get('argv') == argv and capture.get('command') == 'run-org-observer-fixtures' and
+                output.get('runner_sha256') == hashlib.sha256(runner.read_bytes()).hexdigest() and
+                output.get('workflow_sha256') == hashlib.sha256(workflow['content'].encode()).hexdigest() and
+                capture.get('output_sha256') == hashlib.sha256((directory/capture['output_evidence_url']).read_bytes()).hexdigest(),
+                'Fixture execution must use the approved runner and exact arguments, with matching generated output and observer digests')
         require(type(capture.get('exit_code')) is int and capture['exit_code'] == 0 and
                 text(capture.get('command')) and capture.get('conclusion') == 'success' and
                 result['evidence_url'] == result['capture_evidence_url'],
@@ -806,6 +864,62 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 run.get('path') == '.github/workflows/sfl-pr-review-auto.yml' and
                 run.get('status') == 'completed' and run.get('conclusion') in {'success','failure'},
                 'Live scenario needs its terminal deployed-observer Actions run')
+
+
+def provider_preservation_baseline(row, inventory, directory):
+    kind, resource = row.get('resource_kind'), row.get('resource_id')
+    if kind == 'vercel_project':
+        capture = local_capture('vercel-provider-evidence.json', directory, 'Vercel baseline')
+        project = next((p for p in capture['projects'] if p['id'] == resource), None)
+        require(project is not None, 'Unknown sealed Vercel resource')
+        return {key: project.get(key) for key in ('id', 'accountId', 'framework', 'name', 'targets')}
+    if kind == 'github_pages':
+        repo = next(r for r in inventory['repositories'] if r['id'] == int(row['repository_id']))
+        pages = repo['settings']['pages']
+        require(pages['state'] == 'observed', 'Pages preservation needs a sealed observed baseline')
+        return {key: pages['data'].get(key) for key in ('cname', 'build_type', 'source', 'public', 'https_enforced')}
+    if kind == 'supabase_project':
+        capture = local_capture('supabase-provider-evidence.json', directory, 'Supabase baseline')
+        project = next((p for p in capture['projects'] if p['reference'] == resource), None)
+        require(project is not None, 'Unknown sealed Supabase resource')
+        return dict(project, organization=capture['organization']['slug'])
+    cloudflare = local_capture('now-leadership-live-hosting-evidence.json', directory, 'Cloudflare baseline')['cloudflare_owner_verification']
+    if kind == 'cloudflare_zone':
+        require(resource == cloudflare['zone_id'], 'Unknown sealed Cloudflare zone')
+        return {key: cloudflare[key] for key in ('account_id', 'zone_id', 'plan', 'website_records', 'workers_routes')}
+    if kind == 'cloudflare_worker':
+        worker = next((p for p in cloudflare['workers_and_pages']['applications'] if p['name'] == resource), None)
+        require(worker is not None, 'Unknown sealed Cloudflare Worker')
+        return dict(worker, account_id=cloudflare['account_id'], workers_routes=cloudflare['workers_routes'])
+    raise ValueError('Baseline preservation requires a supported sealed provider resource')
+
+
+def repository_terminal_times(records, ledger_rows, directory):
+    """Collect timestamped local captures only after their contracts passed."""
+    def references(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key.endswith(('evidence_url', 'verification_url')) and isinstance(item, str) and not urllib.parse.urlsplit(item).scheme:
+                    yield item
+                elif isinstance(item, (dict, list)):
+                    yield from references(item)
+        elif isinstance(value, list):
+            for item in value:
+                yield from references(item)
+    times = {}
+    for row in records:
+        relevant = [row] + [r for r in ledger_rows if int(r['repository_id']) == row['repository_id']]
+        observations = []
+        for reference in set(references(relevant)):
+            if not reference:
+                continue
+            capture = local_capture(reference, directory, 'Terminal repository evidence')
+            timestamp = capture.get('observed_at') or capture.get('approved_at')
+            if timestamp:
+                observations.append(observed_time(timestamp, 'Terminal repository evidence'))
+        require(bool(observations), 'Terminal repository needs independently timestamped completion evidence')
+        times[row['repository_id']] = max(observations)
+    return times
 
 
 def validate_preservation_time(capture, cutoff):
@@ -1104,9 +1218,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         'Unused integration must remain preserved without runtime operations')
                 evidence(smoke.get('owner_receipt_url'), directory)
             elif row['smoke_outcome'] == 'baseline_preserved':
-                require(isinstance(smoke.get('baseline'), dict) and bool(smoke['baseline']) and
-                        smoke.get('observed_resource') == smoke['baseline'],
-                        'Baseline preservation needs matching independent resource observations')
+                baseline = provider_preservation_baseline(row, inventory, directory)
+                require(smoke.get('baseline') == baseline and smoke.get('observed_resource') == baseline,
+                        'Baseline preservation must match the sealed provider resource and independent observation')
             else:
                 require(smoke.get('continuity_verified') is True, 'Integration success needs verified continuity')
             evidence(row['resource_url'], directory)
@@ -1550,7 +1664,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     require(result['evidence_url'].startswith('https://github.com/' + name + '/'),
                             'Pilot scenario URL must belong to its designated repository')
                 validate_pilot_scenario(result, scenario, directory, extra_id, name, receipts['deployment_sha'],
-                                        receipts['release_version'], revision)
+                                        receipts['release_version'], revision,
+                                        max(app_transferred_at, observed_time(local_capture(receipts['manifest_evidence_url'], directory, 'Pilot manifest')['observed_at'], 'Pilot manifest')))
             identity = receipts.get('review_artifact_identity')
             require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
                     identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and
@@ -1610,7 +1725,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 'Final completion needs post-transfer resource continuity, beyond pre-transfer readiness')
         require(all(status == 'verified' for statuses in ledger_statuses.values() for status in statuses),
                 'Final completion needs every retained and transferred resource verified')
-        onboarding = validate_final_onboarding(matrix.get('post_rollout_onboarding'), directory, expected, inventory['destination_login'], owned_app_id, app_transferred_at)
+        onboarding = validate_final_onboarding(matrix.get('post_rollout_onboarding'), directory, expected, inventory['destination_login'], owned_app_id, app_transferred_at,
+                                            repository_terminal_times(records, rows, directory))
         rollout_completed_at = observed_time(onboarding['rollout_completed_at'], 'Rollout completion')
         for resource in account_resources:
             require(resource['status'] == 'verified', 'Final completion needs verified unlinked Supabase preservation')

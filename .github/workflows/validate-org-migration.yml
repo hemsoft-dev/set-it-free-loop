@@ -11,6 +11,7 @@ on:
       - 'deployment/tests/test_org_migration.py'
       - 'deployment/scripts/validate-org-rollout.py'
       - 'deployment/tests/test_org_rollout.py'
+      - 'deployment/tests/run-org-observer-fixtures.cjs'
       - 'docs/organization-migration/**'
       - '.github/workflows/*.yml'
   push:
@@ -24,6 +25,7 @@ on:
       - 'deployment/tests/test_org_migration.py'
       - 'deployment/scripts/validate-org-rollout.py'
       - 'deployment/tests/test_org_rollout.py'
+      - 'deployment/tests/run-org-observer-fixtures.cjs'
       - 'docs/organization-migration/**'
       - '.github/workflows/*.yml'
 

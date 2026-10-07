@@ -4,8 +4,11 @@ import copy
 import csv
 import importlib.util
 import json
+import hashlib
 import pathlib
 import tempfile
+import subprocess
+import os
 import unittest
 from unittest.mock import patch
 
@@ -43,8 +46,18 @@ class RolloutTests(unittest.TestCase):
         if proof['state']=='present':
             files['.sfl/sfl.json'].update(state='observed',http_status=200,manifest={
                 'tier':proof['tier'],'addons':proof['addons'],'components':proof['components']})
+        deployed=json.loads((DIRECTORY/row['manifest_evidence_url']).read_text())
+        operation=self.capture({'repository_id':row['repository_id'],'repository':row['destination'],
+            'input_revision_sha':proof['revision_sha'],'result_revision_sha':deployed['revision_sha'],
+            'observed_at':'2026-10-07T02:00:00Z','comparison':{'status':'ahead',
+                'base_commit':{'sha':proof['revision_sha']},'merge_base_commit':{'sha':proof['revision_sha']},
+                'html_url':'https://github.com/'+row['destination']+'/compare/'+proof['revision_sha']+'...'+deployed['revision_sha']}})
         proof['evidence_url']=self.capture({**proof,'phase':'pre_sync',
-            'observed_at':'2026-10-07T02:00:00Z','manifest_files':files})
+            'observed_at':'2026-10-07T02:00:00Z','manifest_files':files,
+            'default_branch_head':{'branch':row['gate_policy']['branch'],'sha':proof['revision_sha'],'http_status':200,
+                'request_url':'https://api.github.com/repos/'+row['destination']+'/git/ref/heads/'+row['gate_policy']['branch'],
+                'data':{'object':{'sha':proof['revision_sha']}}},
+            'deployment_input_evidence_url':operation})
 
     def bind_manifest(self, row, directory=DIRECTORY, repository_id=None, repository=None, revision='b'*40):
         repository_id=repository_id or row['repository_id'];repository=repository or row['destination']
@@ -184,7 +197,11 @@ class RolloutTests(unittest.TestCase):
             observed_at='2026-10-07T02:00:00Z',run={'repository':{'id':repository_id,'full_name':repository},
                 'head_sha':row['review_head_sha'],'path':gate['workflow'],'status':'completed','conclusion':'success',
                 'html_url':'https://github.com/'+repository+'/actions/runs/1',
-                'created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'}),directory)
+                'created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'},
+            check_run={'head_sha':row['review_head_sha'],'name':gate['context'],'app':{'id':15368},
+                'status':'completed','conclusion':'success','html_url':row['gate_run_url'],
+                'external_id':'sfl-codex-review:pull:'+row['review_pr_url'].rsplit('/',1)[1]+':base:'+row['review_base_sha']+':context:fixture:request:1',
+                'started_at':'2026-10-07T02:00:00Z','completed_at':'2026-10-07T02:00:00Z'}),directory)
 
     def complete_app_coverage(self, row):
         row['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
@@ -376,12 +393,22 @@ class RolloutTests(unittest.TestCase):
                 'repository':pilot['repository'],'release_version':receipts['release_version'],
                 'evidence_url':'https://github.com/'+pilot['repository']+'/issues/1#scenario-'+name}
                 for name,outcome in validator.PILOT_SCENARIOS.items()}
+            workflow_source=self.capture({'repository_id':pilot['repository_id'],'repository':pilot['repository'],
+                'revision_sha':'b'*40,'path':'.github/workflows/sfl-pr-review-auto.yml',
+                'content':(ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_text()})
             for scenario,result in receipts['scenario_receipts'].items():
                 output=self.capture({'repository_id':pilot['repository_id'],'repository':pilot['repository'],
                     'deployment_sha':receipts['deployment_sha'],'tested_revision_sha':'b'*40,'scenario':scenario,
-                    'mode':result['mode'],'outcome':result['outcome'],'passed':True})
+                    'mode':result['mode'],'outcome':result['outcome'],'passed':True,'observed_at':'2026-10-07T02:00:00Z',
+                    'runner_sha256':hashlib.sha256((ROOT/'deployment/tests/run-org-observer-fixtures.cjs').read_bytes()).hexdigest(),
+                    'workflow_sha256':hashlib.sha256((ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_bytes()).hexdigest()})
                 result['capture_evidence_url']=self.capture({**result,'scenario':scenario,'tested_revision_sha':'b'*40,
-                    'status':'completed','conclusion':'success','command':'synthetic fixture command','exit_code':0,
+                    'status':'completed','conclusion':'success','command':'run-org-observer-fixtures','exit_code':0,
+                    'workflow_evidence_url':workflow_source,'output_sha256':hashlib.sha256((DIRECTORY/output).read_bytes()).hexdigest(),
+                    'argv':['node','deployment/tests/run-org-observer-fixtures.cjs','--workflow','docs/organization-migration/'+workflow_source,
+                        '--repository-id',str(pilot['repository_id']),'--repository',pilot['repository'],
+                        '--deployment-sha',receipts['deployment_sha'],'--release-version',receipts['release_version'],
+                        '--revision','b'*40,'--scenario',scenario,'--output','docs/organization-migration/'+output],
                     'observed_at':'2026-10-07T02:00:00Z','output_evidence_url':output})
                 result['evidence_url']=result['capture_evidence_url']
             pilot['validation_evidence']['review_artifact_identity'] = {
@@ -1493,7 +1520,8 @@ class RolloutTests(unittest.TestCase):
             path=directory/reference;capture=json.loads(path.read_text());capture['observed_at']='2026-10-07T03:30:00Z';path.write_text(json.dumps(capture))
         gate_path=directory/proof['review_operation_receipts']['gate_run_url']['capture_evidence_url']
         gate_capture=json.loads(gate_path.read_text());gate_capture['observed_at']='2026-10-07T03:30:00Z'
-        gate_capture['run'].update(created_at='2026-10-07T03:30:00Z',updated_at='2026-10-07T03:30:00Z');gate_path.write_text(json.dumps(gate_capture))
+        gate_capture['run'].update(created_at='2026-10-07T03:30:00Z',updated_at='2026-10-07T03:30:00Z')
+        gate_capture['check_run'].update(started_at='2026-10-07T03:30:00Z',completed_at='2026-10-07T03:30:00Z');gate_path.write_text(json.dumps(gate_capture))
         proof['manifest_evidence_url']='post-status-manifest.json'
         (directory/proof['manifest_evidence_url']).write_text(json.dumps({'repository_id':42,'repository':name,'revision_sha':'f'*40,'manifest':proof['manifest_identity'],'observed_at':'2026-10-07T03:30:00Z'}))
         capture={'metadata':{'id':42,'full_name':name,'private':True,'archived':False,'created_at':'2026-10-07T03:00:00Z','default_branch':'main'}}
@@ -1875,6 +1903,7 @@ class RolloutTests(unittest.TestCase):
         self.assertEqual(len(filters),2)
         for filters_for_event in filters:
             paths=re.findall(r"      - '([^']+)'",filters_for_event)
+            self.assertIn('deployment/tests/run-org-observer-fixtures.cjs',paths)
             for source_workflow in ('validate-gh-sfl.yml','sfl-pr-review-auto.yml','renamed-source-workflow.yml'):
                 with self.subTest(workflow=source_workflow):
                     self.assertTrue(any(fnmatch.fnmatch('.github/workflows/'+source_workflow,path) for path in paths))
@@ -1945,7 +1974,7 @@ class RolloutTests(unittest.TestCase):
             accounts=[{'owner':o,'state':'observed','all_pages':True,'repositories':[]} for o in ('HemSoft','fhemmer','hemsoft-dev')]
             for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
                 accounts[2]['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private','archived':False})
-            accounts[2]['repositories'].append({'id':42,'full_name':onboarding['repository'],'private':True,'archived':False})
+            accounts[2]['repositories'].append({'id':42,'full_name':onboarding['repository'],'private':True,'archived':False,'default_branch':'main'})
             proof={'observed_at':'2026-10-07T04:00:00Z','evidence_url':'final.json','additional_repositories':[]}
             path=directory/'final.json'
             path.write_text(json.dumps({'observed_at':proof['observed_at'],'accounts':accounts}))
@@ -2053,7 +2082,7 @@ class RolloutTests(unittest.TestCase):
             accounts=[{'owner':o,'state':'observed','all_pages':True,'repositories':[]} for o in ('HemSoft','fhemmer','hemsoft-dev')]
             for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
                 accounts[2]['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private','archived':False})
-            new={'id':42,'full_name':onboarding['repository'],'private':True,'archived':False};accounts[2]['repositories'].append(new)
+            new={'id':42,'full_name':onboarding['repository'],'private':True,'archived':False,'default_branch':'main'};accounts[2]['repositories'].append(new)
             proof={'observed_at':'2026-10-07T04:00:00Z','evidence_url':'final.json','additional_repositories':[]};path=directory/'final.json'
             for archived in (True,None):
                 new['archived']=archived;path.write_text(json.dumps({'observed_at':proof['observed_at'],'accounts':accounts}))
@@ -2130,7 +2159,7 @@ class RolloutTests(unittest.TestCase):
     def test_registered_review_raw_run_executes_after_cutover(self):
         row=self.complete_rollout();gate=row['review_operation_receipts']['gate_run_url']
         path=DIRECTORY/gate['capture_evidence_url'];original=json.loads(path.read_text());self.check()
-        for field,value in [('created_at','2026-10-07T01:59:59Z'),('created_at',None),('head_sha','f'*40),('path','.github/workflows/validate-gh-sfl.yml')]:
+        for field,value in [('created_at','2026-10-07T01:59:59Z'),('created_at',None),('head_sha',None),('path','.github/workflows/validate-gh-sfl.yml')]:
             capture=copy.deepcopy(original);capture['run'][field]=value;path.write_text(json.dumps(capture))
             with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.check()
         path.write_text(json.dumps(original));self.check()
@@ -2155,6 +2184,80 @@ class RolloutTests(unittest.TestCase):
         target=next(r for r in capture['accounts'][2]['repositories'] if r['id'] in expected)
         target['default_branch']='different-branch';proof['evidence_url']=self.capture(capture)
         with self.assertRaisesRegex(ValueError,'preserve state'):validator.validate_final_inventory(proof,DIRECTORY,expected,retained)
+
+
+    def test_completion_cutoff_follows_latest_terminal_repository_evidence(self):
+        row=self.complete_rollout();times=validator.repository_terminal_times([row],self.rows,DIRECTORY)
+        self.assertEqual(times[row['repository_id']],validator.observed_time('2026-10-07T03:30:00Z','fixture'))
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            baseline=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+            path=directory/proof['rollout_completion_evidence_url'];capture=json.loads(path.read_text())
+            capture['repositories']=[{'repository_id':baseline['id'],'repository':baseline['destination'],
+                'health':'verified','completed_at':'2026-10-07T02:00:00Z'}];path.write_text(json.dumps(capture))
+            with self.assertRaisesRegex(ValueError,'latest independently validated'):
+                validator.validate_final_onboarding(proof,directory,{baseline['id']:baseline},'hemsoft-dev',4448946,terminal_times=times)
+
+    def test_final_onboarding_inventory_preserves_gated_branch(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);onboarding=self.onboarding_fixture(directory)
+            repos=[{'id':rid,'full_name':name,'private':visibility=='private','archived':False,'default_branch':'main'}
+                   for rid,(name,visibility) in validator.APPROVED_PILOTS.items()]
+            repos.append({'id':42,'full_name':onboarding['repository'],'private':True,'archived':False,'default_branch':'main'})
+            capture={'observed_at':'2026-10-07T04:00:00Z','accounts':[{'owner':o,'state':'observed','all_pages':True,
+                'repositories':repos if o=='hemsoft-dev' else []} for o in ('HemSoft','fhemmer','hemsoft-dev')]}
+            proof={'observed_at':capture['observed_at'],'evidence_url':self.capture(capture,directory),'additional_repositories':[]}
+            validator.validate_final_inventory(proof,directory,{}, {},onboarding)
+            repos[-1]['default_branch']='develop';proof['evidence_url']=self.capture(capture,directory)
+            with self.assertRaisesRegex(ValueError,'actually gated default branch'):
+                validator.validate_final_inventory(proof,directory,{}, {},onboarding)
+
+    def test_issue_comment_run_sha_does_not_replace_actual_reviewed_check_head(self):
+        row=self.complete_rollout();path=DIRECTORY/row['review_operation_receipts']['gate_run_url']['capture_evidence_url']
+        capture=json.loads(path.read_text());capture['run']['head_sha']='d'*40;capture['run']['event']='issue_comment'
+        path.write_text(json.dumps(capture));self.check()
+        original=copy.deepcopy(capture)
+        for field,value in [('head_sha','f'*40),('external_id','sfl-codex-review:pull:99:base:'+row['review_base_sha']+':context:fixture'),('app',{'id':1144995})]:
+            capture=copy.deepcopy(original);capture['check_run'][field]=value;path.write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'actual reviewed PR head'):self.check()
+
+    def test_fixture_runner_command_and_generated_output_are_bound(self):
+        self.complete_pilots();pilot=self.matrix['disposable_validation_repositories'][0]
+        result=pilot['validation_evidence']['scenario_receipts']['findings'];path=DIRECTORY/result['capture_evidence_url']
+        original=json.loads(path.read_text());self.check()
+        for field,value in [('command','true'),('argv',['true']),('output_sha256','f'*64)]:
+            capture=copy.deepcopy(original);capture[field]=value;path.write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'approved runner'):self.check()
+        path.write_text(json.dumps(original))
+        execution=subprocess.run(original['argv'],cwd=ROOT,env={'PATH':os.environ['PATH']},text=True,capture_output=True)
+        self.assertEqual(execution.returncode,0,execution.stderr)
+        output=json.loads((DIRECTORY/original['output_evidence_url']).read_text())
+        self.assertTrue(output['passed']);self.assertEqual(output['scenario'],'findings')
+        self.assertEqual(output['workflow_sha256'],hashlib.sha256((ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_bytes()).hexdigest())
+        original['observed_at']=output['observed_at']
+        original['output_sha256']=hashlib.sha256((DIRECTORY/original['output_evidence_url']).read_bytes()).hexdigest()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_pre_sync_revision_must_be_actual_current_deployment_input(self):
+        row=self.complete_rollout();proof=row['pre_sync_installation'];path=DIRECTORY/proof['evidence_url']
+        original=json.loads(path.read_text());self.check()
+        capture=copy.deepcopy(original);capture['default_branch_head']['data']['object']['sha']='f'*40;path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'current default-branch ref'):self.check()
+        path.write_text(json.dumps(original));input_path=DIRECTORY/original['deployment_input_evidence_url']
+        capture=json.loads(input_path.read_text());capture['input_revision_sha']='f'*40;input_path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'actual deployment input'):self.check()
+
+    def test_preservation_baseline_is_bound_to_each_sealed_provider_resource(self):
+        self.complete_transfer_gates()
+        for kind in ('vercel_project','github_pages','supabase_project','cloudflare_zone','cloudflare_worker'):
+            row=next(r for r in self.rows if r.get('resource_kind')==kind)
+            original=copy.deepcopy(row);row['smoke_outcome']='baseline_preserved'
+            smoke=json.loads((DIRECTORY/row['smoke_evidence_url']).read_text());smoke.update(outcome='baseline_preserved')
+            baseline=validator.provider_preservation_baseline(row,self.inventory,DIRECTORY)
+            smoke.update(baseline=baseline,observed_resource=baseline);row['smoke_evidence_url']=self.capture(smoke);self.check()
+            smoke.update(baseline={'invented':'unchanged'},observed_resource={'invented':'unchanged'});row['smoke_evidence_url']=self.capture(smoke)
+            with self.subTest(kind=kind),self.assertRaisesRegex(ValueError,'sealed provider resource'):self.check()
+            row.clear();row.update(original)
 
 
 if __name__ == '__main__':
