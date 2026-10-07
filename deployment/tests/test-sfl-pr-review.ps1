@@ -529,3 +529,10 @@ const isActiveInvalidationRun = () => true;
 '@
 $selectionTest | node -
 if ($LASTEXITCODE -ne 0) { throw 'Request candidate and invalidation authorization fixtures failed.' }
+
+if ([regex]::Matches($canonical, '(?m)^\s*queue:').Count -ne 1) { throw 'Only the observer has an explicitly validated queue setting.' }
+$observerConcurrency = [regex]::Match($canonical, '(?s)  observe:\s*.*?    concurrency:\s*(.*?)    runs-on:')
+if (-not $observerConcurrency.Success -or $observerConcurrency.Groups[1].Value -notmatch '(?m)^\s*queue: max\s*$' -or
+    $observerConcurrency.Groups[1].Value -notmatch 'cancel-in-progress: false') {
+    throw 'Observer must serialize artifacts without replacing queued events.'
+}
