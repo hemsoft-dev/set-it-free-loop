@@ -345,3 +345,18 @@ custom components, including repositories without a manifest in the original
 scan. Final new-repository onboarding follows an independent completion capture
 for every baseline repository and uses the captured Codex installation ID.
 Baseline-covered archived repositories must preserve destination SFL App access.
+
+Final onboarding records include an independent post-status manifest capture,
+canonical release/checksum verification, actual merged init PR, successful sync
+outcome and zero-change repeat results. Revision receipts follow the operation
+sequence through final status. A repeat or sync that changes no files records
+`no_changes`; it must not invent a new PR.
+
+All transferred SFL App coverage reconciles with the single destination
+installation in `owned-app-organization-installation-evidence.json`. Its current
+state is pending and does not claim an installation. The source credential
+receipt must independently verify installation 150383874 selecting `all`, as
+reported by the owner. The wider pilot executes a successful non-Auditor
+workflow distinct from its Auditor run. Known provider actions must preserve
+the captured dashboard paused-database and modern-web-stack Git-retirement
+decisions; nonempty text that contradicts those decisions cannot clear a gate.

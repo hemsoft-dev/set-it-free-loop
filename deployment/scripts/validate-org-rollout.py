@@ -154,7 +154,8 @@ def validate_app_credential(proof, directory):
             proof.get('conclusion') == 'success' and immutable_sha(proof.get('reviewed_sha')) and
             proof.get('app_id') == 4448946 and proof.get('client_id') == 'Iv23liwvwJJUh2bUIKLW' and
             proof.get('owner') == 'HemSoft' and type(proof.get('installation_id')) is int and
-            proof['installation_id'] > 0 and proof.get('permission_ceiling_verified') is True,
+            proof['installation_id'] == 150383874 and proof.get('repository_selection') == 'all' and
+            proof.get('permission_ceiling_verified') is True,
             'Transfer gates need a successful reviewed owned-App credential workflow receipt')
     require(re.fullmatch(r'https://github.com/HemSoft/set-it-free-loop/actions/runs/[1-9][0-9]*',
                         proof.get('run_url', '')) is not None,
@@ -257,6 +258,24 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id):
     require(proof.get('deployment_source') == organization + '/set-it-free-loop' and
             immutable_sha(proof.get('deployment_sha')) and semantic_version(proof.get('release_version')),
             'New onboarding needs the canonical immutable deployment and release')
+    manifest = proof.get('manifest_identity')
+    addons, _ = workflow_catalog()
+    require(isinstance(manifest, dict) and manifest.get('source') == proof['deployment_source'] and
+            manifest.get('sourceSha') == proof['deployment_sha'] and manifest.get('version') == proof['release_version'] and
+            manifest.get('tier') in {'minimal', 'standard', 'reviewer', 'full'} and
+            string_list(manifest.get('addons')) and set(manifest['addons']) <= addons and
+            '.github/workflows/sfl-pr-review-auto.yml' in deployed_workflow_paths(manifest['tier'],manifest['addons']),
+            'New onboarding must prove its canonical post-status observer manifest')
+    reference = proof.get('manifest_evidence_url')
+    evidence(reference,directory)
+    require(not urllib.parse.urlsplit(reference).scheme,'New onboarding needs an independent post-status manifest capture')
+    observed = json.loads((directory/reference).read_text())
+    require(observed.get('repository_id') == repo_id and observed.get('repository') == name and
+            observed.get('manifest') == manifest and immutable_sha(observed.get('revision_sha')),
+            'New onboarding manifest capture must match its repository and deployed configuration')
+    evidence(proof.get('release_download_verification_url'),directory)
+    require(proof.get('release_url') == 'https://github.com/'+proof['deployment_source']+'/releases/tag/v'+proof['release_version'],
+            'New onboarding release verification must use its canonical version')
     operations = proof.get('onboarding_operation_receipts')
     fields = ('init_pr_url', 'repeat_onboarding_url', 'sync_pr_url', 'repeat_sync_url', 'status_url')
     require(isinstance(operations, dict) and set(operations) == set(fields),
@@ -264,6 +283,24 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id):
     for field in fields:
         bound_operation(operations[field], directory, repo_id, name, proof['deployment_sha'],
                         proof['release_version'], proof.get(field))
+        operation = operations[field]
+        command = 'init' if field in {'init_pr_url','repeat_onboarding_url'} else 'status' if field == 'status_url' else 'sync'
+        outcomes = {'pull_request_merged'} if field == 'init_pr_url' else {'no_changes','pull_request_merged'} if field == 'sync_pr_url' else {'healthy'} if field == 'status_url' else {'no_changes'}
+        require(operation.get('command') == command and operation.get('outcome') in outcomes and
+                immutable_sha(operation.get('revision_after')),
+                'New onboarding operation must prove successful init/sync/status outcomes at the observed revision')
+        if operation['outcome'] == 'pull_request_merged':
+            require(operation.get('merged') is True and
+                    re.fullmatch('https://github.com/'+re.escape(name)+r'/pull/[1-9][0-9]*',proof[field]) is not None,
+                    'New onboarding mutation needs its actual merged deployment PR')
+        elif operation['outcome'] == 'no_changes':
+            require(operation.get('change_count') == 0 and operation.get('revision_before') == operation['revision_after'],
+                    'Repeated onboarding and sync must prove zero changes at the same observed revision')
+    require(operations['repeat_onboarding_url']['revision_before'] == operations['init_pr_url']['revision_after'] and
+            operations['sync_pr_url']['revision_before'] == operations['repeat_onboarding_url']['revision_after'] and
+            operations['repeat_sync_url']['revision_before'] == operations['sync_pr_url']['revision_after'] and
+            operations['status_url']['revision_after'] == operations['repeat_sync_url']['revision_after'] == observed['revision_sha'],
+            'New onboarding revisions must follow init, repeated init, sync and final status in order')
     validate_app_coverage(proof.get('destination_sfl_app_access'), directory, repo_id, name, app_id, organization)
     validate_app_coverage(proof.get('destination_codex_access'), directory, repo_id, name, 1144995, organization)
     validate_registered_review(proof, directory, name)
@@ -338,6 +375,12 @@ def validate_app_coverage(coverage, directory, repository_id, repository, app_id
             type(coverage.get('installation_id')) is int and coverage['installation_id'] > 0,
             'Verified destination needs repository-bound post-transfer SFL App coverage')
     evidence(coverage.get('evidence_url'), directory)
+    if app_id == 4448946:
+        capture = json.loads((directory/'owned-app-organization-installation-evidence.json').read_text())
+        require(capture.get('verification_status') == 'verified' and capture.get('account',{}).get('login') == owner and
+                capture.get('installation',{}).get('id') == coverage['installation_id'] and
+                capture['installation'].get('app_id') == app_id and capture['installation'].get('repository_selection') == 'all',
+                'SFL coverage must match the captured all-repositories destination installation')
     if app_id == 1144995:
         capture = json.loads((directory / 'codex-organization-installation-evidence.json').read_text())
         require(coverage['installation_id'] == capture['installation']['id'] and
@@ -635,6 +678,19 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     verified_at >= datetime.datetime.fromisoformat(external_scope['confirmed_at'].replace('Z', '+00:00')),
                     'Verified provider absence needs the approved owner receipt for this transfer target')
         else:
+            if row.get('resource_kind') == 'supabase_project' and row.get('resource_id') == 'cevpnetigzotgstxxjpm':
+                decision = json.loads((directory/'dashboard-database-owner-disposition.json').read_text())
+                require(decision.get('repository_id') == repo_id and decision.get('resource_id') == row['resource_id'] and
+                        decision.get('disposition') == 'preserve_paused_database_and_configuration' and
+                        decision.get('resume_authorized') is False and decision.get('delete_authorized') is False and
+                        row.get('transfer_action') == 'Preserve paused database and configuration; no project/database transfer, resume, query or deletion',
+                        'Dashboard database action must preserve its approved paused disposition')
+            if row.get('resource_kind') == 'vercel_project' and row.get('resource_id') == 'prj_hPjAbxtMlCi3A5waKxQpjATto0ae':
+                decision = json.loads((directory/'modern-web-stack-git-retirement-evidence.json').read_text())
+                require(decision.get('repository_id') == repo_id and decision.get('project_id') == row['resource_id'] and
+                        decision.get('result') == 'disconnected' and decision.get('project_deleted') is False and
+                        row.get('transfer_action') == 'Git connection retired before transfer; transfer GitHub repository without reconnecting Vercel',
+                        'Retired Vercel project action must preserve its approved disconnected disposition')
             for field in ('resource_owner', 'resource_url', 'billing_dependency', 'credential_source',
                           'affected_reference', 'transfer_action', 'smoke_test', 'recovery_action'):
                 require(text(row.get(field)), f'Verified integration needs {field}')
@@ -1052,6 +1108,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 bound_workflow_operation(receipts.get('auditor_operation_receipt'), directory, extra_id, name,
                                          receipts['deployment_sha'], receipts['release_version'], receipts['auditor_run_url'],
                                          {'.github/workflows/sfl-auditor.yml'})
+                require(any(operation['workflow'] != '.github/workflows/sfl-auditor.yml' and
+                            run != receipts['auditor_run_url'] for run,operation in zip(runs,wider_receipts)),
+                        'Wider pilot must execute a distinct successful non-Auditor workflow')
                 verified_wider_pilot = True
             verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)

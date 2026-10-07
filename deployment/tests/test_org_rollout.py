@@ -63,6 +63,10 @@ class RolloutTests(unittest.TestCase):
                                credential_validity='verified', affected_reference='Existing Git project link',
                                transfer_action='Reconnect after gated transfer', smoke_test='Synthetic deployment succeeds',
                                recovery_action='Retain previous deployment',billing_dependency='Existing plan')
+                if row.get('resource_kind')=='supabase_project' and row.get('resource_id')=='cevpnetigzotgstxxjpm':
+                    row['transfer_action']='Preserve paused database and configuration; no project/database transfer, resume, query or deletion'
+                if row.get('resource_kind')=='vercel_project' and row.get('resource_id')=='prj_hPjAbxtMlCi3A5waKxQpjATto0ae':
+                    row['transfer_action']='Git connection retired before transfer; transfer GitHub repository without reconnecting Vercel'
                 if row.get('resource_kind') == 'repository_runner':
                     row.update(resource_owner='HemSoft', resource_url='https://example.com/runner',
                                billing_dependency='Existing VM',credential_source='Existing registration',
@@ -113,7 +117,7 @@ class RolloutTests(unittest.TestCase):
         self.matrix['pre_transfer_credential_verification'] = {'repository_id':1169772257,
             'repository':'HemSoft/set-it-free-loop','workflow':'.github/workflows/verify-sfl-app-credential.yml',
             'conclusion':'success','reviewed_sha':'e'*40,'app_id':4448946,'client_id':'Iv23liwvwJJUh2bUIKLW',
-            'owner':'HemSoft','installation_id':123,'permission_ceiling_verified':True,
+            'owner':'HemSoft','installation_id':150383874,'repository_selection':'all','permission_ceiling_verified':True,
             'run_url':'https://github.com/HemSoft/set-it-free-loop/actions/runs/1'}
         for row in self.matrix['repositories']:
             repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
@@ -131,6 +135,12 @@ class RolloutTests(unittest.TestCase):
 
     def complete_app_transfer(self):
         self.matrix['owned_app_transfer'].update(status='verified',owner='hemsoft-dev',evidence_url='https://example.com/app-transfer')
+        path=DIRECTORY/'owned-app-organization-installation-evidence.json'
+        if not hasattr(self,'original_owned_installation_capture'):
+            self.original_owned_installation_capture=path.read_text()
+            self.addCleanup(path.write_text,self.original_owned_installation_capture)
+        path.write_text(json.dumps({'verification_status':'verified','account':{'login':'hemsoft-dev'},
+            'installation':{'id':123,'app_id':4448946,'repository_selection':'all'}}))
 
     def complete_rollout(self):
         self.complete_pilots()
@@ -1258,6 +1268,7 @@ class RolloutTests(unittest.TestCase):
         proof['destination_codex_access']=dict(proof['destination_sfl_app_access'],app_id=1144995,installation_id=168678981)
         self.bind_review_operations(proof)
         proof['gate_policy']=self.gate_policy(42,name,directory)
+        (directory/'owned-app-organization-installation-evidence.json').write_text((DIRECTORY/'owned-app-organization-installation-evidence.json').read_text())
         (directory/'codex-organization-installation-evidence.json').write_text((DIRECTORY/'codex-organization-installation-evidence.json').read_text())
         fields=('init_pr_url','repeat_onboarding_url','sync_pr_url','repeat_sync_url','status_url')
         proof['onboarding_operation_receipts']={}
@@ -1265,6 +1276,12 @@ class RolloutTests(unittest.TestCase):
             proof[field]='https://github.com/'+name+'/issues/1#'+field
             proof['onboarding_operation_receipts'][field]={'repository_id':42,'repository':name,
                 'deployment_sha':proof['deployment_sha'],'release_version':proof['release_version'],'evidence_url':proof[field]}
+        proof['init_pr_url']='https://github.com/'+name+'/pull/3'
+        for field,operation in proof['onboarding_operation_receipts'].items():
+            command='init' if field in {'init_pr_url','repeat_onboarding_url'} else 'status' if field=='status_url' else 'sync'
+            operation.update(command=command,outcome='pull_request_merged' if field=='init_pr_url' else 'healthy' if field=='status_url' else 'no_changes',revision_before='f'*40,revision_after='f'*40,change_count=0,merged=field=='init_pr_url',evidence_url=proof[field])
+        proof['manifest_evidence_url']='post-status-manifest.json'
+        (directory/proof['manifest_evidence_url']).write_text(json.dumps({'repository_id':42,'repository':name,'revision_sha':'f'*40,'manifest':proof['manifest_identity']}))
         capture={'metadata':{'id':42,'full_name':name,'private':True,'archived':False,'created_at':'2026-10-07T03:00:00Z'}}
         (directory/'metadata.json').write_text(json.dumps(capture));proof['metadata_evidence_url']='metadata.json'
         completion={'completed_at':proof['rollout_completed_at'],'organization':'hemsoft-dev',
@@ -1393,6 +1410,64 @@ class RolloutTests(unittest.TestCase):
         self.complete_app_coverage(row);self.check()
         row['destination_sfl_app_access']['status']='pending'
         with self.assertRaisesRegex(ValueError,'baseline-covered terminal'):self.check()
+
+
+    def test_post_rollout_onboarding_requires_manifest_and_idempotent_operation_results(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+            for field in ('manifest_identity','manifest_evidence_url','release_download_verification_url','release_url'):
+                changed=copy.deepcopy(proof);changed.pop(field)
+                with self.subTest(field=field),self.assertRaises(ValueError):
+                    validator.validate_final_onboarding(changed,directory,{},'hemsoft-dev',4448946)
+            for field in ('repeat_onboarding_url','repeat_sync_url','sync_pr_url'):
+                changed=copy.deepcopy(proof);changed['onboarding_operation_receipts'][field]['change_count']=1
+                with self.subTest(field=field),self.assertRaisesRegex(ValueError,'zero changes'):
+                    validator.validate_final_onboarding(changed,directory,{},'hemsoft-dev',4448946)
+            changed=copy.deepcopy(proof);changed['init_pr_url']='https://github.com/'+proof['repository']+'/issues/1'
+            changed['onboarding_operation_receipts']['init_pr_url']['evidence_url']=changed['init_pr_url']
+            with self.assertRaisesRegex(ValueError,'actual merged deployment PR'):
+                validator.validate_final_onboarding(changed,directory,{},'hemsoft-dev',4448946)
+            capture=json.loads((directory/'post-status-manifest.json').read_text());capture['manifest']['sourceSha']='c'*40
+            (directory/'post-status-manifest.json').write_text(json.dumps(capture))
+            with self.assertRaisesRegex(ValueError,'manifest capture must match'):
+                validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+
+    def test_sfl_coverage_matches_one_saved_destination_installation(self):
+        row=self.complete_rollout();self.check();baseline=copy.deepcopy(row['destination_sfl_app_access'])
+        row['destination_sfl_app_access']['installation_id']=42
+        with self.assertRaisesRegex(ValueError,'captured all-repositories destination'):self.check()
+        row['destination_sfl_app_access']=baseline
+        path=DIRECTORY/'owned-app-organization-installation-evidence.json';capture=json.loads(path.read_text())
+        for field,value in [('id',42),('repository_selection','selected')]:
+            changed=copy.deepcopy(capture);changed['installation'][field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'captured all-repositories destination'):self.check()
+        path.write_text(json.dumps(capture));self.check()
+
+    def test_source_all_repository_selection_must_be_saved_and_verified(self):
+        self.complete_transfer_gates();proof=self.matrix['pre_transfer_credential_verification']
+        for selection in (None,'selected'):
+            proof['repository_selection']=selection
+            with self.subTest(selection=selection),self.assertRaisesRegex(ValueError,'owned-App credential'):self.check()
+        proof['repository_selection']='all';self.check()
+
+    def test_known_provider_actions_cannot_contradict_owner_dispositions(self):
+        self.complete_transfer_gates();self.check()
+        for resource_id,action in [('cevpnetigzotgstxxjpm','Resume the database'),
+                                  ('cevpnetigzotgstxxjpm','Delete the database'),
+                                  ('prj_hPjAbxtMlCi3A5waKxQpjATto0ae','Reconnect Git after transfer')]:
+            row=next(r for r in self.rows if r['resource_id']==resource_id)
+            original=row['transfer_action'];row['transfer_action']=action
+            with self.subTest(action=action),self.assertRaisesRegex(ValueError,'approved.*disposition'):self.check()
+            row['transfer_action']=original
+
+    def test_one_auditor_run_cannot_count_as_wider_workflow_proof(self):
+        self.complete_pilots();self.check()
+        pilot=next(p for p in self.matrix['disposable_validation_repositories'] if p['visibility']=='private')
+        receipts=pilot['validation_evidence']
+        receipts['wider_workflow_run_urls']=[receipts['auditor_run_url']]
+        receipts['wider_operation_receipts']=[copy.deepcopy(receipts['auditor_operation_receipt'])]
+        with self.assertRaisesRegex(ValueError,'distinct successful non-Auditor'):self.check()
 
 
 if __name__ == '__main__':
