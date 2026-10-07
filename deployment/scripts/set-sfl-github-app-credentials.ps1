@@ -1,14 +1,14 @@
 <#
 .SYNOPSIS
-Sets per-repository SFL GitHub App credentials for HemSoft-owned repositories.
+Sets scoped SFL App credentials for HemSoft and hemsoft-dev repositories.
 
 .DESCRIPTION
-HemSoft is a GitHub user account, not an organization, so Actions credentials
-must be configured on each repository. Before writing anything, this script
-authenticates as the App and proves that every target is a HemSoft repository
-covered by the App's exact reviewer permission contract. It then sets
-the SFL GitHub App Actions variables and stores the app private key as an
-Actions secret without echoing the key value.
+Validate the authenticated user's admin access separately from repository and
+App ownership. The default stores credentials per repository. Organization scope
+requires hemsoft-dev owner access, explicit repository selection, and no existing
+shared credentials or overriding repository credentials. Secret values are piped
+without being printed. Environment overrides must be reconciled in pre-transfer
+and rollout owner verification.
 
 .PARAMETER Repos
 Repository names in OWNER/REPO format.
@@ -52,14 +52,28 @@ param(
 
     [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
-    [string] $ExpectedLogin = 'HemSoft'
+    [string] $ExpectedLogin = 'HemSoft',
+
+    [ValidateSet('HemSoft', 'hemsoft-dev')]
+    [string] $ExpectedOwner = 'HemSoft',
+
+    [ValidateSet('repository', 'organization')]
+    [string] $CredentialScope = 'repository',
+
+    [ValidateSet('', 'HemSoft', 'hemsoft-dev')]
+    [string] $ExpectedAppOwner = ''
 )
 
+if (-not $ExpectedAppOwner) { $ExpectedAppOwner = $ExpectedOwner }
 $InformationPreference = 'Continue'
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'SflGitHubAppBootstrap.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'SflRepositoryPolicy.psm1') -Force
+if ($CredentialScope -eq 'organization' -and $ExpectedOwner -cne 'hemsoft-dev') {
+    throw 'Organization credential scope requires hemsoft-dev and explicit selected repositories.'
+}
 
 function Invoke-GhCommand {
     param(
@@ -88,18 +102,11 @@ $requiredSecrets = @('SFL_APP_PRIVATE_KEY')
 $validatedRepos = [Collections.Generic.List[string]]::new()
 
 foreach ($repo in $Repos) {
-    $repositoryJson = Invoke-GhCommand -Arguments @(
-        'repo', 'view', $repo,
-        '--json', 'nameWithOwner,owner'
-    )
-    $repository = $repositoryJson | ConvertFrom-Json
-    if ($repository.nameWithOwner -cne $repo) {
-        throw "Resolved repository '$($repository.nameWithOwner)' does not match requested repository '$repo'."
+    $context = Get-SflRepositoryContext -Repository $repo -Access admin -AllowSource -ExpectedLogin $ExpectedLogin
+    if ($context.Metadata.owner.login -ine $ExpectedOwner) {
+        throw "Repository '$repo' is not owned by '$ExpectedOwner'."
     }
-    if ($repository.owner.login -cne $ExpectedLogin) {
-        throw "Repository '$repo' is not owned by '$ExpectedLogin'."
-    }
-    $validatedRepos.Add($repo)
+    $validatedRepos.Add([string] $context.Metadata.full_name)
 }
 
 $privateKeyPem = Get-Content -LiteralPath $resolvedPrivateKeyPath -Raw
@@ -109,7 +116,7 @@ Assert-SflGitHubAppIdentity `
     -Identity $appIdentity `
     -ExpectedAppId $AppId `
     -ExpectedClientId $ClientId `
-    -ExpectedOwner $ExpectedLogin
+    -ExpectedOwner $ExpectedAppOwner
 
 foreach ($repo in $validatedRepos) {
     $installation = Get-SflGitHubAppRepositoryInstallation -Repository $repo -Jwt $appJwt
@@ -118,8 +125,57 @@ foreach ($repo in $validatedRepos) {
         -Repository $repo `
         -ExpectedAppId $AppId `
         -ExpectedClientId $ClientId `
-        -ExpectedOwner $ExpectedLogin
+        -ExpectedOwner $ExpectedOwner
     Write-Information "Verified SFL App installation and permission ceiling on $repo"
+}
+
+if ($CredentialScope -eq 'organization') {
+    $membership = Invoke-GhCommand -Arguments @('api', '--method', 'GET', "orgs/$ExpectedOwner/memberships/$ExpectedLogin") | ConvertFrom-Json
+    if ($membership.state -ne 'active' -or $membership.role -ne 'admin') {
+        throw 'Organization credentials require active organization owner access and admin:org authorization.'
+    }
+    foreach ($repo in $validatedRepos) {
+        $variables = @(Invoke-GhCommand -Arguments @('variable', 'list', '--repo', $repo, '--json', 'name', '--jq', '.[].name'))
+        $secrets = @(Invoke-GhCommand -Arguments @('secret', 'list', '--repo', $repo, '--app', 'actions', '--json', 'name', '--jq', '.[].name'))
+        if (@($variables | Where-Object { $_ -in $requiredVariables }).Count -or
+            @($secrets | Where-Object { $_ -in $requiredSecrets }).Count) {
+            throw "Repository credential overrides on $repo take precedence over organization values; reconcile them before organization setup."
+        }
+    }
+    foreach ($repo in $validatedRepos) {
+        $environments = @(Invoke-GhCommand -Arguments @('api', '--method', 'GET', "repos/$repo/environments?per_page=100", '--paginate', '--jq', '.environments[].name'))
+        foreach ($environment in $environments) {
+            $variables = @(Invoke-GhCommand -Arguments @('variable', 'list', '--repo', $repo, '--env', $environment, '--json', 'name', '--jq', '.[].name'))
+            $secrets = @(Invoke-GhCommand -Arguments @('secret', 'list', '--repo', $repo, '--env', $environment, '--json', 'name', '--jq', '.[].name'))
+            if (@($variables | Where-Object { $_ -in $requiredVariables }).Count -or
+                @($secrets | Where-Object { $_ -in $requiredSecrets }).Count) {
+                throw "Environment credential overrides on $repo/$environment take precedence; reconcile them before organization setup."
+            }
+        }
+    }
+    # Refuse to replace existing shared coverage without a separate owner decision.
+    $variables = @(Invoke-GhCommand -Arguments @('variable', 'list', '--org', $ExpectedOwner, '--json', 'name', '--jq', '.[].name'))
+    $secrets = @(Invoke-GhCommand -Arguments @('secret', 'list', '--org', $ExpectedOwner, '--app', 'actions', '--json', 'name', '--jq', '.[].name'))
+    if (@($variables | Where-Object { $_ -in $requiredVariables }).Count -or
+        @($secrets | Where-Object { $_ -in $requiredSecrets }).Count) {
+        throw 'Existing organization SFL credentials require owner reconciliation of selected coverage before replacement.'
+    }
+    $selectedNames = ($validatedRepos | ForEach-Object { $_.Split('/')[1] }) -join ','
+    if ($PSCmdlet.ShouldProcess($ExpectedOwner, 'Create organization SFL credentials for explicitly selected repositories')) {
+        Invoke-GhCommand -Arguments @('variable', 'set', 'SFL_APP_ID', '--org', $ExpectedOwner, '--repos', $selectedNames, '--body', $AppId) | Out-Null
+        Invoke-GhCommand -Arguments @('variable', 'set', 'SFL_APP_CLIENT_ID', '--org', $ExpectedOwner, '--repos', $selectedNames, '--body', $ClientId) | Out-Null
+        Get-Content -LiteralPath $resolvedPrivateKeyPath -Raw | & gh secret set SFL_APP_PRIVATE_KEY --org $ExpectedOwner --visibility selected --repos $selectedNames
+        if ($LASTEXITCODE -ne 0) { throw 'Setting organization App private key failed.' }
+        $expectedRepositories = @($validatedRepos | Sort-Object -Unique)
+        foreach ($endpoint in @('variables/SFL_APP_ID', 'variables/SFL_APP_CLIENT_ID', 'secrets/SFL_APP_PRIVATE_KEY')) {
+            $actual = @(Invoke-GhCommand -Arguments @('api', '--method', 'GET', "orgs/$ExpectedOwner/actions/$endpoint/repositories?per_page=100", '--paginate', '--jq', '.repositories[].full_name') | Sort-Object -Unique)
+            if (($actual -join ',') -ine ($expectedRepositories -join ',')) {
+                throw "Organization credential repository coverage mismatch for $endpoint."
+            }
+        }
+        Write-Information "Created organization credentials for $($validatedRepos.Count) selected repositories. Repository/environment overrides must remain reconciled."
+    }
+    return
 }
 
 foreach ($repo in $validatedRepos) {

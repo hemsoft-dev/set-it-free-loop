@@ -19,7 +19,8 @@ type syncOptions struct {
 }
 
 func shouldPreserveSyncAudit(manifest *sflManifest, release deploymentRelease, installedTier string) bool {
-	return manifest.Version == release.Version &&
+	return manifest != nil && manifest.MotherRepo == motherRepoOwner+"/"+motherRepoName &&
+		manifest.Version == release.Version &&
 		manifest.SourceSHA == release.SHA && manifest.Tier == installedTier
 }
 
@@ -163,15 +164,14 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	// Update manifest
 	manifest.Version = release.Version
+	manifest.MotherRepo = motherRepoOwner + "/" + motherRepoName
 	manifest.SourceSHA = latestSHA
 	manifest.DeployedAt = deployedAt
 	manifest.DeployedBy = deployedBy
 	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
-	manifestJSON, err := marshalManifest(manifest)
-	if err != nil {
+	if err := writeManifestFiles(fileMap, manifest); err != nil {
 		return fmt.Errorf("marshaling manifest: %w", err)
 	}
-	fileMap[".sfl/sfl.json"] = manifestJSON
 	fmt.Fprintf(stdout, "    .sfl/sfl.json ✓\n")
 
 	// Deploy all files in a single atomic commit.

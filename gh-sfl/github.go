@@ -150,8 +150,11 @@ func parseReviewTarget(repoFlag string) (string, string, error) {
 }
 
 func validateDeploymentTarget(owner, repo string) error {
-	if !strings.EqualFold(owner, "HemSoft") {
+	if !allowedTargetOwner(owner) {
 		return fmt.Errorf("%s/%s is outside the HemSoft repository scope", owner, repo)
+	}
+	if !validRepositoryName(repo) {
+		return fmt.Errorf("invalid repository name %q", repo)
 	}
 	if strings.EqualFold(repo, motherRepoName) {
 		return fmt.Errorf("%s/%s is protected and cannot be targeted by SFL deployment operations", owner, repo)
@@ -160,19 +163,168 @@ func validateDeploymentTarget(owner, repo string) error {
 }
 
 func validateHemSoftTarget(owner, repo string) error {
-	if !strings.EqualFold(owner, "HemSoft") {
+	if !allowedTargetOwner(owner) {
 		return fmt.Errorf("%s/%s is outside the HemSoft repository scope", owner, repo)
+	}
+	if !validRepositoryName(repo) {
+		return fmt.Errorf("invalid repository name %q", repo)
 	}
 	loginOut, loginErr, err := ghExec("api", "user", "--jq", ".login")
 	if err != nil {
 		return fmt.Errorf("checking GitHub CLI identity: %s: %w", loginErr.String(), err)
 	}
 	login := strings.TrimSpace(loginOut.String())
-	if !strings.EqualFold(login, "HemSoft") {
+	if strings.EqualFold(owner, "HemSoft") && !strings.EqualFold(login, "HemSoft") {
 		return fmt.Errorf("GitHub CLI must be authenticated as HemSoft; active login is %q", login)
 	}
+	if strings.EqualFold(owner, organizationOwner) {
+		return requireRepositoryPermission(owner, repo, login, false)
+	}
 
+	return verifyCanonicalRepository(owner, repo)
+}
+
+const organizationOwner = "hemsoft-dev"
+
+func validRepositoryName(repo string) bool {
+	if repo == "" || repo == "." || repo == ".." {
+		return false
+	}
+	return strings.IndexFunc(repo, func(r rune) bool {
+		return !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '_' || r == '-' || r == '.')
+	}) == -1
+}
+
+func allowedTargetOwner(owner string) bool {
+	return strings.EqualFold(owner, "HemSoft") || strings.EqualFold(owner, organizationOwner)
+}
+
+func parseSourceRepository(source string) (string, string, error) {
+	parts := strings.Split(source, "/")
+	if len(parts) != 2 || !allowedTargetOwner(parts[0]) || parts[1] != motherRepoName {
+		return "", "", fmt.Errorf("unsupported SFL source repository %q", source)
+	}
+	owner := "HemSoft"
+	if strings.EqualFold(parts[0], organizationOwner) {
+		owner = organizationOwner
+	}
+	return owner, motherRepoName, nil
+}
+
+func configureSourceRepository() error {
+	source := os.Getenv("SFL_SOURCE_REPOSITORY")
+	if source == "" {
+		if !allowedTargetOwner(motherRepoOwner) {
+			return fmt.Errorf("unsupported built-in SFL source owner %q", motherRepoOwner)
+		}
+		if strings.EqualFold(motherRepoOwner, organizationOwner) {
+			motherRepoOwner = organizationOwner
+		} else {
+			motherRepoOwner = "HemSoft"
+		}
+		return nil
+	}
+	parts := strings.Split(source, "/")
+	if len(parts) != 2 || !allowedTargetOwner(parts[0]) || parts[1] != motherRepoName {
+		return fmt.Errorf("SFL_SOURCE_REPOSITORY must be HemSoft/%s or %s/%s", motherRepoName, organizationOwner, motherRepoName)
+	}
+	if strings.EqualFold(parts[0], organizationOwner) {
+		motherRepoOwner = organizationOwner
+	} else {
+		motherRepoOwner = "HemSoft"
+	}
 	return nil
+}
+
+// verifyCanonicalRepository rejects GitHub redirects before a target is used.
+func verifyCanonicalRepository(owner, repo string) error {
+	stdout, _, err := ghExec("api", "--method", "GET", fmt.Sprintf("repos/%s/%s", owner, repo))
+	if err != nil {
+		return fmt.Errorf("cannot verify canonical repository %s/%s", owner, repo)
+	}
+	var metadata struct {
+		FullName string `json:"full_name"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &metadata); err != nil || !strings.EqualFold(metadata.FullName, owner+"/"+repo) {
+		return fmt.Errorf("canonical repository does not match requested target %s/%s", owner, repo)
+	}
+	return nil
+}
+
+func repositoryPermission(owner, repo, login string) (string, error) {
+	if login == "" || strings.ContainsAny(login, "/?# \r\n") {
+		return "", fmt.Errorf("invalid authenticated GitHub login")
+	}
+	if err := verifyCanonicalRepository(owner, repo); err != nil {
+		return "", err
+	}
+	endpoint := fmt.Sprintf("repos/%s/%s/collaborators/%s/permission", owner, repo, login)
+	stdout, _, err := ghExec("api", "--method", "GET", endpoint)
+	if err != nil {
+		return "", fmt.Errorf("cannot verify repository permissions for %s on %s/%s", login, owner, repo)
+	}
+	var permission struct {
+		Permission string `json:"permission"`
+		User       struct {
+			Login string `json:"login"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &permission); err != nil || !strings.EqualFold(permission.User.Login, login) {
+		return "", fmt.Errorf("invalid repository permission response for %s", login)
+	}
+	return permission.Permission, nil
+}
+
+func requireRepositoryPermission(owner, repo, login string, admin bool) error {
+	permission, err := repositoryPermission(owner, repo, login)
+	if err != nil {
+		return err
+	}
+	allowed := permission == "admin" || (!admin && (permission == "write" || permission == "maintain"))
+	if !allowed {
+		return fmt.Errorf("%s needs %s access to %s/%s", login, map[bool]string{true: "admin", false: "write or higher"}[admin], owner, repo)
+	}
+	return nil
+}
+
+func parseStatusTarget(repoFlag string) (string, string, error) {
+	owner, repo, err := parseRepoFlag(repoFlag)
+	if err != nil {
+		return "", "", err
+	}
+	if !allowedTargetOwner(owner) || !validRepositoryName(repo) {
+		return "", "", fmt.Errorf("invalid or unsupported SFL status target")
+	}
+	if !strings.EqualFold(owner, organizationOwner) {
+		if err := validateHemSoftTarget(owner, repo); err != nil {
+			return "", "", err
+		}
+		return owner, repo, nil
+	}
+	login, _, err := ghExec("api", "user", "--jq", ".login")
+	if err != nil {
+		return "", "", fmt.Errorf("cannot establish status reader identity: %w", err)
+	}
+	permission, err := repositoryPermission(owner, repo, strings.TrimSpace(login.String()))
+	if err != nil {
+		return "", "", err
+	}
+	if permission != "read" && permission != "triage" && permission != "write" && permission != "maintain" && permission != "admin" {
+		return "", "", fmt.Errorf("status reader needs read or higher repository access")
+	}
+	return owner, repo, nil
+}
+
+// Administrative operations must fail before changing organization gates.
+func requireOrganizationAdmin(owner, repo string) error {
+	if !strings.EqualFold(owner, organizationOwner) {
+		return nil
+	}
+	login, _, err := ghExec("api", "user", "--jq", ".login")
+	if err != nil {
+		return fmt.Errorf("cannot verify GitHub identity for administrative operation")
+	}
+	return requireRepositoryPermission(owner, repo, strings.TrimSpace(login.String()), true)
 }
 
 // ensureRepoVariable creates or updates a repository Actions variable.
@@ -569,7 +721,7 @@ var (
 )
 
 func sourceReadClient(owner, repo string) (restAPI, bool, error) {
-	if owner != motherRepoOwner || repo != motherRepoName {
+	if _, _, err := parseSourceRepository(owner + "/" + repo); err != nil {
 		return nil, false, nil
 	}
 	token := strings.TrimSpace(os.Getenv("SFL_SOURCE_TOKEN"))

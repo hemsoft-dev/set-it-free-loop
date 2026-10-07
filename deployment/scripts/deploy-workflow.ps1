@@ -91,7 +91,9 @@ param(
 
     [string] $ScheduleSeed = "HemSoft/set-it-free-loop",
 
-    [string] $CloneDir = "$env:TEMP\sfl-deploy"
+    [string] $CloneDir = "$env:TEMP\sfl-deploy",
+
+    [string] $SourceRepository = 'HemSoft/set-it-free-loop'
 )
 
 Set-StrictMode -Version Latest
@@ -122,6 +124,8 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot  = Resolve-Path (Join-Path $ScriptDir "..\..")
 . (Join-Path $ScriptDir "merge-sfl-manifest.ps1")
 . (Join-Path $ScriptDir "add-sfl-source-pin.ps1")
+Import-Module (Join-Path $ScriptDir 'SflRepositoryPolicy.psm1') -Force
+Assert-SflSourceRepository $SourceRepository
 
 # ─── SFL Version (read from VERSION file — single source of truth) ────────────
 
@@ -387,6 +391,9 @@ if (-not $CurrentSha) {
     Write-Error "Could not determine current git SHA. Is this repo initialized?"
     exit 1
 }
+if (-not $Local -and -not $DryRun) {
+    Assert-SflSourceCheckout -Repository $SourceRepository -CheckoutRoot $RepoRoot -Commit $CurrentSha
+}
 
 $EnginePolicyManifest = New-SflEnginePolicyManifest $WorkflowsToDeploy
 
@@ -397,20 +404,11 @@ function Write-Status([string]$Emoji, [string]$Message, [ConsoleColor]$Color = "
 }
 
 function Assert-HemSoftRepository([string] $TargetRepo) {
+    Assert-SflTargetScope $TargetRepo
     if ($DryRun) {
         return
     }
-    $activeLogin = (gh api user --jq '.login').Trim()
-    if ($LASTEXITCODE -ne 0 -or $activeLogin -ne 'HemSoft') {
-        throw "GitHub CLI must be authenticated as HemSoft; active login is '$activeLogin'."
-    }
-    $metadata = gh repo view $TargetRepo --json 'owner' | ConvertFrom-Json
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not read repository owner for $TargetRepo."
-    }
-    if ($metadata.owner.login -ne 'HemSoft') {
-        throw 'This SFL distribution is restricted to HemSoft-owned repositories.'
-    }
+    $null = Get-SflRepositoryContext -Repository $TargetRepo
 }
 
 function Assert-SflReviewCredentials([string]$TargetRepo) {
@@ -423,12 +421,7 @@ function Assert-SflReviewCredentials([string]$TargetRepo) {
         return
     }
 
-    $secretNames = @(
-        & gh secret list --repo $TargetRepo --app actions --json name --jq '.[].name' 2>&1
-    )
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to list Actions secrets on ${TargetRepo}: $($secretNames -join [Environment]::NewLine)"
-    }
+    $secretNames = @(Get-SflActionsSecretNames -Repository $TargetRepo)
 
     foreach ($workflowName in $WorkflowsToDeploy) {
         $profile = Resolve-SflEngineProfile $workflowName
@@ -559,7 +552,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
                 -Content (Get-Content $DestFile -Raw) `
                 -EngineProfile $engineProfile `
                 -WorkflowName $wf
-            $SflSourceRef = "HemSoft/set-it-free-loop/deployment/workflows/$wf.md@$CurrentSha"
+            $SflSourceRef = "$SourceRepository/deployment/workflows/$wf.md@$CurrentSha"
             $pinComment = "<!--`nDeployed from: $SflSourceRef`nTo upgrade: re-run deploy-workflow.ps1 at the desired SHA`n-->`n"
             $content = Add-SflSourcePin -Content $content -PinComment $pinComment
             Set-Content $DestFile -Value $content -NoNewline
@@ -586,7 +579,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
             $DestFile   = Join-Path $DestWorkdir "$inf.yml"
             Copy-Item $SourceFile $DestFile
             if ($inf -eq "sfl-pr-review-auto") {
-                $sourceRef = "HemSoft/set-it-free-loop/deployment/infrastructure/$inf.yml@$CurrentSha"
+                $sourceRef = "$SourceRepository/deployment/infrastructure/$inf.yml@$CurrentSha"
                 $content = Add-SflYamlSourcePin `
                     -Content (Get-Content $DestFile -Raw) `
                     -SourceRef $sourceRef `
@@ -602,7 +595,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
             version    = $SflVersion
             deployedAt = $now
             tier       = $DeployTier
-            source     = "HemSoft/set-it-free-loop"
+            source     = $SourceRepository
             sourceSha  = $CurrentSha
             components = $DeployComponents
             enginePolicy = $EnginePolicyManifest
@@ -637,7 +630,7 @@ function Deploy-ToRepo([string]$TargetRepo) {
             $owner = $TargetRepo.Split("/")[0]
             $repo  = $TargetRepo.Split("/")[1]
             $badgeUrl = "https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2F$owner%2F$repo%2Fmain%2Fsfl.json&query=%24.version&prefix=v&label=SFL%20Upstream&color=FFD700&style=flat&logo=githubactions&logoColor=white"
-            $badgeLine = "[![SFL Upstream]($badgeUrl)](https://github.com/HemSoft/set-it-free-loop)"
+            $badgeLine = "[![SFL Upstream]($badgeUrl)](https://github.com/$SourceRepository)"
             $badgeWithMarker = "$badgeLine`n<!-- SFL_BADGE: auto-updated by deploy-workflow.ps1 -->"
 
             if ($readmeContent -match '(?m)^.*<!-- SFL_BADGE:.*-->.*$') {
@@ -677,13 +670,13 @@ function Deploy-ToRepo([string]$TargetRepo) {
 
         git -C $ClonePath commit -m "$commitMsg
 
-Source: HemSoft/set-it-free-loop@$CurrentSha
+Source: $SourceRepository@$CurrentSha
 Version: $SflVersion
 Tier: $DeployTier
 Components: $($DeployComponents -join ', ')
 Engine policy: $DefaultEngineProfileName
 
-See https://github.com/HemSoft/set-it-free-loop for full documentation." --quiet
+See https://github.com/$SourceRepository for full documentation." --quiet
         if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
 
         # 8. Push
@@ -720,9 +713,9 @@ $componentList
 
 ### What is the Set it Free Loop?
 
-The [Set it Free Loop](https://github.com/HemSoft/set-it-free-loop) is a continuous
+The [Set it Free Loop](https://github.com/$SourceRepository) is a continuous
 quality improvement operating model for software repositories. See the
-[CATALOG](https://github.com/HemSoft/set-it-free-loop/blob/main/CATALOG.md)
+[CATALOG](https://github.com/$SourceRepository/blob/main/CATALOG.md)
 for all available workflows.
 
 ### Before merging

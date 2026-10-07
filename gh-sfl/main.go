@@ -14,8 +14,10 @@ import (
 var version = "dev"
 var buildDate = ""
 
+// Kept on the legacy source until cutover. Release builds can set this with -X.
+var motherRepoOwner = "HemSoft"
+
 const (
-	motherRepoOwner = "HemSoft"
 	motherRepoName  = "set-it-free-loop"
 	extensionName   = "gh-sfl"
 	copyrightHolder = "HemSoft"
@@ -88,6 +90,9 @@ func resolveCommand(name string) subcommand {
 }
 
 func run(args []string, stdout io.Writer, stderr io.Writer) (<-chan string, error) {
+	if err := configureSourceRepository(); err != nil {
+		return nil, err
+	}
 	var updateCh <-chan string
 	skipUpdate := len(args) > 0 && shouldSkipUpdateCheck(args[0])
 	if !skipUpdate && version != "dev" {

@@ -1,15 +1,15 @@
 <#
 .SYNOPSIS
-    Requires the native SFL Reviewer Approval check on a branch.
+    Requires the native SFL Reviewer Gate Runner check on a branch.
 
 .DESCRIPTION
-    Adds the GitHub Actions-owned SFL Reviewer Approval check to branch
+    Adds the GitHub Actions-owned SFL Reviewer Gate Runner check to branch
     protection without removing existing required checks. If the branch is not
     protected, the helper creates a minimal policy containing this check. The
     policy is strict so a base-branch update requires a fresh review of the new
     pull-request head.
 
-    This HemSoft deployment helper supports HemSoft-owned repositories. It
+    This HemSoft deployment helper supports HemSoft and hemsoft-dev repositories. It
     does not create or modify organization rulesets.
 
 .EXAMPLE
@@ -22,7 +22,7 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory)]
-    [ValidatePattern('^HemSoft/[^/]+$')]
+    [ValidatePattern('^(HemSoft|hemsoft-dev)/[^/]+$')]
     [string] $Repo,
 
     [string] $Branch,
@@ -33,25 +33,23 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$reviewContext = 'SFL Reviewer Approval'
+$reviewContext = 'SFL Reviewer Gate Runner'
 $githubActionsAppId = 15368
 
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     throw 'GitHub CLI (gh) is required.'
 }
 
-$activeLogin = (gh api user --jq '.login').Trim()
-if ($LASTEXITCODE -ne 0 -or $activeLogin -ne 'HemSoft') {
-    throw "GitHub CLI must be authenticated as HemSoft; active login is '$activeLogin'."
-}
+Import-Module (Join-Path $PSScriptRoot 'SflRepositoryPolicy.psm1') -Force
+$repositoryContext = Get-SflRepositoryContext -Repository $Repo -Access admin -AllowSource
 
 $repoInfo = gh repo view $Repo --json 'owner,defaultBranchRef' |
     ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) {
     throw "Could not read repository metadata for $Repo."
 }
-if ($repoInfo.owner.login -ne 'HemSoft') {
-    throw 'SFL reviewer gates may be configured only on HemSoft-owned repositories.'
+if ($repoInfo.owner.login -ine $Repo.Split('/')[0]) {
+    throw 'Repository owner does not match the selected SFL target.'
 }
 if ([string]::IsNullOrWhiteSpace($Branch)) {
     $Branch = [string] $repoInfo.defaultBranchRef.name
@@ -91,6 +89,10 @@ if ($statusChecksExist) {
 $checksByIdentity = [ordered]@{}
 foreach ($check in @($current.checks)) {
     $appId = if ($null -eq $check.app_id) { -1 } else { [int64] $check.app_id }
+    if ($check.context -eq 'SFL Reviewer Approval') {
+        if ($appId -ne $githubActionsAppId) { throw 'Legacy SFL gate has an unverified App binding; reconcile it before migration.' }
+        continue
+    }
     $key = "$($check.context)|$appId"
     $checksByIdentity[$key] = [ordered]@{
         context = [string] $check.context
@@ -99,6 +101,11 @@ foreach ($check in @($current.checks)) {
 }
 
 foreach ($context in @($current.contexts)) {
+    if ($context -eq 'SFL Reviewer Approval') {
+        $boundLegacy = @($current.checks | Where-Object { $_.context -eq $context -and $_.app_id -eq $githubActionsAppId })
+        if (-not $boundLegacy.Count) { throw 'Legacy SFL gate has an unverified App binding; reconcile it before migration.' }
+        continue
+    }
     $alreadyPresent = @($checksByIdentity.Values) |
         Where-Object { $_.context -eq [string] $context } |
         Select-Object -First 1

@@ -23,6 +23,7 @@ Write-Host 'Configuring Git folder routing...'
 
 git config --global --unset-all 'url.git@github-work1:.insteadOf' 2>$null
 git config --global 'includeIf.gitdir:D:/github/HemSoft/.path' '~/.gitconfig-hemsoft'
+git config --global 'includeIf.gitdir:D:/github/hemsoft-dev/.path' '~/.gitconfig-hemsoft'
 git config --global 'includeIf.gitdir:D:/github/Relias/.path' '~/.gitconfig-relias'
 
 git config --file $hemSoftConfig 'url.git@github-personal1:.insteadOf' 'git@github.com:'
@@ -52,7 +53,8 @@ function gh {
     try {
         $cwd = (Get-Location).Path
 
-        if ($cwd -like 'D:\github\HemSoft*') {
+        if ($cwd -eq 'D:\github\HemSoft' -or $cwd -like 'D:\github\HemSoft\*' -or
+            $cwd -eq 'D:\github\hemsoft-dev' -or $cwd -like 'D:\github\hemsoft-dev\*') {
             $env:GH_CONFIG_DIR = "$HOME\.gh-personal"
         }
         elseif ($cwd -like 'D:\github\Relias*') {

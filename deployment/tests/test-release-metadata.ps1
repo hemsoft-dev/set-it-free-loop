@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [string] $ExpectedVersion,
+    [string] $ExpectedRepository,
     [switch] $RequirePrerelease
 )
 
@@ -14,6 +15,15 @@ $release = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\release-met
     ConvertFrom-Json
 $workflow = Get-Content -LiteralPath (Join-Path $repoRoot '.github\workflows\publish-private-prerelease.yml') -Raw
 $failures = [System.Collections.Generic.List[string]]::new()
+if (-not $ExpectedRepository) {
+    $ExpectedRepository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'HemSoft/set-it-free-loop' }
+}
+if ($ExpectedRepository -notin @('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop') -or
+    $release.distribution.repository -ine $ExpectedRepository -or
+    $release.cliSource.repository -ine $ExpectedRepository) {
+    throw "Release source mismatch: distribution and CLI must both identify publishing repository '$ExpectedRepository'."
+}
+
 $semanticVersionPattern = '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$'
 
 if ($version -notmatch $semanticVersionPattern) {
@@ -38,7 +48,7 @@ if ([bool] $release.distribution.prerelease -ne $isPrerelease) {
 if ($RequirePrerelease -and -not $isPrerelease) {
     $failures.Add("Release workflow only publishes prereleases, but '$version' is stable.")
 }
-if ($release.distribution.repository -ne 'HemSoft/set-it-free-loop' -or
+if ($release.distribution.repository -notin @('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop') -or
     $release.distribution.visibility -ne 'private') {
     $failures.Add('Release distribution identity is not the private HemSoft repository.')
 }
@@ -53,7 +63,7 @@ if ($release.schemaVersion -ne 2 -or
     $release.reviewerRuntime.requiredGate.appId -ne 15368) {
     $failures.Add('Subscription-backed Codex reviewer identity is incomplete or inconsistent.')
 }
-if ($release.cliSource.repository -ne 'HemSoft/set-it-free-loop' -or
+if ($release.cliSource.repository -ne $release.distribution.repository -or
     $release.cliSource.path -ne 'gh-sfl' -or
     $release.cliSource.module -ne 'github.com/HemSoft/set-it-free-loop/gh-sfl' -or
     $release.cliSource.buildScript -ne 'deployment/scripts/install-gh-sfl-hemsoft.ps1') {
@@ -63,7 +73,7 @@ if ($release.cliSource.repository -ne 'HemSoft/set-it-free-loop' -or
 $requiredWorkflowPatterns = @(
     "github.repository == 'HemSoft/set-it-free-loop'",
     "github.ref == 'refs/heads/main'",
-    'test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -RequirePrerelease',
+    'test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -ExpectedRepository $env:GITHUB_REPOSITORY -RequirePrerelease',
     'repos/${GITHUB_REPOSITORY}/commits/main',
     'test "$(git rev-parse HEAD)" = "$remote_main_sha"',
     'IMMUTABLE_RELEASES_ATTESTED: ${{ vars.SFL_IMMUTABLE_RELEASES_ENABLED }}',
@@ -166,6 +176,12 @@ try {
         }
     }
 
+    $otherRepository = if ($ExpectedRepository -ieq 'HemSoft/set-it-free-loop') { 'hemsoft-dev/set-it-free-loop' } else { 'HemSoft/set-it-free-loop' }
+    $sourceMismatch = $null
+    try { & $PSCommandPath -ExpectedRepository $otherRepository | Out-Null }
+    catch { $sourceMismatch = $_.Exception.Message }
+    if ($sourceMismatch -notlike 'Release source mismatch:*') { $failures.Add('Publishing repository mismatch was not rejected before building.') }
+
     $nonEmptyOutput = Join-Path $fixtureRoot 'non-empty-output'
     New-Item -ItemType Directory -Path $nonEmptyOutput -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $nonEmptyOutput 'sentinel.txt') -Value 'must remain'
@@ -186,8 +202,8 @@ try {
     Push-Location $fixtureRoot
     try {
         & (Join-Path $repoRoot 'deployment\scripts\build-release-artifacts.ps1') `
-            -Version '9.8.7-rc.2' -BuildDate '2026-08-13' `
-            -OutputDirectory $relativeOutputName -RepositoryRoot $repoRoot | Out-Null
+            $repoRoot $relativeOutputName '9.8.7-rc.2' '2026-08-13' `
+            -SourceRepository 'hemsoft-dev/set-it-free-loop' | Out-Null
     }
     finally {
         Pop-Location

@@ -77,7 +77,7 @@ func runStatus(args []string, stdout io.Writer, stderr io.Writer) error {
 		return err
 	}
 
-	owner, repo, err := parseRepoFlag(opts.repo)
+	owner, repo, err := parseStatusTarget(opts.repo)
 	if err != nil {
 		return err
 	}
@@ -284,21 +284,8 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 			fmt.Fprintf(stdout, "    %s %s missing\n",
 				styler.colored("✗", termenv.ANSIRed).styled, path)
 		default:
-			source, sourceErr := fetchFileRaw(
-				motherRepoOwner,
-				motherRepoName,
-				sourceWorkflowPath(workflow),
-				manifest.SourceSHA,
-			)
-			preparedSource, prepareErr := prepareWorkflowSource(
-				workflow,
-				source,
-				manifest.SourceSHA,
-				owner+"/"+repo,
-				defaultBranch,
-			)
-			expected, renderErr := renderHemSoftWorkflow(workflow, preparedSource, manifest.Version)
-			if manifest.SourceSHA == "" || defaultBranchErr != nil || sourceErr != nil || prepareErr != nil || renderErr != nil ||
+			expected, sourceErr := expectedInstalledReviewerSource(manifest, workflow, owner+"/"+repo, defaultBranch, fetchFileRaw)
+			if manifest.SourceSHA == "" || defaultBranchErr != nil || sourceErr != nil ||
 				content != expected {
 				drifted++
 				fmt.Fprintf(stdout, "    %s %s differs from pinned source %s\n",
@@ -365,6 +352,22 @@ func printReviewerHealth(stdout io.Writer, styler tableStyler, owner, repo strin
 		fmt.Fprintf(stdout, "    %s success (%s)\n",
 			styler.colored("✓", termenv.ANSIGreen).styled, run.URL)
 	}
+}
+
+func expectedInstalledReviewerSource(manifest *sflManifest, workflow, targetRepo, defaultBranch string, fetch func(string, string, string, string) (string, error)) (string, error) {
+	owner, repo, err := parseSourceRepository(manifest.MotherRepo)
+	if err != nil {
+		return "", err
+	}
+	source, err := fetch(owner, repo, sourceWorkflowPath(workflow), manifest.SourceSHA)
+	if err != nil {
+		return "", err
+	}
+	preparedSource, err := prepareWorkflowSourceFromRepository(workflow, source, manifest.SourceSHA, targetRepo, defaultBranch, owner+"/"+repo)
+	if err != nil {
+		return "", err
+	}
+	return renderHemSoftWorkflow(workflow, preparedSource, manifest.Version)
 }
 
 func printReviewerPrerequisites(

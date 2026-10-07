@@ -1216,6 +1216,9 @@ func installReviewFakes(t *testing.T, rest restAPI) {
 	waitForCodexReactionPoll = func() {}
 	waitForReviewInvalidationPoll = func() {}
 	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
+		if strings.Join(args, " ") == "api --method GET repos/HemSoft/consumer" {
+			return *bytes.NewBufferString(`{"full_name":"HemSoft/consumer"}`), bytes.Buffer{}, nil
+		}
 		if strings.Join(args, " ") != "api user --jq .login" {
 			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected gh call: %v", args)
 		}

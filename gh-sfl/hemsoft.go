@@ -373,6 +373,10 @@ const reviewerPushBranchPlaceholder = "    branches: [main]"
 const reviewerBaseBranchPlaceholder = "  SFL_REVIEW_BASE_BRANCH: main"
 
 func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo, defaultBranch string) (string, error) {
+	return prepareWorkflowSourceFromRepository(workflow, content, sourceSHA, targetRepo, defaultBranch, motherRepoOwner+"/"+motherRepoName)
+}
+
+func prepareWorkflowSourceFromRepository(workflow, content, sourceSHA, targetRepo, defaultBranch, sourceRepository string) (string, error) {
 	if workflow != "sfl-pr-review-auto.yml" {
 		return content, nil
 	}
@@ -386,7 +390,10 @@ func prepareWorkflowSource(workflow, content, sourceSHA, targetRepo, defaultBran
 	if strings.TrimSpace(defaultBranch) == "" {
 		return "", fmt.Errorf("preparing the SFL Codex observer for %s: target default branch is empty", targetRepo)
 	}
-	sourceRef := "HemSoft/set-it-free-loop/" + sourceWorkflowPath(workflow) + "@" + sourceSHA
+	if _, _, err := parseSourceRepository(sourceRepository); err != nil {
+		return "", err
+	}
+	sourceRef := sourceRepository + "/" + sourceWorkflowPath(workflow) + "@" + sourceSHA
 	content = strings.Replace(content, reviewerSourcePlaceholder, "# Source: "+sourceRef, 1)
 	escapedBranch := strings.ReplaceAll(defaultBranch, "'", "''")
 	content = strings.Replace(content, reviewerPushBranchPlaceholder, "    branches: ['"+escapedBranch+"']", 1)

@@ -102,6 +102,8 @@ func TestValidateDeploymentTargetEnforcesIdentity(t *testing.T) {
 				switch strings.Join(args, " ") {
 				case "api user --jq .login":
 					fmt.Fprintln(&stdout, test.login)
+				case "api --method GET repos/HemSoft/consumer":
+					fmt.Fprintln(&stdout, `{"full_name":"HemSoft/consumer"}`)
 				default:
 					return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected gh arguments: %v", args)
 				}
@@ -148,6 +150,9 @@ func TestValidateReviewTargetAllowsSourceRepository(t *testing.T) {
 	oldGHExec := ghExec
 	t.Cleanup(func() { ghExec = oldGHExec })
 	ghExec = func(args ...string) (bytes.Buffer, bytes.Buffer, error) {
+		if strings.Join(args, " ") == "api --method GET repos/HemSoft/set-it-free-loop" {
+			return *bytes.NewBufferString(`{"full_name":"HemSoft/set-it-free-loop"}`), bytes.Buffer{}, nil
+		}
 		if strings.Join(args, " ") != "api user --jq .login" {
 			return bytes.Buffer{}, bytes.Buffer{}, fmt.Errorf("unexpected gh arguments: %v", args)
 		}

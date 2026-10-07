@@ -180,6 +180,11 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	if opts.slackWebhook != "" {
+		if err := requireOrganizationAdmin(owner, repo); err != nil {
+			return fmt.Errorf("Slack secret setup requires repository admin before deployment: %w", err)
+		}
+	}
 	existingManifest, err := readRemoteManifest(owner, repo)
 	if err != nil && !isNotFoundError(err) {
 		return fmt.Errorf("checking existing SFL deployment in %s/%s: %w", owner, repo, err)
@@ -272,10 +277,7 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Manifest
 	deployedAt := time.Now().UTC()
 	deployedBy := getCurrentUser()
-	if existingManifest != nil &&
-		existingManifest.Version == release.Version &&
-		existingManifest.Tier == opts.tier &&
-		existingManifest.SourceSHA == release.SHA {
+	if shouldPreserveSyncAudit(existingManifest, release, opts.tier) {
 		deployedAt = existingManifest.DeployedAt
 		deployedBy = existingManifest.DeployedBy
 	}
@@ -290,11 +292,12 @@ func runInit(args []string, stdout io.Writer, stderr io.Writer) error {
 		Addons:       opts.addons,
 		EnginePolicy: hemSoftEnginePolicyManifestForFileMap(fileMap),
 	}
-	manifestJSON, err := marshalManifest(manifest)
-	if err != nil {
+	if existingManifest != nil {
+		manifest.RemotePaths = existingManifest.RemotePaths
+	}
+	if err := writeManifestFiles(fileMap, manifest); err != nil {
 		return fmt.Errorf("marshaling manifest: %w", err)
 	}
-	fileMap[".sfl/sfl.json"] = manifestJSON
 	fmt.Fprintf(stdout, "    .sfl/sfl.json ✓\n")
 
 	shortSHA := release.SHA

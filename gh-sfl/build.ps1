@@ -13,7 +13,8 @@ param(
     [string] $ReleaseVersion,
     [string] $BuildDate,
     [string] $GitHubCliPath,
-    [switch] $NoInstall
+    [switch] $NoInstall,
+    [string] $Repository
 )
 
 Set-StrictMode -Version Latest

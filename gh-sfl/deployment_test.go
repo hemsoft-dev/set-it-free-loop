@@ -480,7 +480,7 @@ func TestParseAddOptionsDefaultsToPullRequest(t *testing.T) {
 
 func TestSyncPreservesAuditFieldsOnlyForCurrentCanonicalDeployment(t *testing.T) {
 	release := deploymentRelease{Version: "2.0.0", SHA: strings.Repeat("a", 40)}
-	current := &sflManifest{Version: release.Version, SourceSHA: release.SHA, Tier: "reviewer"}
+	current := &sflManifest{MotherRepo: motherRepoOwner + "/" + motherRepoName, Version: release.Version, SourceSHA: release.SHA, Tier: "reviewer"}
 	if !shouldPreserveSyncAudit(current, release, "reviewer") {
 		t.Fatal("current canonical deployment did not preserve audit fields")
 	}
@@ -2392,5 +2392,35 @@ func TestDeployViaPullRequestRemovesRetiredWorkflowTombstone(t *testing.T) {
 	deletions := input["fileChanges"].(map[string]any)["deletions"].([]fileDeletion)
 	if len(deletions) != 1 || deletions[0].Path != retiredPath {
 		t.Errorf("GraphQL deletions = %+v, want retired workflow tombstone", deletions)
+	}
+}
+
+func TestSourceTokenReadsBothApprovedSourcesDuringCutover(t *testing.T) {
+	t.Setenv("SFL_SOURCE_TOKEN", "source-read-token")
+	previousOwner, previousClient := motherRepoOwner, newSourceRESTClient
+	t.Cleanup(func() { motherRepoOwner, newSourceRESTClient = previousOwner, previousClient })
+	for _, selected := range []string{"HemSoft", "hemsoft-dev"} {
+		motherRepoOwner = selected
+		for _, requested := range []string{"HemSoft", "hemsoft-dev"} {
+			client := &fakeREST{fileContents: map[string]string{"VERSION": "2.1.0-rc.14\n"}}
+			created := 0
+			newSourceRESTClient = func(token string) (restAPI, error) {
+				created++
+				if token != "source-read-token" {
+					t.Fatal("wrong source credential")
+				}
+				return client, nil
+			}
+			content, err := fetchFileRaw(requested, "set-it-free-loop", "VERSION", strings.Repeat("a", 40))
+			if err != nil || content != "2.1.0-rc.14\n" || created != 1 || len(client.gets) != 1 || !strings.HasPrefix(client.gets[0], "repos/"+requested+"/set-it-free-loop/") {
+				t.Fatalf("selected=%s requested=%s content=%q gets=%v error=%v", selected, requested, content, client.gets, err)
+			}
+			for _, target := range [][2]string{{"hemsoft-dev", "consumer"}, {"HemSoft", "consumer"}, {"other", "set-it-free-loop"}, {"hemsoft-dev", extensionName}} {
+				before := created
+				if _, ok, err := sourceReadClient(target[0], target[1]); err != nil || ok || created != before {
+					t.Fatalf("source credential escaped to %v: selected=%t error=%v", target, ok, err)
+				}
+			}
+		}
 	}
 }

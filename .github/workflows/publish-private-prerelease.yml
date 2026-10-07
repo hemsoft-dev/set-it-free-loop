@@ -19,7 +19,7 @@ concurrency:
 jobs:
   publish:
     if: >-
-      github.repository == 'HemSoft/set-it-free-loop' &&
+      (github.repository == 'HemSoft/set-it-free-loop' || github.repository == 'hemsoft-dev/set-it-free-loop') &&
       github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -43,7 +43,7 @@ jobs:
 
       - name: Preflight synchronized prerelease
         shell: pwsh
-        run: ./deployment/tests/test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -RequirePrerelease
+        run: ./deployment/tests/test-release-metadata.ps1 -ExpectedVersion $env:RELEASE_VERSION -ExpectedRepository $env:GITHUB_REPOSITORY -RequirePrerelease
 
       - name: Preflight immutable source and destination
         shell: bash
@@ -72,6 +72,7 @@ jobs:
           ./deployment/scripts/build-release-artifacts.ps1 `
             -Version $env:RELEASE_VERSION `
             -BuildDate $buildDate `
+            -SourceRepository $env:GITHUB_REPOSITORY `
             -OutputDirectory (Join-Path $env:RUNNER_TEMP 'release')
 
       - name: Verify release bundle
@@ -161,7 +162,7 @@ jobs:
         run: |
           $smokeDir = Join-Path $env:RUNNER_TEMP 'clean-install-smoke'
           ./deployment/scripts/install-gh-sfl-hemsoft.ps1 `
-            -ReleaseVersion $env:RELEASE_VERSION `
+            -ReleaseVersion $env:RELEASE_VERSION -Repository $env:GITHUB_REPOSITORY `
             -WorkDir $smokeDir `
             -NoInstall
           $binary = Join-Path $smokeDir "gh-sfl_$($env:RELEASE_VERSION)_linux_amd64"
