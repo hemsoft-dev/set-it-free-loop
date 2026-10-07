@@ -9,7 +9,8 @@ mappings. They are work records: no transfer or rollout is marked verified.
 
 ## Owner integration ledger
 
-Complete a row for every repository before transferring any repository or App.
+Complete the ledger for every transfer target and any retained repository
+affected by App transfer before transferring any repository or App.
 Add rows when a repository uses multiple provider resources. The candidate column
 comes only from App access selections; it does not assert hosting or deployment.
 Check GitHub workflows, environments, Pages, packages, webhooks, deployment keys,

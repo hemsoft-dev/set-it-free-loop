@@ -224,6 +224,16 @@ releases and integration settings for the transfer receipt. Verify App coverage,
 the integration ledger, billing, protections, membership and both collision
 names. Stop on unknown or conflicting state.
 
+## Current execution scope
+
+Franz's [October 6 retention decision](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635)
+keeps now-leadership-group and set-it-free-loop-site in personal HemSoft. Preserve
+their privacy and the site repository's archive state. The sealed baseline remains
+67 IDs; the [scope decisions](scope-decisions.json) and
+[rollout matrix](rollout-matrix.json) define 65 transfers and 2 retained sources.
+Do not transfer those two repositories or include them in organization rollout.
+Verify any effect of App transfer on their existing personal installation.
+
 ## Transfer order and recovery
 
 1. Complete organization setup and the destination/permission checks above.
@@ -238,7 +248,7 @@ names. Stop on unknown or conflicting state.
    cutover window. GitHub App registration transfer is separate from installing
    it on the organization. Observe transfer warnings and verify identity,
    installation repository coverage, and token access afterward.
-4. Transfer the remaining repositories in reviewed batches. Keep both
+4. Transfer the remaining in-scope repositories in reviewed batches. Keep both
    `hs-cli-confluence-search` IDs and apply the explicit name mapping. Inventory
    `.github` organization defaults before its move, since organization profile
    and community files may affect other repositories.
@@ -255,8 +265,9 @@ For each repository, log the source/destination IDs, before/after full names,
 visibility, archive state, refs, releases, issues/PRs, protections, memberships,
 App coverage and integration tests. Test a fetch using `github-personal1`, a
 normal push through the repository's policy, and representative CI/deployment.
-The population check passes only when every original ID appears exactly once
-at its mapped destination and none remains at either source owner.
+The population check accounts for every original ID exactly once: 65 at their
+mapped destinations and the two owner-approved retained IDs at their original
+HemSoft locations, with source metadata verified. Retention is not transfer proof.
 
 If a transfer or integration check fails, stop the batch and retain all data.
 Reconcile permissions, App access or the failing integration first. A reverse
