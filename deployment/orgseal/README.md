@@ -70,3 +70,8 @@ Authentication metadata alone does not prove the wider runtime.
 All tests and implementation preparation can run without accessing the actual
 App key, writing organization credentials, invoking a model, or changing a
 database. The migration issues remain open until their live proof completes.
+
+The preparation also installs the source repository's actual `.github/CODEOWNERS`
+from the existing governance template. Source completion separately verifies
+those immutable repository bytes and the live authoritative labels and Actions
+policies. Declaring ownership alone does not establish live governance.
