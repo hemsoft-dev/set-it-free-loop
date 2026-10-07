@@ -10,6 +10,9 @@ import re
 import urllib.parse
 
 TIERS = {'review', 'reviewer', 'minimal', 'standard', 'full', 'custom'}
+# Franz's recorded October 6 decision. Expanding this set requires a new owner decision.
+APPROVED_RETAINED_IDS = {1162179521, 1169698740}
+RETENTION_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635'
 HEALTH = {'pending_transfer', 'pending_rollout', 'failed', 'verified', 'archived_verified', 'scope_exception', 'retained_source'}
 LEDGER_STATUS = {'owner_verification_pending', 'partial_provider_verified', 'verified'}
 
@@ -69,16 +72,21 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     if scope_decisions is None:
         scope_decisions = json.loads((directory / 'scope-decisions.json').read_text())
     require(scope_decisions.get('schema_version') == 1, 'Unsupported scope decision schema')
+    decisions = scope_decisions.get('retained_repositories')
+    require(isinstance(decisions, list) and len(decisions) == len(APPROVED_RETAINED_IDS),
+            'Retention must match the fixed owner-approved two-repository set')
     retained = {}
-    for decision in scope_decisions.get('retained_repositories', []):
+    for decision in decisions:
         repo_id = decision.get('repository_id')
-        require(type(repo_id) is int and repo_id in expected and repo_id not in retained,
+        require(type(repo_id) is int and repo_id in expected and repo_id in APPROVED_RETAINED_IDS and repo_id not in retained,
                 'Invalid or duplicate retained source ID')
         repo = expected[repo_id]
         require(decision.get('source') == repo['full_name'] and
                 decision.get('retained_repository') == repo['full_name'] and
                 decision.get('disposition') == 'retain_source' and decision.get('decision_owner') == 'HemSoft',
                 'Retained source needs explicit owner scope decision')
+        require(decision.get('decision_evidence_url') == RETENTION_RECEIPT,
+                'Retention must reference the recorded owner decision')
         evidence(decision.get('decision_evidence_url'), directory)
         evidence(decision.get('status_evidence_url'), directory)
         metadata = decision.get('observed_metadata', {})
@@ -86,6 +94,23 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 metadata.get('private') == (repo['visibility'] == 'private') and
                 metadata.get('archived') == repo['archived'], 'Retained source metadata differs from baseline')
         retained[repo_id] = decision
+    require(set(retained) == APPROVED_RETAINED_IDS, 'Retention differs from fixed owner-approved set')
+    provider_apps = {'Azure Pipelines', 'Railway App', 'Fly.io', 'Vercel'}
+    candidates = {repo_id: set() for repo_id in expected}
+    for repo_id, repo in expected.items():
+        if repo['full_name'].startswith('HemSoft/'):
+            for app in apps:
+                if app['name'] in provider_apps and (app['selection'] == 'all' or
+                        repo['full_name'] in app['repositories']):
+                    candidates[repo_id].add(app['name'])
+        else:
+            org_apps = inventory['source_organization_apps']
+            require(org_apps.get('state') == 'observed', 'Organization App candidates are unverified')
+            for app in org_apps['data']:
+                if app['app_slug'] == 'blacksmith-sh':
+                    require(app['repository_selection'] == 'all',
+                            'Cannot establish selected organization provider coverage')
+                    candidates[repo_id].add('Blacksmith')
     seen_ledger = set()
     ledger_statuses = {}
     for row in rows:
@@ -97,6 +122,11 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         repo = expected[repo_id]
         require(row.get('source') == repo['full_name'] and row.get('destination') == repo['destination'],
                 'Ledger identity or collision mapping mismatch')
+        captured = row.get('provider_candidates_from_app_access', '')
+        require(isinstance(captured, str), 'Invalid provider candidate list')
+        listed = [name.strip() for name in captured.split(';') if name.strip()]
+        require(len(listed) == len(set(listed)) and set(listed) == candidates[repo_id],
+                'Provider candidates differ from captured App selections')
         require(row.get('status') in LEDGER_STATUS, 'Invalid ledger status')
         seen_ledger.add(repo_id)
         ledger_statuses.setdefault(repo_id, []).append(row['status'])
@@ -138,7 +168,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 row['source_app_access_in_baseline'] == (repo['full_name'] in source_app_repos),
                 'Matrix source App access differs from owner-verified baseline')
         for field in ('installed_tier', 'selected_tier'):
-            require(field in row and (row[field] is None or row[field] in TIERS), f'Invalid {field}')
+            require(field in row and (row[field] is None or row[field] in (TIERS | {'not_installed'} if field == 'installed_tier' else TIERS)), f'Invalid {field}')
         for field in ('installed_addons', 'selected_addons'):
             require(field in row, f'Matrix needs {field}')
             addons = row[field]
@@ -171,6 +201,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(row['archived'] is False, 'Archived repository needs archive-preserving verification')
             for field in ('selected_tier', 'manifest_version', 'review_requester'):
                 require(text(row.get(field)), f'Verified rollout needs {field}')
+            require(text(row.get('installed_tier')), 'Verified rollout needs the observed pre-sync installed tier')
+            if row['installed_tier'] == 'custom':
+                require(string_list(row['installed_components']) and bool(row['installed_components']),
+                        'Installed custom tier needs observed components')
             require(row['installed_addons'] is not None and row['selected_addons'] is not None,
                     'Verified rollout needs observed and selected addon lists')
             require(row['selected_tier'] != 'review', 'Verified selected tier must use canonical reviewer spelling')

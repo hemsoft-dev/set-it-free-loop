@@ -38,7 +38,9 @@ CI also runs `validate-org-rollout.py` against the ledger and matrix. It rejects
 missing or changed baseline mappings, invalid statuses, verified rows without
 owner/evidence fields, and completed rollouts without immutable deployment/review
 receipts. Pending addon lists are `null`; an observed empty list is `[]`.
-Installed tier `review` is a legacy alias for selected `reviewer`; `custom` tiers
+Completed active rows require the observed pre-sync installed tier. Use
+`not_installed` only for a verified absence of an existing deployment; installed
+custom tiers also need their observed component list. Installed tier `review` is a legacy alias for selected `reviewer`; `custom` tiers
 retain their observed manifest components and need recognized selected workflows.
 Selected addons must be in the CLI's authoritative catalog. Completed rollout,
 archive and scope-exception rows require every integration row verified. Exceptions
@@ -135,6 +137,10 @@ planning evidence. The execution plan now has 65 transfers and 2 retained source
 including 52 active and 13 archived transfer targets. Matrix health retained_source
 requires a matching owner decision and current source metadata. It does not masquerade
 as a completed transfer. Other rollout exceptions still require actual transfer proof.
+Validation pins the two retained IDs and their owner receipt. Changing the
+retained set requires a new owner decision and a deliberate validator update.
+Provider candidate lists must match captured personal and organization App selections;
+a candidate does not prove deployment usage or prevent an evidenced absence result.
 Provider ledger completion applies to transfer targets. Before the SFL App transfer,
 also verify any effect on retained repositories' existing personal App installation;
 retention does not waive this shared-App dependency check.
@@ -153,6 +159,10 @@ and organization installation must follow #138's gates. Its
 only the owning HemSoft account, not hemsoft-dev. Keep visibility private; do not
 make the App public to bypass the gated ownership transfer. Verify App/client
 identity, intended permissions, and actual per-repository operations afterward.
+The [owner transfer preparation warning](sfl-app-transfer-warning-evidence.json)
+explicitly states that transfer automatically uninstalls the App from the personal
+account. Reconcile all 64 selected repositories and the two retained personal
+repositories before proceeding. No transfer has been submitted.
 Do not count native Codex installation or a clean external Codex comment as proof
 that the intended SFL PR Reviewer runtime is restored. The
 [reviewer baseline](README.md#reviewer-baseline) records its discontinued state.
@@ -273,9 +283,11 @@ accounts and source redirects.
 
 ## Final coverage report
 
-Re-enumerate both sources and the destination. Each original ID must occur exactly
-once at its mapped destination; none may remain under the sources. Match the matrix
-against that fresh inventory, including archive state and explicit additions.
+Re-enumerate both sources and the destination. Each of the 65 transfer target IDs
+must occur exactly once at its mapped destination and no longer under its source.
+The two retained IDs must remain at their recorded personal HemSoft locations with
+unchanged privacy and archive state. Account for all 67 original IDs, and match the
+matrix against the fresh inventory, including explicit additions.
 Close #138 only after data/settings/integration checks and new-source release
 installation pass. Close #139 only after every active target and new-repository
 onboarding passes, or an explicitly accepted scope exception is linked. An empty

@@ -46,7 +46,7 @@ class RolloutTests(unittest.TestCase):
     def complete_rollout(self):
         self.complete_pilots()
         row = next(row for row in self.matrix['repositories'] if not row['archived'])
-        row.update(health='verified', selected_tier='reviewer', installed_addons=[], selected_addons=[],
+        row.update(health='verified', selected_tier='reviewer', installed_tier='not_installed', installed_addons=[], selected_addons=[],
                    manifest_version='2.1.0-rc.14', review_requester='HemSoft',
                    deployment_source='hemsoft-dev/set-it-free-loop', deployment_sha='a'*40,
                    review_head_sha='b'*40, review_base_sha='c'*40, destination_codex_access='verified',
@@ -135,7 +135,7 @@ class RolloutTests(unittest.TestCase):
     def test_verified_rollout_requires_each_receipt(self):
         row = self.complete_rollout()
         complete = copy.deepcopy(row)
-        for field in ('installed_addons', 'selected_addons', 'deployment_sha', 'review_head_sha',
+        for field in ('installed_tier', 'installed_addons', 'selected_addons', 'deployment_sha', 'review_head_sha',
                       'review_base_sha', 'gate_run_url', 'review_pr_url', 'transfer_evidence_url',
                       'status_evidence_url', 'selected_tier', 'destination_codex_access',
                       'destination_sfl_app_access', 'review_registration_url', 'review_registry_status_url',
@@ -307,8 +307,7 @@ class RolloutTests(unittest.TestCase):
 
     def test_completed_rollout_requires_all_provider_rows_verified(self):
         row = self.complete_rollout()
-        pending = copy.deepcopy(self.rows[0])
-        pending['repository_id'] = str(row['repository_id'])
+        pending = copy.deepcopy(next(item for item in self.rows if int(item['repository_id']) == row['repository_id']))
         pending['status'] = 'partial_provider_verified'
         pending['provider'] = 'additional provider'
         self.rows.append(pending)
@@ -355,6 +354,52 @@ class RolloutTests(unittest.TestCase):
         row['source_app_access_in_baseline'] = not row['source_app_access_in_baseline']
         with self.assertRaisesRegex(ValueError, 'App access differs'):
             self.check()
+
+    def test_observed_custom_tier_requires_components(self):
+        row = self.complete_rollout()
+        row['installed_tier'] = 'custom'
+        for invalid in (None, []):
+            row['installed_components'] = invalid
+            with self.assertRaisesRegex(ValueError, 'Installed custom tier'):
+                self.check()
+        row['installed_components'] = ['historical-workflow']
+        self.check()
+
+    def test_retention_cannot_expand_or_shrink_owner_approved_scope(self):
+        original = copy.deepcopy(self.scope)
+        self.scope['retained_repositories'].pop()
+        with self.assertRaisesRegex(ValueError, 'fixed owner-approved'):
+            self.check()
+        self.scope = copy.deepcopy(original)
+        candidate = copy.deepcopy(self.scope['retained_repositories'][0])
+        repo = self.inventory['repositories'][0]
+        candidate.update(repository_id=repo['id'], source=repo['full_name'], retained_repository=repo['full_name'])
+        self.scope['retained_repositories'].append(candidate)
+        with self.assertRaisesRegex(ValueError, 'fixed owner-approved'):
+            self.check()
+        self.scope = copy.deepcopy(original)
+        self.scope['retained_repositories'][0] = candidate
+        with self.assertRaisesRegex(ValueError, 'retained source ID'):
+            self.check()
+
+    def test_retention_cannot_substitute_an_arbitrary_owner_receipt(self):
+        self.scope['retained_repositories'][0]['decision_evidence_url'] = 'https://example.com/approval'
+        with self.assertRaisesRegex(ValueError, 'recorded owner decision'):
+            self.check()
+
+    def test_provider_candidates_cannot_be_removed_or_invented(self):
+        for source, provider in (('HemSoft/codexbar', 'Fly.io'), ('HemSoft/dashboard', 'Vercel'),
+                                 ('fhemmer/hs-cli-confluence-search', 'Blacksmith')):
+            row = next(row for row in self.rows if row['source'] == source)
+            original = row['provider_candidates_from_app_access']
+            row['provider_candidates_from_app_access'] = '; '.join(name.strip() for name in original.split(';') if name.strip() != provider)
+            with self.subTest(source=source), self.assertRaisesRegex(ValueError, 'Provider candidates'):
+                self.check()
+            row['provider_candidates_from_app_access'] = original + '; Invented provider'
+            with self.subTest(source=source), self.assertRaisesRegex(ValueError, 'Provider candidates'):
+                self.check()
+            row['provider_candidates_from_app_access'] = original
+        self.check()
 
     def test_disposable_inventory_cannot_be_removed_or_duplicated(self):
         extras = copy.deepcopy(self.matrix['disposable_validation_repositories'])
