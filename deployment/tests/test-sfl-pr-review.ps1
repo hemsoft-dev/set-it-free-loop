@@ -141,7 +141,7 @@ foreach ($pattern in @(
     'supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId)',
     'already has this exact invalidation; skipping rerun',
     'received a newer context or successful Codex gate while invalidation was running',
-    'conflictingBaseRequest',
+    '!hasHistoricalBaseConflict(triggerComments, requestStatuses, request.comment.id)',
     'reviewContextToken(confirmedChecks) !== contextToken',
     ':context:${encodeURIComponent(invalidationId)}:',
     'skipping stale invalidation',
@@ -481,6 +481,19 @@ assert.equal(hasHistoricalBaseConflict([edited],[registration("member",1)]),true
 const durable={...registration("member",1),description:`SFL Codex request comment 1 for PR #42 base ${currentBase}`};
 assert.equal(hasHistoricalBaseConflict([edited],[durable]),false);
 assert.equal(hasHistoricalBaseConflict([edited],[{...durable,description:durable.description.replace(currentBase,"c".repeat(40))}]),true);
+// A prior base is stale, but cannot prevent an independently registered current-base retry.
+const priorBase={...durable,description:durable.description.replace(currentBase,"c".repeat(40))};
+const retry={id:3,user:{login:"member"},body:`@codex review\n\n${baseMarker}context=none -->`,created_at:"2026-08-19T00:01:00Z",updated_at:"2026-08-19T00:01:00Z"};
+const retryRegistry={...registration("member",3),description:`SFL Codex request comment 3 for PR #42 base ${currentBase}`};
+assert.equal(hasHistoricalBaseConflict([edited,retry],[priorBase,retryRegistry],3),false);
+assert.equal(hasHistoricalBaseConflict([edited,retry],[priorBase,retryRegistry],1),true);
+// Editing an old request into the new context cannot erase its original-base binding.
+const forged={...edited,body:retry.body};
+assert.equal(hasHistoricalBaseConflict([forged,retry],[priorBase,retryRegistry],1),true);
+assert.equal(hasHistoricalBaseConflict([forged,retry],[priorBase,retryRegistry],3),false);
+assert.equal(hasHistoricalBaseConflict([edited,retry],[registration("member",1),retryRegistry],3),false);
+assert.equal(hasHistoricalBaseConflict([edited,retry],[registration("member",1),retryRegistry],1),true);
+
 for (const id of ["01","+1","1?x=1"]) assert.equal(historicalRequestIdsFromStatuses([registration("member",id)]).size,0);
 '@
 $registrationTest | node -
@@ -529,3 +542,10 @@ const isActiveInvalidationRun = () => true;
 '@
 $selectionTest | node -
 if ($LASTEXITCODE -ne 0) { throw 'Request candidate and invalidation authorization fixtures failed.' }
+
+if ([regex]::Matches($canonical, '(?m)^\s*queue:').Count -ne 1) { throw 'Only the observer has an explicitly validated queue setting.' }
+$observerConcurrency = [regex]::Match($canonical, '(?s)  observe:\s*.*?    concurrency:\s*(.*?)    runs-on:')
+if (-not $observerConcurrency.Success -or $observerConcurrency.Groups[1].Value -notmatch '(?m)^\s*queue: max\s*$' -or
+    $observerConcurrency.Groups[1].Value -notmatch 'cancel-in-progress: false') {
+    throw 'Observer must serialize artifacts without replacing queued events.'
+}
