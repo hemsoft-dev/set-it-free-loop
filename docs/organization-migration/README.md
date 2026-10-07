@@ -460,6 +460,21 @@ and evidence times no later than the snapshot. Source refresh and App transfer
 follow this capture. Preserve it when the current ledger gains post-transfer
 smokes; current status strings alone cannot establish earlier readiness.
 
+After the complete source refresh, save `pre_cutover_tree_evidence_url` with fresh
+canonical metadata and complete branch GETs for both originally unavailable trees.
+Bind fhemmer's unchanged main head to its raw empty-tree Git commit; n8n-workflows
+must still have no branches. Preserve the original recheck as historical evidence.
+Every observation follows source refresh, and the completed tree capture precedes
+every repository or App transfer. New commits or branches require a new source
+scan and reconciliation rather than reusing an earlier empty classification.
+
+Terminal archive outcomes load actual destination repository metadata. Active
+consumer and protected-source outcomes additionally load full protection captures
+after terminal gate installation, retaining baseline rules while proving the gate
+is still required. These observations contribute to final completion chronology.
+The final new-repository onboarding orders all five terminal CLI operations and
+loads a repository-specific, unsuspended owned-App installation GET after creation.
+
 Every terminal Actions capture includes the API run's `created_at` and
 `updated_at`. Captures follow actual completion, and final rollout chronology
 includes that completion time. The raw source credential run also records its

@@ -66,7 +66,8 @@
         "verified_at": null,
         "permission_evidence_url": null,
         "license_evidence_url": null
-      }
+      },
+      "terminal_protections": null
     },
     {
       "repository_id": 1349305052,
@@ -101,7 +102,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1127994043,
@@ -136,7 +138,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1107806657,
@@ -171,7 +174,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1126133188,
@@ -206,7 +210,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1136522036,
@@ -241,7 +246,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1318635011,
@@ -284,7 +290,8 @@
       "review_artifact_url": null,
       "review_artifact_identity": null,
       "installed_manifest_path": "sfl.json",
-      "installed_manifest_blob_sha": "3140ed9f66c1fc5bf23e6bfddba9fdf26f911d6f"
+      "installed_manifest_blob_sha": "3140ed9f66c1fc5bf23e6bfddba9fdf26f911d6f",
+      "terminal_protections": null
     },
     {
       "repository_id": 987895155,
@@ -319,7 +326,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1214914496,
@@ -354,7 +362,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1285058368,
@@ -389,7 +398,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1298365902,
@@ -424,7 +434,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1120402599,
@@ -459,7 +470,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1096201366,
@@ -494,7 +506,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 987270315,
@@ -529,7 +542,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 804681121,
@@ -564,7 +578,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 46445245,
@@ -599,7 +614,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1234389239,
@@ -634,7 +650,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1262580000,
@@ -669,7 +686,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1141008729,
@@ -704,7 +722,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 941842262,
@@ -739,7 +758,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1398757511,
@@ -774,7 +794,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1107323158,
@@ -809,7 +830,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1271503908,
@@ -844,7 +866,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1229335234,
@@ -895,7 +918,8 @@
       "review_artifact_url": null,
       "review_artifact_identity": null,
       "installed_manifest_path": ".sfl/sfl.json",
-      "installed_manifest_blob_sha": "8c0a3c94cbf137dcfe72e55f31179d7c6e395685"
+      "installed_manifest_blob_sha": "8c0a3c94cbf137dcfe72e55f31179d7c6e395685",
+      "terminal_protections": null
     },
     {
       "repository_id": 1169875606,
@@ -930,7 +954,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1143972745,
@@ -965,7 +990,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1141615583,
@@ -1000,7 +1026,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1141507514,
@@ -1035,7 +1062,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1145574258,
@@ -1070,7 +1098,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1122850110,
@@ -1105,7 +1134,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1360796394,
@@ -1140,7 +1170,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1255413023,
@@ -1175,7 +1206,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 992260357,
@@ -1210,7 +1242,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1353177297,
@@ -1245,7 +1278,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1119892824,
@@ -1280,7 +1314,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1106290960,
@@ -1315,7 +1350,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 996911586,
@@ -1350,7 +1386,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1086124099,
@@ -1385,7 +1422,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 982944435,
@@ -1420,7 +1458,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1162179521,
@@ -1464,7 +1503,8 @@
         "verified_at": "2026-10-07T00:58:31.929393+00:00",
         "evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028536416",
         "disposition": "No SFL App dependency; existing SFL credentials unused. Preserve personal hosting."
-      }
+      },
+      "terminal_protections": null
     },
     {
       "repository_id": 579605475,
@@ -1499,7 +1539,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 945738366,
@@ -1534,7 +1575,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 223800408,
@@ -1569,7 +1611,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1135799306,
@@ -1604,7 +1647,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1148500296,
@@ -1639,7 +1683,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 133669754,
@@ -1674,7 +1719,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 173613643,
@@ -1709,7 +1755,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 124155847,
@@ -1744,7 +1791,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 133668217,
@@ -1779,7 +1827,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 85017515,
@@ -1814,7 +1863,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1002223819,
@@ -1849,7 +1899,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1266823833,
@@ -1884,7 +1935,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 286901159,
@@ -1919,7 +1971,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1358408598,
@@ -1954,7 +2007,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1169772257,
@@ -1989,7 +2043,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1169698740,
@@ -2033,7 +2088,8 @@
         "verified_at": "2026-10-07T00:58:32.227956+00:00",
         "evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028536416",
         "disposition": "No SFL App dependency; existing SFL credentials unused. Preserve personal hosting."
-      }
+      },
+      "terminal_protections": null
     },
     {
       "repository_id": 1120321254,
@@ -2068,7 +2124,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1070353109,
@@ -2103,7 +2160,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1104960030,
@@ -2138,7 +2196,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1076389234,
@@ -2173,7 +2232,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1399232444,
@@ -2208,7 +2268,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 193121052,
@@ -2243,7 +2304,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1039658773,
@@ -2278,7 +2340,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 223324060,
@@ -2313,7 +2376,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 995371240,
@@ -2348,7 +2412,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1188676172,
@@ -2383,7 +2448,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     },
     {
       "repository_id": 1332684620,
@@ -2418,7 +2484,8 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "terminal_protections": null
     }
   ],
   "disposable_validation_repositories": [
@@ -2465,5 +2532,6 @@
   ],
   "post_rollout_onboarding": null,
   "pre_cutover_source_evidence_url": null,
-  "pre_cutover_ledger_evidence_url": null
+  "pre_cutover_ledger_evidence_url": null,
+  "pre_cutover_tree_evidence_url": null
 }

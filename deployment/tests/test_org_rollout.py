@@ -333,10 +333,29 @@ class RolloutTests(unittest.TestCase):
                 'started_at':timestamp,'completed_at':timestamp}),directory)
         self.bind_gate_execution(row,directory,revision)
 
-    def complete_app_coverage(self, row):
+    def complete_app_coverage(self, row, directory=DIRECTORY, timestamp='2026-10-07T02:00:00Z'):
+        name=row.get('destination') or row['repository']
         row['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
-            'repository_id':row['repository_id'],'repository':row['destination'],'installation_id':123,
-            'evidence_url':'https://example.com/app-access'}
+            'repository_id':row['repository_id'],'repository':name,'installation_id':123,
+            'evidence_url':self.capture({'repository_id':row['repository_id'],'repository':name,
+                'request_url':'https://api.github.com/repos/'+name+'/installation','http_status':200,
+                'observed_at':timestamp,'installation':{'id':123,'app_id':4448946,
+                    'account':{'id':338855369,'login':'hemsoft-dev','type':'Organization'},
+                    'target_type':'Organization','repository_selection':'all','suspended_at':None}},directory)}
+
+    def terminal_protections(self, row, revision):
+        repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        row['terminal_protections']=dict(validator.protection_contract(repo),repository_id=repo['id'],
+            repository=repo['destination'],revision_sha=revision,observed_at='2026-10-07T02:00:01Z')
+        policy=json.loads((DIRECTORY/row['gate_policy']['evidence_url']).read_text())
+        row['terminal_protections']['evidence_url']=self.capture(dict(policy,**row['terminal_protections'],phase='post_transfer'))
+
+    def archived_status(self, row, timestamp='2026-10-07T02:00:00Z'):
+        repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        row['status_evidence_url']=self.capture({'phase':'post_transfer','repository_id':repo['id'],
+            'repository':repo['destination'],'request_url':'https://api.github.com/repos/'+repo['destination'],
+            'http_status':200,'observed_at':timestamp,'metadata':{'id':repo['id'],'full_name':repo['destination'],
+                **{k:repo[k] for k in ('private','visibility','default_branch','archived')}}})
 
     def complete_post_transfer_access(self, row):
         if row['repository_id'] == 1143951439:
@@ -402,6 +421,19 @@ class RolloutTests(unittest.TestCase):
                          'permissions':self.inventory['known_owned_app']['data']['permissions']},
             'source_installation':{'id':150383874,'app_id':4448946,'owner':'HemSoft','repository_selection':'all'},
             'source_organization_installations':self.inventory['source_organization_apps']})
+        tree_refresh=json.loads((DIRECTORY/'source-tree-recheck-evidence.json').read_text())
+        tree_refresh.update(phase='pre_cutover',observed_at='2026-10-07T01:50:10Z')
+        for tree in tree_refresh['records']:
+            repo=next(r for r in self.inventory['repositories'] if r['id']==tree['repository_id'])
+            tree.update(observed_at='2026-10-07T01:50:05Z',
+                metadata_request_url='https://api.github.com/repos/'+tree['source'],metadata_http_status=200,
+                metadata={'id':repo['id'],'full_name':tree['source'],'size':0,'default_branch':repo['default_branch']},
+                branches_response={'request_url':'https://api.github.com/repos/'+tree['source']+'/branches?per_page=100',
+                    'http_status':200,'all_pages':True,'data':copy.deepcopy(tree['branches'])})
+            if tree['state']=='empty_tree':
+                tree['commit_response']={'request_url':'https://api.github.com/repos/'+tree['source']+'/git/commits/'+tree['commit_sha'],
+                    'http_status':200,'data':{'sha':tree['commit_sha'],'tree':{'sha':tree['tree_sha']}}}
+        self.matrix['pre_cutover_tree_evidence_url']=self.capture(tree_refresh)
         for row in self.matrix['repositories']:
             repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
             if repo['full_name']=='HemSoft/yahtzee':
@@ -433,6 +465,7 @@ class RolloutTests(unittest.TestCase):
                 repository_id=repo['id'],repository=repo['destination'],revision_sha='e'*40,
                 observed_at='2026-10-07T02:00:00Z')
             row['destination_protections']['evidence_url']=self.capture(dict(row['destination_protections'],phase='post_transfer'))
+            if row['archived'] and row['repository_id'] not in validator.APPROVED_RETAINED_IDS:self.archived_status(row)
         for repo in self.inventory['repositories']:
             self.verify_source_ledger(repo['id'])
         self.bind_ledger_readiness()
@@ -537,6 +570,7 @@ class RolloutTests(unittest.TestCase):
         self.bind_manifest(row)
         self.bind_pre_sync(row)
         self.bind_download(row)
+        self.terminal_protections(row,'b'*40)
         self.matrix['summary']['verified_rollouts'] += 1
         self.pilots_before_rollout()
         return row
@@ -584,9 +618,9 @@ class RolloutTests(unittest.TestCase):
                 receipts['auditor_operation_receipt']=dict(receipts['wider_operation_receipts'][0],evidence_url=receipts['auditor_run_url'],workflow='.github/workflows/sfl-auditor.yml')
                 for operation in receipts['wider_operation_receipts']:self.bind_workflow_capture(operation)
                 self.bind_workflow_capture(receipts['auditor_operation_receipt'])
-            receipts['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
-                'repository_id':pilot['repository_id'],'repository':pilot['repository'],'installation_id':123,
-                'evidence_url':'https://example.com/pilot-app-access'}
+            pilot_coverage=dict(receipts,repository_id=pilot['repository_id'],repository=pilot['repository'])
+            self.complete_app_coverage(pilot_coverage)
+            receipts['destination_sfl_app_access']=pilot_coverage['destination_sfl_app_access']
             receipts['scenario_receipts'] = {name:{'outcome':outcome,'mode':'workflow_fixture',
                 'deployment_sha':receipts['deployment_sha'],'repository_id':pilot['repository_id'],
                 'repository':pilot['repository'],'release_version':receipts['release_version'],
@@ -680,6 +714,7 @@ class RolloutTests(unittest.TestCase):
         self.bind_download(proof,repository_id=row['repository_id'],repository=row['destination'],
             source='hemsoft-dev/set-it-free-loop',sha=proof['source_sha'],version=proof['release_version'],field='release_verification_url')
         self.verify_source_ledger(row['repository_id'])
+        self.terminal_protections(row,proof['source_sha'])
         self.matrix['summary']['verified_rollouts'] += 1
         proof['default_branch_evidence_url']=self.capture({'phase':'post_transfer','repository_id':row['repository_id'],
             'repository':row['destination'],'branch':repo['default_branch'],'http_status':200,
@@ -861,6 +896,7 @@ class RolloutTests(unittest.TestCase):
             self.check()
         row.update(health='archived_verified', transfer_evidence_url=self.transfer_capture(row),
                    status_evidence_url='https://example.com/settings')
+        self.archived_status(row)
         self.complete_app_transfer();self.complete_app_coverage(row)
         self.check()
 
@@ -1411,7 +1447,7 @@ class RolloutTests(unittest.TestCase):
             for field in ('repository_id','source','destination','visibility','archived','source_app_access_in_baseline','rollout_action'):
                 replacement[field]=candidate[field]
             replacement.pop('post_transfer_access',None)
-            replacement['destination_sfl_app_access'].update(repository_id=inventory['id'],repository=inventory['destination'])
+            self.complete_app_coverage(replacement)
             replacement['destination_protections']=copy.deepcopy(candidate['destination_protections'])
             replacement['pre_sync_installation'].update(repository_id=inventory['id'],repository=inventory['destination'])
             replacement['transfer_evidence_url']=self.transfer_capture(replacement)
@@ -1428,7 +1464,7 @@ class RolloutTests(unittest.TestCase):
             replacement[field] = target[field]
         replacement.pop('post_transfer_access', None)
         replacement['transfer_evidence_url']=self.transfer_capture(replacement)
-        replacement['destination_sfl_app_access'].update(repository_id=target['repository_id'],repository=target['destination'])
+        self.complete_app_coverage(replacement)
         replacement.update(installed_tier='reviewer', selected_tier='reviewer', installed_components=[])
         replacement['review_pr_url']='https://github.com/'+target['destination']+'/pull/1'
         replacement['review_artifact_identity']['review_pr_url']=replacement['review_pr_url']
@@ -1715,7 +1751,7 @@ class RolloutTests(unittest.TestCase):
                      rollout_completed_at='2026-10-07T02:00:00Z',release_version=row['manifest_version'])
         proof['review_pr_url']='https://github.com/'+name+'/pull/2'
         proof['review_artifact_identity'].update(review_pr_url=proof['review_pr_url'])
-        proof['destination_sfl_app_access'].update(repository_id=42,repository=name)
+        self.complete_app_coverage(proof,directory,'2026-10-07T03:30:00Z')
         proof['destination_codex_access']=dict(proof['destination_sfl_app_access'],app_id=1144995,installation_id=168678981)
         self.bind_review_operations(proof,directory=directory,revision='f'*40,timestamp='2026-10-07T03:30:00Z')
         proof['gate_policy']=self.gate_policy(42,name,directory)
@@ -1776,6 +1812,7 @@ class RolloutTests(unittest.TestCase):
                 continue
             row.update(health='archived_verified' if row['archived'] else 'scope_exception',
                        transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
+            if row['archived']:self.archived_status(row)
             self.complete_post_transfer_access(row)
             self.complete_app_coverage(row)
             if not row['archived']:
@@ -1877,6 +1914,7 @@ class RolloutTests(unittest.TestCase):
         self.complete_transfer_gates();self.complete_app_transfer()
         row=next(r for r in self.matrix['repositories'] if r['archived'] and r['source_app_access_in_baseline'])
         row.update(health='archived_verified',transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
+        self.archived_status(row)
         self.complete_app_coverage(row);self.check()
         row['destination_sfl_app_access']['status']='pending'
         with self.assertRaisesRegex(ValueError,'baseline-covered terminal'):self.check()
@@ -1906,7 +1944,7 @@ class RolloutTests(unittest.TestCase):
     def test_sfl_coverage_matches_one_saved_destination_installation(self):
         row=self.complete_rollout();self.check();baseline=copy.deepcopy(row['destination_sfl_app_access'])
         row['destination_sfl_app_access']['installation_id']=42
-        with self.assertRaisesRegex(ValueError,'captured all-repositories destination'):self.check()
+        with self.assertRaisesRegex(ValueError,'repository-specific destination installation GET'):self.check()
         row['destination_sfl_app_access']=baseline
         path=DIRECTORY/'owned-app-organization-installation-evidence.json';capture=json.loads(path.read_text())
         for field,value in [('id',42),('repository_selection','selected')]:
@@ -2954,6 +2992,87 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         with self.assertRaisesRegex(ValueError,'complete destination'):self.check()
         capture=copy.deepcopy(original);capture['destination_account']['repositories'].append({'id':999,'full_name':'hemsoft-dev/unrelated-new-repo'})
         path.write_text(json.dumps(capture));self.check()
+
+
+    def test_final_onboarding_orders_noop_operations_even_at_one_revision(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+            fields=('init_pr_url','repeat_onboarding_url','sync_pr_url','repeat_sync_url')
+            for field in fields:
+                path=directory/proof['onboarding_operation_receipts'][field]['capture_evidence_url']
+                original=path.read_text();capture=json.loads(original);capture['observed_at']='2026-10-07T03:31:00Z'
+                path.write_text(json.dumps(capture))
+                with self.subTest(field=field),self.assertRaisesRegex(ValueError,'terminal operations must follow'):
+                    validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+                path.write_text(original)
+
+    def test_archived_completion_loads_metadata_and_contributes_its_terminal_time(self):
+        self.complete_transfer_gates();self.complete_app_transfer()
+        row=next(r for r in self.matrix['repositories'] if r['archived'] and r['health']!='retained_source')
+        row.update(health='archived_verified',transfer_evidence_url=self.transfer_capture(row));self.complete_app_coverage(row)
+        self.check();path=DIRECTORY/row['status_evidence_url'];original=json.loads(path.read_text())
+        mutations=(lambda c:c['metadata'].update(archived=False),lambda c:c['metadata'].update(full_name='HemSoft/other'),
+            lambda c:c.update(http_status=404),lambda c:c.update(observed_at='2026-10-07T01:49:00Z'))
+        for mutate in mutations:
+            capture=copy.deepcopy(original);mutate(capture);path.write_text(json.dumps(capture))
+            with self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(dict(original,observed_at='2026-10-07T04:00:00Z')));self.check()
+        self.assertEqual(validator.repository_terminal_times([row],[],DIRECTORY)[row['repository_id']],
+            validator.observed_time('2026-10-07T04:00:00Z','fixture'))
+        row['status_evidence_url']='https://example.com/unrelated'
+        with self.assertRaisesRegex(ValueError,'Archived destination status needs an independent local capture'):self.check()
+
+    def test_new_repository_loads_actual_app_installation_after_creation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+            path=directory/proof['destination_sfl_app_access']['evidence_url'];original=json.loads(path.read_text())
+            mutations=(lambda c:c.update(observed_at='2026-10-07T02:59:59Z'),lambda c:c.update(repository_id=43),
+                lambda c:c.update(http_status=404),lambda c:c['installation'].update(repository_selection='selected'),
+                lambda c:c['installation'].update(suspended_at='2026-10-07T03:00:00Z'),
+                lambda c:c.update(request_url='https://api.github.com/repos/hemsoft-dev/other/installation'))
+            for mutate in mutations:
+                capture=copy.deepcopy(original);mutate(capture);path.write_text(json.dumps(capture))
+                with self.assertRaises(ValueError):
+                    validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+            path.write_text(json.dumps(dict(original,observed_at='2026-10-07T03:35:00Z')))
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+            self.assertEqual(validator.final_onboarding_terminal_time(proof,directory),
+                validator.observed_time('2026-10-07T03:35:00Z','fixture'))
+
+    def test_unavailable_trees_need_current_branches_between_refresh_and_transfer(self):
+        self.complete_transfer_gates();self.check();path=DIRECTORY/self.matrix['pre_cutover_tree_evidence_url']
+        original=json.loads(path.read_text())
+        mutations=(lambda c:c.update(observed_at='2026-10-07T01:49:00Z'),
+            lambda c:c['records'][0].update(observed_at='2026-10-07T01:49:00Z'),
+            lambda c:c['records'][0]['branches_response']['data'][0]['commit'].update(sha='a'*40),
+            lambda c:c['records'][1]['branches_response']['data'].append({'name':'main','commit':{'sha':'a'*40}}),
+            lambda c:c['records'][0]['commit_response']['data']['tree'].update(sha='a'*40),
+            lambda c:c['records'][0]['branches_response'].update(all_pages=False))
+        for mutate in mutations:
+            capture=copy.deepcopy(original);mutate(capture);path.write_text(json.dumps(capture))
+            with self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+        row=next(r for r in self.matrix['repositories'] if not r['archived'] and r['repository_id']!=1143951439)
+        row.update(health='pending_rollout',transfer_evidence_url=self.transfer_capture(row,'2026-10-07T01:50:05Z'))
+        with self.assertRaisesRegex(ValueError,'transfer must follow'):self.check()
+        row['transfer_evidence_url']=self.transfer_capture(row);self.check()
+
+    def test_terminal_gate_preserves_baseline_protections_after_installation(self):
+        index=next(i for i,r in enumerate(self.matrix['repositories']) if r['source']=='HemSoft/dashboard')
+        self.matrix['repositories'].insert(0,self.matrix['repositories'].pop(index))
+        row=self.complete_rollout();self.check();proof=row['terminal_protections'];original=copy.deepcopy(proof)
+        path=DIRECTORY/proof['evidence_url'];original_capture=json.loads(path.read_text())
+        mutations=(lambda p:p.update(observed_at='2026-10-07T01:59:59Z'),lambda p:p.update(rulesets=[]),
+            lambda p:p.update(revision_sha='d'*40))
+        for mutate in mutations:
+            changed=copy.deepcopy(original);mutate(changed);row['terminal_protections']=changed
+            path.write_text(json.dumps(dict(original_capture,**{k:v for k,v in changed.items() if k!='evidence_url'})))
+            with self.assertRaises(ValueError):self.check()
+        row['terminal_protections']=original;path.write_text(json.dumps(original_capture));self.check()
+        capture=copy.deepcopy(original_capture);capture['effective_rules']['data']=[];path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'actually require the strict'):self.check()
 
 
 if __name__ == '__main__':

@@ -274,8 +274,14 @@ For each repository fill the matrix's installed/selected tier and addon lists, s
 App access, gate policy, health, and immutable evidence links. Run status and
 compare its manifest, source pin, and effective branch rules with the row. A failed
 check remains failed or pending; a scope exception requires an explicit owner
-receipt, not a default skip. Archived rows need transfer/settings evidence, not
-unarchiving or new workflow runs. The protected distribution repository uses
+receipt, not a default skip. An archived completion loads a timestamped destination
+repository GET proving the original visibility, default branch and `archived: true`
+after transfer/settings preservation. Its observation contributes to the rollout
+completion cutoff. Preserve archive state without running workflows.
+After installing a strict review gate, save `terminal_protections` at the verified
+deployment revision. This independent capture follows the terminal gate-policy
+capture, includes full rulesets/classic protections and effective gate rules, and
+must retain every unrelated baseline rule. The protected distribution repository uses
 health=source_verified with in_place_evidence for workflow run URLs, canonical
 release/version/SHA, release verification, governance, transfer/status receipts
 and verified App coverage, plus a strict review gate and registered Codex-backed SFL
@@ -287,6 +293,11 @@ procedure twice. Native Codex's all-repository selection should include it; veri
 access through an actual review. SFL App access and selected organization
 credentials must explicitly include the new repository. Repeating onboarding must
 preserve existing tier and create no duplicate deployment, labels, or gates.
+Record terminal times in init, repeated init, sync, repeated sync and status order,
+including no-op operations sharing the same revision. Verify owned-App access with
+an unsuspended repository-specific installation GET after the new repository's
+creation and App cutover. The older all-repositories installation capture alone
+does not establish coverage for a repository created afterward.
 
 ## Credential rotation and recovery
 

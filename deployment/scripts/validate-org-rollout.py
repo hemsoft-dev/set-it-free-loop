@@ -372,6 +372,32 @@ def validate_protection_preservation(proof, directory, repo, cutover=None):
                 'Destination must preserve every unrelated classic branch protection')
 
 
+def validate_terminal_protections(row, directory, repo, revision):
+    policy = local_capture(row['gate_policy']['evidence_url'], directory, 'Terminal gate policy')
+    proof = row.get('terminal_protections')
+    validate_protection_preservation(proof, directory, repo,
+                                     observed_time(policy['observed_at'], 'Terminal gate policy'))
+    require(proof['revision_sha'] == revision,
+            'Terminal protection preservation must bind the actual verified deployment revision')
+    validate_gate_policy(dict(row['gate_policy'], evidence_url=proof['evidence_url']), directory,
+                         repo['id'], repo['destination'], repo['default_branch'],
+                         observed_time(policy['observed_at'], 'Terminal gate policy'))
+
+
+def validate_archived_status(row, directory, repo, cutoff):
+    capture = local_capture(row.get('status_evidence_url'), directory, 'Archived destination status')
+    metadata = capture.get('metadata', {})
+    require(capture.get('phase') == 'post_transfer' and capture.get('repository_id') == repo['id'] and
+            capture.get('repository') == repo['destination'] and capture.get('http_status') == 200 and
+            capture.get('request_url') == 'https://api.github.com/repos/' + repo['destination'] and
+            metadata.get('id') == repo['id'] and metadata.get('full_name') == repo['destination'] and
+            all(metadata.get(field) == repo[field] for field in ('private', 'visibility', 'default_branch')) and
+            metadata.get('archived') is True,
+            'Archived completion needs actual destination metadata proving preserved archived state')
+    require(observed_time(capture.get('observed_at'), 'Archived destination status') >= cutoff,
+            'Archived destination status must follow transfer and destination preservation')
+
+
 def validate_release_download(proof, directory, repository_id, repository, source, sha, version):
     release_url = 'https://github.com/' + source + '/releases/tag/v' + version
     download = local_capture(proof.get('release_download_verification_url'), directory, 'Release download')
@@ -500,6 +526,7 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
     fields = ('init_pr_url', 'repeat_onboarding_url', 'sync_pr_url', 'repeat_sync_url', 'status_url')
     require(isinstance(operations, dict) and set(operations) == set(fields),
             'New onboarding needs initial and repeated onboarding/sync/status operation receipts')
+    operation_times = []
     for field in fields:
         bound_operation(operations[field], directory, repo_id, name, proof['deployment_sha'],
                         proof['release_version'], proof.get(field))
@@ -509,7 +536,8 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
         require(operation.get('command') == command and operation.get('outcome') in outcomes and
                 immutable_sha(operation.get('revision_after')),
                 'New onboarding operation must prove successful init/sync/status outcomes at the observed revision')
-        validate_terminal_operation(operation, directory, max(created_at, cutover) if cutover is not None else created_at)
+        operation_times.append(validate_terminal_operation(operation, directory,
+            max(created_at, cutover) if cutover is not None else created_at))
         if operation['outcome'] == 'pull_request_merged':
             require(operation.get('merged') is True and
                     re.fullmatch('https://github.com/'+re.escape(name)+r'/pull/[1-9][0-9]*',proof[field]) is not None,
@@ -517,12 +545,15 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
         elif operation['outcome'] == 'no_changes':
             require(operation.get('change_count') == 0 and operation.get('revision_before') == operation['revision_after'],
                     'Repeated onboarding and sync must prove zero changes at the same observed revision')
+    require(all(before <= after for before, after in zip(operation_times, operation_times[1:])),
+            'New onboarding terminal operations must follow init, repeated init, sync, repeated sync and status chronology')
     require(operations['repeat_onboarding_url']['revision_before'] == operations['init_pr_url']['revision_after'] and
             operations['sync_pr_url']['revision_before'] == operations['repeat_onboarding_url']['revision_after'] and
             operations['repeat_sync_url']['revision_before'] == operations['sync_pr_url']['revision_after'] and
             operations['status_url']['revision_after'] == operations['repeat_sync_url']['revision_after'] == observed['revision_sha'],
             'New onboarding revisions must follow init, repeated init, sync and final status in order')
-    validate_app_coverage(proof.get('destination_sfl_app_access'), directory, repo_id, name, app_id, organization, cutover)
+    validate_app_coverage(proof.get('destination_sfl_app_access'), directory, repo_id, name, app_id, organization,
+                          cutover, repository_created_at=created_at)
     validate_app_coverage(proof.get('destination_codex_access'), directory, repo_id, name, 1144995, organization)
     validate_registered_review(proof, directory, name, target_branch=metadata.get('default_branch'), deployment_revision=observed['revision_sha'], cutover=max(created_at, cutover) if cutover is not None else created_at)
     return proof
@@ -534,6 +565,7 @@ def final_onboarding_terminal_time(proof, directory):
                    proof['review_deployment_evidence_url'],
                    proof['manifest_evidence_url'], proof['release_download_verification_url']]
     references += [op['capture_evidence_url'] for op in proof['review_operation_receipts'].values()]
+    references.append(proof['destination_sfl_app_access']['evidence_url'])
     return max(observed_time(local_capture(ref, directory, 'Final onboarding terminal evidence').get('observed_at'),
                              'Final onboarding terminal evidence') for ref in references)
 
@@ -656,7 +688,8 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
                 'Final inventory additions must match their recorded identity and visibility')
 
 
-def validate_app_coverage(coverage, directory, repository_id, repository, app_id, owner, cutover=None):
+def validate_app_coverage(coverage, directory, repository_id, repository, app_id, owner, cutover=None,
+                          repository_created_at=None):
     require(isinstance(coverage, dict) and coverage.get('status') == 'verified' and
             coverage.get('app_id') == app_id and coverage.get('owner') == owner and
             coverage.get('repository_id') == repository_id and coverage.get('repository') == repository and
@@ -664,11 +697,29 @@ def validate_app_coverage(coverage, directory, repository_id, repository, app_id
             'Verified destination needs repository-bound post-transfer SFL App coverage')
     evidence(coverage.get('evidence_url'), directory)
     if app_id == 4448946:
+        access = local_capture(coverage['evidence_url'], directory, 'Repository App installation')
+        installation = access.get('installation', {})
+        require(access.get('repository_id') == repository_id and access.get('repository') == repository and
+                access.get('http_status') == 200 and
+                access.get('request_url') == 'https://api.github.com/repos/' + repository + '/installation' and
+                installation.get('id') == coverage['installation_id'] and installation.get('app_id') == app_id and
+                installation.get('account', {}).get('login') == owner and
+                installation['account'].get('id') == 338855369 and installation['account'].get('type') == 'Organization' and
+                installation.get('target_type') == 'Organization' and installation.get('repository_selection') == 'all' and
+                'suspended_at' in installation and installation['suspended_at'] is None,
+                'SFL coverage needs an unsuspended repository-specific destination installation GET')
+        cutoffs = [time for time in (cutover, repository_created_at) if time is not None]
+        access_at = observed_time(access.get('observed_at'), 'Repository App installation')
+        if cutoffs:
+            require(access_at >= max(cutoffs),
+                    'Repository App installation GET must follow repository creation and App cutover')
         capture = local_capture('owned-app-organization-installation-evidence.json', directory, 'Destination App installation')
         require(capture.get('phase') == 'post_transfer', 'Destination App installation must be captured after transfer')
         installation_at = observed_time(capture.get('observed_at'), 'Destination App installation')
         if cutover is not None:
             require(installation_at >= cutover, 'Destination App installation capture must follow App ownership transfer')
+        require(installation_at <= access_at,
+                'Repository App access must follow the shared destination installation capture')
         require(capture.get('verification_status') == 'verified' and capture.get('account',{}).get('login') == owner and
                 capture.get('installation',{}).get('id') == coverage['installation_id'] and
                 capture['installation'].get('app_id') == app_id and capture['installation'].get('repository_selection') == 'all',
@@ -956,6 +1007,48 @@ def validate_source_refresh(proof, directory, inventory, credential):
 
 def ledger_digest(rows):
     return hashlib.sha256(json.dumps(rows, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def validate_tree_refresh(reference, directory, inventory, source_refreshed_at):
+    original = json.loads((directory / 'source-tree-recheck-evidence.json').read_text())
+    unresolved = {row['repository_id']: row for row in original['records']}
+    capture = local_capture(reference, directory, 'Pre-cutover source tree refresh')
+    require(capture.get('phase') == 'pre_cutover' and isinstance(capture.get('records'), list) and
+            len(capture['records']) == len(unresolved) and
+            {row.get('repository_id') for row in capture['records']} == set(unresolved),
+            'Source tree refresh must resolve every originally unavailable tree exactly once')
+    timestamp = observed_time(capture.get('observed_at'), 'Source tree refresh')
+    require(timestamp >= source_refreshed_at, 'Source tree refresh must follow the complete source refresh')
+    expected = {repo['id']: repo for repo in inventory['repositories']}
+    for row in capture['records']:
+        repo = expected[row['repository_id']]
+        baseline = unresolved[row['repository_id']]
+        observed = observed_time(row.get('observed_at'), 'Source tree observation')
+        require(source_refreshed_at <= observed <= timestamp,
+                'Each source branch/head recheck must follow source refresh and precede its completed capture')
+        metadata = row.get('metadata', {})
+        branches = row.get('branches_response', {})
+        require(row.get('source') == repo['full_name'] and row.get('state') == baseline['state'] and
+                row.get('metadata_request_url') == 'https://api.github.com/repos/' + repo['full_name'] and
+                row.get('metadata_http_status') == 200 and metadata.get('id') == repo['id'] and
+                metadata.get('full_name') == repo['full_name'] and metadata.get('size') == 0 and
+                metadata.get('default_branch') == repo['default_branch'] and
+                branches.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'] + '/branches?per_page=100' and
+                branches.get('http_status') == 200 and branches.get('all_pages') is True and
+                branches.get('data') == baseline['branches'],
+                'Source tree recheck must bind current canonical metadata and unchanged complete branches')
+        if baseline['state'] == 'empty_tree':
+            commit = row.get('commit_response', {})
+            require(commit.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'] +
+                    '/git/commits/' + baseline['commit_sha'] and commit.get('http_status') == 200 and
+                    commit.get('data', {}).get('sha') == baseline['commit_sha'] and
+                    commit['data'].get('tree', {}).get('sha') == '4b825dc642cb6eb9a060e54bf8d69288fbee4904' and
+                    len(branches['data']) == 1 and branches['data'][0]['commit']['sha'] == baseline['commit_sha'],
+                    'Empty source tree needs its unchanged current branch head and raw empty-tree Git commit')
+        else:
+            require(baseline['state'] == 'uninitialized' and branches['data'] == [],
+                    'Uninitialized source must still have no current branches')
+    return timestamp
 
 
 def validate_ledger_readiness(reference, current_rows, directory, context, source_refreshed_at):
@@ -1705,6 +1798,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                       current.get('branches') == [])),
                     'Unverified source trees need a repository-bound independent resolution before transfer')
             evidence(current.get('evidence_url'), directory)
+        tree_refreshed_at = validate_tree_refresh(matrix.get('pre_cutover_tree_evidence_url'), directory,
+                                                  inventory, source_refreshed_at)
 
     app_transfer = matrix.get('owned_app_transfer')
     require(isinstance(app_transfer, dict) and app_transfer.get('app_id') == owned_app_id and
@@ -1712,7 +1807,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     if app_transfer['status'] == 'verified':
         require(all_transfer_gates_verified, 'All transfer-target ledger gates must be verified before App transfer')
         require(app_transfer.get('owner') == inventory['destination_login'], 'Transferred App needs its canonical organization owner')
-        app_transferred_at = validate_app_transfer(app_transfer, directory, inventory, source_refreshed_at)
+        app_transferred_at = validate_app_transfer(app_transfer, directory, inventory, tree_refreshed_at)
     if all_transfer_gates_verified:
         cutoff = app_transferred_at if app_transfer['status'] == 'verified' else source_refreshed_at
         require(all(timestamp > cutoff for times in post_transfer_smokes.values() for timestamp in times),
@@ -1762,7 +1857,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         if repo_id not in retained and (health != 'pending_transfer' or text(row.get('transfer_evidence_url'))):
             require(all_transfer_gates_verified,
                     'All transfer-target ledger gates must be verified before any transfer advances')
-            transferred_at = validate_repository_transfer(row.get('transfer_evidence_url'), directory, repo, source_refreshed_at)
+            transferred_at = validate_repository_transfer(row.get('transfer_evidence_url'), directory, repo, tree_refreshed_at)
             if health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'}:
                 require(transferred_at <= observed_time(destination['observed_at'], 'Destination protections'),
                         'Destination protections must be observed after actual repository transfer')
@@ -1873,6 +1968,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(row['installed_tier'] is None and row['selected_tier'] is None,
                     'Protected source must not be recorded as a deployed consumer')
             validate_registered_review(row, directory, row["destination"], target_branch=repo["default_branch"], deployment_revision=proof["source_sha"], cutover=max(app_transferred_at, observed_time(row["destination_protections"]["observed_at"], "Source transfer")))
+            validate_terminal_protections(row, directory, repo, proof['source_sha'])
             validate_source_default_head(proof, directory, repo,
                 repository_terminal_times([row], rows, directory)[repo_id])
             verified_rollouts += 1
@@ -1905,7 +2001,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         elif health == 'archived_verified':
             require(row['archived'] is True, 'Active repository cannot use archived completion')
             evidence(row.get('transfer_evidence_url'), directory)
-            evidence(row.get('status_evidence_url'), directory)
+            validate_archived_status(row, directory, repo,
+                max(transferred_at, observed_time(destination['observed_at'], 'Destination protections')))
         elif health == 'verified':
             require(not protected_source, 'Protected source must use in-place source verification')
             require(row['archived'] is False, 'Archived repository needs archive-preserving verification')
@@ -2019,6 +2116,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                                                                  row['selected_components']) - {'.github/workflows/sfl-pr-review-auto.yml'}, revision,
                                          max(app_transferred_at, observed_time(row['destination_protections']['observed_at'], 'Consumer transfer')))
             validate_registered_review(row, directory, row['destination'], target_branch=repo['default_branch'], deployment_revision=revision, cutover=max(app_transferred_at, observed_time(row['destination_protections']['observed_at'], 'Consumer transfer')))
+            validate_terminal_protections(row, directory, repo, revision)
             verified_rollouts += 1
     if app_transfer['status'] == 'verified':
         require(all(row.get('retained_app_dependency', {}).get('status') == 'verified'
