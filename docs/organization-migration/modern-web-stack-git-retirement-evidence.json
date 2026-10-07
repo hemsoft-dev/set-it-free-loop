@@ -1,0 +1,30 @@
+{
+  "observed_at": "2026-10-07T01:58:32.693283+00:00",
+  "observed_by": "HemSoft owner authenticated collaborative browser",
+  "repository_id": 1119892824,
+  "source": "HemSoft/modern-web-stack-poc",
+  "provider": "Vercel",
+  "project_id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+  "workspace_id": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+  "resource_url": "https://vercel.com/franz-hemmers-projects/modern-web-stack-poc/settings/git",
+  "owner_decision_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048",
+  "action": "Remove Git Connection",
+  "result": "disconnected",
+  "persisted_reload_observation": "This Project is not connected to a Git repository. To be able to set up a Deploy Hook, you need to set up a new connection in the Connected Git Repository section above.",
+  "confirmation_dialog": "Your project settings and configuration will be preserved. Branch-specific configuration tied to your Git project may no longer apply.",
+  "preserved": [
+    "Vercel project",
+    "settings and configuration",
+    "historical deployments",
+    "GitHub repository",
+    "database data"
+  ],
+  "project_deleted": false,
+  "database_mutated": false,
+  "purchase_made": false,
+  "recovery": "Reconnect the exact Git repository to this preserved project if the owner later reactivates it",
+  "legacy_supabase_reference": "krdpxbpnvemzfxbnkgcq.supabase.co",
+  "legacy_database_dependency": "Owner confirms this repository is unused; no active integration to preserve",
+  "dns_observation": "System resolution failed; Google public DNS A query returned Status 3 NXDOMAIN",
+  "limits": "Git deployment connection retired; no claim that historical deployed URLs or database resources were deleted"
+}

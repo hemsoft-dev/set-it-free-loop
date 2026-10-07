@@ -39,9 +39,14 @@ class RolloutTests(unittest.TestCase):
     def verify_source_ledger(self, repo_id):
         for row in self.rows:
             if int(row['repository_id']) == repo_id:
-                row.update(status='verified', provider='none' if row.get('resource_kind') != 'repository_runner' else 'GitHub Actions', absence_reason='Synthetic owner absence receipt',
+                row.update(status='verified', provider='Vercel' if row.get('resource_kind') == 'vercel_project' else ('GitHub Actions' if row.get('resource_kind') == 'repository_runner' else 'none'), absence_reason='Synthetic owner absence receipt',
                            verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
                            evidence_url='https://github.com/HemSoft/set-it-free-loop/issues/138')
+                if row.get('resource_kind') == 'vercel_project':
+                    row.update(resource_owner='Synthetic verified project owner', credential_source='Provider-owned integration',
+                               credential_validity='verified', affected_reference='Existing Git project link',
+                               transfer_action='Reconnect after gated transfer', smoke_test='Synthetic deployment succeeds',
+                               recovery_action='Retain previous deployment',billing_dependency='Existing plan')
                 if row.get('resource_kind') == 'repository_runner':
                     row.update(resource_owner='HemSoft', resource_url='https://example.com/runner',
                                billing_dependency='Existing VM',credential_source='Existing registration',
@@ -54,6 +59,11 @@ class RolloutTests(unittest.TestCase):
             row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
                 paid_seats=1, verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
                 permission_evidence_url='https://example.com/access', license_evidence_url='https://example.com/license')
+
+    def complete_scope_decision(self, row):
+        row['scope_exception_decision'] = {'repository_id':row['repository_id'],'repository':row['destination'],
+            'approved_by':'HemSoft','approved_at':'2026-10-06T20:00:00-04:00','reason':'Synthetic owner-approved fixture',
+            'disposition':'exclude_runtime_rollout','evidence_url':row['exception_evidence_url']}
 
     def complete_transfer_gates(self):
         for repo in self.inventory['repositories']:
@@ -98,6 +108,8 @@ class RolloutTests(unittest.TestCase):
         return row
 
     def complete_pilots(self):
+        self.complete_transfer_gates()
+        self.complete_app_transfer()
         for pilot in self.matrix['disposable_validation_repositories']:
             pilot['validation_status'] = 'verified'
             pilot['validation_evidence'] = {field: 'https://example.com/' + field for field in
@@ -121,6 +133,12 @@ class RolloutTests(unittest.TestCase):
                 receipts['manifest_identity']['tier']='full'
                 receipts['wider_workflow_run_urls']=['https://example.com/workflow']
                 receipts['auditor_run_url']='https://example.com/auditor'
+            receipts['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
+                'repository_id':pilot['repository_id'],'repository':pilot['repository'],'installation_id':123,
+                'evidence_url':'https://example.com/pilot-app-access'}
+            receipts['scenario_receipts'] = {name:{'outcome':outcome,'mode':'workflow_fixture',
+                'deployment_sha':receipts['deployment_sha'],'evidence_url':'https://example.com/scenario/'+name}
+                for name,outcome in validator.PILOT_SCENARIOS.items()}
             pilot['validation_evidence']['review_artifact_identity'] = {
                 'runtime': 'sfl_registered_codex', 'app_id': 1144995, 'bot_user_id': 199175422,
                 'reviewed_head_sha': 'b'*40, 'reviewed_base_sha': 'c'*40,
@@ -332,6 +350,7 @@ class RolloutTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.check()
         row['exception_evidence_url'] = 'https://github.com/HemSoft/set-it-free-loop/issues/139'
+        self.complete_scope_decision(row)
         self.complete_post_transfer_access(row)
         self.check()
 
@@ -430,6 +449,7 @@ class RolloutTests(unittest.TestCase):
                        transfer_evidence_url='https://example.com/transfer',
                        status_evidence_url='https://example.com/settings')
             self.complete_post_transfer_access(row)
+            self.complete_scope_decision(row)
         self.complete_source()
         for pilot in self.matrix['disposable_validation_repositories']:
             pilot['validation_status'] = 'pending'
@@ -481,6 +501,7 @@ class RolloutTests(unittest.TestCase):
             self.check()
         row['status_evidence_url'] = 'https://example.com/settings'
         self.complete_post_transfer_access(row)
+        self.complete_scope_decision(row)
         self.check()
 
     def test_optional_or_unbound_gate_cannot_claim_verified_rollout(self):
@@ -731,6 +752,79 @@ class RolloutTests(unittest.TestCase):
             row['post_transfer_access'] = copy.deepcopy(original)
             row['post_transfer_access'][field] = value
             with self.subTest(field=field,value=value), self.assertRaises(ValueError): self.check()
+
+
+    def test_wider_pilot_must_deploy_an_auditor_tier(self):
+        self.complete_pilots()
+        pilot = next(p for p in self.matrix['disposable_validation_repositories'] if p['visibility']=='private')
+        pilot['validation_evidence']['manifest_identity']['tier']='minimal'
+        with self.assertRaisesRegex(ValueError, 'wider deployed configuration'): self.check()
+
+    def test_unused_credentials_remain_bound_to_exact_owner_scope(self):
+        original=copy.deepcopy(self.rows)
+        unused=next(r for r in self.rows if r['unused_repository_credential_names'])
+        for field,value in [('unused_repository_credential_names',''),
+                            ('unused_repository_credential_names','OPENAI_API_KEY'),
+                            ('unused_repository_credential_evidence_url','https://example.com/unrelated')]:
+            previous=unused[field];unused[field]=value
+            with self.subTest(field=field,value=value), self.assertRaisesRegex(ValueError,'unused credential'): self.check()
+            unused[field]=previous
+        referenced=next(r for r in self.rows if r['source']=='HemSoft/hs-buddy')
+        referenced['unused_repository_credential_names']='SFL_APP_PRIVATE_KEY'
+        with self.assertRaisesRegex(ValueError,'unused credential names'): self.check()
+        self.rows=original
+        self.check()
+
+    def test_verified_pilot_needs_transferred_app_and_bound_access_receipt(self):
+        self.complete_pilots()
+        self.matrix['owned_app_transfer']['status']='pending'
+        with self.assertRaisesRegex(ValueError,'pilot requires completed owned App transfer'): self.check()
+        self.complete_app_transfer()
+        pilot=self.matrix['disposable_validation_repositories'][0]
+        original=copy.deepcopy(pilot['validation_evidence']['destination_sfl_app_access'])
+        for field,value in [('status','pending'),('owner','HemSoft'),('app_id',1144995),
+                            ('repository_id',42),('repository','hemsoft-dev/other'),('installation_id',0),('evidence_url',None)]:
+            pilot['validation_evidence']['destination_sfl_app_access']=copy.deepcopy(original)
+            pilot['validation_evidence']['destination_sfl_app_access'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+
+    def test_known_vercel_projects_cannot_disappear_or_become_absence(self):
+        row=next(r for r in self.rows if r['resource_kind']=='vercel_project')
+        row['provider']='none'
+        with self.assertRaisesRegex(ValueError,'Vercel project cannot'):self.check()
+        row['provider']='Vercel';row['resource_kind']=''
+        with self.assertRaisesRegex(ValueError,'every captured Vercel'):self.check()
+        row['resource_kind']='vercel_project';row['resource_id']='other'
+        with self.assertRaisesRegex(ValueError,'Vercel project resource'):self.check()
+
+    def test_verified_pilot_requires_all_negative_scenario_outcomes(self):
+        self.complete_pilots()
+        receipts=self.matrix['disposable_validation_repositories'][0]['validation_evidence']
+        original=copy.deepcopy(receipts['scenario_receipts'])
+        for scenario in validator.PILOT_SCENARIOS:
+            receipts['scenario_receipts']=copy.deepcopy(original)
+            del receipts['scenario_receipts'][scenario]
+            with self.subTest(missing=scenario),self.assertRaisesRegex(ValueError,'every mandatory negative'):self.check()
+        for field,value in [('outcome','gate_passed'),('mode','assumed'),('deployment_sha','b'*40),('evidence_url',None)]:
+            receipts['scenario_receipts']=copy.deepcopy(original)
+            receipts['scenario_receipts']['malformed_output'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+        receipts['scenario_receipts']=original
+        self.check()
+
+    def test_scope_exception_requires_owner_repository_reason_and_timestamp(self):
+        row=self.complete_rollout()
+        row['health']='scope_exception';row['exception_evidence_url']='https://example.com/exception'
+        with self.assertRaisesRegex(ValueError,'repository-bound explicit owner'):self.check()
+        self.complete_scope_decision(row)
+        self.matrix['summary']['verified_rollouts']-=1
+        self.check()
+        original=copy.deepcopy(row['scope_exception_decision'])
+        for field,value in [('approved_by','other'),('repository_id',42),('repository','hemsoft-dev/other'),
+                            ('reason',''),('disposition','skip'),('approved_at','2026-10-06T20:00:00'),
+                            ('evidence_url','https://example.com/unrelated')]:
+            row['scope_exception_decision']=copy.deepcopy(original);row['scope_exception_decision'][field]=value
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
 
 
 if __name__ == '__main__':

@@ -14,6 +14,11 @@ INIT_TIERS = {'reviewer', 'minimal', 'standard', 'full'}
 APPROVED_PILOTS = {1408025382: ('hemsoft-dev/sfl-migration-pilot-private', 'private'),
                    1408029795: ('hemsoft-dev/sfl-migration-pilot-public', 'public')}
 FHEMMER_REPOSITORY_ID = 1143951439
+LEGACY_UNUSED_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028911622'
+PILOT_SCENARIOS = {'findings':'gate_failed', 'pending_request':'gate_blocked', 'malformed_output':'gate_blocked',
+                   'revoked_permission':'gate_blocked', 'permission_lookup_failure':'gate_blocked',
+                   'forged_registration':'gate_blocked', 'edited_registration':'gate_blocked',
+                   'duplicate_delivery':'idempotent', 'new_head':'stale_gate_rejected', 'base_advance':'stale_gate_rejected'}
 # Franz's recorded October 6 decision. Expanding this set requires a new owner decision.
 APPROVED_RETAINED_IDS = {1162179521, 1169698740}
 RETENTION_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635'
@@ -197,6 +202,34 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         if capture['kind'] == 'runners' and capture.get('state') == 'observed':
             for runner in capture.get('data', {}).get('runners', []):
                 runner_resources.add((by_source[capture['repository']], str(runner['id'])))
+    vercel_capture = json.loads((directory / 'vercel-provider-evidence.json').read_text())
+    vercel_resources = {(project['link']['repoId'], project['id']) for project in vercel_capture['projects']}
+    require(all(repo_id in expected for repo_id, _ in vercel_resources), 'Captured Vercel resource targets unknown repository')
+    seen_vercel_resources = set()
+    workflow_capture = json.loads((directory / 'workflow-reference-evidence.json').read_text())
+    workflow_refs = {}
+    for record in workflow_capture['records']:
+        workflow_refs.setdefault(record['source'], set()).update(record.get('referenced_secret_names', []))
+    legacy_names = {'SFL_APP_PRIVATE_KEY', 'OPENROUTER_API_KEY'}
+    expected_unused = {}
+    for repo_id, repo in expected.items():
+        names = set(repo['settings']['secret_names'].get('data', [])) & legacy_names
+        if repo_id not in retained and names and not (legacy_names & workflow_refs.get(repo['full_name'], set())):
+            expected_unused[repo_id] = names
+    unused_capture = json.loads((directory / 'legacy-unused-credential-owner-evidence.json').read_text())
+    require(unused_capture.get('evidence_url') == LEGACY_UNUSED_RECEIPT and
+            unused_capture.get('confirmed_by') == 'Franz (HemSoft owner)' and
+            unused_capture.get('repository_count') == len(expected_unused) == 42,
+            'Unused legacy credential confirmation must match the recorded owner scope')
+    captured_unused = {}
+    for record in unused_capture.get('repositories', []):
+        repo_id = record.get('repository_id')
+        names = record.get('unused_repository_secret_names')
+        require(repo_id in expected_unused and repo_id not in captured_unused and
+                record.get('source') == expected[repo_id]['full_name'] and string_list(names) and
+                set(names) == expected_unused[repo_id], 'Unused credential artifact identity or names differ from scanned owner scope')
+        captured_unused[repo_id] = set(names)
+    require(captured_unused == expected_unused, 'Unused credential artifact must retain the exact 42-repository scope')
     seen_runner_resources = set()
     seen_ledger = set()
     ledger_statuses = {}
@@ -215,6 +248,20 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Unexpected or duplicate repository runner resource')
             require(row.get('provider') == 'GitHub Actions', 'Known runner cannot be recorded as provider absence')
             seen_runner_resources.add(resource)
+        if row.get('resource_kind') == 'vercel_project':
+            resource = (repo_id, row.get('resource_id'))
+            require(resource in vercel_resources and resource not in seen_vercel_resources,
+                    'Unexpected or duplicate Vercel project resource')
+            require(row.get('provider') == 'Vercel', 'Known Vercel project cannot be recorded as provider absence')
+            seen_vercel_resources.add(resource)
+        names = row.get('unused_repository_credential_names')
+        require(isinstance(names, str), 'Ledger needs explicit unused credential names')
+        listed_unused = [name.strip() for name in names.split(';') if name.strip()]
+        require(len(listed_unused) == len(set(listed_unused)) and set(listed_unused) == expected_unused.get(repo_id, set()),
+                'Ledger unused credential names differ from owner-confirmed scope')
+        expected_reference = 'legacy-unused-credential-owner-evidence.json' if repo_id in expected_unused else ''
+        require(row.get('unused_repository_credential_evidence_url') == expected_reference,
+                'Ledger unused credential reference differs from owner evidence')
         captured = row.get('provider_candidates_from_app_access', '')
         require(isinstance(captured, str), 'Invalid provider candidate list')
         listed = [name.strip() for name in captured.split(';') if name.strip()]
@@ -244,6 +291,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Credential presence alone does not establish validity')
     require(seen_ledger == set(expected), 'Ledger must cover every baseline ID')
     require(seen_runner_resources == runner_resources, 'Ledger must preserve every observed repository runner resource')
+    require(seen_vercel_resources == vercel_resources, 'Ledger must preserve every captured Vercel project resource')
     all_transfer_gates_verified = all(all(status == 'verified' for status in ledger_statuses[repo_id])
                                       for repo_id in expected if repo_id not in retained)
 
@@ -358,6 +406,18 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             verified_rollouts += 1
         elif health == 'scope_exception':
             require(not protected_source, 'Protected source cannot omit in-place verification through an exception')
+            decision = row.get('scope_exception_decision')
+            require(isinstance(decision, dict) and decision.get('repository_id') == repo_id and
+                    decision.get('repository') == row['destination'] and decision.get('approved_by') == 'HemSoft' and
+                    decision.get('disposition') == 'exclude_runtime_rollout' and text(decision.get('reason')),
+                    'Scope exception needs a repository-bound explicit owner decision')
+            try:
+                approved_at = datetime.datetime.fromisoformat(decision.get('approved_at', '').replace('Z', '+00:00'))
+            except ValueError as exc:
+                raise ValueError('Scope exception needs an approval timestamp') from exc
+            require(approved_at.tzinfo is not None, 'Scope exception approval needs a timezone')
+            require(decision.get('evidence_url') == row.get('exception_evidence_url'),
+                    'Scope exception evidence must match its owner decision')
             evidence(row.get('exception_evidence_url'), directory)
             evidence(row.get('transfer_evidence_url'), directory)
             evidence(row.get('status_evidence_url'), directory)
@@ -470,6 +530,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         require(extra.get('validation_status') in {'pending', 'failed', 'verified'},
                 'Disposable pilot needs an explicit validation status')
         if extra['validation_status'] == 'verified':
+            require(app_transfer['status'] == 'verified', 'Verified pilot requires completed owned App transfer')
             receipts = extra.get('validation_evidence')
             require(isinstance(receipts, dict), 'Verified pilot needs onboarding and SFL receipts')
             for field in ('init_pr_url', 'sync_pr_url', 'repeat_sync_evidence_url',
@@ -487,6 +548,23 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                     'Verified pilot manifest must match its deployment source, SHA and version')
             for field in ('manifest_evidence_url', 'release_download_verification_url'):
                 evidence(receipts.get(field), directory)
+            coverage = receipts.get('destination_sfl_app_access')
+            require(isinstance(coverage, dict) and coverage.get('status') == 'verified' and
+                    coverage.get('app_id') == owned_app_id and coverage.get('owner') == inventory['destination_login'] and
+                    coverage.get('repository_id') == extra_id and coverage.get('repository') == name and
+                    type(coverage.get('installation_id')) is int and coverage['installation_id'] > 0,
+                    'Verified pilot needs post-transfer per-repository SFL App coverage')
+            evidence(coverage.get('evidence_url'), directory)
+            scenarios = receipts.get('scenario_receipts')
+            require(isinstance(scenarios, dict) and set(scenarios) == set(PILOT_SCENARIOS),
+                    'Verified pilot needs every mandatory negative scenario receipt')
+            for scenario, outcome in PILOT_SCENARIOS.items():
+                result = scenarios[scenario]
+                require(isinstance(result, dict) and result.get('outcome') == outcome and
+                        result.get('mode') in {'live', 'workflow_fixture'} and
+                        result.get('deployment_sha') == receipts['deployment_sha'],
+                        'Pilot scenario outcome must match the tested deployment and declared execution mode')
+                evidence(result.get('evidence_url'), directory)
             identity = receipts.get('review_artifact_identity')
             require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
                     identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and
@@ -508,7 +586,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             runs = receipts.get('wider_workflow_run_urls')
             require(isinstance(runs, list), 'Pilot needs an explicit wider workflow receipt list')
             if runs:
-                require(manifest['tier'] in {'minimal', 'standard', 'full'},
+                require(manifest['tier'] in {'standard', 'full'},
                         'Wider pilot must declare a wider deployed configuration')
                 for run in runs:
                     evidence(run, directory)

@@ -1,0 +1,11 @@
+{
+  "confirmed_by": "Franz (HemSoft owner)",
+  "confirmed_at": "2026-10-07T01:48:17Z",
+  "evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048",
+  "scope": "65 approved transfer targets",
+  "active_external_resources": "Only the inventoried Vercel, Cloudflare, Supabase, GitHub Pages and yahtzee runner resources",
+  "blacksmith_usage": "none",
+  "modern_web_stack_poc_usage": "Repository is not used",
+  "database_treatment": "No database deletion or mutation authorized or performed",
+  "limits": "Does not establish active credential validity or post-transfer resource continuity"
+}

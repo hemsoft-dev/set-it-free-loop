@@ -84,10 +84,12 @@ are private: [now-leadership-group](https://vercel.com/franz-hemmers-projects/no
 and [modern-web-stack-poc](https://vercel.com/franz-hemmers-projects/modern-web-stack-poc).
 This exceeds the four repository selections in the historical App snapshot.
 [Vercel's Hobby policy](https://vercel.com/docs/git#using-hobby-teams) blocks private
-organization Git deployments. Franz selected retirement of the modern-web-stack-poc Vercel project. Retain its
-GitHub repository in the migration. Record the retirement receipt and associated
-Supabase resource treatment before clearing its provider gate; no resource has
-been deleted. Franz selected retaining the other two Git repositories in personal HemSoft; their Vercel Git connections avoid the organization restriction. The
+organization Git deployments. Franz selected retirement of the unused modern-web-stack-poc Git deployment. The
+[retirement receipt](modern-web-stack-git-retirement-evidence.json) records the
+disconnected Git connection and a fresh settings reload confirming no connected
+repository. Keep its GitHub repository in the migration. The Vercel project,
+configuration, historical deployments and database data are preserved. No Pro
+purchase is required for this disconnected Git deployment. Franz selected retaining the other two Git repositories in personal HemSoft; their Vercel Git connections avoid the organization restriction. The
 [now-leadership-group live-hosting check](now-leadership-live-hosting-evidence.json)
 confirms the configured Vercel origin through owner DNS: proxied apex A
 76.76.21.21 and www CNAME cname.vercel-dns.com, with no zone Workers routes.
@@ -111,7 +113,10 @@ inspection; no legal terms, upgrade or resource creation was submitted.
 The [Supabase owner observation](supabase-provider-evidence.json) records two
 paused projects in HemSoft's Org, Free, with Franz's account as sole Owner. One
 has a Vercel dashboard connection. The modern-web-stack-poc public deployment
-references a different Supabase project, whose ownership remains pending.
+references a different Supabase hostname that now returns DNS NXDOMAIN. Franz
+[confirmed the repository is unused](external-resource-owner-scope-evidence.json).
+Its legacy database integration has no active workload to preserve; this does not
+authorize deleting a database.
 Do not resume or delete databases as a consequence of retiring a Vercel project.
 The [Blacksmith owner observation](blacksmith-provider-evidence.json) records
 zero October jobs, runner minutes and spend, with no payment method or invoices.
@@ -324,3 +329,7 @@ Verified App transfer requires verified retained-site App dependency receipts. D
 Franz [confirmed the 42 listed repositories’ unreferenced legacy Actions credentials are unused by external clients](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028911622). [The exact repository IDs and secret names](legacy-unused-credential-owner-evidence.json) are recorded in the ledger’s `unused_repository_credential_names` and `unused_repository_credential_evidence_url` columns. Keep the encrypted entries in place. This confirmation covers repository Actions entries only. It does not clear Vercel environment variables with the same names, other credentials, or the actively referenced credentials in buddy-ios, hs-buddy and the SFL source. Provider and runner row status remains unchanged.
 
 Verified consumer manifests must match selected add-ons and custom components, as well as source, release SHA, version and tier. Disposable pilots retain the designated ID/name/visibility pairs and use an init-supported tier. The fhemmer repository’s `post_transfer_access` receipt stays pending before cutover; after transfer it must prove fhemmerrelias has no effective destination permission and the organization still has one filled, one paid seat. Generic provider absence cannot substitute for that access/license receipt.
+
+The [latest owner resource confirmation](external-resource-owner-scope-evidence.json) limits active external integrations on the 65 transfer targets to the inventoried resources and confirms no Blacksmith usage. Historical App selections remain unchanged. The unused modern-web-stack-poc Git connection is retired with preserved project configuration and database data. Other active credential and cutover gates remain pending.
+
+The validator reconciles all five captured Vercel project IDs, including retained and disconnected projects. The 42 unused Actions credential records must match the exact scanned repository IDs, names and owner receipt. Verified pilots require completed owned-App transfer and repository-bound post-transfer App coverage. A wider pilot must use standard or full tier so it actually deploys the Auditor. Every required negative scenario records its expected outcome, deployment SHA, execution mode and evidence. Use `live` for observed GitHub behavior and `workflow_fixture` for a fixture executing the deployed observer logic; never describe fixture execution as a live provider test. Scope exceptions require the matching repository ID/name, HemSoft approval identity, time, reason and disposition linked to the owner decision.
