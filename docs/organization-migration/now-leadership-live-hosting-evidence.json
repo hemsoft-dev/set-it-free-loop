@@ -293,7 +293,46 @@
     }
   ],
   "limitations": [
-    "A Cloudflare DNS or proxy response does not identify the origin hosting provider.",
-    "Vercel project aliases alone do not establish that they serve the current live site."
-  ]
+    "Public Cloudflare proxy DNS alone cannot identify origin; subsequent owner DNS records and empty Workers route list establish the configured Vercel website origin.",
+    "Python domain GET403 is a client-specific observation, not proof the site is globally unavailable.",
+    "No DNS, proxy, hosting, plan, or billing settings changed."
+  ],
+  "cloudflare_owner_verification": {
+    "observed_at": "2026-10-07T00:38:07.535096+00:00",
+    "account_id": "f850cbd0005a78cacf00ee70ad14f941",
+    "zone_id": "23882174cdf6c55620b0c186e4e3aaf2",
+    "plan": "Free",
+    "dns_records_url": "https://dash.cloudflare.com/f850cbd0005a78cacf00ee70ad14f941/nowleadershipgroup.com/dns/records",
+    "website_records": [
+      {
+        "name": "nowleadershipgroup.com",
+        "type": "A",
+        "content": "76.76.21.21",
+        "proxied": true
+      },
+      {
+        "name": "www.nowleadershipgroup.com",
+        "type": "CNAME",
+        "content": "cname.vercel-dns.com",
+        "proxied": true
+      }
+    ],
+    "workers_routes_url": "https://dash.cloudflare.com/f850cbd0005a78cacf00ee70ad14f941/nowleadershipgroup.com/workers",
+    "workers_routes": [],
+    "conclusion": "Owner-configured website origin is Vercel, with Cloudflare DNS/proxy. No zone Workers route overrides these requests. Matching Vercel project domain bindings and HTTP-copy evidence retained.",
+    "changes_made": false,
+    "workers_and_pages": {
+      "url": "https://dash.cloudflare.com/f850cbd0005a78cacf00ee70ad14f941/workers-and-pages",
+      "applications": [
+        {
+          "name": "nlg-contact-form",
+          "url": "https://nlg-contact-form.nlg.workers.dev",
+          "type": "Worker"
+        }
+      ],
+      "visible_pages_projects": 0,
+      "scope": "current accessible account",
+      "website_origin_overridden_by_worker_route": false
+    }
+  }
 }

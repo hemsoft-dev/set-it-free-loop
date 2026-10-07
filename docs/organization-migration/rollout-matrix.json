@@ -16,7 +16,9 @@
     "repositories": 67,
     "active": 53,
     "archived": 14,
-    "verified_rollouts": 0
+    "verified_rollouts": 0,
+    "planned_transfers": 65,
+    "retained_sources": 2
   },
   "repositories": [
     {
@@ -1414,7 +1416,7 @@
       "destination": "hemsoft-dev/now-leadership-group",
       "visibility": "private",
       "archived": false,
-      "rollout_action": "preserve_existing_tier_else_reviewer",
+      "rollout_action": "retained_personal_source_owner_decision",
       "installed_tier": null,
       "selected_tier": null,
       "source_app_access_in_baseline": true,
@@ -1424,7 +1426,7 @@
       "deployment_sha": null,
       "manifest_version": null,
       "gate_policy": null,
-      "health": "pending_transfer",
+      "health": "retained_source",
       "transfer_evidence_url": null,
       "review_pr_url": null,
       "review_head_sha": null,
@@ -1432,7 +1434,7 @@
       "review_requester": null,
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
-      "status_evidence_url": null,
+      "status_evidence_url": "scope-decisions.json",
       "exception_evidence_url": null,
       "installed_addons": null,
       "selected_addons": null,
@@ -1441,7 +1443,9 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "actual_repository": "HemSoft/now-leadership-group",
+      "retention_evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635"
     },
     {
       "repository_id": 579605475,
@@ -1974,7 +1978,7 @@
       "destination": "hemsoft-dev/set-it-free-loop-site",
       "visibility": "private",
       "archived": true,
-      "rollout_action": "retain_archive_and_verify_transfer",
+      "rollout_action": "retained_personal_source_owner_decision",
       "installed_tier": null,
       "selected_tier": null,
       "source_app_access_in_baseline": true,
@@ -1984,7 +1988,7 @@
       "deployment_sha": null,
       "manifest_version": null,
       "gate_policy": null,
-      "health": "pending_transfer",
+      "health": "retained_source",
       "transfer_evidence_url": null,
       "review_pr_url": null,
       "review_head_sha": null,
@@ -1992,7 +1996,7 @@
       "review_requester": null,
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
-      "status_evidence_url": null,
+      "status_evidence_url": "scope-decisions.json",
       "exception_evidence_url": null,
       "installed_addons": null,
       "selected_addons": null,
@@ -2001,7 +2005,9 @@
       "review_registration_url": null,
       "review_registry_status_url": null,
       "review_artifact_url": null,
-      "review_artifact_identity": null
+      "review_artifact_identity": null,
+      "actual_repository": "HemSoft/set-it-free-loop-site",
+      "retention_evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635"
     },
     {
       "repository_id": 1120321254,
@@ -2397,14 +2403,18 @@
       "source_inventory_member": false,
       "permission_probe_run": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/actions/runs/37548125725",
       "permission_probe_result": "workflow token: HemSoft admin; fhemmerrelias none",
-      "review_result": "native Codex clean at f225d94d49a5951d6b2b205ad08990337aff040f; SFL gate proof pending"
+      "review_result": "native Codex clean at f225d94d49a5951d6b2b205ad08990337aff040f; SFL gate proof pending",
+      "validation_status": "pending",
+      "validation_evidence": null
     },
     {
       "repository_id": 1408029795,
       "repository": "hemsoft-dev/sfl-migration-pilot-public",
       "visibility": "public",
       "source_inventory_member": false,
-      "review_result": "pending"
+      "review_result": "pending",
+      "validation_status": "pending",
+      "validation_evidence": null
     }
   ]
 }

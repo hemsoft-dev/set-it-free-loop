@@ -10,7 +10,7 @@ import re
 import urllib.parse
 
 TIERS = {'review', 'reviewer', 'minimal', 'standard', 'full', 'custom'}
-HEALTH = {'pending_transfer', 'pending_rollout', 'failed', 'verified', 'archived_verified', 'scope_exception'}
+HEALTH = {'pending_transfer', 'pending_rollout', 'failed', 'verified', 'archived_verified', 'scope_exception', 'retained_source'}
 LEDGER_STATUS = {'owner_verification_pending', 'partial_provider_verified', 'verified'}
 
 
@@ -53,7 +53,7 @@ def string_list(value):
     return isinstance(value, list) and all(text(item) for item in value) and len(set(value)) == len(value)
 
 
-def validate(inventory, rows, matrix, directory):
+def validate(inventory, rows, matrix, directory, scope_decisions=None):
     expected = {repo['id']: repo for repo in inventory['repositories']}
     require(len(expected) == len(inventory['repositories']), 'Duplicate baseline ID')
     require(matrix.get('schema_version') == 1, 'Unsupported matrix schema')
@@ -66,6 +66,26 @@ def validate(inventory, rows, matrix, directory):
     source_app_repos = set(source_apps[0]['repositories'])
     supported_addons, supported_components = workflow_catalog()
     owned_app_id = inventory['known_owned_app']['data']['id']
+    if scope_decisions is None:
+        scope_decisions = json.loads((directory / 'scope-decisions.json').read_text())
+    require(scope_decisions.get('schema_version') == 1, 'Unsupported scope decision schema')
+    retained = {}
+    for decision in scope_decisions.get('retained_repositories', []):
+        repo_id = decision.get('repository_id')
+        require(type(repo_id) is int and repo_id in expected and repo_id not in retained,
+                'Invalid or duplicate retained source ID')
+        repo = expected[repo_id]
+        require(decision.get('source') == repo['full_name'] and
+                decision.get('retained_repository') == repo['full_name'] and
+                decision.get('disposition') == 'retain_source' and decision.get('decision_owner') == 'HemSoft',
+                'Retained source needs explicit owner scope decision')
+        evidence(decision.get('decision_evidence_url'), directory)
+        evidence(decision.get('status_evidence_url'), directory)
+        metadata = decision.get('observed_metadata', {})
+        require(metadata.get('id') == repo_id and metadata.get('full_name') == repo['full_name'] and
+                metadata.get('private') == (repo['visibility'] == 'private') and
+                metadata.get('archived') == repo['archived'], 'Retained source metadata differs from baseline')
+        retained[repo_id] = decision
     seen_ledger = set()
     ledger_statuses = {}
     for row in rows:
@@ -129,10 +149,17 @@ def validate(inventory, rows, matrix, directory):
             require(field in row and (row[field] is None or string_list(row[field])), f'Invalid {field}')
         health = row.get('health')
         require(health in HEALTH, 'Invalid matrix health')
+        require((health == 'retained_source') == (repo_id in retained), 'Matrix must honor retained source decisions')
         if health in {'verified', 'archived_verified', 'scope_exception'}:
             require(all(status == 'verified' for status in ledger_statuses[repo_id]),
                     'Completed rollout requires every integration row verified')
-        if health == 'scope_exception':
+        if health == 'retained_source':
+            decision = retained[repo_id]
+            require(row.get('actual_repository') == decision['retained_repository'] and
+                    row.get('retention_evidence_url') == decision['decision_evidence_url'] and
+                    row.get('status_evidence_url') == decision['status_evidence_url'],
+                    'Retained source needs matching owner and current source receipts')
+        elif health == 'scope_exception':
             evidence(row.get('exception_evidence_url'), directory)
             evidence(row.get('transfer_evidence_url'), directory)
             evidence(row.get('status_evidence_url'), directory)
@@ -177,17 +204,21 @@ def validate(inventory, rows, matrix, directory):
                     'Verified rollout needs an SFL-owned immutable review artifact identity')
             runs = row.get('wider_workflow_run_urls')
             require(isinstance(runs, list), 'Wider workflow evidence must be a list')
-            require(row['selected_tier'] == 'reviewer' or bool(runs), 'Wider tier needs workflow evidence')
+            wider = row['selected_tier'] not in {'reviewer', 'custom'} or (
+                row['selected_tier'] == 'custom' and
+                bool(set(row['selected_components']) & (supported_components - {'sfl-pr-review-auto'})))
+            require(not wider or bool(runs), 'Wider tier needs workflow evidence')
             for run in runs:
                 evidence(run, directory)
             verified_rollouts += 1
     require(seen_matrix == set(expected), 'Matrix must cover every baseline ID exactly once')
     summary = {'repositories': len(expected), 'active': sum(not repo['archived'] for repo in expected.values()),
-               'archived': sum(repo['archived'] for repo in expected.values()), 'verified_rollouts': verified_rollouts}
+               'archived': sum(repo['archived'] for repo in expected.values()), 'verified_rollouts': verified_rollouts,
+               'planned_transfers': len(expected) - len(retained), 'retained_sources': len(retained)}
     require(matrix.get('summary') == summary, 'Matrix summary is stale')
     extras = matrix.get('disposable_validation_repositories')
     require(isinstance(extras, list) and bool(extras), 'Disposable validation inventory must remain present')
-    extra_ids, extra_names = set(), set()
+    extra_ids, extra_names, verified_pilot_visibilities = set(), set(), set()
     for extra in extras:
         extra_id, name = extra.get('repository_id'), extra.get('repository')
         require(type(extra_id) is int and extra_id > 0 and extra_id not in expected and
@@ -199,8 +230,30 @@ def validate(inventory, rows, matrix, directory):
         require(extra_id not in extra_ids and name.casefold() not in extra_names,
                 'Duplicate disposable repository identity')
         require(extra.get('visibility') in {'public', 'private'}, 'Invalid disposable repository visibility')
+        require(extra.get('validation_status') in {'pending', 'failed', 'verified'},
+                'Disposable pilot needs an explicit validation status')
+        if extra['validation_status'] == 'verified':
+            receipts = extra.get('validation_evidence')
+            require(isinstance(receipts, dict), 'Verified pilot needs onboarding and SFL receipts')
+            for field in ('init_pr_url', 'sync_pr_url', 'repeat_sync_evidence_url',
+                          'repeat_onboarding_evidence_url', 'review_registration_url',
+                          'review_registry_status_url', 'review_artifact_url', 'gate_run_url',
+                          'status_evidence_url', 'gate_uninstall_evidence_url'):
+                evidence(receipts.get(field), directory)
+            identity = receipts.get('review_artifact_identity')
+            require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_owned' and
+                    identity.get('app_id') == owned_app_id and
+                    all(isinstance(identity.get(field), str) and
+                        re.fullmatch(r'[0-9a-f]{40}', identity[field])
+                        for field in ('reviewed_head_sha', 'reviewed_base_sha')),
+                    'Verified pilot needs immutable SFL-owned review identity')
+            verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)
         extra_names.add(name.casefold())
+    source_complete = all(row['health'] in {'verified', 'archived_verified', 'scope_exception', 'retained_source'} for row in records)
+    if verified_rollouts or source_complete:
+        require(verified_pilot_visibilities == {'public', 'private'},
+                'Active rollout requires verified public and private onboarding pilots first')
     return summary
 
 

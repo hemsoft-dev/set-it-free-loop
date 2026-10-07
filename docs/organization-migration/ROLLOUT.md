@@ -47,6 +47,12 @@ Actions and SFL-owned App artifact identity at the recorded head and base, with
 registration, registry-status and artifact receipts. Native Codex connection proof
 alone cannot fill those SFL runtime fields. Baseline SFL App coverage is checked
 against owner-verification.json; disposable pilot identities must remain recorded.
+Disposable pilots retain explicit pending/failed/verified validation status. Verified
+pilots need initial and repeated onboarding/sync, registration, SFL-owned artifact,
+gate, status and safe gate/uninstall receipts. Both public and private pilots must
+pass before any active rollout row can claim verification. Review-only custom
+components need no unrelated wider-workflow run; custom selections containing
+wider workflows require those run receipts.
 Use `health=verified` for a completed active rollout, `archived_verified` for
 archive-preserving transfer/settings evidence, or `scope_exception` with an
 explicit owner receipt. A verified provider row requires every integration field
@@ -74,12 +80,13 @@ This exceeds the four repository selections in the historical App snapshot.
 organization Git deployments. Franz selected retirement of the modern-web-stack-poc Vercel project. Retain its
 GitHub repository in the migration. Record the retirement receipt and associated
 Supabase resource treatment before clearing its provider gate; no resource has
-been deleted. Hosting treatment for the other two private projects remains pending. The
+been deleted. Franz selected retaining the other two Git repositories in personal HemSoft; their Vercel Git connections avoid the organization restriction. The
 [now-leadership-group live-hosting check](now-leadership-live-hosting-evidence.json)
-confirms Cloudflare DNS/proxy and a live Vercel copy. Vercel reports Proxy Detected
-for both custom domains. The Cloudflare origin or Workers/Pages deployment still
-needs owner verification. A Vercel alias does not establish that the current live
-site depends on Vercel; do not infer a Pro requirement from that alias alone.
+confirms the configured Vercel origin through owner DNS: proxied apex A
+76.76.21.21 and www CNAME cname.vercel-dns.com, with no zone Workers routes.
+Cloudflare provides DNS/proxy and Vercel hosts the website. This later owner
+observation resolves the earlier origin uncertainty. Retaining the personal Git
+repository avoids the private-organization Hobby restriction.
 Project IDs, Git repository IDs, domains, variable names and deployment states
 are observed; credential validity remains pending. The owner Shared tab and API both show no
 shared variables in this workspace.
@@ -111,6 +118,25 @@ references and secret names, not values. hs-buddy has a canonical full-tier
 manifest; buddy-ios has only a legacy root manifest with tier review. Preserve
 these observations and resolve their runtime migration before rollout. Text
 markers and configuration files do not establish provider resource ownership.
+
+## Owner retention decision
+
+Franz directed that HemSoft/now-leadership-group and HemSoft/set-it-free-loop-site
+remain in the personal account. The [scope decision](scope-decisions.json) records
+his [receipt](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635)
+and fresh source IDs, visibility and archive state. These repositories are outside
+organization transfer and SFL rollout. Preserve their existing hosting and settings.
+Keeping personal ownership avoids Vercel Hobby's private-organization Git restriction;
+no Pro purchase is selected for either project. The site repository remains archived.
+
+Keep the sealed 67-ID baseline and original destination mappings as historical
+planning evidence. The execution plan now has 65 transfers and 2 retained sources,
+including 52 active and 13 archived transfer targets. Matrix health retained_source
+requires a matching owner decision and current source metadata. It does not masquerade
+as a completed transfer. Other rollout exceptions still require actual transfer proof.
+Provider ledger completion applies to transfer targets. Before the SFL App transfer,
+also verify any effect on retained repositories' existing personal App installation;
+retention does not waive this shared-App dependency check.
 
 ## Runtime prerequisites
 

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-07T00:36:38.501043+00:00",
+  "reason": "Owner directed that these private Vercel repositories stay in personal HemSoft, avoiding the private-organization Hobby restriction. Preserve current visibility/archive state and hosting; exclude from organization transfer and SFL rollout. No Pro purchase.",
+  "retained_repositories": [
+    {
+      "repository_id": 1162179521,
+      "source": "HemSoft/now-leadership-group",
+      "disposition": "retain_source",
+      "retained_repository": "HemSoft/now-leadership-group",
+      "decision_owner": "HemSoft",
+      "decision_evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635",
+      "status_evidence_url": "scope-decisions.json",
+      "observed_metadata": {
+        "id": 1162179521,
+        "full_name": "HemSoft/now-leadership-group",
+        "private": true,
+        "archived": false,
+        "default_branch": "main",
+        "html_url": "https://github.com/HemSoft/now-leadership-group"
+      }
+    },
+    {
+      "repository_id": 1169698740,
+      "source": "HemSoft/set-it-free-loop-site",
+      "disposition": "retain_source",
+      "retained_repository": "HemSoft/set-it-free-loop-site",
+      "decision_owner": "HemSoft",
+      "decision_evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635",
+      "status_evidence_url": "scope-decisions.json",
+      "observed_metadata": {
+        "id": 1169698740,
+        "full_name": "HemSoft/set-it-free-loop-site",
+        "private": true,
+        "archived": true,
+        "default_branch": "main",
+        "html_url": "https://github.com/HemSoft/set-it-free-loop-site"
+      }
+    }
+  ]
+}

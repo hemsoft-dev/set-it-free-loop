@@ -18,11 +18,12 @@ class RolloutTests(unittest.TestCase):
     def setUp(self):
         self.inventory = json.loads((DIRECTORY / 'inventory.json').read_text())
         self.matrix = json.loads((DIRECTORY / 'rollout-matrix.json').read_text())
+        self.scope = json.loads((DIRECTORY / 'scope-decisions.json').read_text())
         with (DIRECTORY / 'integration-ledger.csv').open(newline='') as stream:
             self.rows = list(csv.DictReader(stream))
 
     def check(self):
-        return validator.validate(self.inventory, self.rows, self.matrix, DIRECTORY)
+        return validator.validate(self.inventory, self.rows, self.matrix, DIRECTORY, self.scope)
 
     def complete_provider(self):
         row = self.rows[0]
@@ -43,6 +44,7 @@ class RolloutTests(unittest.TestCase):
                            evidence_url='https://github.com/HemSoft/set-it-free-loop/issues/138')
 
     def complete_rollout(self):
+        self.complete_pilots()
         row = next(row for row in self.matrix['repositories'] if not row['archived'])
         row.update(health='verified', selected_tier='reviewer', installed_addons=[], selected_addons=[],
                    manifest_version='2.1.0-rc.14', review_requester='HemSoft',
@@ -61,6 +63,18 @@ class RolloutTests(unittest.TestCase):
         self.verify_source_ledger(row['repository_id'])
         self.matrix['summary']['verified_rollouts'] += 1
         return row
+
+    def complete_pilots(self):
+        for pilot in self.matrix['disposable_validation_repositories']:
+            pilot['validation_status'] = 'verified'
+            pilot['validation_evidence'] = {field: 'https://example.com/' + field for field in
+                ('init_pr_url', 'sync_pr_url', 'repeat_sync_evidence_url',
+                 'repeat_onboarding_evidence_url', 'review_registration_url',
+                 'review_registry_status_url', 'review_artifact_url', 'gate_run_url',
+                 'status_evidence_url', 'gate_uninstall_evidence_url')}
+            pilot['validation_evidence']['review_artifact_identity'] = {
+                'runtime': 'sfl_owned', 'app_id': 4448946,
+                'reviewed_head_sha': 'b'*40, 'reviewed_base_sha': 'c'*40}
 
     def test_pending_records_do_not_claim_completion(self):
         self.assertEqual(self.check()['verified_rollouts'], 0)
@@ -219,6 +233,77 @@ class RolloutTests(unittest.TestCase):
             self.check()
         row['selected_addons'] = ['pr-review']
         self.check()
+
+    def test_review_only_custom_tier_needs_no_unrelated_workflow_run(self):
+        row = self.complete_rollout()
+        row.update(selected_tier='custom', selected_components=['sfl-pr-review-auto'])
+        row['wider_workflow_run_urls'] = []
+        self.check()
+        row['selected_components'].append('sfl-auditor')
+        with self.assertRaisesRegex(ValueError, 'Wider tier'):
+            self.check()
+
+    def test_active_rollout_requires_both_verified_onboarding_pilots(self):
+        self.complete_rollout()
+        for pilot in self.matrix['disposable_validation_repositories']:
+            pilot['validation_status'] = 'pending'
+            with self.assertRaisesRegex(ValueError, 'public and private onboarding pilots'):
+                self.check()
+            pilot['validation_status'] = 'verified'
+        self.check()
+
+    def test_verified_pilot_requires_all_onboarding_and_sfl_receipts(self):
+        self.complete_pilots()
+        pilot = self.matrix['disposable_validation_repositories'][0]
+        complete = copy.deepcopy(pilot['validation_evidence'])
+        for field in complete:
+            pilot['validation_evidence'] = copy.deepcopy(complete)
+            del pilot['validation_evidence'][field]
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.check()
+        pilot['validation_evidence'] = complete
+        self.check()
+
+    def test_pilot_status_required_even_during_preparation(self):
+        del self.matrix['disposable_validation_repositories'][0]['validation_status']
+        with self.assertRaisesRegex(ValueError, 'explicit validation status'):
+            self.check()
+
+    def test_terminal_exceptions_cannot_skip_new_repository_onboarding(self):
+        for row in self.matrix['repositories']:
+            if row['health'] == 'retained_source':
+                continue
+            self.verify_source_ledger(row['repository_id'])
+            row.update(health='scope_exception', exception_evidence_url='https://example.com/exception',
+                       transfer_evidence_url='https://example.com/transfer',
+                       status_evidence_url='https://example.com/settings')
+        with self.assertRaisesRegex(ValueError, 'public and private onboarding pilots'):
+            self.check()
+
+    def test_retained_sources_preserve_original_inventory_and_owner(self):
+        summary = self.check()
+        self.assertEqual(summary['repositories'], 67)
+        self.assertEqual(summary['planned_transfers'], 65)
+        self.assertEqual(summary['retained_sources'], 2)
+        for decision in self.scope['retained_repositories']:
+            row = next(row for row in self.matrix['repositories'] if row['repository_id'] == decision['repository_id'])
+            self.assertEqual(row['actual_repository'], row['source'])
+            self.assertEqual(row['health'], 'retained_source')
+
+    def test_retained_source_cannot_be_transferred_or_waived_without_decision(self):
+        decision = self.scope['retained_repositories'][0]
+        row = next(row for row in self.matrix['repositories'] if row['repository_id'] == decision['repository_id'])
+        row['health'] = 'pending_transfer'
+        with self.assertRaisesRegex(ValueError, 'honor retained source'):
+            self.check()
+
+    def test_retention_needs_owner_receipt_and_exact_metadata(self):
+        original = copy.deepcopy(self.scope['retained_repositories'][0])
+        for field in ('decision_evidence_url', 'status_evidence_url', 'decision_owner', 'observed_metadata'):
+            self.scope['retained_repositories'][0] = copy.deepcopy(original)
+            del self.scope['retained_repositories'][0][field]
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.check()
 
     def test_completed_rollout_requires_all_provider_rows_verified(self):
         row = self.complete_rollout()
