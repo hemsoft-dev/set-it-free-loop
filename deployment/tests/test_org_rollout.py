@@ -41,8 +41,8 @@ class RolloutTests(unittest.TestCase):
         return validator.validate(self.inventory, self.rows, self.matrix, DIRECTORY, self.scope)
 
     def bind_final_pages(self, value):
-        if isinstance(value.get('accounts'),list) and {a.get('owner') for a in value['accounts']}=={'HemSoft','fhemmer','hemsoft-dev'}:
-            for account in value['accounts']:
+        if isinstance(value.get('accounts'),list):
+            for account in value['accounts'] + ([value['destination_account']] if 'destination_account' in value else []):
                 owner=account['owner'];url=('https://api.github.com/user/repos?affiliation=owner&per_page=100' if owner=='HemSoft' else
                     'https://api.github.com/orgs/'+owner+'/repos?type=all&per_page=100')
                 account['pages']=[{'method':'GET','request_url':url,'http_status':200,'response_headers':{},
@@ -729,6 +729,12 @@ class RolloutTests(unittest.TestCase):
         self.bind_pre_sync(row)
         self.bind_download(row)
         self.terminal_protections(row,'b'*40)
+        repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        row['default_branch_evidence_url']=self.capture({'phase':'post_transfer','method':'GET',
+            'repository_id':repo['id'],'repository':row['destination'],'branch':repo['default_branch'],
+            'http_status':200,'request_url':'https://api.github.com/repos/'+row['destination']+'/git/ref/heads/'+repo['default_branch'],
+            'observed_at':'2026-10-07T03:40:00Z','data':{'ref':'refs/heads/'+repo['default_branch'],
+                'object':{'type':'commit','sha':'b'*40}}})
         self.matrix['summary']['verified_rollouts'] += 1
         self.pilots_before_rollout()
         return row
@@ -2602,7 +2608,7 @@ class RolloutTests(unittest.TestCase):
 
     def test_completion_cutoff_follows_latest_terminal_repository_evidence(self):
         row=self.complete_rollout();times=validator.repository_terminal_times([row],self.rows,DIRECTORY)
-        self.assertEqual(times[row['repository_id']],validator.observed_time('2026-10-07T03:30:00Z','fixture'))
+        self.assertEqual(times[row['repository_id']],validator.observed_time('2026-10-07T03:40:00Z','fixture'))
         with tempfile.TemporaryDirectory() as folder:
             directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
             baseline=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
@@ -2990,6 +2996,10 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         capture={'resource_id':resource['resource_id'],'resource_owner':resource['resource_owner'],
             'state':'paused','project':baseline,'resource_changes_made':False,'operation':'read_only_preservation',
             'phase':'post_transfer','observed_at':'2026-10-07T05:00:00Z','database_actions':[],'credential_reads':False}
+        capture['provider_responses']={'project':{'method':'GET','http_status':200,
+            'request_url':'https://api.supabase.com/v1/projects/'+resource['resource_id'],
+            'observed_at':capture['observed_at'],'data':{'ref':resource['resource_id'],'name':baseline['name'],
+                'region':baseline['region'],'status':'INACTIVE','organization_slug':'tigijbtmewljfqdmdskh'}}}
         resource.update(status='verified',post_transfer_evidence_url=self.capture(capture));path=DIRECTORY/resource['post_transfer_evidence_url']
         cutoff=validator.observed_time('2026-10-07T04:00:00Z','test')
         validator.validate_unlinked_supabase(resource,baseline,DIRECTORY,cutoff)
@@ -3120,9 +3130,9 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         self.complete_transfer_gates();self.check();path=DIRECTORY/self.matrix['pre_cutover_source_evidence_url']
         original=json.loads(path.read_text());capture=copy.deepcopy(original)
         private=next(r for a in capture['accounts'] for r in a['repositories'] if r['private'])
-        private['visibility']='internal';path.write_text(json.dumps(capture))
+        private['visibility']='internal';path.write_text(json.dumps(self.bind_final_pages(capture)))
         with self.assertRaisesRegex(ValueError,'metadata changed'):self.check()
-        del private['visibility'];path.write_text(json.dumps(capture))
+        del private['visibility'];path.write_text(json.dumps(self.bind_final_pages(capture)))
         with self.assertRaisesRegex(ValueError,'metadata changed'):self.check()
         path.write_text(json.dumps(original));self.check()
 
@@ -3152,14 +3162,14 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         original=json.loads(path.read_text());target=next(r for r in self.inventory['repositories'] if r['id'] not in validator.APPROVED_RETAINED_IDS)
         for name in (target['destination'],target['destination'].split('/')[0]+'/'+target['destination'].split('/')[1].upper()):
             capture=copy.deepcopy(original);capture['destination_account']['repositories'].append({'id':999,'full_name':name})
-            path.write_text(json.dumps(capture))
+            path.write_text(json.dumps(self.bind_final_pages(capture)))
             with self.subTest(name=name),self.assertRaisesRegex(ValueError,'newly occupied mapped transfer name'):self.check()
         capture=copy.deepcopy(original);capture['destination_account']['all_pages']=False;path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'complete destination'):self.check()
         capture=copy.deepcopy(original);del capture['destination_account'];path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'complete destination'):self.check()
         capture=copy.deepcopy(original);capture['destination_account']['repositories'].append({'id':999,'full_name':'hemsoft-dev/unrelated-new-repo'})
-        path.write_text(json.dumps(capture));self.check()
+        path.write_text(json.dumps(self.bind_final_pages(capture)));self.check()
 
 
     def test_final_onboarding_orders_noop_operations_even_at_one_revision(self):
@@ -3646,6 +3656,66 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
                 self.assertEqual(asset.name,name);self.assertEqual(asset.read_bytes(),b'synthetic download')
             self.assertFalse(asset.exists())
         self.assertEqual(len(calls),1)
+
+
+    def test_source_refresh_lists_derive_from_successful_paginated_account_gets(self):
+        self.complete_transfer_gates();self.check();path=DIRECTORY/self.matrix['pre_cutover_source_evidence_url']
+        original=json.loads(path.read_text())
+        for account_index in ('destination',0,1):
+            for mutation in ('missing-pages','failed-get','omitted-next','mismatched-list','future-get','stale-get','wrong-endpoint'):
+                capture=copy.deepcopy(original)
+                account=capture['destination_account'] if account_index=='destination' else capture['accounts'][account_index]
+                page=account['pages'][0]
+                if mutation=='missing-pages':account.pop('pages')
+                elif mutation=='failed-get':page['http_status']=403
+                elif mutation=='omitted-next':page['response_headers']['Link']='<'+page['request_url']+'&page=2>; rel="next"'
+                elif mutation=='mismatched-list':page['data'].append({'id':999,'full_name':account['owner']+'/omitted'})
+                elif mutation=='future-get':page['observed_at']='2026-10-08T01:50:00Z'
+                elif mutation=='stale-get':page['observed_at']='2026-10-07T01:47:00Z'
+                else:page['request_url']='https://api.github.com/orgs/other/repos?type=all&per_page=100'
+                path.write_text(json.dumps(capture))
+                with self.subTest(account=account_index,mutation=mutation),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_consumer_terminal_head_rejects_missing_changed_or_early_default_ref(self):
+        row=self.complete_rollout();self.check();reference=row['default_branch_evidence_url'];path=DIRECTORY/reference
+        original=json.loads(path.read_text())
+        row.pop('default_branch_evidence_url')
+        with self.assertRaises(ValueError):self.check()
+        row['default_branch_evidence_url']=reference
+        for mutation in ('changed-head','early-get','wrong-ref','failed-get','wrong-repository','wrong-method'):
+            capture=copy.deepcopy(original)
+            if mutation=='changed-head':capture['data']['object']['sha']='e'*40
+            elif mutation=='early-get':capture['observed_at']='2026-10-07T02:00:00Z'
+            elif mutation=='wrong-ref':capture['data']['ref']='refs/heads/other'
+            elif mutation=='failed-get':capture['http_status']=404
+            elif mutation=='wrong-repository':capture['repository_id']=42
+            else:capture['method']='POST'
+            path.write_text(json.dumps(capture))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_unlinked_supabase_rejects_copied_baseline_without_current_provider_state(self):
+        resource=self.matrix['account_resource_preservation'][0]
+        baseline=next(p for p in json.loads((DIRECTORY/'supabase-provider-evidence.json').read_text())['projects'] if p['reference']==resource['resource_id'])
+        capture={'resource_id':resource['resource_id'],'resource_owner':resource['resource_owner'],
+            'state':'paused','project':baseline,'resource_changes_made':False,'operation':'read_only_preservation',
+            'phase':'post_transfer','observed_at':'2026-10-07T05:00:00Z','database_actions':[],'credential_reads':False,
+            'provider_responses':{'project':{'method':'GET','http_status':200,                'request_url':'https://api.supabase.com/v1/projects/'+resource['resource_id'],                'observed_at':'2026-10-07T04:30:00Z','data':{'ref':resource['resource_id'],'name':baseline['name'],                    'region':baseline['region'],'status':'INACTIVE','organization_slug':'tigijbtmewljfqdmdskh'}}}}
+        resource.update(status='verified',post_transfer_evidence_url=self.capture(capture));path=DIRECTORY/resource['post_transfer_evidence_url']
+        cutoff=validator.observed_time('2026-10-07T04:00:00Z','test')
+        validator.validate_unlinked_supabase(resource,baseline,DIRECTORY,cutoff)
+        for field,value in [('provider_responses',{}),('http_status',404),('status','ACTIVE'),('name','changed'),
+                            ('ref','cevpnetigzotgstxxjpm'),('organization_slug','other'),('region','other'),
+                            ('observed_at','2026-10-07T03:59:00Z'),('request_url','https://api.supabase.com/v1/projects/other')]:
+            changed=copy.deepcopy(capture)
+            if field=='provider_responses':changed[field]=value
+            elif field in ('http_status','observed_at','request_url'):changed['provider_responses']['project'][field]=value
+            else:changed['provider_responses']['project']['data'][field]=value
+            path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                validator.validate_unlinked_supabase(resource,baseline,DIRECTORY,cutoff)
+
 
 if __name__ == '__main__':
     unittest.main()

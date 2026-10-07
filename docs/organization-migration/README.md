@@ -525,3 +525,21 @@ reference scan and head/branch comparison for every source, followed by ledger
 reconciliation and a current-main owned-App credential run. Provider success
 records carry service-specific GET responses, repository bindings and observed
 production state. Historical preparation checks do not clear these live gates.
+
+Before cutover, every source and destination account enumeration must include
+its raw successful GET pages, observation times and response headers. Follow
+all `Link` next links on the exact owner endpoint and reconcile their repository
+bodies with the recorded list before checking mapped-name collisions. Summary
+lists and `all_pages` flags alone cannot establish a complete enumeration.
+
+Active consumers need `default_branch_evidence_url` from a successful GET of
+their actual default ref after status, review, policy and wider-workflow proof.
+The observed commit must equal the verified deployment revision. If the branch
+advances, verify the new revision and repeat the terminal capture before marking
+completion. A descendant commit alone does not prove it preserved installed files.
+
+Unlinked paused Supabase preservation also needs a successful resource-specific
+project metadata GET after rollout, bound to the sealed name, region, organization
+and `INACTIVE` state. Native dashboard metadata requires the matching organization
+GET to bind its numeric organization ID to the sealed slug. This reads metadata
+only and preserves the paused database and configuration.

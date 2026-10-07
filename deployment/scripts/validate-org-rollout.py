@@ -706,7 +706,7 @@ def validate_workflow_contents(workflow, repository, revision):
             'Fixture source must match its independently captured immutable Git blob identity')
 
 
-def validate_repository_enumeration(account, captured_at):
+def validate_repository_enumeration(account, captured_at, earliest=None):
     owner = account['owner']
     url = ('https://api.github.com/user/repos?affiliation=owner&per_page=100' if owner == 'HemSoft' else
            'https://api.github.com/orgs/' + owner + '/repos?type=all&per_page=100')
@@ -719,6 +719,9 @@ def validate_repository_enumeration(account, captured_at):
                 isinstance(page.get('response_headers'), dict) and
                 observed_time(page.get('observed_at'), 'Final inventory page') <= captured_at,
                 'Final inventory pages need successful exact account GETs, response headers and capture times')
+        if earliest is not None:
+            require(observed_time(page['observed_at'], 'Repository page') >= earliest,
+                    'Repository enumeration pages must follow the independent freshness boundary')
         repositories.extend(page['data'])
         headers = {key.lower(): value for key, value in page['response_headers'].items()}
         links = re.findall(r'<([^>]+)>;\s*rel="next"', headers.get('link', ''))
@@ -766,7 +769,8 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
     for account in accounts:
         require(account.get('state') == 'observed' and account.get('all_pages') is True and
                 isinstance(account.get('repositories'), list), 'Final inventory enumeration must be complete')
-        validate_repository_enumeration(account, captured_at)
+        validate_repository_enumeration(account, captured_at,
+            final_onboarding_terminal_time(approved_onboarding, directory) if approved_onboarding is not None else None)
         for repo in account['repositories']:
             repo_id = repo.get('id')
             require(type(repo_id) is int and repo_id not in actual and
@@ -1229,6 +1233,7 @@ def validate_source_refresh(proof, directory, inventory, credential):
     for account in accounts:
         require(account.get('all_pages') is True and account.get('state') == 'observed' and
                 isinstance(account.get('repositories'), list), 'Source refresh needs complete owner enumerations')
+        validate_repository_enumeration(account, timestamp, scanned_at)
         for current in account['repositories']:
             repo_id = current.get('id')
             require(repo_id in expected and repo_id not in actual, 'Source refresh contains a new or duplicate repository')
@@ -1253,6 +1258,7 @@ def validate_source_refresh(proof, directory, inventory, credential):
             destination.get('all_pages') is True and isinstance(destination.get('repositories'), list) and
             destination.get('request_url') == 'https://api.github.com/orgs/' + login + '/repos?type=all&per_page=100',
             'Source refresh must include a complete destination repository enumeration')
+    validate_repository_enumeration(destination, timestamp, scanned_at)
     mapped_names = {repo['destination'].casefold() for repo in expected.values()
                     if repo['id'] not in APPROVED_RETAINED_IDS}
     destination_ids, destination_names = set(), set()
@@ -1444,6 +1450,20 @@ def validate_source_default_head(proof, directory, repo, latest):
             'Protected source proof must match its independently captured current default-branch head')
     require(observed_time(capture.get('observed_at'), 'Source current head') >= latest,
             'Source default-branch head capture must follow all validated source evidence')
+
+
+def validate_consumer_default_head(row, directory, repo, revision, latest):
+    capture = local_capture(row.get('default_branch_evidence_url'), directory, 'Consumer default-branch head')
+    require(capture.get('phase') == 'post_transfer' and capture.get('repository_id') == repo['id'] and
+            capture.get('repository') == repo['destination'] and capture.get('branch') == repo['default_branch'] and
+            capture.get('http_status') == 200 and capture.get('method') == 'GET' and capture.get('request_url') ==
+                'https://api.github.com/repos/' + repo['destination'] + '/git/ref/heads/' + repo['default_branch'] and
+            capture.get('data', {}).get('ref') == 'refs/heads/' + repo['default_branch'] and
+            capture['data'].get('object', {}).get('type') == 'commit' and
+            capture['data']['object'].get('sha') == revision,
+            'Consumer proof must match its independently captured current default-branch head')
+    require(observed_time(capture.get('observed_at'), 'Consumer current head') >= latest,
+            'Consumer default-branch head capture must follow all validated terminal evidence')
 
 
 def validate_runner_captures(proof, directory, earliest):
@@ -1780,16 +1800,7 @@ def validate_provider_success(smoke, row, inventory, directory, repository):
         baseline = provider_preservation_baseline(row, inventory, directory)
         require(resource == 'cevpnetigzotgstxxjpm' and row.get('smoke_outcome') in {'baseline_preserved', 'preserved_unused'},
                 'Supabase runtime success cannot replace the approved unused paused disposition')
-        project = response('project', 'https://api.supabase.com/v1/projects/' + resource)
-        organization_matches = project.get('organization_slug') == baseline['organization']
-        if responses['project']['request_url'].startswith('https://api.supabase.com/platform/'):
-            organization = response('organization', 'https://api.supabase.com/v1/organizations/' + baseline['organization'])
-            organization_matches = organization.get('slug') == baseline['organization'] and \
-                project.get('organization_id') is not None and organization.get('id') == project['organization_id']
-        require(isinstance(project, dict) and project.get('ref') == resource and
-                project.get('name') == baseline['name'] and project.get('region') == baseline['region'] and
-                organization_matches and project.get('status') == 'INACTIVE',
-                'Supabase preservation needs the actual owner project metadata and paused state')
+        validate_supabase_project(response, responses, baseline, resource)
     else:
         raise ValueError('Provider success needs a supported provider-specific observation; preserve unused resources separately')
     return min(times)
@@ -1826,6 +1837,19 @@ def repository_terminal_times(records, ledger_rows, directory):
     return times
 
 
+def validate_supabase_project(response, responses, baseline, resource):
+    project = response('project', 'https://api.supabase.com/v1/projects/' + resource)
+    require(isinstance(project, dict), 'Supabase preservation needs actual project metadata')
+    organization_matches = project.get('organization_slug') == baseline['organization']
+    if responses['project']['request_url'].startswith('https://api.supabase.com/platform/'):
+        organization = response('organization', 'https://api.supabase.com/v1/organizations/' + baseline['organization'])
+        organization_matches = isinstance(organization, dict) and organization.get('slug') == baseline['organization'] and \
+            project.get('organization_id') is not None and organization.get('id') == project['organization_id']
+    require(project.get('ref') == resource and project.get('name') == baseline['name'] and
+            project.get('region') == baseline['region'] and organization_matches and project.get('status') == 'INACTIVE',
+            'Supabase preservation needs the actual owner project metadata and paused state')
+
+
 def validate_unlinked_supabase(resource, baseline, directory, cutoff):
     require(resource['status'] == 'verified', 'Final completion needs verified unlinked Supabase preservation')
     reference = resource.get('post_transfer_evidence_url')
@@ -1838,6 +1862,20 @@ def validate_unlinked_supabase(resource, baseline, directory, cutoff):
             capture.get('state') == baseline['state'] and capture.get('project') == baseline and
             capture.get('resource_changes_made') is False and capture.get('operation') == 'read_only_preservation',
             'Unlinked Supabase post-transfer capture must preserve the exact account project configuration and paused state')
+    responses = capture.get('provider_responses', {})
+    observed = observed_time(capture['observed_at'], 'Unlinked Supabase capture')
+
+    def response(name, url):
+        raw = responses.get(name, {})
+        at = observed_time(raw.get('observed_at'), 'Unlinked Supabase response')
+        require(raw.get('request_url') in {url, url.replace('https://api.supabase.com/v1/', 'https://api.supabase.com/platform/', 1)} and
+                raw.get('method') == 'GET' and raw.get('http_status') == 200 and cutoff <= at <= observed,
+                'Unlinked Supabase preservation needs successful post-rollout resource-specific metadata GETs')
+        return raw.get('data')
+
+    organization = local_capture('supabase-provider-evidence.json', directory, 'Supabase account baseline')['organization']['slug']
+    validate_supabase_project(response, responses, dict(baseline, organization=organization), resource['resource_id'])
+
 
 
 def validate_pilot_cleanup(receipts, directory, repository_id, repository, branch, operations, operation_times):
@@ -2543,6 +2581,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                                          max(app_transferred_at, observed_time(row['destination_protections']['observed_at'], 'Consumer transfer')))
             validate_registered_review(row, directory, row['destination'], target_branch=repo['default_branch'], deployment_revision=revision, cutover=max(app_transferred_at, observed_time(row['destination_protections']['observed_at'], 'Consumer transfer')))
             validate_terminal_protections(row, directory, repo, revision)
+            validate_consumer_default_head(row, directory, repo, revision,
+                repository_terminal_times([row], rows, directory)[repo_id])
             verified_rollouts += 1
     if app_transfer['status'] == 'verified':
         require(all(row.get('retained_app_dependency', {}).get('status') == 'verified'
