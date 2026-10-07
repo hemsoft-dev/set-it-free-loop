@@ -87,7 +87,7 @@ foreach ($pattern in @(
     'state: "failure"',
     'const postSuccessState = await publicationState()',
     'state.openPulls.length !== 1',
-    'registeredRequestIdsFromStatuses(statuses, comments)',
+    'historicalRequestIdsFromStatuses(statuses, comments)',
     'let latestPotentialRequestRegistered = false',
     'visibleRegistrations.has(latestPotentialRequest.comment.id)',
     'if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 5000))',
@@ -321,6 +321,7 @@ const terminal = completed_at => ({
 });
 const cases = [
   {name: "overlap blocked", comments: [first, second], checks: [], want: [1]},
+  {name: "revoked predecessor still blocks overlap", comments: [{...first,user:{login:"departed"}}, second], checks: [], want: [1]},
   {name: "terminal predecessor allows retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1, 2]},
   {name: "same-second terminal fails closed", comments: [first, second], checks: [terminal("2026-08-19T00:00:02Z")], want: [1]},
   {name: "edited marker is rejected", comments: [first, editedSecond], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
@@ -453,6 +454,7 @@ $registration = [regex]::Match($canonical, '(?s)// BEGIN TESTABLE REQUEST REGIST
 if (-not $registration.Success) { throw 'Missing testable request registration.' }
 $registrationTest = @'
 const assert = require("node:assert/strict");
+const owner="hemsoft-dev";
 const requestTargetPrefix = "https://github.com/hemsoft-dev/consumer/pull/42#issuecomment-";
 const triggerComments = [{id:1,user:{login:"member"}},{id:2,user:{login:"other"}}];
 const requesterPermissions = new Map([["member",true],["other",true],["reader",false]]);
@@ -470,6 +472,9 @@ assert.equal(registeredRequestIdsFromStatuses([registration("member",99)]).size,
 assert.deepEqual([...registeredRequestIdsFromStatuses([registration("member",1),registration("member",1)])],[1]);
 requesterPermissions.set("member",false);
 assert.equal(registeredRequestIdsFromStatuses([registration("member",1)]).size,0);
+assert.deepEqual([...historicalRequestIdsFromStatuses([registration("member",1)])],[1]);
+assert.equal(historicalRequestIdsFromStatuses([registration("reader",1)]).size,0);
+for (const id of ["01","+1","1?x=1"]) assert.equal(historicalRequestIdsFromStatuses([registration("member",id)]).size,0);
 '@
 $registrationTest | node -
 if ($LASTEXITCODE -ne 0) { throw 'Registry creator/author binding fixtures failed.' }

@@ -494,9 +494,8 @@ jobs:
             const baseMarker = `${headMarker}${currentBase.toLowerCase()};`;
             const requestTargetPrefix = `https://github.com/${owner}/${repo}/pull/${pullNumber}#issuecomment-`.toLowerCase();
             // BEGIN TESTABLE REQUEST REGISTRATION
-            const registeredRequestIdsFromStatuses = (statuses, comments = triggerComments) => new Set(statuses.flatMap(status => {
-              if (status.context !== "SFL Codex Review Request Registry" ||
-                  requesterPermissions.get(((status.creator && status.creator.login) || "").toLowerCase()) !== true) {
+            const historicalRequestIdsFromStatuses = (statuses, comments = triggerComments) => new Set(statuses.flatMap(status => {
+              if (status.context !== "SFL Codex Review Request Registry") {
                 return [];
               }
               const targetURL = (status.target_url || "").toLowerCase();
@@ -505,9 +504,14 @@ jobs:
               const comment = comments.find(candidate => candidate.id === requestId);
               const author = ((comment && comment.user && comment.user.login) || "").toLowerCase();
               const creator = ((status.creator && status.creator.login) || "").toLowerCase();
-              return Number.isSafeInteger(requestId) && requestId > 0 && author === creator &&
-                isOwnerRequest(comment) ? [requestId] : [];
+              return Number.isSafeInteger(requestId) && requestId > 0 &&
+                String(requestId) === targetURL.slice(requestTargetPrefix.length) &&
+                Boolean(author) && author === creator &&
+                (owner.toLowerCase() === "hemsoft-dev" || creator === owner.toLowerCase()) ? [requestId] : [];
             }));
+            const registeredRequestIdsFromStatuses = (statuses, comments = triggerComments) =>
+              new Set([...historicalRequestIdsFromStatuses(statuses, comments)].filter(id =>
+                isOwnerRequest(comments.find(comment => comment.id === id))));
             // END TESTABLE REQUEST REGISTRATION
             let triggerComments = [];
             let requestStatuses = [];
@@ -547,7 +551,7 @@ jobs:
               core.info("No registered Codex review request materialized for this artifact");
               return;
             }
-            const registeredRequestIds = registeredRequestIdsFromStatuses(requestStatuses);
+            const registeredRequestIds = historicalRequestIdsFromStatuses(requestStatuses);
             // BEGIN TESTABLE REQUEST ELIGIBILITY
             const requestContextFromBody = body => {
               const contextMatch = /;context=(.*?) -->/.exec(body || "");
@@ -562,7 +566,7 @@ jobs:
                 updatedTime: Date.parse(comment.updated_at || ""),
               }),
             ).filter(
-              ({comment, requestTime, updatedTime}) => isOwnerRequest(comment) &&
+              ({comment, requestTime, updatedTime}) =>
                 registrations.has(comment.id) &&
                 (comment.body || "").includes(baseMarker) &&
                 (comment.body || "") === `@codex review\n\n${baseMarker}context=${requestContextFromBody(comment.body)} -->` &&
@@ -749,7 +753,7 @@ jobs:
             const contextToken = reviewContextToken(initialChecks);
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
             const conflictingBaseRequest = triggerComments.some(
-              comment => isOwnerRequest(comment) &&
+              comment => (isOwnerRequest(comment) || historicalRequestIdsFromStatuses(requestStatuses).has(comment.id)) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(headMarker) &&
                 !(comment.body || "").includes(baseMarker),
@@ -823,7 +827,7 @@ jobs:
                 comments,
                 checkRuns,
                 Number.POSITIVE_INFINITY,
-                registeredRequestIdsFromStatuses(statuses, comments),
+                historicalRequestIdsFromStatuses(statuses, comments),
               ).some(
                 candidate => candidate.contextToken === contextToken &&
                   (candidate.requestTime > requestTime ||
@@ -875,6 +879,12 @@ jobs:
             );
             await refreshRequesterPermissions(latestTriggerComments, latestRequestStatuses);
             const latestOriginalRequest = latestTriggerComments.find(comment => comment.id === request.comment.id);
+            if (latestTriggerComments.some(comment =>
+                historicalRequestIdsFromStatuses(latestRequestStatuses, latestTriggerComments).has(comment.id) &&
+                (comment.body || "").includes(headMarker) && !(comment.body || "").includes(baseMarker))) {
+              core.setFailed("Historical registered request belongs to another base");
+              return;
+            }
             if (!latestOriginalRequest || !isOwnerRequest(latestOriginalRequest) ||
                 !registeredRequestIdsFromStatuses(latestRequestStatuses, latestTriggerComments).has(request.comment.id) ||
                 latestOriginalRequest.body !== request.comment.body ||
@@ -992,7 +1002,7 @@ jobs:
                 activeInvalidationRuns(),
               ]);
               await refreshRequesterPermissions(comments, statuses);
-              const registrations = registeredRequestIdsFromStatuses(statuses, comments);
+              const registrations = historicalRequestIdsFromStatuses(statuses, comments);
               const currentRequest = comments.find(comment => comment.id === request.comment.id);
               const requestStillAuthorized = Boolean(currentRequest) && isOwnerRequest(currentRequest) &&
                 registrations.has(currentRequest.id) && currentRequest.body === request.comment.body &&

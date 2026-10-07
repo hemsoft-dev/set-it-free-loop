@@ -720,6 +720,10 @@ func findConflictingCodexBaseRequest(
 	prNumber int,
 	headSHA, currentBaseMarker string,
 ) (string, error) {
+	historical, err := findRegisteredCodexRequestIDsWithAuthorization(client, owner, repo, prNumber, headSHA, false)
+	if err != nil {
+		return "", err
+	}
 	headMarker := codexReviewHeadMarker(headSHA)
 	for page := 1; ; page++ {
 		var comments []reviewTriggerComment
@@ -734,6 +738,9 @@ func findConflictingCodexBaseRequest(
 			// edited owner comment conservatively so a removed command or marker
 			// cannot bypass the Codex completion wait.
 			if strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentBaseMarker) {
+				if historical[comment.ID] {
+					return comment.HTMLURL, nil
+				}
 				allowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
 				if err != nil {
 					return "", err
@@ -809,7 +816,7 @@ func findCodexReviewTriggers(
 	headSHA string,
 	marker string,
 ) ([]reviewTriggerComment, []reviewTriggerComment, error) {
-	registeredIDs, err := findRegisteredCodexRequestIDs(client, owner, repo, prNumber, headSHA)
+	registeredIDs, err := findRegisteredCodexRequestIDsWithAuthorization(client, owner, repo, prNumber, headSHA, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -834,11 +841,11 @@ func findCodexReviewTriggers(
 				if err != nil {
 					return nil, nil, err
 				}
-				if !allowed {
+				if !allowed && !registeredIDs[comment.ID] {
 					continue
 				}
 				ownerRequests = append(ownerRequests, comment)
-				if strings.Contains(comment.Body, marker) {
+				if allowed && strings.Contains(comment.Body, marker) {
 					matches = append(matches, comment)
 				}
 			}
@@ -884,6 +891,12 @@ func findRegisteredCodexRequestIDs(
 	prNumber int,
 	headSHA string,
 ) (map[int64]bool, error) {
+	return findRegisteredCodexRequestIDsWithAuthorization(client, owner, repo, prNumber, headSHA, true)
+}
+
+// Durable registrations remain ordering barriers after permission revocation.
+// Only the authorization-enabled path may establish publication eligibility.
+func findRegisteredCodexRequestIDsWithAuthorization(client restAPI, owner, repo string, prNumber int, headSHA string, requireAuthorization bool) (map[int64]bool, error) {
 	registered := map[int64]bool{}
 	targetMarker := strings.ToLower(fmt.Sprintf("/%s/%s/pull/%d#issuecomment-", owner, repo, prNumber))
 	for page := 1; ; page++ {
@@ -908,11 +921,16 @@ func findRegisteredCodexRequestIDs(
 			if parseErr != nil || id <= 0 || strconv.FormatInt(id, 10) != idText {
 				continue
 			}
-			allowed, err := authorizeReviewRequester(client, owner, repo, status.Creator.Login)
-			if err != nil {
-				return nil, err
+			if requireAuthorization {
+				allowed, err := authorizeReviewRequester(client, owner, repo, status.Creator.Login)
+				if err != nil {
+					return nil, err
+				}
+				if !allowed {
+					continue
+				}
 			}
-			if !allowed {
+			if !requireAuthorization && !strings.EqualFold(owner, "hemsoft-dev") && !strings.EqualFold(status.Creator.Login, owner) {
 				continue
 			}
 			if strings.EqualFold(owner, "hemsoft-dev") {
@@ -923,12 +941,14 @@ func findRegisteredCodexRequestIDs(
 				if comment.ID != id || !strings.EqualFold(comment.User.Login, status.Creator.Login) {
 					continue
 				}
-				authorAllowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
-				if err != nil {
-					return nil, err
-				}
-				if !authorAllowed {
-					continue
+				if requireAuthorization {
+					authorAllowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
+					if err != nil {
+						return nil, err
+					}
+					if !authorAllowed {
+						continue
+					}
 				}
 			}
 			registered[id] = true

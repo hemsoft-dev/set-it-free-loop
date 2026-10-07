@@ -160,3 +160,26 @@ func TestOrganizationRegistryIgnoresUnrelatedTargetsBeforeAuthorization(t *testi
 		}
 	}
 }
+
+func TestDeauthorizedRegistrationStillBlocksChangedBase(t *testing.T) {
+	head, oldBase, newBase := strings.Repeat("b", 40), strings.Repeat("a", 40), strings.Repeat("c", 40)
+	comment := reviewTriggerComment{ID: 123, Body: bodyForReviewRequest(codexReviewMarker(head, oldBase, "none")), HTMLURL: "https://github.com/hemsoft-dev/consumer/pull/94#issuecomment-123", CreatedAt: "2026-08-19T00:00:00Z", UpdatedAt: "2026-08-19T00:00:00Z"}
+	comment.User.Login = "departed"
+	status := reviewRequestStatus{Context: codexReviewRequestRegistryContext, TargetURL: comment.HTMLURL}
+	status.Creator.Login = "departed"
+	rest := &organizationReviewREST{reviewREST: &reviewREST{comments: []reviewTriggerComment{comment}, statuses: []reviewRequestStatus{status}}, role: "none", author: "departed"}
+	conflict, err := findConflictingCodexBaseRequest(rest, "hemsoft-dev", "consumer", 94, head, codexReviewBaseMarker(head, newBase))
+	if err != nil || conflict != comment.HTMLURL {
+		t.Fatalf("conflict=%q error=%v", conflict, err)
+	}
+	matches, history, err := findCodexReviewTriggers(rest, "hemsoft-dev", "consumer", 94, head, codexReviewMarker(head, oldBase, "none"))
+	if err != nil || len(matches) != 0 || len(history) != 1 || !history[0].Registered {
+		t.Fatalf("matches=%v history=%v error=%v", matches, history, err)
+	}
+	status.Creator.Login = "forged"
+	rest.statuses = []reviewRequestStatus{status}
+	conflict, err = findConflictingCodexBaseRequest(rest, "hemsoft-dev", "consumer", 94, head, codexReviewBaseMarker(head, newBase))
+	if err != nil || conflict != "" {
+		t.Fatalf("forged registration conflict=%q error=%v", conflict, err)
+	}
+}
