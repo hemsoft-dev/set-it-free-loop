@@ -2717,6 +2717,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     seen_matrix = set()
     verified_rollouts = 0
     rollout_start_times = []
+    protected_source_completed_at = None
     for row in records:
         repo_id = row.get('repository_id')
         require(type(repo_id) is int and repo_id in expected and repo_id not in seen_matrix,
@@ -2875,6 +2876,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             validate_terminal_protections(row, directory, repo, proof['source_sha'])
             validate_source_default_head(proof, directory, repo,
                 repository_terminal_times([row], rows, directory)[repo_id])
+            protected_source_completed_at = repository_terminal_times([row], rows, directory)[repo_id]
             verified_rollouts += 1
         elif health == 'scope_exception':
             require(not protected_source, 'Protected source cannot omit in-place verification through an exception')
@@ -3133,6 +3135,12 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 elif outcome == 'gate_removed':
                     require(operation.get('gate_only') is True and operation.get('unrelated_change_count') == 0,
                             'Pilot gate uninstall must prove safe gate-only removal')
+            init_capture = local_capture(operations['init_pr_url']['capture_evidence_url'], directory, 'Pilot init execution')
+            pilot_started_at = observed_time(init_capture.get('started_at'), 'Pilot init execution start')
+            require(app_transferred_at <= pilot_started_at <= operation_times['init_pr_url'],
+                    'Pilot init execution start must follow App cutover and precede its successful observation')
+            require(protected_source_completed_at is not None and protected_source_completed_at < pilot_started_at,
+                    'Protected source must finish all verification before pilot execution starts')
             for previous, following in zip(onboarding, onboarding[1:]):
                 require(operations[previous]['revision_after'] == operations[following]['revision_before'],
                         'Pilot onboarding operations must follow their ordered revision chain')
@@ -3205,7 +3213,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         extra_names.add(name.casefold())
     require(extra_ids == set(APPROVED_PILOTS), 'Both designated disposable pilot identities must remain recorded')
     source_complete = all(row['health'] in {'verified', 'archived_verified', 'scope_exception', 'retained_source', 'source_verified'} for row in records)
-    if verified_rollouts or source_complete:
+    if rollout_start_times or source_complete:
         require(all(row['retained_app_dependency']['status'] == 'verified' for row in records
                     if row['health'] == 'retained_source'),
                 'Completed rollout requires verified retained App dependencies')

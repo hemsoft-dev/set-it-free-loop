@@ -657,8 +657,13 @@ from the actual init/sync invocation. It must follow pre-sync inspection and
 precede the input/result observation and deployed manifest. Both designated
 pilots' latest validated terminal evidence, including wider-workflow tests and
 final gate cleanup, must precede this first deployment operation. The protected
-distribution source is prepared before pilot execution; it does not use consumer
-init/sync and has its own in-place verification contract.
+distribution source must finish its in-place release, workflow, governance,
+review and final default-head verification before either pilot starts. Its latest
+validated terminal capture must strictly precede `started_at` from each pilot's
+first successful init execution capture. This timestamp must follow App cutover
+and precede the init result observation. Source verification can complete while
+pilots remain pending. Pilots then finish before active consumer deployment.
+The source does not use consumer init/sync.
 
 The yahtzee runner proof additionally records `smoke_job_id` and a local
 `jobs_evidence_url`. Capture all pages of the completed current attempt's

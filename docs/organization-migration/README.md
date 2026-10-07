@@ -667,3 +667,10 @@ Fresh workflow scans reject an unused-credential waiver when `secrets: inherit`
 or computed `secrets[...]` leaves its scope unresolved. Reconcile the reusable
 workflow or dynamic access and obtain the required credential evidence before
 cutover. Static dot and literal bracket references remain explicitly enumerated.
+
+The protected source finishes its full in-place verification before either pilot
+starts. Compare its latest validated terminal evidence, including the final
+default-head GET, with `started_at` in each pilot's successful first-init capture.
+Missing or late source verification cannot qualify earlier pilots. Source-only
+verification may be recorded while pilots remain pending; both completed pilots
+remain prerequisites for the first active consumer deployment.

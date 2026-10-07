@@ -518,7 +518,7 @@ class RolloutTests(unittest.TestCase):
         elif operation['outcome']=='gate_removed':
             result={'gate_required':False,'unrelated_change_count':0,'preserved_unrelated_rules':True}
         operation['capture_evidence_url']=self.capture({**operation,'status':'completed','exit_code':0,
-            'observed_at':timestamp,'result':result},directory)
+            'started_at':timestamp,'observed_at':timestamp,'result':result},directory)
 
     def bind_workflow_capture(self, operation):
         operation['capture_evidence_url']=self.capture({'observed_at':'2026-10-07T02:00:00Z','run':{
@@ -760,6 +760,8 @@ class RolloutTests(unittest.TestCase):
                 runner['run_evidence_url']=self.capture(dict(common,read_only=True,run={'id':1,'run_attempt':1,'repository':{'id':repo['id'],
                     'full_name':repo['destination']},'html_url':runner['run_url'],'head_sha':runner['run_head_sha'],
                     'status':'completed','conclusion':'success','created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'}))
+            if row['health'] == 'source_verified':
+                continue
             row['destination_protections'] = dict(validator.protection_contract(repo),
                 repository_id=repo['id'],repository=repo['destination'],revision_sha='e'*40,
                 observed_at='2026-10-07T02:00:00Z')
@@ -901,6 +903,7 @@ class RolloutTests(unittest.TestCase):
     def complete_pilots(self):
         self.complete_transfer_gates()
         self.complete_app_transfer()
+        self.complete_source_in_place()
         for pilot in self.matrix['disposable_validation_repositories']:
             pilot['validation_status'] = 'verified'
             pilot['validation_evidence'] = {field: 'https://github.com/' + pilot['repository'] + '/issues/1#' + field for field in
@@ -998,9 +1001,16 @@ class RolloutTests(unittest.TestCase):
 
     def complete_source(self):
         self.complete_pilots()
+        row = next(row for row in self.matrix['repositories'] if row['source'] == 'HemSoft/set-it-free-loop')
+        self.pilots_before_rollout()
+        return row
+
+    def complete_source_in_place(self):
+        row = next(row for row in self.matrix['repositories'] if row['source'] == 'HemSoft/set-it-free-loop')
+        if row['health'] == 'source_verified':
+            return row
         self.complete_transfer_gates()
         self.complete_app_transfer()
-        row = next(row for row in self.matrix['repositories'] if row['source'] == 'HemSoft/set-it-free-loop')
         row.update(health='source_verified', transfer_evidence_url=self.transfer_capture(row),
                    status_evidence_url='https://example.com/status', destination_codex_access='verified',
                    destination_sfl_app_access='verified', review_requester='HemSoft',
@@ -1029,7 +1039,7 @@ class RolloutTests(unittest.TestCase):
             'labels':json.loads((root/'labels.json').read_text()),'codeowners':(root/'CODEOWNERS').read_text(),
             'actions_policy':repo['settings']['actions_policy']['data'],
             'workflow_permissions':repo['settings']['workflow_permissions']['data']})
-        self.bind_review_operations(row,revision=row['in_place_evidence']['source_sha'])
+        self.bind_review_operations(row,revision=row['in_place_evidence']['source_sha'],timestamp='2026-10-07T01:52:00Z')
         proof=row['in_place_evidence'];proof['workflow_run_urls']=['https://github.com/'+row['destination']+'/actions/runs/1']
         proof['workflow_operation_receipts']=[{'repository_id':row['repository_id'],'repository':row['destination'],
             'deployment_sha':proof['source_sha'],'release_version':proof['release_version'],'evidence_url':proof['workflow_run_urls'][0],
@@ -1045,7 +1055,36 @@ class RolloutTests(unittest.TestCase):
             'request_url':'https://api.github.com/repos/'+row['destination']+'/git/ref/heads/'+repo['default_branch'],
             'observed_at':'2026-10-07T03:40:00Z','data':{'ref':'refs/heads/'+repo['default_branch'],
                 'object':{'type':'commit','sha':proof['source_sha']}}})
-        self.pilots_before_rollout()
+        # Source verification finishes first. Re-time only the synthetic source
+        # captures; the freshly generated registration already hashes this time.
+        def retime(value):
+            if isinstance(value,dict):return {key:retime(item) for key,item in value.items()}
+            if isinstance(value,list):return [retime(item) for item in value]
+            if isinstance(value,str) and value.startswith('2026-10-07T'):
+                try:
+                    at=datetime.datetime.fromisoformat(value.replace('Z','+00:00'))
+                    for old,new in [('03:40:00','01:52:03'),('03:30:00','01:52:02'),('02:00:01','01:52:01'),('02:00:00','01:52:00')]:
+                        if at >= datetime.datetime.fromisoformat('2026-10-07T'+old+'+00:00'):
+                            return '2026-10-07T'+new+'Z'
+                except ValueError:pass
+            return value
+        changed=retime(row);row.clear();row.update(changed)
+        references=set()
+        def collect(value):
+            if isinstance(value,dict):
+                for key,item in value.items():
+                    if key.endswith(('evidence_url','verification_url')) and isinstance(item,str) and not item.startswith('https://'):
+                        references.add(item)
+                    elif isinstance(item,(dict,list)):collect(item)
+            elif isinstance(value,list):
+                for item in value:collect(item)
+        collect(row);pending=list(references);done=set()
+        while pending:
+            reference=pending.pop()
+            if reference in done:continue
+            done.add(reference);path=DIRECTORY/reference
+            data=retime(json.loads(path.read_text()))
+            path.write_text(json.dumps(data));collect(data);pending.extend(references-done)
         return row
 
     def test_protected_source_can_complete_without_consumer_manifest(self):
@@ -1053,6 +1092,46 @@ class RolloutTests(unittest.TestCase):
         self.assertIsNone(row['installed_tier'])
         self.assertIsNone(row['manifest_version'])
         self.assertEqual(self.check()['verified_rollouts'], 1)
+
+    def test_source_in_place_verification_can_precede_pending_pilots(self):
+        self.complete_source_in_place()
+        self.assertTrue(all(p['validation_status']=='pending' for p in self.matrix['disposable_validation_repositories']))
+        self.assertEqual(self.check()['verified_rollouts'],1)
+
+    def test_source_verification_finishes_before_either_pilot_starts(self):
+        self.complete_source();self.check()
+        for pilot in self.matrix['disposable_validation_repositories']:
+            operation=pilot['validation_evidence']['operation_receipts']['init_pr_url']
+            path=DIRECTORY/operation['capture_evidence_url'];original=json.loads(path.read_text())
+            capture=copy.deepcopy(original);capture['started_at']='2026-10-07T01:52:03Z'
+            path.write_text(json.dumps(capture))
+            with self.subTest(visibility=pilot['visibility']),self.assertRaisesRegex(ValueError,'Protected source must finish'):
+                self.check()
+            path.write_text(json.dumps(original))
+
+    def test_pilots_cannot_retroactively_qualify_late_or_missing_source_verification(self):
+        source=self.complete_source();self.check()
+        path=DIRECTORY/source['in_place_evidence']['default_branch_evidence_url'];original=json.loads(path.read_text())
+        for timestamp in ['2026-10-07T01:53:00Z','2026-10-07T03:42:00Z']:
+            capture=copy.deepcopy(original);capture['observed_at']=timestamp;path.write_text(json.dumps(capture))
+            with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'Protected source must finish'):
+                self.check()
+        path.write_text(json.dumps(original))
+        source['health']='pending_transfer';self.matrix['summary']['verified_rollouts']-=1
+        with self.assertRaisesRegex(ValueError,'Protected source must finish'):self.check()
+
+    def test_pilot_init_start_is_required_and_bounded_by_its_actual_operation(self):
+        self.complete_source();self.check()
+        operation=self.matrix['disposable_validation_repositories'][0]['validation_evidence']['operation_receipts']['init_pr_url']
+        path=DIRECTORY/operation['capture_evidence_url'];original=json.loads(path.read_text())
+        for timestamp in [None,'2026-10-07T01:49:00Z','2026-10-07T04:00:00Z','2026-10-07T01:53:00']:
+            capture=copy.deepcopy(original)
+            if timestamp is None:del capture['started_at']
+            else:capture['started_at']=timestamp
+            path.write_text(json.dumps(capture))
+            with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'Pilot init execution start'):
+                self.check()
+        path.write_text(json.dumps(original));self.check()
 
     def test_protected_source_requires_in_place_proof_and_owned_review(self):
         row = self.complete_source()
@@ -1710,7 +1789,7 @@ class RolloutTests(unittest.TestCase):
     def test_verified_pilot_needs_transferred_app_and_bound_access_receipt(self):
         self.complete_pilots()
         self.matrix['owned_app_transfer']['status']='pending'
-        with self.assertRaisesRegex(ValueError,'pilot requires completed owned App transfer'): self.check()
+        with self.assertRaisesRegex(ValueError,'(?:pilot requires completed owned|requires verified) App transfer'): self.check()
         self.complete_app_transfer()
         pilot=self.matrix['disposable_validation_repositories'][0]
         original=copy.deepcopy(pilot['validation_evidence']['destination_sfl_app_access'])
