@@ -467,3 +467,29 @@ source refresh and, when transferred, App registration observation. For terminal
 transferred repositories they also cannot precede the independently captured
 destination metadata/protection observation. Pre-transfer readiness observations
 remain distinct and cannot establish final resource continuity.
+
+Destination protection captures must be observed after the independently
+validated source/App cutover, in addition to matching the actual rulesets and
+classic protection. A `post_transfer` phase label alone is insufficient.
+
+Every verified consumer also loads its local `pre_sync_installation.evidence_url`
+with `phase: pre_sync`. Bind repository ID/name, revision, both manifest paths,
+state, tier, add-ons and components. `manifest_files` records each path's pinned
+revision and either a successful contents read with its parsed manifest or a
+captured HTTP404 absence. Require both `.sfl/sfl.json` and `sfl.json` checks;
+authorization failures do not establish absence. Prefer the primary manifest
+when both exist. This capture follows destination verification and precedes the
+post-deployment manifest capture.
+
+The distinct final new-repository test exercises the documented default
+`reviewer` tier with no add-ons. Wider tiers and credential-dependent add-ons
+remain deliberate configurations verified in the separate wider pilot; they
+cannot substitute for this default onboarding proof. The final all-owner
+inventory must still show this newly onboarded repository as unarchived.
+
+Workflow operation receipts also load `capture_evidence_url` with independently
+captured terminal Actions `run` metadata: repository ID/name, URL, workflow path,
+head SHA, successful conclusion and creation time. Source and consumer runs must
+be created after their independently captured destination/App cutover; pilot runs
+must follow App cutover. The observation cannot precede run creation. Source
+governance configuration is likewise observed after App cutover.

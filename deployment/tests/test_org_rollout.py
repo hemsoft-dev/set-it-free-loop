@@ -36,6 +36,16 @@ class RolloutTests(unittest.TestCase):
     def branch(self, repository_id):
         return next((r['default_branch'] for r in self.inventory['repositories'] if r['id']==repository_id),'main')
 
+    def bind_pre_sync(self, row):
+        proof=row['pre_sync_installation']
+        files={path:{'path':path,'revision_sha':proof['revision_sha'],'state':'absent','http_status':404}
+               for path in ('.sfl/sfl.json','sfl.json')}
+        if proof['state']=='present':
+            files['.sfl/sfl.json'].update(state='observed',http_status=200,manifest={
+                'tier':proof['tier'],'addons':proof['addons'],'components':proof['components']})
+        proof['evidence_url']=self.capture({**proof,'phase':'pre_sync',
+            'observed_at':'2026-10-07T02:00:00Z','manifest_files':files})
+
     def bind_manifest(self, row, directory=DIRECTORY, repository_id=None, repository=None, revision='b'*40):
         repository_id=repository_id or row['repository_id'];repository=repository or row['destination']
         row['manifest_evidence_url']=self.capture({'repository_id':repository_id,'repository':repository,
@@ -112,6 +122,12 @@ class RolloutTests(unittest.TestCase):
 
                 if row['provider']!='none':self.bind_smoke(row)
 
+    def bind_workflow_capture(self, operation):
+        operation['capture_evidence_url']=self.capture({'observed_at':'2026-10-07T02:00:00Z','run':{
+            'repository':{'id':operation['repository_id'],'full_name':operation['repository']},
+            'html_url':operation['evidence_url'],'head_sha':operation['run_head_sha'],'path':operation['workflow'],
+            'status':'completed','conclusion':'success','created_at':'2026-10-07T02:00:00Z'}})
+
     def bind_consumer_runs(self, row):
         self.bind_manifest(row)
         row['wider_workflow_run_urls'] = ['https://github.com/'+row['destination']+'/actions/runs/'+str(i+1)
@@ -121,6 +137,7 @@ class RolloutTests(unittest.TestCase):
             'deployment_sha':row['deployment_sha'],'release_version':row['manifest_version'],'evidence_url':run,
             'conclusion':'success','run_head_sha':'b'*40,'workflow':next(iter(sorted(paths)),'.github/workflows/sfl-auditor.yml')}
             for run in row['wider_workflow_run_urls']]
+        for operation in row['wider_operation_receipts']:self.bind_workflow_capture(operation)
 
     def bind_review_operations(self, row, repository_id=None, repository=None, directory=DIRECTORY, revision="b"*40):
         repository_id = repository_id or row['repository_id']
@@ -287,6 +304,7 @@ class RolloutTests(unittest.TestCase):
                    release_url='https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v'+row['manifest_version'],
                    release_download_verification_url='https://example.com/checksum')
         self.bind_manifest(row)
+        self.bind_pre_sync(row)
         self.bind_download(row)
         self.matrix['summary']['verified_rollouts'] += 1
         return row
@@ -329,6 +347,8 @@ class RolloutTests(unittest.TestCase):
                     'evidence_url':receipts['wider_workflow_run_urls'][0],'conclusion':'success',
                     'workflow':'.github/workflows/sfl-dispatcher.yml','run_head_sha':'b'*40}]
                 receipts['auditor_operation_receipt']=dict(receipts['wider_operation_receipts'][0],evidence_url=receipts['auditor_run_url'],workflow='.github/workflows/sfl-auditor.yml')
+                for operation in receipts['wider_operation_receipts']:self.bind_workflow_capture(operation)
+                self.bind_workflow_capture(receipts['auditor_operation_receipt'])
             receipts['destination_sfl_app_access'] = {'status':'verified','app_id':4448946,'owner':'hemsoft-dev',
                 'repository_id':pilot['repository_id'],'repository':pilot['repository'],'installation_id':123,
                 'evidence_url':'https://example.com/pilot-app-access'}
@@ -400,6 +420,7 @@ class RolloutTests(unittest.TestCase):
         proof['workflow_operation_receipts']=[{'repository_id':row['repository_id'],'repository':row['destination'],
             'deployment_sha':proof['source_sha'],'release_version':proof['release_version'],'evidence_url':proof['workflow_run_urls'][0],
             'conclusion':'success','workflow':'.github/workflows/validate-gh-sfl.yml','run_head_sha':proof['source_sha']}]
+        for operation in proof['workflow_operation_receipts']:self.bind_workflow_capture(operation)
         self.bind_download(proof,repository_id=row['repository_id'],repository=row['destination'],
             source='hemsoft-dev/set-it-free-loop',sha=proof['source_sha'],version=proof['release_version'],field='release_verification_url')
         self.verify_source_ledger(row['repository_id'])
@@ -616,8 +637,10 @@ class RolloutTests(unittest.TestCase):
         row['manifest_identity']['tier'] = 'custom'
         row['installed_tier'] = 'custom'
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
+        self.bind_pre_sync(row)
         row['installed_components'] = ['sfl-auditor','sfl-pr-review-auto']
         row['pre_sync_installation']['components']=['sfl-auditor','sfl-pr-review-auto']
+        self.bind_pre_sync(row)
         row['wider_workflow_run_urls'] = ['https://example.com/auditor-run']
         self.bind_consumer_runs(row)
         for components in (None, [], ['unknown-workflow']):
@@ -633,6 +656,7 @@ class RolloutTests(unittest.TestCase):
         row = self.complete_rollout()
         row['installed_tier'] = 'review'
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
+        self.bind_pre_sync(row)
         self.check()
         row['selected_tier'] = 'review'
         with self.assertRaisesRegex(ValueError, 'canonical reviewer'):
@@ -652,14 +676,17 @@ class RolloutTests(unittest.TestCase):
         row = self.complete_rollout()
         row.update(selected_tier='custom', installed_tier='custom', installed_components=['sfl-pr-review-auto'],selected_components=['sfl-pr-review-auto'])
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
+        self.bind_pre_sync(row)
         row['manifest_identity']['tier']='custom'
         row['pre_sync_installation']['components']=row['installed_components']
+        self.bind_pre_sync(row)
         row['wider_workflow_run_urls'] = []
         self.bind_manifest(row)
         self.check()
         row['selected_components'].append('sfl-auditor')
         row['installed_components'].append('sfl-auditor')
         row['manifest_identity']['components'].append('sfl-auditor')
+        self.bind_pre_sync(row)
         with self.assertRaisesRegex(ValueError, 'Wider tier'):
             self.check()
 
@@ -786,6 +813,7 @@ class RolloutTests(unittest.TestCase):
         row = self.complete_rollout()
         row['installed_tier'] = 'custom'
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
+        self.bind_pre_sync(row)
         for invalid in (None, []):
             row['installed_components'] = invalid
             with self.assertRaisesRegex(ValueError, 'Installed custom tier'):
@@ -795,6 +823,7 @@ class RolloutTests(unittest.TestCase):
         row['selected_components']=['sfl-pr-review-auto']
         row['manifest_identity']['tier']='custom'
         row['pre_sync_installation']['components']=row['installed_components']
+        self.bind_pre_sync(row)
         self.bind_manifest(row)
         self.check()
 
@@ -875,6 +904,7 @@ class RolloutTests(unittest.TestCase):
         for tier in ('not_installed','reviewer','full'):
             row['installed_tier']=tier
             row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
+            self.bind_pre_sync(row)
             with self.subTest(tier=tier),self.assertRaisesRegex(ValueError,'existing custom'): self.check()
 
     def test_pilot_required_policy_and_authorized_review_context(self):
@@ -925,7 +955,9 @@ class RolloutTests(unittest.TestCase):
         row=self.complete_rollout()
         row.update(installed_tier='full',installed_addons=['pr-review'])
         row['pre_sync_installation'].update(addons=['pr-review'])
+        self.bind_pre_sync(row)
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
+        self.bind_pre_sync(row)
         with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
         row['selected_tier']='full';row['manifest_identity']['tier']='full'
         with self.assertRaisesRegex(ValueError,'preserve its installed tier and addons'):self.check()
@@ -960,8 +992,10 @@ class RolloutTests(unittest.TestCase):
         row.update(installed_tier='minimal', selected_tier='minimal', installed_addons=['pr-review'],
                    selected_addons=['pr-review'], wider_workflow_run_urls=['https://example.com/run'])
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
+        self.bind_pre_sync(row)
         row['manifest_identity']['tier'] = 'minimal'
         row['pre_sync_installation']['addons']=row['installed_addons']
+        self.bind_pre_sync(row)
         for addons in (None, [], ['policy-manager']):
             row['manifest_identity']['addons'] = addons
             with self.subTest(addons=addons), self.assertRaisesRegex(ValueError, 'manifest must match the selected addons'):
@@ -972,8 +1006,10 @@ class RolloutTests(unittest.TestCase):
         row.update(installed_tier='custom', selected_tier='custom', installed_components=['sfl-pr-review-auto'],
                    selected_components=['sfl-pr-review-auto'])
         row['pre_sync_installation'].update(tier=row['installed_tier'],state='absent' if row['installed_tier']=='not_installed' else 'present')
+        self.bind_pre_sync(row)
         row['manifest_identity']['tier'] = 'custom'
         row['pre_sync_installation']['components']=row['installed_components']
+        self.bind_pre_sync(row)
         for components in (None, [], ['sfl-auditor']):
             row['manifest_identity']['components'] = components
             with self.subTest(components=components), self.assertRaisesRegex(ValueError, 'custom manifest must match'):
@@ -1951,6 +1987,85 @@ class RolloutTests(unittest.TestCase):
             path.write_text(json.dumps(dict(original,observed_at=timestamp)))
             with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'smoke observations must follow'):self.check()
         path.write_text(json.dumps(original));self.check()
+
+
+    def test_destination_protection_capture_follows_cutover(self):
+        row=self.complete_rollout();self.check();proof=row['destination_protections']
+        path=DIRECTORY/proof['evidence_url'];original=json.loads(path.read_text())
+        for timestamp in ('2026-10-07T00:05:00Z','2026-10-07T00:30:00Z','2026-10-07T01:00:00Z'):
+            proof['observed_at']=timestamp;path.write_text(json.dumps(dict(original,observed_at=timestamp)))
+            with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'protections must be captured after'):self.check()
+        proof['observed_at']=original['observed_at'];path.write_text(json.dumps(original));self.check()
+
+    def test_pre_sync_capture_proves_manifest_presence_absence_and_configuration(self):
+        row=self.complete_rollout();self.check();proof=row['pre_sync_installation']
+        path=DIRECTORY/proof['evidence_url'];original=json.loads(path.read_text())
+        for field,value in [('repository_id',42),('repository','hemsoft-dev/other'),('revision_sha','f'*40),
+                            ('phase','post_sync'),('manifest_paths',[]),('state','present'),('tier','full'),
+                            ('addons',['pr-review']),('components',['sfl-auditor']),
+                            ('observed_at','2026-10-07T01:00:00Z')]:
+            changed=copy.deepcopy(original);changed[field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+        changed=copy.deepcopy(original);changed['manifest_files']['.sfl/sfl.json'].update(
+            state='observed',http_status=200,manifest={'tier':'reviewer','addons':[]})
+        path.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError,'independent absence'):self.check()
+        changed=copy.deepcopy(original);changed['manifest_files']['sfl.json']['http_status']=403
+        path.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError,'captured 404'):self.check()
+        path.write_text(json.dumps(original));row.update(installed_tier='reviewer',installed_addons=['pr-review'],selected_addons=['pr-review'])
+        proof.update(state='present',tier='reviewer',addons=['pr-review']);row['manifest_identity']['addons']=['pr-review']
+        self.bind_manifest(row);self.bind_consumer_runs(row);self.bind_pre_sync(row);self.check()
+        path=DIRECTORY/proof['evidence_url'];changed=json.loads(path.read_text());changed['manifest_files']['.sfl/sfl.json']['manifest']['addons']=[]
+        path.write_text(json.dumps(changed))
+        with self.assertRaisesRegex(ValueError,'captured manifest contents'):self.check()
+
+    def test_final_onboarding_inventory_preserves_active_archive_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);onboarding=self.onboarding_fixture(directory)
+            accounts=[{'owner':o,'state':'observed','all_pages':True,'repositories':[]} for o in ('HemSoft','fhemmer','hemsoft-dev')]
+            for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
+                accounts[2]['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private','archived':False})
+            new={'id':42,'full_name':onboarding['repository'],'private':True,'archived':False};accounts[2]['repositories'].append(new)
+            proof={'observed_at':'2026-10-07T04:00:00Z','evidence_url':'final.json','additional_repositories':[]};path=directory/'final.json'
+            for archived in (True,None):
+                new['archived']=archived;path.write_text(json.dumps({'observed_at':proof['observed_at'],'accounts':accounts}))
+                with self.subTest(archived=archived),self.assertRaisesRegex(ValueError,'remain unarchived'):
+                    validator.validate_final_inventory(proof,directory,{}, {},onboarding)
+            new['archived']=False;path.write_text(json.dumps({'observed_at':proof['observed_at'],'accounts':accounts}))
+            validator.validate_final_inventory(proof,directory,{}, {},onboarding)
+
+    def test_designated_new_onboarding_proves_default_reviewer_without_wider_credentials(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
+            for tier,addons in [('minimal',[]),('standard',[]),('full',[]),('reviewer',['pr-review'])]:
+                changed=copy.deepcopy(proof);changed['manifest_identity'].update(tier=tier,addons=addons)
+                manifest=json.loads((directory/proof['manifest_evidence_url']).read_text());manifest['manifest']=changed['manifest_identity']
+                changed['manifest_evidence_url']=self.capture(manifest,directory)
+                with self.subTest(tier=tier,addons=addons),self.assertRaisesRegex(ValueError,'default reviewer tier'):
+                    validator.validate_final_onboarding(changed,directory,{},'hemsoft-dev',4448946)
+
+
+    def test_shared_workflow_capture_proves_actual_terminal_run_and_creation_time(self):
+        row=self.complete_source();self.check();operation=row['in_place_evidence']['workflow_operation_receipts'][0]
+        path=DIRECTORY/operation['capture_evidence_url'];original=json.loads(path.read_text())
+        for field,value in [('head_sha','f'*40),('path','.github/workflows/unrelated.yml'),
+                            ('conclusion','failure'),('status','in_progress'),
+                            ('created_at','2026-10-07T00:30:00Z'),('created_at','2026-10-07T03:00:00Z')]:
+            changed=copy.deepcopy(original);changed['run'][field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field,value=value),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+        pilot=self.matrix['disposable_validation_repositories'][0]
+        operation=pilot['validation_evidence']['auditor_operation_receipt']
+        path=DIRECTORY/operation['capture_evidence_url'];capture=json.loads(path.read_text());capture['run']['repository']['id']=42
+        path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'execution capture must prove'):self.check()
+
+    def test_source_governance_observation_follows_app_cutover(self):
+        row=self.complete_source();proof=row['in_place_evidence'];path=DIRECTORY/proof['governance_evidence_url']
+        capture=json.loads(path.read_text());capture['observed_at']='2026-10-07T00:30:00Z';path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'governance must be captured after'):self.check()
 
 
 if __name__ == '__main__':
