@@ -604,16 +604,24 @@ def validate_final_onboarding(proof, directory, expected, organization, app_id, 
                           cutover, repository_created_at=created_at)
     validate_app_coverage(proof.get('destination_codex_access'), directory, repo_id, name, 1144995, organization)
     validate_registered_review(proof, directory, name, target_branch=metadata.get('default_branch'), deployment_revision=observed['revision_sha'], cutover=max(created_at, cutover) if cutover is not None else created_at)
+    codex_policy = local_capture(proof.get('codex_installation_policy_evidence_url'), directory, 'New onboarding Codex policy')
+    validate_codex_installation_policy(codex_policy, created_at)
+    repo = {'id':repo_id, 'destination':name, 'default_branch':metadata['default_branch']}
+    validate_consumer_default_head(proof, directory, repo, observed['revision_sha'],
+        final_onboarding_terminal_time(proof, directory, include_head=False))
     return proof
 
 
-def final_onboarding_terminal_time(proof, directory):
+def final_onboarding_terminal_time(proof, directory, include_head=True):
     references = [op['capture_evidence_url'] for op in proof['onboarding_operation_receipts'].values()]
     references += [proof['gate_policy']['evidence_url'], proof['requester_permission_evidence_url'],
                    proof['review_deployment_evidence_url'],
                    proof['manifest_evidence_url'], proof['release_download_verification_url']]
     references += [op['capture_evidence_url'] for op in proof['review_operation_receipts'].values()]
     references.append(proof['destination_sfl_app_access']['evidence_url'])
+    references.append(proof['codex_installation_policy_evidence_url'])
+    if include_head:
+        references.append(proof['default_branch_evidence_url'])
     return max(observed_time(local_capture(ref, directory, 'Final onboarding terminal evidence').get('observed_at'),
                              'Final onboarding terminal evidence') for ref in references)
 
@@ -704,6 +712,65 @@ def validate_workflow_contents(workflow, repository, revision):
     require(content == workflow['content'].encode() and body.get('sha') == blob_sha and body.get('size') == len(content) and
             body.get('git_url') == 'https://api.github.com/repos/' + repository + '/git/blobs/' + blob_sha,
             'Fixture source must match its independently captured immutable Git blob identity')
+
+
+def validate_raw_page_chain(pages, url, captured_at, label, field=None, earliest=None):
+    require(isinstance(pages, list) and bool(pages), label + ' needs raw complete response pages')
+    parsed = urllib.parse.urlsplit(url)
+    endpoint, filters = parsed.path, urllib.parse.parse_qs(parsed.query)
+    rows, totals, seen = [], set(), set()
+    page_number = 1
+    for page in pages:
+        require(url is not None and url not in seen and page.get('request_url') == url and
+                page.get('method') == 'GET' and page.get('http_status') == 200 and
+                isinstance(page.get('response_headers'), dict), label + ' needs exact successful GET page responses')
+        seen.add(url)
+        at = observed_time(page.get('observed_at'), label + ' page')
+        require(at <= captured_at and (earliest is None or at >= earliest), label + ' page is outside its freshness boundary')
+        data = page.get('data')
+        if field is not None:
+            require(isinstance(data, dict) and type(data.get('total_count')) is int and
+                    data['total_count'] >= 0, label + ' needs raw response totals')
+            totals.add(data['total_count'])
+            data = data.get(field)
+        require(isinstance(data, list), label + ' needs raw response arrays')
+        rows.extend(data)
+        headers = {key.lower(): value for key, value in page['response_headers'].items()}
+        links = re.findall(r'<([^>]+)>;\s*rel="next"', headers.get('link', ''))
+        require(len(links) <= 1, label + ' has ambiguous pagination')
+        url = links[0] if links else None
+        if url:
+            next_page = urllib.parse.urlsplit(url)
+            query = urllib.parse.parse_qs(next_page.query)
+            page_number += 1
+            require(next_page.scheme == 'https' and next_page.netloc == 'api.github.com' and
+                    next_page.path == endpoint and query == dict(filters, page=[str(page_number)]),
+                    label + ' pagination must preserve its endpoint, filters and consecutive pages')
+    require(url is None, label + ' omitted a captured next page')
+    if field is not None:
+        require(totals == {len(rows)}, label + ' response total differs from all captured pages')
+    return rows
+
+
+def validate_codex_installation_policy(capture, earliest=None):
+    observed = observed_time(capture.get('observed_at'), 'Codex installation policy')
+    url = 'https://api.github.com/orgs/hemsoft-dev/installations?per_page=100'
+    installations = validate_raw_page_chain(capture.get('installation_pages'), url, observed,
+        'Codex installation policy', field='installations', earliest=earliest)
+    matched = [item for item in installations if item.get('app_id') == 1144995]
+    require(len(matched) == 1, 'Codex policy needs its unique actual organization installation')
+    actual = matched[0]
+    require(actual.get('id') == 168678981 and actual.get('app_slug') == 'chatgpt-codex-connector' and
+            actual.get('repository_selection') == 'all' and actual.get('account', {}).get('id') == 338855369 and
+            actual['account'].get('login') == 'hemsoft-dev' and actual['account'].get('type') == 'Organization' and
+            'suspended_at' in actual and actual['suspended_at'] is None and
+            'suspended_by' in actual and actual['suspended_by'] is None,
+            'Codex policy needs actual all-current-and-future repository coverage and unsuspended organization identity')
+    require(all(capture.get('installation', {}).get(key) == actual.get(key) for key in
+                ('id','app_id','app_slug','repository_selection')) and
+            all(capture.get('account', {}).get(key) == actual['account'].get(key) for key in ('id','login','type')),
+            'Codex installation summary must derive from its raw API response')
+    return observed
 
 
 def validate_repository_enumeration(account, captured_at, earliest=None):
@@ -1115,15 +1182,18 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
 
 
 
-def source_revision(row, repo):
+def source_revision(row, repo, earliest=None):
     """Bind a complete branch list and default head to raw immutable Git data."""
     base = 'https://api.github.com/repos/' + repo['full_name']
     branches = row.get('branches_response', {})
     require(branches.get('request_url') == base + '/branches?per_page=100' and
             branches.get('http_status') == 200 and branches.get('all_pages') is True and
             isinstance(branches.get('data'), list), 'Source heads need complete repository-bound branches GETs')
+    actual_branches = validate_raw_page_chain(branches.get('pages'), base + '/branches?per_page=100',
+        observed_time(row.get('observed_at'), 'Source branch capture'), 'Source branches', earliest=earliest)
+    require(actual_branches == branches['data'], 'Source branch list must derive from every raw API page')
     branch_heads = {}
-    for branch in branches['data']:
+    for branch in actual_branches:
         name, sha = branch.get('name'), branch.get('commit', {}).get('sha')
         require(text(name) and name not in branch_heads and immutable_sha(sha),
                 'Source branches need unique names and immutable heads')
@@ -1245,7 +1315,7 @@ def validate_source_refresh(proof, directory, inventory, credential):
                     'Source protections changed; reconcile the preservation baseline')
             head = current.get('source_head', {})
             require(scanned_at <= observed_time(head.get('observed_at'), 'Current source head') <= timestamp and
-                    source_revision(head, baseline) == revisions[repo_id],
+                    source_revision(head, baseline, scanned_at) == revisions[repo_id],
                     'Source head, tree or branches changed after reference scan; rescan and reconcile before transfer')
             if repo_id == 1169772257:
                 require(head.get('head_sha') == credential['reviewed_sha'] == run.get('head_sha'),
@@ -1314,6 +1384,9 @@ def validate_tree_refresh(reference, directory, inventory, source_refreshed_at):
                 branches.get('http_status') == 200 and branches.get('all_pages') is True and
                 branches.get('data') == baseline['branches'],
                 'Source tree recheck must bind current canonical metadata and unchanged complete branches')
+        raw_branches = validate_raw_page_chain(branches.get('pages'), branches['request_url'], timestamp,
+            'Source tree branches', earliest=source_refreshed_at)
+        require(raw_branches == branches['data'], 'Source tree branch list must derive from raw pages')
         if baseline['state'] == 'empty_tree':
             commit = row.get('commit_response', {})
             require(commit.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'] +
@@ -2007,13 +2080,31 @@ def validate_ledger_rows(rows, inventory, directory, expected, retained, candida
                 approval = local_capture(smoke.get('owner_approval_evidence_url'), directory, 'Provider recovery approval')
                 decision = {'repository_id':repo_id, 'repository':smoke_repository, 'provider':row['provider'],
                             'resource_id':row['resource_id'], 'disposition':'approved_recovery',
-                            'reason':approval.get('reason')}
+                            'reason':approval.get('reason'), 'recovery_action':row['recovery_action'],
+                            'operation':smoke.get('recovery_operation')}
+                operation = decision['operation']
+                require(isinstance(operation, dict) and set(operation) == {'command','argv'} and text(operation.get('command')) and
+                        string_list(operation.get('argv')) and bool(operation['argv']),
+                        'Provider recovery needs its exact approved executable action')
                 require(text(decision['reason']) and all(approval.get(k) == v for k, v in decision.items()),
                         'Provider recovery approval must identify this exact resource and action')
                 validate_owner_approval_comment(approval.get('owner_comment_evidence_url'), directory,
                     smoke.get('owner_receipt_url'), observed_time(approval.get('approved_at'), 'Provider recovery approval'),
                     decision, smoke_observed_at)
-                smoke_observed_at = validate_provider_success(smoke, row, inventory, directory, smoke_repository)
+                execution = local_capture(smoke.get('recovery_execution_evidence_url'), directory, 'Provider recovery execution')
+                require(all(execution.get(key) == decision[key] for key in
+                            ('repository_id','repository','provider','resource_id','recovery_action','operation')) and
+                        type(execution.get('exit_code')) is int and execution['exit_code'] == 0 and
+                        execution.get('status') == 'completed' and execution.get('conclusion') == 'success',
+                        'Provider recovery execution must bind the exact owner-approved action and successful terminal result')
+                started = observed_time(execution.get('started_at'), 'Recovery execution start')
+                completed = observed_time(execution.get('completed_at'), 'Recovery execution completion')
+                require(observed_time(approval['approved_at'], 'Recovery approval') <= started <= completed <=
+                        observed_time(execution.get('observed_at'), 'Recovery execution capture') <= smoke_observed_at,
+                        'Recovery execution must follow approval and precede its captured smoke')
+                provider_at = validate_provider_success(smoke, row, inventory, directory, smoke_repository)
+                require(completed <= provider_at, 'Provider recovery metadata GETs must follow its exact executed action')
+                smoke_observed_at = min(started, provider_at)
             elif row['smoke_outcome'] in {'baseline_preserved', 'preserved_unused'}:
                 approvals = {('vercel_project', 'prj_hPjAbxtMlCi3A5waKxQpjATto0ae'):
                              'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048',
@@ -2065,6 +2156,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     canonical_source = inventory['destination_login'] + '/set-it-free-loop'
     codex = matrix.get('destination_codex_installation')
     captured_codex = json.loads((directory / 'codex-organization-installation-evidence.json').read_text())
+    validate_codex_installation_policy(captured_codex)
     installation = captured_codex['installation']
     smoke = captured_codex['smoke_review']
     require(isinstance(codex, dict) and codex.get('id') == installation['id'] and

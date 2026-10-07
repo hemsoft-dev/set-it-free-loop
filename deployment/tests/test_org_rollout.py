@@ -51,6 +51,18 @@ class RolloutTests(unittest.TestCase):
 
     def capture(self, value, directory=DIRECTORY, prefix='fixture-capture-'):
         self.bind_final_pages(value)
+        def branch_pages(node):
+            if isinstance(node,dict):
+                if isinstance(node.get('branches_response'),dict):
+                    branches=node['branches_response']
+                    if 'pages' not in branches:
+                        branches['pages']=[{'method':'GET','http_status':branches.get('http_status'),
+                            'request_url':branches.get('request_url'),'data':copy.deepcopy(branches.get('data')),
+                            'response_headers':{},'observed_at':node.get('observed_at',value.get('observed_at'))}]
+                for child in list(node.values()):branch_pages(child)
+            elif isinstance(node,list):
+                for child in node:branch_pages(child)
+        branch_pages(value)
         if value.get('phase')=='post_transfer' and value.get('account')=='fhemmerrelias' and 'result' in value:
             value.setdefault('request_url','https://api.github.com/repos/'+value['repository']+'/collaborators/fhemmerrelias/permission')
             value['result'].setdefault('user',{'login':'fhemmerrelias'})
@@ -1959,6 +1971,13 @@ class RolloutTests(unittest.TestCase):
             'observed_at':'2026-10-07T03:30:00Z'},directory)
         download_path=directory/proof['release_download_verification_url'];download=json.loads(download_path.read_text())
         self.bind_attestation(download,directory);download_path.write_text(json.dumps(download))
+        policy=json.loads((DIRECTORY/'codex-organization-installation-evidence.json').read_text())
+        policy['observed_at']='2026-10-07T03:35:00Z'
+        for page in policy['installation_pages']:page['observed_at']=policy['observed_at']
+        proof['codex_installation_policy_evidence_url']=self.capture(policy,directory)
+        proof['default_branch_evidence_url']=self.capture({'phase':'post_transfer','method':'GET','repository_id':42,
+            'repository':name,'branch':'main','http_status':200,'request_url':'https://api.github.com/repos/'+name+'/git/ref/heads/main',
+            'observed_at':'2026-10-07T03:40:00Z','data':{'ref':'refs/heads/main','object':{'type':'commit','sha':'f'*40}}},directory)
         return proof
 
     def test_post_rollout_onboarding_requires_distinct_dynamic_app_coverage(self):
@@ -3217,7 +3236,7 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             path.write_text(json.dumps(dict(original,observed_at='2026-10-07T03:35:00Z')))
             validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
             self.assertEqual(validator.final_onboarding_terminal_time(proof,directory),
-                validator.observed_time('2026-10-07T03:35:00Z','fixture'))
+                validator.observed_time('2026-10-07T03:40:00Z','fixture'))
 
     def test_unavailable_trees_need_current_branches_between_refresh_and_transfer(self):
         self.complete_transfer_gates();self.check();path=DIRECTORY/self.matrix['pre_cutover_tree_evidence_url']
@@ -3448,6 +3467,7 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             head['commit_response']['data']['sha']='d'*40
             head['commit_response']['request_url']=head['commit_response']['request_url'].replace('e'*40,'d'*40)
             head['branches_response']['data'][0]['commit']['sha']='d'*40
+            head['branches_response']['pages'][0]['data'][0]['commit']['sha']='d'*40
             for file in head.get('files',[]):
                 file['revision_sha']='d'*40
                 file['contents_response']['request_url']=file['contents_response']['request_url'].replace('e'*40,'d'*40)
@@ -3528,11 +3548,13 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
     def test_approved_recovery_needs_bound_owner_comment_and_provider_gets(self):
         row=self.complete_provider();path=DIRECTORY/row['smoke_evidence_url'];capture=json.loads(path.read_text())
         row['smoke_outcome']='approved_recovery'
-        capture.update(outcome='approved_recovery',recovery_success=True,approved_by='HemSoft')
+        capture.update(outcome='approved_recovery',recovery_success=True,approved_by='HemSoft',
+            recovery_operation={'command':'provider-metadata-recovery','argv':['provider-metadata-recovery',row['resource_id']]})
         path.write_text(json.dumps(capture))
         with self.assertRaisesRegex(ValueError,'Missing evidence'):self.check()
         decision={'repository_id':int(row['repository_id']),'repository':row['destination'],'provider':row['provider'],
-            'resource_id':row['resource_id'],'disposition':'approved_recovery','reason':'Synthetic recovery approval'}
+            'resource_id':row['resource_id'],'disposition':'approved_recovery','reason':'Synthetic recovery approval',
+            'recovery_action':row['recovery_action'],'operation':capture['recovery_operation']}
         receipt='https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-123'
         at='2026-10-07T02:00:00Z'
         comment={'id':123,'html_url':receipt,'created_at':at,'updated_at':at,
@@ -3542,6 +3564,8 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             'http_status':200,'observed_at':at,'comment':comment})
         capture.update(owner_receipt_url=receipt,owner_approval_evidence_url=self.capture(dict(decision,
             approved_at=at,owner_comment_evidence_url=comment_file)))
+        capture['recovery_execution_evidence_url']=self.capture({**decision,'status':'completed','conclusion':'success',
+            'exit_code':0,'started_at':at,'completed_at':at,'observed_at':at})
         path.write_text(json.dumps(capture));self.check()
         for mutate in (lambda c:c.pop('provider_responses'),
                        lambda c:c['provider_responses']['project']['data'].update(link=None)):
@@ -3715,6 +3739,92 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             path.write_text(json.dumps(changed))
             with self.subTest(field=field),self.assertRaises(ValueError):
                 validator.validate_unlinked_supabase(resource,baseline,DIRECTORY,cutoff)
+
+
+    def test_source_branches_require_complete_raw_pagination_and_fresh_pages(self):
+        self.complete_transfer_gates()
+        captured=json.loads((DIRECTORY/self.matrix['pre_cutover_source_evidence_url']).read_text())
+        repo=self.inventory['repositories'][0]
+        row=copy.deepcopy(next(r for a in captured['accounts'] for r in a['repositories'] if r['id']==repo['id'])['source_head'])
+        url=row['branches_response']['request_url'];branches=row['branches_response'];original=copy.deepcopy(row)
+        for mutation in ('no-pages','wrong-url','failed-get','omitted-next','wrong-list','stale-get','wrong-next-filter'):
+            changed=copy.deepcopy(original);pages=changed['branches_response']['pages']
+            if mutation=='no-pages':changed['branches_response'].pop('pages')
+            elif mutation=='wrong-url':pages[0]['request_url']=url.replace(repo['full_name'],'other/repo')
+            elif mutation=='failed-get':pages[0]['http_status']=403
+            elif mutation=='omitted-next':pages[0]['response_headers']['Link']='<'+url+'&page=2>; rel="next"'
+            elif mutation=='wrong-list':pages[0]['data'].append({'name':'hidden','commit':{'sha':'f'*40}})
+            elif mutation=='stale-get':pages[0]['observed_at']='2026-10-07T01:47:00Z'
+            else:pages[0]['response_headers']['Link']='<'+url.replace('per_page=100','per_page=30')+'&page=2>; rel="next"'
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.source_revision(changed,repo,validator.observed_time('2026-10-07T01:48:00Z','fixture'))
+        branches['data'] += [{'name':'additional-'+str(i),'commit':{'sha':'f'*40}} for i in range(100)]
+        first=copy.deepcopy(branches['pages'][0]);first['data']=copy.deepcopy(branches['data'][:100])
+        first['response_headers']['Link']='<'+url+'&page=2>; rel="next"'
+        second=copy.deepcopy(first);second.update(request_url=url+'&page=2',response_headers={},data=copy.deepcopy(branches['data'][100:]))
+        branches['pages']=[first,second]
+        self.assertEqual(len(validator.source_revision(row,repo)[2]),101)
+
+    def test_final_onboarding_requires_current_default_head_after_all_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+            reference=proof.pop('default_branch_evidence_url')
+            with self.assertRaises(ValueError):validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+            proof['default_branch_evidence_url']=reference;path=directory/reference;original=json.loads(path.read_text())
+            for mutation in ('advanced','early','wrong-default-ref'):
+                capture=copy.deepcopy(original)
+                if mutation=='advanced':capture['data']['object']['sha']='b'*40
+                elif mutation=='early':capture['observed_at']='2026-10-07T03:34:00Z'
+                else:capture['data']['ref']='refs/heads/other'
+                path.write_text(json.dumps(capture))
+                with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                    validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+
+    def test_codex_future_coverage_needs_raw_installation_pages_after_creation(self):
+        original=json.loads((DIRECTORY/'codex-organization-installation-evidence.json').read_text())
+        validator.validate_codex_installation_policy(original)
+        for mutation in ('no-pages','failed-get','wrong-url','selected','suspended','omitted-next','wrong-total','wrong-account'):
+            capture=copy.deepcopy(original);page=capture['installation_pages'][0]
+            actual=next(i for i in page['data']['installations'] if i['app_id']==1144995)
+            if mutation=='no-pages':capture.pop('installation_pages')
+            elif mutation=='failed-get':page['http_status']=403
+            elif mutation=='wrong-url':page['request_url']=page['request_url'].replace('hemsoft-dev','other')
+            elif mutation=='selected':actual['repository_selection']='selected'
+            elif mutation=='suspended':actual['suspended_at']='2026-10-07T01:00:00Z'
+            elif mutation=='omitted-next':page['response_headers']['Link']='<'+page['request_url']+'&page=2>; rel="next"'
+            elif mutation=='wrong-total':page['data']['total_count']+=1
+            else:actual['account']['id']=42
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):validator.validate_codex_installation_policy(capture)
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);proof=self.onboarding_fixture(directory)
+            path=directory/proof['codex_installation_policy_evidence_url'];capture=json.loads(path.read_text())
+            capture['installation_pages'][0]['observed_at']='2026-10-07T02:59:00Z';path.write_text(json.dumps(capture))
+            with self.assertRaisesRegex(ValueError,'freshness boundary'):
+                validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946,terminal_times={})
+
+    def test_recovery_approval_cannot_authorize_a_different_execution(self):
+        row=self.complete_provider();path=DIRECTORY/row['smoke_evidence_url'];smoke=json.loads(path.read_text())
+        row['smoke_outcome']='approved_recovery';at='2026-10-07T02:00:00Z'
+        operation={'command':'reconnect-approved-project','argv':['reconnect-approved-project',row['resource_id']]}
+        decision={'repository_id':int(row['repository_id']),'repository':row['destination'],'provider':row['provider'],
+            'resource_id':row['resource_id'],'disposition':'approved_recovery','reason':'Synthetic explicit remediation',
+            'recovery_action':row['recovery_action'],'operation':operation}
+        receipt='https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-123'
+        comment_file=self.capture({'request_url':'https://api.github.com/repos/HemSoft/set-it-free-loop/issues/comments/123',
+            'http_status':200,'observed_at':at,'comment':{'id':123,'html_url':receipt,'created_at':at,'updated_at':at,
+                'user':{'id':8227352,'login':'HemSoft','type':'User'},'body':'Approved. <!-- sfl-migration-approval:'+json.dumps(decision)+' -->'}})
+        execution={**decision,'status':'completed','conclusion':'success','exit_code':0,'started_at':at,'completed_at':at,'observed_at':at}
+        reference=self.capture(execution)
+        smoke.update(outcome='approved_recovery',recovery_success=True,approved_by='HemSoft',owner_receipt_url=receipt,
+            owner_approval_evidence_url=self.capture(dict(decision,approved_at=at,owner_comment_evidence_url=comment_file)),
+            recovery_operation=operation,recovery_execution_evidence_url=reference)
+        path.write_text(json.dumps(smoke));self.check()
+        for field,value in [('operation',{'command':'change-dns','argv':['change-dns','unapproved']}),
+                            ('recovery_action','different action'),('exit_code',1),('resource_id','other'),
+                            ('started_at','2026-10-07T01:59:00Z'),('completed_at','2026-10-07T02:01:00Z')]:
+            capture=copy.deepcopy(execution);capture[field]=value;(DIRECTORY/reference).write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
 
 
 if __name__ == '__main__':

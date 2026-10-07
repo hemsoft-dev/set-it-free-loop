@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-07T01:24:55.966726+00:00",
+  "observed_at": "2026-10-07T21:24:34.184598+00:00",
   "method": "GitHub REST GET as HemSoft; installation metadata and native smoke artifact identity only",
   "installation": {
     "id": 168678981,
@@ -20,5 +20,156 @@
     "result": "Codex Review: Didn't find any major issues. Hooray!",
     "reviewed_commit_prefix": "f225d94d49",
     "commit_resolution_url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/commits/f225d94d49"
-  }
+  },
+  "historical_observed_at": "2026-10-07T01:24:55.966726+00:00",
+  "installation_pages": [
+    {
+      "method": "GET",
+      "http_status": 200,
+      "request_url": "https://api.github.com/orgs/hemsoft-dev/installations?per_page=100",
+      "observed_at": "2026-10-07T21:24:34.184598+00:00",
+      "response_headers": {
+        "Content-Type": "application/json; charset=utf-8"
+      },
+      "data": {
+        "total_count": 2,
+        "installations": [
+          {
+            "id": 168678981,
+            "client_id": "Iv23liVemv8A9if9v0F2",
+            "account": {
+              "login": "hemsoft-dev",
+              "id": 338855369,
+              "node_id": "O_kgDOFDKFyQ",
+              "avatar_url": "https://avatars.githubusercontent.com/u/338855369?v=4",
+              "gravatar_id": "",
+              "url": "https://api.github.com/users/hemsoft-dev",
+              "html_url": "https://github.com/hemsoft-dev",
+              "followers_url": "https://api.github.com/users/hemsoft-dev/followers",
+              "following_url": "https://api.github.com/users/hemsoft-dev/following{/other_user}",
+              "gists_url": "https://api.github.com/users/hemsoft-dev/gists{/gist_id}",
+              "starred_url": "https://api.github.com/users/hemsoft-dev/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/hemsoft-dev/subscriptions",
+              "organizations_url": "https://api.github.com/users/hemsoft-dev/orgs",
+              "repos_url": "https://api.github.com/users/hemsoft-dev/repos",
+              "events_url": "https://api.github.com/users/hemsoft-dev/events{/privacy}",
+              "received_events_url": "https://api.github.com/users/hemsoft-dev/received_events",
+              "type": "Organization",
+              "user_view_type": "public",
+              "site_admin": false
+            },
+            "repository_selection": "all",
+            "access_tokens_url": "https://api.github.com/app/installations/168678981/access_tokens",
+            "repositories_url": "https://api.github.com/installation/repositories",
+            "html_url": "https://github.com/organizations/hemsoft-dev/settings/installations/168678981",
+            "app_id": 1144995,
+            "app_slug": "chatgpt-codex-connector",
+            "target_id": 338855369,
+            "target_type": "Organization",
+            "permissions": {
+              "checks": "read",
+              "issues": "write",
+              "actions": "write",
+              "contents": "write",
+              "metadata": "read",
+              "statuses": "read",
+              "workflows": "write",
+              "pull_requests": "write"
+            },
+            "events": [
+              "check_run",
+              "check_suite",
+              "commit_comment",
+              "issues",
+              "issue_comment",
+              "pull_request",
+              "pull_request_review",
+              "pull_request_review_comment",
+              "pull_request_review_thread",
+              "repository",
+              "status",
+              "sub_issues"
+            ],
+            "created_at": "2026-10-06T19:30:30.000-04:00",
+            "updated_at": "2026-10-06T19:30:34.000-04:00",
+            "single_file_name": null,
+            "has_multiple_single_files": false,
+            "single_file_paths": [],
+            "suspended_by": null,
+            "suspended_at": null
+          },
+          {
+            "id": 168725517,
+            "client_id": "Iv1.9d7d662ea00b8481",
+            "account": {
+              "login": "hemsoft-dev",
+              "id": 338855369,
+              "node_id": "O_kgDOFDKFyQ",
+              "avatar_url": "https://avatars.githubusercontent.com/u/338855369?v=4",
+              "gravatar_id": "",
+              "url": "https://api.github.com/users/hemsoft-dev",
+              "html_url": "https://github.com/hemsoft-dev",
+              "followers_url": "https://api.github.com/users/hemsoft-dev/followers",
+              "following_url": "https://api.github.com/users/hemsoft-dev/following{/other_user}",
+              "gists_url": "https://api.github.com/users/hemsoft-dev/gists{/gist_id}",
+              "starred_url": "https://api.github.com/users/hemsoft-dev/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/hemsoft-dev/subscriptions",
+              "organizations_url": "https://api.github.com/users/hemsoft-dev/orgs",
+              "repos_url": "https://api.github.com/users/hemsoft-dev/repos",
+              "events_url": "https://api.github.com/users/hemsoft-dev/events{/privacy}",
+              "received_events_url": "https://api.github.com/users/hemsoft-dev/received_events",
+              "type": "Organization",
+              "user_view_type": "public",
+              "site_admin": false
+            },
+            "repository_selection": "all",
+            "access_tokens_url": "https://api.github.com/app/installations/168725517/access_tokens",
+            "repositories_url": "https://api.github.com/installation/repositories",
+            "html_url": "https://github.com/organizations/hemsoft-dev/settings/installations/168725517",
+            "app_id": 8329,
+            "app_slug": "vercel",
+            "target_id": 338855369,
+            "target_type": "Organization",
+            "permissions": {
+              "checks": "write",
+              "issues": "write",
+              "actions": "read",
+              "members": "read",
+              "contents": "write",
+              "metadata": "read",
+              "statuses": "write",
+              "workflows": "write",
+              "deployments": "write",
+              "pull_requests": "write",
+              "administration": "write",
+              "repository_hooks": "write"
+            },
+            "events": [
+              "branch_protection_rule",
+              "check_run",
+              "delete",
+              "deployment",
+              "issue_comment",
+              "membership",
+              "pull_request",
+              "pull_request_review",
+              "pull_request_review_comment",
+              "pull_request_review_thread",
+              "push",
+              "repository",
+              "status",
+              "team"
+            ],
+            "created_at": "2026-10-06T23:33:04.000-04:00",
+            "updated_at": "2026-10-06T23:43:52.000-04:00",
+            "single_file_name": null,
+            "has_multiple_single_files": false,
+            "single_file_paths": [],
+            "suspended_by": null,
+            "suspended_at": null
+          }
+        ]
+      }
+    }
+  ]
 }

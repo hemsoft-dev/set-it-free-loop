@@ -543,3 +543,25 @@ project metadata GET after rollout, bound to the sealed name, region, organizati
 and `INACTIVE` state. Native dashboard metadata requires the matching organization
 GET to bind its numeric organization ID to the sealed slug. This reads metadata
 only and preserves the paused database and configuration.
+
+Source branch captures include raw successful GET pages and response headers,
+follow every `Link` next page with consecutive page numbers and unchanged filters,
+and derive the recorded branch list from those bodies. The reference scan and
+fresh head refresh both validate this contract. Refresh pages follow the scan;
+the separate empty/uninitialized-tree branch recheck follows source refresh.
+
+Codex all-current-and-future coverage derives from the raw paginated
+[organization installation GET](https://docs.github.com/en/rest/orgs/orgs#list-app-installations-for-an-organization).
+Bind the actual installation/App IDs, account identity, `repository_selection=all`
+and explicit unsuspended state. Final onboarding saves a new
+`codex_installation_policy_evidence_url` after repository creation, then a terminal
+`default_branch_evidence_url` after all onboarding and registered review evidence.
+The final ref must equal the verified installed revision. Final inventory follows
+that last ref observation.
+
+An approved recovery marker names the exact ledger `recovery_action` and concrete
+operation, including command and arguments. Its separate timestamped execution
+receipt binds the same repository, provider, resource and approved operation to a
+successful terminal result. Execution follows the owner approval, and provider
+metadata GETs follow execution. A free-form reason or healthy final state cannot
+authorize a different operation.
