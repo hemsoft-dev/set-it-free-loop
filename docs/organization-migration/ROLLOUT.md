@@ -33,6 +33,15 @@ cutover. The [fhemmer owner-browser evidence](fhemmer-protection-evidence.json) 
 no classic protections or rulesets; reconfirm its settings immediately before cutover. Keep original failures visible beside supplemental evidence.
 The [existing snapshot checker](README.md#refresh-and-validate) establishes
 inventory integrity, not provider ownership or live credential validity.
+CI also runs `validate-org-rollout.py` against the ledger and matrix. It rejects
+missing or changed baseline mappings, invalid statuses, verified rows without
+owner/evidence fields, and completed rollouts without immutable deployment/review
+receipts. Pending addon lists are `null`; an observed empty list is `[]`.
+Use `health=verified` for a completed active rollout, `archived_verified` for
+archive-preserving transfer/settings evidence, or `scope_exception` with an
+explicit owner receipt. A verified provider row requires every integration field
+and credential validity `verified` or `not_required`. For `provider=none`, record
+the owner, timestamp, evidence and absence reason instead.
 
 The destination Team plan has one occupied seat. Franz selected removal of
 `fhemmerrelias` access **after transfer** in
@@ -52,12 +61,23 @@ are private: [now-leadership-group](https://vercel.com/franz-hemmers-projects/no
 and [modern-web-stack-poc](https://vercel.com/franz-hemmers-projects/modern-web-stack-poc).
 This exceeds the four repository selections in the historical App snapshot.
 [Vercel's Hobby policy](https://vercel.com/docs/git#using-hobby-teams) blocks private
-organization Git deployments. Plan or hosting treatment for all three private projects is a mandatory gate.
+organization Git deployments. Franz selected retirement of the modern-web-stack-poc Vercel project. Retain its
+GitHub repository in the migration. Record the retirement receipt and associated
+Supabase resource treatment before clearing its provider gate; no resource has
+been deleted. Hosting treatment for the other two private projects remains pending.
 Project IDs, Git repository IDs, domains, variable names and deployment states
 are observed; credential validity remains pending. The owner Shared tab and API both show no
 shared variables in this workspace.
 No variable values were read or recorded. Preserve the current production
 projects and aliases while preparing the cutover.
+
+The [Fly owner-account observation](fly-provider-evidence.json) shows one
+accessible organization with no apps or machines. The
+[Railway visible-workspace observation](railway-provider-evidence.json) shows zero
+projects and an expired trial. These observations cover only the authenticated
+accounts shown; they do not establish absence in other accounts or complete the
+per-repository ledger. Railway's terms dialog prevented further workspace
+inspection; no legal terms, upgrade or resource creation was submitted.
 
 ## Runtime prerequisites
 
@@ -99,11 +119,24 @@ Record disposable repositories separately from transferred source IDs.
 
    ```text
    gh sfl init --repo hemsoft-dev/<pilot> --source-ref v<version> --pr
+   ```
+
+   For a fresh consumer, review and merge the initialization PR through ordinary
+   repository policy first. Confirm the manifest exists on the default branch.
+   For a consumer with an existing manifest, use sync to preserve its tier and
+   addons instead of reinitializing it. Then run:
+
+   ```text
    gh sfl sync --repo hemsoft-dev/<pilot> --source-ref v<version> --pr
+   ```
+
+   Review and merge any sync PR before checking the deployed default branch:
+
+   ```text
    gh sfl status --repo hemsoft-dev/<pilot>
    ```
 
-   Merge the deployment through ordinary repository policy. Repeat sync twice;
+   Repeat sync twice;
    expect one consistent deployment and no duplicate PR, preserving unmanaged
    files, installed tier, and addons. Record the source SHA and actual manifest.
 3. On a same-repository PR targeting the default branch, request review as an
@@ -134,7 +167,7 @@ Reconcile organization labels, existing CODEOWNERS, allowed Actions, and credent
 precedence. Keep the valid individual owner `@HemSoft`; use a team only after it
 exists and has the required access. Preserve unrelated governance and protections.
 
-For each repository fill the matrix's installed/selected tier, source/version/SHA,
+For each repository fill the matrix's installed/selected tier and addon lists, source/version/SHA,
 App access, gate policy, health, and immutable evidence links. Run status and
 compare its manifest, source pin, and effective branch rules with the row. A failed
 check remains failed or pending; a scope exception requires an explicit owner

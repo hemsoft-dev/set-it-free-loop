@@ -812,5 +812,16 @@
     "HemSoft/now-leadership-group",
     "HemSoft/modern-web-stack-poc",
     "HemSoft/set-it-free-loop-site"
+  ],
+  "owner_decisions": [
+    {
+      "repository": "HemSoft/modern-web-stack-poc",
+      "project_id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+      "decision": "retire_vercel_project_keep_github_repository",
+      "decision_by": "Franz Hemmer",
+      "recorded_at": "2026-10-07T00:08:53.972000+00:00",
+      "execution_status": "pending",
+      "supabase_resource_treatment": "pending_owner_verification"
+    }
   ]
 }

@@ -44,7 +44,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1349305052,
@@ -71,7 +73,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1127994043,
@@ -98,7 +102,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1107806657,
@@ -125,7 +131,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1126133188,
@@ -152,7 +160,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1136522036,
@@ -179,7 +189,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1318635011,
@@ -206,7 +218,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 987895155,
@@ -233,7 +247,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1214914496,
@@ -260,7 +276,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1285058368,
@@ -287,7 +305,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1298365902,
@@ -314,7 +334,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1120402599,
@@ -341,7 +363,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1096201366,
@@ -368,7 +392,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 987270315,
@@ -395,7 +421,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 804681121,
@@ -422,7 +450,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 46445245,
@@ -449,7 +479,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1234389239,
@@ -476,7 +508,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1262580000,
@@ -503,7 +537,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1141008729,
@@ -530,7 +566,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 941842262,
@@ -557,7 +595,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1398757511,
@@ -584,7 +624,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1107323158,
@@ -611,7 +653,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1271503908,
@@ -638,7 +682,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1229335234,
@@ -665,7 +711,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1169875606,
@@ -692,7 +740,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1143972745,
@@ -719,7 +769,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1141615583,
@@ -746,7 +798,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1141507514,
@@ -773,7 +827,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1145574258,
@@ -800,7 +856,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1122850110,
@@ -827,7 +885,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1360796394,
@@ -854,7 +914,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1255413023,
@@ -881,7 +943,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 992260357,
@@ -908,7 +972,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1353177297,
@@ -935,7 +1001,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1119892824,
@@ -962,7 +1030,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1106290960,
@@ -989,7 +1059,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 996911586,
@@ -1016,7 +1088,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1086124099,
@@ -1043,7 +1117,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 982944435,
@@ -1070,7 +1146,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1162179521,
@@ -1097,7 +1175,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 579605475,
@@ -1124,7 +1204,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 945738366,
@@ -1151,7 +1233,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 223800408,
@@ -1178,7 +1262,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1135799306,
@@ -1205,7 +1291,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1148500296,
@@ -1232,7 +1320,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 133669754,
@@ -1259,7 +1349,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 173613643,
@@ -1286,7 +1378,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 124155847,
@@ -1313,7 +1407,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 133668217,
@@ -1340,7 +1436,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 85017515,
@@ -1367,7 +1465,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1002223819,
@@ -1394,7 +1494,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1266823833,
@@ -1421,7 +1523,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 286901159,
@@ -1448,7 +1552,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1358408598,
@@ -1475,7 +1581,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1169772257,
@@ -1502,7 +1610,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1169698740,
@@ -1529,7 +1639,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1120321254,
@@ -1556,7 +1668,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1070353109,
@@ -1583,7 +1697,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1104960030,
@@ -1610,7 +1726,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1076389234,
@@ -1637,7 +1755,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1399232444,
@@ -1664,7 +1784,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 193121052,
@@ -1691,7 +1813,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1039658773,
@@ -1718,7 +1842,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 223324060,
@@ -1745,7 +1871,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 995371240,
@@ -1772,7 +1900,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1188676172,
@@ -1799,7 +1929,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     },
     {
       "repository_id": 1332684620,
@@ -1826,7 +1958,9 @@
       "gate_run_url": null,
       "wider_workflow_run_urls": [],
       "status_evidence_url": null,
-      "exception_evidence_url": null
+      "exception_evidence_url": null,
+      "installed_addons": null,
+      "selected_addons": null
     }
   ],
   "disposable_validation_repositories": [
