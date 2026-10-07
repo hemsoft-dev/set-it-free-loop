@@ -1018,6 +1018,12 @@ def validate_source_governance(proof, directory, repo, cutover):
 
 
 def validate_runner_captures(proof, directory, earliest):
+    registration = local_capture(proof.get('registration_evidence_url'), directory, 'Destination runner')
+    runner = registration.get('runner', {})
+    baseline = local_capture('yahtzee-runner-owner-evidence.json', directory, 'Sealed runner')['runner']
+    labels = {label['name'] if isinstance(label, dict) else label for label in runner.get('labels', [])}
+    require(runner.get('id') == baseline['id'] and runner.get('name') == baseline['name'] and
+            labels == set(baseline['labels']), 'Runner registration must preserve its sealed identity and labels')
     for field in ('registration_evidence_url','isolation_evidence_url','service_evidence_url','run_evidence_url'):
         capture = local_capture(proof.get(field), directory, 'Destination runner')
         require(capture.get('phase') == 'post_transfer' and
@@ -1048,6 +1054,54 @@ def validate_runner_captures(proof, directory, earliest):
                     observed_time(run.get('created_at'), 'Runner smoke creation') >= earliest,
                     'Runner smoke capture must prove a completed destination run at the recorded revision')
             terminal_run_time(run, observed_time(capture['observed_at'], 'Runner capture'), 'Runner smoke')
+            jobs = local_capture(proof.get('jobs_evidence_url'), directory, 'Runner smoke jobs')
+            require(type(run.get('id')) is int and run['id'] > 0 and
+                    type(run.get('run_attempt')) is int and run['run_attempt'] > 0 and
+                    jobs.get('request_url') == 'https://api.github.com/repos/' + proof['repository'] +
+                        '/actions/runs/' + str(run['id']) + '/attempts/' + str(run['run_attempt']) + '/jobs?per_page=100' and
+                    jobs.get('all_pages') is True and isinstance(jobs.get('jobs'), list) and
+                    jobs.get('total_count') == len(jobs['jobs']) and
+                    observed_time(run['updated_at'], 'Runner smoke completion') <=
+                    observed_time(jobs.get('observed_at'), 'Runner jobs capture') <=
+                    observed_time(capture['observed_at'], 'Runner capture'),
+                    'Runner jobs must be captured from the completed current run attempt')
+            matches = [job for job in jobs['jobs'] if job.get('id') == proof.get('smoke_job_id')]
+            require(type(proof.get('smoke_job_id')) is int and proof['smoke_job_id'] > 0 and len(matches) == 1,
+                    'Runner smoke needs its unique executed job')
+            job = matches[0]
+            require(job.get('run_id') == run['id'] and job.get('run_attempt') == run['run_attempt'] and
+                    job.get('head_sha') == run['head_sha'] and job.get('runner_id') == proof['runner_id'] and
+                    job.get('runner_name') == runner['name'] and job.get('status') == 'completed' and
+                    job.get('conclusion') == 'success' and string_list(job.get('labels')) and
+                    'self-hosted' in job['labels'] and set(job['labels']) <= labels and
+                    observed_time(run['created_at'], 'Runner smoke creation') <=
+                    observed_time(job.get('started_at'), 'Runner job start') <=
+                    observed_time(job.get('completed_at'), 'Runner job completion') <=
+                    observed_time(run['updated_at'], 'Runner smoke completion'),
+                    'Runner smoke job must execute successfully on the preserved self-hosted runner and labels')
+
+
+def validate_repository_transfer(reference, directory, repo, cutoff):
+    capture = local_capture(reference, directory, 'Repository transfer')
+    event = capture.get('event', {})
+    organization = repo['destination'].split('/')[0]
+    require(capture.get('phase') == 'post_transfer' and capture.get('source') == repo['full_name'] and
+            capture.get('repository_id') == repo['id'] and capture.get('repository') == repo['destination'] and
+            capture.get('audit_log_url') == 'https://github.com/organizations/' + organization + '/settings/audit-log' and
+            event.get('action') == 'repo.transfer' and text(event.get('_document_id')) and
+            event.get('repo_id') == repo['id'] and event.get('repo') == repo['destination'] and
+            event.get('org') == organization and event.get('org_id') == 338855369 and
+            event.get('actor') == 'HemSoft' and
+            ('repo_was' not in event or event['repo_was'] == repo['full_name']),
+            'Repository transfer must match its captured GitHub acceptance event and source/destination identities')
+    milliseconds = event.get('@timestamp')
+    require(type(milliseconds) is int and milliseconds > 0 and
+            ('created_at' not in event or event['created_at'] == milliseconds),
+            'Repository transfer needs the actual audit event timestamp')
+    transferred_at = datetime.datetime.fromtimestamp(milliseconds / 1000, datetime.timezone.utc)
+    require(cutoff < transferred_at <= observed_time(capture.get('observed_at'), 'Repository transfer capture'),
+            'Repository transfer must follow immutable ledger readiness and source recheck')
+    return transferred_at
 
 
 def validate_pre_sync_installation(proof, directory, row):
@@ -1082,7 +1136,8 @@ def validate_pre_sync_installation(proof, directory, row):
                 proof['revision_sha'] + '...' + deployed['revision_sha'],
             'Deployed revision must contain the independently captured pre-sync input')
     input_at = observed_time(operation.get('observed_at'), 'Deployment input')
-    require(timestamp <= input_at <= observed_time(deployed['observed_at'], 'Deployed manifest'),
+    started_at = observed_time(operation.get('started_at'), 'Deployment operation start')
+    require(timestamp <= started_at <= input_at <= observed_time(deployed['observed_at'], 'Deployed manifest'),
             'Deployment input proof must follow pre-sync inspection and precede final deployment status')
     files = capture.get('manifest_files')
     require(isinstance(files, dict) and set(files) == {'.sfl/sfl.json','sfl.json'} and
@@ -1103,6 +1158,7 @@ def validate_pre_sync_installation(proof, directory, row):
         require(primary['state']=='observed' and manifest.get('tier') == proof['tier'] and
                 manifest.get('addons',[]) == proof['addons'] and manifest.get('components',[]) == proof['components'],
                 'Present installation must match independently captured manifest contents')
+    return started_at
 
 
 def validate_pilot_scenario(result, scenario, directory, repository_id, repository, sha, version, revision, cutover=None):
@@ -1619,6 +1675,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     require(isinstance(records, list), 'Matrix needs repository records')
     seen_matrix = set()
     verified_rollouts = 0
+    rollout_start_times = []
     for row in records:
         repo_id = row.get('repository_id')
         require(type(repo_id) is int and repo_id in expected and repo_id not in seen_matrix,
@@ -1658,6 +1715,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         if repo_id not in retained and (health != 'pending_transfer' or text(row.get('transfer_evidence_url'))):
             require(all_transfer_gates_verified,
                     'All transfer-target ledger gates must be verified before any transfer advances')
+            transferred_at = validate_repository_transfer(row.get('transfer_evidence_url'), directory, repo, source_refreshed_at)
+            if health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'}:
+                require(transferred_at <= observed_time(destination['observed_at'], 'Destination protections'),
+                        'Destination protections must be observed after actual repository transfer')
         if repo_id == FHEMMER_REPOSITORY_ID:
             access = row.get('post_transfer_access')
             require(isinstance(access, dict) and access.get('status') in {'pending', 'verified'},
@@ -1726,6 +1787,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 except ValueError as exc:
                     raise ValueError('Retained App dependency needs a verification timestamp') from exc
                 require(verified_at.tzinfo is not None, 'Retained App dependency needs a timezone')
+                if app_transfer['status'] == 'verified':
+                    require(verified_at < app_transferred_at,
+                            'Retained App dependency verification must precede App transfer')
         elif health == 'source_verified':
             require(protected_source and not row['archived'], 'Only the protected distribution source can verify in place')
             proof = row.get('in_place_evidence')
@@ -1819,7 +1883,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                             row['installed_addons'] == manifest.get('addons', []) and
                             row['installed_components'] == manifest.get('components', []),
                             'Present installation must preserve its independently captured manifest configuration')
-            validate_pre_sync_installation(observed, directory, row)
+            rollout_start_times.append(validate_pre_sync_installation(observed, directory, row))
             if row['installed_tier'] == 'custom':
                 require(string_list(row['installed_components']) and bool(row['installed_components']),
                         'Installed custom tier needs observed components')
@@ -1918,6 +1982,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     extra_ids, extra_names, verified_pilot_visibilities = set(), set(), set()
     verified_wider_pilot = False
     pilot_branches = {}
+    pilot_terminal_times = []
     for extra in extras:
         extra_id, name = extra.get('repository_id'), extra.get('repository')
         require(type(extra_id) is int and extra_id > 0 and extra_id not in expected and
@@ -2075,6 +2140,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         'Wider pilot must execute a distinct successful non-Auditor workflow')
                 verified_wider_pilot = True
             validate_pilot_cleanup(receipts, directory, extra_id, name, metadata['default_branch'], operations, operation_times)
+            pilot_terminal_times.append(repository_terminal_times(
+                [{'repository_id':extra_id, 'validation':receipts}], [], directory)[extra_id])
             verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)
         extra_names.add(name.casefold())
@@ -2087,6 +2154,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         require(verified_pilot_visibilities == {'public', 'private'},
                 'Active rollout requires verified public and private onboarding pilots first')
         require(verified_wider_pilot, 'Active rollout requires a verified wider-workflow and auditor pilot')
+        require(all(finished < started for finished in pilot_terminal_times for started in rollout_start_times),
+                'Both pilots must finish all validation before the first active rollout deployment')
     if source_complete:
         require(all(row.get('smoke_phase') == 'post_transfer' for row in rows
                     if row.get('provider') != 'none' and row.get('status') == 'verified'),

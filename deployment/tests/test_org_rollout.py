@@ -41,6 +41,55 @@ class RolloutTests(unittest.TestCase):
         path.write_text(json.dumps(value));self.addCleanup(path.unlink,missing_ok=True)
         return path.name
 
+    def transfer_capture(self, row, timestamp='2026-10-07T01:50:30Z'):
+        milliseconds=int(validator.observed_time(timestamp,'fixture').timestamp()*1000)
+        return self.capture({'phase':'post_transfer','source':row['source'],
+            'repository_id':row['repository_id'],'repository':row['destination'],
+            'audit_log_url':'https://github.com/organizations/hemsoft-dev/settings/audit-log',
+            'observed_at':'2026-10-07T01:50:45Z','event':{'action':'repo.transfer',
+                '_document_id':'synthetic-transfer-'+str(row['repository_id']),
+                'repo_id':row['repository_id'],'repo':row['destination'],'repo_was':row['source'],
+                'org':'hemsoft-dev','org_id':338855369,'actor':'HemSoft',
+                '@timestamp':milliseconds,'created_at':milliseconds}})
+
+    def pilots_before_rollout(self):
+        # Keep complete_pilots' deliberate timing fixtures, then build a coherent
+        # pilot-before-consumer positive fixture when an active rollout is added.
+        references=set()
+        def collect(value):
+            if isinstance(value,dict):
+                for key,item in value.items():
+                    if key.endswith(('evidence_url','verification_url')) and isinstance(item,str) and not item.startswith('https://'):
+                        references.add(item)
+                    elif isinstance(item,(dict,list)):collect(item)
+            elif isinstance(value,list):
+                for item in value:collect(item)
+        for pilot in self.matrix['disposable_validation_repositories']:
+            receipts=pilot['validation_evidence']
+            # Registration context hashes include the request time. Generate a
+            # new coherent request rather than changing its timestamp in place.
+            self.bind_review_operations(receipts,pilot['repository_id'],pilot['repository'],timestamp='2026-10-07T01:53:00Z')
+            for field in receipts['review_operation_receipts']:
+                receipts['operation_receipts'][field]['evidence_url']=receipts[field]
+            collect(receipts)
+        pending=list(references);done=set()
+        substitutions={'2026-10-07T02:00:00Z':'2026-10-07T01:53:00Z',
+            '2026-10-07T03:30:00Z':'2026-10-07T01:54:00Z',
+            '2026-10-07T03:40:00Z':'2026-10-07T01:56:00Z',
+            '2026-10-07T03:41:00Z':'2026-10-07T01:57:00Z'}
+        while pending:
+            reference=pending.pop()
+            if reference in done:continue
+            done.add(reference);path=DIRECTORY/reference
+            data=path.read_text()
+            for old,new in substitutions.items():data=data.replace(old,new)
+            path.write_text(data);collect(json.loads(data));pending.extend(references-done)
+        for reference in done:
+            path=DIRECTORY/reference;capture=json.loads(path.read_text())
+            if 'output_evidence_url' in capture and 'output_sha256' in capture:
+                capture['output_sha256']=hashlib.sha256((DIRECTORY/capture['output_evidence_url']).read_bytes()).hexdigest()
+                path.write_text(json.dumps(capture))
+
     def branch(self, repository_id):
         return next((r['default_branch'] for r in self.inventory['repositories'] if r['id']==repository_id),'main')
 
@@ -54,7 +103,7 @@ class RolloutTests(unittest.TestCase):
         deployed=json.loads((DIRECTORY/row['manifest_evidence_url']).read_text())
         operation=self.capture({'repository_id':row['repository_id'],'repository':row['destination'],
             'input_revision_sha':proof['revision_sha'],'result_revision_sha':deployed['revision_sha'],
-            'observed_at':'2026-10-07T02:00:00Z','comparison':{'status':'ahead',
+            'started_at':'2026-10-07T02:00:00Z','observed_at':'2026-10-07T02:00:00Z','comparison':{'status':'ahead',
                 'base_commit':{'sha':proof['revision_sha']},'merge_base_commit':{'sha':proof['revision_sha']},
                 'html_url':'https://github.com/'+row['destination']+'/compare/'+proof['revision_sha']+'...'+deployed['revision_sha']}})
         proof['evidence_url']=self.capture({**proof,'phase':'pre_sync',
@@ -354,12 +403,20 @@ class RolloutTests(unittest.TestCase):
                 runner=row['post_transfer_runner']
                 common={'phase':'post_transfer','observed_at':'2026-10-07T02:00:00Z',
                         'repository_id':repo['id'],'repository':repo['destination'],'runner_id':21}
-                runner['registration_evidence_url']=self.capture(dict(common,runner={'id':21,'status':'online','busy':False}))
+                runner['registration_evidence_url']=self.capture(dict(common,runner={'id':21,'name':'mini-github-runner-01','status':'online','busy':False,
+                    'labels':[{'name':label} for label in ('self-hosted','Linux','X64','mini','yahtzee')]}))
                 runner['isolation_evidence_url']=self.capture(dict(common,tailscale_present=False,
                     public_dns_https='passed',isolation_checks=[{'target':t,'blocked':True} for t in
                         ('100.101.122.39:22','100.117.202.124:22','100.69.182.27:22','192.168.1.1:80','10.0.0.1:443','172.16.0.1:443')]))
                 runner['service_evidence_url']=self.capture(dict(common,unit='actions.runner.fixture.service',active_state='active'))
-                runner['run_evidence_url']=self.capture(dict(common,read_only=True,run={'repository':{'id':repo['id'],
+                runner['smoke_job_id']=1
+                runner['jobs_evidence_url']=self.capture({'request_url':'https://api.github.com/repos/'+repo['destination']+
+                    '/actions/runs/1/attempts/1/jobs?per_page=100','all_pages':True,'total_count':1,
+                    'observed_at':common['observed_at'],'jobs':[{'id':1,'run_id':1,'run_attempt':1,
+                        'head_sha':runner['run_head_sha'],'runner_id':21,'runner_name':'mini-github-runner-01',
+                        'labels':['self-hosted','Linux','X64','mini','yahtzee'],'status':'completed','conclusion':'success',
+                        'started_at':common['observed_at'],'completed_at':common['observed_at']}]})
+                runner['run_evidence_url']=self.capture(dict(common,read_only=True,run={'id':1,'run_attempt':1,'repository':{'id':repo['id'],
                     'full_name':repo['destination']},'html_url':runner['run_url'],'head_sha':runner['run_head_sha'],
                     'status':'completed','conclusion':'success','created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'}))
             row['destination_protections'] = dict(validator.protection_contract(repo),
@@ -433,7 +490,7 @@ class RolloutTests(unittest.TestCase):
                    manifest_version='2.1.0-rc.14', review_requester='HemSoft',
                    deployment_source='hemsoft-dev/set-it-free-loop', deployment_sha='a'*40,
                    review_head_sha='b'*40, review_base_sha='c'*40, destination_codex_access='verified',
-                   destination_sfl_app_access='verified', transfer_evidence_url='https://example.com/transfer',
+                   destination_sfl_app_access='verified', transfer_evidence_url=self.transfer_capture(row),
                    review_pr_url='https://example.com/review', gate_run_url='https://example.com/gate',
                    status_evidence_url='https://example.com/status')
         self.complete_app_coverage(row)
@@ -471,6 +528,7 @@ class RolloutTests(unittest.TestCase):
         self.bind_pre_sync(row)
         self.bind_download(row)
         self.matrix['summary']['verified_rollouts'] += 1
+        self.pilots_before_rollout()
         return row
 
     def complete_pilots(self):
@@ -575,7 +633,7 @@ class RolloutTests(unittest.TestCase):
         self.complete_transfer_gates()
         self.complete_app_transfer()
         row = next(row for row in self.matrix['repositories'] if row['source'] == 'HemSoft/set-it-free-loop')
-        row.update(health='source_verified', transfer_evidence_url='https://example.com/transfer',
+        row.update(health='source_verified', transfer_evidence_url=self.transfer_capture(row),
                    status_evidence_url='https://example.com/status', destination_codex_access='verified',
                    destination_sfl_app_access='verified', review_requester='HemSoft',
                    review_head_sha='b'*40, review_base_sha='c'*40,
@@ -613,6 +671,7 @@ class RolloutTests(unittest.TestCase):
             source='hemsoft-dev/set-it-free-loop',sha=proof['source_sha'],version=proof['release_version'],field='release_verification_url')
         self.verify_source_ledger(row['repository_id'])
         self.matrix['summary']['verified_rollouts'] += 1
+        self.pilots_before_rollout()
         return row
 
     def test_protected_source_can_complete_without_consumer_manifest(self):
@@ -785,7 +844,7 @@ class RolloutTests(unittest.TestCase):
         self.complete_transfer_gates()
         with self.assertRaisesRegex(ValueError, 'archive-preserving'):
             self.check()
-        row.update(health='archived_verified', transfer_evidence_url='https://example.com/transfer',
+        row.update(health='archived_verified', transfer_evidence_url=self.transfer_capture(row),
                    status_evidence_url='https://example.com/settings')
         self.complete_app_transfer();self.complete_app_coverage(row)
         self.check()
@@ -794,7 +853,7 @@ class RolloutTests(unittest.TestCase):
         row = self.matrix['repositories'][0]
         row['health'] = 'scope_exception'
         self.complete_transfer_gates()
-        row['transfer_evidence_url'] = 'https://example.com/transfer'
+        row['transfer_evidence_url'] = self.transfer_capture(row)
         row['status_evidence_url'] = 'https://example.com/settings'
         with self.assertRaises(ValueError):
             self.check()
@@ -910,7 +969,7 @@ class RolloutTests(unittest.TestCase):
                 continue
             self.verify_source_ledger(row['repository_id'])
             row.update(health='scope_exception', exception_evidence_url='https://example.com/exception',
-                       transfer_evidence_url='https://example.com/transfer',
+                       transfer_evidence_url=self.transfer_capture(row),
                        status_evidence_url='https://example.com/settings')
             self.complete_post_transfer_access(row)
             self.complete_scope_decision(row)
@@ -960,7 +1019,7 @@ class RolloutTests(unittest.TestCase):
         row.update(health='scope_exception', exception_evidence_url='https://example.com/owner-exception')
         with self.assertRaises(ValueError):
             self.check()
-        row['transfer_evidence_url'] = 'https://example.com/transfer'
+        row['transfer_evidence_url'] = self.transfer_capture(row)
         with self.assertRaises(ValueError):
             self.check()
         row['status_evidence_url'] = 'https://example.com/settings'
@@ -1228,7 +1287,7 @@ class RolloutTests(unittest.TestCase):
     def test_fhemmer_transfer_requires_effective_access_and_one_seat_receipt(self):
         self.complete_transfer_gates()
         row = next(r for r in self.matrix['repositories'] if r['repository_id'] == 1143951439)
-        row.update(health='pending_rollout', transfer_evidence_url='https://example.com/transfer')
+        row.update(health='pending_rollout', transfer_evidence_url=self.transfer_capture(row))
         with self.assertRaisesRegex(ValueError, 'post-transfer access and seat proof'): self.check()
         row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
             paid_seats=1, verified_by='HemSoft',
@@ -1340,6 +1399,7 @@ class RolloutTests(unittest.TestCase):
             replacement['destination_sfl_app_access'].update(repository_id=inventory['id'],repository=inventory['destination'])
             replacement['destination_protections']=copy.deepcopy(candidate['destination_protections'])
             replacement['pre_sync_installation'].update(repository_id=inventory['id'],repository=inventory['destination'])
+            replacement['transfer_evidence_url']=self.transfer_capture(replacement)
             index=self.matrix['repositories'].index(candidate);self.matrix['repositories'][index]=replacement
             with self.assertRaisesRegex(ValueError,'cannot erase a captured'):self.check()
             self.matrix['repositories'][index]=candidate
@@ -1352,6 +1412,7 @@ class RolloutTests(unittest.TestCase):
                       'source_app_access_in_baseline', 'rollout_action', 'destination_protections'):
             replacement[field] = target[field]
         replacement.pop('post_transfer_access', None)
+        replacement['transfer_evidence_url']=self.transfer_capture(replacement)
         replacement['destination_sfl_app_access'].update(repository_id=target['repository_id'],repository=target['destination'])
         replacement.update(installed_tier='reviewer', selected_tier='reviewer', installed_components=[])
         replacement['review_pr_url']='https://github.com/'+target['destination']+'/pull/1'
@@ -1616,7 +1677,7 @@ class RolloutTests(unittest.TestCase):
         self.complete_transfer_gates(); self.complete_app_transfer()
         row = next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
         row.update(health='scope_exception',exception_evidence_url='https://example.com/exception',
-                   transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+                   transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
         self.complete_scope_decision(row)
         original = row.pop('post_transfer_runner')
         with self.assertRaisesRegex(ValueError,'structured destination continuity'):
@@ -1699,7 +1760,7 @@ class RolloutTests(unittest.TestCase):
             if row['health'] in {'retained_source','source_verified'}:
                 continue
             row.update(health='archived_verified' if row['archived'] else 'scope_exception',
-                       transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+                       transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
             self.complete_post_transfer_access(row)
             self.complete_app_coverage(row)
             if not row['archived']:
@@ -1800,7 +1861,7 @@ class RolloutTests(unittest.TestCase):
     def test_archived_baseline_app_coverage_cannot_remain_pending(self):
         self.complete_transfer_gates();self.complete_app_transfer()
         row=next(r for r in self.matrix['repositories'] if r['archived'] and r['source_app_access_in_baseline'])
-        row.update(health='archived_verified',transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+        row.update(health='archived_verified',transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
         self.complete_app_coverage(row);self.check()
         row['destination_sfl_app_access']['status']='pending'
         with self.assertRaisesRegex(ValueError,'baseline-covered terminal'):self.check()
@@ -2131,7 +2192,7 @@ class RolloutTests(unittest.TestCase):
     def test_runner_continuity_loads_independent_operational_captures(self):
         self.complete_transfer_gates();self.complete_app_transfer()
         row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
-        row.update(health='scope_exception',transfer_evidence_url='https://example.com/transfer',
+        row.update(health='scope_exception',transfer_evidence_url=self.transfer_capture(row),
                    status_evidence_url='https://example.com/status');self.complete_scope_decision(row);self.check()
         proof=row['post_transfer_runner']
         for reference,field,value in [('registration_evidence_url','runner',{'id':21,'status':'offline','busy':False}),
@@ -2171,7 +2232,7 @@ class RolloutTests(unittest.TestCase):
     def test_post_transfer_smokes_follow_source_app_and_destination_captures(self):
         self.complete_transfer_gates();self.complete_app_transfer()
         row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
-        row.update(health='scope_exception',transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+        row.update(health='scope_exception',transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
         self.complete_scope_decision(row);self.check()
         resource=next(r for r in self.rows if r['source']=='HemSoft/yahtzee' and r.get('resource_kind')=='repository_runner');path=DIRECTORY/resource['smoke_evidence_url']
         original=json.loads(path.read_text())
@@ -2445,7 +2506,7 @@ class RolloutTests(unittest.TestCase):
 
     def test_runner_registration_and_execution_follow_destination_cutover(self):
         self.complete_pilots();row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
-        row.update(health='scope_exception',transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
+        row.update(health='scope_exception',transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
         self.complete_scope_decision(row)
         cutoff='2026-10-07T03:00:00Z';row['destination_protections']['observed_at']=cutoff
         protection_path=DIRECTORY/row['destination_protections']['evidence_url'];protection=json.loads(protection_path.read_text())
@@ -2459,6 +2520,10 @@ class RolloutTests(unittest.TestCase):
             capture['observed_at']=cutoff
             if field=='run_evidence_url':capture['run'].update(created_at=cutoff,updated_at=cutoff)
             (DIRECTORY/runner[field]).write_text(json.dumps(capture))
+        jobs_path=DIRECTORY/runner['jobs_evidence_url'];jobs=json.loads(jobs_path.read_text())
+        jobs['observed_at']=cutoff
+        for job in jobs['jobs']:job.update(started_at=cutoff,completed_at=cutoff)
+        jobs_path.write_text(json.dumps(jobs))
         self.check()
         for field,original in originals.items():
             capture=copy.deepcopy(original);capture['observed_at']='2026-10-07T02:00:00Z'
@@ -2709,6 +2774,78 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             changed=copy.deepcopy(capture);changed['project'][field]=value;path.write_text(json.dumps(changed))
             with self.subTest(field=field),self.assertRaisesRegex(ValueError,'exact account project configuration'):
                 validator.validate_unlinked_supabase(resource,baseline,DIRECTORY,cutoff)
+
+
+    def test_both_pilots_finish_before_active_deployment(self):
+        self.complete_rollout();self.check()
+        for pilot in self.matrix['disposable_validation_repositories']:
+            receipts=pilot['validation_evidence']
+            policy_path=DIRECTORY/receipts['final_gate_policy_evidence_url']
+            original=json.loads(policy_path.read_text());late=copy.deepcopy(original)
+            late['observed_at']='2026-10-07T02:01:00Z';policy_path.write_text(json.dumps(late))
+            with self.subTest(visibility=pilot['visibility']),self.assertRaisesRegex(ValueError,'Both pilots must finish'):
+                self.check()
+            policy_path.write_text(json.dumps(original))
+        # A successful wider-workflow test is also a prerequisite, not a later
+        # action allowed to retroactively qualify the active deployment.
+        private=next(p for p in self.matrix['disposable_validation_repositories'] if p['visibility']=='private')
+        receipts=private['validation_evidence'];operation=receipts['auditor_operation_receipt']
+        path=DIRECTORY/operation['capture_evidence_url'];capture=json.loads(path.read_text())
+        capture['observed_at']='2026-10-07T02:01:00Z'
+        capture['run'].update(created_at='2026-10-07T02:01:00Z',updated_at='2026-10-07T02:01:00Z')
+        path.write_text(json.dumps(capture))
+        self.bind_terminal_capture(receipts['operation_receipts']['gate_uninstall_evidence_url'],timestamp='2026-10-07T02:02:00Z')
+        path=DIRECTORY/receipts['final_gate_policy_evidence_url'];capture=json.loads(path.read_text())
+        capture['observed_at']='2026-10-07T02:03:00Z';path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'Both pilots must finish'):self.check()
+
+    def test_runner_smoke_executes_on_preserved_runner(self):
+        self.complete_transfer_gates();self.complete_app_transfer()
+        row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
+        row.update(health='scope_exception',transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/status')
+        self.complete_scope_decision(row);self.check()
+        proof=row['post_transfer_runner'];path=DIRECTORY/proof['jobs_evidence_url'];original=json.loads(path.read_text())
+        for field,value in [('runner_id',22),('runner_name','GitHub Actions 1'),('labels',['ubuntu-latest']),
+                            ('run_id',2),('run_attempt',2),('head_sha','f'*40),('conclusion','skipped'),
+                            ('completed_at','2026-10-07T02:01:00Z')]:
+            capture=copy.deepcopy(original);capture['jobs'][0][field]=value;path.write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'preserved self-hosted runner'):self.check()
+        path.write_text(json.dumps(original));self.check()
+        capture=copy.deepcopy(original);capture['request_url']=capture['request_url'].replace('/attempts/1/','/attempts/2/')
+        path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'current run attempt'):self.check()
+        path.write_text(json.dumps(original));del proof['jobs_evidence_url']
+        with self.assertRaisesRegex(ValueError,'Missing evidence'):self.check()
+
+    def test_repository_transfer_follows_pre_transfer_gates(self):
+        self.complete_transfer_gates()
+        row=next(r for r in self.matrix['repositories'] if not r['archived'] and r['repository_id']!=1143951439)
+        row.update(health='pending_rollout',transfer_evidence_url=self.transfer_capture(row));self.check()
+        path=DIRECTORY/row['transfer_evidence_url'];original=json.loads(path.read_text())
+        for timestamp in ('2026-10-07T01:48:00Z','2026-10-07T01:49:30Z'):
+            capture=copy.deepcopy(original);milliseconds=int(validator.observed_time(timestamp,'test').timestamp()*1000)
+            capture['event'].update({'@timestamp':milliseconds,'created_at':milliseconds});path.write_text(json.dumps(capture))
+            with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'immutable ledger readiness and source recheck'):
+                self.check()
+        for field,value in [('action','repo.transfer_start'),('repo_id',1),('repo','hemsoft-dev/other'),
+                            ('repo_was','HemSoft/other'),('org_id',1),('actor','another-owner'),('_document_id','')]:
+            capture=copy.deepcopy(original);capture['event'][field]=value;path.write_text(json.dumps(capture))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'acceptance event'):self.check()
+        path.write_text(json.dumps(original));self.check()
+        row['transfer_evidence_url']='https://example.com/transfer'
+        with self.assertRaisesRegex(ValueError,'independent local capture'):self.check()
+
+    def test_retained_dependency_verification_precedes_app_transfer(self):
+        self.complete_transfer_gates();self.complete_app_transfer();self.check()
+        for row in self.matrix['repositories']:
+            if row['health']!='retained_source':continue
+            dependency=row['retained_app_dependency'];original=dependency['verified_at']
+            for timestamp in ('2026-10-07T01:51:00Z','2026-10-07T02:00:00Z'):
+                dependency['verified_at']=timestamp
+                with self.subTest(repository=row['source'],timestamp=timestamp),self.assertRaisesRegex(ValueError,'must precede App transfer'):
+                    self.check()
+            dependency['verified_at']=original
+        self.check()
 
 
 if __name__ == '__main__':

@@ -157,6 +157,9 @@ a candidate does not prove deployment usage or prevent an evidenced absence resu
 Provider ledger completion applies to transfer targets. Before the SFL App transfer,
 also verify any effect on retained repositories' existing personal App installation;
 retention does not waive this shared-App dependency check.
+Record each retained dependency's `verified_at` before the independently captured
+App ownership-transfer time. A later no-dependency confirmation cannot qualify an
+earlier App transfer.
 
 ## Runtime prerequisites
 
@@ -556,3 +559,35 @@ publication configuration; Supabase preserves the recorded account project;
 Cloudflare preserves the captured zone routing or Worker identity and routing.
 Use actual successful continuity or approved recovery when a deployment changes;
 do not invent equal before/after dictionaries.
+
+Repository `transfer_evidence_url` must name an independent local capture of the
+destination organization's accepted `repo.transfer` audit event. Preserve its
+`_document_id`, `repo_id`, canonical `repo`, `org`, `org_id`, `actor` and numeric
+`@timestamp` in milliseconds. If exported, `created_at` must agree and `repo_was`
+must match the original source. The capture also records source/destination,
+repository ID, `phase: post_transfer`, `observed_at` and `audit_log_url` pointing
+to [the organization audit log](https://github.com/organizations/hemsoft-dev/settings/audit-log).
+Use its filtered JSON export when the audit-log REST API is unavailable on Team,
+following [GitHub's export instructions](https://docs.github.com/en/organizations/keeping-your-organization-secure/managing-security-settings-for-your-organization/reviewing-the-audit-log-for-your-organization#exporting-the-audit-log).
+Retain only these public event fields, never token, request or user-agent details.
+The actual accepted event must follow the immutable ledger snapshot and fresh
+source recheck, and precede destination protection observations. An issue comment
+or later destination metadata capture cannot replace the transfer event.
+
+For active consumers, the deployment-input capture also records `started_at`
+from the actual init/sync invocation. It must follow pre-sync inspection and
+precede the input/result observation and deployed manifest. Both designated
+pilots' latest validated terminal evidence, including wider-workflow tests and
+final gate cleanup, must precede this first deployment operation. The protected
+distribution source is prepared before pilot execution; it does not use consumer
+init/sync and has its own in-place verification contract.
+
+The yahtzee runner proof additionally records `smoke_job_id` and a local
+`jobs_evidence_url`. Capture all pages of the completed current attempt's
+`GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100`
+response, with its `request_url`, `observed_at`, `all_pages`, `total_count` and
+raw `jobs`. The selected successful job must bind the run/attempt/head, execute
+on runner 21 named `mini-github-runner-01`, request self-hosted labels drawn from
+the preserved registration, and finish within the captured run. Compare the
+registration name and full label set with the sealed runner baseline. A passing
+GitHub-hosted job cannot establish this runner's continuity.
