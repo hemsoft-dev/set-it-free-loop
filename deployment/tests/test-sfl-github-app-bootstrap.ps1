@@ -55,6 +55,7 @@ function Get-HealthyIdentity {
         id        = 123456
         client_id = 'Iv1.testclient'
         owner     = [pscustomobject]@{ login = 'HemSoft' }
+        permissions = (Get-HealthyInstallation).permissions
     }
 }
 
@@ -65,6 +66,8 @@ function Get-HealthyInstallation {
         client_id            = 'Iv1.testclient'
         repository_selection = 'selected'
         target_type          = 'User'
+        suspended_at         = $null
+        suspended_by         = $null
         account              = [pscustomobject]@{ login = 'HemSoft' }
         permissions          = [pscustomobject]@{
             actions       = 'write'
@@ -180,6 +183,39 @@ Assert-Throw {
     Assert-SflGitHubAppInstallation -Installation $wrongInstallation -Repository 'HemSoft/example' `
         -ExpectedAppId '123456' -ExpectedClientId 'Iv1.testclient' -ExpectedOwner 'HemSoft'
 } 'App ID.*target type.*installation account' 'Wrong installation identity'
+
+foreach ($field in @('suspended_at', 'suspended_by')) {
+    $suspended = Get-HealthyInstallation
+    $suspended.$field = 'synthetic suspension'
+    Assert-Throw {
+        Assert-SflGitHubAppInstallation -Installation $suspended -Repository 'HemSoft/example' `
+            -ExpectedAppId '123456' -ExpectedClientId 'Iv1.testclient' -ExpectedOwner 'HemSoft'
+    } 'suspended' "Suspended installation $field"
+    $suspended.PSObject.Properties.Remove($field)
+    Assert-Throw {
+        Assert-SflGitHubAppInstallation -Installation $suspended -Repository 'HemSoft/example' `
+            -ExpectedAppId '123456' -ExpectedClientId 'Iv1.testclient' -ExpectedOwner 'HemSoft'
+    } 'suspension field.*missing' "Absent installation suspension field $field"
+}
+foreach ($shape in @('object', 'dictionary')) {
+    $registration = Get-HealthyIdentity
+    if ($shape -eq 'dictionary') {
+        $registration.permissions = @{ actions='write'; checks='write'; contents='read'; issues='write'; metadata='read'; pull_requests='write' }
+        $registration.permissions.workflows = 'write'
+    } else {
+        $registration.permissions | Add-Member -NotePropertyName workflows -NotePropertyValue write
+    }
+    Assert-Throw {
+        Assert-SflGitHubAppIdentity -Identity $registration -ExpectedAppId '123456' `
+            -ExpectedClientId 'Iv1.testclient' -ExpectedOwner 'HemSoft'
+    } "unexpected permission 'workflows'" "Expanded registration permissions $shape"
+}
+$registration = Get-HealthyIdentity
+$registration.permissions.PSObject.Properties.Remove('checks')
+Assert-Throw {
+    Assert-SflGitHubAppIdentity -Identity $registration -ExpectedAppId '123456' `
+        -ExpectedClientId 'Iv1.testclient' -ExpectedOwner 'HemSoft'
+} "permission 'checks' is 'missing'" 'Missing registration permission'
 
 # Exercise the real script with faked read-only dependencies. A permission
 # failure must happen before the first variable or secret mutation.
