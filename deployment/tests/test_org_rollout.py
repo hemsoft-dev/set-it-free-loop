@@ -29,13 +29,34 @@ class RolloutTests(unittest.TestCase):
         self.inventory = json.loads((DIRECTORY / 'inventory.json').read_text())
         self.matrix = json.loads((DIRECTORY / 'rollout-matrix.json').read_text())
         self.scope = json.loads((DIRECTORY / 'scope-decisions.json').read_text())
+        self.release_results={}
+        self.real_release_verification=validator.run_release_verification
+        self.release_verifier=patch.object(validator,'run_release_verification',
+            side_effect=lambda argv:copy.deepcopy(self.release_results[tuple(argv)]))
+        self.release_verifier.start();self.addCleanup(self.release_verifier.stop)
         with (DIRECTORY / 'integration-ledger.csv').open(newline='') as stream:
             self.rows = list(csv.DictReader(stream))
 
     def check(self):
         return validator.validate(self.inventory, self.rows, self.matrix, DIRECTORY, self.scope)
 
+    def bind_final_pages(self, value):
+        if isinstance(value.get('accounts'),list) and {a.get('owner') for a in value['accounts']}=={'HemSoft','fhemmer','hemsoft-dev'}:
+            for account in value['accounts']:
+                owner=account['owner'];url=('https://api.github.com/user/repos?affiliation=owner&per_page=100' if owner=='HemSoft' else
+                    'https://api.github.com/orgs/'+owner+'/repos?type=all&per_page=100')
+                account['pages']=[{'method':'GET','request_url':url,'http_status':200,'response_headers':{},
+                    'observed_at':value['observed_at'],'data':copy.deepcopy(account['repositories'])}]
+        return value
+
     def capture(self, value, directory=DIRECTORY, prefix='fixture-capture-'):
+        self.bind_final_pages(value)
+        if value.get('phase')=='post_transfer' and value.get('account')=='fhemmerrelias' and 'result' in value:
+            value.setdefault('request_url','https://api.github.com/repos/'+value['repository']+'/collaborators/fhemmerrelias/permission')
+            value['result'].setdefault('user',{'login':'fhemmerrelias'})
+        if value.get('phase')=='post_transfer' and value.get('organization')=='hemsoft-dev' and 'plan' in value:
+            value.setdefault('request_url','https://api.github.com/orgs/hemsoft-dev');value.setdefault('http_status',200)
+            value.setdefault('data',{'id':338855369,'login':'hemsoft-dev','plan':copy.deepcopy(value['plan'])})
         with tempfile.NamedTemporaryFile(dir=directory,suffix='.json',prefix=prefix,delete=False) as stream:
             path=pathlib.Path(stream.name)
         path.write_text(json.dumps(value));self.addCleanup(path.unlink,missing_ok=True)
@@ -205,7 +226,10 @@ class RolloutTests(unittest.TestCase):
         elif kind=='supabase_project':
             baseline=validator.provider_preservation_baseline(row,self.inventory,directory)
             row['smoke_outcome']=smoke['outcome']='baseline_preserved'
-            smoke.update(baseline=baseline,observed_resource=copy.deepcopy(baseline))
+            smoke.update(baseline=baseline,observed_resource=copy.deepcopy(baseline),resource_unchanged=True,runtime_actions=[],
+                owner_receipt_url='https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6030145370')
+            response('project','https://api.supabase.com/v1/projects/'+resource,{'id':'synthetic-project-id','ref':resource,'name':baseline['name'],
+                'region':baseline['region'],'organization_id':'synthetic-org-id','organization_slug':baseline['organization'],'status':'INACTIVE'})
         row['smoke_evidence_url']=self.capture(smoke,directory)
 
     def bind_source_scan(self, accounts):
@@ -249,6 +273,9 @@ class RolloutTests(unittest.TestCase):
                 'git_url':'https://api.github.com/repos/'+repository+'/git/blobs/'+blob}}}
 
     def bind_attestation(self, download, directory=DIRECTORY):
+        folder=tempfile.TemporaryDirectory();self.addCleanup(folder.cleanup)
+        asset=pathlib.Path(folder.name)/download['asset_name'];asset.write_bytes(b'synthetic regression asset '+download['asset_name'].encode())
+        download['expected_sha256']=download['actual_sha256']=hashlib.sha256(asset.read_bytes()).hexdigest()
         source=download['source_repository'];version=download['release_version'];purl='pkg:github/'+source+'@v'+version
         statement={'_type':'https://in-toto.io/Statement/v1','predicateType':'https://in-toto.io/attestation/release/v0.2',
             'subject':[{'uri':purl,'digest':{'sha1':download['source_sha']}},
@@ -258,7 +285,8 @@ class RolloutTests(unittest.TestCase):
             'payload':base64.b64encode(json.dumps(statement).encode()).decode(),'signatures':[{'sig':'synthetic-regression-signature'}]}}},
             'verificationResult':{'signature':{'certificate':{'subjectAlternativeName':'https://dotcom.releases.github.com'}},
                 'verifiedTimestamps':[{'timestamp':download['observed_at']}],'statement':statement}}
-        asset_path='/tmp/synthetic-release/'+download['asset_name']
+        asset_path=str(asset)
+        self.release_results[tuple(['gh','release','verify-asset','v'+version,asset_path,'--repo',source,'--format','json'])]=copy.deepcopy(result)
         download['attestation_evidence_url']=self.capture({'command':'gh release verify-asset',
             'argv':['gh','release','verify-asset','v'+version,asset_path,'--repo',source,'--format','json'],
             'asset_path':asset_path,'exit_code':0,'status':'completed','observed_at':download['observed_at'],'result':result},directory)
@@ -1671,7 +1699,7 @@ class RolloutTests(unittest.TestCase):
             accounts[name.split('/')[0]]['repositories'].append({'id':repo_id,'full_name':name,'private':repo['private'],'visibility':repo['visibility'],'archived':repo['archived'],'default_branch':repo['default_branch']})
         for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
             accounts['hemsoft-dev']['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private','visibility':visibility,'archived':False})
-        capture={'observed_at':'2026-10-07T03:00:00Z','accounts':list(accounts.values())}
+        capture=self.bind_final_pages({'observed_at':'2026-10-07T03:00:00Z','accounts':list(accounts.values())})
         with tempfile.TemporaryDirectory() as folder:
             directory=pathlib.Path(folder);path=directory/'final-inventory.json'
             proof={'observed_at':capture['observed_at'],'evidence_url':path.name,'additional_repositories':[]}
@@ -1773,7 +1801,7 @@ class RolloutTests(unittest.TestCase):
                  'approved_by':'HemSoft', 'evidence_url':'https://example.com/approval'}
         with tempfile.TemporaryDirectory() as folder:
             directory = pathlib.Path(folder)
-            (directory/'capture.json').write_text(json.dumps(capture))
+            (directory/'capture.json').write_text(json.dumps(self.bind_final_pages(capture)))
             proof = {'observed_at':capture['observed_at'], 'evidence_url':'capture.json',
                      'additional_repositories':[extra]}
             with self.assertRaisesRegex(ValueError, 'Missing evidence reference'):
@@ -2368,10 +2396,10 @@ class RolloutTests(unittest.TestCase):
             accounts[2]['repositories'].append({'id':42,'full_name':onboarding['repository'],'private':True,'visibility':'private','archived':False,'default_branch':'main'})
             proof={'observed_at':'2026-10-07T04:00:00Z','evidence_url':'final.json','additional_repositories':[]}
             path=directory/'final.json'
-            path.write_text(json.dumps({'observed_at':proof['observed_at'],'accounts':accounts}))
+            path.write_text(json.dumps(self.bind_final_pages({'observed_at':proof['observed_at'],'accounts':accounts})))
             validator.validate_final_inventory(proof,directory,{}, {},onboarding)
             for timestamp in ('2026-10-07T01:00:00Z','2026-10-07T02:30:00Z','2026-10-07T03:15:00Z'):
-                proof['observed_at']=timestamp;path.write_text(json.dumps({'observed_at':timestamp,'accounts':accounts}))
+                proof['observed_at']=timestamp;path.write_text(json.dumps(self.bind_final_pages({'observed_at':timestamp,'accounts':accounts})))
                 with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'must follow rollout'):
                     validator.validate_final_inventory(proof,directory,{}, {},onboarding)
 
@@ -2471,10 +2499,10 @@ class RolloutTests(unittest.TestCase):
             new={'id':42,'full_name':onboarding['repository'],'private':True,'visibility':'private','archived':False,'default_branch':'main'};accounts[2]['repositories'].append(new)
             proof={'observed_at':'2026-10-07T04:00:00Z','evidence_url':'final.json','additional_repositories':[]};path=directory/'final.json'
             for archived in (True,None):
-                new['archived']=archived;path.write_text(json.dumps({'observed_at':proof['observed_at'],'accounts':accounts}))
+                new['archived']=archived;path.write_text(json.dumps(self.bind_final_pages({'observed_at':proof['observed_at'],'accounts':accounts})))
                 with self.subTest(archived=archived),self.assertRaisesRegex(ValueError,'remain unarchived'):
                     validator.validate_final_inventory(proof,directory,{}, {},onboarding)
-            new['archived']=False;path.write_text(json.dumps({'observed_at':proof['observed_at'],'accounts':accounts}))
+            new['archived']=False;path.write_text(json.dumps(self.bind_final_pages({'observed_at':proof['observed_at'],'accounts':accounts})))
             validator.validate_final_inventory(proof,directory,{}, {},onboarding)
 
     def test_designated_new_onboarding_proves_default_reviewer_without_wider_credentials(self):
@@ -2640,15 +2668,17 @@ class RolloutTests(unittest.TestCase):
 
     def test_preservation_baseline_is_bound_to_each_sealed_provider_resource(self):
         self.complete_transfer_gates()
-        for kind in ('vercel_project','github_pages','supabase_project','cloudflare_zone','cloudflare_worker'):
-            row=next(r for r in self.rows if r.get('resource_kind')==kind)
-            original=copy.deepcopy(row);row['smoke_outcome']='baseline_preserved'
-            smoke=json.loads((DIRECTORY/row['smoke_evidence_url']).read_text());smoke.update(outcome='baseline_preserved')
-            baseline=validator.provider_preservation_baseline(row,self.inventory,DIRECTORY)
-            smoke.update(baseline=baseline,observed_resource=baseline);row['smoke_evidence_url']=self.capture(smoke);self.check()
-            smoke.update(baseline={'invented':'unchanged'},observed_resource={'invented':'unchanged'});row['smoke_evidence_url']=self.capture(smoke)
-            with self.subTest(kind=kind),self.assertRaisesRegex(ValueError,'sealed provider resource'):self.check()
+        for kind in ('vercel_project','github_pages','cloudflare_zone','cloudflare_worker'):
+            row=next(r for r in self.rows if r.get('resource_kind')==kind);original=copy.deepcopy(row)
+            row['smoke_outcome']='baseline_preserved';smoke=json.loads((DIRECTORY/row['smoke_evidence_url']).read_text())
+            smoke.update(outcome='baseline_preserved',baseline=validator.provider_preservation_baseline(row,self.inventory,DIRECTORY))
+            smoke['observed_resource']=copy.deepcopy(smoke['baseline']);row['smoke_evidence_url']=self.capture(smoke)
+            with self.subTest(kind=kind),self.assertRaisesRegex(ValueError,'Preservation-only outcomes'):self.check()
             row.clear();row.update(original)
+        row=next(r for r in self.rows if r.get('resource_kind')=='supabase_project');self.check()
+        smoke=json.loads((DIRECTORY/row['smoke_evidence_url']).read_text())
+        smoke.update(baseline={'invented':'unchanged'},observed_resource={'invented':'unchanged'});row['smoke_evidence_url']=self.capture(smoke)
+        with self.assertRaisesRegex(ValueError,'sealed provider resource'):self.check()
 
 
     def test_final_inventory_follows_terminal_status_not_only_manifest(self):
@@ -3473,6 +3503,149 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         scan_path.write_text(json.dumps(scan))
         with self.assertRaisesRegex(ValueError,'derive from immutable bytes'):
             validator.validate_reference_scan(source['reference_scan_evidence_url'],DIRECTORY,self.inventory)
+
+    def test_active_provider_cannot_claim_preservation_without_continuity(self):
+        row=self.complete_provider();path=DIRECTORY/row['smoke_evidence_url'];original=json.loads(path.read_text())
+        for outcome in ('baseline_preserved','preserved_unused'):
+            capture=copy.deepcopy(original)
+            row['smoke_outcome']=outcome
+            capture.update(outcome=outcome,baseline=validator.provider_preservation_baseline(row,self.inventory,DIRECTORY),
+                resource_unchanged=True,runtime_actions=[])
+            capture['observed_resource']=copy.deepcopy(capture['baseline']);capture.pop('provider_responses')
+            path.write_text(json.dumps(capture))
+            with self.subTest(outcome=outcome),self.assertRaisesRegex(ValueError,'explicitly approved unused resource'):self.check()
+
+    def test_approved_recovery_needs_bound_owner_comment_and_provider_gets(self):
+        row=self.complete_provider();path=DIRECTORY/row['smoke_evidence_url'];capture=json.loads(path.read_text())
+        row['smoke_outcome']='approved_recovery'
+        capture.update(outcome='approved_recovery',recovery_success=True,approved_by='HemSoft')
+        path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'Missing evidence'):self.check()
+        decision={'repository_id':int(row['repository_id']),'repository':row['destination'],'provider':row['provider'],
+            'resource_id':row['resource_id'],'disposition':'approved_recovery','reason':'Synthetic recovery approval'}
+        receipt='https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-123'
+        at='2026-10-07T02:00:00Z'
+        comment={'id':123,'html_url':receipt,'created_at':at,'updated_at':at,
+            'user':{'id':8227352,'login':'HemSoft','type':'User'},
+            'body':'Approved. <!-- sfl-migration-approval:'+json.dumps(decision)+' -->'}
+        comment_file=self.capture({'request_url':'https://api.github.com/repos/HemSoft/set-it-free-loop/issues/comments/123',
+            'http_status':200,'observed_at':at,'comment':comment})
+        capture.update(owner_receipt_url=receipt,owner_approval_evidence_url=self.capture(dict(decision,
+            approved_at=at,owner_comment_evidence_url=comment_file)))
+        path.write_text(json.dumps(capture));self.check()
+        for mutate in (lambda c:c.pop('provider_responses'),
+                       lambda c:c['provider_responses']['project']['data'].update(link=None)):
+            changed=copy.deepcopy(capture);mutate(changed);path.write_text(json.dumps(changed))
+            with self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(capture));comment['user']['login']='other'
+        (DIRECTORY/comment_file).write_text(json.dumps({'request_url':'https://api.github.com/repos/HemSoft/set-it-free-loop/issues/comments/123',
+            'http_status':200,'observed_at':at,'comment':comment}))
+        with self.assertRaisesRegex(ValueError,'actual HemSoft comment'):self.check()
+
+    def test_paused_supabase_preservation_requires_actual_project_metadata(self):
+        row=next(r for r in self.rows if r['resource_kind']=='supabase_project')
+        self.verify_source_ledger(int(row['repository_id']));self.check()
+        path=DIRECTORY/row['smoke_evidence_url'];original=json.loads(path.read_text())
+        for mutation in (lambda c:c.pop('provider_responses'),
+                         lambda c:c['provider_responses']['project'].update(http_status=404),
+                         lambda c:c['provider_responses']['project']['data'].update(status='ACTIVE_HEALTHY'),
+                         lambda c:c['provider_responses']['project']['data'].update(organization_slug='other'),
+                         lambda c:c['provider_responses']['project']['data'].update(ref='other'),
+                         lambda c:c.update(runtime_actions=['resume']),
+                         lambda c:c.update(owner_receipt_url='https://example.com/approval')):
+            capture=copy.deepcopy(original);mutation(capture);path.write_text(json.dumps(capture))
+            with self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_access_and_license_require_exact_raw_api_responses(self):
+        row=self.complete_rollout();access=row['post_transfer_access'];self.check()
+        permission_path=DIRECTORY/access['permission_evidence_url'];license_path=DIRECTORY/access['license_evidence_url']
+        captures={permission_path:json.loads(permission_path.read_text()),license_path:json.loads(license_path.read_text())}
+        cases=[(permission_path,lambda c:c.pop('request_url')),
+            (permission_path,lambda c:c.update(request_url='https://api.github.com/repos/other/repo/collaborators/fhemmerrelias/permission')),
+            (permission_path,lambda c:c['result']['user'].update(login='other')),
+            (permission_path,lambda c:c.update(http_status=404)),
+            (license_path,lambda c:c.pop('request_url')),(license_path,lambda c:c.pop('http_status')),
+            (license_path,lambda c:c.pop('data')),(license_path,lambda c:c['data'].update(id=1)),
+            (license_path,lambda c:c['data']['plan'].update(filled_seats=2))]
+        for path,mutation in cases:
+            capture=copy.deepcopy(captures[path]);mutation(capture);path.write_text(json.dumps(capture))
+            with self.assertRaises(ValueError):self.check()
+            path.write_text(json.dumps(captures[path]))
+        self.check()
+
+    def test_supabase_dashboard_metadata_binds_numeric_organization_to_slug(self):
+        row=next(r for r in self.rows if r['resource_kind']=='supabase_project')
+        self.verify_source_ledger(int(row['repository_id']));path=DIRECTORY/row['smoke_evidence_url']
+        capture=json.loads(path.read_text());project=capture['provider_responses']['project']
+        project['request_url']=project['request_url'].replace('/v1/','/platform/')
+        project['data'].pop('organization_slug');project['data'].update(id=100,organization_id=200)
+        capture['provider_responses']['organization']={'method':'GET','http_status':200,
+            'request_url':'https://api.supabase.com/platform/organizations/tigijbtmewljfqdmdskh',
+            'observed_at':project['observed_at'],'data':{'id':200,'slug':'tigijbtmewljfqdmdskh'}}
+        path.write_text(json.dumps(capture));self.check()
+        for value in (201,None):
+            capture['provider_responses']['organization']['data']['id']=value;path.write_text(json.dumps(capture))
+            with self.assertRaisesRegex(ValueError,'actual owner project metadata'):self.check()
+
+    def test_final_inventory_derives_every_repository_from_raw_pages(self):
+        at=validator.observed_time('2026-10-07T03:00:00Z','fixture')
+        url='https://api.github.com/orgs/hemsoft-dev/repos?type=all&per_page=100'
+        repo={'id':42,'full_name':'hemsoft-dev/addition','private':True,'visibility':'private',
+            'archived':False,'default_branch':'main'}
+        first={'method':'GET','request_url':url,'http_status':200,'observed_at':at.isoformat(),'data':[],
+            'response_headers':{'Link':'<'+url+'&page=2>; rel="next"'}}
+        second=dict(first,request_url=url+'&page=2',response_headers={},data=[repo])
+        account={'owner':'hemsoft-dev','repositories':[repo],'pages':[first,second]}
+        validator.validate_repository_enumeration(account,at)
+        mutations=(lambda c:c.pop('pages'),lambda c:c.update(pages=c['pages'][:1]),
+            lambda c:c.update(repositories=[]),lambda c:c['pages'][0].update(http_status=403),
+            lambda c:c['pages'][0].update(request_url=url.replace('hemsoft-dev','other')),
+            lambda c:c['pages'][1].update(request_url=url+'&page=3'),
+            lambda c:c['pages'][0].update(response_headers={'Link':'<https://api.github.com/orgs/hemsoft-dev/repos?type=public&per_page=100&page=2>; rel="next"'}),
+            lambda c:c['pages'][1].update(observed_at='2026-10-08T00:00:00Z'))
+        for mutation in mutations:
+            changed=copy.deepcopy(account);mutation(changed)
+            with self.assertRaises(ValueError):validator.validate_repository_enumeration(changed,at)
+        personal={'owner':'HemSoft','repositories':[],'pages':[dict(first,data=[],response_headers={},
+            request_url='https://api.github.com/users/HemSoft/repos?per_page=100')]}
+        with self.assertRaises(ValueError):validator.validate_repository_enumeration(personal,at)
+
+    def test_release_verification_rejects_fabricated_success_and_changed_file(self):
+        row=self.complete_rollout();path=DIRECTORY/row['release_download_verification_url'];download=json.loads(path.read_text())
+        attestation=json.loads((DIRECTORY/download['attestation_evidence_url']).read_text());self.check()
+        argv=tuple(attestation['argv']);original=copy.deepcopy(self.release_results[argv])
+        self.release_verifier.stop()
+        try:
+            with patch.object(validator.subprocess,'run',return_value=subprocess.CompletedProcess(argv,1,'','signature invalid')) as process:
+                with self.assertRaisesRegex(ValueError,'Independent release signature verification failed'):
+                    validator.validate_release_download(row,DIRECTORY,row['repository_id'],row['destination'],
+                        row['deployment_source'],row['deployment_sha'],row['manifest_version'])
+                self.assertEqual(process.call_args.args[0],list(argv))
+        finally:self.release_verifier.start()
+        asset=pathlib.Path(attestation['asset_path']);asset.write_bytes(asset.read_bytes()+b'changed')
+        with self.assertRaisesRegex(ValueError,'Actual downloaded file bytes'):self.check()
+        self.release_results[argv]=original
+
+    def test_release_verification_rejects_an_independently_different_statement(self):
+        row=self.complete_rollout();download=json.loads((DIRECTORY/row['release_download_verification_url']).read_text())
+        attestation=json.loads((DIRECTORY/download['attestation_evidence_url']).read_text());argv=tuple(attestation['argv'])
+        self.release_results[argv]['verificationResult']['statement']['predicate']['databaseId']='2'
+        with self.assertRaisesRegex(ValueError,'Independent cryptographic verification'):self.check()
+
+    def test_missing_local_release_asset_is_downloaded_from_the_exact_canonical_release(self):
+        name='gh-sfl_2.1.0-rc.15_linux_amd64';calls=[]
+        def download(argv,**kwargs):
+            calls.append(argv)
+            self.assertEqual(argv[:8],['gh','release','download','v2.1.0-rc.15','--repo','hemsoft-dev/set-it-free-loop','--pattern',name])
+            self.assertEqual(argv[8],'--dir');self.assertEqual(kwargs['timeout'],60)
+            (pathlib.Path(argv[9])/name).write_bytes(b'synthetic download')
+            return subprocess.CompletedProcess(argv,0,'','')
+        with patch.object(validator.subprocess,'run',side_effect=download):
+            with validator.canonical_release_asset('/missing/'+name,'hemsoft-dev/set-it-free-loop','2.1.0-rc.15',name) as asset:
+                self.assertEqual(asset.name,name);self.assertEqual(asset.read_bytes(),b'synthetic download')
+            self.assertFalse(asset.exists())
+        self.assertEqual(len(calls),1)
 
 if __name__ == '__main__':
     unittest.main()

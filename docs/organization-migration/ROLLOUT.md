@@ -607,13 +607,36 @@ the inspected input. Capture that input after pre-sync inspection and before
 final deployed status. A historical manifest query cannot describe the actual
 configuration consumed by deployment.
 
-For `baseline_preserved`, both the claimed baseline and observed resource must
-match the provider-specific projection of sealed records. Vercel preserves its
-project/account/framework/name and existing deployment targets; Pages preserves
-publication configuration; Supabase preserves the recorded account project;
-Cloudflare preserves the captured zone routing or Worker identity and routing.
-Use actual successful continuity or approved recovery when a deployment changes;
-do not invent equal before/after dictionaries.
+`baseline_preserved` and `preserved_unused` apply only to the owner-approved
+retired modern-web-stack-poc Vercel project and paused dashboard Supabase project.
+Bind the exact owner receipt, unchanged sealed baseline, no runtime actions and
+successful resource metadata GETs. The Supabase GET must show its exact project
+reference, organization slug, name, region and `INACTIVE` state. The retired
+Vercel project must remain disconnected, with preserved production state and
+aliases. Active resources must demonstrate actual continuity. `approved_recovery`
+requires a captured HemSoft-authored decision for the exact resource and action,
+plus the same provider-specific successful GETs as ordinary continuity.
+
+The modern-web-stack-poc Git retirement remains complete. Its older preservation
+receipt lacks the resource response now required by the validator, so the ledger
+records `partial_provider_verified` until fresh metadata proves preservation.
+
+Completed release-download validation reruns `gh release verify-asset` against
+the actual file and compares its independently verified signed statement. If the
+captured local file is absent, download the exact named asset from the canonical
+repository and tag into temporary storage, verify its SHA256 and signature, then
+remove it. This is a read-only network check and never executes the binary.
+Pending records remain offline. CI supplies its read-only GitHub token solely to
+this final validator step.
+
+Post-transfer permission evidence needs the exact destination collaborator
+permission GET, HTTP 200 and raw response identifying `fhemmerrelias` with
+permission `none`. Seat evidence needs the exact `hemsoft-dev` organization GET,
+HTTP 200, organization ID and raw Team plan showing one purchased and filled seat.
+Final inventory stores every raw successful account enumeration GET and response
+headers, follows each `Link` next page, and derives its repository list from those
+pages. Use the authenticated owner-affiliation endpoint for HemSoft to include
+private repositories. Missing pages and independently edited lists fail.
 
 Repository `transfer_evidence_url` must name an independent local capture of the
 destination organization's accepted `repo.transfer` audit event. Preserve its

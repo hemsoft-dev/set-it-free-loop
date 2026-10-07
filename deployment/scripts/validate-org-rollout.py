@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Validate offline migration work records without treating pending work as complete."""
+"""Validate migration records and independently verify completed release downloads."""
 
 import argparse
 import base64
+import contextlib
 import csv
 import datetime
 import hashlib
@@ -10,6 +11,8 @@ import io
 import json
 import pathlib
 import re
+import subprocess
+import tempfile
 import urllib.parse
 import zipfile
 
@@ -401,6 +404,35 @@ def validate_archived_status(row, directory, repo, cutoff):
             'Archived destination status must follow transfer and destination preservation')
 
 
+def run_release_verification(argv):
+    """Execute the verifier; a stored success receipt is not signature proof."""
+    try:
+        result = subprocess.run(argv, capture_output=True, text=True, timeout=60, check=False)
+        require(result.returncode == 0, 'Independent release signature verification failed')
+        return json.loads(result.stdout)
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+        raise ValueError('Independent release signature verification could not complete') from exc
+
+
+@contextlib.contextmanager
+def canonical_release_asset(path, source, version, name):
+    asset = pathlib.Path(path)
+    if asset.is_file():
+        yield asset
+        return
+    with tempfile.TemporaryDirectory(prefix='sfl-canonical-release-') as directory:
+        argv = ['gh', 'release', 'download', 'v' + version, '--repo', source,
+                '--pattern', name, '--dir', directory]
+        try:
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=60, check=False)
+            require(result.returncode == 0, 'Canonical release asset download failed')
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ValueError('Canonical release asset download could not complete') from exc
+        asset = pathlib.Path(directory) / name
+        require(asset.is_file(), 'Canonical release download did not produce the exact asset')
+        yield asset
+
+
 def validate_release_download(proof, directory, repository_id, repository, source, sha, version):
     release_url = 'https://github.com/' + source + '/releases/tag/v' + version
     download = local_capture(proof.get('release_download_verification_url'), directory, 'Release download')
@@ -455,6 +487,15 @@ def validate_release_download(proof, directory, repository_id, repository, sourc
     require(len(source_subjects) == len(asset_subjects) == 1 and source_subjects[0].get('digest', {}).get('sha1') == sha and
             asset_subjects[0].get('digest', {}).get('sha256') == download['expected_sha256'],
             'Downloaded digest must match the independently verified signed asset and source commit')
+    with canonical_release_asset(attestation['asset_path'], source, version, download['asset_name']) as asset:
+        with asset.open('rb') as stream:
+            actual = hashlib.file_digest(stream, 'sha256').hexdigest()
+        require(actual == download['actual_sha256'], 'Actual downloaded file bytes must match the claimed release digest')
+        independent_argv = list(argv)
+        independent_argv[4] = str(asset)
+        independent = run_release_verification(independent_argv)
+        require(independent.get('verificationResult', {}).get('statement') == statement,
+                'Independent cryptographic verification must confirm the captured release statement and actual asset')
 
 
 def validate_final_onboarding(proof, directory, expected, organization, app_id, cutover=None, terminal_times=None):
@@ -665,6 +706,41 @@ def validate_workflow_contents(workflow, repository, revision):
             'Fixture source must match its independently captured immutable Git blob identity')
 
 
+def validate_repository_enumeration(account, captured_at):
+    owner = account['owner']
+    url = ('https://api.github.com/user/repos?affiliation=owner&per_page=100' if owner == 'HemSoft' else
+           'https://api.github.com/orgs/' + owner + '/repos?type=all&per_page=100')
+    pages = account.get('pages')
+    require(isinstance(pages, list) and bool(pages), 'Final inventory needs raw complete repository enumeration pages')
+    repositories = []
+    for page in pages:
+        require(url is not None and page.get('request_url') == url and page.get('http_status') == 200 and
+                page.get('method') == 'GET' and isinstance(page.get('data'), list) and
+                isinstance(page.get('response_headers'), dict) and
+                observed_time(page.get('observed_at'), 'Final inventory page') <= captured_at,
+                'Final inventory pages need successful exact account GETs, response headers and capture times')
+        repositories.extend(page['data'])
+        headers = {key.lower(): value for key, value in page['response_headers'].items()}
+        links = re.findall(r'<([^>]+)>;\s*rel="next"', headers.get('link', ''))
+        require(len(links) <= 1, 'Final inventory pagination has ambiguous next links')
+        url = links[0] if links else None
+        if url is not None:
+            parsed = urllib.parse.urlsplit(url)
+            query = urllib.parse.parse_qs(parsed.query)
+            require(parsed.scheme == 'https' and parsed.netloc == 'api.github.com' and
+                    parsed.path == ('/user/repos' if owner == 'HemSoft' else '/orgs/' + owner + '/repos') and
+                    query == dict({'affiliation':['owner']} if owner == 'HemSoft' else {'type':['all']},
+                                  per_page=['100'], page=query.get('page')) and
+                    isinstance(query.get('page'), list) and len(query['page']) == 1 and
+                    re.fullmatch(r'[1-9][0-9]*', query['page'][0]) is not None,
+                    'Final inventory pagination must stay on its exact account endpoint')
+    require(url is None, 'Final inventory omitted a captured next repository page')
+    fields = ('id', 'full_name', 'private', 'visibility', 'archived', 'default_branch')
+    project = lambda rows: [{key: row[key] for key in fields if key in row} for row in rows]
+    require(project(repositories) == project(account['repositories']),
+            'Final inventory list must derive from all raw account repository pages')
+
+
 def validate_final_inventory(proof, directory, expected, retained, approved_onboarding=None, pilot_branches=None):
     require(isinstance(proof, dict), 'Final completion needs a fresh independent repository inventory')
     reference = proof.get('evidence_url')
@@ -690,6 +766,7 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
     for account in accounts:
         require(account.get('state') == 'observed' and account.get('all_pages') is True and
                 isinstance(account.get('repositories'), list), 'Final inventory enumeration must be complete')
+        validate_repository_enumeration(account, captured_at)
         for repo in account['repositories']:
             repo_id = repo.get('id')
             require(type(repo_id) is int and repo_id not in actual and
@@ -1315,11 +1392,17 @@ def validate_post_transfer_access(access, directory, repo, earliest):
     require(permission.get('phase') == 'post_transfer' and permission.get('repository_id') == repo['id'] and
             permission.get('repository') == repo['destination'] and permission.get('account') == 'fhemmerrelias' and
             permission.get('effective_permission') == 'none' and
-            permission.get('http_status') == 200 and permission.get('result',{}).get('permission') == 'none',
+            permission.get('request_url') == 'https://api.github.com/repos/' + repo['destination'] +
+            '/collaborators/fhemmerrelias/permission' and permission.get('http_status') == 200 and
+            permission.get('result',{}).get('permission') == 'none' and
+            permission['result'].get('user', {}).get('login') == 'fhemmerrelias',
             'Post-transfer permission capture must prove the specified account has no access')
     require(license.get('phase') == 'post_transfer' and license.get('organization_id') == 338855369 and
             license.get('organization') == 'hemsoft-dev' and
-            license.get('plan') == {'name':'team','filled_seats':1,'seats':1},
+            license.get('request_url') == 'https://api.github.com/orgs/hemsoft-dev' and license.get('http_status') == 200 and
+            license.get('data', {}).get('id') == 338855369 and license['data'].get('login') == 'hemsoft-dev' and
+            license.get('plan') == {'name':'team','filled_seats':1,'seats':1} and
+            all(license['data'].get('plan', {}).get(k) == v for k, v in license['plan'].items()),
             'Post-transfer license capture must prove the existing one-seat organization plan')
     for capture in (permission, license):
         require(observed_time(capture.get('observed_at'), 'Post-transfer access') > earliest and
@@ -1614,6 +1697,8 @@ def validate_provider_success(smoke, row, inventory, directory, repository):
             urls.add(url.replace('https://api.cloudflare.com/client/v4/', 'https://dash.cloudflare.com/api/v4/', 1))
         if url.startswith('https://api.vercel.com/'):
             urls.add(url.replace('https://api.vercel.com/', 'https://vercel.com/api/', 1))
+        if url.startswith('https://api.supabase.com/v1/projects/') or url.startswith('https://api.supabase.com/v1/organizations/'):
+            urls.add(url.replace('https://api.supabase.com/v1/', 'https://api.supabase.com/platform/', 1))
         require(capture.get('request_url') in urls and capture.get('http_status') == 200 and
                 capture.get('method') == 'GET' and at <= observed,
                 'Provider success needs successful exact resource GETs before its capture')
@@ -1691,6 +1776,20 @@ def validate_provider_success(smoke, row, inventory, directory, repository):
                 runner.get('status') == 'online' and runner.get('busy') is False and
                 {label.get('name') for label in runner.get('labels', [])} == {'self-hosted', 'Linux', 'X64', 'mini', 'yahtzee'},
                 'Runner success needs its actual online idle repository registration and preserved labels')
+    elif kind == 'supabase_project':
+        baseline = provider_preservation_baseline(row, inventory, directory)
+        require(resource == 'cevpnetigzotgstxxjpm' and row.get('smoke_outcome') in {'baseline_preserved', 'preserved_unused'},
+                'Supabase runtime success cannot replace the approved unused paused disposition')
+        project = response('project', 'https://api.supabase.com/v1/projects/' + resource)
+        organization_matches = project.get('organization_slug') == baseline['organization']
+        if responses['project']['request_url'].startswith('https://api.supabase.com/platform/'):
+            organization = response('organization', 'https://api.supabase.com/v1/organizations/' + baseline['organization'])
+            organization_matches = organization.get('slug') == baseline['organization'] and \
+                project.get('organization_id') is not None and organization.get('id') == project['organization_id']
+        require(isinstance(project, dict) and project.get('ref') == resource and
+                project.get('name') == baseline['name'] and project.get('region') == baseline['region'] and
+                organization_matches and project.get('status') == 'INACTIVE',
+                'Supabase preservation needs the actual owner project metadata and paused state')
     else:
         raise ValueError('Provider success needs a supported provider-specific observation; preserve unused resources separately')
     return min(times)
@@ -1867,15 +1966,29 @@ def validate_ledger_rows(rows, inventory, directory, expected, retained, candida
             if row['smoke_outcome'] == 'approved_recovery':
                 require(smoke.get('recovery_success') is True and smoke.get('approved_by') == 'HemSoft',
                         'Integration recovery needs owner approval and a successful result')
-                evidence(smoke.get('owner_receipt_url'), directory)
-            elif row['smoke_outcome'] == 'preserved_unused':
-                require(smoke.get('resource_unchanged') is True and smoke.get('runtime_actions') == [],
-                        'Unused integration must remain preserved without runtime operations')
-                evidence(smoke.get('owner_receipt_url'), directory)
-            elif row['smoke_outcome'] == 'baseline_preserved':
+                approval = local_capture(smoke.get('owner_approval_evidence_url'), directory, 'Provider recovery approval')
+                decision = {'repository_id':repo_id, 'repository':smoke_repository, 'provider':row['provider'],
+                            'resource_id':row['resource_id'], 'disposition':'approved_recovery',
+                            'reason':approval.get('reason')}
+                require(text(decision['reason']) and all(approval.get(k) == v for k, v in decision.items()),
+                        'Provider recovery approval must identify this exact resource and action')
+                validate_owner_approval_comment(approval.get('owner_comment_evidence_url'), directory,
+                    smoke.get('owner_receipt_url'), observed_time(approval.get('approved_at'), 'Provider recovery approval'),
+                    decision, smoke_observed_at)
+                smoke_observed_at = validate_provider_success(smoke, row, inventory, directory, smoke_repository)
+            elif row['smoke_outcome'] in {'baseline_preserved', 'preserved_unused'}:
+                approvals = {('vercel_project', 'prj_hPjAbxtMlCi3A5waKxQpjATto0ae'):
+                             'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048',
+                             ('supabase_project', 'cevpnetigzotgstxxjpm'):
+                             'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6030145370'}
+                require((kind, row.get('resource_id')) in approvals and
+                        smoke.get('owner_receipt_url') == approvals[(kind, row.get('resource_id'))] and
+                        smoke.get('runtime_actions') == [] and smoke.get('resource_unchanged') is True,
+                        'Preservation-only outcomes require an explicitly approved unused resource and no runtime actions')
                 baseline = provider_preservation_baseline(row, inventory, directory)
                 require(smoke.get('baseline') == baseline and smoke.get('observed_resource') == baseline,
                         'Baseline preservation must match the sealed provider resource and independent observation')
+                smoke_observed_at = validate_provider_success(smoke, row, inventory, directory, smoke_repository)
             else:
                 require(smoke.get('continuity_verified') is True, 'Integration success needs verified continuity')
                 smoke_observed_at = validate_provider_success(smoke, row, inventory, directory, smoke_repository)

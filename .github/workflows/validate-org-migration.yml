@@ -47,4 +47,6 @@ jobs:
       - name: Test pending and completed migration work records
         run: python3 -B -m unittest discover -s deployment/tests -p test_org_rollout.py -v
       - name: Validate ledger coverage and rollout completion evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 -B deployment/scripts/validate-org-rollout.py docs/organization-migration

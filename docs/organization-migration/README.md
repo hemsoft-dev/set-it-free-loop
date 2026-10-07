@@ -430,6 +430,10 @@ artifact. The successful check's full external ID must match their context,
 request ID, creation time and artifact ID. Pilot metadata supplies the actual
 default branch; its required gate and final inventory must preserve that branch.
 All offline regression captures are synthetic and do not claim live transfers.
+Pending-record checks are offline. Completed release-download records additionally
+run the real GitHub signature verifier against file bytes, downloading the exact
+canonical asset when its captured local path is unavailable. Captured success
+flags and attestation JSON alone cannot satisfy this gate.
 
 Successful observer checks now publish an execution record containing their
 Actions run ID and attempt, execution/workflow revisions, exact check ID and
