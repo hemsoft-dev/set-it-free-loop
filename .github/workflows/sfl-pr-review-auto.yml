@@ -513,10 +513,9 @@ jobs:
             const registeredRequestIdsFromStatuses = (statuses, comments = triggerComments) =>
               new Set([...historicalRequestIdsFromStatuses(statuses, comments)].filter(id =>
                 isOwnerRequest(comments.find(comment => comment.id === id))));
-            const hasHistoricalBaseConflict = (comments, statuses, requestId) => {
+            const hasHistoricalBaseConflict = (comments, statuses) => {
               const historical = historicalRequestIdsFromStatuses(statuses, comments);
               for (const id of historical) {
-                if (requestId !== undefined && id !== requestId) continue;
                 const comment = comments.find(candidate => candidate.id === id);
                 if (!comment) return true;
                 const creator = ((comment.user && comment.user.login) || "").toLowerCase();
@@ -777,14 +776,17 @@ jobs:
             );
             const contextToken = reviewContextToken(initialChecks);
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
+            const conflictingBaseRequest = hasHistoricalBaseConflict(triggerComments, requestStatuses) || triggerComments.some(
+              comment => (isOwnerRequest(comment) || historicalRequestIdsFromStatuses(requestStatuses).has(comment.id)) &&
+                (comment.body || "").startsWith("@codex review") &&
+                (comment.body || "").includes(headMarker) &&
+                !(comment.body || "").includes(baseMarker),
+            );
             const matchingRequests = candidateRequests.filter(
               ({comment}) => (comment.body || "").includes(marker),
             );
             const request = matchingRequests[0];
-            // Validate the selected request against its immutable original base.
-            // Earlier base contexts cannot permanently poison a fresh retry.
-            const requestMatchesCurrentBase = Boolean(request) &&
-              !hasHistoricalBaseConflict(triggerComments, requestStatuses, request.comment.id);
+            const requestMatchesCurrentBase = Boolean(request) && !conflictingBaseRequest;
             const openPullsForCurrentHead = async () => {
               const candidates = await github.paginate(github.rest.pulls.list, {
                 owner, repo, state: "open", per_page: 100,
@@ -901,8 +903,10 @@ jobs:
             );
             await refreshRequesterPermissions(latestTriggerComments, latestRequestStatuses);
             const latestOriginalRequest = latestTriggerComments.find(comment => comment.id === request.comment.id);
-            if (hasHistoricalBaseConflict(latestTriggerComments, latestRequestStatuses, request.comment.id)) {
-              core.setFailed("Selected registered request belongs to another base");
+            if (hasHistoricalBaseConflict(latestTriggerComments, latestRequestStatuses) || latestTriggerComments.some(comment =>
+                historicalRequestIdsFromStatuses(latestRequestStatuses, latestTriggerComments).has(comment.id) &&
+                (comment.body || "").includes(headMarker) && !(comment.body || "").includes(baseMarker))) {
+              core.setFailed("Historical registered request belongs to another base");
               return;
             }
             if (!latestOriginalRequest || !isOwnerRequest(latestOriginalRequest) ||
@@ -1026,8 +1030,7 @@ jobs:
               const currentRequest = comments.find(comment => comment.id === request.comment.id);
               const requestStillAuthorized = Boolean(currentRequest) && isOwnerRequest(currentRequest) &&
                 registrations.has(currentRequest.id) && currentRequest.body === request.comment.body &&
-                currentRequest.updated_at === currentRequest.created_at &&
-                !hasHistoricalBaseConflict(comments, statuses, currentRequest.id);
+                currentRequest.updated_at === currentRequest.created_at;
               return {
                 requestStillAuthorized,
                 pull: currentPull.data,

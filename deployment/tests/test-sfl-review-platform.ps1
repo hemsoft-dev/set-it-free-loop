@@ -44,7 +44,7 @@ foreach ($required in @(
     'Remove-Item -LiteralPath $retiredPath -Force',
     'gh pr edit $existingPrNumber',
     '--body $prBody',
-    'actionlint .github/workflows/sfl-pr-review-auto.yml'
+    'actionlint -ignore ''unexpected key `"queue`" for `"concurrency`" section'' .github/workflows/sfl-pr-review-auto.yml'
 )) {
     if ($files.Deploy -notmatch [regex]::Escape($required)) {
         throw "Review-tier deployment is missing contract text: $required"

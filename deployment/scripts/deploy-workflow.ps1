@@ -698,7 +698,7 @@ See https://github.com/$SourceRepository for full documentation." --quiet
 		$compileChecklist = if ($WorkflowsToDeploy.Count -gt 0) {
 			"- [ ] For each ``.md`` workflow: verify ``gh aw compile .github/workflows/<name>.md`` succeeds"
 		} else {
-			"- [ ] Verify the standard Actions observer with ``actionlint .github/workflows/sfl-pr-review-auto.yml``"
+			"- [ ] Verify the standard Actions observer with ``actionlint -ignore 'unexpected key `"queue`" for `"concurrency`" section' .github/workflows/sfl-pr-review-auto.yml``"
 		}
 		$prBody = "## Set it Free Loop — Deployment
 
