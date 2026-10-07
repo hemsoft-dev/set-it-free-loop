@@ -407,3 +407,47 @@ and strict gate, and repository-bound initial/repeated init, sync and status
 receipts. The final inventory separately accounts for this third operational test
 repository; other additions still need owner decisions. Final completion cannot
 reuse one of the two original pilots for this test.
+
+The pre-transfer credential check must be followed by a complete
+`pre_cutover_source_evidence_url` local JSON capture. Record `phase: pre_cutover`,
+`observed_at`, and both source-owner `accounts` with `state: observed`,
+`all_pages: true`, and every repository's ID, full name, privacy, archive state,
+default branch and current `protections` contract. Reconcile all 67 sealed IDs;
+new repositories, changed metadata or changed protections require updating and
+reviewing the baseline before transfer. Capture `owned_app` registration identity,
+client ID, owner and permissions, `source_installation` identity/all-repository
+selection, and `source_organization_installations` separately from repository
+metadata. The original inaccessible endpoint records remain preserved.
+
+A verified `owned_app_transfer.evidence_url` must load a separate local capture
+with `phase: post_transfer`, `observed_at` after the source refresh, and `app`
+registration metadata proving ID 4448946, the original client ID and permissions,
+and organization owner hemsoft-dev, ID 338855369. An installation record alone
+does not establish App ownership.
+
+The fhemmer access decision requires two local post-transfer captures, observed
+after the source refresh and before `verified_at`. The permission capture binds
+the repository ID/name and fhemmerrelias to the successful permission GET's
+`result.permission: none`; the license capture binds hemsoft-dev's organization
+ID/name to its Team `plan` with one filled seat and one purchased seat.
+
+Protected-source `governance_evidence_url` must load post-transfer configuration
+at the canonical repository ID/name and released revision. Its captured `labels`
+must include every authoritative name, color and description from
+`deployment/governance/labels.json`; its `codeowners` must match
+`deployment/governance/CODEOWNERS`. Capture repository `actions_policy` and
+`workflow_permissions` and preserve their sealed settings. This source check
+does not deploy a consumer manifest.
+
+The unlinked Supabase account-preservation capture must record
+`phase: post_transfer` and an `observed_at` after both App transfer and baseline
+rollout completion. The final all-owner inventory must follow baseline
+completion, creation of the designated new repository, and its final captured
+onboarding status. Earlier readiness captures cannot establish final preservation
+or final repository coverage.
+
+Runner continuity also loads separate local registration, isolation, guest-service
+and `run_evidence_url` captures. Each binds the destination repository and runner
+21 after the source refresh. Require online/idle registration, an active service,
+public DNS/HTTPS success, the six existing private-route checks blocked, no
+Tailscale, and the successful read-only Actions run at the recorded revision.

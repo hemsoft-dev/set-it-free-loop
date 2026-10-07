@@ -159,8 +159,13 @@ class RolloutTests(unittest.TestCase):
     def complete_post_transfer_access(self, row):
         if row['repository_id'] == 1143951439:
             row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
-                paid_seats=1, verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
-                permission_evidence_url='https://example.com/access', license_evidence_url='https://example.com/license')
+                paid_seats=1, verified_by='HemSoft',
+                permission_evidence_url=self.capture({'phase':'post_transfer','repository_id':row['repository_id'],
+                    'repository':row['destination'],'account':'fhemmerrelias','effective_permission':'none',
+                    'http_status':200,'result':{'permission':'none'},'observed_at':'2026-10-07T00:30:00Z'}),
+                license_evidence_url=self.capture({'phase':'post_transfer','organization_id':338855369,
+                    'organization':'hemsoft-dev','plan':{'name':'team','filled_seats':1,'seats':1},
+                    'observed_at':'2026-10-07T00:30:00Z'}),verified_at='2026-10-07T02:00:00Z')
 
     def complete_scope_decision(self, row):
         if row['source_app_access_in_baseline']:
@@ -186,10 +191,20 @@ class RolloutTests(unittest.TestCase):
             ('repository_id','repository','reviewed_sha','run_url','app_id','client_id','owner',
              'installation_id','repository_selection','permission_ceiling_verified')},
             'credential_verification':'success','installation_owner':'HemSoft','target_type':'User',
-            'observed_at':'2026-10-07T03:30:00Z'})
+            'observed_at':'2026-10-07T00:00:00Z'})
         proof['workflow_run_evidence_url']=self.capture({'repository':{'id':proof['repository_id'],'full_name':proof['repository']},
             'html_url':proof['run_url'],'head_sha':proof['reviewed_sha'],'path':proof['workflow'],
             'head_branch':'main','status':'completed','conclusion':'success'})
+        accounts = [{'owner':owner,'state':'observed','all_pages':True,'repositories':[
+            {**{k:repo[k] for k in ('id','full_name','private','archived','default_branch')},
+             'protections':validator.protection_contract(repo)} for repo in self.inventory['repositories']
+            if repo['full_name'].startswith(owner+'/')]} for owner in ('HemSoft','fhemmer')]
+        self.matrix['pre_cutover_source_evidence_url']=self.capture({'phase':'pre_cutover',
+            'observed_at':'2026-10-07T00:10:00Z','accounts':accounts,
+            'owned_app':{'id':4448946,'client_id':'Iv23liwvwJJUh2bUIKLW','owner':{'login':'HemSoft','type':'User'},
+                         'permissions':self.inventory['known_owned_app']['data']['permissions']},
+            'source_installation':{'id':150383874,'app_id':4448946,'owner':'HemSoft','repository_selection':'all'},
+            'source_organization_installations':self.inventory['source_organization_apps']})
         for row in self.matrix['repositories']:
             repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
             if repo['full_name']=='HemSoft/yahtzee':
@@ -198,6 +213,17 @@ class RolloutTests(unittest.TestCase):
                     'run_head_sha':'e'*40,'run_url':'https://github.com/'+repo['destination']+'/actions/runs/1',
                     'registration_evidence_url':'https://example.com/registration','isolation_evidence_url':'https://example.com/isolation',
                     'service_evidence_url':'https://example.com/service'}
+                runner=row['post_transfer_runner']
+                common={'phase':'post_transfer','observed_at':'2026-10-07T02:00:00Z',
+                        'repository_id':repo['id'],'repository':repo['destination'],'runner_id':21}
+                runner['registration_evidence_url']=self.capture(dict(common,runner={'id':21,'status':'online','busy':False}))
+                runner['isolation_evidence_url']=self.capture(dict(common,tailscale_present=False,
+                    public_dns_https='passed',isolation_checks=[{'target':t,'blocked':True} for t in
+                        ('100.101.122.39:22','100.117.202.124:22','100.69.182.27:22','192.168.1.1:80','10.0.0.1:443','172.16.0.1:443')]))
+                runner['service_evidence_url']=self.capture(dict(common,unit='actions.runner.fixture.service',active_state='active'))
+                runner['run_evidence_url']=self.capture(dict(common,read_only=True,run={'repository':{'id':repo['id'],
+                    'full_name':repo['destination']},'html_url':runner['run_url'],'head_sha':runner['run_head_sha'],
+                    'status':'completed','conclusion':'success'}))
             row['destination_protections'] = dict(validator.protection_contract(repo),
                 repository_id=repo['id'],repository=repo['destination'],revision_sha='e'*40,
                 observed_at='2026-10-07T02:00:00Z')
@@ -206,7 +232,10 @@ class RolloutTests(unittest.TestCase):
             self.verify_source_ledger(repo['id'])
 
     def complete_app_transfer(self):
-        self.matrix['owned_app_transfer'].update(status='verified',owner='hemsoft-dev',evidence_url='https://example.com/app-transfer')
+        self.matrix['owned_app_transfer'].update(status='verified',owner='hemsoft-dev',evidence_url=self.capture({
+            'phase':'post_transfer','observed_at':'2026-10-07T01:00:00Z','app':{'id':4448946,
+            'client_id':'Iv23liwvwJJUh2bUIKLW','owner':{'id':338855369,'login':'hemsoft-dev','type':'Organization'},
+            'permissions':self.inventory['known_owned_app']['data']['permissions']}}))
         path=DIRECTORY/'owned-app-organization-installation-evidence.json'
         if not hasattr(self,'original_owned_installation_capture'):
             self.original_owned_installation_capture=path.read_text()
@@ -245,8 +274,13 @@ class RolloutTests(unittest.TestCase):
         self.verify_source_ledger(row['repository_id'])
         if row['repository_id'] == 1143951439:
             row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
-                paid_seats=1, verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
-                permission_evidence_url='https://example.com/access', license_evidence_url='https://example.com/license')
+                paid_seats=1, verified_by='HemSoft',
+                permission_evidence_url=self.capture({'phase':'post_transfer','repository_id':row['repository_id'],
+                    'repository':row['destination'],'account':'fhemmerrelias','effective_permission':'none',
+                    'http_status':200,'result':{'permission':'none'},'observed_at':'2026-10-07T00:30:00Z'}),
+                license_evidence_url=self.capture({'phase':'post_transfer','organization_id':338855369,
+                    'organization':'hemsoft-dev','plan':{'name':'team','filled_seats':1,'seats':1},
+                    'observed_at':'2026-10-07T00:30:00Z'}),verified_at='2026-10-07T02:00:00Z')
         row.update(manifest_identity={'source':row['deployment_source'],'sourceSha':row['deployment_sha'],
                                       'version':row['manifest_version'],'tier':row['selected_tier'],'addons':[],'components':['sfl-pr-review-auto']},
                    manifest_evidence_url='https://example.com/manifest',
@@ -345,6 +379,14 @@ class RolloutTests(unittest.TestCase):
             'release_url':'https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.14',
             'release_verification_url':'https://example.com/checksum',
             'governance_evidence_url':'https://example.com/governance'}
+        root = ROOT / 'deployment/governance'
+        repo = next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        row['in_place_evidence']['governance_evidence_url']=self.capture({'phase':'post_transfer',
+            'repository_id':row['repository_id'],'repository':row['destination'],
+            'revision_sha':row['in_place_evidence']['source_sha'],'observed_at':'2026-10-07T02:00:00Z',
+            'labels':json.loads((root/'labels.json').read_text()),'codeowners':(root/'CODEOWNERS').read_text(),
+            'actions_policy':repo['settings']['actions_policy']['data'],
+            'workflow_permissions':repo['settings']['workflow_permissions']['data']})
         self.bind_review_operations(row,revision=row['in_place_evidence']['source_sha'])
         proof=row['in_place_evidence'];proof['workflow_run_urls']=['https://github.com/'+row['destination']+'/actions/runs/1']
         proof['workflow_operation_receipts']=[{'repository_id':row['repository_id'],'repository':row['destination'],
@@ -808,6 +850,7 @@ class RolloutTests(unittest.TestCase):
                                                 evidence_url='https://example.com/app-transfer')
         with self.assertRaisesRegex(ValueError,'before App transfer'): self.check()
         self.complete_transfer_gates()
+        self.complete_app_transfer()
         self.check()
 
     def test_known_runner_cannot_disappear_or_become_absence(self):
@@ -956,8 +999,13 @@ class RolloutTests(unittest.TestCase):
         row.update(health='pending_rollout', transfer_evidence_url='https://example.com/transfer')
         with self.assertRaisesRegex(ValueError, 'post-transfer access and seat proof'): self.check()
         row['post_transfer_access'].update(status='verified', effective_permission='none', filled_seats=1,
-            paid_seats=1, verified_by='HemSoft', verified_at='2026-10-06T20:00:00-04:00',
-            permission_evidence_url='https://example.com/access', license_evidence_url='https://example.com/license')
+            paid_seats=1, verified_by='HemSoft',
+            permission_evidence_url=self.capture({'phase':'post_transfer','repository_id':row['repository_id'],
+                    'repository':row['destination'],'account':'fhemmerrelias','effective_permission':'none',
+                    'http_status':200,'result':{'permission':'none'},'observed_at':'2026-10-07T00:30:00Z'}),
+                license_evidence_url=self.capture({'phase':'post_transfer','organization_id':338855369,
+                    'organization':'hemsoft-dev','plan':{'name':'team','filled_seats':1,'seats':1},
+                    'observed_at':'2026-10-07T00:30:00Z'}),verified_at='2026-10-07T02:00:00Z')
         self.check()
         original = copy.deepcopy(row['post_transfer_access'])
         for field, value in [('effective_permission','admin'), ('account','HemSoft'), ('repository','fhemmer/hs-cli-confluence-search'),
@@ -1759,6 +1807,98 @@ class RolloutTests(unittest.TestCase):
             for source_workflow in ('validate-gh-sfl.yml','sfl-pr-review-auto.yml','renamed-source-workflow.yml'):
                 with self.subTest(workflow=source_workflow):
                     self.assertTrue(any(fnmatch.fnmatch('.github/workflows/'+source_workflow,path) for path in paths))
+
+
+    def test_app_ownership_requires_registration_capture_not_installation(self):
+        self.complete_transfer_gates();self.complete_app_transfer();self.check()
+        proof=self.matrix['owned_app_transfer'];path=DIRECTORY/proof['evidence_url']
+        original=json.loads(path.read_text())
+        for field,value in [('owner',{'id':8227352,'login':'HemSoft','type':'User'}),
+                            ('id',42),('client_id','wrong'),('permissions',{})]:
+            changed=copy.deepcopy(original);changed['app'][field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'registration metadata'):self.check()
+        path.write_text(json.dumps(original));proof['evidence_url']='https://example.com/installation'
+        with self.assertRaisesRegex(ValueError,'local capture'):self.check()
+
+    def test_permission_and_seats_require_independent_destination_captures(self):
+        row=self.complete_rollout();access=row['post_transfer_access'];self.check()
+        for reference,field,value in [('permission_evidence_url','repository_id',42),
+            ('permission_evidence_url','account','someone'),('permission_evidence_url','effective_permission','admin'),
+            ('license_evidence_url','organization_id',42),('license_evidence_url','plan',{'name':'team','filled_seats':2,'seats':2}),
+            ('permission_evidence_url','observed_at','2026-10-06T00:00:00Z')]:
+            path=DIRECTORY/access[reference];original=json.loads(path.read_text());changed=copy.deepcopy(original)
+            changed[field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+            path.write_text(json.dumps(original))
+
+    def test_pre_cutover_refresh_rejects_omissions_drift_and_stale_apps(self):
+        self.complete_transfer_gates();self.check();path=DIRECTORY/self.matrix['pre_cutover_source_evidence_url']
+        original=json.loads(path.read_text())
+        mutations=[lambda c:c['accounts'][0].update(all_pages=False),
+            lambda c:c['accounts'][0]['repositories'].pop(),
+            lambda c:c['accounts'][0]['repositories'][0].update(private=True),
+            lambda c:c['accounts'][0]['repositories'][0].update(default_branch='other'),
+            lambda c:c['accounts'][0]['repositories'][0]['protections'].update(classic={'main':{}}),
+            lambda c:c.update(observed_at='2026-10-06T00:00:00Z'),
+            lambda c:c['source_installation'].update(repository_selection='selected'),
+            lambda c:c['owned_app'].update(permissions={})]
+        # Flip rather than assume the first repository is public.
+        mutations[2]=lambda c:c['accounts'][0]['repositories'][0].update(private=not c['accounts'][0]['repositories'][0]['private'])
+        for index,mutate in enumerate(mutations):
+            changed=copy.deepcopy(original);mutate(changed);path.write_text(json.dumps(changed))
+            with self.subTest(index=index),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_source_governance_requires_bound_authoritative_configuration(self):
+        row=self.complete_source();self.check();proof=row['in_place_evidence']
+        path=DIRECTORY/proof['governance_evidence_url'];original=json.loads(path.read_text())
+        for field,value in [('repository_id',42),('repository','hemsoft-dev/other'),('revision_sha','f'*40),
+            ('phase','pre_transfer'),('labels',[]),('codeowners','* @someone'),('actions_policy',{}),
+            ('workflow_permissions',{'default_workflow_permissions':'write'})]:
+            changed=copy.deepcopy(original);changed[field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(original));self.check()
+
+    def test_account_preservation_requires_post_rollout_observation(self):
+        cutoff=validator.observed_time('2026-10-07T02:00:00Z','test')
+        capture={'phase':'post_transfer','observed_at':'2026-10-07T03:00:00Z'}
+        validator.validate_preservation_time(capture,cutoff)
+        for changed in ({},dict(capture,phase='pre_transfer'),dict(capture,observed_at='2026-10-07T01:00:00Z'),
+                        dict(capture,observed_at='2026-10-07T02:00:00Z')):
+            with self.subTest(capture=changed),self.assertRaises(ValueError):
+                validator.validate_preservation_time(changed,cutoff)
+
+    def test_final_inventory_follows_new_onboarding_final_status(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);onboarding=self.onboarding_fixture(directory)
+            accounts=[{'owner':o,'state':'observed','all_pages':True,'repositories':[]} for o in ('HemSoft','fhemmer','hemsoft-dev')]
+            for repo_id,(name,visibility) in validator.APPROVED_PILOTS.items():
+                accounts[2]['repositories'].append({'id':repo_id,'full_name':name,'private':visibility=='private','archived':False})
+            accounts[2]['repositories'].append({'id':42,'full_name':onboarding['repository'],'private':True,'archived':False})
+            proof={'observed_at':'2026-10-07T04:00:00Z','evidence_url':'final.json','additional_repositories':[]}
+            path=directory/'final.json'
+            path.write_text(json.dumps({'observed_at':proof['observed_at'],'accounts':accounts}))
+            validator.validate_final_inventory(proof,directory,{}, {},onboarding)
+            for timestamp in ('2026-10-07T01:00:00Z','2026-10-07T02:30:00Z','2026-10-07T03:15:00Z'):
+                proof['observed_at']=timestamp;path.write_text(json.dumps({'observed_at':timestamp,'accounts':accounts}))
+                with self.subTest(timestamp=timestamp),self.assertRaisesRegex(ValueError,'must follow rollout'):
+                    validator.validate_final_inventory(proof,directory,{}, {},onboarding)
+
+
+    def test_runner_continuity_loads_independent_operational_captures(self):
+        self.complete_transfer_gates();self.complete_app_transfer()
+        row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
+        row.update(health='scope_exception',transfer_evidence_url='https://example.com/transfer',
+                   status_evidence_url='https://example.com/status');self.complete_scope_decision(row);self.check()
+        proof=row['post_transfer_runner']
+        for reference,field,value in [('registration_evidence_url','runner',{'id':21,'status':'offline','busy':False}),
+            ('isolation_evidence_url','tailscale_present',True),('isolation_evidence_url','isolation_checks',[]),
+            ('service_evidence_url','active_state','inactive'),('run_evidence_url','read_only',False),
+            ('run_evidence_url','repository_id',42)]:
+            path=DIRECTORY/proof[reference];original=json.loads(path.read_text());changed=copy.deepcopy(original)
+            changed[field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaises(ValueError):self.check()
+            path.write_text(json.dumps(original))
 
 
 if __name__ == '__main__':

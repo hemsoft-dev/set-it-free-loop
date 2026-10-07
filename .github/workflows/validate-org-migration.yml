@@ -5,6 +5,8 @@ on:
     paths:
       - 'gh-sfl/addons.go'
       - 'gh-sfl/init.go'
+      - 'deployment/governance/labels.json'
+      - 'deployment/governance/CODEOWNERS'
       - 'deployment/scripts/capture-org-migration.py'
       - 'deployment/tests/test_org_migration.py'
       - 'deployment/scripts/validate-org-rollout.py'
@@ -16,6 +18,8 @@ on:
     paths:
       - 'gh-sfl/addons.go'
       - 'gh-sfl/init.go'
+      - 'deployment/governance/labels.json'
+      - 'deployment/governance/CODEOWNERS'
       - 'deployment/scripts/capture-org-migration.py'
       - 'deployment/tests/test_org_migration.py'
       - 'deployment/scripts/validate-org-rollout.py'

@@ -396,6 +396,13 @@ def validate_final_inventory(proof, directory, expected, retained, approved_onbo
     require(capture.get('observed_at') == proof.get('observed_at'), 'Final inventory timestamp must match its capture')
     captured_at = datetime.datetime.fromisoformat(capture['observed_at'].replace('Z', '+00:00'))
     require(captured_at.tzinfo is not None, 'Final inventory timestamp needs a timezone')
+    if approved_onboarding is not None:
+        metadata = local_capture(approved_onboarding['metadata_evidence_url'], directory, 'New repository metadata')['metadata']
+        status = local_capture(approved_onboarding['manifest_evidence_url'], directory, 'New repository status')
+        require(captured_at >= max(observed_time(approved_onboarding['rollout_completed_at'], 'Rollout completion'),
+                                  observed_time(metadata['created_at'], 'New repository creation'),
+                                  observed_time(status.get('observed_at'), 'New repository status')),
+                'Final inventory must follow rollout completion, new repository creation and final status')
     accounts = capture.get('accounts')
     require(isinstance(accounts, list) and {x.get('owner') for x in accounts} == {'HemSoft', 'fhemmer', 'hemsoft-dev'} and
             len(accounts) == 3, 'Final inventory must enumerate both sources and the destination')
@@ -542,6 +549,131 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
             captured_gate.get('artifact_identity') == identity,
             'Gate result capture must match the completed gate and recorded immutable review artifact')
     observed_time(captured_gate.get('observed_at'), 'Gate result')
+
+
+
+def validate_source_refresh(proof, directory, inventory, credential):
+    capture = local_capture(proof, directory, 'Pre-cutover source refresh')
+    require(capture.get('phase') == 'pre_cutover', 'Source refresh must precede cutover')
+    timestamp = observed_time(capture.get('observed_at'), 'Source refresh')
+    metadata = local_capture(credential.get('credential_metadata_evidence_url'), directory, 'App credential metadata')
+    require(timestamp >= observed_time(metadata.get('observed_at'), 'App credential metadata'),
+            'Source refresh must follow the credential check')
+    expected = {r['id']: r for r in inventory['repositories']}
+    accounts = capture.get('accounts')
+    require(isinstance(accounts, list) and len(accounts) == 2 and
+            {a.get('owner') for a in accounts} == {'HemSoft', 'fhemmer'}, 'Source refresh must enumerate both owners')
+    actual = {}
+    for account in accounts:
+        require(account.get('all_pages') is True and account.get('state') == 'observed' and
+                isinstance(account.get('repositories'), list), 'Source refresh needs complete owner enumerations')
+        for current in account['repositories']:
+            repo_id = current.get('id')
+            require(repo_id in expected and repo_id not in actual, 'Source refresh contains a new or duplicate repository')
+            baseline = expected[repo_id]
+            require(current.get('full_name', '').startswith(account['owner'] + '/') and
+                    all(current.get(k) == baseline[k] for k in ('full_name','private','archived','default_branch')),
+                    'Source repository metadata changed; reconcile the transfer baseline')
+            require(current.get('protections') == protection_contract(baseline, directory),
+                    'Source protections changed; reconcile the preservation baseline')
+            actual[repo_id] = current
+    require(set(actual) == set(expected), 'Source refresh must cover every sealed repository ID')
+    app = capture.get('owned_app', {})
+    require(app.get('id') == 4448946 and app.get('client_id') == 'Iv23liwvwJJUh2bUIKLW' and
+            app.get('owner') == {'login':'HemSoft','type':'User'} and
+            app.get('permissions') == inventory['known_owned_app']['data']['permissions'] and
+            capture.get('source_installation') == {'id':150383874,'app_id':4448946,'owner':'HemSoft','repository_selection':'all'} and
+            capture.get('source_organization_installations') == inventory['source_organization_apps'],
+            'Source refresh must reconcile owned and installed App settings')
+    return timestamp
+
+
+def validate_app_transfer(proof, directory, inventory, earliest):
+    capture = local_capture(proof.get('evidence_url'), directory, 'App ownership transfer')
+    timestamp = observed_time(capture.get('observed_at'), 'App ownership transfer')
+    app = capture.get('app', {})
+    require(capture.get('phase') == 'post_transfer' and timestamp > earliest and
+            app.get('id') == 4448946 and app.get('client_id') == 'Iv23liwvwJJUh2bUIKLW' and
+            app.get('owner') == {'id':338855369,'login':'hemsoft-dev','type':'Organization'} and
+            app.get('permissions') == inventory['known_owned_app']['data']['permissions'],
+            'App ownership transfer needs post-transfer registration metadata with the original permission ceiling')
+    return timestamp
+
+
+def validate_post_transfer_access(access, directory, repo, earliest):
+    permission = local_capture(access.get('permission_evidence_url'), directory, 'Post-transfer permission')
+    license = local_capture(access.get('license_evidence_url'), directory, 'Post-transfer license')
+    require(permission.get('phase') == 'post_transfer' and permission.get('repository_id') == repo['id'] and
+            permission.get('repository') == repo['destination'] and permission.get('account') == 'fhemmerrelias' and
+            permission.get('effective_permission') == 'none' and
+            permission.get('http_status') == 200 and permission.get('result',{}).get('permission') == 'none',
+            'Post-transfer permission capture must prove the specified account has no access')
+    require(license.get('phase') == 'post_transfer' and license.get('organization_id') == 338855369 and
+            license.get('organization') == 'hemsoft-dev' and
+            license.get('plan') == {'name':'team','filled_seats':1,'seats':1},
+            'Post-transfer license capture must prove the existing one-seat organization plan')
+    for capture in (permission, license):
+        require(observed_time(capture.get('observed_at'), 'Post-transfer access') > earliest and
+                observed_time(capture['observed_at'], 'Post-transfer access') <=
+                observed_time(access.get('verified_at'), 'Access verification'),
+                'Access and license captures must follow source refresh and precede verification')
+
+
+def validate_source_governance(proof, directory, repo):
+    capture = local_capture(proof.get('governance_evidence_url'), directory, 'Protected source governance')
+    require(capture.get('phase') == 'post_transfer' and capture.get('repository_id') == repo['id'] and
+            capture.get('repository') == repo['destination'] and capture.get('revision_sha') == proof['source_sha'],
+            'Source governance capture must match its transferred repository and release revision')
+    observed_time(capture.get('observed_at'), 'Source governance')
+    root = pathlib.Path(__file__).resolve().parents[2]
+    labels = json.loads((root / 'deployment/governance/labels.json').read_text())
+    actual = capture.get('labels')
+    require(isinstance(actual, list), 'Source governance needs captured labels')
+    by_name = {label.get('name'):label for label in actual}
+    require(all(all(by_name.get(label['name'],{}).get(field) == label[field]
+                    for field in ('name','color','description')) for label in labels),
+            'Source governance must preserve every authoritative label')
+    require(capture.get('codeowners') == (root / 'deployment/governance/CODEOWNERS').read_text() and
+            capture.get('actions_policy') == repo['settings']['actions_policy'].get('data') and
+            capture.get('workflow_permissions') == repo['settings']['workflow_permissions'].get('data'),
+            'Source governance must match authoritative CODEOWNERS and baseline Actions policies')
+
+
+def validate_runner_captures(proof, directory, earliest):
+    for field in ('registration_evidence_url','isolation_evidence_url','service_evidence_url','run_evidence_url'):
+        capture = local_capture(proof.get(field), directory, 'Destination runner')
+        require(capture.get('phase') == 'post_transfer' and
+                capture.get('repository_id') == proof['repository_id'] and capture.get('repository') == proof['repository'] and
+                capture.get('runner_id') == proof['runner_id'] and
+                observed_time(capture.get('observed_at'), 'Destination runner') > earliest,
+                'Runner captures must match the destination identity after source refresh')
+        if field == 'registration_evidence_url':
+            require(capture.get('runner',{}).get('id') == proof['runner_id'] and
+                    capture['runner'].get('status') == 'online' and capture['runner'].get('busy') is False,
+                    'Runner registration capture must prove online and idle state')
+        elif field == 'isolation_evidence_url':
+            checks = capture.get('isolation_checks')
+            require(capture.get('tailscale_present') is False and isinstance(checks,list) and len(checks) == 6 and
+                    {c.get('target') for c in checks} == {'100.101.122.39:22','100.117.202.124:22','100.69.182.27:22',
+                        '192.168.1.1:80','10.0.0.1:443','172.16.0.1:443'} and
+                    all(c.get('blocked') is True for c in checks) and capture.get('public_dns_https') == 'passed',
+                    'Runner isolation capture must preserve the six blocked private routes and absence of Tailscale')
+        elif field == 'service_evidence_url':
+            require(text(capture.get('unit')) and capture.get('active_state') == 'active',
+                    'Runner service capture must prove the guest service is active')
+        else:
+            run = capture.get('run', {})
+            require(run.get('repository',{}).get('id') == proof['repository_id'] and
+                    run['repository'].get('full_name') == proof['repository'] and run.get('html_url') == proof['run_url'] and
+                    run.get('head_sha') == proof['run_head_sha'] and run.get('status') == 'completed' and
+                    run.get('conclusion') == 'success' and capture.get('read_only') is True,
+                    'Runner smoke capture must prove a completed destination run at the recorded revision')
+
+
+def validate_preservation_time(capture, cutoff):
+    require(capture.get('phase') == 'post_transfer' and
+            observed_time(capture.get('observed_at'), 'Account preservation') > cutoff,
+            'Account preservation must be observed after rollout and App transfer')
 
 
 def validate(inventory, rows, matrix, directory, scope_decisions=None):
@@ -848,6 +980,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                                       for repo_id in expected if repo_id not in retained)
     if all_transfer_gates_verified:
         validate_app_credential(matrix.get('pre_transfer_credential_verification'), directory)
+        source_refreshed_at = validate_source_refresh(matrix.get('pre_cutover_source_evidence_url'), directory, inventory,
+                                                       matrix['pre_transfer_credential_verification'])
         source_capture = json.loads((directory / 'source-reference-evidence.json').read_text())
         unresolved = {x['repository_id']: x for x in source_capture['repositories'] if x.get('state') != 'observed'}
         tree_refresh = json.loads((directory / 'source-tree-recheck-evidence.json').read_text())
@@ -868,7 +1002,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     if app_transfer['status'] == 'verified':
         require(all_transfer_gates_verified, 'All transfer-target ledger gates must be verified before App transfer')
         require(app_transfer.get('owner') == inventory['destination_login'], 'Transferred App needs its canonical organization owner')
-        evidence(app_transfer.get('evidence_url'), directory)
+        app_transferred_at = validate_app_transfer(app_transfer, directory, inventory, source_refreshed_at)
 
     records = matrix.get('repositories')
     require(isinstance(records, list), 'Matrix needs repository records')
@@ -928,6 +1062,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 require(captured_at.tzinfo is not None, 'Post-transfer access receipt needs a timezone')
                 evidence(access.get('permission_evidence_url'), directory)
                 evidence(access.get('license_evidence_url'), directory)
+                validate_post_transfer_access(access, directory, repo, source_refreshed_at)
         coverage = row.get('destination_sfl_app_access')
         if (health in {'verified', 'source_verified', 'archived_verified', 'scope_exception'} and
                 row['source_app_access_in_baseline']):
@@ -952,6 +1087,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         'Runner smoke must belong to its destination repository')
                 for field in ('registration_evidence_url', 'isolation_evidence_url', 'service_evidence_url', 'run_url'):
                     evidence(proof.get(field), directory)
+                validate_runner_captures(proof, directory, source_refreshed_at)
         if health == 'retained_source':
             decision = retained[repo_id]
             require(row.get('actual_repository') == decision['retained_repository'] and
@@ -985,6 +1121,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             validate_release_download({'release_download_verification_url': proof.get('release_verification_url')},
                                       directory, repo_id, row['destination'], canonical_source,
                                       proof['source_sha'], proof['release_version'])
+            validate_source_governance(proof, directory, repo)
             runs = proof.get('workflow_run_urls')
             require(isinstance(runs, list) and bool(runs), 'Protected source needs in-place workflow runs')
             operations = proof.get('workflow_operation_receipts')
@@ -1317,6 +1454,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 'Final completion needs post-transfer resource continuity, beyond pre-transfer readiness')
         require(all(status == 'verified' for statuses in ledger_statuses.values() for status in statuses),
                 'Final completion needs every retained and transferred resource verified')
+        onboarding = validate_final_onboarding(matrix.get('post_rollout_onboarding'), directory, expected, inventory['destination_login'], owned_app_id)
+        rollout_completed_at = observed_time(onboarding['rollout_completed_at'], 'Rollout completion')
         for resource in account_resources:
             require(resource['status'] == 'verified', 'Final completion needs verified unlinked Supabase preservation')
             reference = resource.get('post_transfer_evidence_url')
@@ -1324,11 +1463,11 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(not urllib.parse.urlsplit(reference).scheme and reference != 'supabase-provider-evidence.json',
                     'Unlinked resource needs an independent post-transfer account capture')
             capture = json.loads((directory / reference).read_text())
+            validate_preservation_time(capture, max(rollout_completed_at, app_transferred_at))
             require(capture.get('resource_id') == resource['resource_id'] and capture.get('resource_owner') == resource['resource_owner'] and
                     capture.get('state') == unlinked_supabase[resource['resource_id']]['state'] and
                     capture.get('resource_changes_made') is False and capture.get('operation') == 'read_only_preservation',
                     'Unlinked Supabase post-transfer capture must preserve the exact account resource and paused state')
-        onboarding = validate_final_onboarding(matrix.get('post_rollout_onboarding'), directory, expected, inventory['destination_login'], owned_app_id)
         proof = matrix.get('final_inventory')
         validate_final_inventory(proof, directory, expected, retained, onboarding)
         require(datetime.datetime.fromisoformat(proof['observed_at'].replace('Z', '+00:00')) >
