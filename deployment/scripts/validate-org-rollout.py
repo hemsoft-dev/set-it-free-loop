@@ -307,6 +307,18 @@ def validate_app_credential(proof, directory):
             'App credential capture must come from its successful reviewed main workflow run')
     terminal_run_time(run, observed_time(run.get('captured_at'), 'App credential run capture'),
                       'App credential workflow')
+    implementations = proof.get('implementation_evidence')
+    paths = (proof['workflow'], 'deployment/scripts/SflGitHubAppBootstrap.psm1')
+    require(isinstance(implementations, dict) and set(implementations) == set(paths),
+            'App credential proof needs both reviewed canonical implementations')
+    for path in paths:
+        capture = local_capture(implementations[path], directory, 'App credential implementation')
+        actual = immutable_contents(capture, proof['repository_id'], proof['repository'], proof['reviewed_sha'], path)
+        require(actual == (pathlib.Path(__file__).resolve().parents[2] / path).read_bytes(),
+                'App credential implementation must equal the reviewed canonical source bytes')
+        require(observed_time(capture.get('observed_at'), 'App credential implementation capture') <=
+                observed_time(run['captured_at'], 'App credential run capture'),
+                'App credential implementation must be captured with its reviewed run')
     validate_run_artifact(proof.get('credential_artifact_evidence_url'), directory, proof['repository'], run,
                           'sfl-app-credential-metadata', 'sfl-app-credential-metadata.json', metadata,
                           observed_time(run['captured_at'], 'App credential run capture'))
@@ -932,6 +944,18 @@ def validate_owner_approval_comment(reference, directory, receipt_url, approved_
     require(approval == decision, 'Owner comment must approve this exact repository decision')
 
 
+def validate_owner_scope(record, decision, directory):
+    """Authenticate recorded global facts using the same owner-comment contract."""
+    capture = local_capture(record.get('owner_comment_evidence_url'), directory, 'Owner scope comment')
+    recorded_at = observed_time(record.get('decision_recorded_at'), 'Owner scope decision')
+    captured_at = observed_time(capture.get('observed_at'), 'Owner scope capture')
+    validate_owner_approval_comment(record['owner_comment_evidence_url'], directory, record['evidence_url'],
+                                    recorded_at, decision, captured_at)
+    require(observed_time(record.get('confirmed_at'), 'Original owner scope confirmation') <= recorded_at,
+            'Structured owner scope cannot precede its original confirmation')
+    return captured_at
+
+
 def validate_app_coverage(coverage, directory, repository_id, repository, app_id, owner, cutover=None,
                           repository_created_at=None):
     require(isinstance(coverage, dict) and coverage.get('status') == 'verified' and
@@ -1250,46 +1274,25 @@ def validate_reference_scan(reference, directory, inventory):
         if revision[0] is None:
             require(row.get('files') == [], 'Uninitialized source cannot claim scanned files')
             continue
-        tree = row.get('tree_response', {})
-        require(tree.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'] +
-                '/git/trees/' + revision[1] + '?recursive=1' and tree.get('http_status') == 200 and
-                tree.get('data', {}).get('sha') == revision[1] and tree['data'].get('truncated') is False and
-                isinstance(tree['data'].get('tree'), list), 'Fresh reference scan needs the complete immutable Git tree')
-        paths = {}
-        for entry in tree['data']['tree']:
-            path = entry.get('path')
-            require(text(path) and path not in paths, 'Fresh source tree paths must be unique')
-            paths[path] = entry
-        relevant = {p for p, entry in paths.items() if entry.get('type') == 'blob' and
-                    ((p.startswith('.github/workflows/') and p.endswith(('.yml', '.yaml', '.md'))) or
-                     p in {'.sfl/sfl.json', 'sfl.json', 'vercel.json', 'fly.toml', 'railway.json',
-                           'railway.toml', 'wrangler.toml', 'wrangler.json', 'wrangler.jsonc',
-                           'azure-pipelines.yml', 'azure-pipelines.yaml', 'supabase/config.toml'})}
-        files = row.get('files')
-        require(isinstance(files, list) and len(files) == len(relevant) and
-                {f.get('path') for f in files} == relevant, 'Fresh scan must read every workflow and installation manifest')
-        references = set()
-        unresolved_secret_scope = False
-        for file in files:
-            path = file['path']
-            body = immutable_contents(file, repo_id, repo['full_name'], revision[0], path)
-            require(file['contents_response']['data']['sha'] == paths[path].get('sha') and
-                    observed_time(file.get('observed_at'), 'Source file capture') <=
-                    observed_time(row['observed_at'], 'Repository reference scan'),
-                    'Scanned file must match the complete Git tree blob')
-            source = body.decode('utf-8')
-            references.update(name.upper() for name in re.findall(r'secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)', source, re.I))
-            references.update(name.upper() for name in re.findall(r"secrets\s*\[\s*['\"]([^'\"]+)['\"]\s*\]", source, re.I))
-            unresolved_secret_scope |= bool(re.search(r"(?im)^\s*secrets\s*:\s*(['\"]?)inherit\1\s*(?:#.*)?$", source))
-            unresolved_secret_scope |= any(re.fullmatch(r"\s*['\"][A-Za-z_][A-Za-z0-9_]*['\"]\s*", match[1]) is None
-                for match in re.finditer(r'\bsecrets\s*\[([^\]]*)\]', source, re.I))
-            unresolved_secret_scope |= any(re.search(r'\bsecrets\b(?!\s*(?:\.[A-Za-z_]|\[))', expression, re.I)
-                for expression in re.findall(r'\$\{\{(.*?)\}\}', source, re.S))
-            if path in {'.sfl/sfl.json', 'sfl.json'}:
-                require(file.get('manifest') == json.loads(body), 'Fresh installation manifest must derive from immutable bytes')
-                require(repo_id not in manifests or manifests[repo_id] == file['manifest'],
-                        'Fresh canonical and legacy installation manifests disagree')
-                manifests[repo_id] = file['manifest']
+        branch_scans = row.get('branch_scans')
+        other_heads = set(revision[2].values()) - {revision[0]}
+        require(isinstance(branch_scans, list) and len(branch_scans) == len(other_heads) and
+                {branch.get('head_sha') for branch in branch_scans} == other_heads,
+                'Fresh scan must inspect every distinct non-default branch head')
+        references, unresolved_secret_scope = set(), False
+        for branch in [row] + branch_scans:
+            head, tree_sha = branch.get('head_sha'), branch.get('tree_sha')
+            commit = branch.get('commit_response', {})
+            require(immutable_sha(tree_sha) and commit.get('http_status') == 200 and
+                    commit.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'] + '/git/commits/' + head and
+                    commit.get('data', {}).get('sha') == head and commit['data'].get('tree', {}).get('sha') == tree_sha,
+                    'Scanned branch must match its immutable commit and tree')
+            branch_references, branch_unresolved, branch_manifests = validate_branch_reference_files(
+                branch, repo, observed_time(row['observed_at'], 'Repository reference scan'))
+            references.update(branch_references)
+            unresolved_secret_scope |= branch_unresolved
+            if head == revision[0]:
+                manifests.update({repo_id: manifest for manifest in branch_manifests})
         require({name.upper() for name in row.get('referenced_secret_names', [])} == references,
                 'Fresh credential reference conclusions must derive from every captured workflow')
         unused = local_capture('legacy-unused-credential-owner-evidence.json', directory, 'Unused legacy credential scope')
@@ -1300,6 +1303,52 @@ def validate_reference_scan(reference, directory, inventory):
                 'A newly referenced legacy credential needs reconciliation and fresh validation')
     return revisions, timestamp, manifests
 
+
+def validate_branch_reference_files(branch, repo, captured_at):
+    repo_id = repo['id']
+    head, tree_sha = branch['head_sha'], branch['tree_sha']
+    tree = branch.get('tree_response', {})
+    require(tree.get('request_url') == 'https://api.github.com/repos/' + repo['full_name'] +
+            '/git/trees/' + tree_sha + '?recursive=1' and tree.get('http_status') == 200 and
+            tree.get('data', {}).get('sha') == tree_sha and tree['data'].get('truncated') is False and
+            isinstance(tree['data'].get('tree'), list), 'Fresh reference scan needs the complete immutable Git tree')
+    paths = {}
+    for entry in tree['data']['tree']:
+        path = entry.get('path')
+        require(text(path) and path not in paths, 'Fresh source tree paths must be unique')
+        paths[path] = entry
+    relevant = {p for p, entry in paths.items() if entry.get('type') == 'blob' and
+                ((p.startswith('.github/workflows/') and p.endswith(('.yml', '.yaml', '.md'))) or
+                 p in {'.sfl/sfl.json', 'sfl.json', 'vercel.json', 'fly.toml', 'railway.json',
+                       'railway.toml', 'wrangler.toml', 'wrangler.json', 'wrangler.jsonc',
+                       'azure-pipelines.yml', 'azure-pipelines.yaml', 'supabase/config.toml'})}
+    files = branch.get('files')
+    require(isinstance(files, list) and len(files) == len(relevant) and
+            {f.get('path') for f in files} == relevant, 'Fresh scan must read every workflow and installation manifest')
+    references = set()
+    unresolved_secret_scope = False
+    manifests = []
+    for file in files:
+        path = file['path']
+        body = immutable_contents(file, repo_id, repo['full_name'], head, path)
+        require(file['contents_response']['data']['sha'] == paths[path].get('sha') and
+                observed_time(file.get('observed_at'), 'Source file capture') <=
+                captured_at,
+                'Scanned file must match the complete Git tree blob')
+        source = body.decode('utf-8')
+        references.update(name.upper() for name in re.findall(r'secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)', source, re.I))
+        references.update(name.upper() for name in re.findall(r"secrets\s*\[\s*['\"]([^'\"]+)['\"]\s*\]", source, re.I))
+        unresolved_secret_scope |= bool(re.search(r"(?im)^\s*secrets\s*:\s*(['\"]?)inherit\1\s*(?:#.*)?$", source))
+        unresolved_secret_scope |= any(re.fullmatch(r"\s*['\"][A-Za-z_][A-Za-z0-9_]*['\"]\s*", match[1]) is None
+            for match in re.finditer(r'\bsecrets\s*\[([^\]]*)\]', source, re.I))
+        unresolved_secret_scope |= any(re.search(r'\bsecrets\b(?!\s*(?:\.[A-Za-z_]|\[))', expression, re.I)
+            for expression in re.findall(r'\$\{\{(.*?)\}\}', source, re.S))
+        if path in {'.sfl/sfl.json', 'sfl.json'}:
+            require(file.get('manifest') == json.loads(body), 'Fresh installation manifest must derive from immutable bytes')
+            require(not manifests or manifests[0] == file['manifest'],
+                    'Fresh canonical and legacy installation manifests disagree')
+            manifests.append(file['manifest'])
+    return references, unresolved_secret_scope, manifests
 
 def validate_source_refresh(proof, directory, inventory, credential):
     capture = local_capture(proof, directory, 'Pre-cutover source refresh')
@@ -1765,11 +1814,24 @@ def validate_pre_sync_installation(proof, directory, row):
     require(isinstance(files, dict) and set(files) == {'.sfl/sfl.json','sfl.json'} and
             set(proof['manifest_paths']) == set(files), 'Pre-sync capture must inspect both manifest locations')
     for path, value in files.items():
-        require(isinstance(value, dict) and value.get('revision_sha') == proof['revision_sha'] and
+        require(isinstance(value, dict) and value.get('repository_id') == row['repository_id'] and
+                value.get('repository') == row['destination'] and value.get('revision_sha') == proof['revision_sha'] and
                 value.get('path') == path and value.get('state') in {'absent','observed'},
                 'Manifest location capture must bind its path and pre-sync revision')
         require(value.get('http_status') == (404 if value['state']=='absent' else 200),
                 'Manifest absence needs a captured 404; presence needs a successful contents read')
+        response = value.get('contents_response', {})
+        require(response.get('request_url') == 'https://api.github.com/repos/' + row['destination'] +
+                '/contents/' + path + '?ref=' + proof['revision_sha'] and
+                response.get('http_status') == value['http_status'],
+                'Pre-sync manifest needs its exact immutable contents response')
+        if value['state'] == 'absent':
+            require(response.get('data', {}).get('message') == 'Not Found',
+                    'Pre-sync absence must derive from the actual contents 404')
+        else:
+            content = immutable_contents(value, row['repository_id'], row['destination'], proof['revision_sha'], path)
+            require(value.get('manifest') == json.loads(content),
+                    'Pre-sync configuration must derive from immutable captured manifest contents')
     primary = files['.sfl/sfl.json'] if files['.sfl/sfl.json']['state']=='observed' else files['sfl.json']
     if proof['state'] == 'absent':
         require(all(value['state']=='absent' for value in files.values()) and
@@ -2324,6 +2386,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             external_scope.get('active_external_resources') ==
             'Only the inventoried Vercel, Cloudflare, Supabase, GitHub Pages and yahtzee runner resources',
             'Provider absence must match the approved owner evidence and exact transfer scope')
+    owner_scope_times = [validate_owner_scope(absence, {
+        'scope': absence['scope'], 'providers': sorted(absence['providers']), 'disposition': absence['disposition']}, directory),
+        validate_owner_scope(external_scope, {field: external_scope[field] for field in
+            ('scope', 'active_external_resources', 'blacksmith_usage', 'modern_web_stack_poc_usage', 'database_treatment')}, directory)]
     provider_apps = {'Azure Pipelines', 'Railway App', 'Fly.io', 'Vercel'}
     candidates = {repo_id: set() for repo_id in expected}
     for repo_id, repo in expected.items():
@@ -2424,6 +2490,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 set(names) == expected_unused[repo_id], 'Unused credential artifact identity or names differ from scanned owner scope')
         captured_unused[repo_id] = set(names)
     require(captured_unused == expected_unused, 'Unused credential artifact must retain the exact 42-repository scope')
+    owner_scope_times.append(validate_owner_scope(unused_capture, {
+        'repository_count': 42, 'disposition': 'Unused by external clients',
+        'repositories': unused_capture['repositories']}, directory))
     ledger_context = (inventory, directory, expected, retained, candidates, expected_unused,
                       runner_resources, vercel_resources, other_resources, external_scope)
     ledger_statuses, post_transfer_smokes = validate_ledger_rows(rows, *ledger_context)
@@ -2433,6 +2502,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         validate_app_credential(matrix.get('pre_transfer_credential_verification'), directory)
         source_refreshed_at, scanned_at, captured_manifests = validate_source_refresh(matrix.get('pre_cutover_source_evidence_url'), directory, inventory,
                                                        matrix['pre_transfer_credential_verification'])
+        require(all(at <= source_refreshed_at for at in owner_scope_times),
+                'Global owner scope must be authenticated before the pre-cutover source refresh')
         validate_ledger_readiness(matrix.get('pre_cutover_ledger_evidence_url'), rows, directory,
                                  ledger_context, source_refreshed_at, scanned_at)
         source_capture = json.loads((directory / 'source-reference-evidence.json').read_text())

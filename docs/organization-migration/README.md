@@ -224,6 +224,31 @@ releases and integration settings for the transfer receipt. Verify App coverage,
 the integration ledger, billing, protections, membership and both collision
 names. Stop on unknown or conflicting state.
 
+The fresh reference scan reads the recursive tree and all relevant source files
+at every distinct captured branch head. `branch_scans` contains non-default
+heads, each with its immutable commit/tree responses and file bytes. Branches
+sharing one head need one scan. Secret references and unresolved inherited or
+dynamic secret access are reconciled across all branches; the default branch
+alone supplies the installed manifest. An unscanned branch cannot clear a
+credential waiver.
+
+The source App credential receipt includes immutable contents captures for
+`.github/workflows/verify-sfl-app-credential.yml` and
+`deployment/scripts/SflGitHubAppBootstrap.psm1` at the successful run SHA. Both
+must equal the reviewed canonical bytes. Successful artifact output without
+those implementation captures cannot clear the transfer gate.
+
+Pre-sync inspection authenticates both manifest paths at the actual input SHA.
+Presence derives from encoded contents and their Git blob identity. Absence
+requires the exact contents endpoint's 404 response. Parsed tier, add-ons and
+components must equal the captured manifest bytes.
+
+Provider absence, the inventoried external-resource scope and the 42 unused
+legacy credential entries include successful raw owner-comment captures. The
+shared owner identity and structured-decision checks bind their exact scope to
+the existing HemSoft receipts. These captures must precede the final source
+refresh. A local summary or comment URL alone cannot establish an owner fact.
+
 ## Current execution scope
 
 Franz's [October 6 retention decision](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635)

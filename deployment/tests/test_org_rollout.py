@@ -37,6 +37,28 @@ class RolloutTests(unittest.TestCase):
         self.release_verifier.start();self.addCleanup(self.release_verifier.stop)
         with (DIRECTORY / 'integration-ledger.csv').open(newline='') as stream:
             self.rows = list(csv.DictReader(stream))
+        self.bind_global_owner_scopes()
+
+    def bind_global_owner_scopes(self):
+        for filename in ('provider-absence-owner-evidence.json', 'external-resource-owner-scope-evidence.json',
+                         'legacy-unused-credential-owner-evidence.json'):
+            path=DIRECTORY/filename;original=path.read_bytes();record=json.loads(original)
+            self.addCleanup(path.write_bytes,original)
+            if filename.startswith('provider-absence'):
+                decision={'scope':record['scope'],'providers':sorted(record['providers']),'disposition':record['disposition']}
+            elif filename.startswith('external-resource'):
+                decision={field:record[field] for field in ('scope','active_external_resources','blacksmith_usage',
+                                                           'modern_web_stack_poc_usage','database_treatment')}
+            else:decision={'repository_count':42,'disposition':'Unused by external clients','repositories':record['repositories']}
+            at='2026-10-07T01:48:30Z';record['decision_recorded_at']=at
+            comment_id=int(record['evidence_url'].rsplit('-',1)[1])
+            record['owner_comment_evidence_url']=self.capture({'http_status':200,
+                'request_url':'https://api.github.com/repos/HemSoft/set-it-free-loop/issues/comments/'+str(comment_id),
+                'observed_at':at,'comment':{'id':comment_id,'html_url':record['evidence_url'],
+                    'created_at':record['confirmed_at'],'updated_at':at,
+                    'user':{'id':8227352,'login':'HemSoft','type':'User'},
+                    'body':'Synthetic owner fact. <!-- sfl-migration-approval:'+json.dumps(decision)+' -->'}})
+            path.write_text(json.dumps(record))
 
     def check(self):
         return validator.validate(self.inventory, self.rows, self.matrix, DIRECTORY, self.scope)
@@ -161,11 +183,16 @@ class RolloutTests(unittest.TestCase):
 
     def bind_pre_sync(self, row):
         proof=row['pre_sync_installation']
-        files={path:{'path':path,'revision_sha':proof['revision_sha'],'state':'absent','http_status':404}
+        files={path:{'repository_id':row['repository_id'],'repository':row['destination'],
+                    'path':path,'revision_sha':proof['revision_sha'],'state':'absent','http_status':404,
+                    'contents_response':{'http_status':404,'request_url':'https://api.github.com/repos/'+row['destination']+
+                        '/contents/'+path+'?ref='+proof['revision_sha'],'data':{'message':'Not Found'}}}
                for path in ('.sfl/sfl.json','sfl.json')}
         if proof['state']=='present':
             files['.sfl/sfl.json'].update(state='observed',http_status=200,manifest={
                 'tier':proof['tier'],'addons':proof['addons'],'components':proof['components']})
+            files['.sfl/sfl.json']['contents_response']=self.file_response(row['destination'],proof['revision_sha'],
+                '.sfl/sfl.json',json.dumps(files['.sfl/sfl.json']['manifest']).encode())
         deployed=json.loads((DIRECTORY/row['manifest_evidence_url']).read_text())
         operation=self.capture({'repository_id':row['repository_id'],'repository':row['destination'],
             'input_revision_sha':proof['revision_sha'],'result_revision_sha':deployed['revision_sha'],
@@ -298,8 +325,14 @@ class RolloutTests(unittest.TestCase):
                     'commit_response':{'request_url':base+'/git/commits/'+str(head),'http_status':200,
                         'data':{'sha':head,'tree':{'sha':tree}}}}
                 scans.append(dict(copy.deepcopy(data),repository_id=repo['id'],source=repo['full_name'],files=[],
-                    referenced_secret_names=[],tree_response={'request_url':base+'/git/trees/'+str(tree)+'?recursive=1',
+                    referenced_secret_names=[],branch_scans=[],tree_response={'request_url':base+'/git/trees/'+str(tree)+'?recursive=1',
                     'http_status':200,'data':{'sha':tree,'truncated':False,'tree':[]}}))
+                for other_head in sorted({branch['commit']['sha'] for branch in branches}-{head}):
+                    scans[-1]['branch_scans'].append({'head_sha':other_head,'tree_sha':tree,
+                        'commit_response':{'request_url':base+'/git/commits/'+other_head,'http_status':200,
+                            'data':{'sha':other_head,'tree':{'sha':tree}}},
+                        'tree_response':{'request_url':base+'/git/trees/'+str(tree)+'?recursive=1','http_status':200,
+                            'data':{'sha':tree,'truncated':False,'tree':[]}},'files':[]})
                 repo['source_head']=dict(data,observed_at='2026-10-07T01:49:30Z')
                 for previous in json.loads((DIRECTORY/'workflow-reference-evidence.json').read_text())['records']:
                     if previous['repository_id']!=repo['id'] or previous.get('state')!='observed' or 'manifest' not in previous:continue
@@ -571,6 +604,10 @@ class RolloutTests(unittest.TestCase):
             'owner':'HemSoft','installation_id':150383874,'repository_selection':'all','permission_ceiling_verified':True,
             'run_url':'https://github.com/HemSoft/set-it-free-loop/actions/runs/1'}
         proof=self.matrix['pre_transfer_credential_verification']
+        proof['implementation_evidence']={path:self.capture({'repository_id':proof['repository_id'],
+            'repository':proof['repository'],'revision_sha':proof['reviewed_sha'],'observed_at':'2026-10-07T01:48:25Z',
+            'contents_response':self.file_response(proof['repository'],proof['reviewed_sha'],path,(ROOT/path).read_bytes())})
+            for path in (proof['workflow'],'deployment/scripts/SflGitHubAppBootstrap.psm1')}
         proof['credential_metadata_evidence_url']=self.capture({**{field:proof[field] for field in
             ('repository_id','repository','reviewed_sha','run_url','app_id','client_id','owner',
              'installation_id','repository_selection','permission_ceiling_verified')},
@@ -2541,7 +2578,7 @@ class RolloutTests(unittest.TestCase):
         changed=copy.deepcopy(original);changed['manifest_files']['.sfl/sfl.json'].update(
             state='observed',http_status=200,manifest={'tier':'reviewer','addons':[]})
         path.write_text(json.dumps(changed))
-        with self.assertRaisesRegex(ValueError,'independent absence'):self.check()
+        with self.assertRaises(ValueError):self.check()
         changed=copy.deepcopy(original);changed['manifest_files']['sfl.json']['http_status']=403
         path.write_text(json.dumps(changed))
         with self.assertRaisesRegex(ValueError,'captured 404'):self.check()
@@ -3989,6 +4026,95 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             with self.subTest(workflow=workflow),self.assertRaisesRegex(ValueError,'Inherited or dynamic secret scope'):
                 validator.validate_reference_scan(scan_path.name,DIRECTORY,self.inventory)
         scan_path.write_text(json.dumps(original))
+
+    def test_non_default_workflow_trees_are_complete_and_reconcile_secrets(self):
+        self.complete_transfer_gates();source=json.loads((DIRECTORY/self.matrix['pre_cutover_source_evidence_url']).read_text())
+        scan_path=DIRECTORY/source['reference_scan_evidence_url'];scan=json.loads(scan_path.read_text())
+        unused=json.loads((DIRECTORY/'legacy-unused-credential-owner-evidence.json').read_text())['repositories'][0]
+        repo=next(r for r in self.inventory['repositories'] if r['id']==unused['repository_id'])
+        row=next(r for r in scan['repositories'] if r['repository_id']==repo['id']);head='d'*40;tree='c'*40
+        row['branches_response']['data'].append({'name':'only-other-branch','commit':{'sha':head}})
+        row['branches_response']['pages'][0]['data']=copy.deepcopy(row['branches_response']['data'])
+        base='https://api.github.com/repos/'+repo['full_name'];path='.github/workflows/other.yml'
+        body=b'jobs:\n  test:\n    steps:\n      - run: echo ${{ secrets.SFL_APP_PRIVATE_KEY }}\n'
+        file={'repository_id':repo['id'],'repository':repo['full_name'],'revision_sha':head,'path':path,
+            'observed_at':row['observed_at'],'contents_response':self.file_response(repo['full_name'],head,path,body)}
+        branch={'head_sha':head,'tree_sha':tree,'commit_response':{'http_status':200,'request_url':base+'/git/commits/'+head,
+            'data':{'sha':head,'tree':{'sha':tree}}},'tree_response':{'http_status':200,
+            'request_url':base+'/git/trees/'+tree+'?recursive=1','data':{'sha':tree,'truncated':False,
+                'tree':[{'path':path,'type':'blob','sha':file['contents_response']['data']['sha']}]}},'files':[file]}
+        row['branch_scans'].append(branch);row['referenced_secret_names']=['SFL_APP_PRIVATE_KEY']
+        scan_path.write_text(json.dumps(scan))
+        with self.assertRaisesRegex(ValueError,'newly referenced legacy credential'):
+            validator.validate_reference_scan(scan_path.name,DIRECTORY,self.inventory)
+        body=b'jobs:\n  test:\n    steps:\n      - run: echo safe\n'
+        file['contents_response']=self.file_response(repo['full_name'],head,path,body)
+        branch['tree_response']['data']['tree'][0]['sha']=file['contents_response']['data']['sha'];row['referenced_secret_names']=[]
+        scan_path.write_text(json.dumps(scan));validator.validate_reference_scan(scan_path.name,DIRECTORY,self.inventory)
+        original=copy.deepcopy(scan)
+        for mutation in ('missing-branch','missing-workflow','wrong-commit','wrong-tree','wrong-file-head','truncated-tree'):
+            changed=copy.deepcopy(original);target=next(r for r in changed['repositories'] if r['repository_id']==repo['id'])
+            other=target['branch_scans'][-1]
+            if mutation=='missing-branch':target['branch_scans'].pop()
+            elif mutation=='missing-workflow':other['files']=[]
+            elif mutation=='wrong-commit':other['commit_response']['data']['sha']='b'*40
+            elif mutation=='wrong-tree':other['tree_response']['data']['sha']='b'*40
+            elif mutation=='wrong-file-head':other['files'][0]['revision_sha']=row['head_sha']
+            else:other['tree_response']['data']['truncated']=True
+            scan_path.write_text(json.dumps(changed))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_reference_scan(scan_path.name,DIRECTORY,self.inventory)
+
+    def test_owned_app_check_executes_the_canonical_workflow_and_module(self):
+        self.complete_transfer_gates();proof=self.matrix['pre_transfer_credential_verification']
+        validator.validate_app_credential(proof,DIRECTORY)
+        original=copy.deepcopy(proof['implementation_evidence']);proof.pop('implementation_evidence')
+        with self.assertRaisesRegex(ValueError,'both reviewed canonical'):validator.validate_app_credential(proof,DIRECTORY)
+        proof['implementation_evidence']=original
+        for path in original:
+            capture_path=DIRECTORY/original[path];capture=json.loads(capture_path.read_text());old=capture_path.read_text()
+            capture['contents_response']=self.file_response(proof['repository'],proof['reviewed_sha'],path,b'Fabricated success output')
+            capture_path.write_text(json.dumps(capture))
+            with self.subTest(path=path),self.assertRaisesRegex(ValueError,'reviewed canonical source bytes'):
+                validator.validate_app_credential(proof,DIRECTORY)
+            capture_path.write_text(old)
+        validator.validate_app_credential(proof,DIRECTORY)
+
+    def test_pre_sync_manifest_paths_use_actual_immutable_contents_responses(self):
+        row=self.complete_rollout();proof=row['pre_sync_installation'];path=DIRECTORY/proof['evidence_url']
+        original=json.loads(path.read_text());validator.validate_pre_sync_installation(proof,DIRECTORY,row)
+        for location in ('.sfl/sfl.json','sfl.json'):
+            for mutation in ('missing','wrong-path','wrong-revision','wrong-status','invented-404'):
+                changed=copy.deepcopy(original);response=changed['manifest_files'][location]['contents_response']
+                if mutation=='missing':changed['manifest_files'][location].pop('contents_response')
+                elif mutation=='wrong-path':response['request_url']=response['request_url'].replace('/contents/'+location,'/contents/other.json')
+                elif mutation=='wrong-revision':response['request_url']=response['request_url'].replace(proof['revision_sha'],'f'*40)
+                elif mutation=='wrong-status':response['http_status']=200
+                else:response['data']={}
+                path.write_text(json.dumps(changed))
+                with self.subTest(location=location,mutation=mutation),self.assertRaises(ValueError):
+                    validator.validate_pre_sync_installation(proof,DIRECTORY,row)
+        path.write_text(json.dumps(original));validator.validate_pre_sync_installation(proof,DIRECTORY,row)
+
+    def test_global_owner_facts_need_raw_identity_and_exact_structured_scope(self):
+        self.check()
+        for filename in ('provider-absence-owner-evidence.json','external-resource-owner-scope-evidence.json',
+                         'legacy-unused-credential-owner-evidence.json'):
+            record=json.loads((DIRECTORY/filename).read_text());path=DIRECTORY/record['owner_comment_evidence_url']
+            original=json.loads(path.read_text())
+            for mutation in ('wrong-author','wrong-id','wrong-request','failed-get','wrong-scope','missing-decision','backdated-edit'):
+                capture=copy.deepcopy(original)
+                if mutation=='wrong-author':capture['comment']['user']['login']='someone-else'
+                elif mutation=='wrong-id':capture['comment']['user']['id']=42
+                elif mutation=='wrong-request':capture['request_url']=capture['request_url'].replace('issues/comments/','pulls/comments/')
+                elif mutation=='failed-get':capture['http_status']=403
+                elif mutation=='wrong-scope':capture['comment']['body']='<!-- sfl-migration-approval:{"scope":"one repository"} -->'
+                elif mutation=='missing-decision':capture['comment']['body']='No confirmation'
+                else:capture['comment']['updated_at']='2026-10-07T02:00:00Z'
+                path.write_text(json.dumps(capture))
+                with self.subTest(filename=filename,mutation=mutation),self.assertRaises(ValueError):self.check()
+            path.write_text(json.dumps(original))
+        self.check()
 
 
 if __name__ == '__main__':

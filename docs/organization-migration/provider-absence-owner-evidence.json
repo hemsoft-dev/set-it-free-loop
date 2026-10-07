@@ -9,5 +9,7 @@
   ],
   "disposition": "none uses these providers",
   "evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028753359",
-  "limits": "Does not clear other provider, runner, credential or owned App readiness gates"
+  "limits": "Does not clear other provider, runner, credential or owned App readiness gates",
+  "owner_comment_evidence_url": "provider-absence-owner-comment-evidence.json",
+  "decision_recorded_at": "2026-10-07T22:04:01Z"
 }
