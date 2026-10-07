@@ -1945,7 +1945,7 @@ class RolloutTests(unittest.TestCase):
         row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/yahtzee')
         row.update(health='scope_exception',transfer_evidence_url='https://example.com/transfer',status_evidence_url='https://example.com/status')
         self.complete_scope_decision(row);self.check()
-        resource=next(r for r in self.rows if r['source']=='HemSoft/yahtzee');path=DIRECTORY/resource['smoke_evidence_url']
+        resource=next(r for r in self.rows if r['source']=='HemSoft/yahtzee' and r.get('resource_kind')=='repository_runner');path=DIRECTORY/resource['smoke_evidence_url']
         original=json.loads(path.read_text())
         for timestamp in ('2026-10-07T00:05:00Z','2026-10-07T00:30:00Z','2026-10-07T01:30:00Z'):
             path.write_text(json.dumps(dict(original,observed_at=timestamp)))
