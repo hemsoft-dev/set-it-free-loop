@@ -321,8 +321,18 @@ class RolloutTests(unittest.TestCase):
             'observed_at':'2026-10-07T00:00:00Z'})
         proof['workflow_run_evidence_url']=self.capture({'repository':{'id':proof['repository_id'],'full_name':proof['repository']},
             'html_url':proof['run_url'],'head_sha':proof['reviewed_sha'],'path':proof['workflow'],
-            'head_branch':'main','status':'completed','conclusion':'success',
+            'head_branch':'main','id':1,'run_started_at':'2026-10-07T00:00:00Z','status':'completed','conclusion':'success',
             'created_at':'2026-10-07T00:00:00Z','updated_at':'2026-10-07T00:01:00Z','captured_at':'2026-10-07T00:02:00Z'})
+        metadata=json.loads((DIRECTORY/proof['credential_metadata_evidence_url']).read_text())
+        stream=io.BytesIO()
+        with zipfile.ZipFile(stream,'w') as archive:archive.writestr('sfl-app-credential-metadata.json',json.dumps(metadata))
+        url='https://api.github.com/repos/HemSoft/set-it-free-loop/actions/artifacts/1'
+        proof['credential_artifact_evidence_url']=self.capture({'request_url':url,'download_url':url+'/zip',
+            'observed_at':'2026-10-07T00:02:00Z','archive_base64':base64.b64encode(stream.getvalue()).decode(),
+            'artifact':{'id':1,'name':'sfl-app-credential-metadata','expired':False,'archive_download_url':url+'/zip',
+                'workflow_run':{'id':1,'head_sha':proof['reviewed_sha']},
+                'created_at':'2026-10-07T00:00:30Z','updated_at':'2026-10-07T00:00:30Z',
+                'digest':'sha256:'+hashlib.sha256(stream.getvalue()).hexdigest()}})
         accounts = [{'owner':owner,'state':'observed','all_pages':True,'repositories':[
             {**{k:repo[k] for k in ('id','full_name','private','archived','default_branch')},
              'protections':validator.protection_contract(repo)} for repo in self.inventory['repositories']
@@ -384,7 +394,7 @@ class RolloutTests(unittest.TestCase):
         path=DIRECTORY/result['capture_evidence_url'];capture=json.loads(path.read_text())
         result.update(mode='live',evidence_url='https://github.com/'+pilot['repository']+'/actions/runs/'+str(run_id))
         capture.update(mode='live',run={'repository':{'id':pilot['repository_id'],'full_name':pilot['repository']},
-            'id':run_id,'run_attempt':1,'html_url':result['evidence_url'],'head_sha':'b'*40,
+            'id':run_id,'run_attempt':1,'run_started_at':'2026-10-07T02:00:00Z','html_url':result['evidence_url'],'head_sha':'b'*40,
             'path':'.github/workflows/sfl-pr-review-auto.yml','status':'completed','conclusion':'success',
             'created_at':'2026-10-07T02:00:00Z','updated_at':'2026-10-07T02:00:00Z'})
         output_path=DIRECTORY/capture['output_evidence_url'];output=json.loads(output_path.read_text())
@@ -553,7 +563,11 @@ class RolloutTests(unittest.TestCase):
                 outcome='pull_request_merged' if field in {'init_pr_url','sync_pr_url'} else 'healthy' if command=='status' else 'gate_removed' if command=='uninstall-gate' else 'no_changes'
                 operation.update(command=command,outcome=outcome,revision_before='b'*40,revision_after='b'*40,
                     change_count=0,merged=outcome=='pull_request_merged',gate_only=True,unrelated_change_count=0)
-                self.bind_terminal_capture(operation)
+                self.bind_terminal_capture(operation,timestamp='2026-10-07T03:40:00Z' if command=='uninstall-gate' else '2026-10-07T02:00:00Z')
+            receipts['final_gate_policy_evidence_url']=self.capture({'repository_id':pilot['repository_id'],
+                'repository':pilot['repository'],'branch':self.branch(pilot['repository_id']),
+                'observed_at':'2026-10-07T03:41:00Z','classic_protection':{'state':'absent','http_status':404},
+                'effective_rules':{'state':'observed','data':[]}})
 
 
     def complete_source(self):
@@ -2358,6 +2372,11 @@ class RolloutTests(unittest.TestCase):
         self.assertEqual(output['workflow_sha256'],hashlib.sha256((ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_bytes()).hexdigest())
         original['observed_at']=output['observed_at']
         original['output_sha256']=hashlib.sha256((DIRECTORY/original['output_evidence_url']).read_bytes()).hexdigest()
+        cleanup=pilot['validation_evidence']['operation_receipts']['gate_uninstall_evidence_url']
+        self.bind_terminal_capture(cleanup,timestamp=output['observed_at'])
+        final_policy_path=DIRECTORY/pilot['validation_evidence']['final_gate_policy_evidence_url']
+        final_policy=json.loads(final_policy_path.read_text());final_policy['observed_at']=output['observed_at']
+        final_policy_path.write_text(json.dumps(final_policy))
         path.write_text(json.dumps(original));self.check()
 
     def test_pre_sync_revision_must_be_actual_current_deployment_input(self):
@@ -2486,7 +2505,9 @@ class RolloutTests(unittest.TestCase):
         metadata['metadata']['default_branch']='develop';metadata_path.write_text(json.dumps(metadata))
         with self.assertRaisesRegex(ValueError,'repository-bound required strict'):self.check()
         receipts['gate_policy']['branch']='develop';policy_path=DIRECTORY/receipts['gate_policy']['evidence_url']
-        policy=json.loads(policy_path.read_text());policy['branch']='develop';policy_path.write_text(json.dumps(policy));self.check()
+        policy=json.loads(policy_path.read_text());policy['branch']='develop';policy_path.write_text(json.dumps(policy))
+        final_policy_path=DIRECTORY/receipts['final_gate_policy_evidence_url'];final_policy=json.loads(final_policy_path.read_text())
+        final_policy['branch']='develop';final_policy_path.write_text(json.dumps(final_policy));self.check()
         repos=[{'id':rid,'full_name':name,'private':visibility=='private','visibility':visibility,'archived':False,'default_branch':'main'}
             for rid,(name,visibility) in validator.APPROVED_PILOTS.items()]
         capture={'observed_at':'2026-10-07T04:00:00Z','accounts':[{'owner':o,'state':'observed','all_pages':True,
@@ -2591,7 +2612,7 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         other,other_capture=self.bind_live_scenario(pilot,'pending_request',run_id=99,artifact_id=101);self.check()
         other_path=DIRECTORY/other['capture_evidence_url'];other_capture['artifact_evidence_url']=capture['artifact_evidence_url']
         other_path.write_text(json.dumps(other_capture))
-        with self.assertRaisesRegex(ValueError,'exact run, attempt and scenario artifact'):self.check()
+        with self.assertRaisesRegex(ValueError,'exact repository run'):self.check()
 
     def test_workflow_capture_cannot_backdate_terminal_completion(self):
         self.complete_pilots();receipts=self.matrix['disposable_validation_repositories'][0]['validation_evidence']
@@ -2638,6 +2659,56 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             asset_name='gh-sfl_'+row['manifest_version']+'_windows_amd64.exe')
         download['asset_url']='https://github.com/'+download['source_repository']+'/releases/download/v'+download['release_version']+'/'+download['asset_name']
         self.bind_attestation(download);path.write_text(json.dumps(download));self.check()
+
+
+    def test_app_credential_metadata_matches_uploaded_run_artifact(self):
+        self.complete_transfer_gates();proof=self.matrix['pre_transfer_credential_verification'];self.check()
+        artifact_path=DIRECTORY/proof['credential_artifact_evidence_url'];original=json.loads(artifact_path.read_text())
+        for change in (lambda c:c['artifact']['workflow_run'].update(id=2),
+                       lambda c:c['artifact'].update(name='unrelated-artifact'),
+                       lambda c:c['artifact'].update(digest='sha256:'+'f'*64)):
+            capture=copy.deepcopy(original);change(capture);artifact_path.write_text(json.dumps(capture))
+            with self.assertRaises(ValueError):self.check()
+        capture=copy.deepcopy(original);metadata=json.loads((DIRECTORY/proof['credential_metadata_evidence_url']).read_text())
+        metadata['repository_selection']='selected';stream=io.BytesIO()
+        with zipfile.ZipFile(stream,'w') as archive:archive.writestr('sfl-app-credential-metadata.json',json.dumps(metadata))
+        capture['archive_base64']=base64.b64encode(stream.getvalue()).decode()
+        capture['artifact']['digest']='sha256:'+hashlib.sha256(stream.getvalue()).hexdigest();artifact_path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'independently downloaded output'):self.check()
+        artifact_path.write_text(json.dumps(original));self.check()
+        run_path=DIRECTORY/proof['workflow_run_evidence_url'];run=json.loads(run_path.read_text())
+        run['run_started_at']='2026-10-07T00:00:01Z';run_path.write_text(json.dumps(run))
+        with self.assertRaisesRegex(ValueError,'completed run'):self.check()
+
+    def test_pilot_cleanup_follows_validation_and_final_gate_is_absent(self):
+        self.complete_pilots();receipts=self.matrix['disposable_validation_repositories'][0]['validation_evidence'];self.check()
+        operation=receipts['operation_receipts']['gate_uninstall_evidence_url'];path=DIRECTORY/operation['capture_evidence_url']
+        original=json.loads(path.read_text());capture=copy.deepcopy(original);capture['observed_at']='2026-10-07T02:00:00Z'
+        path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'latest completed validation'):self.check()
+        path.write_text(json.dumps(original));self.check()
+        final_path=DIRECTORY/receipts['final_gate_policy_evidence_url'];final=json.loads(final_path.read_text())
+        capture=copy.deepcopy(final);capture['observed_at']='2026-10-07T03:39:00Z';final_path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'follow gate removal'):self.check()
+        capture=copy.deepcopy(final);capture['effective_rules']['data']=[{'type':'required_status_checks','parameters':{
+            'required_status_checks':[{'context':'SFL Reviewer Gate Runner','integration_id':15368}]}}]
+        final_path.write_text(json.dumps(capture))
+        with self.assertRaisesRegex(ValueError,'gate is absent'):self.check()
+        final_path.write_text(json.dumps(final));self.check()
+
+    def test_unlinked_paused_supabase_keeps_sealed_configuration(self):
+        resource=self.matrix['account_resource_preservation'][0]
+        baseline=next(p for p in json.loads((DIRECTORY/'supabase-provider-evidence.json').read_text())['projects'] if p['reference']==resource['resource_id'])
+        capture={'resource_id':resource['resource_id'],'resource_owner':resource['resource_owner'],
+            'state':'paused','project':baseline,'resource_changes_made':False,'operation':'read_only_preservation',
+            'phase':'post_transfer','observed_at':'2026-10-07T05:00:00Z','database_actions':[],'credential_reads':False}
+        resource.update(status='verified',post_transfer_evidence_url=self.capture(capture));path=DIRECTORY/resource['post_transfer_evidence_url']
+        cutoff=validator.observed_time('2026-10-07T04:00:00Z','test')
+        validator.validate_unlinked_supabase(resource,baseline,DIRECTORY,cutoff)
+        for field,value in [('name','renamed'),('region','different-region'),('resource_url','https://example.com/project')]:
+            changed=copy.deepcopy(capture);changed['project'][field]=value;path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,'exact account project configuration'):
+                validator.validate_unlinked_supabase(resource,baseline,DIRECTORY,cutoff)
 
 
 if __name__ == '__main__':

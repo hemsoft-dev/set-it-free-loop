@@ -95,6 +95,39 @@ def terminal_run_time(run, observed_at, label):
     return completed
 
 
+def validate_run_artifact(reference, directory, repository, run, artifact_name, filename, payload, observed_at):
+    capture = local_capture(reference, directory, 'Actions output artifact')
+    artifact = capture.get('artifact', {})
+    artifact_id = artifact.get('id')
+    require(type(artifact_id) is int and artifact_id > 0 and type(run.get('id')) is int and run['id'] > 0 and
+            artifact.get('name') == artifact_name and artifact.get('expired') is False and
+            artifact.get('workflow_run', {}).get('id') == run['id'] and
+            artifact['workflow_run'].get('head_sha') == run['head_sha'] and
+            capture.get('request_url') == 'https://api.github.com/repos/' + repository + '/actions/artifacts/' + str(artifact_id) and
+            artifact.get('archive_download_url') == capture.get('download_url') ==
+                'https://api.github.com/repos/' + repository + '/actions/artifacts/' + str(artifact_id) + '/zip',
+            'Actions output artifact must belong to the exact repository run and named output')
+    require(observed_time(run['created_at'], 'Artifact workflow creation') <=
+            observed_time(run.get('run_started_at'), 'Artifact run attempt start') <=
+            observed_time(payload.get('observed_at'), 'Artifact output creation') <=
+            observed_time(artifact.get('created_at'), 'Artifact creation') <=
+            observed_time(artifact.get('updated_at'), 'Artifact completion') <=
+            observed_time(run['updated_at'], 'Artifact workflow completion') and
+            observed_time(run['updated_at'], 'Artifact workflow completion') <=
+            observed_time(capture.get('observed_at'), 'Artifact capture') <= observed_at,
+            'Actions output artifact capture must follow its completed run')
+    try:
+        archive = base64.b64decode(capture.get('archive_base64', ''), validate=True)
+        require(artifact.get('digest') == 'sha256:' + hashlib.sha256(archive).hexdigest(),
+                'Actions output archive must match its GitHub digest')
+        with zipfile.ZipFile(io.BytesIO(archive)) as files:
+            require(files.namelist() == [filename], 'Actions output artifact must contain only its named public output')
+            require(json.loads(files.read(filename).decode('utf-8-sig')) == payload,
+                    'Actions output must equal the downloaded immutable artifact contents')
+    except (ValueError, zipfile.BadZipFile, KeyError) as exc:
+        raise ValueError('Actions artifact must contain the independently downloaded output') from exc
+
+
 def deployed_revision(proof, directory, repository_id, repository, manifest):
     capture = local_capture(proof.get('manifest_evidence_url'), directory, 'Deployed revision')
     require(capture.get('repository_id') == repository_id and capture.get('repository') == repository and
@@ -266,6 +299,9 @@ def validate_app_credential(proof, directory):
             'App credential capture must come from its successful reviewed main workflow run')
     terminal_run_time(run, observed_time(run.get('captured_at'), 'App credential run capture'),
                       'App credential workflow')
+    validate_run_artifact(proof.get('credential_artifact_evidence_url'), directory, proof['repository'], run,
+                          'sfl-app-credential-metadata', 'sfl-app-credential-metadata.json', metadata,
+                          observed_time(run['captured_at'], 'App credential run capture'))
 
 
 def protection_semantics(value, repo, url_field=False):
@@ -1117,37 +1153,13 @@ def validate_pilot_scenario(result, scenario, directory, repository_id, reposito
                 run.get('status') == 'completed' and run.get('conclusion') in {'success','failure'},
                 'Live scenario needs its terminal deployed-observer Actions run')
         terminal_run_time(run, scenario_at, 'Live scenario')
-        artifact_capture = local_capture(capture.get('artifact_evidence_url'), directory, 'Live scenario artifact')
-        artifact = artifact_capture.get('artifact', {})
         run_id = int(result['evidence_url'].rsplit('/', 1)[1])
-        artifact_id = artifact.get('id')
-        require(type(artifact_id) is int and artifact_id > 0 and type(run.get('id')) is int and run['id'] == run_id and
+        require(type(run.get('id')) is int and run['id'] == run_id and
                 type(run.get('run_attempt')) is int and run['run_attempt'] > 0 and
-                artifact.get('name') == 'sfl-observer-scenario-' + scenario and artifact.get('expired') is False and
-                artifact.get('workflow_run', {}).get('id') == run_id and
-                artifact['workflow_run'].get('head_sha') == revision and
-                artifact_capture.get('request_url') == 'https://api.github.com/repos/' + repository + '/actions/artifacts/' + str(artifact_id) and
-                artifact.get('archive_download_url') == artifact_capture.get('download_url') ==
-                    'https://api.github.com/repos/' + repository + '/actions/artifacts/' + str(artifact_id) + '/zip' and
-                all(output.get(k) == v for k, v in {'run_id':run_id, 'run_attempt':run['run_attempt']}.items()),
-                'Live scenario output must identify its exact run, attempt and scenario artifact')
-        require(observed_time(run['created_at'], 'Live scenario creation') <=
-                observed_time(artifact.get('created_at'), 'Scenario artifact creation') <=
-                observed_time(artifact.get('updated_at'), 'Scenario artifact completion') <=
-                observed_time(run['updated_at'], 'Live scenario completion') and
-                observed_time(artifact.get('updated_at'), 'Scenario artifact completion') <=
-                    observed_time(artifact_capture.get('observed_at'), 'Scenario artifact capture') <= scenario_at,
-                'Live scenario capture must follow its immutable artifact observation')
-        try:
-            archive = base64.b64decode(artifact_capture.get('archive_base64', ''), validate=True)
-            require(artifact.get('digest') == 'sha256:' + hashlib.sha256(archive).hexdigest(),
-                    'Live scenario artifact archive must match its GitHub digest')
-            with zipfile.ZipFile(io.BytesIO(archive)) as files:
-                require(files.namelist() == ['scenario.json'], 'Live scenario artifact needs one scenario output')
-                require(json.loads(files.read('scenario.json')) == output,
-                        'Live scenario output must equal the downloaded immutable artifact contents')
-        except (ValueError, zipfile.BadZipFile, KeyError) as exc:
-            raise ValueError('Live scenario artifact must contain the independently downloaded output') from exc
+                output.get('run_id') == run_id and output.get('run_attempt') == run['run_attempt'],
+                'Live scenario output must identify its exact run and attempt')
+        validate_run_artifact(capture.get('artifact_evidence_url'), directory, repository, run,
+                              'sfl-observer-scenario-' + scenario, 'scenario.json', output, scenario_at)
 
 
 def provider_preservation_baseline(row, inventory, directory):
@@ -1207,6 +1219,47 @@ def repository_terminal_times(records, ledger_rows, directory):
         require(bool(observations), 'Terminal repository needs independently timestamped completion evidence')
         times[row['repository_id']] = max(observations)
     return times
+
+
+def validate_unlinked_supabase(resource, baseline, directory, cutoff):
+    require(resource['status'] == 'verified', 'Final completion needs verified unlinked Supabase preservation')
+    reference = resource.get('post_transfer_evidence_url')
+    evidence(reference, directory)
+    require(not urllib.parse.urlsplit(reference).scheme and reference != 'supabase-provider-evidence.json',
+            'Unlinked resource needs an independent post-transfer account capture')
+    capture = local_capture(reference, directory, 'Unlinked Supabase preservation')
+    validate_preservation_time(capture, cutoff)
+    require(capture.get('resource_id') == resource['resource_id'] and capture.get('resource_owner') == resource['resource_owner'] and
+            capture.get('state') == baseline['state'] and capture.get('project') == baseline and
+            capture.get('resource_changes_made') is False and capture.get('operation') == 'read_only_preservation',
+            'Unlinked Supabase post-transfer capture must preserve the exact account project configuration and paused state')
+
+
+def validate_pilot_cleanup(receipts, directory, repository_id, repository, branch, operations, operation_times):
+    ordered = ('init_pr_url', 'repeat_onboarding_evidence_url', 'sync_pr_url',
+               'repeat_sync_evidence_url', 'status_evidence_url', 'gate_uninstall_evidence_url')
+    require(all(operation_times[a] <= operation_times[b] for a,b in zip(ordered, ordered[1:])),
+            'Pilot terminal operations must follow execution time as well as revision order')
+    prior = {k:v for k,v in receipts.items() if k not in {'gate_uninstall_evidence_url', 'final_gate_policy_evidence_url'}}
+    prior['operation_receipts'] = {k:v for k,v in operations.items() if k != 'gate_uninstall_evidence_url'}
+    latest = repository_terminal_times([{'repository_id':repository_id, 'validation':prior}], [], directory)[repository_id]
+    removed_at = operation_times['gate_uninstall_evidence_url']
+    require(removed_at >= latest, 'Pilot gate removal must follow the latest completed validation evidence')
+    policy = local_capture(receipts.get('final_gate_policy_evidence_url'), directory, 'Final pilot gate policy')
+    require(policy.get('repository_id') == repository_id and policy.get('repository') == repository and
+            policy.get('branch') == branch and observed_time(policy.get('observed_at'), 'Final pilot policy') >= removed_at,
+            'Final pilot policy must follow gate removal on the actual default branch')
+    classic = policy.get('classic_protection', {})
+    rules = policy.get('effective_rules', {})
+    require((classic.get('state') == 'observed' or
+             (classic.get('state') == 'absent' and classic.get('http_status') == 404)) and
+            rules.get('state') == 'observed' and isinstance(rules.get('data'), list),
+            'Final pilot gate policy needs independently observed classic and effective rules')
+    checks = classic.get('data', {}).get('required_status_checks') or {}
+    contexts = list(checks.get('contexts', [])) + [c.get('context') for c in checks.get('checks', [])]
+    contexts += [c.get('context') for r in rules['data'] if r.get('type') == 'required_status_checks'
+                 for c in r.get('parameters', {}).get('required_status_checks', [])]
+    require('SFL Reviewer Gate Runner' not in contexts, 'Final pilot policy must prove the SFL gate is absent')
 
 
 def validate_ledger_rows(rows, inventory, directory, expected, retained, candidates, expected_unused,
@@ -1938,6 +1991,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         'Pilot onboarding PR must belong to its designated repository')
             onboarding = ('init_pr_url', 'repeat_onboarding_evidence_url', 'sync_pr_url',
                           'repeat_sync_evidence_url', 'status_evidence_url', 'gate_uninstall_evidence_url')
+            operation_times = {}
             for field in onboarding:
                 operation = operations[field]
                 command = ('init' if field in {'init_pr_url', 'repeat_onboarding_evidence_url'} else
@@ -1947,7 +2001,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 require(operation.get('command') == command and operation.get('outcome') == outcome and
                         immutable_sha(operation.get('revision_before')) and immutable_sha(operation.get('revision_after')),
                         'Pilot onboarding operations need successful command-specific terminal outcomes')
-                validate_terminal_operation(operation, directory, app_transferred_at)
+                operation_times[field] = validate_terminal_operation(operation, directory, app_transferred_at)
                 if outcome == 'pull_request_merged':
                     require(operation.get('merged') is True, 'Pilot init and sync must prove merged deployment PRs')
                 elif outcome == 'no_changes':
@@ -2020,6 +2074,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                             run != receipts['auditor_run_url'] for run,operation in zip(runs,wider_receipts)),
                         'Wider pilot must execute a distinct successful non-Auditor workflow')
                 verified_wider_pilot = True
+            validate_pilot_cleanup(receipts, directory, extra_id, name, metadata['default_branch'], operations, operation_times)
             verified_pilot_visibilities.add(extra['visibility'])
         extra_ids.add(extra_id)
         extra_names.add(name.casefold())
@@ -2042,17 +2097,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                                             repository_terminal_times(records, rows, directory))
         rollout_completed_at = observed_time(onboarding['rollout_completed_at'], 'Rollout completion')
         for resource in account_resources:
-            require(resource['status'] == 'verified', 'Final completion needs verified unlinked Supabase preservation')
-            reference = resource.get('post_transfer_evidence_url')
-            evidence(reference, directory)
-            require(not urllib.parse.urlsplit(reference).scheme and reference != 'supabase-provider-evidence.json',
-                    'Unlinked resource needs an independent post-transfer account capture')
-            capture = json.loads((directory / reference).read_text())
-            validate_preservation_time(capture, max(rollout_completed_at, app_transferred_at))
-            require(capture.get('resource_id') == resource['resource_id'] and capture.get('resource_owner') == resource['resource_owner'] and
-                    capture.get('state') == unlinked_supabase[resource['resource_id']]['state'] and
-                    capture.get('resource_changes_made') is False and capture.get('operation') == 'read_only_preservation',
-                    'Unlinked Supabase post-transfer capture must preserve the exact account resource and paused state')
+            validate_unlinked_supabase(resource, unlinked_supabase[resource['resource_id']], directory,
+                                       max(rollout_completed_at, app_transferred_at))
         proof = matrix.get('final_inventory')
         validate_final_inventory(proof, directory, expected, retained, onboarding, pilot_branches)
         require(datetime.datetime.fromisoformat(proof['observed_at'].replace('Z', '+00:00')) >

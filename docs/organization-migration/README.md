@@ -329,6 +329,11 @@ receipt. The original selected-repository capture remains historical evidence.
 Fresh saved-selection verification is pending. The GET-only App credential
 workflow publishes an allowlisted public metadata artifact with installation
 identity and repository selection. It does not mint an installation token.
+The credential receipt loads the run's immutable artifact GET metadata and
+downloaded archive, verifies its GitHub digest and compares the sole metadata
+file with the local capture. Run identity, current attempt start and output
+chronology must match; a locally authored JSON beside a successful run is
+insufficient.
 
 The dashboard Supabase database `cevpnetigzotgstxxjpm` is unused.
 `dashboard-database-owner-disposition.json` records the instruction to preserve
@@ -468,3 +473,15 @@ run and attempt. The captured artifact ID belongs to that observer run and
 deployed revision. A run without a matching scenario artifact does not establish
 live proof; the tracked executed workflow fixture remains an explicitly labeled
 alternative for the supported scenarios.
+
+Pilot init, repeated init, sync, repeated sync and status follow both revision
+and execution order. Gate removal follows the latest validated scenario,
+registered review, required policy and wider-workflow evidence. An independent
+default-branch policy capture after removal must show the SFL gate absent.
+Required-policy evidence before this cleanup still proves the operational test;
+the separate final onboarding repository keeps its required working gate.
+
+Final account preservation compares the full observed unlinked Supabase project
+record with the sealed project, including reference, name, region, paused state
+and resource URL. A no-change flag alone is insufficient. This remains a
+read-only configuration check and does not authorize a database operation.
