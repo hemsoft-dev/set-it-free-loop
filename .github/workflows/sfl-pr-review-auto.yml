@@ -30,7 +30,6 @@ jobs:
       vars.SFL_ENABLED != 'false' &&
       github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
-      github.event.sender.login == github.repository_owner &&
       startsWith(github.event.comment.body, '@codex review')
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -47,11 +46,38 @@ jobs:
           github-token: ${{ github.token }}
           script: |
             const {owner, repo} = context.repo;
+            // BEGIN TESTABLE REQUESTER AUTHORIZATION
+            const requesterAllowed = async login => {
+              if (owner.toLowerCase() !== "hemsoft-dev") {
+                return (login || "").toLowerCase() === owner.toLowerCase();
+              }
+              if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(login || "")) return false;
+              let permission;
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username: login,
+                });
+                permission = response.data;
+              } catch (error) {
+                if (error.status === 404 || error.status === 403) return false;
+                throw error;
+              }
+              if (!permission.user ||
+                  (permission.user.login || "").toLowerCase() !== login.toLowerCase()) {
+                throw new Error("Review requester permission identity mismatch");
+              }
+              return ["admin", "maintain", "write"].includes(permission.permission);
+            };
+            // END TESTABLE REQUESTER AUTHORIZATION
             const pullNumber = context.payload.issue.number;
             const commentId = context.payload.comment.id;
             const comment = await github.rest.issues.getComment({
               owner, repo, comment_id: commentId,
             });
+            if (!await requesterAllowed(comment.data.user && comment.data.user.login)) {
+              core.info("Review requester does not have write or higher repository permission");
+              return;
+            }
             if (comment.data.updated_at !== comment.data.created_at) {
               core.info("Edited Codex review requests are not accepted");
               return;
@@ -103,11 +129,16 @@ jobs:
                 github.rest.repos.listCommitStatusesForRef,
                 {owner, repo, ref: currentHead, per_page: 100},
               );
-              registered = statuses.some(status =>
-                status.context === "SFL Codex Review Request Registry" &&
-                ((status.creator && status.creator.login) || "").toLowerCase() === owner.toLowerCase() &&
-                (status.target_url || "").toLowerCase() === targetURL,
-              );
+              const author = ((comment.data.user && comment.data.user.login) || "").toLowerCase();
+              for (const status of statuses) {
+                const creator = ((status.creator && status.creator.login) || "").toLowerCase();
+                if (status.context === "SFL Codex Review Request Registry" &&
+                    creator === author && (status.target_url || "").toLowerCase() === targetURL &&
+                    await requesterAllowed(creator)) {
+                  registered = true;
+                  break;
+                }
+              }
               if (!registered && attempt < 11) {
                 await new Promise(resolve => setTimeout(resolve, 5000));
               }
@@ -265,7 +296,9 @@ jobs:
               if (!run || run.status === "completed") return false;
               if (run.event === "push") return true;
               if (run.event === "issue_comment") {
-                return ((run.actor && run.actor.login) || "").toLowerCase() === owner.toLowerCase() &&
+                // Identify a request invalidation candidate for this PR;
+                // activeInvalidationRuns verifies the actor before waiting.
+                return Boolean(run.actor && run.actor.login) &&
                   run.display_title === `SFL Codex review request #${pullNumber}`;
               }
               return run.event === "pull_request_target" &&
@@ -282,6 +315,29 @@ jobs:
             // END TESTABLE CODEX OBSERVER
 
             const {owner, repo} = context.repo;
+            // BEGIN TESTABLE REQUESTER AUTHORIZATION
+            const requesterAllowed = async login => {
+              if (owner.toLowerCase() !== "hemsoft-dev") {
+                return (login || "").toLowerCase() === owner.toLowerCase();
+              }
+              if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/.test(login || "")) return false;
+              let permission;
+              try {
+                const response = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner, repo, username: login,
+                });
+                permission = response.data;
+              } catch (error) {
+                if (error.status === 404 || error.status === 403) return false;
+                throw error;
+              }
+              if (!permission.user ||
+                  (permission.user.login || "").toLowerCase() !== login.toLowerCase()) {
+                throw new Error("Review requester permission identity mismatch");
+              }
+              return ["admin", "maintain", "write"].includes(permission.permission);
+            };
+            // END TESTABLE REQUESTER AUTHORIZATION
             const eventName = context.eventName;
             const pullNumber = eventName === "issue_comment"
               ? context.payload.issue.number
@@ -403,21 +459,83 @@ jobs:
               core.info("This exact Codex artifact already completed a review request; verifying its required status");
             }
             const artifactTime = Date.parse(artifact.created_at || artifact.submitted_at || "");
-            const isOwnerRequest = comment =>
-              ((comment.user && comment.user.login) || "").toLowerCase() === owner.toLowerCase();
+            let requesterPermissions = new Map();
+            // BEGIN TESTABLE REQUESTER REFRESH
+            const refreshRequesterPermissions = async (comments, statuses) => {
+              const registrations = statuses.filter(status =>
+                status.context === "SFL Codex Review Request Registry" &&
+                (status.target_url || "").toLowerCase().startsWith(requestTargetPrefix));
+              const registeredIds = new Set(registrations.map(status =>
+                Number(status.target_url.toLowerCase().slice(requestTargetPrefix.length))));
+              const candidates = comments.filter(comment =>
+                registeredIds.has(comment.id) ||
+                ((comment.body || "").startsWith("@codex review") &&
+                 (comment.body || "").includes(headMarker)));
+              const matchingCreators = registrations.filter(status => {
+                const id = Number(status.target_url.toLowerCase().slice(requestTargetPrefix.length));
+                const comment = candidates.find(candidate => candidate.id === id);
+                return comment && ((comment.user && comment.user.login) || "").toLowerCase() ===
+                  ((status.creator && status.creator.login) || "").toLowerCase();
+              });
+              const logins = new Set([
+                ...candidates.map(comment => (comment.user && comment.user.login) || ""),
+                ...matchingCreators.map(status => (status.creator && status.creator.login) || ""),
+              ]);
+              const refreshed = new Map();
+              for (const login of logins) {
+                refreshed.set(login.toLowerCase(), await requesterAllowed(login));
+              }
+              requesterPermissions = refreshed;
+            };
+            // END TESTABLE REQUESTER REFRESH
+            const isOwnerRequest = comment => Boolean(comment) &&
+              requesterPermissions.get(((comment.user && comment.user.login) || "").toLowerCase()) === true;
             const headMarker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=`;
             const baseMarker = `${headMarker}${currentBase.toLowerCase()};`;
             const requestTargetPrefix = `https://github.com/${owner}/${repo}/pull/${pullNumber}#issuecomment-`.toLowerCase();
-            const registeredRequestIdsFromStatuses = statuses => new Set(statuses.flatMap(status => {
-              if (status.context !== "SFL Codex Review Request Registry" ||
-                  ((status.creator && status.creator.login) || "").toLowerCase() !== owner.toLowerCase()) {
+            // BEGIN TESTABLE REQUEST REGISTRATION
+            const historicalRequestIdsFromStatuses = (statuses, comments = triggerComments) => new Set(statuses.flatMap(status => {
+              if (status.context !== "SFL Codex Review Request Registry") {
                 return [];
               }
               const targetURL = (status.target_url || "").toLowerCase();
               if (!targetURL.startsWith(requestTargetPrefix)) return [];
               const requestId = Number(targetURL.slice(requestTargetPrefix.length));
-              return Number.isSafeInteger(requestId) && requestId > 0 ? [requestId] : [];
+              const comment = comments.find(candidate => candidate.id === requestId);
+              const author = ((comment && comment.user && comment.user.login) || "").toLowerCase();
+              const creator = ((status.creator && status.creator.login) || "").toLowerCase();
+              return Number.isSafeInteger(requestId) && requestId > 0 &&
+                String(requestId) === targetURL.slice(requestTargetPrefix.length) &&
+                Boolean(creator) && (!comment || author === creator) &&
+                (owner.toLowerCase() === "hemsoft-dev" || creator === owner.toLowerCase()) ? [requestId] : [];
             }));
+            const registeredRequestIdsFromStatuses = (statuses, comments = triggerComments) =>
+              new Set([...historicalRequestIdsFromStatuses(statuses, comments)].filter(id =>
+                isOwnerRequest(comments.find(comment => comment.id === id))));
+            const hasHistoricalBaseConflict = (comments, statuses) => {
+              const historical = historicalRequestIdsFromStatuses(statuses, comments);
+              for (const id of historical) {
+                const comment = comments.find(candidate => candidate.id === id);
+                if (!comment) return true;
+                const creator = ((comment.user && comment.user.login) || "").toLowerCase();
+                const registration = statuses.filter(status =>
+                  status.context === "SFL Codex Review Request Registry" &&
+                  (status.target_url || "").toLowerCase() === `${requestTargetPrefix}${id}` &&
+                  ((status.creator && status.creator.login) || "").toLowerCase() === creator).at(-1);
+                const prefix = `SFL Codex request comment ${id} for PR #${pullNumber} base `;
+                const description = (registration && registration.description) || "";
+                const originalBase = description.startsWith(prefix) ? description.slice(prefix.length) : "";
+                if (/^[0-9a-f]{40}$/.test(originalBase)) {
+                  if (originalBase !== currentBase.toLowerCase()) return true;
+                } else if (comment.updated_at !== comment.created_at ||
+                           !(comment.body || "").includes(baseMarker)) {
+                  // Old registries lack an immutable base. Edits erase that evidence.
+                  return true;
+                }
+              }
+              return false;
+            };
+            // END TESTABLE REQUEST REGISTRATION
             let triggerComments = [];
             let requestStatuses = [];
             let latestPotentialRequest;
@@ -432,6 +550,7 @@ jobs:
                   {owner, repo, ref: currentHead, per_page: 100},
                 ),
               ]);
+              await refreshRequesterPermissions(triggerComments, requestStatuses);
               const potentialRequests = triggerComments.map(comment => ({
                 comment,
                 requestTime: Date.parse(comment.created_at || ""),
@@ -455,7 +574,7 @@ jobs:
               core.info("No registered Codex review request materialized for this artifact");
               return;
             }
-            const registeredRequestIds = registeredRequestIdsFromStatuses(requestStatuses);
+            const registeredRequestIds = historicalRequestIdsFromStatuses(requestStatuses);
             // BEGIN TESTABLE REQUEST ELIGIBILITY
             const requestContextFromBody = body => {
               const contextMatch = /;context=(.*?) -->/.exec(body || "");
@@ -470,7 +589,7 @@ jobs:
                 updatedTime: Date.parse(comment.updated_at || ""),
               }),
             ).filter(
-              ({comment, requestTime, updatedTime}) => isOwnerRequest(comment) &&
+              ({comment, requestTime, updatedTime}) =>
                 registrations.has(comment.id) &&
                 (comment.body || "").includes(baseMarker) &&
                 (comment.body || "") === `@codex review\n\n${baseMarker}context=${requestContextFromBody(comment.body)} -->` &&
@@ -535,6 +654,7 @@ jobs:
                 core.info("This Codex review request already has a terminal SFL audit; verifying its required status");
               }
             }
+            // BEGIN TESTABLE ACTIVE INVALIDATIONS
             const activeInvalidationRuns = async () => {
               const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"];
               const events = ["pull_request_target", "push", "issue_comment"];
@@ -549,11 +669,20 @@ jobs:
                 },
                 response => response.data,
               )));
-              return pages.flat().filter(
+              const candidates = pages.flat().filter(
                 run => run.id !== context.runId && events.includes(run.event) &&
                   isActiveInvalidationRun(run, pullNumber, owner),
               );
+              const authorized = [];
+              for (const run of candidates) {
+                if (run.event !== "issue_comment" ||
+                    await requesterAllowed((run.actor && run.actor.login) || "")) {
+                  authorized.push(run);
+                }
+              }
+              return authorized;
             };
+            // END TESTABLE ACTIVE INVALIDATIONS
             const failForPendingInvalidation = async pendingRun => {
               if (!artifactBindsCurrentHead) {
                 core.info("The Codex artifact does not bind to the current head; it cannot complete the pending request");
@@ -646,8 +775,8 @@ jobs:
             );
             const contextToken = reviewContextToken(initialChecks);
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
-            const conflictingBaseRequest = triggerComments.some(
-              comment => isOwnerRequest(comment) &&
+            const conflictingBaseRequest = hasHistoricalBaseConflict(triggerComments, requestStatuses) || triggerComments.some(
+              comment => (isOwnerRequest(comment) || historicalRequestIdsFromStatuses(requestStatuses).has(comment.id)) &&
                 (comment.body || "").startsWith("@codex review") &&
                 (comment.body || "").includes(headMarker) &&
                 !(comment.body || "").includes(baseMarker),
@@ -721,7 +850,7 @@ jobs:
                 comments,
                 checkRuns,
                 Number.POSITIVE_INFINITY,
-                registeredRequestIdsFromStatuses(statuses),
+                historicalRequestIdsFromStatuses(statuses, comments),
               ).some(
                 candidate => candidate.contextToken === contextToken &&
                   (candidate.requestTime > requestTime ||
@@ -771,6 +900,21 @@ jobs:
               github.rest.repos.listCommitStatusesForRef,
               {owner, repo, ref: currentHead, per_page: 100},
             );
+            await refreshRequesterPermissions(latestTriggerComments, latestRequestStatuses);
+            const latestOriginalRequest = latestTriggerComments.find(comment => comment.id === request.comment.id);
+            if (hasHistoricalBaseConflict(latestTriggerComments, latestRequestStatuses) || latestTriggerComments.some(comment =>
+                historicalRequestIdsFromStatuses(latestRequestStatuses, latestTriggerComments).has(comment.id) &&
+                (comment.body || "").includes(headMarker) && !(comment.body || "").includes(baseMarker))) {
+              core.setFailed("Historical registered request belongs to another base");
+              return;
+            }
+            if (!latestOriginalRequest || !isOwnerRequest(latestOriginalRequest) ||
+                !registeredRequestIdsFromStatuses(latestRequestStatuses, latestTriggerComments).has(request.comment.id) ||
+                latestOriginalRequest.body !== request.comment.body ||
+                latestOriginalRequest.updated_at !== latestOriginalRequest.created_at) {
+              core.setFailed("Registered review request changed or lost authorization before publication");
+              return;
+            }
             if (hasNewerMatchingRequest(
               latestTriggerComments, latestRequestChecks, latestRequestStatuses,
             )) {
@@ -880,7 +1024,14 @@ jobs:
                 pullLifecycleToken(),
                 activeInvalidationRuns(),
               ]);
+              await refreshRequesterPermissions(comments, statuses);
+              const registrations = historicalRequestIdsFromStatuses(statuses, comments);
+              const currentRequest = comments.find(comment => comment.id === request.comment.id);
+              const requestStillAuthorized = Boolean(currentRequest) && isOwnerRequest(currentRequest) &&
+                registrations.has(currentRequest.id) && currentRequest.body === request.comment.body &&
+                currentRequest.updated_at === currentRequest.created_at;
               return {
+                requestStillAuthorized,
                 pull: currentPull.data,
                 openPulls,
                 contextToken: reviewContextToken(checkRuns),
@@ -889,7 +1040,7 @@ jobs:
                 invalidationRuns,
               };
             };
-            const publicationChanged = state => state.pull.state !== "open" ||
+            const publicationChanged = state => !state.requestStillAuthorized || state.pull.state !== "open" ||
               state.pull.head.sha !== currentHead ||
               state.pull.base.sha !== currentBase ||
               state.openPulls.length !== 1 ||

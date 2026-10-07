@@ -153,3 +153,29 @@ delayed artifact from an older request from consuming the replacement's gate.
 Pilot deployments are limited to HemSoft/hs-buddy until the source change and
 smoke evidence are accepted. Do not deploy this migration to
 developer-documentation.
+
+## Organization requester authorization
+
+For `hemsoft-dev`, the CLI, request invalidator, and result observer use the
+[repository permission API](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user)
+to authorize people with write or higher access. The organization's login is
+never treated as a human requester. The registry creator must match the actual
+comment author; both identities require verified permission. Unknown identities,
+read-only users, outsiders, and lookup failures cannot authorize a request.
+Personal `HemSoft` repositories retain the owner-operated policy.
+
+Permissions are checked again before publishing a result. The exact registered
+comment must remain present and unedited, with the same head/base/context marker.
+Existing Codex bot/App identity checks, same-repository default-branch scope,
+retry ordering, and durable head-status publication remain required. An edited,
+forged, or unregistered request cannot produce success. Pending invalidation
+runs are awaited only after their request actor passes the same live permission
+check. Only request-shaped comments and matching registry creators are queried,
+so unrelated discussion does not consume the authorization budget. No authorization decision relies on comment association labels.
+
+A connected Codex account and repository installation remain runtime
+prerequisites. Organization ownership alone does not establish them. Record
+real fixed-head review evidence in [#137](https://github.com/HemSoft/set-it-free-loop/issues/137)
+and the full rollout in [#139](https://github.com/HemSoft/set-it-free-loop/issues/139).
+
+Registered request statuses now preserve their original base SHA in the immutable status description. Historical requests remain ordering and base-conflict barriers after permission revocation or comment edits. For older registrations without a durable base, an edited/deleted comment loses that evidence and requires a new PR head; it cannot authorize matching a delayed artifact to a new base. Current permission and an unchanged exact request body remain required for gate publication.

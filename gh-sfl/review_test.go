@@ -93,7 +93,7 @@ func (f *reviewREST) Get(path string, response interface{}) error {
 		if defaultBranch == "" {
 			defaultBranch = "main"
 		}
-		return decodeTestResponse(response, map[string]any{"default_branch": defaultBranch})
+		return decodeTestResponse(response, map[string]any{"full_name": "HemSoft/consumer", "default_branch": defaultBranch})
 	case strings.Contains(path, "/check-runs?"):
 		for page, runs := range f.checkRunPages {
 			if strings.Contains(path, fmt.Sprintf("page=%d", page)) {
@@ -1130,8 +1130,9 @@ func TestRunReviewIgnoresUnregisteredEditedDiscussionComment(t *testing.T) {
 
 func registeredReviewRequestStatus(commentID int64) reviewRequestStatus {
 	status := reviewRequestStatus{
-		Context:   codexReviewRequestRegistryContext,
-		TargetURL: fmt.Sprintf("https://github.test/HemSoft/consumer/pull/94#issuecomment-%d", commentID),
+		Context:     codexReviewRequestRegistryContext,
+		Description: fmt.Sprintf("SFL Codex request comment %d for PR #94 base %s", commentID, strings.Repeat("a", 40)),
+		TargetURL:   fmt.Sprintf("https://github.com/HemSoft/consumer/pull/94#issuecomment-%d", commentID),
 	}
 	status.Creator.Login = "HemSoft"
 	return status

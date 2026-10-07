@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -92,9 +93,10 @@ type reviewCommentReaction struct {
 }
 
 type reviewRequestStatus struct {
-	Context   string `json:"context"`
-	TargetURL string `json:"target_url"`
-	Creator   struct {
+	Context     string `json:"context"`
+	Description string `json:"description"`
+	TargetURL   string `json:"target_url"`
+	Creator     struct {
 		Login string `json:"login"`
 	} `json:"creator"`
 }
@@ -119,14 +121,37 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return err
 	}
 
-	owner, repo, err := parseReviewTarget(opts.repo)
+	owner, repo, err := parseRepoFlag(opts.repo)
 	if err != nil {
 		return err
+	}
+
+	if !strings.EqualFold(owner, "hemsoft-dev") {
+		if err := validateHemSoftTarget(owner, repo); err != nil {
+			return err
+		}
+	} else if !reviewRepositoryName.MatchString(repo) || repo == "." || repo == ".." {
+		return fmt.Errorf("invalid organization review repository")
 	}
 
 	client, err := newRESTClient()
 	if err != nil {
 		return fmt.Errorf("creating GitHub REST client: %w", err)
+	}
+	reviewRequester := ""
+	if strings.EqualFold(owner, "hemsoft-dev") {
+		login, _, err := ghExec("api", "user", "--jq", ".login")
+		if err != nil {
+			return fmt.Errorf("cannot establish review requester identity: %w", err)
+		}
+		reviewRequester = strings.TrimSpace(login.String())
+		allowed, err := authorizeReviewRequester(client, owner, repo, reviewRequester)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return fmt.Errorf("review requester requires write or higher repository access")
+		}
 	}
 	defaultBranch, err := fetchRepositoryDefaultBranchWithClient(client, owner, repo)
 	if err != nil {
@@ -314,6 +339,9 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("encoding Codex review request: %w", err)
 	}
 	var created reviewTriggerComment
+	if err := confirmOrganizationReviewRequester(client, owner, repo, reviewRequester); err != nil {
+		return err
+	}
 	if err := client.Post(
 		fmt.Sprintf("repos/%s/%s/issues/%d/comments", owner, repo, opts.pr),
 		payload,
@@ -324,7 +352,7 @@ func runReview(args []string, stdout io.Writer, stderr io.Writer) error {
 	if created.ID < 1 || strings.TrimSpace(created.HTMLURL) == "" {
 		return errors.New("GitHub created the Codex review request without returning its ID and URL")
 	}
-	if err := registerCodexReviewRequest(client, owner, repo, opts.pr, pr.HeadSHA, created); err != nil {
+	if err := registerCodexReviewRequest(client, owner, repo, opts.pr, pr.HeadSHA, pr.BaseSHA, created); err != nil {
 		deletePath := fmt.Sprintf("repos/%s/%s/issues/comments/%d", owner, repo, created.ID)
 		if deleteErr := client.Delete(deletePath, nil); deleteErr != nil {
 			return fmt.Errorf("registering the Codex review request: %v; deleting unregistered request comment %d: %w", err, created.ID, deleteErr)
@@ -341,13 +369,13 @@ func registerCodexReviewRequest(
 	client restAPI,
 	owner, repo string,
 	prNumber int,
-	headSHA string,
+	headSHA, baseSHA string,
 	request reviewTriggerComment,
 ) error {
 	payload, err := jsonBody(map[string]string{
 		"state":       "success",
 		"context":     codexReviewRequestRegistryContext,
-		"description": fmt.Sprintf("SFL Codex request comment %d for PR #%d", request.ID, prNumber),
+		"description": fmt.Sprintf("SFL Codex request comment %d for PR #%d base %s", request.ID, prNumber, strings.ToLower(baseSHA)),
 		"target_url":  request.HTMLURL,
 	})
 	if err != nil {
@@ -655,10 +683,14 @@ func fetchPullRequestShasWithClient(client restAPI, owner, repo string, number i
 
 func fetchRepositoryDefaultBranchWithClient(client restAPI, owner, repo string) (string, error) {
 	var response struct {
+		FullName      string `json:"full_name"`
 		DefaultBranch string `json:"default_branch"`
 	}
 	if err := client.Get(fmt.Sprintf("repos/%s/%s", owner, repo), &response); err != nil {
 		return "", fmt.Errorf("reading the default branch for %s/%s: %w", owner, repo, err)
+	}
+	if !strings.EqualFold(response.FullName, owner+"/"+repo) {
+		return "", fmt.Errorf("canonical repository does not match requested review target %s/%s", owner, repo)
 	}
 	if strings.TrimSpace(response.DefaultBranch) == "" {
 		return "", fmt.Errorf("repository %s/%s has no default branch", owner, repo)
@@ -689,6 +721,10 @@ func findConflictingCodexBaseRequest(
 	prNumber int,
 	headSHA, currentBaseMarker string,
 ) (string, error) {
+	historical, err := findRegisteredCodexRequestRecords(client, owner, repo, prNumber, headSHA, false)
+	if err != nil {
+		return "", err
+	}
 	headMarker := codexReviewHeadMarker(headSHA)
 	for page := 1; ; page++ {
 		var comments []reviewTriggerComment
@@ -702,15 +738,82 @@ func findConflictingCodexBaseRequest(
 			// GitHub does not expose the prior body after an edit. Retain every
 			// edited owner comment conservatively so a removed command or marker
 			// cannot bypass the Codex completion wait.
-			if strings.EqualFold(comment.User.Login, owner) &&
-				strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentBaseMarker) {
-				return comment.HTMLURL, nil
+			if registration, exists := historical[comment.ID]; exists {
+				prefix := fmt.Sprintf("SFL Codex request comment %d for PR #%d base ", comment.ID, prNumber)
+				originalBase := strings.TrimPrefix(registration.Description, prefix)
+				knownBase := strings.HasPrefix(registration.Description, prefix) && regexp.MustCompile(`^[0-9a-f]{40}$`).MatchString(originalBase)
+				if (knownBase && codexReviewBaseMarker(headSHA, originalBase) != currentBaseMarker) ||
+					(!knownBase && (reviewCommentWasEdited(comment, comment.Body) || !strings.Contains(comment.Body, currentBaseMarker))) {
+					return comment.HTMLURL, nil
+				}
+			}
+			if strings.Contains(comment.Body, headMarker) && !strings.Contains(comment.Body, currentBaseMarker) {
+				allowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
+				if err != nil {
+					return "", err
+				}
+				if allowed {
+					return comment.HTMLURL, nil
+				}
 			}
 		}
 		if len(comments) < 100 {
 			return "", nil
 		}
 	}
+}
+
+var reviewRepositoryName = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+var reviewRequesterLogin = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9-]{0,38}$`)
+
+func confirmOrganizationReviewRequester(client restAPI, owner, repo, expectedLogin string) error {
+	if !strings.EqualFold(owner, "hemsoft-dev") {
+		return nil
+	}
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := client.Get("user", &user); err != nil {
+		return fmt.Errorf("cannot revalidate review requester identity: %w", err)
+	}
+	if !strings.EqualFold(user.Login, expectedLogin) {
+		return fmt.Errorf("review requester identity changed before posting")
+	}
+	allowed, err := authorizeReviewRequester(client, owner, repo, expectedLogin)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return fmt.Errorf("review requester lost write permission before posting")
+	}
+	return nil
+}
+
+func authorizeReviewRequester(client restAPI, owner, repo, login string) (bool, error) {
+	if !strings.EqualFold(owner, "hemsoft-dev") {
+		return strings.EqualFold(login, owner), nil
+	}
+	if !reviewRequesterLogin.MatchString(login) {
+		return false, nil
+	}
+	var permission struct {
+		Permission string `json:"permission"`
+		User       struct {
+			Login string `json:"login"`
+		} `json:"user"`
+	}
+	path := fmt.Sprintf("repos/%s/%s/collaborators/%s/permission", owner, repo, login)
+	if err := client.Get(path, &permission); err != nil {
+		var httpErr *api.HTTPError
+		if errors.As(err, &httpErr) && (httpErr.StatusCode == http.StatusNotFound || httpErr.StatusCode == http.StatusForbidden) {
+			return false, nil
+		}
+		return false, fmt.Errorf("cannot authorize review requester %s: %w", login, err)
+	}
+	if !strings.EqualFold(permission.User.Login, login) {
+		return false, fmt.Errorf("review requester identity mismatch")
+	}
+	return permission.Permission == "admin" || permission.Permission == "write" || permission.Permission == "maintain", nil
 }
 
 func findCodexReviewTriggers(
@@ -720,7 +823,7 @@ func findCodexReviewTriggers(
 	headSHA string,
 	marker string,
 ) ([]reviewTriggerComment, []reviewTriggerComment, error) {
-	registeredIDs, err := findRegisteredCodexRequestIDs(client, owner, repo, prNumber, headSHA)
+	registeredIDs, err := findRegisteredCodexRequestIDsWithAuthorization(client, owner, repo, prNumber, headSHA, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -739,12 +842,17 @@ func findCodexReviewTriggers(
 		for _, comment := range comments {
 			foundCommentIDs[comment.ID] = true
 			comment.Registered = registeredIDs[comment.ID]
-			if strings.EqualFold(comment.User.Login, owner) &&
-				((strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) &&
-					strings.Contains(comment.Body, headMarker)) ||
-					registeredIDs[comment.ID]) {
+			if (strings.HasPrefix(strings.TrimSpace(comment.Body), codexReviewCommand) &&
+				strings.Contains(comment.Body, headMarker)) || registeredIDs[comment.ID] {
+				allowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
+				if err != nil {
+					return nil, nil, err
+				}
+				if !allowed && !registeredIDs[comment.ID] {
+					continue
+				}
 				ownerRequests = append(ownerRequests, comment)
-				if strings.Contains(comment.Body, marker) {
+				if allowed && strings.Contains(comment.Body, marker) {
 					matches = append(matches, comment)
 				}
 			}
@@ -790,7 +898,25 @@ func findRegisteredCodexRequestIDs(
 	prNumber int,
 	headSHA string,
 ) (map[int64]bool, error) {
-	registered := map[int64]bool{}
+	return findRegisteredCodexRequestIDsWithAuthorization(client, owner, repo, prNumber, headSHA, true)
+}
+
+// Durable registrations remain ordering barriers after permission revocation.
+// Only the authorization-enabled path may establish publication eligibility.
+func findRegisteredCodexRequestIDsWithAuthorization(client restAPI, owner, repo string, prNumber int, headSHA string, requireAuthorization bool) (map[int64]bool, error) {
+	records, err := findRegisteredCodexRequestRecords(client, owner, repo, prNumber, headSHA, requireAuthorization)
+	if err != nil {
+		return nil, err
+	}
+	ids := map[int64]bool{}
+	for id := range records {
+		ids[id] = true
+	}
+	return ids, nil
+}
+
+func findRegisteredCodexRequestRecords(client restAPI, owner, repo string, prNumber int, headSHA string, requireAuthorization bool) (map[int64]reviewRequestStatus, error) {
+	registered := map[int64]reviewRequestStatus{}
 	targetMarker := strings.ToLower(fmt.Sprintf("/%s/%s/pull/%d#issuecomment-", owner, repo, prNumber))
 	for page := 1; ; page++ {
 		var statuses []reviewRequestStatus
@@ -801,20 +927,51 @@ func findRegisteredCodexRequestIDs(
 			return nil, err
 		}
 		for _, status := range statuses {
-			if status.Context != codexReviewRequestRegistryContext ||
-				!strings.EqualFold(status.Creator.Login, owner) {
+			if status.Context != codexReviewRequestRegistryContext {
 				continue
 			}
 			normalizedTargetURL := strings.ToLower(status.TargetURL)
-			markerIndex := strings.LastIndex(normalizedTargetURL, targetMarker)
-			if markerIndex < 0 {
+			targetPrefix := "https://github.com" + targetMarker
+			if !strings.HasPrefix(normalizedTargetURL, targetPrefix) {
 				continue
 			}
-			idText := normalizedTargetURL[markerIndex+len(targetMarker):]
+			idText := normalizedTargetURL[len(targetPrefix):]
 			id, parseErr := strconv.ParseInt(idText, 10, 64)
-			if parseErr == nil && id > 0 {
-				registered[id] = true
+			if parseErr != nil || id <= 0 || strconv.FormatInt(id, 10) != idText {
+				continue
 			}
+			if requireAuthorization {
+				allowed, err := authorizeReviewRequester(client, owner, repo, status.Creator.Login)
+				if err != nil {
+					return nil, err
+				}
+				if !allowed {
+					continue
+				}
+			}
+			if !requireAuthorization && !strings.EqualFold(owner, "hemsoft-dev") && !strings.EqualFold(status.Creator.Login, owner) {
+				continue
+			}
+			if strings.EqualFold(owner, "hemsoft-dev") {
+				var comment reviewTriggerComment
+				if err := client.Get(fmt.Sprintf("repos/%s/%s/issues/comments/%d", owner, repo, id), &comment); err != nil {
+					return nil, fmt.Errorf("cannot verify registered request author: %w", err)
+				}
+				if comment.ID != id || !strings.EqualFold(comment.User.Login, status.Creator.Login) {
+					continue
+				}
+				if requireAuthorization {
+					authorAllowed, err := authorizeReviewRequester(client, owner, repo, comment.User.Login)
+					if err != nil {
+						return nil, err
+					}
+					if !authorAllowed {
+						continue
+					}
+				}
+			}
+			// GitHub returns newest first; preserve the original registration.
+			registered[id] = status
 		}
 		if len(statuses) < 100 {
 			return registered, nil
