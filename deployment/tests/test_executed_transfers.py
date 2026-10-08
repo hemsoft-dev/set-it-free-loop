@@ -14,6 +14,20 @@ DIRECTORY = ROOT / 'docs/organization-migration'
 
 
 class ExecutedTransferTests(unittest.TestCase):
+    def test_source_gate_current_get_policy_and_chronology(self):
+        import json
+        for field, value in [('enforcement', 'disabled'), ('id', 1), ('bypass_actors', [{'actor_type': 'OrganizationAdmin'}])]:
+            def mutate(d):
+                current = json.loads(d['stdout'])
+                current[field] = value
+                d['stdout'] = json.dumps(current)
+            with self.subTest(field=field):
+                self.rejects('pr156-current-owned-source-gate-primary.json', mutate, 'Source gate current GET')
+        self.rejects('pr156-current-owned-source-gate-primary.json',
+                     lambda d: d.update(started_at='2000-01-01T00:00:00Z'), 'Source gate current GET')
+        self.rejects('pr156-current-owned-source-gate-primary.json',
+                     lambda d: d.update(exit_code=1), 'Pilot API capture')
+
     def test_pilot_authenticated_gate_listing_is_required(self):
         original = VALIDATOR.read
         for role in ('private', 'public'):

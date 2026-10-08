@@ -73,3 +73,5 @@ job wiring as well as testable code blocks. The authenticated coverage artifact
 listing must be captured after its workflow completes, before its digest is used.
 
 Historical live gates are derived from the authenticated, repository- and commit-bound check-run listings. Every accepted gate field matches the contemporaneous guard snapshot. GitHub cleared the private gate's pull-request array in its post-merge listing; its original PR association remains checked separately against the authenticated merged-PR capture. Empty associations are accepted only for captures made after the actual merge. Missing, incomplete, duplicate, mismatched or backdated listings fail validation.
+
+The source organization gate is checked with a later authenticated GET, including its active state, strict Actions integration, exact source-only scope and absence of bypass actors. The retained execution output records the final validator and test-file digests and actual corruption-test count; CI rejects stale records after either implementation changes.

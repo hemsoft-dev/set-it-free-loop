@@ -433,6 +433,14 @@ def validate_source_gate(execution):
                 'strict_required_status_checks_policy': True, 'do_not_enforce_on_create': False,
                 'required_status_checks': [{'context': 'SFL Reviewer Gate Runner', 'integration_id': 15368}]}}],
             'Source organization gate changed its scope, integration or bypass policy')
+    current_name = 'pr156-current-owned-source-gate-primary.json'
+    current = api_receipt(execution, current_name, 'orgs/hemsoft-dev/rulesets/24716278')
+    capture = read(execution, current_name)
+    require(all(current[key] == gate[key] for key in ('id', 'source_type', 'source', 'target',
+                'enforcement', 'bypass_actors', 'conditions', 'rules')) and
+            timestamp(created['completed_at']) <= timestamp(capture['started_at']) <=
+            timestamp(capture['completed_at']),
+            'Source gate current GET differs from its owned strict policy or predates creation')
     before_name, after_name = 'rc21-before-source-governance-unrelated-detail.json', 'rc21-source-org-gate-after-unrelated.json'
     endpoint = 'orgs/hemsoft-dev/rulesets/24698223'
     before, after = api_receipt(execution, before_name, endpoint), api_receipt(execution, after_name, endpoint)
