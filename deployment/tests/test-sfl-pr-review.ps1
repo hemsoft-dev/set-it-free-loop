@@ -422,8 +422,8 @@ const cases = [
   {name: "revoked predecessor still blocks overlap", comments: [{...first,user:{login:"departed"}}, second], checks: [], want: [1]},
   {name: "terminal predecessor allows retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1, 2]},
   {name: "same-second terminal fails closed", comments: [first, second], checks: [terminal("2026-08-19T00:00:02Z")], want: [1]},
-  {name: "edited marker is rejected", comments: [first, editedSecond], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
-  {name: "same-second body mutation is rejected", comments: [first, sameSecondBodyMutation], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
+  {name: "edited marker blocks the head", comments: [first, editedSecond], checks: [terminal("2026-08-19T00:00:01.500Z")], want: []},
+  {name: "same-second body mutation blocks the head", comments: [first, sameSecondBodyMutation], checks: [terminal("2026-08-19T00:00:01.500Z")], want: []},
   {name: "late terminal does not authorize retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:02.500Z")], want: [1]},
   {name: "third request cannot skip unresolved overlapping predecessor", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:03Z")], want: [1]},
   {name: "serial completed requests allow third request", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:01.500Z"), secondTerminal("2026-08-19T00:00:03Z")], want: [1, 2, 4]},
@@ -459,8 +459,8 @@ const supersessionCases = [
   {name: "same-second overlap uses comment order", comments: [first, {...second, created_at: first.created_at, updated_at: first.created_at}], registrations: registeredRequestIds, want: true},
   {name: "multiple overlapping requests supersede", comments: [first, second, recoveredRetry], registrations: registeredRequestIds, want: true},
   {name: "different context does not supersede", comments: [first, otherContext], registrations: registeredRequestIds, want: false},
-  {name: "edited overlap cannot supersede", comments: [first, editedSecond], registrations: registeredRequestIds, want: false},
-  {name: "mutated overlap cannot supersede", comments: [first, sameSecondBodyMutation], registrations: registeredRequestIds, want: false},
+  {name: "edited overlap still supersedes", comments: [first, editedSecond], registrations: registeredRequestIds, want: true},
+  {name: "mutated overlap still supersedes", comments: [first, sameSecondBodyMutation], registrations: registeredRequestIds, want: true},
   {name: "unregistered overlap cannot supersede", comments: [first, second], registrations: new Set([1]), want: false},
   {name: "newly observed registration supersedes", comments: [first, unregistered], registrations: refreshedRegistrations, want: true},
   {name: "replayed original request does not supersede", comments: [first], registrations: registeredRequestIds, want: false},
@@ -659,3 +659,41 @@ if ($canonical -notmatch [regex]::Escape('update this PR branch from ${baseRef} 
 if ($canonical -match [regex]::Escape('advanced to ${pull.base.sha}; request a new Codex review with gh sfl review --retry')) {
     throw 'Base-advance recovery must not recommend an unsupported same-head retry.'
 }
+
+# Execute production admission and final-state predicates, including their writes.
+$contextMatch = [regex]::Match($canonical, '(?s)// BEGIN TESTABLE SUPPORTED PULL CONTEXT\s*(.*?)\s*// END TESTABLE SUPPORTED PULL CONTEXT')
+$terminalMatch = [regex]::Match($canonical, '(?s)// BEGIN TESTABLE TERMINAL PUBLICATION PREFLIGHT\s*(.*?)\s*// END TESTABLE TERMINAL PUBLICATION PREFLIGHT')
+$changedMatch = [regex]::Match($canonical, '(?s)const publicationChanged = state =>(.*?);\s*const publicationChangeReason')
+if (-not $contextMatch.Success -or -not $terminalMatch.Success -or -not $changedMatch.Success) {
+    throw 'Missing cutover publication guards.'
+}
+$cutoverTest = @'
+const assert = require('node:assert/strict');
+const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+const testContext = new Function('owner','repo','headRepo','pull','context',
+'@ + "`n" + ($contextMatch.Groups[1].Value + "`nreturn supportedPullContext;" | ConvertTo-Json -Compress) + @'
+);
+const event = (base, action, changes, head='hemsoft-dev/test') => testContext('hemsoft-dev','test',head,{base:{ref:base}},{payload:{action,changes,repository:{default_branch:'main'}}});
+assert.equal(event('main','opened',undefined),true);
+assert.equal(event('release','opened',undefined),false);
+assert.equal(event('release','edited',{base:{ref:{from:'main'}}}),true);
+assert.equal(event('release','edited',{title:{from:'old'}}),false);
+assert.equal(event('release','edited',{base:{ref:{from:'main'}}},'fork/test'),false);
+const preflight = new AsyncFunction('publicationState','core','publish',
+'@ + "`n" + (
+    'const pullNumber=42,currentHead="head",currentBase="base",contextToken="none";' +
+    'const publicationChangeReason=()=>"changed";const publicationChanged = state =>' +
+    $changedMatch.Groups[1].Value + ";`n" + $terminalMatch.Groups[1].Value + "`nawait publish();" | ConvertTo-Json -Compress) + @'
+);
+(async()=>{
+const valid={requestStillAuthorized:true,pull:{state:'open',head:{sha:'head'},base:{sha:'base'}},openPulls:[{number:42}],supersededRequest:false,lifecycleChanged:false,invalidationRuns:[],contextToken:'none',contextUnambiguous:true};
+const changedStates=[{...valid,requestStillAuthorized:false},{...valid,pull:{...valid.pull,head:{sha:'new'}}},{...valid,pull:{...valid.pull,base:{sha:'new'}}},{...valid,pull:{...valid.pull,state:'closed'}},{...valid,openPulls:[]},{...valid,supersededRequest:true},{...valid,lifecycleChanged:true},{...valid,invalidationRuns:[{id:1}]},{...valid,contextToken:'new'},{...valid,contextUnambiguous:false}];
+for (const [state,want] of [[valid,1],...changedStates.map(state=>[state,0])]) {
+ let writes=0, snapshots=0;
+ await preflight(async()=>{snapshots++;return state},{info:()=>{}},async()=>{writes++});
+ assert.equal(snapshots,1);assert.equal(writes,want);
+}
+})().catch(error=>{console.error(error);process.exitCode=1});
+'@
+$cutoverTest | node -
+if ($LASTEXITCODE -ne 0) { throw 'Cutover admission or terminal publication preflight regression failed.' }
