@@ -1040,6 +1040,19 @@ func deployViaPullRequestAtRevision(owner, repo, baseBranch, operation string, f
 			return "", stateErr
 		}
 		if matches {
+			if policyRevision != "" {
+				var ref struct {
+					Object struct {
+						SHA string `json:"sha"`
+					} `json:"object"`
+				}
+				if err := restClient.Get(fmt.Sprintf("repos/%s/%s/git/ref/heads/%s", owner, repo, baseBranch), &ref); err != nil {
+					return "", err
+				}
+				if ref.Object.SHA != policyRevision {
+					return "", fmt.Errorf("default branch changed before consumer-policy no-op; rerun sync")
+				}
+			}
 			fmt.Fprintf(w, "  SFL %s is already up to date; no pull request needed\n", operation)
 			return "", nil
 		}
@@ -1109,6 +1122,19 @@ func deployViaPullRequestAtRevision(owner, repo, baseBranch, operation string, f
 	}
 	if matches {
 		if existingPR.URL != "" {
+			if policyRevision != "" {
+				var ref struct {
+					Object struct {
+						SHA string `json:"sha"`
+					} `json:"object"`
+				}
+				if err := restClient.Get(fmt.Sprintf("repos/%s/%s/git/ref/heads/%s", owner, repo, baseBranch), &ref); err != nil {
+					return "", err
+				}
+				if ref.Object.SHA != policyRevision {
+					return "", fmt.Errorf("default branch changed before consumer-policy no-op; rerun sync")
+				}
+			}
 			if err := updateDeploymentPRTitle(restClient, owner, repo, existingPR.Number, headline); err != nil {
 				return "", err
 			}

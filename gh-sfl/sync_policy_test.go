@@ -217,3 +217,62 @@ func TestExistingSyncPRLateBaseAdvanceFailsBeforeCommit(t *testing.T) {
 		t.Fatal("stale existing-PR policy wrote repository state")
 	}
 }
+
+func TestConsumerPolicyNoOpRejectsMovedDefaultHead(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		rest := &changingPolicyBaseREST{fakeREST: fakeREST{fileContents: map[string]string{".github/workflows/sfl-pr-review-auto.yml": "current observer"}}}
+		if existing {
+			rest.openPRURL = "https://github.test/pull/existing"
+			rest.openPRBranch = "sfl/sync-existing"
+		}
+		graphQL := &fakeGraphQL{}
+		installDeploymentFakes(t, rest, graphQL)
+		_, err := deployViaPullRequestAtRevision("owner", "repo", "main", "sync", map[string]string{".github/workflows/sfl-pr-review-auto.yml": "current observer"}, "sync", true, io.Discard, "base-sha", nil)
+		if err == nil || !strings.Contains(err.Error(), "default branch changed before consumer-policy no-op") {
+			t.Fatalf("existing=%v returned stale no-op: %v", existing, err)
+		}
+		if len(rest.posts)+len(rest.puts)+len(rest.patches)+len(rest.deletes) != 0 || graphQL.variables != nil {
+			t.Fatal("stale no-op mutated repository")
+		}
+	}
+}
+
+func TestConsumerManifestSnapshotRejectsLegacyPresenceRace(t *testing.T) {
+	body := `{"version":"2.1.0-rc.18","tier":"full","motherRepo":"hemsoft-dev/set-it-free-loop"}`
+	fetch := func(legacy bool) func(string, string, string, string) (string, error) {
+		return func(_, _, path, _ string) (string, error) {
+			if path == "sfl.json" && !legacy {
+				return "", &api.HTTPError{StatusCode: 404}
+			}
+			return body, nil
+		}
+	}
+	initial, err := readRemoteManifestWithFetcher("owner", "repo", fetch(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound, err := readRemoteManifestWithFetcher("owner", "repo", fetch(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialJSON, err := json.Marshal(initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundJSON, err := json.Marshal(bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(initialJSON) != string(boundJSON) {
+		t.Fatal("counterexample must change only unencoded legacy presence")
+	}
+	if err := validateConsumerManifestSnapshot(initialJSON, initial.RemotePaths, bound); err == nil {
+		t.Fatal("legacy manifest removal accepted and would be restored")
+	}
+	if err := validateConsumerManifestSnapshot(initialJSON, initial.RemotePaths, initial); err != nil {
+		t.Fatalf("unchanged snapshot rejected: %v", err)
+	}
+	if err := validateConsumerManifestSnapshot(boundJSON, bound.RemotePaths, initial); err == nil {
+		t.Fatal("concurrent legacy manifest addition accepted")
+	}
+}

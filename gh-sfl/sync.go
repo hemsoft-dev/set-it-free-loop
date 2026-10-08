@@ -44,6 +44,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("reading manifest from %s/%s: %w\nHint: run 'gh sfl init' first to deploy SFL", owner, repo, err)
 	}
 
+	initialManifestPaths := slices.Clone(manifest.RemotePaths)
 	initialManifestJSON, err := json.Marshal(manifest)
 	if err != nil {
 		return fmt.Errorf("capturing installed manifest: %w", err)
@@ -136,12 +137,8 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 			if boundErr != nil {
 				return fmt.Errorf("binding consumer policy to installed manifest: %w", boundErr)
 			}
-			boundJSON, boundErr := json.Marshal(boundManifest)
-			if boundErr != nil {
-				return boundErr
-			}
-			if string(boundJSON) != string(initialManifestJSON) {
-				return fmt.Errorf("installed manifest changed before consumer policy capture; rerun sync")
+			if err := validateConsumerManifestSnapshot(initialManifestJSON, initialManifestPaths, boundManifest); err != nil {
+				return err
 			}
 			fmt.Fprintf(stdout, "  Preserving consumer-owned workflows: %s\n", strings.Join(consumerPolicy.UnmanagedWorkflows, ", "))
 		}
@@ -372,3 +369,16 @@ Examples:
   gh sfl sync --repo owner/repo --direct # Push directly (explicit opt-in)
   gh sfl sync --dry-run                # Preview changes without applying
 `
+
+// RemotePaths records file presence and is deliberately omitted from deployment JSON.
+// Compare it separately so concurrent legacy-manifest removal cannot be reversed.
+func validateConsumerManifestSnapshot(initialJSON []byte, initialPaths []string, bound *sflManifest) error {
+	boundJSON, err := json.Marshal(bound)
+	if err != nil {
+		return err
+	}
+	if string(boundJSON) != string(initialJSON) || !slices.Equal(bound.RemotePaths, initialPaths) {
+		return fmt.Errorf("installed manifest changed before consumer policy capture; rerun sync")
+	}
+	return nil
+}
