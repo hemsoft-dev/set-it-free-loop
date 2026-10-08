@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-08T11:54:50.299598+00:00",
+  "observed_at": "2026-10-08T12:21:05.683133+00:00",
   "command": [
     "python3",
     "deployment/scripts/validate-executed-transfers.py",
@@ -30,7 +30,7 @@
       "-v"
     ],
     "exit_code": 0,
-    "tests": 17
+    "tests": 22
   },
   "existing_migration_tests": {
     "command": [

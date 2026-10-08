@@ -1,0 +1,25 @@
+{
+  "method": "GET",
+  "request_url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-public/actions/runs/37757998489",
+  "http_status": 200,
+  "observed_at": "2026-10-08T12:18:30.829866+00:00",
+  "actor": "HemSoft",
+  "data": {
+    "id": 37757998489,
+    "name": "SFL Codex review request #11",
+    "head_sha": "dcde3d3ae10d93a9cb37462f81049c62d4562911",
+    "path": ".github/workflows/sfl-pr-review-auto.yml",
+    "event": "issue_comment",
+    "status": "completed",
+    "conclusion": "failure",
+    "run_attempt": 1,
+    "created_at": "2026-10-08T09:37:59Z",
+    "run_started_at": "2026-10-08T09:37:59Z",
+    "updated_at": "2026-10-08T09:38:11Z",
+    "html_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-public/actions/runs/37757998489",
+    "repository": {
+      "id": 1408029795,
+      "full_name": "hemsoft-dev/sfl-migration-pilot-public"
+    }
+  }
+}

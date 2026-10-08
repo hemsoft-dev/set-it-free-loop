@@ -4,9 +4,16 @@ import argparse
 import base64
 import datetime
 import hashlib
+import importlib.util
 import json
 import pathlib
 import re
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPLAY_SPEC = importlib.util.spec_from_file_location(
+    'executed_observer_replay', ROOT / 'deployment/scripts/validate-org-rollout.py')
+REPLAY = importlib.util.module_from_spec(REPLAY_SPEC)
+REPLAY_SPEC.loader.exec_module(REPLAY)
 
 
 def require(condition, message):
@@ -108,6 +115,13 @@ def validate_pilots(directory):
                     fixture['outcome'] == outcome and fixture['passed'] is True and
                     fixture['runner_sha256'] == runner_hash and fixture['workflow_sha256'] == workflow_hash,
                     'Pilot fixture does not match its installed workflow and expected result')
+            replay = REPLAY.replay_observer_fixture(
+                json.dumps(installed, sort_keys=True), repository_id, repo, source, version,
+                installed['revision_sha'], scenario, runner_hash)
+            require(all(replay[k] == fixture[k] for k in ('scenario', 'mode', 'outcome', 'passed',
+                    'repository_id', 'repository', 'deployment_sha', 'release_version',
+                    'tested_revision_sha', 'runner_sha256', 'workflow_sha256')),
+                    'Independent pilot fixture replay disagrees with its receipt')
         require(summary['execution_binding_receipt'] == prefix + '-live-execution-binding.json' and
                 summary['installed_terminal_receipt'] == prefix + '-live-runtime-run.json',
                 'Pilot qualification references the wrong live evidence')
@@ -134,6 +148,11 @@ def validate_pilots(directory):
                                  'execution_sha', 'workflow_sha', 'workflow_path', 'event',
                                  'check_run_id', 'external_id'} and
                 all(decoded[k] == binding[k] for k in decoded) and gate['head_sha'] == merge['head'] and
+                gate['name'] == 'SFL Reviewer Gate Runner' and
+                gate['external_id'].startswith(f'sfl-codex-review:pull:{merge["pr_number"]}:base:{merge["base"]}:context:') and
+                timestamp(request['created_at']) < timestamp(native['created_at']) <=
+                timestamp(gate['started_at']) <= timestamp(gate['completed_at']) <=
+                timestamp(merge['observed_at']) <= timestamp(merge['merged_at']) and
                 gate['app']['id'] == 15368 and gate['status'] == 'completed' and gate['conclusion'] == 'success' and
                 gate['external_id'].endswith(':artifact:c' + str(native['id'])) and
                 f':request:{request["id"]}:' in gate['external_id'] and
@@ -154,7 +173,24 @@ def validate_pilots(directory):
                 observers[0]['head_sha'] == run['head_sha'] and observers[0]['conclusion'] == 'success',
                 'Pilot installed observer job did not pass')
         log = read(execution, binding['pending_failure_primary'])
+        pending_capture = read(execution, prefix + '-pending-request-failed-run.json')
+        pending = pending_capture['data']
+        require(pending_capture['method'] == 'GET' and pending_capture['http_status'] == 200 and
+                pending_capture['actor'] == 'HemSoft' and pending_capture['request_url'] ==
+                'https://api.github.com/repos/' + repo + '/actions/runs/' + str(pending['id']) and
+                pending['repository']['id'] == repository_id and pending['repository']['full_name'] == repo and
+                pending['head_sha'] == installed['revision_sha'] and pending['path'] == installed['path'] and
+                pending['event'] == 'issue_comment' and pending['status'] == 'completed' and
+                pending['conclusion'] == 'failure' and
+                timestamp(request['created_at']) <= timestamp(pending['created_at']) <=
+                timestamp(pending['run_started_at']) <= timestamp(pending['updated_at']) <=
+                timestamp(native['created_at']) and
+                timestamp(pending['updated_at']) <= timestamp(pending_capture['observed_at']),
+                'Pilot pending-failure run is not bound to its registered request')
         require(binding['pending_failure_expected'] is True and log['exit_code'] == 0 and
+                log['actor'] == 'HemSoft' and log['argv'] == ['gh', 'run', 'view', str(pending['id']),
+                    '--repo', repo, '--log-failed'] and
+                timestamp(pending['updated_at']) <= timestamp(log['started_at']) <= timestamp(log['completed_at']) and
                 f'Registered Codex review request {request["id"]} is pending' in log['stdout'],
                 'Pilot pending-failure primary is missing or mismatched')
         completion = read(execution, prefix + '-completed-live-pilot-validation.json')
@@ -180,6 +216,48 @@ def validate_pilots(directory):
                     'Pilot terminal repeat is invalid or changed the default revision')
             if operation != 'status':
                 require('no pull request needed' in repeat['stdout'], 'Pilot repeat created a pull request')
+        equivalence = read(execution, prefix + '-final-installed-equivalence.json')
+        require(equivalence['repository_id'] == repository_id and equivalence['repository'] == repo and
+                equivalence['tested_revision_sha'] == installed['revision_sha'] and
+                equivalence['final_default_revision_sha'] == merge['merge_sha'] and
+                equivalence['actual_git_blob_sha'] == installed['blob_sha'] and
+                equivalence['workflow_sha256'] == workflow_hash and equivalence['content_equal'] is True and
+                equivalence['fixture_revisions_unmodified'] is True and
+                timestamp(completion['completed_at']) <= timestamp(equivalence['actual_capture_started_at']) <=
+                timestamp(equivalence['actual_capture_completed_at']) <= timestamp(equivalence['observed_at']),
+                'Pilot final installed equivalence is not bound to its tested workflow')
+        for kind, path in [('workflow', installed['path']), ('manifest', '.sfl/sfl.json')]:
+            capture = read(execution, prefix + '-final-installed-' + kind + '-capture.json')
+            require(capture['actor'] == 'HemSoft' and capture['exit_code'] == 0 and
+                    capture['argv'] == ['gh', 'api', 'repos/' + repo + '/contents/' + path + '?ref=' + merge['merge_sha']] and
+                    timestamp(completion['completed_at']) <= timestamp(capture['started_at']) <=
+                    timestamp(capture['completed_at']) <= timestamp(equivalence['observed_at']) and
+                    capture['data']['type'] == 'file' and capture['data']['encoding'] == 'base64' and
+                    capture['data']['path'] == path,
+                    'Pilot final installed capture is not bound to its immutable revision')
+            captured_content = base64.b64decode(capture['data']['content'])
+            if kind == 'workflow':
+                require(captured_content == content and capture['data']['sha'] == blob and
+                        capture['started_at'] == equivalence['actual_capture_started_at'] and
+                        capture['completed_at'] == equivalence['actual_capture_completed_at'],
+                        'Pilot final installed bytes differ from the tested workflow')
+            else:
+                final_manifest = json.loads(captured_content)
+                require(final_manifest == equivalence['manifest'] and final_manifest['sourceSha'] == source and
+                        final_manifest['version'] == version and final_manifest['tier'] == 'reviewer',
+                        'Pilot final installed manifest differs from its canonical pin')
+        deletion = read(execution, prefix + '-post-live-gate-only-cleanup.json')
+        require(deletion['actor'] == 'HemSoft' and deletion['exit_code'] == 0 and
+                deletion['argv'] == ['gh', 'api', '--method', 'DELETE',
+                    'repos/' + repo + '/rulesets/' + str(completion['owned_gate_id'])] and
+                timestamp(completion['observed_at']) <= timestamp(deletion['started_at']) <=
+                timestamp(deletion['completed_at']) <= timestamp(completion['completed_at']),
+                'Pilot owned gate removal did not follow terminal repeats')
+        for kind in ('effective', 'rulesets'):
+            capture = read(execution, prefix + '-post-live-after-cleanup-' + kind + '.json')
+            require(timestamp(deletion['completed_at']) <= timestamp(capture['started_at']) <=
+                    timestamp(capture['completed_at']) <= timestamp(completion['completed_at']),
+                    'Pilot post-cleanup policy capture predates gate removal')
         effective = api_receipt(execution, prefix + '-post-live-after-cleanup-effective.json',
                                 'repos/' + repo + '/rules/branches/main')
         rulesets = api_receipt(execution, prefix + '-post-live-after-cleanup-rulesets.json',

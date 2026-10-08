@@ -107,6 +107,50 @@ class ExecutedTransferTests(unittest.TestCase):
             d['stdout'] = json.dumps(run)
         self.rejects('rc21-public-live-runtime-run.json', corrupt, 'did not complete successfully')
 
+    def test_final_installed_equivalence_requires_matching_bytes_and_interval(self):
+        for mutation in (lambda d: d.update(content_equal=False),
+                         lambda d: d.update(actual_git_blob_sha='0' * 40),
+                         lambda d: d.update(actual_capture_started_at='2000-01-01T00:00:00Z')):
+            self.rejects('rc21-private-final-installed-equivalence.json', mutation, 'final installed equivalence')
+
+    def test_cleanup_capture_and_deletion_order_rejected(self):
+        self.rejects('rc21-private-post-live-after-cleanup-effective.json',
+                     lambda d: d.update(started_at='2000-01-01T00:00:00Z'), 'predates gate removal')
+        self.rejects('rc21-private-post-live-gate-only-cleanup.json',
+                     lambda d: d.update(started_at='2000-01-01T00:00:00Z'), 'removal did not follow')
+
+    def test_pending_log_command_and_run_identity_rejected(self):
+        for mutation in (lambda d: d.update(actor='someone-else'),
+                         lambda d: d.update(argv=['gh', 'api', 'rate_limit']),
+                         lambda d: d.update(started_at='2000-01-01T00:00:00Z')):
+            self.rejects('rc21-private-live-request-failure-log.json', mutation, 'pending-failure primary')
+        self.rejects('rc21-private-pending-request-failed-run.json',
+                     lambda d: d['data']['repository'].update(id=1), 'pending-failure run')
+
+    def test_required_gate_name_and_completion_time_rejected(self):
+        for mutation in (lambda d: d['gate'].update(name='unrelated check'),
+                         lambda d: d['gate'].update(completed_at='2099-01-01T00:00:00Z'),
+                         lambda d: d['gate'].update(external_id=d['gate']['external_id'].replace('pull:12:', 'pull:999:'))):
+            self.rejects('rc21-private-live-guarded-merge.json', mutation,
+                         'gate is invalid|request binding is invalid')
+
+    def test_arbitrary_installed_text_cannot_qualify_by_rehashing(self):
+        import hashlib
+        original = VALIDATOR.read
+        fake = 'Arbitrary text @89425320ace3127a829d86e3b642fe2b31fd979e'
+        digest = hashlib.sha256(fake.encode()).hexdigest()
+        blob = hashlib.sha1(b'blob ' + str(len(fake.encode())).encode() + b'\0' + fake.encode()).hexdigest()
+        def changed(directory, name):
+            value = copy.deepcopy(original(directory, name))
+            if name == 'rc21-private-installed-observer-projected.json':
+                value.update(content=fake, blob_sha=blob)
+            elif name.startswith('rc21-private-fixture-'):
+                value['workflow_sha256'] = digest
+            return value
+        with mock.patch.object(VALIDATOR, 'read', side_effect=changed):
+            with self.assertRaisesRegex(ValueError, 'reviewed source markers'):
+                VALIDATOR.validate(DIRECTORY)
+
     def test_accepted_response_is_bound_to_actual_transfer(self):
         for field, value in [('method', 'DELETE'), ('request_url', 'https://api.github.com/rate_limit'),
                              ('observed_at', '2026-10-06T00:00:00Z')]:
