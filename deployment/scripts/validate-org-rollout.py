@@ -1608,7 +1608,7 @@ def source_revision(row, repo, earliest=None):
     return head, tree, branch_heads, tags
 
 
-def validate_reference_scan(reference, directory, inventory):
+def validate_reference_scan(reference, directory, inventory, latest_at=None):
     scan = local_capture(reference, directory, 'Fresh complete source reference scan')
     timestamp = observed_time(scan.get('observed_at'), 'Fresh source scan')
     expected = {repo['id']: repo for repo in inventory['repositories']}
@@ -1659,7 +1659,7 @@ def validate_reference_scan(reference, directory, inventory):
         require(not waived or not unresolved_secret_scope,
                 'Inherited or dynamic secret scope needs reconciliation before an unused-credential waiver')
         if conflicts:
-            validate_inactive_historical_references(row, repo, revision, conflicts, waived, directory, timestamp)
+            validate_inactive_historical_references(row, repo, revision, conflicts, waived, directory, timestamp, latest_at=latest_at)
     return revisions, timestamp, manifests
 
 
@@ -1669,7 +1669,7 @@ def secret_references(source):
     return names
 
 
-def validate_inactive_historical_references(row, repo, revision, conflicts, waived, directory, scanned_at):
+def validate_inactive_historical_references(row, repo, revision, conflicts, waived, directory, scanned_at, latest_at=None):
     """Reconcile only the reviewed retired gh-x bytes, never current branch references."""
     require(repo['id'] == 1262580000 and repo['full_name'] == 'HemSoft/gh-x' and
             set(waived) == {'OPENROUTER_API_KEY', 'SFL_APP_PRIVATE_KEY'},
@@ -1703,8 +1703,8 @@ def validate_inactive_historical_references(row, repo, revision, conflicts, waiv
     capture = local_capture(row.get('inactive_historical_workflows_evidence_url'), directory, 'Fresh inactive workflow metadata')
     at = observed_time(capture.get('observed_at'), 'Inactive workflow metadata')
     require(capture.get('phase') == 'pre_cutover' and capture.get('repository_id') == repo['id'] and
-            capture.get('repository') == repo['full_name'] and capture.get('head_sha') == revision[0] and at >= scanned_at,
-            'Inactive workflow evidence must follow the complete scan at its current source head')
+            capture.get('repository') == repo['full_name'] and capture.get('head_sha') == revision[0] and at >= scanned_at and (latest_at is None or at <= latest_at),
+            'Inactive workflow evidence must follow the complete scan at its current source head and precede source refresh')
     base = 'https://api.github.com/repos/' + repo['full_name']
     for name, url in [('metadata_response', base),
                       ('default_ref_response', base + '/git/ref/heads/' + urllib.parse.quote(repo['default_branch'], safe=''))]:
@@ -1855,7 +1855,7 @@ def validate_source_refresh(proof, directory, inventory, credential):
     require(timestamp >= observed_time(credential_run.get('captured_at'), 'App credential run capture'),
             'Source refresh must follow the captured completed credential workflow')
     expected = {r['id']: r for r in inventory['repositories']}
-    revisions, scanned_at, manifests = validate_reference_scan(capture.get('reference_scan_evidence_url'), directory, inventory)
+    revisions, scanned_at, manifests = validate_reference_scan(capture.get('reference_scan_evidence_url'), directory, inventory, latest_at=timestamp)
     run = credential_run.get('run', credential_run)
     require(scanned_at <= observed_time(run.get('created_at'), 'Fresh credential run creation') and
             timestamp - observed_time(run.get('updated_at'), 'Fresh credential run completion') <= datetime.timedelta(minutes=15),

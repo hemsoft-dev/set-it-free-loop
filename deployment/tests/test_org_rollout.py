@@ -5333,6 +5333,21 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         revision=('e'*40,'f'*40,{'main':'e'*40},{'refs/tags/history':{'commit_sha':entry['source_revision']}})
         return repo,row,revision,history,path,capture
 
+    def test_inactive_history_cannot_use_evidence_after_source_refresh(self):
+        repo,row,revision,history,path,original=self.historical_credential_fixture()
+        scanned=validator.observed_time('2026-10-08T01:55:00Z','fixture')
+        refresh=validator.observed_time('2026-10-08T02:01:00Z','fixture')
+        def check():
+            validator.validate_inactive_historical_references(row,repo,revision,[history],
+                ['OPENROUTER_API_KEY','SFL_APP_PRIVATE_KEY'],DIRECTORY,scanned,latest_at=refresh)
+        check()
+        future=copy.deepcopy(original);future['observed_at']='2026-10-08T02:02:00Z'
+        path.write_text(json.dumps(future))
+        with self.assertRaisesRegex(ValueError,'precede source refresh'):check()
+        future=copy.deepcopy(original);future['metadata_response']['observed_at']='2026-10-08T02:02:00Z'
+        path.write_text(json.dumps(future))
+        with self.assertRaisesRegex(ValueError,'identity GETs'):check()
+
     def test_retired_history_requires_exact_bytes_and_current_primary_metadata(self):
         repo,row,revision,history,path,original=self.historical_credential_fixture()
         waived=['OPENROUTER_API_KEY','SFL_APP_PRIVATE_KEY'];scanned=validator.observed_time('2026-10-08T01:55:00Z','fixture')

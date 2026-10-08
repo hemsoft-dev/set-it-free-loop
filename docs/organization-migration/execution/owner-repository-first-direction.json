@@ -1,0 +1,15 @@
+{
+  "recorded_at": "2026-10-08T02:15:58.019651+00:00",
+  "owner_instruction": "Look, we are moving repos over and its taking forever. We will deal with everything SFL related once we\u2019re in hemsoft-dev.",
+  "repository_transfer_first": true,
+  "deferred": "SFL App ownership, organization credential delivery, reviewer deployment and runtime validation",
+  "org_credential_delivery_approved": false,
+  "sealed_workflow_dispatched": false,
+  "retained_sources": [
+    "HemSoft/now-leadership-group",
+    "HemSoft/set-it-free-loop-site"
+  ],
+  "local_preparation_commit": "8455e12bbda1874e59ed3dff6c1c9082b4c56a43",
+  "local_preparation_published": false,
+  "non_sfl_resource_preservation_still_required": true
+}
