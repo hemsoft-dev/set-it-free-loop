@@ -211,6 +211,31 @@ function retargetCases() {
   assert.equal(event('main','release'),true,'retarget to default remains supported');
   assert.equal(event('release',undefined),false,'missing original base cannot grant admission');
   assert.equal(event('release','main','fork/fixture'),false,'fork remains unsupported');
+
+  const job = source.slice(source.indexOf('\n  invalidate-pull-context:'),
+    source.indexOf('\n  invalidate-base-advance:'));
+  const group = /^      group: (.+)$/m.exec(job);
+  assert(group, 'pull-context invalidation concurrency group');
+  assert.match(job, /cancel-in-progress: true/);
+  const evaluateGroup = (ref, from, number=42) => {
+    const github = {repository:'hemsoft-dev/fixture',event:{
+      repository:{default_branch:'main'},pull_request:{number,base:{ref}},
+      changes:{base:{ref:{from}}}}};
+    return group[1].replace(/\$\{\{\s*(.*?)\s*\}\}/g, (_, expression) =>
+      String(new Function('github', `return (${expression});`)(github)));
+  };
+  const departure = evaluateGroup('release','main');
+  // Both running and pending jobs can be canceled by another event in their
+  // group. A chain returning to the same nondefault target must stay separate.
+  for (const [ref, from] of [['other','release'],['release','other']]) {
+    assert.equal(event(ref,from),false,'unsupported chained retarget stays read-only');
+    assert.notEqual(evaluateGroup(ref,from),departure,
+      'unsupported chained retarget cannot cancel default-departure invalidation');
+  }
+  assert.equal(evaluateGroup('main','release'),departure,
+    'supported contexts share the same invalidation serialization');
+  assert.notEqual(evaluateGroup('release','main',43),departure,
+    'different pull requests retain separate invalidation groups');
 }
 
 const repairStart = source.indexOf('const terminalState = await publicationState();');
