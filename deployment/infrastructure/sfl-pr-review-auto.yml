@@ -781,9 +781,18 @@ jobs:
                  (check.external_id || "").startsWith("sfl-codex-review:base-advance:")));
               const tokens = [...new Set(contexts.map(check => check.external_id))];
               if (tokens.length !== 1) return false;
-              const match = /^sfl-codex-review:pull-context:at:(\d+):(\d+):pull:(\d+):action:(opened|synchronize):base:([a-f0-9]{40})$/.exec(tokens[0]);
-              return Boolean(match) && Number(match[3]) === pullNumber &&
-                match[5] === currentBase.toLowerCase();
+              if (!/^sfl-codex-review:pull-context:at:\d+:\d+$/.test(tokens[0])) return false;
+              // Keep the token compact: it is embedded in terminal check IDs.
+              // Structured check output carries the base/action provenance.
+              return contexts.every(check => {
+                let provenance;
+                try { provenance = JSON.parse((check.output && check.output.text) || ""); }
+                catch { return false; }
+                return provenance && provenance.schema === 1 &&
+                  provenance.pull_number === pullNumber &&
+                  (provenance.action === "opened" || provenance.action === "synchronize") &&
+                  provenance.base_sha === currentBase.toLowerCase();
+              });
             }
             // END TESTABLE REVIEW CONTEXT PROVENANCE
             const initialChecks = await github.paginate(
@@ -1210,7 +1219,7 @@ jobs:
             if (!Number.isFinite(contextChangeTime)) {
               throw new Error("Could not determine the pull-context change event time");
             }
-            const invalidationId = `sfl-codex-review:pull-context:at:${contextChangeTime}:${context.runId}:pull:${pull.number}:action:${context.payload.action}:base:${pull.base.sha.toLowerCase()}`;
+            const invalidationId = `sfl-codex-review:pull-context:at:${contextChangeTime}:${context.runId}`;
             const reviewerChecks = await github.paginate(
               github.rest.checks.listForRef,
               {
@@ -1305,7 +1314,12 @@ jobs:
               completed_at: new Date().toISOString(),
               details_url: pull.html_url,
               external_id: invalidationId,
-              output: {title: "SFL Codex review invalidated", summary: reason},
+              output: {
+                title: "SFL Codex review invalidated",
+                summary: reason,
+                text: JSON.stringify({schema: 1, pull_number: pull.number,
+                  action: context.payload.action, base_sha: pull.base.sha.toLowerCase()}),
+              },
             });
             await github.rest.repos.createCommitStatus({
               owner,

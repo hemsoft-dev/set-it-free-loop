@@ -4,7 +4,7 @@ The canonical source is [hemsoft-dev/set-it-free-loop](https://github.com/hemsof
 
 ## New repository
 
-Install the [checksum-verified canonical release](https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.20). With repository write access, run `gh sfl init --repo hemsoft-dev/REPOSITORY --pr`. The default tier is reviewer. Add owner-bound `.github/CODEOWNERS` only when no CODEOWNERS already exists, keeping it separate from SFL managed files. Review and merge the deployment PR, then run `gh sfl gate --repo hemsoft-dev/REPOSITORY`. Run a registered `gh sfl review --repo hemsoft-dev/REPOSITORY --pr NUMBER` on an actual consumer PR. Inspect the current head/base and successful Actions-owned gate before merging.
+Install the [checksum-verified canonical release](https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.21). With repository write access, run `gh sfl init --repo hemsoft-dev/REPOSITORY --pr`. The default tier is reviewer. Add owner-bound `.github/CODEOWNERS` only when no CODEOWNERS already exists, keeping it separate from SFL managed files. Review and merge the deployment PR, then run `gh sfl gate --repo hemsoft-dev/REPOSITORY`. Run a registered `gh sfl review --repo hemsoft-dev/REPOSITORY --pr NUMBER` on an actual consumer PR. Inspect the current head/base and successful Actions-owned gate before merging.
 
 Repeat init/sync through `--pr` and confirm no additional changes. `gh sfl status --repo hemsoft-dev/REPOSITORY` reports the deployed version, source pin, managed file drift and effective gate. Status alone does not turn an advisory deployment into a required gate.
 

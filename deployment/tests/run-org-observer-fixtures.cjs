@@ -29,26 +29,29 @@ const contextGuardStart=source.indexOf('if (!reviewContextUnambiguous(initialChe
 const contextGuardEnd=source.indexOf('const marker = ',contextGuardStart);
 assert(contextGuardStart>=0&&contextGuardEnd>contextGuardStart);
 const guardedContext=new AsyncFunction('initialChecks','pullNumber','currentBase','core','publish',extract('REVIEW CONTEXT PROVENANCE')+source.slice(contextGuardStart,contextGuardEnd)+'await publish();');
-const contextCheck=(token,id=1)=>({id,app:{id:15368},external_id:token});
-const safeToken=`sfl-codex-review:pull-context:at:1000:1:pull:1:action:opened:base:${currentBase}`;
-const headToken=safeToken.replace('action:opened','action:synchronize');
+const contextCheck=(token,id=1,metadata={})=>({id,app:{id:15368},external_id:token,output:{text:JSON.stringify({schema:1,pull_number:1,action:'opened',base_sha:currentBase,...metadata})}});
+const safeToken='sfl-codex-review:pull-context:at:1791499999999:37799999999';
 let contextWrites=0;
 const attempt=async checks=>{contextWrites=0;await guardedContext(checks,1,currentBase,{info:()=>{}},async()=>{contextWrites++});return contextWrites;};
 assert.equal(await attempt([contextCheck(safeToken)]),1);
-assert.equal(await attempt([contextCheck(headToken)]),1);
+assert.equal(await attempt([contextCheck(safeToken,1,{action:'synchronize'})]),1);
 assert.equal(await attempt([contextCheck(safeToken),contextCheck(safeToken,2)]),1);
-for(const checks of [[],[contextCheck('sfl-codex-review:pull-context:at:1000:1')],
- [contextCheck(safeToken.replace('action:opened','action:edited'))],
- [contextCheck(safeToken.replace('action:opened','action:reopened'))],
- [contextCheck(safeToken.replace(currentBase,'c'.repeat(40)))],
- [contextCheck(safeToken.replace('pull:1','pull:2'))],
- [contextCheck(safeToken),contextCheck(headToken.replace(':1000:1:',':2000:2:'),2)],
- [contextCheck(safeToken),contextCheck('sfl-codex-review:base-advance:at:2000:2:1',2)],
- [{...contextCheck(safeToken),app:{id:99}}]]){assert.equal(await attempt(checks),0);}
+for(const checks of [[],[{id:1,app:{id:15368},external_id:safeToken}],
+ [contextCheck(safeToken,1,{action:'edited'})],
+ [contextCheck(safeToken,1,{action:'reopened'})],
+ [contextCheck(safeToken,1,{base_sha:'c'.repeat(40)})],
+ [contextCheck(safeToken,1,{pull_number:2})],
+ [contextCheck(safeToken),contextCheck('sfl-codex-review:pull-context:at:1791500000000:37800000000',2)],
+ [contextCheck(safeToken),contextCheck('sfl-codex-review:base-advance:at:1791500000000:37800000000:1',2)],
+ [contextCheck(safeToken),contextCheck(safeToken,2,{action:'edited'})],
+ [{...contextCheck(safeToken),app:{id:99}}],
+ [{...contextCheck(safeToken),output:{text:'malformed'}}]]){assert.equal(await attempt(checks),0);}
 assert.equal(f.eligibleReviewRequests([request],[],Date.parse('2026-10-07T03:00:00Z'),new Set([3])).length,1);
 assert.equal(f.hasHistoricalBaseConflict([request],[registration]),false);
 assert.equal(f.classifyCodexArtifact(input).action,'success');
-assert.equal(await attempt([contextCheck(safeToken.replace('action:opened','action:edited'))]),0);
+assert.equal(await attempt([contextCheck(safeToken,1,{action:'edited'})]),0);
+const representativeID=f.requestGateExternalId(123456,currentBase,safeToken,605999999999,1791499999999,'c605999999999');
+assert(representativeID.length<=255,`Terminal check ID exceeds API limit: ${representativeID.length}`);
 for(const required of ['!reviewContextUnambiguous(checks, pullNumber, currentBase)','!reviewContextUnambiguous(latestRequestChecks, pullNumber, currentBase)','contextUnambiguous: reviewContextUnambiguous(checkRuns, pullNumber, currentBase)','!state.contextUnambiguous']){assert(source.includes(required));}
 results.push({scenario:'unregistered_base_context',mode:'workflow_fixture',outcome:'stale_gate_rejected',limits:'Production publication guard blocks head-only artifacts after base edits, reopen, legacy or multiple contexts even when only the current request is registered. A fresh opened/head-change context publishes; no live provider events claimed'});
 assert.equal(f.eligibleReviewRequests([request],[],Date.parse('2026-10-07T01:59:59Z'),new Set([3])).length,0);results.push({scenario:'pending_request',mode:'workflow_fixture',outcome:'gate_blocked',limits:'Future request cannot be satisfied by earlier artifact'});
