@@ -168,7 +168,9 @@ const artifact={html_url:'https://github.com/hemsoft-dev/fixture/pull/42'},pull=
 const core={info:()=>{},setFailed:reason=>fixture.failures.push(reason)};
 const github={rest:{repos:{createCommitStatus:async data=>{
   fixture.writes.push(data);
+  if(data.state==='failure'&&fixture.blockingErrors?.length)throw fixture.blockingErrors.shift();
   if(data.state==='success'&&fixture.onSuccess)fixture.onSuccess();
+  if(data.state==='success'&&fixture.successWriteError)throw fixture.successWriteError;
 }}}};
 const publicationState=async()=>{
   fixture.snapshots++;
@@ -201,6 +203,26 @@ async function repairCases(baseFixture, first, selected) {
     assert.equal(during.failures.length,1,name);
     assert(during.snapshots>=2,name);
   }
+  for(const transientFailures of [0,1,2,3]) {
+    const broken=make();
+    const originalError=new Error('actual post-write snapshot API failure');
+    broken.onSuccess=()=>{broken.comments=[selected];};
+    broken.beforeSnapshot=count=>{if(count===3)throw originalError;};
+    broken.blockingErrors=Array.from({length:transientFailures},()=>new Error('blocking status API failure'));
+    await assert.rejects(repairFlow(broken,snapshot),error=>error===originalError,
+      'preserve the post-write verification failure');
+    assert.deepEqual(broken.writes.map(write=>write.state),
+      ['success',...Array(Math.min(transientFailures+1,3)).fill('failure')],
+      'restore a blocking status with bounded retries after API rejection');
+    assert.equal(broken.failures.length,1,'verification errors cannot become success');
+  }
+  const ambiguousWrite=make();
+  const originalWriteError=new Error('success status accepted but response failed');
+  ambiguousWrite.successWriteError=originalWriteError;
+  await assert.rejects(repairFlow(ambiguousWrite,snapshot),error=>error===originalWriteError);
+  assert.deepEqual(ambiguousWrite.writes.map(write=>write.state),['success','failure'],
+    'an ambiguous success write must restore the blocking status');
+  assert.equal(ambiguousWrite.failures.length,1);
   const before=make();before.beforeSnapshot=count=>{
     if(count===2)before.comments=[selected];
   };
