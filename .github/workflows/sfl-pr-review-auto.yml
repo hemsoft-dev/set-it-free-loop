@@ -639,7 +639,8 @@ jobs:
             // BEGIN TESTABLE REQUEST ELIGIBILITY
             const requestContextFromBody = body => {
               const contextMatch = /;context=(.*?) -->/.exec(body || "");
-              return contextMatch && contextMatch[1] ? contextMatch[1] : "";
+              const token = contextMatch && contextMatch[1] ? contextMatch[1] : "";
+              return token && token.trim() === token ? token : "";
             };
             const requestOrder = (left, right) =>
               left.requestTime - right.requestTime || left.comment.id - right.comment.id;
@@ -652,6 +653,7 @@ jobs:
             ).filter(
               ({comment, requestTime, updatedTime}) =>
                 registrations.has(comment.id) &&
+                Boolean(requestContextFromBody(comment.body)) &&
                 (comment.body || "").includes(baseMarker) &&
                 (comment.body || "") === `@codex review\n\n${baseMarker}context=${requestContextFromBody(comment.body)} -->` &&
                 Number.isFinite(requestTime) && requestTime <= beforeTime &&
@@ -685,6 +687,7 @@ jobs:
                 Date.parse(comment.created_at) <= beforeTime);
               if (history.some(comment =>
                   comment.updated_at !== comment.created_at ||
+                  !requestContextFromBody(comment.body) ||
                   (comment.body || "") !== `@codex review\n\n${baseMarker}context=${requestContextFromBody(comment.body)} -->`)) {
                 return [];
               }
@@ -714,6 +717,7 @@ jobs:
                     !(candidateTime > request.requestTime ||
                       (candidateTime === request.requestTime && comment.id > request.comment.id))) return false;
                 const exact = comment.updated_at === comment.created_at &&
+                  Boolean(requestContextFromBody(comment.body)) &&
                   (comment.body || "") === `@codex review\n\n${baseMarker}context=${requestContextFromBody(comment.body)} -->`;
                 // An edited or erased marker cannot erase the newer registration.
                 return !exact || requestContextFromBody(comment.body) === contextToken;
@@ -1164,17 +1168,63 @@ jobs:
             if (existing) {
               const repair = requiredGateRepair(existing, latestRequestStatuses);
               if (repair) {
-                await github.rest.repos.createCommitStatus({
-                  owner,
-                  repo,
-                  sha: currentHead,
-                  state: repair.state,
-                  context: "SFL Reviewer Gate Runner",
-                  target_url: existing.details_url || artifact.html_url || pull.data.html_url,
-                  description: repair.state === "success"
-                    ? "Restored the required status for the completed Codex review"
-                    : "Restored the blocking status for the failed Codex review",
-                });
+                if (repair.state === "success") {
+                  const beforeRepairState = await publicationState();
+                  if (publicationChanged(beforeRepairState)) {
+                    core.info(publicationChangeReason(beforeRepairState));
+                    return;
+                  }
+                }
+                let repairFailureReason;
+                let repairVerificationError;
+                try {
+                  await github.rest.repos.createCommitStatus({
+                    owner,
+                    repo,
+                    sha: currentHead,
+                    state: repair.state,
+                    context: "SFL Reviewer Gate Runner",
+                    target_url: existing.details_url || artifact.html_url || pull.data.html_url,
+                    description: repair.state === "success"
+                      ? "Restored the required status for the completed Codex review"
+                      : "Restored the blocking status for the failed Codex review",
+                  });
+                  if (repair.state === "success") {
+                    const repairedState = await publicationState();
+                    if (publicationChanged(repairedState)) {
+                      repairFailureReason = publicationChangeReason(repairedState);
+                    }
+                  }
+                } catch (error) {
+                  if (repair.state !== "success") throw error;
+                  repairVerificationError = error;
+                  repairFailureReason = "The required status repair could not be verified";
+                }
+                if (repairFailureReason) {
+                  let blockingStatusError;
+                  for (let attempt = 0; attempt < 3; attempt += 1) {
+                    try {
+                      await github.rest.repos.createCommitStatus({
+                        owner,
+                        repo,
+                        sha: currentHead,
+                        state: "failure",
+                        context: "SFL Reviewer Gate Runner",
+                        target_url: existing.details_url || artifact.html_url || pull.data.html_url,
+                        description: "The reviewed pull request context could not be verified during status repair",
+                      });
+                      blockingStatusError = undefined;
+                      break;
+                    } catch (error) {
+                      blockingStatusError = error;
+                    }
+                  }
+                  core.setFailed(repairFailureReason);
+                  if (blockingStatusError) core.info("The blocking status could not be restored after three attempts");
+                  if (repairVerificationError) throw repairVerificationError;
+                  if (blockingStatusError) throw blockingStatusError;
+                  return;
+                }
                 core.info(`Restored the ${repair.state} required status from the terminal SFL audit`);
               }
               core.info("This Codex review request already has a terminal SFL gate");

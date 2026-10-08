@@ -176,8 +176,8 @@ $requiredStatusWrites = [regex]::Matches(
     $canonical,
     '(?s)github\.rest\.repos\.createCommitStatus\(\{(.*?)\}\);'
 )
-if ($requiredStatusWrites.Count -ne 10) {
-    throw "Expected ten required-gate status transitions, found $($requiredStatusWrites.Count)."
+if ($requiredStatusWrites.Count -ne 11) {
+    throw "Expected eleven required-gate status transitions, found $($requiredStatusWrites.Count)."
 }
 foreach ($statusWrite in $requiredStatusWrites) {
     if ($statusWrite.Groups[1].Value -notmatch '(?m)^\s+sha: (currentHead|requiredGateSha|pull\.head\.sha),\s*$') {
