@@ -1383,7 +1383,7 @@ jobs:
               }
               const reason = renamedBase
                 ? `Repository default branch changed from deployed SFL review base ${configuredBaseBranch} to ${baseRef}; redeploy SFL before requesting a new Codex review.`
-                : `Pull request base ${baseRef} advanced to ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`;
+                : `Pull request base ${baseRef} advanced to ${pull.base.sha}; update this PR branch from ${baseRef} to a new head, then request a Codex review with gh sfl review --repo ${owner}/${repo} --pr ${pull.number}.`;
               const finalChecks = await github.paginate(
                 github.rest.checks.listForRef,
                 {

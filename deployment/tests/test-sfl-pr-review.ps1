@@ -536,3 +536,10 @@ if (-not $observerConcurrency.Success -or $observerConcurrency.Groups[1].Value -
     $observerConcurrency.Groups[1].Value -notmatch 'cancel-in-progress: false') {
     throw 'Observer must serialize artifacts without replacing queued events.'
 }
+
+if ($canonical -notmatch [regex]::Escape('update this PR branch from ${baseRef} to a new head, then request a Codex review')) {
+    throw 'Base-advance recovery must explain the new-head prerequisite.'
+}
+if ($canonical -match [regex]::Escape('advanced to ${pull.base.sha}; request a new Codex review with gh sfl review --retry')) {
+    throw 'Base-advance recovery must not recommend an unsupported same-head retry.'
+}
