@@ -39,7 +39,7 @@ items.filter(item => item.id);
 
 foreach ($pattern in @(
     'name: SFL Codex Review Observer',
-    "format('SFL Codex review request #{0}', github.event.issue.number)",
+    "format('SFL Codex comment #{0} request {1}', github.event.issue.number, github.event.comment.id)",
     'github.event.sender.id == 199175422',
     'const appId = 1144995',
     'const appSlug = "chatgpt-codex-connector"',
@@ -615,7 +615,7 @@ const requestTargetPrefix = "https://github.com/hemsoft-dev/consumer/pull/42#iss
 const headMarker = "<!-- sfl-codex-review:head=abc;base=";
 let calls=[];
 const requesterAllowed = async login => { calls.push(login); return login === "member"; };
-const owner="hemsoft-dev", repo="consumer", pullNumber=42;
+const owner="hemsoft-dev", repo="consumer", pullNumber=42,currentHead="abc";
 const context={runId:99};
 const runs=[
  {id:1,event:"issue_comment",actor:{login:"outsider"}},
@@ -625,6 +625,7 @@ const runs=[
 ];
 const github={rest:{actions:{listWorkflowRuns:{}}},paginate:async (_method,args) => args.status === "queued" ? runs : []};
 const isActiveInvalidationRun = () => true;
+const invalidationRequestCommentId = () => null;
 '@ + "`n" + $refreshHelper.Groups[1].Value + "`n" + $activeHelper.Groups[1].Value + "`n" + @'
 (async () => {
  const comments=[
@@ -678,6 +679,8 @@ assert.equal(event('main','opened',undefined),true);
 assert.equal(event('release','opened',undefined),false);
 assert.equal(event('release','edited',{base:{ref:{from:'main'}}}),true);
 assert.equal(event('release','edited',{title:{from:'old'}}),false);
+assert.equal(event('release-b','edited',{base:{ref:{from:'release-a'}}}),false);
+assert.equal(event('main','edited',{base:{ref:{from:'release'}}}),true);
 assert.equal(event('release','edited',{base:{ref:{from:'main'}}},'fork/test'),false);
 const preflight = new AsyncFunction('publicationState','core','publish',
 '@ + "`n" + (

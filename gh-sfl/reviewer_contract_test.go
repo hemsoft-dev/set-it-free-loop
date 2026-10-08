@@ -38,7 +38,7 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 
 	for _, required := range []string{
 		"name: SFL Codex Review Observer",
-		"format('SFL Codex review request #{0}', github.event.issue.number)",
+		"format('SFL Codex comment #{0} request {1}', github.event.issue.number, github.event.comment.id)",
 		"types: [opened, reopened, edited, synchronize]",
 		"invalidate-base-advance:",
 		"github.event.sender.id == 199175422",
