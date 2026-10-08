@@ -1156,6 +1156,24 @@ func deployViaPullRequestAtRevision(owner, repo, baseBranch, operation string, f
 		_ = cleanupBranch()
 		return "", fmt.Errorf("creating GitHub GraphQL client: %w", err)
 	}
+	// Consumer choices can change while reconciliation reads are in flight.
+	// Recheck immediately before the file mutation, including existing PRs.
+	if policyRevision != "" {
+		var ref struct {
+			Object struct {
+				SHA string `json:"sha"`
+			} `json:"object"`
+		}
+		if err := restClient.Get(fmt.Sprintf("repos/%s/%s/git/ref/heads/%s", owner, repo, baseBranch), &ref); err != nil {
+			_ = cleanupBranch()
+			return "", err
+		}
+		if ref.Object.SHA != policyRevision {
+			_ = cleanupBranch()
+			return "", fmt.Errorf("default branch changed before consumer-policy commit; rerun sync before publishing")
+		}
+	}
+
 	if err := graphQLClient.Do(mutation, map[string]any{"input": input}, &mutationResponse); err != nil {
 		cleanupErr := cleanupBranch()
 		if cleanupErr != nil {

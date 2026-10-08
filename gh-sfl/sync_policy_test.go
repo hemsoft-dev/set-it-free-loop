@@ -204,3 +204,16 @@ func TestExistingSyncPRCannotRestoreConsumerOwnedAutomation(t *testing.T) {
 		t.Fatal("consumer-owned divergence wrote repository state")
 	}
 }
+
+func TestExistingSyncPRLateBaseAdvanceFailsBeforeCommit(t *testing.T) {
+	rest := &changingPolicyBaseREST{fakeREST: fakeREST{openPRURL: "https://github.test/pull/existing", openPRBranch: "sfl/sync-existing", fileContents: map[string]string{".github/workflows/sfl-auditor.yml": "manual consumer auditor"}}}
+	graphQL := &fakeGraphQL{}
+	installDeploymentFakes(t, rest, graphQL)
+	_, err := deployViaPullRequestAtRevision("owner", "repo", "main", "sync", map[string]string{".github/workflows/sfl-pr-review-auto.yml": "new observer"}, "sync", true, io.Discard, "base-sha", []string{".github/workflows/sfl-auditor.yml"})
+	if err == nil || !strings.Contains(err.Error(), "default branch changed before consumer-policy commit") || rest.refReads != 2 {
+		t.Fatalf("late existing-PR advance not rejected: %v reads%d", err, rest.refReads)
+	}
+	if len(rest.posts)+len(rest.patches)+len(rest.puts)+len(rest.deletes) != 0 || graphQL.variables != nil {
+		t.Fatal("stale existing-PR policy wrote repository state")
+	}
+}
