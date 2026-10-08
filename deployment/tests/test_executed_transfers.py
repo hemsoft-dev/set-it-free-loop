@@ -61,6 +61,24 @@ class ExecutedTransferTests(unittest.TestCase):
                      lambda d: d.update(text=d['text'] + '\nHemSoft – repo.add_branch_protection_rule\n'),
                      'limited event capture')
 
+    def test_audit_rejects_protection_events_from_other_actors(self):
+        for actor in ('SomeBot', 'github-actions[bot]', 'another-owner'):
+            self.rejects('fhemmer-post-transfer-browser-audit.json',
+                         lambda d, a=actor: d.update(text=d['text'] + '\n' + a + ' – repo.add_branch_protection_rule\n'),
+                         'limited event capture')
+
+    def test_explicit_visibility_is_preserved_for_transfers_and_retained_sources(self):
+        self.rejects('repository-transfers/repository-transfer-1143951439.json',
+                     lambda d: d['after']['data'].update(visibility='internal'), 'Transfer changed visibility')
+        self.rejects('retained-repository-1162179521.json',
+                     lambda d: d['data'].update(visibility='internal'), 'Retained repository configuration')
+
+    def test_verifier_path_capture_binds_bytes_and_retrospective_timing(self):
+        for field, value in [('captured_path', '/tmp/unrelated.py'), ('captured_sha256', '0' * 64),
+                             ('capture_timing', 'at_execution'), ('observed_at', '2026-10-07T00:00:00Z')]:
+            self.rejects('pr156-rc21-executed-verifier-path-capture.json',
+                         lambda d, k=field, v=value: d.update({k: v}), 'Retrospective verifier path capture')
+
     def rejects(self, filename, mutate, message):
         original = VALIDATOR.read
 

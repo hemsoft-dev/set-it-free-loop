@@ -1,0 +1,10 @@
+{
+  "observed_at": "2026-10-08T13:26:55.582479+00:00",
+  "captured_path": "/home/franz/github/hemsoft/set-it-free-loop/.git/merge-mission/verify-rc21-download.py",
+  "captured_sha256": "003d0035ac48c149db6d71361b8292ed27291f50a6ce6654684e9db6dd21867f",
+  "captured_bytes": 2842,
+  "committed_copy": "rc21-independent-download-verifier.py",
+  "invocation_primary": "rc21-independent-default-download-verification.json",
+  "capture_timing": "retrospective_after_execution",
+  "limitation": "Original invocation did not record a script hash at execution time; this later capture proves current bytes at its exact argv path equal the retained implementation, not historical execution-time byte attestation."
+}

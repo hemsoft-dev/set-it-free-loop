@@ -355,9 +355,18 @@ def validate_release(execution):
             {name: 'sha256:' + digest for name, digest in signed_assets.items()},
             'Release asset digests do not match the signed checksum primary')
     invocation = read(execution, 'rc21-independent-default-download-verification.json')
-    require(hashlib.sha256((execution / 'rc21-independent-download-verifier.py').read_bytes()).hexdigest() ==
-            '003d0035ac48c149db6d71361b8292ed27291f50a6ce6654684e9db6dd21867f',
-            'Independent verifier implementation differs from the executed checksum, signature and installer contract')
+    verifier_bytes = (execution / 'rc21-independent-download-verifier.py').read_bytes()
+    verifier_capture = read(execution, 'pr156-rc21-executed-verifier-path-capture.json')
+    require(verifier_capture['captured_path'] == invocation['argv'][1] and
+            verifier_capture['committed_copy'] == 'rc21-independent-download-verifier.py' and
+            verifier_capture['invocation_primary'] == 'rc21-independent-default-download-verification.json' and
+            verifier_capture['captured_bytes'] == len(verifier_bytes) and
+            verifier_capture['captured_sha256'] == hashlib.sha256(verifier_bytes).hexdigest() ==
+            '003d0035ac48c149db6d71361b8292ed27291f50a6ce6654684e9db6dd21867f' and
+            verifier_capture['capture_timing'] == 'retrospective_after_execution' and
+            timestamp(invocation['completed_at']) <= timestamp(verifier_capture['observed_at']) and
+            verifier_capture['limitation'].startswith('Original invocation did not record a script hash at execution time;'),
+            'Retrospective verifier path capture does not bind actual argv, retained bytes or its timing limitation')
     require(invocation['actor'] == 'HemSoft' and invocation['exit_code'] == 0 and
             invocation['argv'] == ['python3', '/home/franz/github/hemsoft/set-it-free-loop/.git/merge-mission/verify-rc21-download.py'] and
             timestamp(release['published_at']) <= timestamp(invocation['started_at']) <= timestamp(proof['observed_at']) <=
@@ -509,7 +518,7 @@ def validate_protection_limitation(execution):
             response['data']['message'] == 'Upgrade to GitHub Pro or make this repository public to enable this feature.' and
             response['data']['status'] == '403' and timestamp(browser['observed_at']) <= timestamp(response['observed_at']) <=
             timestamp(receipt['submitted_at']), 'Historical protection gap requires its actual cutover API refusal')
-    events = re.findall(r'(?m)^\s*(?:HemSoft|fhemmer)\s+[–-]\s+([A-Za-z_]+\.[A-Za-z_]+)\s*$', audit['text'])
+    events = re.findall(r'(?m)^\s*[^\r\n]+?\s+[–-]\s+([A-Za-z_]+\.[A-Za-z_]+)\s*$', audit['text'])
     require(audit['url'] == 'https://github.com/organizations/fhemmer/settings/audit-log?q=created%3A%3E%3D2026-10-07' and
             audit['capture_source'] == 'Shared owner browser visible fhemmer organization audit log' and
             set(events) == {'repo.transfer_outgoing', 'integration_installation.repositories_removed'} and
@@ -547,7 +556,7 @@ def validate(directory):
         actual = metadata(capture, repository_id, name)
         require(timestamp(capture['observed_at']) >= timestamp(final['observed_at']),
                 'Retained repository capture must follow the transfer phase')
-        for field in ('private', 'archived', 'default_branch'):
+        for field in ('private', 'visibility', 'archived', 'default_branch'):
             require(actual[field] == expected[repository_id][field],
                     'Retained repository configuration differs from the inventory')
     receipts = final['receipts']
@@ -567,7 +576,7 @@ def validate(directory):
                 'Receipt mapping must match the original inventory')
         before = metadata(receipt['before'], repo['id'], repo['full_name'])
         after = metadata(receipt['after'], repo['id'], repo['destination'])
-        for field in ('private', 'archived', 'default_branch'):
+        for field in ('private', 'visibility', 'archived', 'default_branch'):
             require(before[field] == after[field] == repo[field],
                     f'Transfer changed {field} for repository {repo["id"]}')
         require(row['private'] == after['private'] and row['archived'] == after['archived'],
