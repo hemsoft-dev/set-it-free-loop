@@ -1,0 +1,35 @@
+# Organization onboarding
+
+The canonical source is [hemsoft-dev/set-it-free-loop](https://github.com/hemsoft-dev/set-it-free-loop). Authenticate the operator as HemSoft; use the `github-personal1` SSH profile. The private SFL App and native Codex installation cover all current and future organization repositories. Reviewer deployments require neither an App private key nor a model credential.
+
+## New repository
+
+Install the [checksum-verified canonical release](https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.18). With repository write access, run `gh sfl init --repo hemsoft-dev/REPOSITORY --pr`. The default tier is reviewer. Add owner-bound `.github/CODEOWNERS` only when no CODEOWNERS already exists, keeping it separate from SFL managed files. Review and merge the deployment PR, then run `gh sfl gate --repo hemsoft-dev/REPOSITORY`. Run a registered `gh sfl review --repo hemsoft-dev/REPOSITORY --pr NUMBER` on an actual consumer PR. Inspect the current head/base and successful Actions-owned gate before merging.
+
+Repeat init/sync through `--pr` and confirm no additional changes. `gh sfl status --repo hemsoft-dev/REPOSITORY` reports the deployed version, source pin, managed file drift and effective gate. Status alone does not turn an advisory deployment into a required gate.
+
+## Existing repository
+
+Use `gh sfl sync --repo hemsoft-dev/REPOSITORY --pr`. Preserve existing tiers, addons, unmanaged files, archive state and unrelated protections. No archived repository is unarchived for rollout. The personal now-leadership-group and set-it-free-loop-site repositories remain outside this organization rollout.
+
+## Review recovery
+
+A review is bound to the PR head, base and context. Findings, malformed results, pending requests and changed context block the gate. If the base advances, update the PR branch to a new head before requesting another review. `--retry` cannot safely reuse the same head across different bases because native Codex artifacts do not identify the originating base/request.
+
+## Governance and credentials
+
+HemSoft remains the valid individual CODEOWNER. Preserve existing repository CODEOWNERS and unrelated ownership rules; organization `.github` CODEOWNERS is not inherited by other repositories. Reviewer tier deliberately provisions no autonomous-agent labels. Existing full tiers retain their labels and governance. Record the effective organization and repository Actions policy without tightening it across unrelated workflows.
+
+Existing App-backed repositories retain their narrow repository-scoped credentials. Organization secrets are not required by reviewer deployments. Repository/environment overrides take precedence over shared values and must be inventoried before any shared credential provision or rotation. No key sealing, export or organization credential write is part of this rollout.
+
+## Recovery and uninstall
+
+Inspect active organization and repository rules before gate changes or uninstall. CLI operations only mutate supported repository-owned SFL rules; inherited organization gates must be removed or changed through their owning organization. Preserve unrelated rules. On disposable validation repositories, verify rejection leaves inherited policy and managed files unchanged, then remove only the deliberately created SFL validation rule and test uninstall under an unrelated retained rule. Use `--keep-labels` for disposable uninstall tests so pre-existing labels remain. Production consumers are not uninstalled as part of this test.
+
+Rotate an App key only through a separately authorized secure credential operation. Verify App identity, installation owner and selected repository coverage, deploy to existing credential consumers, run their read-only checks, then revoke the old key after successful validation. Keep keys, tokens and MFA codes out of logs and issue bodies.
+
+## Installation coverage evidence
+
+The [main-only verification workflow](https://github.com/hemsoft-dev/set-it-free-loop/actions/workflows/verify-sfl-app-credential.yml) reuses the existing source key inside Actions and performs GET requests only. It retains the source credential metadata artifact and adds a separate repository-installation coverage artifact for the 65 transfer targets and three disposable validation repositories. Both retained personal repositories are excluded. Optional extra targets require an explicit bounded JSON array of owner-verified IDs and canonical organization names.
+
+The App JWT stays in memory and is masked; it is never included in artifacts. Coverage receipts bind the requested repository, actual HTTP 200 response, organization installation, permission ceiling and observation time. These checks establish App coverage and credential validity; reviewer and wider-workflow runtime require their separate PR/run evidence in [#139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139).
