@@ -1,0 +1,671 @@
+{
+  "phase": "preparation",
+  "derived_at": "2026-10-08T01:58:24.658355+00:00",
+  "repository_id": 1399232444,
+  "repository": "HemSoft/survival-shelter-opus55",
+  "baseline_inventory_sha256": "472b6005882a3928c549610accbf7d6bee17395ad1ef6cb32875afeec651e55c",
+  "baseline_integrity_sha256": "d30f6b88ea73ce3112b0eb7b43ba11c4f94a1dc80ad0b4f2539a4981411cb5ac",
+  "policy_capture": {
+    "phase": "preparation",
+    "repository_id": 1399232444,
+    "repository": "HemSoft/survival-shelter-opus55",
+    "revision_sha": "f2cb9726ff85c4831b14a25b37474327b10168fc",
+    "observed_at": "2026-10-08T01:28:32.643791+00:00",
+    "repository_response": {
+      "method": "GET",
+      "http_status": 200,
+      "observed_at": "2026-10-08T01:28:31.397328+00:00",
+      "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55",
+      "response_headers": {
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Thu, 08 Oct 2026 01:28:31 GMT",
+        "X-Ratelimit-Limit": "5000",
+        "X-Ratelimit-Remaining": "2546",
+        "X-Ratelimit-Reset": "1791425639",
+        "X-Ratelimit-Resource": "core",
+        "X-Ratelimit-Used": "2454"
+      },
+      "data": {
+        "id": 1399232444,
+        "node_id": "R_kgDOU2aXvA",
+        "name": "survival-shelter-opus55",
+        "full_name": "HemSoft/survival-shelter-opus55",
+        "private": true,
+        "owner": {
+          "login": "HemSoft",
+          "id": 8227352,
+          "node_id": "MDQ6VXNlcjgyMjczNTI=",
+          "avatar_url": "https://avatars.githubusercontent.com/u/8227352?v=4",
+          "gravatar_id": "",
+          "url": "https://api.github.com/users/HemSoft",
+          "html_url": "https://github.com/HemSoft",
+          "followers_url": "https://api.github.com/users/HemSoft/followers",
+          "following_url": "https://api.github.com/users/HemSoft/following{/other_user}",
+          "gists_url": "https://api.github.com/users/HemSoft/gists{/gist_id}",
+          "starred_url": "https://api.github.com/users/HemSoft/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/HemSoft/subscriptions",
+          "organizations_url": "https://api.github.com/users/HemSoft/orgs",
+          "repos_url": "https://api.github.com/users/HemSoft/repos",
+          "events_url": "https://api.github.com/users/HemSoft/events{/privacy}",
+          "received_events_url": "https://api.github.com/users/HemSoft/received_events",
+          "type": "User",
+          "user_view_type": "public",
+          "site_admin": false
+        },
+        "html_url": "https://github.com/HemSoft/survival-shelter-opus55",
+        "description": "Underground shelter management game (Unreal Engine 5.7 + Blender)",
+        "fork": false,
+        "url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55",
+        "forks_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/forks",
+        "keys_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/keys{/key_id}",
+        "collaborators_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/collaborators{/collaborator}",
+        "teams_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/teams",
+        "hooks_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/hooks",
+        "issue_events_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/issues/events{/number}",
+        "events_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/events",
+        "assignees_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/assignees{/user}",
+        "branches_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/branches{/branch}",
+        "tags_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/tags",
+        "blobs_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/blobs{/sha}",
+        "git_tags_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/tags{/sha}",
+        "git_refs_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/refs{/sha}",
+        "trees_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/trees{/sha}",
+        "statuses_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/statuses/{sha}",
+        "languages_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/languages",
+        "stargazers_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/stargazers",
+        "contributors_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/contributors",
+        "subscribers_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/subscribers",
+        "subscription_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/subscription",
+        "commits_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/commits{/sha}",
+        "git_commits_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/commits{/sha}",
+        "comments_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/comments{/number}",
+        "issue_comment_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/issues/comments{/number}",
+        "contents_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/contents/{+path}",
+        "compare_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/compare/{base}...{head}",
+        "merges_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/merges",
+        "archive_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/{archive_format}{/ref}",
+        "downloads_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/downloads",
+        "issues_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/issues{/number}",
+        "pulls_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/pulls{/number}",
+        "milestones_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/milestones{/number}",
+        "notifications_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/notifications{?since,all,participating}",
+        "labels_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/labels{/name}",
+        "releases_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/releases{/id}",
+        "deployments_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/deployments",
+        "created_at": "2026-10-01T05:48:07Z",
+        "updated_at": "2026-10-07T23:32:23Z",
+        "pushed_at": "2026-10-08T01:19:24Z",
+        "git_url": "git://github.com/HemSoft/survival-shelter-opus55.git",
+        "ssh_url": "git@github.com:HemSoft/survival-shelter-opus55.git",
+        "clone_url": "https://github.com/HemSoft/survival-shelter-opus55.git",
+        "svn_url": "https://github.com/HemSoft/survival-shelter-opus55",
+        "homepage": null,
+        "size": 345,
+        "stargazers_count": 0,
+        "watchers_count": 0,
+        "language": "C++",
+        "has_issues": true,
+        "has_projects": true,
+        "has_downloads": false,
+        "has_wiki": true,
+        "has_pages": false,
+        "has_discussions": false,
+        "forks_count": 0,
+        "mirror_url": null,
+        "archived": false,
+        "disabled": false,
+        "open_issues_count": 2,
+        "license": null,
+        "allow_forking": true,
+        "is_template": false,
+        "web_commit_signoff_required": false,
+        "has_pull_requests": true,
+        "pull_request_creation_policy": "all",
+        "topics": [],
+        "visibility": "private",
+        "forks": 0,
+        "open_issues": 2,
+        "watchers": 0,
+        "default_branch": "main",
+        "permissions": {
+          "admin": true,
+          "maintain": true,
+          "push": true,
+          "triage": true,
+          "pull": true
+        },
+        "temp_clone_token": "AB6YUGEO3SRMFNIV66MJ323KY3ZOW",
+        "allow_squash_merge": true,
+        "allow_merge_commit": true,
+        "allow_rebase_merge": true,
+        "allow_auto_merge": false,
+        "delete_branch_on_merge": false,
+        "allow_update_branch": false,
+        "use_squash_pr_title_as_default": false,
+        "squash_merge_commit_message": "COMMIT_MESSAGES",
+        "squash_merge_commit_title": "COMMIT_OR_PR_TITLE",
+        "merge_commit_message": "PR_TITLE",
+        "merge_commit_title": "MERGE_MESSAGE",
+        "network_count": 0,
+        "subscribers_count": 0
+      }
+    },
+    "revision_response": {
+      "method": "GET",
+      "http_status": 200,
+      "observed_at": "2026-10-08T01:28:31.647121+00:00",
+      "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/ref/heads/main",
+      "response_headers": {
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Thu, 08 Oct 2026 01:28:31 GMT",
+        "X-Ratelimit-Limit": "5000",
+        "X-Ratelimit-Remaining": "2542",
+        "X-Ratelimit-Reset": "1791425639",
+        "X-Ratelimit-Resource": "core",
+        "X-Ratelimit-Used": "2458"
+      },
+      "data": {
+        "ref": "refs/heads/main",
+        "node_id": "REF_kwDOU2aXvK9yZWZzL2hlYWRzL21haW4",
+        "url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/refs/heads/main",
+        "object": {
+          "sha": "f2cb9726ff85c4831b14a25b37474327b10168fc",
+          "type": "commit",
+          "url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/commits/f2cb9726ff85c4831b14a25b37474327b10168fc"
+        }
+      }
+    },
+    "ruleset_pages": [
+      {
+        "method": "GET",
+        "http_status": 200,
+        "observed_at": "2026-10-08T01:28:31.896379+00:00",
+        "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/rulesets?includes_parents=true&per_page=100",
+        "response_headers": {
+          "Content-Type": "application/json; charset=utf-8",
+          "Date": "Thu, 08 Oct 2026 01:28:31 GMT",
+          "X-Ratelimit-Limit": "5000",
+          "X-Ratelimit-Remaining": "2538",
+          "X-Ratelimit-Reset": "1791425639",
+          "X-Ratelimit-Resource": "core",
+          "X-Ratelimit-Used": "2462"
+        },
+        "data": [
+          {
+            "id": 24630478,
+            "name": "main protection",
+            "target": "branch",
+            "source_type": "Repository",
+            "source": "HemSoft/survival-shelter-opus55",
+            "enforcement": "active",
+            "node_id": "RRS_lACqUmVwb3NpdG9yec5TZpe8zgF31M4",
+            "_links": {
+              "self": {
+                "href": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/rulesets/24630478"
+              },
+              "html": {
+                "href": "https://github.com/HemSoft/survival-shelter-opus55/rules/24630478"
+              }
+            },
+            "created_at": "2026-10-07T01:40:13.711-04:00",
+            "updated_at": "2026-10-07T01:40:13.777-04:00"
+          }
+        ]
+      }
+    ],
+    "ruleset_responses": {
+      "24630478": {
+        "method": "GET",
+        "http_status": 200,
+        "observed_at": "2026-10-08T01:28:32.401814+00:00",
+        "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/rulesets/24630478",
+        "response_headers": {
+          "Content-Type": "application/json; charset=utf-8",
+          "Date": "Thu, 08 Oct 2026 01:28:32 GMT",
+          "X-Ratelimit-Limit": "5000",
+          "X-Ratelimit-Remaining": "2531",
+          "X-Ratelimit-Reset": "1791425639",
+          "X-Ratelimit-Resource": "core",
+          "X-Ratelimit-Used": "2469"
+        },
+        "data": {
+          "id": 24630478,
+          "name": "main protection",
+          "target": "branch",
+          "source_type": "Repository",
+          "source": "HemSoft/survival-shelter-opus55",
+          "enforcement": "active",
+          "conditions": {
+            "ref_name": {
+              "exclude": [],
+              "include": [
+                "~DEFAULT_BRANCH"
+              ]
+            }
+          },
+          "rules": [
+            {
+              "type": "deletion"
+            },
+            {
+              "type": "non_fast_forward"
+            },
+            {
+              "type": "required_status_checks",
+              "parameters": {
+                "strict_required_status_checks_policy": false,
+                "do_not_enforce_on_create": false,
+                "required_status_checks": [
+                  {
+                    "context": "Build and simulation tests",
+                    "integration_id": 15368
+                  }
+                ]
+              }
+            }
+          ],
+          "node_id": "RRS_lACqUmVwb3NpdG9yec5TZpe8zgF31M4",
+          "created_at": "2026-10-07T01:40:13.711-04:00",
+          "updated_at": "2026-10-07T01:40:13.777-04:00",
+          "bypass_actors": [],
+          "current_user_can_bypass": "never",
+          "_links": {
+            "self": {
+              "href": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/rulesets/24630478"
+            },
+            "html": {
+              "href": "https://github.com/HemSoft/survival-shelter-opus55/rules/24630478"
+            }
+          }
+        }
+      }
+    },
+    "protected_branch_pages": [
+      {
+        "method": "GET",
+        "http_status": 200,
+        "observed_at": "2026-10-08T01:28:32.160603+00:00",
+        "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/branches?protected=true&per_page=100",
+        "response_headers": {
+          "Content-Type": "application/json; charset=utf-8",
+          "Date": "Thu, 08 Oct 2026 01:28:32 GMT",
+          "X-Ratelimit-Limit": "5000",
+          "X-Ratelimit-Remaining": "2535",
+          "X-Ratelimit-Reset": "1791425639",
+          "X-Ratelimit-Resource": "core",
+          "X-Ratelimit-Used": "2465"
+        },
+        "data": [
+          {
+            "name": "main",
+            "commit": {
+              "sha": "f2cb9726ff85c4831b14a25b37474327b10168fc",
+              "url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/commits/f2cb9726ff85c4831b14a25b37474327b10168fc"
+            },
+            "protected": true,
+            "protection": {
+              "enabled": false,
+              "required_status_checks": {
+                "enforcement_level": "off",
+                "contexts": [],
+                "checks": []
+              }
+            },
+            "protection_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/branches/main/protection"
+          }
+        ]
+      }
+    ],
+    "classic_responses": {
+      "main": {
+        "method": "GET",
+        "http_status": 404,
+        "observed_at": "2026-10-08T01:28:32.643770+00:00",
+        "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/branches/main/protection",
+        "response_headers": {
+          "Content-Type": "application/json; charset=utf-8",
+          "Date": "Thu, 08 Oct 2026 01:28:32 GMT",
+          "X-Ratelimit-Limit": "5000",
+          "X-Ratelimit-Remaining": "2528",
+          "X-Ratelimit-Reset": "1791425639",
+          "X-Ratelimit-Resource": "core",
+          "X-Ratelimit-Used": "2472"
+        },
+        "data": {
+          "message": "Branch not protected",
+          "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-branch-protection",
+          "status": "404"
+        }
+      }
+    },
+    "derived_contract": {
+      "rulesets": [
+        {
+          "id": 24630478,
+          "name": "main protection",
+          "target": "branch",
+          "enforcement": "active",
+          "conditions": {
+            "ref_name": {
+              "exclude": [],
+              "include": [
+                "~DEFAULT_BRANCH"
+              ]
+            }
+          },
+          "rules": [
+            {
+              "type": "deletion"
+            },
+            {
+              "type": "non_fast_forward"
+            },
+            {
+              "type": "required_status_checks",
+              "parameters": {
+                "strict_required_status_checks_policy": false,
+                "do_not_enforce_on_create": false,
+                "required_status_checks": [
+                  {
+                    "context": "Build and simulation tests",
+                    "integration_id": 15368
+                  }
+                ]
+              }
+            }
+          ],
+          "bypass_actors": []
+        }
+      ],
+      "classic": {}
+    }
+  },
+  "runner_pages": [
+    {
+      "method": "GET",
+      "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/actions/runners?per_page=100",
+      "http_status": 200,
+      "observed_at": "2026-10-07T22:19:43.233380+00:00",
+      "response_headers": {
+        "Content-Type": "application/json; charset=utf-8"
+      },
+      "data": {
+        "total_count": 1,
+        "runners": [
+          {
+            "id": 10,
+            "name": "DESKTOP-7ES73Q4",
+            "os": "Windows",
+            "status": "online",
+            "busy": false,
+            "version": "2.338.0",
+            "labels": [
+              {
+                "id": 0,
+                "name": "self-hosted",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "Windows",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "X64",
+                "type": "read-only"
+              },
+              {
+                "id": 0,
+                "name": "ue5.7",
+                "type": "custom"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "variable_response": {
+    "method": "GET",
+    "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/actions/variables/UE_RUNNER_ENABLED",
+    "http_status": 200,
+    "observed_at": "2026-10-07T22:32:59.803054+00:00",
+    "data": {
+      "name": "UE_RUNNER_ENABLED",
+      "value": "true",
+      "created_at": "2026-10-07T05:38:06Z",
+      "updated_at": "2026-10-07T06:53:04Z"
+    }
+  },
+  "workflow_capture": {
+    "repository_id": 1399232444,
+    "repository": "HemSoft/survival-shelter-opus55",
+    "revision_sha": "f2cb9726ff85c4831b14a25b37474327b10168fc",
+    "path": ".github/workflows/ci.yml",
+    "contents_response": {
+      "method": "GET",
+      "observed_at": "2026-10-08T00:04:29.812637+00:00",
+      "request_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/contents/.github/workflows/ci.yml?ref=f2cb9726ff85c4831b14a25b37474327b10168fc",
+      "http_status": 200,
+      "data": {
+        "name": "ci.yml",
+        "path": ".github/workflows/ci.yml",
+        "sha": "9c942b4e2b5a6aa3e499e0686652e7130dbcdf94",
+        "size": 1274,
+        "url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/contents/.github/workflows/ci.yml?ref=f2cb9726ff85c4831b14a25b37474327b10168fc",
+        "html_url": "https://github.com/HemSoft/survival-shelter-opus55/blob/f2cb9726ff85c4831b14a25b37474327b10168fc/.github/workflows/ci.yml",
+        "git_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/blobs/9c942b4e2b5a6aa3e499e0686652e7130dbcdf94",
+        "download_url": "https://raw.githubusercontent.com/HemSoft/survival-shelter-opus55/f2cb9726ff85c4831b14a25b37474327b10168fc/.github/workflows/ci.yml?token=AB6YUGDZYRXXHK25NZX7FYTKY3PETAA",
+        "type": "file",
+        "content": "IyBCdWlsZCBhbmQgc2ltdWxhdGlvbiB0ZXN0cyBvbiBldmVyeSBwdXNoIGFu\nZCBwdWxsIHJlcXVlc3QgdG8gbWFpbi4KIyBOZWVkcyBhIHNlbGYtaG9zdGVk\nIFdpbmRvd3MgcnVubmVyIHdpdGggVUUgNS43IChzZWUgRG9jcy9DSS5tZCku\nIFRoZSBqb2IgaXMgc2tpcHBlZCwgd2hpY2ggc2F0aXNmaWVzIHRoZSByZXF1\naXJlZAojIGNoZWNrLCB1bnRpbCB0aGUgcmVwb3NpdG9yeSB2YXJpYWJsZSBV\nRV9SVU5ORVJfRU5BQkxFRCBpcyAndHJ1ZScsIHNvIHB1bGwgcmVxdWVzdHMg\nZG9uJ3QgcXVldWUgd2l0aG91dCBhIHJ1bm5lci4KbmFtZTogQ0kKCm9uOgog\nIHB1c2g6CiAgICBicmFuY2hlczogW21haW5dCiAgcHVsbF9yZXF1ZXN0Ogog\nICAgYnJhbmNoZXM6IFttYWluXQogIHdvcmtmbG93X2Rpc3BhdGNoOgoKcGVy\nbWlzc2lvbnM6CiAgY29udGVudHM6IHJlYWQKCiMgUXVldWUgcmF0aGVyIHRo\nYW4gY2FuY2VsOiBjYW5jZWxsaW5nIGtpbGxzIGEgcnVubmluZyBVbnJlYWxF\nZGl0b3IsIHdoaWNoIEFHRU5UUy5tZCBmb3JiaWRzLgpjb25jdXJyZW5jeToK\nICBncm91cDogY2ktJHt7IGdpdGh1Yi5yZWYgfX0KICBjYW5jZWwtaW4tcHJv\nZ3Jlc3M6IGZhbHNlCgpqb2JzOgogIGJ1aWxkLWFuZC10ZXN0OgogICAgIyBU\naGUgcmVxdWlyZWQgc3RhdHVzIGNoZWNrIG1hdGNoZXMgdGhpcyBuYW1lIGV4\nYWN0bHk7IHJlbmFtZSBib3RoIHRvZ2V0aGVyLgogICAgbmFtZTogQnVpbGQg\nYW5kIHNpbXVsYXRpb24gdGVzdHMKICAgIGlmOiB2YXJzLlVFX1JVTk5FUl9F\nTkFCTEVEID09ICd0cnVlJwogICAgcnVucy1vbjogW3NlbGYtaG9zdGVkLCBX\naW5kb3dzLCBYNjQsIHVlNS43XQogICAgdGltZW91dC1taW51dGVzOiA2MAog\nICAgZW52OgogICAgICBVRV9ST09UOiAke3sgdmFycy5VRV9ST09UIH19CiAg\nICBzdGVwczoKICAgICAgLSBuYW1lOiBDaGVjayBvdXQKICAgICAgICB1c2Vz\nOiBhY3Rpb25zL2NoZWNrb3V0QDNkM2M0MmU1YWFjNWJhODA1ODI1ZGE3NjQx\nMGMxODEyNzNiYTkwYjEgIyB2Ny4wLjEKICAgICAgICB3aXRoOgogICAgICAg\nICAgbGZzOiB0cnVlCiAgICAgICAgICBwZXJzaXN0LWNyZWRlbnRpYWxzOiBm\nYWxzZQoKICAgICAgLSBuYW1lOiBCdWlsZCBlZGl0b3IgdGFyZ2V0CiAgICAg\nICAgc2hlbGw6IHB3c2gKICAgICAgICBydW46IC4vVG9vbHMvU2NyaXB0cy9i\ndWlsZC5wczEKCiAgICAgIC0gbmFtZTogU2ltdWxhdGlvbiB0ZXN0cwogICAg\nICAgIHNoZWxsOiBwd3NoCiAgICAgICAgcnVuOiAuL1Rvb2xzL1NjcmlwdHMv\ncnVuLXRlc3RzLnBzMQo=\n",
+        "encoding": "base64",
+        "_links": {
+          "self": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/contents/.github/workflows/ci.yml?ref=f2cb9726ff85c4831b14a25b37474327b10168fc",
+          "git": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/blobs/9c942b4e2b5a6aa3e499e0686652e7130dbcdf94",
+          "html": "https://github.com/HemSoft/survival-shelter-opus55/blob/f2cb9726ff85c4831b14a25b37474327b10168fc/.github/workflows/ci.yml"
+        }
+      }
+    },
+    "observed_at": "2026-10-08T00:04:29.812711+00:00"
+  },
+  "host_capture": {
+    "observed_at": "2026-10-07T22:30:43.953916+00:00",
+    "host_alias": "laptop",
+    "operation": "Read-only runner services/process paths and selected non-secret .runner metadata",
+    "data": {
+      "computer": "DESKTOP-7ES73Q4",
+      "services": [],
+      "processes": [
+        {
+          "Name": "Runner.Listener.exe",
+          "ProcessId": 9044,
+          "ExecutablePath": "C:\\Users\\User\\actions-runner\\survival-shelter\\bin\\Runner.Listener.exe"
+        }
+      ],
+      "configurations": [
+        {
+          "directory": "C:\\Users\\User\\actions-runner\\survival-shelter",
+          "agentId": 10,
+          "agentName": "DESKTOP-7ES73Q4",
+          "gitHubUrl": "https://github.com/HemSoft/survival-shelter-opus55",
+          "workFolder": "_work"
+        }
+      ]
+    }
+  },
+  "startup_capture": {
+    "observed_at": "2026-10-07T22:57:24.763020+00:00",
+    "operation": "read-only scheduled task metadata; no task or process changes",
+    "host_alias": "laptop",
+    "data": {
+      "computer": "DESKTOP-7ES73Q4",
+      "name": "GitHub Actions runner - HemSoft-survival-shelter-opus55",
+      "path": "\\",
+      "state": "Running",
+      "enabled": true,
+      "actions": [
+        {
+          "Execute": "C:\\Users\\User\\actions-runner\\survival-shelter\\run.cmd",
+          "Arguments": null,
+          "WorkingDirectory": "C:\\Users\\User\\actions-runner\\survival-shelter"
+        }
+      ],
+      "triggers": [
+        {
+          "Enabled": true,
+          "CimClass": {
+            "CimSuperClassName": "MSFT_TaskTrigger",
+            "CimSuperClass": {
+              "CimSuperClassName": null,
+              "CimSuperClass": null,
+              "CimClassProperties": [
+                {
+                  "Name": "Enabled",
+                  "Value": null,
+                  "CimType": 1,
+                  "Flags": "Property, NullValue",
+                  "Qualifiers": "",
+                  "ReferenceClassName": null
+                },
+                {
+                  "Name": "EndBoundary",
+                  "Value": null,
+                  "CimType": 14,
+                  "Flags": "Property, NullValue",
+                  "Qualifiers": "",
+                  "ReferenceClassName": null
+                },
+                {
+                  "Name": "ExecutionTimeLimit",
+                  "Value": null,
+                  "CimType": 14,
+                  "Flags": "Property, NullValue",
+                  "Qualifiers": "",
+                  "ReferenceClassName": null
+                },
+                {
+                  "Name": "Id",
+                  "Value": null,
+                  "CimType": 14,
+                  "Flags": "Property, NullValue",
+                  "Qualifiers": "",
+                  "ReferenceClassName": null
+                },
+                {
+                  "Name": "Repetition",
+                  "Value": null,
+                  "CimType": 16,
+                  "Flags": "Property, NullValue",
+                  "Qualifiers": "EmbeddedInstance = \"MSFT_TaskRepetitionPattern\"",
+                  "ReferenceClassName": "MSFT_TaskRepetitionPattern"
+                },
+                {
+                  "Name": "StartBoundary",
+                  "Value": null,
+                  "CimType": 14,
+                  "Flags": "Property, NullValue",
+                  "Qualifiers": "",
+                  "ReferenceClassName": null
+                }
+              ],
+              "CimClassQualifiers": [],
+              "CimClassMethods": [],
+              "CimSystemProperties": {
+                "Namespace": "ROOT/Microsoft/Windows/TaskScheduler",
+                "ServerName": "DESKTOP-7ES73Q4",
+                "ClassName": "MSFT_TaskTrigger",
+                "Path": null
+              }
+            },
+            "CimClassProperties": [
+              {
+                "Name": "Enabled",
+                "Value": null,
+                "CimType": 1,
+                "Flags": "Property, NullValue",
+                "Qualifiers": [],
+                "ReferenceClassName": null
+              },
+              {
+                "Name": "EndBoundary",
+                "Value": null,
+                "CimType": 14,
+                "Flags": "Property, NullValue",
+                "Qualifiers": [],
+                "ReferenceClassName": null
+              },
+              {
+                "Name": "ExecutionTimeLimit",
+                "Value": null,
+                "CimType": 14,
+                "Flags": "Property, NullValue",
+                "Qualifiers": [],
+                "ReferenceClassName": null
+              },
+              {
+                "Name": "Id",
+                "Value": null,
+                "CimType": 14,
+                "Flags": "Property, NullValue",
+                "Qualifiers": [],
+                "ReferenceClassName": null
+              },
+              {
+                "Name": "Repetition",
+                "Value": null,
+                "CimType": 16,
+                "Flags": "Property, NullValue",
+                "Qualifiers": [
+                  "EmbeddedInstance = \"MSFT_TaskRepetitionPattern\""
+                ],
+                "ReferenceClassName": "MSFT_TaskRepetitionPattern"
+              },
+              {
+                "Name": "StartBoundary",
+                "Value": null,
+                "CimType": 14,
+                "Flags": "Property, NullValue",
+                "Qualifiers": [],
+                "ReferenceClassName": null
+              },
+              {
+                "Name": "Delay",
+                "Value": null,
+                "CimType": 14,
+                "Flags": "Property, NullValue",
+                "Qualifiers": [],
+                "ReferenceClassName": null
+              },
+              {
+                "Name": "UserId",
+                "Value": null,
+                "CimType": 14,
+                "Flags": "Property, NullValue",
+                "Qualifiers": [],
+                "ReferenceClassName": null
+              }
+            ],
+            "CimClassQualifiers": [],
+            "CimClassMethods": [],
+            "CimSystemProperties": {
+              "Namespace": "Root/Microsoft/Windows/TaskScheduler",
+              "ServerName": "DESKTOP-7ES73Q4",
+              "ClassName": "MSFT_TaskLogonTrigger",
+              "Path": null
+            }
+          }
+        }
+      ],
+      "principal": {
+        "user": "User",
+        "logonType": "Interactive",
+        "runLevel": "Limited"
+      },
+      "lastRunTime": "2026-10-07T02:52:58.0000000-04:00",
+      "lastTaskResult": 267009
+    }
+  },
+  "treatment": "Preserve runner10, existing logon startup task, UE_RUNNER_ENABLED and current main protections. Require fresh primary source checks and actual destination CI on runner10. Do not change or cancel human processes, tasks or registration.",
+  "transfer_gate_cleared": false
+}

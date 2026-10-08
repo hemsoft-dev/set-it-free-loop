@@ -24,10 +24,12 @@ source evidence URL or approved owner receipt. Where there is no external
 integration, record `provider=none` and an evidence-backed `absence_reason`.
 Empty fields, missing access, and failed lookups remain pending.
 
-The [fresh runtime evidence](runtime-refresh-evidence.json) contains successful
+The [earlier runtime evidence](runtime-refresh-evidence.json) contains successful
 runner lookups for all 67 sources and secret/variable name inventories for all
-16 environments. Only HemSoft/yahtzee has a registered runner, online and idle;
-all 32 environment inventories are empty. Destination owner pages show no
+16 environments. That capture observed only HemSoft/yahtzee's registered runner;
+the [subsequent Windows resource capture](current-survival-resources.json)
+also records survival-shelter-opus55 runner10 and its existing startup task.
+All 32 environment inventories in that capture are empty. Destination owner pages show no
 self-hosted runners and a Default group excluding public repositories. Refresh
 these observations, App selections and effective protections immediately before
 cutover. The [fhemmer owner-browser evidence](fhemmer-protection-evidence.json) observes
@@ -334,7 +336,7 @@ rollout evidence field never establishes completion.
 
 Additional mandatory record checks: every transfer-target ledger row must be verified before any source transfer or App cutover. A selected custom tier requires an existing custom manifest. Completed consumers must record matching manifest source/sourceSha/version/tier and canonical release/download verification receipts. Verified pilots require a strict required Actions-bound SFL gate, the human requester and write-or-higher permission receipt, the same-repository review PR, and an SFL registered Codex artifact bound to that requester, PR, head and base. At least one verified pilot must deploy a wider tier and supply wider workflow and auditor run receipts before organization rollout.
 
-The known yahtzee runner is a separate resource row reconciled with both runner captures. Its current registration and guest service are recorded in `yahtzee-runner-owner-evidence.json`; fresh pre-transfer smoke and isolation checks passed; post-transfer continuity remains pending. Preserve the existing registration first and replace it only if continuity fails. Never infer runner absence from an empty external-provider dashboard.
+The known yahtzee runner is a separate resource row reconciled with both runner captures. Its current registration and guest service are recorded in `yahtzee-runner-owner-evidence.json`; fresh pre-transfer smoke and isolation checks passed; post-transfer continuity remains pending. The subsequently observed Windows runner has its own ledger row and [reviewed resource contract](current-survival-resources.json). Preserve both registrations and their existing startup mechanisms. Any repair requires its own authorization. Never infer runner absence from an empty external-provider dashboard.
 
 Franz confirmed [none of the 65 transfer targets uses Azure Pipelines, Fly.io or Railway](https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028753359). `provider-absence-owner-evidence.json` clears those usage candidates without changing historical App selections or clearing other mandatory gates.
 
@@ -800,3 +802,51 @@ run of `.github/workflows/self-hosted-smoke.yml` and `workflow_evidence_url` wit
 immutable contents at its actual head, equal to
 [the reviewed read-only workflow](yahtzee-smoke-workflow.yml). Preserve the
 existing runner's isolation, service, labels and executed-job requirements.
+
+## Current resources and retired history
+
+The original inventory and unavailable endpoint seal stay unchanged. The
+[Windows preparation capture](current-survival-resources.json) adds the observed
+main ruleset24630478, runner10 `DESKTOP-7ES73Q4`, `UE_RUNNER_ENABLED=true`, and
+immutable `.github/workflows/ci.yml`. Fresh source observations must preserve
+these resources alongside the original protections. Preparation does not clear
+any transfer gate.
+
+For Windows destination continuity, record `startup_model=windows_logon_task`
+and `startup_active=true`, plus `registration_evidence_url`,
+`startup_evidence_url`, `run_evidence_url`, `workflow_evidence_url` and
+`jobs_evidence_url`. The registration capture includes its exact successful
+destination `/actions/runners/10` GET. The startup capture contains fresh
+`host_capture` and `startup_capture` from laptop after destination/App/policy
+cutover. Preserve the existing limited interactive logon task, `run.cmd`, work
+directory and foreground listener. Do not stop human processes, change tasks,
+register a replacement, or cancel an existing run to collect this proof.
+
+Dispatch the existing main CI only when the runner is available. Its capture
+uses `verification_mode=existing_build_and_simulation_tests` and proves the
+successful `Build and simulation tests` job ran on runner10 in the exact current
+attempt. Both bare `ci.yml` and exact `ci.yml@main` run paths are supported;
+other refs reject. This existing build is separate from yahtzee's zero-permission
+read-only smoke. All Linux isolation, route, service and workflow checks remain
+mandatory.
+
+The [retired workflow catalog](historical-workflow-reconciliation.json) pins
+the exact 14 gh-x blobs and 11 tag-only revisions found in the complete scan.
+Their two unused legacy credential names retain the existing owner receipt.
+Set gh-x's `inactive_historical_workflows_evidence_url` to an independent fresh
+capture after the complete final scan: current repository/ref GETs, complete
+current workflow pages, deleted automatic/lock workflow GETs, and the exact
+recovery workflow404. The reviewed exception accepts only those bytes on tags
+that are absent from current branch heads. Restored branches, changed blobs,
+new references, or dynamic secret access require new reconciliation. Preserve
+historical manifests while requiring agreement between both manifest locations
+on every current branch.
+
+For the inaccessible fhemmer source only, a fresh `owner_browser_evidence_url`
+can accompany the exact retained Free-plan ruleset403. Keep complete successful
+repository/ref and empty protected-branch GETs. Record authenticated HemSoft
+classic/ruleset Settings DOM with the exact source URL and repository header;
+the classic page also binds its immutable ID. Browser and policy phases must
+match `pre_cutover` or `pre_transfer`. The immediate pre-transfer observations
+must fall within the same 60-second acceptance window. This exception never
+applies to a destination refusal, quota failure, or newly configured protection.

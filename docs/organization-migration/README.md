@@ -654,6 +654,13 @@ attempt's jobs API. Record each response body, HTTP status, observation time and
 pagination headers. The executed smoke job must identify the preserved runner;
 a manually supplied job summary cannot establish machine continuity.
 
+The [current-resource reconciliation](ROLLOUT.md#current-resources-and-retired-history)
+preserves the later Windows runner/startup/main ruleset independently of the
+original sealed inventory. It also defines exact retired gh-x tag-only workflow
+proof and authenticated source-browser protection evidence for fhemmer's retained
+plan refusal. These reviewed preparations require fresh cutover observations;
+they do not establish a completed transfer or rollout.
+
 Transfer captures include the owner-authenticated JSON audit export request,
 ready response, successful truncation verification and downloaded gzip bytes.
 The request uses `action:repo.transfer`; bind all returned routes by SHA256 and

@@ -1,0 +1,180 @@
+{
+  "repository_id": 1262580000,
+  "repository": "HemSoft/gh-x",
+  "secret_names": [
+    "OPENROUTER_API_KEY",
+    "SFL_APP_PRIVATE_KEY"
+  ],
+  "tag_only_revisions": [
+    "1ffda033ae19d6d60ce8102f770a20caa981c312",
+    "24ee6fdf5db38ca2db1c7db5bac1b0e95c0df66e",
+    "659d9a769644be503330b552857a8e4a779d2202",
+    "65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+    "7e86bde9fdaaf2b4dab0c76d7cee066b85b053f6",
+    "816a63e7da31cf3a08a32a5d70c551325253bcfe",
+    "83e1739dbcfa5343520e19e8708ea54fa234330f",
+    "8be4715cc68e36761441dbe9a2a169a91a3628be",
+    "a0bbe0a892a85e327e92fd208a23c18b8bb48247",
+    "a3e9eb3a4c326576de3e74db20a207571bfc550e",
+    "be9ed07ae35c58265f941cb5091c8f94bacfe019"
+  ],
+  "blobs": [
+    {
+      "path": ".github/workflows/sfl-pr-review.lock.yml",
+      "blob_sha": "82a39036513f49d1e31766989148c9e919978dcf",
+      "sha256": "e3e3019f3d7a2036fe325aeb1971c83306103e0094fcf620a2c1c33160a17235",
+      "events": [
+        "pull_request",
+        "workflow_dispatch"
+      ],
+      "source_revision": "1ffda033ae19d6d60ce8102f770a20caa981c312",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review.lock.yml?ref=1ffda033ae19d6d60ce8102f770a20caa981c312",
+      "source_observed_at": "2026-10-07T23:57:34.777857+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review.md",
+      "blob_sha": "f66bd8b5a7c88e22b86c05fb36ee14fb219f15f5",
+      "sha256": "617c498071dc64bd2d873a999192f8ee8c188c2340fd1a9f64d69a8c6d06507f",
+      "events": [
+        "label_command"
+      ],
+      "source_revision": "1ffda033ae19d6d60ce8102f770a20caa981c312",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review.md?ref=1ffda033ae19d6d60ce8102f770a20caa981c312",
+      "source_observed_at": "2026-10-07T23:57:35.027572+00:00"
+    },
+    {
+      "path": "sfl.json",
+      "blob_sha": "4f9b88cb3adb44f8d9599805b028e5e6745eaab5",
+      "sha256": "82928742a3c63f5aafda12fbd6acc38abc86ad99960624e3ead75cdde5e3ebb8",
+      "events": [],
+      "source_revision": "1ffda033ae19d6d60ce8102f770a20caa981c312",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/sfl.json?ref=1ffda033ae19d6d60ce8102f770a20caa981c312",
+      "source_observed_at": "2026-10-07T23:57:35.280746+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review.lock.yml",
+      "blob_sha": "3f9d5c4a8ca23a17f38e7d8333bd0827e70d7dd5",
+      "sha256": "bed6b12ba7217927afb50632013b754e1527d4682237a45f001645259a5edf8f",
+      "events": [
+        "pull_request",
+        "workflow_dispatch"
+      ],
+      "source_revision": "24ee6fdf5db38ca2db1c7db5bac1b0e95c0df66e",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review.lock.yml?ref=24ee6fdf5db38ca2db1c7db5bac1b0e95c0df66e",
+      "source_observed_at": "2026-10-07T23:57:39.522151+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review.md",
+      "blob_sha": "87f687c8101009944a5aae2a6bc334b3633b638a",
+      "sha256": "efd03d4666f88b67a22214a101f009f2ad09d6be393c7e566e9f8a27fa9cc4d2",
+      "events": [
+        "label_command"
+      ],
+      "source_revision": "24ee6fdf5db38ca2db1c7db5bac1b0e95c0df66e",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review.md?ref=24ee6fdf5db38ca2db1c7db5bac1b0e95c0df66e",
+      "source_observed_at": "2026-10-07T23:57:39.744594+00:00"
+    },
+    {
+      "path": "sfl.json",
+      "blob_sha": "c59845706c069011b266bf686dde88b48d5c64f4",
+      "sha256": "a88162745f5ee8de198ef8246b83362185cb980f68292a6ca458247be62f7472",
+      "events": [],
+      "source_revision": "24ee6fdf5db38ca2db1c7db5bac1b0e95c0df66e",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/sfl.json?ref=24ee6fdf5db38ca2db1c7db5bac1b0e95c0df66e",
+      "source_observed_at": "2026-10-07T23:57:39.981934+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review.lock.yml",
+      "blob_sha": "ccc0abc4a7ca7854f8a8881b9af8f994aabe2428",
+      "sha256": "1c5166920d0ad17cfea56b7a3e7745693690e50323cdf31a37e9d6b9f31b87e5",
+      "events": [
+        "pull_request",
+        "workflow_dispatch"
+      ],
+      "source_revision": "659d9a769644be503330b552857a8e4a779d2202",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review.lock.yml?ref=659d9a769644be503330b552857a8e4a779d2202",
+      "source_observed_at": "2026-10-07T23:58:03.759867+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review.md",
+      "blob_sha": "41fe6119964c62d39d3cd84761ecb1eff796cbe6",
+      "sha256": "6b3bd79304b626dcc8fae4efb6915b86d71219fb3d25d440d5b38d950655c820",
+      "events": [
+        "label_command"
+      ],
+      "source_revision": "659d9a769644be503330b552857a8e4a779d2202",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review.md?ref=659d9a769644be503330b552857a8e4a779d2202",
+      "source_observed_at": "2026-10-07T23:58:04.018183+00:00"
+    },
+    {
+      "path": "sfl.json",
+      "blob_sha": "a9a026fd56a3fd12abbdb2b17bc0227ae8de1bf6",
+      "sha256": "4a97c695904519065f0763976a052760fc855546b67d4df9310b4fcf8d3349e5",
+      "events": [],
+      "source_revision": "659d9a769644be503330b552857a8e4a779d2202",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/sfl.json?ref=659d9a769644be503330b552857a8e4a779d2202",
+      "source_observed_at": "2026-10-07T23:58:04.231944+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review-auto.yml",
+      "blob_sha": "8d243afac88cbadbfd4139a052b90227e704a95a",
+      "sha256": "e09095d9443b1922a9a5fbf2283e0b6ab0757ac5c695c3c55f8b8e733ca5e8ec",
+      "events": [
+        "issue_comment",
+        "pull_request_review",
+        "pull_request_target"
+      ],
+      "source_revision": "65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review-auto.yml?ref=65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_observed_at": "2026-10-07T23:58:05.616703+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review-recovery.yml",
+      "blob_sha": "0f6588a319b1c69212d20c092491ace85863eeae",
+      "sha256": "c9974cbf72476b30ced6a13c2ef1764f9632dd7cd3e793c0e7ebe3beca3d4a57",
+      "events": [
+        "workflow_run"
+      ],
+      "source_revision": "65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review-recovery.yml?ref=65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_observed_at": "2026-10-07T23:58:05.873431+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review.lock.yml",
+      "blob_sha": "4d4c0dea6a20561074bc0ac1866d205b61b71981",
+      "sha256": "72c5112ebb7bd49fd3cff196acf0fb39e167b14cd8d2bd40e2f1bdcfc78ae2e9",
+      "events": [
+        "workflow_dispatch"
+      ],
+      "source_revision": "65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review.lock.yml?ref=65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_observed_at": "2026-10-07T23:58:06.145503+00:00"
+    },
+    {
+      "path": ".github/workflows/sfl-pr-review.md",
+      "blob_sha": "08c1a079c74bcb21541ebad7219ae6577a69c784",
+      "sha256": "6ead52e47ecedddd5cd37241dad44cceb539eb851090d84ba0b2e82db0a2d79c",
+      "events": [
+        "workflow_dispatch"
+      ],
+      "source_revision": "65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/.github/workflows/sfl-pr-review.md?ref=65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_observed_at": "2026-10-07T23:58:06.406835+00:00"
+    },
+    {
+      "path": "sfl.json",
+      "blob_sha": "61070b4b5bc7b9c44f1fa89c855b562024f5f205",
+      "sha256": "b3b9ee5156c4baae8e228582a2a24593bf0fd75154844a98a3f5ec15d095c40f",
+      "events": [],
+      "source_revision": "65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_contents_url": "https://api.github.com/repos/HemSoft/gh-x/contents/sfl.json?ref=65a33810736b2dd7f4c1047d7332c366aa36bb0d",
+      "source_observed_at": "2026-10-07T23:58:06.610945+00:00"
+    }
+  ],
+  "owner_unused_receipt": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028911622",
+  "treatment": "Preserve tagged history and encrypted entries; verify current branch absence and retired workflow metadata again before transfer.",
+  "trigger_basis": "Immutable bytes parsed with PyYAML BaseLoader; no tag push, create, delete or release events. Manifest records do not execute.",
+  "primary_event_documentation": "https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows",
+  "preparation_scan_observed_at": "2026-10-08T01:29:11.560879+00:00",
+  "transfer_gate_cleared": false
+}
