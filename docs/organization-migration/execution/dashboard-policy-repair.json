@@ -1,7 +1,7 @@
 {
   "observed_at": "2026-10-08T02:34:07.532377+00:00",
   "repository_id": 1120402599,
-  "original_primary_capture": "repository-transfer-1120402599.json",
+  "original_primary_capture": "repository-transfers/repository-transfer-1120402599.json",
   "before": {
     "ruleset_pages": [
       {

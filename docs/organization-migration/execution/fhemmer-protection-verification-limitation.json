@@ -1,0 +1,26 @@
+{
+  "repository_id": 1143951439,
+  "source": "fhemmer/hs-cli-confluence-search",
+  "destination": "hemsoft-dev/hs-cli-confluence-search-fhemmer",
+  "status": "historical fresh-policy capture unavailable",
+  "older_owner_browser_capture": "fhemmer-protection-owner-refresh.json",
+  "older_capture_observed_at": "2026-10-07T17:31:57+00:00",
+  "actual_transfer_started_at": "2026-10-08T02:20:54.135031+00:00",
+  "primary_transfer_capture": "repository-transfers/repository-transfer-1143951439.json",
+  "reason": "Source Free-plan ruleset API returned HTTP403. No fresh owner-browser capture was attached immediately before transfer. The earlier empty-policy owner observation is not a fresh cutover capture.",
+  "retrospective_supporting_capture": "fhemmer-post-transfer-browser-audit.json",
+  "self_serve_attempts": [
+    "Owner-bound organization audit REST request returned HTTP404.",
+    "Shared owner browser audit search for October7 onward showed transfer and installation removal events only."
+  ],
+  "coverage_limit": "Browser audit provides retrospective support but does not prove completeness of policy-change event coverage. Source repository has moved and cannot be inspected at its historical cutover state.",
+  "verified_independently": [
+    "repository ID",
+    "refs",
+    "visibility",
+    "archive state",
+    "default branch",
+    "destination policy capture"
+  ],
+  "policy_preservation_claim": "Not established by a fresh source capture; no replacement or fabricated observation claimed."
+}

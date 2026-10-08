@@ -600,9 +600,16 @@
       "verified_at": "2026-10-08T02:31:34.894613+00:00"
     }
   ],
-  "sfl_app_and_credentials": "deferred; no operations performed",
+  "sfl_app_and_credentials": "Deferred at this snapshot; subsequent App transfer verified in post-transfer-app-installation.json; organization credential delivery remains incomplete",
   "local_other_agent_checkouts": "unchanged",
-  "execution_record_kind": "repository-first transfer, followed by SFL App and release verification",
+  "execution_record_kind": "Repository-first transfer snapshot at observed_at; subsequent App verification captured separately",
   "app_completion_evidence_url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/138#issuecomment-6051388689",
-  "reviewer_rollout_complete": false
+  "reviewer_rollout_complete": false,
+  "subsequent_app_capture": "post-transfer-app-installation.json",
+  "protection_verification_limitations": [
+    {
+      "repository_id": 1143951439,
+      "evidence": "fhemmer-protection-verification-limitation.json"
+    }
+  ]
 }

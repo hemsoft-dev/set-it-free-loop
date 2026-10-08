@@ -1912,6 +1912,13 @@ def validate_source_refresh(proof, directory, inventory, credential):
                 for runner in record.get('data', {}).get('runners', []))
             if repo_id == SURVIVAL_REPOSITORY_ID:
                 survival = reviewed_survival_resources(baseline, directory)
+                scan = local_capture(capture['reference_scan_evidence_url'], directory, 'Fresh complete source reference scan')
+                scanned_repository = next(row for row in scan['repositories'] if row['repository_id'] == repo_id)
+                workflows = [file for file in scanned_repository['files'] if file['path'] == '.github/workflows/ci.yml']
+                require(len(workflows) == 1 and
+                        immutable_contents(workflows[0], repo_id, baseline['full_name'], head['head_sha'],
+                                           '.github/workflows/ci.yml') == survival['workflow_bytes'],
+                        'Current Windows workflow must match its reviewed pinned bytes before cutover')
                 expected_runners.add(survival['runner']['id'])
                 require(scanned_at >= survival['observed_at'],
                         'Source scan must follow the reviewed current Windows resource observations')

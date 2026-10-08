@@ -453,6 +453,13 @@ class RolloutTests(unittest.TestCase):
                     file.update(path=name,observed_at=data['observed_at'],manifest=previous['manifest'])
                     scans[-1]['files'].append(file)
                     scans[-1]['tree_response']['data']['tree'].append({'path':name,'type':'blob','sha':file['contents_response']['data']['sha']})
+                if repo['id'] == validator.SURVIVAL_REPOSITORY_ID:
+                    sealed=next(r for r in self.inventory['repositories'] if r['id']==repo['id'])
+                    name='.github/workflows/ci.yml';body=validator.reviewed_survival_resources(sealed,DIRECTORY)['workflow_bytes']
+                    file=json.loads((DIRECTORY/self.file_contents_capture(repo['id'],repo['full_name'],head,name,body)).read_text())
+                    file.update(path=name,observed_at=data['observed_at'])
+                    scans[-1]['files'].append(file)
+                    scans[-1]['tree_response']['data']['tree'].append({'path':name,'type':'blob','sha':file['contents_response']['data']['sha']})
         return self.capture({'phase':'pre_cutover','observed_at':'2026-10-07T01:48:00Z','repositories':scans})
 
     def workflow_contents(self, repository, revision):
@@ -2913,6 +2920,23 @@ class RolloutTests(unittest.TestCase):
             with self.subTest(mutation=mutation),self.assertRaises(ValueError):
                 validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
         path.write_text(json.dumps(original))
+
+    def test_windows_workflow_drift_is_rejected_before_cutover(self):
+        self.complete_transfer_gates();credential=self.matrix['pre_transfer_credential_verification']
+        ref=self.matrix['pre_cutover_source_evidence_url'];source=json.loads((DIRECTORY/ref).read_text())
+        validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        path=DIRECTORY/source['reference_scan_evidence_url'];scan=json.loads(path.read_text())
+        row=next(r for r in scan['repositories'] if r['repository_id']==validator.SURVIVAL_REPOSITORY_ID)
+        repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        name='.github/workflows/ci.yml';body=validator.reviewed_survival_resources(repo,DIRECTORY)['workflow_bytes']
+        changed=body+b'\n# Unreviewed workflow revision\n'
+        file=json.loads((DIRECTORY/self.file_contents_capture(repo['id'],repo['full_name'],row['head_sha'],name,changed)).read_text())
+        file.update(path=name,observed_at=row['observed_at'])
+        row['files']=[file if f['path']==name else f for f in row['files']]
+        next(entry for entry in row['tree_response']['data']['tree'] if entry['path']==name)['sha']=file['contents_response']['data']['sha']
+        path.write_text(json.dumps(scan))
+        with self.assertRaisesRegex(ValueError,'Windows workflow must match'):
+            validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
 
 
     def test_pilot_scenarios_load_executed_fixture_output(self):
