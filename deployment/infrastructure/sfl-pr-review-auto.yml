@@ -1268,6 +1268,18 @@ jobs:
               external_id: externalId,
               output: {title: "SFL Codex review validating", summary: result.reason},
             });
+            // BEGIN TESTABLE PUBLISHED CHECK UPDATE
+            async function updatePublishedCheck(update) {
+              for (let attempt = 0; attempt < 3; attempt += 1) {
+                try {
+                  return await github.rest.checks.update(update);
+                } catch (error) {
+                  if (error.status !== 404 || attempt === 2) throw error;
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+              }
+            }
+            // END TESTABLE PUBLISHED CHECK UPDATE
             let requiredPublished = null;
             const failPublishedSuccess = async changedReason => {
               core.setFailed(changedReason);
@@ -1326,7 +1338,7 @@ jobs:
             let publicationFailureReason;
             let publicationError;
             try {
-              await github.rest.checks.update({
+              await updatePublishedCheck({
                 owner,
                 repo,
                 check_run_id: published.data.id,

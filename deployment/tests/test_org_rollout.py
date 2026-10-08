@@ -15,6 +15,7 @@ import pathlib
 import tempfile
 import subprocess
 import os
+import re
 import unittest
 from unittest.mock import patch
 
@@ -3408,14 +3409,23 @@ class RolloutTests(unittest.TestCase):
 
     def test_real_observer_publication_records_its_execution_identity(self):
         source=(ROOT/'deployment/infrastructure/sfl-pr-review-auto.yml').read_text()
-        start=source.index('            await github.rest.checks.update({\n              owner,\n              repo,\n              check_run_id: published.data.id,\n              status: "completed",\n              conclusion: "success",')
-        end=source.index('            await github.rest.repos.createCommitStatus({',start)
+        publications=list(re.finditer(
+            r'await (?:github\.rest\.checks\.update|updatePublishedCheck)\(\{\s+owner,\s+repo,\s+'
+            r'check_run_id: published\.data\.id,\s+status: "completed",\s+conclusion: "success",', source))
+        self.assertEqual(len(publications),1,'exactly one completed-success publication')
+        start=publications[0].start()
+        end=source.index('await github.rest.repos.createCommitStatus({',start)
         script="""const fs=require('node:fs');const fragment=fs.readFileSync(0,'utf8');
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
 const fn=new AsyncFunction('github','context','owner','repo','published','externalId','title','result','detailsURL',fragment);
 let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
 (async()=>{await fn(github,{payload:{repository:{id:42}},runId:7,sha:'b'.repeat(40),eventName:'issue_comment'},'hemsoft-dev','example',{data:{id:57}},'exact-external-id','Success',{reason:'Exact clean result'},'https://example.com/review');process.stdout.write(JSON.stringify(observed));})().catch(()=>process.exit(1));"""
-        run=subprocess.run(['node','-e',script],input=source[start:end],text=True,capture_output=True,
+        fragment=source[start:end]
+        if fragment.startswith('await updatePublishedCheck('):
+            helper_start=source.index('// BEGIN TESTABLE PUBLISHED CHECK UPDATE')
+            helper_end=source.index('// END TESTABLE PUBLISHED CHECK UPDATE',helper_start)
+            fragment=source[helper_start:helper_end]+'\n'+fragment
+        run=subprocess.run(['node','-e',script],input=fragment,text=True,capture_output=True,
             env={'PATH':os.environ['PATH'],'GITHUB_RUN_ATTEMPT':'2','GITHUB_WORKFLOW_SHA':'c'*40})
         self.assertEqual(run.returncode,0,run.stderr);result=json.loads(run.stdout)
         self.assertEqual(result['check_run_id'],57);self.assertEqual(result['conclusion'],'success')
