@@ -1,0 +1,20 @@
+{
+  "exit_code": 0,
+  "result": {
+    "method": "Unmodified production functions with synthetic API evidence",
+    "old_unregistered_review_started_before_base_change": true,
+    "only_current_base_request_registered": true,
+    "old_review_completed_after_current_request": true,
+    "production_result": {
+      "eligible": [
+        3
+      ],
+      "historicalConflict": false,
+      "classification": {
+        "action": "success",
+        "reason": "Codex found no major issues on the current head"
+      }
+    },
+    "missing_artifact_start_or_base_provenance": true
+  }
+}

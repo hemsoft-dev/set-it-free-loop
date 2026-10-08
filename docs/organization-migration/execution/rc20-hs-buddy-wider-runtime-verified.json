@@ -1,0 +1,43 @@
+{
+  "observed_at": "2026-10-08T08:00:12.719519+00:00",
+  "revision": "c528c67c787acb39bc31f88f4abe080f2caa4e1d",
+  "source_sha": "292336619aaf8a484e45590bb8897902c7ce7fce",
+  "auditor_run_id": 37746662355,
+  "dispatcher_run_id": 37746665378,
+  "both_actual_runs_success": true,
+  "auditor_zero_discrepancies": true,
+  "dispatcher_zero_model_dispatches": true,
+  "primary_log_summaries": {
+    "auditor": [
+      "2026-10-08T07:57:30.1960824Z Found 0 in-progress issues",
+      "2026-10-08T07:57:30.6440685Z Found 0 open agent PRs",
+      "2026-10-08T07:57:30.6616552Z Fixed 0 orphaned agent:in-progress labels",
+      "2026-10-08T07:57:31.2716022Z Fixed 0 conflicting label issues",
+      "2026-10-08T07:57:31.2881007Z Found 0 orphaned agent PRs",
+      "2026-10-08T07:57:31.7786506Z Found 0 stale unclaimed issues",
+      "2026-10-08T07:57:32.4420208Z Found 0 stalled draft PRs",
+      "2026-10-08T07:57:33.0423370Z Found 0 unexplained pauses",
+      "2026-10-08T07:57:35.3544856Z Found 0 missing SFL review prerequisite(s)",
+      "2026-10-08T07:57:35.3717982Z | Check | Count |",
+      "2026-10-08T07:57:35.3718364Z |-------|-------|",
+      "2026-10-08T07:57:35.3718940Z | Orphaned in-progress labels fixed | 0 |",
+      "2026-10-08T07:57:35.3719611Z | Conflicting labels fixed | 0 |",
+      "2026-10-08T07:57:35.3720220Z | Orphaned agent PRs flagged | 0 |",
+      "2026-10-08T07:57:35.3720852Z | Stale unclaimed issues flagged | 0 |",
+      "2026-10-08T07:57:35.3721483Z | Stalled draft PRs flagged | 0 |",
+      "2026-10-08T07:57:35.3722014Z | Unexplained pauses flagged | 0 |",
+      "2026-10-08T07:57:35.3722385Z | Missing SFL review prerequisites | 0 |"
+    ],
+    "dispatcher": [
+      "2026-10-08T07:57:29.7000600Z No eligible draft PRs \u2014 skipping analyzers and fixer.",
+      "2026-10-08T07:57:30.1546696Z No approved PRs awaiting merge."
+    ]
+  },
+  "primary_receipts": [
+    "rc20-hs-buddy-wider-auditor-terminal.json",
+    "rc20-hs-buddy-wider-dispatcher-terminal.json",
+    "rc20-hs-buddy-wider-auditor-jobs.json",
+    "rc20-hs-buddy-wider-dispatcher-jobs.json"
+  ],
+  "fleet_still_pending_manifest_normalization_and_repeat": true
+}

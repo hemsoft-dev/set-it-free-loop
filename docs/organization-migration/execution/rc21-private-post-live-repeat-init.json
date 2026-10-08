@@ -1,0 +1,35 @@
+{
+  "repository_id": 1408025382,
+  "repository": "hemsoft-dev/sfl-migration-pilot-private",
+  "default_branch": "main",
+  "cli_version": "2.1.0-rc.21",
+  "deployment_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+  "release_version": "2.1.0-rc.21",
+  "started_at": "2026-10-08T09:42:53.504268+00:00",
+  "observed_at": "2026-10-08T09:43:00.175152+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "revision_before": "01ca85bd09714ab17d2b6a018006b3b6fb022409",
+  "revision_after": "01ca85bd09714ab17d2b6a018006b3b6fb022409",
+  "execution": {
+    "command": "gh sfl init",
+    "argv": [
+      "gh",
+      "sfl",
+      "init",
+      "--repo",
+      "hemsoft-dev/sfl-migration-pilot-private",
+      "--tier",
+      "reviewer",
+      "--source-ref",
+      "v2.1.0-rc.21",
+      "--pr"
+    ],
+    "started_at": "2026-10-08T09:42:53.504268+00:00",
+    "completed_at": "2026-10-08T09:42:59.787966+00:00",
+    "exit_code": 0
+  },
+  "stdout": "Deploying SFL (reviewer tier) to hemsoft-dev/sfl-migration-pilot-private\n\n  Reviewer rollout preflight: default branch main and Actions policy ready \u2713\n  Codex App connection: verify with a current-head review after deployment\n\n  Resolving synchronized SFL release...\n  SFL release: v2.1.0-rc.21 (89425320ace3)\n\n  Fetching 1 workflow files...\n    sfl-pr-review-auto.yml \u2713\n    .sfl/sfl.json \u2713\n\n  SFL init is already up to date; no pull request needed\n\n\u2705 SFL 2.1.0-rc.21 deployed to hemsoft-dev/sfl-migration-pilot-private (reviewer tier)\n",
+  "stderr": "gh-sfl 2.1.0-rc.21 (2026-10-08) HemSoft\n",
+  "actor": "HemSoft"
+}

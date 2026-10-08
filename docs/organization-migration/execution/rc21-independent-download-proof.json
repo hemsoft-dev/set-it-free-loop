@@ -1,0 +1,19 @@
+{
+  "observed_at": "2026-10-08T09:18:27.356512+00:00",
+  "repository": "hemsoft-dev/set-it-free-loop",
+  "source_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+  "version": "2.1.0-rc.21",
+  "release_id": 406645777,
+  "immutable": true,
+  "digests": {
+    "gh-sfl_2.1.0-rc.21_linux_amd64": "dbf02c91d4fed5885ac32ca50156c300dbad44a15ce7a48d283a45e2420bb48d",
+    "gh-sfl_2.1.0-rc.21_windows_amd64.exe": "73f336a58cd0f18b64553c5686ceede9612ef9d7484bc6667f42c66953dde24c",
+    "install-gh-sfl-hemsoft.ps1": "66ac7eb0e5dff8a50577c92fe21407b3455c2b4fd732809afebd00b812673730"
+  },
+  "signed_release_verified": true,
+  "version_output": "gh-sfl 2.1.0-rc.21 (2026-10-08) HemSoft\n\u2713 Latest release (v2.1.0-rc.21)\n",
+  "default_status_exit_code": 0,
+  "installer_default_source": "hemsoft-dev/set-it-free-loop",
+  "isolated_data_home": "/home/franz/github/hemsoft/set-it-free-loop/.git/merge-mission/rc21-clean-download/isolated-data",
+  "pilot_sync_complete": false
+}

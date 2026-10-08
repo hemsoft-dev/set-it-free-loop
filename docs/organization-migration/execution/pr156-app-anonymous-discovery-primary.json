@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-10-08T15:13:21.663818+00:00",
+  "completed_at": "2026-10-08T15:13:21.860892+00:00",
+  "method": "GET",
+  "request_url": "https://api.github.com/apps/sfl-app",
+  "authentication": "none",
+  "http_status": 404,
+  "data": {
+    "message": "Not Found",
+    "documentation_url": "https://docs.github.com/rest/apps/apps#get-an-app",
+    "status": "404"
+  }
+}

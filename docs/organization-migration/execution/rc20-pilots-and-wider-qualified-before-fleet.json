@@ -1,0 +1,108 @@
+{
+  "qualified": true,
+  "wider_runtime_qualified": true,
+  "release_version": "2.1.0-rc.20",
+  "source_sha": "292336619aaf8a484e45590bb8897902c7ce7fce",
+  "qualified_at": "2026-10-08T08:14:42.107450+00:00",
+  "pilot_qualification_receipt": "rc20-pilots-qualified-before-wider.json",
+  "wider_repository": "hemsoft-dev/hs-buddy",
+  "wider_revision": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+  "preserved_consumer_overrides": {
+    "observed_at": "2026-10-08T08:11:14.651829+00:00",
+    "revision": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+    "clean": true,
+    "only_owned_alias_removed_after_tree_equality": true,
+    "preserved_sha256": {
+      ".github/workflows/sfl-auditor.yml": "599b64fb97eee77018764a97e846e13fa1e09011dd6bfaaef3af4a352759ffe3",
+      ".github/workflows/sfl-dispatcher.yml": "569a0a3e4cfce7c13f53f65d906baf8a970ecae957424998247e73ca4d8cf6bd",
+      ".sfl/sync-policy.json": "9bcaeda72f9dea9283502cba58c3feaf78fecfbddbbeaa4a079009ddba84a933"
+    },
+    "retired_issue_processor_absent": true
+  },
+  "repeat_sync_no_pr_and_files_unchanged": true,
+  "existing_full_tier_preserved": true,
+  "actual_final_wider_runs": {
+    "auditor": {
+      "id": 37748311277,
+      "head_sha": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+      "event": "workflow_dispatch",
+      "path": ".github/workflows/sfl-auditor.yml",
+      "created_at": "2026-10-08T08:12:30Z",
+      "updated_at": "2026-10-08T08:12:52Z",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    "dispatcher": {
+      "id": 37748314567,
+      "head_sha": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+      "event": "workflow_dispatch",
+      "path": ".github/workflows/sfl-dispatcher.yml",
+      "created_at": "2026-10-08T08:12:32Z",
+      "updated_at": "2026-10-08T08:12:41Z",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  },
+  "actual_log_summaries": {
+    "auditor": [
+      "2026-10-08T08:12:42.9700380Z Found 0 in-progress issues",
+      "2026-10-08T08:12:43.5245763Z Found 0 open agent PRs",
+      "2026-10-08T08:12:43.5445496Z Fixed 0 orphaned agent:in-progress labels",
+      "2026-10-08T08:12:44.6588850Z Fixed 0 conflicting label issues",
+      "2026-10-08T08:12:44.6786657Z Found 0 orphaned agent PRs",
+      "2026-10-08T08:12:45.1943558Z Found 0 stale unclaimed issues",
+      "2026-10-08T08:12:45.6672240Z Found 0 stalled draft PRs",
+      "2026-10-08T08:12:46.2808807Z Found 0 unexplained pauses",
+      "2026-10-08T08:12:48.7463973Z Found 0 missing SFL review prerequisite(s)",
+      "2026-10-08T08:12:48.7652033Z | Check | Count |",
+      "2026-10-08T08:12:48.7652490Z |-------|-------|",
+      "2026-10-08T08:12:48.7653068Z | Orphaned in-progress labels fixed | 0 |",
+      "2026-10-08T08:12:48.7653793Z | Conflicting labels fixed | 0 |",
+      "2026-10-08T08:12:48.7654326Z | Orphaned agent PRs flagged | 0 |",
+      "2026-10-08T08:12:48.7654964Z | Stale unclaimed issues flagged | 0 |",
+      "2026-10-08T08:12:48.7655525Z | Stalled draft PRs flagged | 0 |",
+      "2026-10-08T08:12:48.7655970Z | Unexplained pauses flagged | 0 |",
+      "2026-10-08T08:12:48.7656376Z | Missing SFL review prerequisites | 0 |"
+    ],
+    "dispatcher": [
+      "2026-10-08T08:12:37.9393468Z No eligible draft PRs \u2014 skipping analyzers and fixer.",
+      "2026-10-08T08:12:38.2923935Z No approved PRs awaiting merge."
+    ]
+  },
+  "registered_installed_observer_review_receipt": "hs-buddy769-guarded-merge-invocation.json",
+  "installed_observer_bytes_unchanged_after_manifest_order_normalization": true,
+  "wider_default_branch_ci_delivery_status": "success",
+  "default_ci_cancellation": "Prior c528 main run intentionally superseded by final ce3d main CI; no success claimed for cancellation",
+  "organization_gate_governance": "Pending fleet rollout phase; existing required policies preserved",
+  "scope": "Runtime prerequisite qualification for active reviewer rollout, not final fleet or issue completion",
+  "default_branch_ci_verified_at": "2026-10-08T08:24:16.274634+00:00",
+  "default_branch_ci_runs": [
+    {
+      "id": 37748083363,
+      "name": "CI",
+      "head_sha": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-08T08:10:25Z",
+      "updated_at": "2026-10-08T08:22:59Z"
+    },
+    {
+      "id": 37748082861,
+      "name": "SFL push event",
+      "head_sha": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-08T08:10:24Z",
+      "updated_at": "2026-10-08T08:10:33Z"
+    },
+    {
+      "id": 37748082893,
+      "name": "Security Scanning",
+      "head_sha": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-10-08T08:10:24Z",
+      "updated_at": "2026-10-08T08:10:53Z"
+    }
+  ]
+}

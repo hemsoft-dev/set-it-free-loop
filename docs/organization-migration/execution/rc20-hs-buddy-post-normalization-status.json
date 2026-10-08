@@ -1,0 +1,23 @@
+{
+  "repository_id": 1229335234,
+  "repository": "hemsoft-dev/hs-buddy",
+  "default_branch": "main",
+  "cli_version": "2.1.0-rc.20",
+  "deployment_sha": "292336619aaf8a484e45590bb8897902c7ce7fce",
+  "release_version": "2.1.0-rc.20",
+  "started_at": "2026-10-08T08:11:07.787174+00:00",
+  "observed_at": "2026-10-08T08:11:16.178909+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "revision_before": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+  "revision_after": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+  "execution": {
+    "command": "gh sfl status",
+    "started_at": "2026-10-08T08:11:07.787174+00:00",
+    "completed_at": "2026-10-08T08:11:15.878328+00:00",
+    "exit_code": 0
+  },
+  "stdout": "SFL Status: hemsoft-dev/hs-buddy\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n  \u2713 Installed\n  Version:    2.1.0-rc.20\n  Tier:       full\n  Deployed:   2026-10-08 05:38 UTC\n  By:         HemSoft\n  Components: daily-repo-status, governance, issue-processor, labels, pr-analyzer-a, pr-analyzer-b, pr-analyzer-c, pr-fixer, pr-promoter, repo-audit, sfl-auditor, sfl-dispatcher, simplisticate, sfl-pr-review-auto\n  Source SHA: 292336619aaf\n  \u2713 Latest synchronized release (v2.1.0-rc.20)\n\n  Reviewer package:\n    \u2713 .github/workflows/sfl-pr-review-auto.yml\n    \u2713 All reviewer package files match the pinned release source\n\n  Codex App:\n    ! The Codex GitHub App installation is verified by an authenticated review smoke test; GitHub CLI cannot inspect the owner's ChatGPT subscription connection\n\n  Reviewer prerequisites:\n    \u2713 Default branch: main\n    \u2713 GitHub Actions enabled\n\n  Merge posture:\n    \u2717 Advisory-only; required reviewer gate is missing\n\n  Latest reviewer run:\n    \u2713 success (https://github.com/hemsoft-dev/hs-buddy/actions/runs/37746874327)\n\n  Labels:\n    \u2713 All 31 labels present\n\n  Active PRs:\n    No active SFL-managed PRs\n\n",
+  "stderr": "gh-sfl 2.1.0-rc.20 (2026-10-08) HemSoft\n",
+  "actor": "HemSoft"
+}

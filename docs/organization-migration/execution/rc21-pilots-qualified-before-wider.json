@@ -1,0 +1,82 @@
+{
+  "qualified": true,
+  "version": "2.1.0-rc.21",
+  "release_tag": "v2.1.0-rc.21",
+  "source_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+  "qualified_at": "2026-10-08T09:45:08.360438+00:00",
+  "pilots": {
+    "private": {
+      "completion": {
+        "observed_at": "2026-10-08T09:44:30.825488+00:00",
+        "repository": "hemsoft-dev/sfl-migration-pilot-private",
+        "owned_gate_id": 24712705,
+        "live_merge_sha": "01ca85bd09714ab17d2b6a018006b3b6fb022409",
+        "after_terminal_captures": true,
+        "terminal_observations": [
+          "2026-10-08T09:42:59.787966+00:00",
+          "2026-10-08T09:43:08.158554+00:00",
+          "2026-10-08T09:43:17.091380+00:00"
+        ],
+        "unrelated_rules_preservation_required": true,
+        "qualified": true,
+        "unrelated_policy_preserved": true,
+        "completed_at": "2026-10-08T09:45:08.358997+00:00"
+      },
+      "execution_binding_receipt": "rc21-private-live-execution-binding.json",
+      "installed_terminal_receipt": "rc21-private-live-runtime-run.json",
+      "fixture_receipts": [
+        "rc21-private-fixture-base_advance.json",
+        "rc21-private-fixture-denied_permission.json",
+        "rc21-private-fixture-duplicate_delivery.json",
+        "rc21-private-fixture-edited_registration.json",
+        "rc21-private-fixture-findings.json",
+        "rc21-private-fixture-forged_registration.json",
+        "rc21-private-fixture-malformed_output.json",
+        "rc21-private-fixture-new_head.json",
+        "rc21-private-fixture-overlapping_request.json",
+        "rc21-private-fixture-pending_request.json",
+        "rc21-private-fixture-permission_lookup_failure.json",
+        "rc21-private-fixture-revoked_permission.json",
+        "rc21-private-fixture-unregistered_base_context.json"
+      ],
+      "all_fixture_results_validated": true
+    },
+    "public": {
+      "completion": {
+        "observed_at": "2026-10-08T09:44:30.826594+00:00",
+        "repository": "hemsoft-dev/sfl-migration-pilot-public",
+        "owned_gate_id": 24712718,
+        "live_merge_sha": "54def8a24948b99136a87cd0cfa97580515867b5",
+        "after_terminal_captures": true,
+        "terminal_observations": [
+          "2026-10-08T09:43:25.455058+00:00",
+          "2026-10-08T09:43:33.661570+00:00",
+          "2026-10-08T09:43:40.050024+00:00"
+        ],
+        "unrelated_rules_preservation_required": true,
+        "qualified": true,
+        "unrelated_policy_preserved": true,
+        "completed_at": "2026-10-08T09:45:08.360347+00:00"
+      },
+      "execution_binding_receipt": "rc21-public-live-execution-binding.json",
+      "installed_terminal_receipt": "rc21-public-live-runtime-run.json",
+      "fixture_receipts": [
+        "rc21-public-fixture-base_advance.json",
+        "rc21-public-fixture-denied_permission.json",
+        "rc21-public-fixture-duplicate_delivery.json",
+        "rc21-public-fixture-edited_registration.json",
+        "rc21-public-fixture-findings.json",
+        "rc21-public-fixture-forged_registration.json",
+        "rc21-public-fixture-malformed_output.json",
+        "rc21-public-fixture-new_head.json",
+        "rc21-public-fixture-overlapping_request.json",
+        "rc21-public-fixture-pending_request.json",
+        "rc21-public-fixture-permission_lookup_failure.json",
+        "rc21-public-fixture-revoked_permission.json",
+        "rc21-public-fixture-unregistered_base_context.json"
+      ],
+      "all_fixture_results_validated": true
+    }
+  },
+  "synthetic_negative_fixtures_distinct_from_live_execution": true
+}

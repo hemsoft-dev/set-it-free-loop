@@ -1,0 +1,16 @@
+{
+  "observed_at": "2026-10-08T15:14:49.656631+00:00",
+  "transfer_identity_targets": 65,
+  "retained_sources": 2,
+  "owned_app_transfer": {
+    "status": "verified",
+    "app_id": 4448946,
+    "owner": "hemsoft-dev",
+    "installation_id": 169090497,
+    "coverage_targets": 68,
+    "evidence": "organization-app-repository-coverage-primary.json"
+  },
+  "migration_acceptance_complete": false,
+  "sfl_rollout_complete": false,
+  "scope": "Actual executed phase after the owner repository-first direction; historical strict pre-cutover matrix remains unfulfilled and is not relabeled"
+}

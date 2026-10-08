@@ -9,9 +9,16 @@ on:
       - 'deployment/governance/CODEOWNERS'
       - 'deployment/scripts/capture-org-migration.py'
       - 'deployment/tests/test_org_migration.py'
+      - 'deployment/scripts/validate-executed-transfers.py'
+      - 'deployment/scripts/check-executed-validation-record.py'
+      - 'deployment/tests/test_executed_transfers.py'
       - 'deployment/scripts/validate-org-rollout.py'
       - 'deployment/tests/test_org_rollout.py'
+      - 'deployment/scripts/validate-executed-transfers.py'
+      - 'deployment/tests/test_executed_transfers.py'
       - 'deployment/tests/run-org-observer-fixtures.cjs'
+      - 'deployment/infrastructure/sfl-pr-review-auto.yml'
+      - 'deployment/tests/observer-snapshots/**'
       - 'docs/organization-migration/**'
       - '.github/workflows/*.yml'
   push:
@@ -23,9 +30,16 @@ on:
       - 'deployment/governance/CODEOWNERS'
       - 'deployment/scripts/capture-org-migration.py'
       - 'deployment/tests/test_org_migration.py'
+      - 'deployment/scripts/validate-executed-transfers.py'
+      - 'deployment/scripts/check-executed-validation-record.py'
+      - 'deployment/tests/test_executed_transfers.py'
       - 'deployment/scripts/validate-org-rollout.py'
       - 'deployment/tests/test_org_rollout.py'
+      - 'deployment/scripts/validate-executed-transfers.py'
+      - 'deployment/tests/test_executed_transfers.py'
       - 'deployment/tests/run-org-observer-fixtures.cjs'
+      - 'deployment/infrastructure/sfl-pr-review-auto.yml'
+      - 'deployment/tests/observer-snapshots/**'
       - 'docs/organization-migration/**'
       - '.github/workflows/*.yml'
 
@@ -50,3 +64,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -B deployment/scripts/validate-org-rollout.py docs/organization-migration
+      - name: Test executed transfer evidence and corruption rejection
+        run: python3 -B -m unittest discover -s deployment/tests -p test_executed_transfers.py -v
+      - name: Validate executed transfer identity without claiming migration acceptance
+        run: python3 -B deployment/scripts/validate-executed-transfers.py docs/organization-migration
+      - name: Reject stale retained executed validation output
+        run: python3 -B deployment/scripts/check-executed-validation-record.py

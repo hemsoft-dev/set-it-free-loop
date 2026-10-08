@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'gh-sfl/**'
+      - 'docs/ORGANIZATION-ONBOARDING.md'
       - 'deployment/**'
       - '.github/workflows/sfl-pr-review*'
       - '.github/workflows/validate-gh-sfl.yml'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'gh-sfl/**'
+      - 'docs/ORGANIZATION-ONBOARDING.md'
       - 'deployment/**'
       - '.github/workflows/sfl-pr-review*'
       - '.github/workflows/validate-gh-sfl.yml'

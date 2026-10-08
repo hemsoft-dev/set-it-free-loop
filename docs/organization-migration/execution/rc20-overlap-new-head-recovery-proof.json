@@ -1,0 +1,15 @@
+{
+  "observed_at": "2026-10-08T07:29:04.561612+00:00",
+  "source_sha": "292336619aaf8a484e45590bb8897902c7ce7fce",
+  "release_version": "2.1.0-rc.20",
+  "mode": "workflow_fixture",
+  "result": {
+    "same_head_overlap_blocked": true,
+    "new_head_fresh_request_eligible": true,
+    "old_unterminated_requests_excluded": true,
+    "new_head_clean_artifact_accepted": true,
+    "old_head_artifact_rejected": true,
+    "production_functions_unmodified": true
+  },
+  "limits": "Synthetic API events against unmodified production functions; no live overlapped provider requests or same-head recovery claimed"
+}

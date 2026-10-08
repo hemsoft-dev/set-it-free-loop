@@ -1,0 +1,12 @@
+{
+  "observed_at": "2026-10-08T07:56:34.463524+00:00",
+  "base": "c528c67c787acb39bc31f88f4abe080f2caa4e1d",
+  "head": "57de27c851ba528201259dfc1d6a7e309baa9eb5",
+  "changed_paths": [
+    "sfl.json",
+    ".sfl/sfl.json"
+  ],
+  "named_profile_maps_equal": true,
+  "all_other_manifest_values_equal": true,
+  "consumer_workflows_unchanged": true
+}

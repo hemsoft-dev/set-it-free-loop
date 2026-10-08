@@ -1,0 +1,15 @@
+{
+  "observed_at": "2026-10-08T04:58:10.858Z",
+  "repository_id": 1408029795,
+  "repository": "hemsoft-dev/sfl-migration-pilot-public",
+  "deployment_sha": "197e0d2d7af1b60647e80148a9cfd75f81c95c16",
+  "release_version": "2.1.0-rc.18",
+  "tested_revision_sha": "37fac0ebc35266a3467cbb5a3862e72a162fa43c",
+  "scenario": "duplicate_delivery",
+  "mode": "workflow_fixture",
+  "outcome": "idempotent",
+  "passed": true,
+  "runner_sha256": "1c39c28d70b58ed55fe94422c93e9923fda384c551b35241226eb86d7f33cbe4",
+  "workflow_sha256": "6400b6c80fe29205493c5eba94e7e3cde1492b960edb527a30946574ecc55e85",
+  "method": "Executed unmodified observer functions with synthetic API responses; no live provider events claimed"
+}

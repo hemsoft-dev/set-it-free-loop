@@ -1,0 +1,17 @@
+{
+  "method": "GET",
+  "request_url": "https://api.github.com/repos/HemSoft/now-leadership-group",
+  "http_status": 200,
+  "observed_at": "2026-10-08T13:28:04.868003+00:00",
+  "capture_started_at": "2026-10-08T13:28:04.531124+00:00",
+  "actor": "HemSoft",
+  "data": {
+    "archived": false,
+    "default_branch": "main",
+    "full_name": "HemSoft/now-leadership-group",
+    "id": 1162179521,
+    "private": true,
+    "visibility": "private"
+  },
+  "primary_receipt": "pr156-sixth-retained-nlg-current-primary.json"
+}

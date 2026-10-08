@@ -1,0 +1,15 @@
+{
+  "started_at": "2026-10-08T13:28:04.531124+00:00",
+  "completed_at": "2026-10-08T13:28:04.868003+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/HemSoft/now-leadership-group",
+    "--jq",
+    "{id,full_name,private,visibility,archived,default_branch}"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stdout": "{\"archived\":false,\"default_branch\":\"main\",\"full_name\":\"HemSoft/now-leadership-group\",\"id\":1162179521,\"private\":true,\"visibility\":\"private\"}\n",
+  "stderr": ""
+}

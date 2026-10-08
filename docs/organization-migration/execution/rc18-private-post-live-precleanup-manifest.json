@@ -1,0 +1,16 @@
+{
+  "started_at": "2026-10-08T05:37:28.025559+00:00",
+  "observed_at": "2026-10-08T05:37:28.280157+00:00",
+  "path": "repos/hemsoft-dev/sfl-migration-pilot-private/contents/.sfl/sfl.json?ref=f0bd35c889ac67a6fc31659815985bd155231d6b",
+  "method": "GET",
+  "exit_code": 0,
+  "response": {
+    "name": "sfl.json",
+    "path": ".sfl/sfl.json",
+    "sha": "0277691ea6ade61eb0e8a119643fa16215c083f5",
+    "size": 369,
+    "encoding": "base64",
+    "content": "ewogICJ2ZXJzaW9uIjogIjIuMS4wLXJjLjE4IiwKICAidGllciI6ICJyZXZp\nZXdlciIsCiAgInNvdXJjZSI6ICJoZW1zb2Z0LWRldi9zZXQtaXQtZnJlZS1s\nb29wIiwKICAiZGVwbG95ZWRBdCI6ICIyMDI2LTEwLTA4VDA0OjM5OjQ5LjU2\nMTc0MTgzNloiLAogICJkZXBsb3llZEJ5IjogIkhlbVNvZnQiLAogICJzb3Vy\nY2VTaGEiOiAiMTk3ZTBkMmQ3YWYxYjYwNjQ3ZTgwMTQ4YTljZmQ3NWY4MWM5\nNWMxNiIsCiAgImNvbXBvbmVudHMiOiBbCiAgICAic2ZsLXByLXJldmlldy1h\ndXRvIgogIF0sCiAgImVuZ2luZVBvbGljeSI6IHsKICAgICJkZWZhdWx0UHJv\nZmlsZSI6ICJjb2RleC1ncHQtNTUtaGlnaCIsCiAgICAid29ya2Zsb3dzIjog\nW10KICB9Cn0K\n"
+  },
+  "stderr": ""
+}

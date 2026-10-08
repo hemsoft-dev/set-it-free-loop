@@ -1,0 +1,12 @@
+{
+  "started_at": "2026-10-08T09:18:15.677274+00:00",
+  "completed_at": "2026-10-08T09:18:27.363326+00:00",
+  "argv": [
+    "python3",
+    "/home/franz/github/hemsoft/set-it-free-loop/.git/merge-mission/verify-rc21-download.py"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stdout": "{\"release_id\": 406645777, \"checksum_verified\": true, \"version\": \"gh-sfl 2.1.0-rc.21 (2026-10-08) HemSoft\\n\\u2713 Latest release (v2.1.0-rc.21)\", \"default_status\": \"passed\"}\n",
+  "stderr": ""
+}

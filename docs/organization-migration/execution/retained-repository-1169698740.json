@@ -1,0 +1,17 @@
+{
+  "method": "GET",
+  "request_url": "https://api.github.com/repos/HemSoft/set-it-free-loop-site",
+  "http_status": 200,
+  "observed_at": "2026-10-08T13:28:05.934652+00:00",
+  "capture_started_at": "2026-10-08T13:28:05.588832+00:00",
+  "actor": "HemSoft",
+  "data": {
+    "archived": true,
+    "default_branch": "main",
+    "full_name": "HemSoft/set-it-free-loop-site",
+    "id": 1169698740,
+    "private": true,
+    "visibility": "private"
+  },
+  "primary_receipt": "pr156-sixth-retained-sfl-site-current-primary.json"
+}

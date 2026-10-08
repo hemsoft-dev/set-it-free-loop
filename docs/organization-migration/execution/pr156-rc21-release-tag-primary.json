@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-10-08T12:38:01.738581+00:00",
+  "completed_at": "2026-10-08T12:38:02.049238+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/hemsoft-dev/set-it-free-loop/git/ref/tags/v2.1.0-rc.21"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stderr": "",
+  "data": {
+    "ref": "refs/tags/v2.1.0-rc.21",
+    "object": {
+      "sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+      "type": "commit",
+      "url": "https://api.github.com/repos/hemsoft-dev/set-it-free-loop/git/commits/89425320ace3127a829d86e3b642fe2b31fd979e"
+    }
+  }
+}

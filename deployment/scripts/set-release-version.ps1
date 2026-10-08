@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Synchronizes the HemSoft distribution version across release metadata.
+    Synchronizes the HemSoft distribution version and operator install instruction.
 #>
 [CmdletBinding()]
 param(
@@ -21,7 +21,8 @@ if ($Version -notmatch $semanticVersionPattern) {
 $versionPath = Join-Path $RepositoryRoot 'VERSION'
 $manifestPath = Join-Path $RepositoryRoot 'sfl.json'
 $metadataPath = Join-Path $RepositoryRoot 'deployment\release-metadata.json'
-foreach ($path in @($versionPath, $manifestPath, $metadataPath)) {
+$onboardingPath = Join-Path $RepositoryRoot 'docs\ORGANIZATION-ONBOARDING.md'
+foreach ($path in @($versionPath, $manifestPath, $metadataPath, $onboardingPath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "Release metadata file not found: $path"
     }
@@ -29,6 +30,16 @@ foreach ($path in @($versionPath, $manifestPath, $metadataPath)) {
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
+$onboarding = Get-Content -LiteralPath $onboardingPath -Raw
+$installPattern = '(?m)^(Install the \[checksum-verified canonical release\]\()[^)\r\n]+(\)\.)'
+if ([regex]::Matches($onboarding, $installPattern).Count -ne 1) {
+    throw 'Onboarding install instruction must be unique before updating release metadata.'
+}
+$installUrl = "https://github.com/$($metadata.distribution.repository)/releases/tag/v$Version"
+$updatedOnboarding = [regex]::Replace($onboarding, $installPattern, {
+    param($match)
+    $match.Groups[1].Value + $installUrl + $match.Groups[2].Value
+})
 $manifest.version = $Version
 $metadata.distribution.version = $Version
 
@@ -48,5 +59,6 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 [System.IO.File]::WriteAllText($versionPath, "$Version`n", $utf8NoBom)
 [System.IO.File]::WriteAllText($manifestPath, "$(ConvertTo-Json $manifest -Depth 100)`n", $utf8NoBom)
 [System.IO.File]::WriteAllText($metadataPath, "$(ConvertTo-Json $metadata -Depth 100)`n", $utf8NoBom)
+[System.IO.File]::WriteAllText($onboardingPath, $updatedOnboarding, $utf8NoBom)
 
 Write-Output "Synchronized HemSoft release metadata for v$Version (prerelease=$($isPrerelease.ToString().ToLowerInvariant()))."

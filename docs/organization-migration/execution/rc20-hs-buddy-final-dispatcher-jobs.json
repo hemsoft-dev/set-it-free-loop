@@ -1,0 +1,120 @@
+{
+  "started_at": "2026-10-08T08:13:34.570620+00:00",
+  "completed_at": "2026-10-08T08:13:35.008920+00:00",
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stdout": {
+    "total_count": 1,
+    "jobs": [
+      {
+        "id": 113215065051,
+        "run_id": 37748314567,
+        "workflow_name": "SFL Dispatcher",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/hemsoft-dev/hs-buddy/actions/runs/37748314567",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOSUYqws8AAAAaXCTL2w",
+        "head_sha": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+        "url": "https://api.github.com/repos/hemsoft-dev/hs-buddy/actions/jobs/113215065051",
+        "html_url": "https://github.com/hemsoft-dev/hs-buddy/actions/runs/37748314567/job/113215065051",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-08T08:12:34Z",
+        "started_at": "2026-10-08T08:12:35Z",
+        "completed_at": "2026-10-08T08:12:40Z",
+        "name": "dispatch",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-08T08:12:36Z",
+            "completed_at": "2026-10-08T08:12:36Z"
+          },
+          {
+            "name": "Mint GitHub App token",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-08T08:12:36Z",
+            "completed_at": "2026-10-08T08:12:37Z"
+          },
+          {
+            "name": "Check for draft PRs with agent:pr",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-08T08:12:37Z",
+            "completed_at": "2026-10-08T08:12:37Z"
+          },
+          {
+            "name": "Dispatch PR Analyzers",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 4,
+            "started_at": "2026-10-08T08:12:37Z",
+            "completed_at": "2026-10-08T08:12:37Z"
+          },
+          {
+            "name": "Dispatch PR Fixer",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 5,
+            "started_at": "2026-10-08T08:12:37Z",
+            "completed_at": "2026-10-08T08:12:37Z"
+          },
+          {
+            "name": "Check for approved PRs awaiting merge",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-08T08:12:37Z",
+            "completed_at": "2026-10-08T08:12:38Z"
+          },
+          {
+            "name": "Dispatch PR Promoter",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 7,
+            "started_at": "2026-10-08T08:12:38Z",
+            "completed_at": "2026-10-08T08:12:38Z"
+          },
+          {
+            "name": "Summary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-08T08:12:38Z",
+            "completed_at": "2026-10-08T08:12:38Z"
+          },
+          {
+            "name": "Post Mint GitHub App token",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16,
+            "started_at": "2026-10-08T08:12:38Z",
+            "completed_at": "2026-10-08T08:12:38Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17,
+            "started_at": "2026-10-08T08:12:38Z",
+            "completed_at": "2026-10-08T08:12:38Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/hemsoft-dev/hs-buddy/check-runs/113215065051",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000001540,
+        "runner_name": "GitHub Actions 1000001540",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      }
+    ]
+  },
+  "stderr": ""
+}

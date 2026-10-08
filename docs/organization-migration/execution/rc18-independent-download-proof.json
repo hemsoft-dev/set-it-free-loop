@@ -1,0 +1,18 @@
+{
+  "observed_at": "2026-10-08T04:36:33.915084+00:00",
+  "repository": "hemsoft-dev/set-it-free-loop",
+  "source_sha": "197e0d2d7af1b60647e80148a9cfd75f81c95c16",
+  "version": "2.1.0-rc.18",
+  "release_id": 406416160,
+  "immutable": true,
+  "digests": {
+    "gh-sfl_2.1.0-rc.18_linux_amd64": "4d925d6fb24118f41bbc32e99f5018ad2fa497cc16c0e6b28ec67a4b45624d8d",
+    "gh-sfl_2.1.0-rc.18_windows_amd64.exe": "2f025960d9ce3711e078913fc3f21d0554191d94d64230a43dc4f52f1f1442ca",
+    "install-gh-sfl-hemsoft.ps1": "66ac7eb0e5dff8a50577c92fe21407b3455c2b4fd732809afebd00b812673730"
+  },
+  "signed_release_verified": true,
+  "version_output": "gh-sfl 2.1.0-rc.18 (2026-10-08) HemSoft\n\u2713 Latest release (v2.1.0-rc.18)\n",
+  "default_status_exit_code": 0,
+  "installer_default_source": "hemsoft-dev/set-it-free-loop",
+  "pilot_sync_complete": false
+}

@@ -1,0 +1,545 @@
+{
+  "captured_at": "2026-10-08T06:11:09.585395+00:00",
+  "original_targets": [
+    {
+      "id": 1143951439,
+      "repository": "hemsoft-dev/hs-cli-confluence-search-fhemmer",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1349305052,
+      "repository": "hemsoft-dev/.github",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1298365902,
+      "repository": "hemsoft-dev/codexbar-mac",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1120402599,
+      "repository": "hemsoft-dev/dashboard",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1096201366,
+      "repository": "hemsoft-dev/dashboard-tui",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 987270315,
+      "repository": "hemsoft-dev/dashcam",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 804681121,
+      "repository": "hemsoft-dev/Egg-Inc-Tracker",
+      "archived": true,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 46445245,
+      "repository": "hemsoft-dev/ESO",
+      "archived": true,
+      "private": false,
+      "default_branch": "develop",
+      "permission_admin": true
+    },
+    {
+      "id": 1234389239,
+      "repository": "hemsoft-dev/gh-prx",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1262580000,
+      "repository": "hemsoft-dev/gh-x",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1141008729,
+      "repository": "hemsoft-dev/github-cli-sdk-demo",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 941842262,
+      "repository": "hemsoft-dev/HemChat",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1127994043,
+      "repository": "hemsoft-dev/7d2d-mods",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1398757511,
+      "repository": "hemsoft-dev/hemsoft-bench",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1107323158,
+      "repository": "hemsoft-dev/hemsoft-power-ai",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1271503908,
+      "repository": "hemsoft-dev/hoarders-heaven",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1229335234,
+      "repository": "hemsoft-dev/hs-buddy",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1169875606,
+      "repository": "hemsoft-dev/hs-buddy-vscode-extension",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1143972745,
+      "repository": "hemsoft-dev/hs-cli-confluence-search",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1141615583,
+      "repository": "hemsoft-dev/hs-cli-prs",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1141507514,
+      "repository": "hemsoft-dev/hs-cli-template",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1145574258,
+      "repository": "hemsoft-dev/hs-conductor",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1122850110,
+      "repository": "hemsoft-dev/hs-landing-page",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1107806657,
+      "repository": "hemsoft-dev/advent-of-code-2025",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1360796394,
+      "repository": "hemsoft-dev/hs-pi-dashboard",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1255413023,
+      "repository": "hemsoft-dev/hs-tui-launcher",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 992260357,
+      "repository": "hemsoft-dev/mcp-server-demo",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1353177297,
+      "repository": "hemsoft-dev/minibot",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1119892824,
+      "repository": "hemsoft-dev/modern-web-stack-poc",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1106290960,
+      "repository": "hemsoft-dev/ms-agent-framework-demo",
+      "archived": true,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 996911586,
+      "repository": "hemsoft-dev/n8n-workflows",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1086124099,
+      "repository": "hemsoft-dev/neo4j-graphrag-poc",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 982944435,
+      "repository": "hemsoft-dev/notes",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 579605475,
+      "repository": "hemsoft-dev/NWMM",
+      "archived": true,
+      "private": true,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 1126133188,
+      "repository": "hemsoft-dev/agents",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 945738366,
+      "repository": "hemsoft-dev/pe-bot",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 223800408,
+      "repository": "hemsoft-dev/PeopleCare",
+      "archived": true,
+      "private": true,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 1135799306,
+      "repository": "hemsoft-dev/prs",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1148500296,
+      "repository": "hemsoft-dev/public-skills",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 133669754,
+      "repository": "hemsoft-dev/PXContainerMagic",
+      "archived": true,
+      "private": false,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 173613643,
+      "repository": "hemsoft-dev/PXFriends",
+      "archived": true,
+      "private": false,
+      "default_branch": "develop",
+      "permission_admin": true
+    },
+    {
+      "id": 124155847,
+      "repository": "hemsoft-dev/PXInfoPanel",
+      "archived": true,
+      "private": false,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 133668217,
+      "repository": "hemsoft-dev/PXVendorMagic",
+      "archived": true,
+      "private": false,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 85017515,
+      "repository": "hemsoft-dev/PXWritStatus",
+      "archived": true,
+      "private": false,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 1002223819,
+      "repository": "hemsoft-dev/rag-poc",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1136522036,
+      "repository": "hemsoft-dev/ai-conductor",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1266823833,
+      "repository": "hemsoft-dev/ralph-loops",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 286901159,
+      "repository": "hemsoft-dev/Relias.Lms.Enrollment",
+      "archived": true,
+      "private": true,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 1358408598,
+      "repository": "hemsoft-dev/reports",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1169772257,
+      "repository": "hemsoft-dev/set-it-free-loop",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1120321254,
+      "repository": "hemsoft-dev/skills",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1070353109,
+      "repository": "hemsoft-dev/spam-removal-agent",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1104960030,
+      "repository": "hemsoft-dev/subtitle-translator",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1076389234,
+      "repository": "hemsoft-dev/summarist",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1399232444,
+      "repository": "hemsoft-dev/survival-shelter-opus55",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 193121052,
+      "repository": "hemsoft-dev/TCE-Admin",
+      "archived": true,
+      "private": false,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 1318635011,
+      "repository": "hemsoft-dev/buddy-ios",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1039658773,
+      "repository": "hemsoft-dev/tickdown",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 223324060,
+      "repository": "hemsoft-dev/TimCoRetailManager",
+      "archived": true,
+      "private": true,
+      "default_branch": "master",
+      "permission_admin": true
+    },
+    {
+      "id": 995371240,
+      "repository": "hemsoft-dev/weather-cli",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1188676172,
+      "repository": "hemsoft-dev/yahtzee",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1332684620,
+      "repository": "hemsoft-dev/yahtzee-bench",
+      "archived": false,
+      "private": true,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 987895155,
+      "repository": "hemsoft-dev/cli-tools",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1214914496,
+      "repository": "hemsoft-dev/codexbar",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    },
+    {
+      "id": 1285058368,
+      "repository": "hemsoft-dev/codexbar-ios",
+      "archived": false,
+      "private": false,
+      "default_branch": "main",
+      "permission_admin": true
+    }
+  ],
+  "additional_repositories": [
+    {
+      "id": 1408025382,
+      "repository": "hemsoft-dev/sfl-migration-pilot-private",
+      "archived": false
+    },
+    {
+      "id": 1408029795,
+      "repository": "hemsoft-dev/sfl-migration-pilot-public",
+      "archived": false
+    },
+    {
+      "id": 1409692659,
+      "repository": "hemsoft-dev/sfl-migration-onboarding-proof",
+      "archived": false
+    }
+  ],
+  "original_target_count": 65,
+  "archive_count": 13,
+  "active_count": 52
+}

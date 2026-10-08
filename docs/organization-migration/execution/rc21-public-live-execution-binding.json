@@ -1,0 +1,25 @@
+{
+  "repository": "hemsoft-dev/sfl-migration-pilot-public",
+  "repository_id": 1408029795,
+  "run_id": 37758129991,
+  "run_attempt": 1,
+  "execution_sha": "dcde3d3ae10d93a9cb37462f81049c62d4562911",
+  "workflow_sha": "dcde3d3ae10d93a9cb37462f81049c62d4562911",
+  "workflow_path": ".github/workflows/sfl-pr-review-auto.yml",
+  "event": "issue_comment",
+  "check_run_id": 113247907813,
+  "external_id": "sfl-codex-review:pull:11:base:dcde3d3ae10d93a9cb37462f81049c62d4562911:context:sfl-codex-review%3Apull-context%3Aat%3A1791452168000%3A37757788611:request:6057035874:at:1791452276000:artifact:c6057054421",
+  "context_check_id": 113246545172,
+  "context_metadata": {
+    "schema": 1,
+    "pull_number": 11,
+    "action": "opened",
+    "base_sha": "dcde3d3ae10d93a9cb37462f81049c62d4562911"
+  },
+  "request_id": 6057035874,
+  "native_comment_id": 6057054421,
+  "native_app_id": 1144995,
+  "observed_at": "2026-10-08T09:43:48.332727+00:00",
+  "pending_failure_expected": true,
+  "pending_failure_primary": "rc21-public-live-request-failure-log.json"
+}

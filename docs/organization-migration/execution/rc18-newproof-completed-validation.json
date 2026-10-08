@@ -1,0 +1,18 @@
+{
+  "observed_at": "2026-10-08T05:16:51.459421+00:00",
+  "repository_id": 1409692659,
+  "repository": "hemsoft-dev/sfl-migration-onboarding-proof",
+  "registered_smoke_merge_sha": "be31ad535031cfc2bd6b2c849295a818f7648266",
+  "safe_uninstall_revision": "9a38c40f506cae5348caf2cb17c8f9eb6f7111a9",
+  "inherited_gate_refusal": true,
+  "inherited_uninstall_refusal": true,
+  "removed_files": [
+    ".github/workflows/sfl-pr-review-auto.yml",
+    ".sfl/sfl.json"
+  ],
+  "ownership_and_readme_bytes_preserved": true,
+  "labels_preserved": true,
+  "unrelated_organization_rule_preserved": 24698223,
+  "credential_changes": false,
+  "limits": "Supplemental disposable onboarding test; does not claim post-fleet final new-repository onboarding."
+}

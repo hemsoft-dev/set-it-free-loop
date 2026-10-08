@@ -1,0 +1,18 @@
+{
+  "started_at": "2026-10-08T10:21:43.656531+00:00",
+  "completed_at": "2026-10-08T10:21:44.307820+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "--include",
+    "--method",
+    "POST",
+    "orgs/hemsoft-dev/rulesets",
+    "--input",
+    "/home/franz/github/hemsoft/set-it-free-loop/.git/merge-mission/rc21-source-org-gate-payload.json"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stdout": "HTTP/2.0 201 Created\nAccess-Control-Allow-Origin: *\nAccess-Control-Expose-Headers: ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning\nCache-Control: private, max-age=60, s-maxage=60\nContent-Length: 832\nContent-Security-Policy: default-src 'none'\nContent-Type: application/json; charset=utf-8\nDate: Thu, 08 Oct 2026 10:21:44 GMT\nEtag: \"a0a47a0fa04f4184807c887b250b7144a4f7ac41bb0236d7d2f638157d37715e\"\nReferrer-Policy: origin-when-cross-origin, strict-origin-when-cross-origin\nServer: github.com\nStrict-Transport-Security: max-age=31536000; includeSubdomains; preload\nVary: Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With\nX-Accepted-Oauth-Scopes: admin:org\nX-Content-Type-Options: nosniff\nX-Frame-Options: deny\nX-Github-Api-Version-Selected: 2022-11-28\nX-Github-Edge-Region: iad\nX-Github-Media-Type: github.v3; format=json\nX-Github-Request-Id: 87BC:14DE17:2AC659:8DFC87:6AC76EB7\nX-Oauth-Client-Id: 178c6fc778ccc68e1d6a\nX-Oauth-Scopes: admin:org, admin:public_key, gist, repo, user, workflow\nX-Ratelimit-Limit: 5000\nX-Ratelimit-Remaining: 4950\nX-Ratelimit-Reset: 1791458281\nX-Ratelimit-Resource: core\nX-Ratelimit-Used: 50\nX-Xss-Protection: 0\n\n{\"id\":24716278,\"name\":\"SFL Reviewer Gate Runner \u2014 distribution source\",\"target\":\"branch\",\"source_type\":\"Organization\",\"source\":\"hemsoft-dev\",\"enforcement\":\"active\",\"conditions\":{\"repository_id\":{\"repository_ids\":[1169772257]},\"ref_name\":{\"exclude\":[],\"include\":[\"~DEFAULT_BRANCH\"]}},\"rules\":[{\"type\":\"required_status_checks\",\"parameters\":{\"strict_required_status_checks_policy\":true,\"do_not_enforce_on_create\":false,\"required_status_checks\":[{\"context\":\"SFL Reviewer Gate Runner\",\"integration_id\":15368}]}}],\"node_id\":\"RRS_lACkVXNlcs4UMoXJzgF5I_Y\",\"created_at\":\"2026-10-08T06:21:43.961-04:00\",\"updated_at\":\"2026-10-08T06:21:44.070-04:00\",\"bypass_actors\":[],\"_links\":{\"self\":{\"href\":\"https://api.github.com/orgs/hemsoft-dev/rulesets/24716278\"},\"html\":{\"href\":\"http://github.com/organizations/hemsoft-dev/settings/rules/24716278\"}}}",
+  "stderr": ""
+}

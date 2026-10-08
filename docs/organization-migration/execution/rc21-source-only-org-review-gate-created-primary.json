@@ -1,0 +1,48 @@
+{
+  "id": 24716278,
+  "name": "SFL Reviewer Gate Runner \u2014 distribution source",
+  "target": "branch",
+  "source_type": "Organization",
+  "source": "hemsoft-dev",
+  "enforcement": "active",
+  "conditions": {
+    "repository_id": {
+      "repository_ids": [
+        1169772257
+      ]
+    },
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "~DEFAULT_BRANCH"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          {
+            "context": "SFL Reviewer Gate Runner",
+            "integration_id": 15368
+          }
+        ]
+      }
+    }
+  ],
+  "node_id": "RRS_lACkVXNlcs4UMoXJzgF5I_Y",
+  "created_at": "2026-10-08T06:21:43.961-04:00",
+  "updated_at": "2026-10-08T06:21:44.070-04:00",
+  "bypass_actors": [],
+  "_links": {
+    "self": {
+      "href": "https://api.github.com/orgs/hemsoft-dev/rulesets/24716278"
+    },
+    "html": {
+      "href": "http://github.com/organizations/hemsoft-dev/settings/rules/24716278"
+    }
+  }
+}

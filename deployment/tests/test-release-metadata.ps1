@@ -144,6 +144,9 @@ foreach ($pattern in @(
 $fixtureRoot = Join-Path ([System.IO.Path]::GetTempPath()) "sfl-release-contract-$([guid]::NewGuid().ToString('N'))"
 try {
     New-Item -ItemType Directory -Path (Join-Path $fixtureRoot 'deployment') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $fixtureRoot 'docs') -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\ORGANIZATION-ONBOARDING.md') `
+        -Destination (Join-Path $fixtureRoot 'docs\ORGANIZATION-ONBOARDING.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $fixtureRoot 'VERSION')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'sfl.json') -Destination (Join-Path $fixtureRoot 'sfl.json')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'deployment\release-metadata.json') `
@@ -161,6 +164,23 @@ try {
         -not $fixtureMetadata.distribution.prerelease) {
         $failures.Add('set-release-version.ps1 did not synchronize the fixture metadata.')
     }
+    $fixtureOnboardingPath = Join-Path $fixtureRoot 'docs\ORGANIZATION-ONBOARDING.md'
+    $fixtureOnboarding = Get-Content -LiteralPath $fixtureOnboardingPath -Raw
+    $expectedInstall = "Install the [checksum-verified canonical release](https://github.com/$($fixtureMetadata.distribution.repository)/releases/tag/v$fixtureVersion)."
+    if (-not $fixtureOnboarding.Contains($expectedInstall)) {
+        $failures.Add('set-release-version.ps1 did not update the designated onboarding instruction.')
+    }
+    [System.IO.File]::WriteAllText($fixtureOnboardingPath, "$fixtureOnboarding`n$expectedInstall`n")
+    $duplicateFailure = $null
+    try {
+        & (Join-Path $repoRoot 'deployment\scripts\set-release-version.ps1') `
+            -Version '9.8.8' -RepositoryRoot $fixtureRoot | Out-Null
+    } catch { $duplicateFailure = $_.Exception.Message }
+    if ($duplicateFailure -notlike 'Onboarding install instruction must be unique*' -or
+        (Get-Content -LiteralPath (Join-Path $fixtureRoot 'VERSION') -Raw).Trim() -ne $fixtureVersion) {
+        $failures.Add('Ambiguous onboarding instructions must fail before changing release metadata.')
+    }
+    [System.IO.File]::WriteAllText($fixtureOnboardingPath, $fixtureOnboarding)
 
     foreach ($invalidVersion in @('9.8', '01.0.0', '1.0.0-rc.01', '1.0.0-')) {
         $invalidVersionFailure = $null
