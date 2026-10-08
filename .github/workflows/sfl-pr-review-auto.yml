@@ -1107,7 +1107,18 @@ jobs:
               completed_at: new Date().toISOString(),
               details_url: detailsURL,
               external_id: externalId,
-              output: {title, summary: result.reason},
+              output: {title, summary: result.reason + "\n\n<!-- sfl-gate-execution:" + Buffer.from(JSON.stringify({
+                repository_id: context.payload.repository.id,
+                repository: `${owner}/${repo}`,
+                run_id: context.runId,
+                run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+                execution_sha: context.sha,
+                workflow_sha: process.env.GITHUB_WORKFLOW_SHA,
+                workflow_path: ".github/workflows/sfl-pr-review-auto.yml",
+                event: context.eventName,
+                check_run_id: published.data.id,
+                external_id: externalId,
+              })).toString("base64") + " -->"},
             });
             await github.rest.repos.createCommitStatus({
               owner,

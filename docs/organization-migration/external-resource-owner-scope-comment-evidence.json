@@ -1,0 +1,18 @@
+{
+  "method": "GET",
+  "http_status": 200,
+  "request_url": "https://api.github.com/repos/HemSoft/set-it-free-loop/issues/comments/6029136048",
+  "observed_at": "2026-10-07T22:04:03.837086+00:00",
+  "comment": {
+    "id": 6029136048,
+    "html_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048",
+    "created_at": "2026-10-07T01:48:17Z",
+    "updated_at": "2026-10-07T22:04:03Z",
+    "body": "Franz confirmed that the 65 transfer targets use only the inventoried Vercel, Cloudflare, Supabase, GitHub Pages and yahtzee runner resources, with no actual Blacksmith usage. Captured App installations remain historical candidate evidence. This owner fact supports explicit absence for other external providers, while actual resource, credential and GitHub workflow/reference gates remain separate.\n\nFranz also confirmed that modern-web-stack-poc is unused. Its historical Supabase hostname krdpxbpnvemzfxbnkgcq.supabase.co is absent from the accessible owner dashboard; independent system DNS and public DNS return no such host / NXDOMAIN. No database was queried, resumed, deleted or otherwise changed. Preserve any database data untouched while retiring the unused Vercel integration and transferring its GitHub repository.\n\nMachine-readable record of the same previously confirmed owner fact. This adds no new permission or scope.\n\n<!-- sfl-migration-approval:{\"scope\":\"65 approved transfer targets\",\"active_external_resources\":\"Only the inventoried Vercel, Cloudflare, Supabase, GitHub Pages and yahtzee runner resources\",\"blacksmith_usage\":\"none\",\"modern_web_stack_poc_usage\":\"Repository is not used\",\"database_treatment\":\"No database deletion or mutation authorized or performed\"} -->\n",
+    "user": {
+      "id": 8227352,
+      "login": "HemSoft",
+      "type": "User"
+    }
+  }
+}

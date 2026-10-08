@@ -1,0 +1,30 @@
+{
+  "observed_at": "2026-10-07T00:02:25.918361+00:00",
+  "provider": "Fly.io",
+  "owner_account": "franz_hemmer@hotmail.com",
+  "organizations": [
+    {
+      "slug": "franz-hemmer-801",
+      "role": "Admin",
+      "apps": 0,
+      "billing": "Trial Active"
+    }
+  ],
+  "organization_url": "https://fly.io/organizations",
+  "resource_url": "https://fly.io/dashboard/franz-hemmer-801",
+  "machines": 0,
+  "active_apps": 0,
+  "pending_apps": 0,
+  "suspended_apps": 0,
+  "source_repository": "HemSoft/codexbar",
+  "source_tree_truncated": false,
+  "fly_configuration_files": [],
+  "workflow_runners": [
+    "windows-latest"
+  ],
+  "github_deployments": 0,
+  "limitations": [
+    "Observed this authenticated account only; other account ownership is not inferred.",
+    "No onboarding form was submitted, no resource or billing action performed."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "method": "GET",
+  "http_status": 200,
+  "request_url": "https://api.github.com/repos/HemSoft/set-it-free-loop/issues/comments/6028753359",
+  "observed_at": "2026-10-07T22:04:02.217372+00:00",
+  "comment": {
+    "id": 6028753359,
+    "html_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028753359",
+    "created_at": "2026-10-07T01:14:31Z",
+    "updated_at": "2026-10-07T22:04:01Z",
+    "body": "Owner confirmation: none of the 65 approved repository transfer targets currently uses Azure Pipelines, Fly.io or Railway. Franz supplied this explicit fact on October 6, 2026.\n\nThis resolves those three provider-usage candidates. Captured installed App access remains in the historical inventory and candidate columns; it is not treated as evidence of active resources. No further Azure sign-in or project identification is required for this absence confirmation.\n\nThis receipt does not waive the other mandatory pre-transfer gates, including known Vercel/Supabase/Blacksmith resources, the yahtzee self-hosted runner, existing credential validity, repository references, or owned SFL App cutover readiness. No repository or App has been transferred by this confirmation.\n\nMachine-readable record of the same previously confirmed owner fact. This adds no new permission or scope.\n\n<!-- sfl-migration-approval:{\"scope\":\"65 approved transfer targets\",\"providers\":[\"Azure Pipelines\",\"Fly.io\",\"Railway\"],\"disposition\":\"none uses these providers\"} -->\n",
+    "user": {
+      "id": 8227352,
+      "login": "HemSoft",
+      "type": "User"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "observed_at": "2026-10-07T00:12:39.114545+00:00",
+  "provider": "Supabase",
+  "owner_account": "franz_hemmer@hotmail.com",
+  "owner_role": "Owner",
+  "organization": {
+    "slug": "tigijbtmewljfqdmdskh",
+    "name": "HemSoft's Org",
+    "plan": "Free",
+    "team_members": 1
+  },
+  "organization_url": "https://supabase.com/dashboard/org/tigijbtmewljfqdmdskh",
+  "projects": [
+    {
+      "reference": "cevpnetigzotgstxxjpm",
+      "name": "HemSoft's Project",
+      "region": "us-east-2",
+      "state": "paused",
+      "resource_url": "https://supabase.com/dashboard/project/cevpnetigzotgstxxjpm",
+      "vercel_project_connection": "dashboard",
+      "resume_until": "2027-02-17"
+    },
+    {
+      "reference": "tbarcuxvolatxdcubfec",
+      "name": "dashboard-recovery",
+      "region": "us-east-2",
+      "state": "paused",
+      "resource_url": "https://supabase.com/dashboard/project/tbarcuxvolatxdcubfec"
+    }
+  ],
+  "integrations_url": "https://supabase.com/dashboard/org/tigijbtmewljfqdmdskh/integrations",
+  "integration": {
+    "vercel_workspace": "Franz Hemmer's projects",
+    "project_connections": 1,
+    "github_connections": 0
+  },
+  "limitations": [
+    "No resume, upgrade, backup download, data query or credentials read.",
+    "Modern web stack public deployment references a third Supabase project hostname outside these two visible projects; ownership is not verified."
+  ]
+}

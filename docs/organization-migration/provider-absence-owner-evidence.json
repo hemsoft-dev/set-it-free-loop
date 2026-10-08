@@ -1,0 +1,15 @@
+{
+  "confirmed_at": "2026-10-07T01:15:01.403987+00:00",
+  "confirmed_by": "Franz (HemSoft owner)",
+  "scope": "65 approved transfer targets",
+  "providers": [
+    "Azure Pipelines",
+    "Fly.io",
+    "Railway"
+  ],
+  "disposition": "none uses these providers",
+  "evidence_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028753359",
+  "limits": "Does not clear other provider, runner, credential or owned App readiness gates",
+  "owner_comment_evidence_url": "provider-absence-owner-comment-evidence.json",
+  "decision_recorded_at": "2026-10-07T22:04:01Z"
+}

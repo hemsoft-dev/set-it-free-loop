@@ -1,0 +1,13 @@
+{
+  "observed_at": "2026-10-07T00:43:08.510896+00:00",
+  "owner_settings_url": "https://github.com/settings/apps/sfl-app/advanced",
+  "app_id": 4448946,
+  "selected_destination": "hemsoft-dev",
+  "destination_type": "Organization",
+  "warning": "When the transfer is completed, this app will be automatically uninstalled from your account.",
+  "confirmation_field_empty": true,
+  "submit_button_disabled": true,
+  "transfer_submitted": false,
+  "retained_repository_dependency": "Both retained repositories are in the existing personal installation; neither complete default-branch tree contains workflow or SFL manifest paths. This does not establish absence of all external consumers or webhooks. Reconcile before App transfer.",
+  "original_installation_id": 150383874
+}

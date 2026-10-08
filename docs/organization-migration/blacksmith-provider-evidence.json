@@ -1,0 +1,20 @@
+{
+  "observed_at": "2026-10-07T00:12:39.114664+00:00",
+  "provider": "Blacksmith",
+  "organization": "fhemmer",
+  "resource_url": "https://app.blacksmith.sh/fhemmer/runs/jobs",
+  "billing_url": "https://app.blacksmith.sh/fhemmer/usage",
+  "period": "2026-10 month to date",
+  "runner_minutes": 0,
+  "jobs": 0,
+  "runner_spend_usd": 0,
+  "sticky_disk_gb_months": 0,
+  "sticky_disk_spend_usd": 0,
+  "payment_method": "none",
+  "invoice_history": "none",
+  "source_repository": "fhemmer/hs-cli-confluence-search",
+  "limitations": [
+    "This observed organization and reporting period only, not historical global absence.",
+    "No runner, migration PR, payment method or billing change created."
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "observed_at": "2026-10-07T00:09:26.706934+00:00",
+  "provider": "Railway",
+  "account": "Franz Hemmer",
+  "workspace": "Franz Hemmer's Projects",
+  "resource_url": "https://railway.com/dashboard",
+  "projects": 0,
+  "billing": "TRIAL expired",
+  "limitations": [
+    "Observed only the authenticated visible workspace; no global absence inferred.",
+    "Legal terms dialog prevents further workspace inspection; no Fair Use Policy acceptance, upgrade or resource creation performed."
+  ]
+}

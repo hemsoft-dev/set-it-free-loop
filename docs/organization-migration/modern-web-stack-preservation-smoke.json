@@ -1,0 +1,124 @@
+{
+  "repository_id": 1119892824,
+  "repository": "HemSoft/modern-web-stack-poc",
+  "provider": "Vercel",
+  "resource_kind": "vercel_project",
+  "resource_id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+  "outcome": "preserved_unused",
+  "phase": "pre_transfer",
+  "destructive_changes": false,
+  "resource_unchanged": true,
+  "runtime_actions": [],
+  "owner_receipt_url": "https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6029136048",
+  "observed_at": "2026-10-07T22:11:17.985842+00:00",
+  "resource_capture_url": "modern-web-stack-git-retirement-evidence.json",
+  "observation": "This Project is not connected to a Git repository. To be able to set up a Deploy Hook, you need to set up a new connection in the Connected Git Repository section above.",
+  "limits": "Successful metadata GET confirms preserved unused project and retired Git binding. No post-transfer continuity or runtime check claimed.",
+  "baseline": {
+    "id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+    "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+    "framework": "nextjs",
+    "name": "modern-web-stack-poc",
+    "targets": {
+      "preview": {
+        "alias": [
+          "modern-web-stack-poc-git-feature-d8f8ce-franz-hemmers-projects.vercel.app"
+        ],
+        "createdAt": 1766292544656,
+        "gitSource": null,
+        "id": "dpl_DFPqxUtmNYnbTmianQ8gjEDStKgj",
+        "readyState": "READY",
+        "url": "modern-web-stack-bngfg1db8-franz-hemmers-projects.vercel.app"
+      },
+      "production": {
+        "alias": [
+          "poc.hemmer.us",
+          "modern-web-stack-poc.vercel.app",
+          "modern-web-stack-poc-franz-hemmers-projects.vercel.app",
+          "modern-web-stack-poc-git-main-franz-hemmers-projects.vercel.app"
+        ],
+        "createdAt": 1766293365430,
+        "gitSource": null,
+        "id": "dpl_2RNbBUD9BwbVvLcheDfakfofJZWr",
+        "readyState": "READY",
+        "url": "modern-web-stack-ixkxetb60-franz-hemmers-projects.vercel.app"
+      }
+    }
+  },
+  "observed_resource": {
+    "id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+    "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+    "framework": "nextjs",
+    "name": "modern-web-stack-poc",
+    "targets": {
+      "preview": {
+        "alias": [
+          "modern-web-stack-poc-git-feature-d8f8ce-franz-hemmers-projects.vercel.app"
+        ],
+        "createdAt": 1766292544656,
+        "gitSource": null,
+        "id": "dpl_DFPqxUtmNYnbTmianQ8gjEDStKgj",
+        "readyState": "READY",
+        "url": "modern-web-stack-bngfg1db8-franz-hemmers-projects.vercel.app"
+      },
+      "production": {
+        "alias": [
+          "poc.hemmer.us",
+          "modern-web-stack-poc.vercel.app",
+          "modern-web-stack-poc-franz-hemmers-projects.vercel.app",
+          "modern-web-stack-poc-git-main-franz-hemmers-projects.vercel.app"
+        ],
+        "createdAt": 1766293365430,
+        "gitSource": null,
+        "id": "dpl_2RNbBUD9BwbVvLcheDfakfofJZWr",
+        "readyState": "READY",
+        "url": "modern-web-stack-ixkxetb60-franz-hemmers-projects.vercel.app"
+      }
+    }
+  },
+  "provider_responses": {
+    "project": {
+      "data": {
+        "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+        "environment_variable_names": [
+          "NEXT_PUBLIC_SUPABASE_PROJECT_URL",
+          "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+          "SUPABASE_SECRET_SERVICE_ROLE_KEY"
+        ],
+        "framework": "nextjs",
+        "id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+        "link": null,
+        "name": "modern-web-stack-poc",
+        "targets": {
+          "preview": {
+            "alias": [
+              "modern-web-stack-poc-git-feature-d8f8ce-franz-hemmers-projects.vercel.app"
+            ],
+            "createdAt": 1766292544656,
+            "gitSource": null,
+            "id": "dpl_DFPqxUtmNYnbTmianQ8gjEDStKgj",
+            "readyState": "READY",
+            "url": "modern-web-stack-bngfg1db8-franz-hemmers-projects.vercel.app"
+          },
+          "production": {
+            "alias": [
+              "poc.hemmer.us",
+              "modern-web-stack-poc.vercel.app",
+              "modern-web-stack-poc-franz-hemmers-projects.vercel.app",
+              "modern-web-stack-poc-git-main-franz-hemmers-projects.vercel.app"
+            ],
+            "createdAt": 1766293365430,
+            "gitSource": null,
+            "id": "dpl_2RNbBUD9BwbVvLcheDfakfofJZWr",
+            "readyState": "READY",
+            "url": "modern-web-stack-ixkxetb60-franz-hemmers-projects.vercel.app"
+          }
+        }
+      },
+      "http_status": 200,
+      "method": "GET",
+      "observed_at": "2026-10-07T22:11:06.631Z",
+      "request_url": "https://vercel.com/api/v9/projects/prj_hPjAbxtMlCi3A5waKxQpjATto0ae?teamId=team_v5nrX8yNM2ZpAJMlqTMjqjvX"
+    }
+  }
+}

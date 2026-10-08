@@ -3,17 +3,31 @@ name: Validate organization migration inventory
 on:
   pull_request:
     paths:
+      - 'gh-sfl/addons.go'
+      - 'gh-sfl/init.go'
+      - 'deployment/governance/labels.json'
+      - 'deployment/governance/CODEOWNERS'
       - 'deployment/scripts/capture-org-migration.py'
       - 'deployment/tests/test_org_migration.py'
+      - 'deployment/scripts/validate-org-rollout.py'
+      - 'deployment/tests/test_org_rollout.py'
+      - 'deployment/tests/run-org-observer-fixtures.cjs'
       - 'docs/organization-migration/**'
-      - '.github/workflows/validate-org-migration.yml'
+      - '.github/workflows/*.yml'
   push:
     branches: [main]
     paths:
+      - 'gh-sfl/addons.go'
+      - 'gh-sfl/init.go'
+      - 'deployment/governance/labels.json'
+      - 'deployment/governance/CODEOWNERS'
       - 'deployment/scripts/capture-org-migration.py'
       - 'deployment/tests/test_org_migration.py'
+      - 'deployment/scripts/validate-org-rollout.py'
+      - 'deployment/tests/test_org_rollout.py'
+      - 'deployment/tests/run-org-observer-fixtures.cjs'
       - 'docs/organization-migration/**'
-      - '.github/workflows/validate-org-migration.yml'
+      - '.github/workflows/*.yml'
 
 permissions:
   contents: read
@@ -21,7 +35,7 @@ permissions:
 jobs:
   inventory:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -30,3 +44,9 @@ jobs:
         run: python3 -B -m unittest discover -s deployment/tests -p test_org_migration.py -v
       - name: Validate inventory and supplemental evidence without GitHub credentials
         run: python3 -B deployment/scripts/capture-org-migration.py --check docs/organization-migration/inventory.json
+      - name: Test pending and completed migration work records
+        run: python3 -B -m unittest discover -s deployment/tests -p test_org_rollout.py -v
+      - name: Validate ledger coverage and rollout completion evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B deployment/scripts/validate-org-rollout.py docs/organization-migration

@@ -1,0 +1,17 @@
+{
+  "observed_at": "2026-10-06T23:48:25.109Z",
+  "identity": "HemSoft authenticated GitHub owner browser",
+  "repository_id": 1143951439,
+  "repository": "fhemmer/hs-cli-confluence-search",
+  "source_owner_type": "Organization",
+  "classic": {
+    "url": "https://github.com/fhemmer/hs-cli-confluence-search/settings/branches",
+    "observation": "Classic branch protections have not been configured"
+  },
+  "rulesets": {
+    "url": "https://github.com/fhemmer/hs-cli-confluence-search/settings/rules",
+    "observation": "You haven't created any rulesets; rulesets won't be enforced on this private repository until source organization upgrades to GitHub Team"
+  },
+  "baseline_api_error_preserved": true,
+  "cutover_reverification_required": true
+}

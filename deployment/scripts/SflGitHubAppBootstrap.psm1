@@ -123,6 +123,32 @@ function Get-SflObjectPropertyValue {
     return $property.Value
 }
 
+function Get-SflGitHubAppPermissionProblems {
+    param([AllowNull()][object] $Permissions)
+    $required = [ordered]@{
+        actions = 'write'; checks = 'write'; contents = 'read'
+        issues = 'write'; metadata = 'read'; pull_requests = 'write'
+    }
+    foreach ($permission in $required.GetEnumerator()) {
+        $actual = [string](Get-SflObjectPropertyValue -Object $Permissions -Name $permission.Key)
+        if ($actual -cne $permission.Value) {
+            $display = if ([string]::IsNullOrEmpty($actual)) { 'missing' } else { $actual }
+            "permission '$($permission.Key)' is '$display'; expected '$($permission.Value)'"
+        }
+    }
+    if ($null -ne $Permissions) {
+        $names = if ($Permissions -is [Collections.IDictionary]) {
+            @($Permissions.Keys)
+        } else { @($Permissions.PSObject.Properties.Name) }
+        foreach ($name in $names) {
+            $value = [string](Get-SflObjectPropertyValue -Object $Permissions -Name $name)
+            if (-not $required.Contains($name) -and $value -cne 'none') {
+                "unexpected permission '$name' is '$value'"
+            }
+        }
+    }
+}
+
 function Assert-SflGitHubAppIdentity {
     [CmdletBinding()]
     param(
@@ -151,6 +177,10 @@ function Assert-SflGitHubAppIdentity {
     if ([string](Get-SflObjectPropertyValue -Object $owner -Name 'login') -cne $ExpectedOwner) {
         $problems.Add("App owner is not '$ExpectedOwner'.")
     }
+    $permissions = Get-SflObjectPropertyValue -Object $Identity -Name 'permissions'
+    foreach ($problem in (Get-SflGitHubAppPermissionProblems -Permissions $permissions)) {
+        $problems.Add($problem)
+    }
 
     if ($problems.Count -gt 0) {
         throw "GitHub App identity validation failed: $($problems -join ' ')"
@@ -176,14 +206,6 @@ function Assert-SflGitHubAppInstallation {
         [string] $ExpectedOwner
     )
 
-    $requiredPermissions = [ordered]@{
-        actions       = 'write'
-        checks        = 'write'
-        contents      = 'read'
-        issues        = 'write'
-        metadata      = 'read'
-        pull_requests = 'write'
-    }
     $problems = [Collections.Generic.List[string]]::new()
 
     if ([string](Get-SflObjectPropertyValue -Object $Installation -Name 'app_id') -cne $ExpectedAppId) {
@@ -205,22 +227,20 @@ function Assert-SflGitHubAppInstallation {
     if ([string](Get-SflObjectPropertyValue -Object $account -Name 'login') -cne $ExpectedOwner) {
         $problems.Add("installation account is not '$ExpectedOwner'")
     }
-
-    $permissions = Get-SflObjectPropertyValue -Object $Installation -Name 'permissions'
-    foreach ($permission in $requiredPermissions.GetEnumerator()) {
-        $actual = [string](Get-SflObjectPropertyValue -Object $permissions -Name $permission.Key)
-        if ($actual -cne $permission.Value) {
-            $displayActual = if ([string]::IsNullOrEmpty($actual)) { 'missing' } else { $actual }
-            $problems.Add("permission '$($permission.Key)' is '$displayActual'; expected '$($permission.Value)'")
-        }
+    foreach ($field in @('suspended_at', 'suspended_by')) {
+        $present = if ($Installation -is [Collections.IDictionary]) {
+            $Installation.Contains($field)
+        } else { $null -ne $Installation.PSObject.Properties[$field] }
+        if (-not $present) { $problems.Add("installation suspension field '$field' is missing") }
+    }
+    if ($null -ne (Get-SflObjectPropertyValue -Object $Installation -Name 'suspended_at') -or
+        $null -ne (Get-SflObjectPropertyValue -Object $Installation -Name 'suspended_by')) {
+        $problems.Add('installation is suspended')
     }
 
-    if ($null -ne $permissions) {
-        foreach ($permission in $permissions.PSObject.Properties) {
-            if (-not $requiredPermissions.Contains($permission.Name) -and [string]$permission.Value -cne 'none') {
-                $problems.Add("unexpected permission '$($permission.Name)' is '$($permission.Value)'")
-            }
-        }
+    $permissions = Get-SflObjectPropertyValue -Object $Installation -Name 'permissions'
+    foreach ($problem in (Get-SflGitHubAppPermissionProblems -Permissions $permissions)) {
+        $problems.Add($problem)
     }
 
     if ($problems.Count -gt 0) {

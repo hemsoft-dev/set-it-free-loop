@@ -1,0 +1,827 @@
+{
+  "observed_at": "2026-10-06T23:43:56.162Z",
+  "observer": "HemSoft authenticated Vercel owner browser",
+  "scope": {
+    "billingPlan": "hobby",
+    "id": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+    "name": "Franz Hemmer's projects",
+    "slug": "franz-hemmers-projects"
+  },
+  "projects": [
+    {
+      "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+      "framework": "nextjs",
+      "id": "prj_eEtkPEkBW5Lo8fQQCiLixuoIFiho",
+      "link": {
+        "org": "HemSoft",
+        "productionBranch": "main",
+        "repo": "now-leadership-group",
+        "repoId": 1162179521,
+        "type": "github"
+      },
+      "name": "now-leadership-group",
+      "targets": {
+        "preview": {
+          "alias": [
+            "now-leadership-group-git-feature-a256fe-franz-hemmers-projects.vercel.app"
+          ],
+          "createdAt": 1789406668469,
+          "gitSource": null,
+          "id": "dpl_EodZt8u8HgUAkZGJoNfrXV5oA8dn",
+          "readyState": "READY",
+          "url": "now-leadership-group-jqxqm7lqe-franz-hemmers-projects.vercel.app"
+        },
+        "production": {
+          "alias": [
+            "nowleadershipgroup.com",
+            "www.nowleadershipgroup.com",
+            "now-leadership-group.vercel.app",
+            "now-leadership-group-franz-hemmers-projects.vercel.app",
+            "now-leadership-group-git-main-franz-hemmers-projects.vercel.app"
+          ],
+          "createdAt": 1789493439255,
+          "gitSource": null,
+          "id": "dpl_5JJb9XShvNNkuGXy1hm7AsJatwmC",
+          "readyState": "READY",
+          "url": "now-leadership-group-no14k6299-franz-hemmers-projects.vercel.app"
+        }
+      },
+      "repository_visibility": "private"
+    },
+    {
+      "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+      "framework": "nextjs",
+      "id": "prj_ee45BuJUXLIUX7vbxZM2Nos2CYHv",
+      "link": {
+        "org": "HemSoft",
+        "productionBranch": "main",
+        "repo": "dashboard",
+        "repoId": 1120402599,
+        "type": "github"
+      },
+      "name": "dashboard",
+      "targets": {
+        "preview": {
+          "alias": [
+            "dashboard-git-sfl-tier-review-franz-hemmers-projects.vercel.app"
+          ],
+          "createdAt": 1785642365029,
+          "gitSource": null,
+          "id": "dpl_As8E7StZGcyW7PVU5qpWyxY4dmEt",
+          "readyState": "ERROR",
+          "url": "dashboard-jwivmcmcq-franz-hemmers-projects.vercel.app"
+        },
+        "production": {
+          "alias": [
+            "dashboard.hemmer.us",
+            "dashboard-ashy-tau-19.vercel.app",
+            "dashboard-franz-hemmers-projects.vercel.app",
+            "dashboard-fphemmer-franz-hemmers-projects.vercel.app"
+          ],
+          "createdAt": 1780527325223,
+          "gitSource": null,
+          "id": "dpl_H4WP1bWwW9wj1vfDSUNAM5QfyTSS",
+          "readyState": "READY",
+          "url": "dashboard-j0ox4mwlx-franz-hemmers-projects.vercel.app"
+        }
+      },
+      "repository_visibility": "public"
+    },
+    {
+      "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+      "framework": "nextjs",
+      "id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+      "link": {
+        "org": "HemSoft",
+        "productionBranch": "main",
+        "repo": "modern-web-stack-poc",
+        "repoId": 1119892824,
+        "type": "github"
+      },
+      "name": "modern-web-stack-poc",
+      "targets": {
+        "preview": {
+          "alias": [
+            "modern-web-stack-poc-git-feature-d8f8ce-franz-hemmers-projects.vercel.app"
+          ],
+          "createdAt": 1766292544656,
+          "gitSource": null,
+          "id": "dpl_DFPqxUtmNYnbTmianQ8gjEDStKgj",
+          "readyState": "READY",
+          "url": "modern-web-stack-bngfg1db8-franz-hemmers-projects.vercel.app"
+        },
+        "production": {
+          "alias": [
+            "poc.hemmer.us",
+            "modern-web-stack-poc.vercel.app",
+            "modern-web-stack-poc-franz-hemmers-projects.vercel.app",
+            "modern-web-stack-poc-git-main-franz-hemmers-projects.vercel.app"
+          ],
+          "createdAt": 1766293365430,
+          "gitSource": null,
+          "id": "dpl_2RNbBUD9BwbVvLcheDfakfofJZWr",
+          "readyState": "READY",
+          "url": "modern-web-stack-ixkxetb60-franz-hemmers-projects.vercel.app"
+        }
+      },
+      "repository_visibility": "private"
+    },
+    {
+      "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+      "framework": "astro",
+      "id": "prj_YnBCABhTFcRereL0WIYZZ4XwLmRD",
+      "link": {
+        "org": "HemSoft",
+        "productionBranch": "main",
+        "repo": "set-it-free-loop-site",
+        "repoId": 1169698740,
+        "type": "github"
+      },
+      "name": "set-it-free-loop-site",
+      "targets": {
+        "production": {
+          "alias": [
+            "setitfreeloop.org",
+            "www.setitfreeloop.org",
+            "set-it-free-loop-site.vercel.app",
+            "set-it-free-loop-site-franz-hemmers-projects.vercel.app",
+            "set-it-free-loop-site-git-main-franz-hemmers-projects.vercel.app"
+          ],
+          "createdAt": 1776362062864,
+          "gitSource": null,
+          "id": "dpl_2iuetnLTZ2gNvGmGDC1NjeN6d9B6",
+          "readyState": "READY",
+          "url": "set-it-free-loop-site-7tt9xhdsc-franz-hemmers-projects.vercel.app"
+        }
+      },
+      "repository_visibility": "private"
+    },
+    {
+      "accountId": "team_v5nrX8yNM2ZpAJMlqTMjqjvX",
+      "framework": "nextjs",
+      "id": "prj_XiikVK36Z7W1w8G6tG4d7oVWTQLS",
+      "link": {
+        "org": "HemSoft",
+        "productionBranch": "main",
+        "repo": "hs-landing-page",
+        "repoId": 1122850110,
+        "type": "github"
+      },
+      "name": "www",
+      "targets": {
+        "preview": {
+          "alias": [
+            "www-git-sfl-tier-review-franz-hemmers-projects.vercel.app"
+          ],
+          "createdAt": 1785643543705,
+          "gitSource": null,
+          "id": "dpl_5t7zsbRqNQEuXCbiJYKiz7fwpFFr",
+          "readyState": "READY",
+          "url": "33fa1ur95-84l3ujnde-franz-hemmers-projects.vercel.app"
+        },
+        "production": {
+          "alias": [
+            "www.hemmer.us",
+            "www-eight-snowy.vercel.app",
+            "www-franz-hemmers-projects.vercel.app",
+            "www-git-main-franz-hemmers-projects.vercel.app",
+            "hemmer.us"
+          ],
+          "createdAt": 1769908872366,
+          "gitSource": null,
+          "id": "dpl_C4HPq8xJJokR7xLEqWusD9fpmNnW",
+          "readyState": "READY",
+          "url": "33fa1ur95-8pszdupmk-franz-hemmers-projects.vercel.app"
+        }
+      },
+      "repository_visibility": "public"
+    }
+  ],
+  "details": [
+    {
+      "detailStatus": 200,
+      "domains": [
+        {
+          "gitBranch": null,
+          "name": "www.nowleadershipgroup.com",
+          "redirect": null,
+          "verified": true
+        },
+        {
+          "gitBranch": null,
+          "name": "nowleadershipgroup.com",
+          "redirect": null,
+          "verified": true
+        },
+        {
+          "gitBranch": null,
+          "name": "now-leadership-group.vercel.app",
+          "redirect": null,
+          "verified": true
+        }
+      ],
+      "domainsStatus": 200,
+      "envStatus": 200,
+      "environmentVariables": [],
+      "id": "prj_eEtkPEkBW5Lo8fQQCiLixuoIFiho",
+      "name": "now-leadership-group",
+      "project": {
+        "buildCommand": null,
+        "framework": "nextjs",
+        "installCommand": null,
+        "link": {
+          "org": "HemSoft",
+          "productionBranch": "main",
+          "repo": "now-leadership-group",
+          "repoId": 1162179521,
+          "type": "github"
+        },
+        "nodeVersion": "24.x",
+        "outputDirectory": null,
+        "rootDirectory": null
+      }
+    },
+    {
+      "detailStatus": 200,
+      "domains": [
+        {
+          "gitBranch": null,
+          "name": "dashboard.hemmer.us",
+          "redirect": null,
+          "verified": true
+        },
+        {
+          "gitBranch": null,
+          "name": "dashboard-ashy-tau-19.vercel.app",
+          "redirect": null,
+          "verified": true
+        }
+      ],
+      "domainsStatus": 200,
+      "envStatus": 200,
+      "environmentVariables": [
+        {
+          "createdAt": 1780526559149,
+          "id": "N66he1qdMfJDH6RK",
+          "key": "NEXT_PUBLIC_SUPABASE_PROJECT_URL",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1780526559149
+        },
+        {
+          "createdAt": 1780526555462,
+          "id": "uaG1xHca4G4lg006",
+          "key": "NEXT_PUBLIC_SUPABASE_PROJECT_URL",
+          "target": [
+            "development"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1780526555462
+        },
+        {
+          "createdAt": 1780526553599,
+          "id": "oLmV5TBYKNS0ExDM",
+          "key": "SUPABASE_SECRET_SERVICE_ROLE_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1780526553599
+        },
+        {
+          "createdAt": 1780526549993,
+          "id": "HcfI85gWYAmDSCTR",
+          "key": "SUPABASE_SECRET_SERVICE_ROLE_KEY",
+          "target": [
+            "development"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1780526549993
+        },
+        {
+          "createdAt": 1780526547993,
+          "id": "DUDrQD9DSGdHVcqD",
+          "key": "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1780526547993
+        },
+        {
+          "createdAt": 1780526544566,
+          "id": "d3Tkom8POtbn0wzo",
+          "key": "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+          "target": [
+            "development"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1780526544566
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "B1BANTktlfmNtEAa",
+          "key": "POSTGRES_HOST",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "h6vXrcUHqaGYvbFc",
+          "key": "POSTGRES_PASSWORD",
+          "target": [
+            "production"
+          ],
+          "type": "sensitive",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "KVkcHhCkEGc5dJQc",
+          "key": "POSTGRES_DATABASE",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "6IWcjTNbcHvHvIT2",
+          "key": "SUPABASE_ANON_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "Us78jscRDZVaZn1E",
+          "key": "SUPABASE_URL",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "AFHSU4V84jIJNmGZ",
+          "key": "SUPABASE_SERVICE_ROLE_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "sensitive",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "oi9Ja8wEd86VQAxA",
+          "key": "SUPABASE_JWT_SECRET",
+          "target": [
+            "production"
+          ],
+          "type": "sensitive",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "JKaKmnh43vAnBtRy",
+          "key": "SUPABASE_PUBLISHABLE_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "uSTemV4028ldp9YZ",
+          "key": "SUPABASE_SECRET_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "sensitive",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "PkYfORc3JaBR6fvH",
+          "key": "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628081,
+          "id": "qPf7Yn3usNVbRVcd",
+          "key": "NEXT_PUBLIC_SUPABASE_URL",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767641628081
+        },
+        {
+          "createdAt": 1767641628080,
+          "id": "qa8dgBhZ2nVI8MeN",
+          "key": "POSTGRES_URL",
+          "target": [
+            "production"
+          ],
+          "type": "sensitive",
+          "updatedAt": 1767641628080
+        },
+        {
+          "createdAt": 1767641628080,
+          "id": "RK4wXpTbIN7G1KA2",
+          "key": "POSTGRES_PRISMA_URL",
+          "target": [
+            "production"
+          ],
+          "type": "sensitive",
+          "updatedAt": 1767641628080
+        },
+        {
+          "createdAt": 1767641628080,
+          "id": "dhoRxvbGOKfYAHCn",
+          "key": "POSTGRES_URL_NON_POOLING",
+          "target": [
+            "production"
+          ],
+          "type": "sensitive",
+          "updatedAt": 1767641628080
+        },
+        {
+          "createdAt": 1767641628080,
+          "id": "Qi6sSmnMCQUsvRvg",
+          "key": "POSTGRES_USER",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767641628080
+        },
+        {
+          "createdAt": 1767039801209,
+          "id": "xAD9ui0ZwwjXGXZo",
+          "key": "OPENROUTER_API_KEY",
+          "target": [
+            "development"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767039801209
+        },
+        {
+          "createdAt": 1767039795884,
+          "id": "YqnnlXBXrsUmw12U",
+          "key": "OPENROUTER_API_KEY",
+          "target": [
+            "preview"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767039795884
+        },
+        {
+          "createdAt": 1767039790516,
+          "id": "2XP6IcYx8cNjoIhM",
+          "key": "OPENROUTER_API_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767039790516
+        },
+        {
+          "createdAt": 1767039168206,
+          "id": "ihQMtX3HL4IwINnb",
+          "key": "TAVILY_API_KEY",
+          "target": [
+            "development"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767039168206
+        },
+        {
+          "createdAt": 1767039164870,
+          "id": "mKNL75wFUDO2QOJ0",
+          "key": "TAVILY_API_KEY",
+          "target": [
+            "preview"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767039164870
+        },
+        {
+          "createdAt": 1767039157502,
+          "id": "JM5YTnMUYfUAetpY",
+          "key": "TAVILY_API_KEY",
+          "target": [
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1767039157502
+        },
+        {
+          "createdAt": 1766587040090,
+          "id": "bLsvC55GuKyrS52W",
+          "key": "CRON_SECRET",
+          "target": [
+            "development",
+            "preview",
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1766587040090
+        },
+        {
+          "createdAt": 1766375748303,
+          "id": "RDePofi0SlzfxRFG",
+          "key": "NEXT_PUBLIC_SITE_URL",
+          "target": [
+            "development",
+            "preview",
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1766375748303
+        },
+        {
+          "createdAt": 1766374933763,
+          "id": "LouF8d5bM6Srw3nA",
+          "key": "GITHUB_DASHBOARD_CLIENT_SECRET",
+          "target": [
+            "development",
+            "preview",
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1766374933763
+        },
+        {
+          "createdAt": 1766374902981,
+          "id": "ab2UMU0xhc3qrKJb",
+          "key": "GITHUB_DASHBOARD_CLIENT_ID",
+          "target": [
+            "development",
+            "preview",
+            "production"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1766374902981
+        }
+      ],
+      "id": "prj_ee45BuJUXLIUX7vbxZM2Nos2CYHv",
+      "name": "dashboard",
+      "project": {
+        "buildCommand": null,
+        "framework": "nextjs",
+        "installCommand": null,
+        "link": {
+          "org": "HemSoft",
+          "productionBranch": "main",
+          "repo": "dashboard",
+          "repoId": 1120402599,
+          "type": "github"
+        },
+        "nodeVersion": "24.x",
+        "outputDirectory": null,
+        "rootDirectory": null
+      }
+    },
+    {
+      "detailStatus": 200,
+      "domains": [
+        {
+          "gitBranch": null,
+          "name": "poc.hemmer.us",
+          "redirect": null,
+          "verified": true
+        },
+        {
+          "gitBranch": null,
+          "name": "modern-web-stack-poc.vercel.app",
+          "redirect": null,
+          "verified": true
+        }
+      ],
+      "domainsStatus": 200,
+      "envStatus": 200,
+      "environmentVariables": [
+        {
+          "createdAt": 1766250205328,
+          "id": "c3FAhFkifEjSyOLX",
+          "key": "NEXT_PUBLIC_SUPABASE_PROJECT_URL",
+          "target": [
+            "production",
+            "preview",
+            "development"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1766250205328
+        },
+        {
+          "createdAt": 1766250205328,
+          "id": "ZSVyFoBkYgRPgrLi",
+          "key": "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
+          "target": [
+            "production",
+            "preview",
+            "development"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1766250205328
+        },
+        {
+          "createdAt": 1766250205328,
+          "id": "wCZviObpZrhM1BwG",
+          "key": "SUPABASE_SECRET_SERVICE_ROLE_KEY",
+          "target": [
+            "production",
+            "preview",
+            "development"
+          ],
+          "type": "encrypted",
+          "updatedAt": 1766250205328
+        }
+      ],
+      "id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+      "name": "modern-web-stack-poc",
+      "project": {
+        "buildCommand": null,
+        "framework": "nextjs",
+        "installCommand": null,
+        "link": {
+          "org": "HemSoft",
+          "productionBranch": "main",
+          "repo": "modern-web-stack-poc",
+          "repoId": 1119892824,
+          "type": "github"
+        },
+        "nodeVersion": "24.x",
+        "outputDirectory": null,
+        "rootDirectory": null
+      }
+    },
+    {
+      "detailStatus": 200,
+      "domains": [
+        {
+          "gitBranch": null,
+          "name": "www.setitfreeloop.org",
+          "redirect": null,
+          "verified": true
+        },
+        {
+          "gitBranch": null,
+          "name": "setitfreeloop.org",
+          "redirect": null,
+          "verified": true
+        },
+        {
+          "gitBranch": null,
+          "name": "set-it-free-loop-site.vercel.app",
+          "redirect": null,
+          "verified": true
+        }
+      ],
+      "domainsStatus": 200,
+      "envStatus": 200,
+      "environmentVariables": [],
+      "id": "prj_YnBCABhTFcRereL0WIYZZ4XwLmRD",
+      "name": "set-it-free-loop-site",
+      "project": {
+        "buildCommand": "npm run build",
+        "framework": "astro",
+        "installCommand": null,
+        "link": {
+          "org": "HemSoft",
+          "productionBranch": "main",
+          "repo": "set-it-free-loop-site",
+          "repoId": 1169698740,
+          "type": "github"
+        },
+        "nodeVersion": "24.x",
+        "outputDirectory": "dist",
+        "rootDirectory": null
+      }
+    },
+    {
+      "detailStatus": 200,
+      "domains": [
+        {
+          "gitBranch": null,
+          "name": "hemmer.us",
+          "redirect": "www.hemmer.us",
+          "verified": true
+        },
+        {
+          "gitBranch": null,
+          "name": "www.hemmer.us",
+          "redirect": null,
+          "verified": true
+        },
+        {
+          "gitBranch": null,
+          "name": "www-eight-snowy.vercel.app",
+          "redirect": null,
+          "verified": true
+        }
+      ],
+      "domainsStatus": 200,
+      "envStatus": 200,
+      "environmentVariables": [],
+      "id": "prj_XiikVK36Z7W1w8G6tG4d7oVWTQLS",
+      "name": "www",
+      "project": {
+        "buildCommand": null,
+        "framework": "nextjs",
+        "installCommand": null,
+        "link": {
+          "org": "HemSoft",
+          "productionBranch": "main",
+          "repo": "hs-landing-page",
+          "repoId": 1122850110,
+          "type": "github"
+        },
+        "nodeVersion": "24.x",
+        "outputDirectory": null,
+        "rootDirectory": null
+      }
+    }
+  ],
+  "limitations": [
+    "No environment variable values read or stored.",
+    "Credential presence does not prove credential validity.",
+    "Post-transfer GitHub App access and deployment smoke tests remain pending.",
+    "setitfreeloop.org failed DNS resolution before any transfer; existing failure is not classified as caused by migration."
+  ],
+  "shared_environment_variables": {
+    "api_status": 200,
+    "api_count": 0,
+    "owner_ui": "Shared tab states No shared variables",
+    "verified_at": "2026-10-06T23:48:11.816Z"
+  },
+  "integration_observations": {
+    "supabase_installation_url": "https://vercel.com/franz-hemmers-projects/~/integrations/supabase/icfg_959WaFB99D3RH3KVbrznohQX",
+    "configuration_id": "icfg_959WaFB99D3RH3KVbrznohQX",
+    "supabase_owner_resource_mapping": "pending",
+    "vercel_storage_page": "https://vercel.com/franz-hemmers-projects/~/stores",
+    "vercel_storage_observation": "Owner page shows Create a database; external Supabase resources still require verification"
+  },
+  "production_domain_smoke": [
+    {
+      "url": "https://nowleadershipgroup.com",
+      "status": 200,
+      "final_origin_and_path": "https://nowleadershipgroup.com",
+      "observed_at": "2026-10-06T23:54:29.376541+00:00"
+    },
+    {
+      "url": "https://www.hemmer.us",
+      "status": 200,
+      "final_origin_and_path": "https://www.hemmer.us",
+      "observed_at": "2026-10-06T23:54:29.310520+00:00"
+    },
+    {
+      "url": "https://dashboard.hemmer.us",
+      "status": 200,
+      "final_origin_and_path": "https://dashboard.hemmer.us/login",
+      "observed_at": "2026-10-06T23:54:31.048679+00:00"
+    },
+    {
+      "url": "https://setitfreeloop.org",
+      "error": "<urlopen error [Errno -5] No address associated with hostname>",
+      "observed_at": "2026-10-06T23:54:29.229531+00:00"
+    },
+    {
+      "url": "https://poc.hemmer.us",
+      "status": 200,
+      "final_origin_and_path": "https://poc.hemmer.us",
+      "observed_at": "2026-10-06T23:54:31.373354+00:00"
+    }
+  ],
+  "private_organization_hobby_blockers": [
+    "HemSoft/now-leadership-group",
+    "HemSoft/modern-web-stack-poc",
+    "HemSoft/set-it-free-loop-site"
+  ],
+  "owner_decisions": [
+    {
+      "repository": "HemSoft/modern-web-stack-poc",
+      "project_id": "prj_hPjAbxtMlCi3A5waKxQpjATto0ae",
+      "decision": "retire_vercel_project_keep_github_repository",
+      "decision_by": "Franz Hemmer",
+      "recorded_at": "2026-10-07T00:08:53.972000+00:00",
+      "execution_status": "pending",
+      "supabase_resource_treatment": "pending_owner_verification"
+    }
+  ]
+}

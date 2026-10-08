@@ -1,0 +1,35 @@
+{
+  "observed_at": "2026-10-07T02:32:41.556133+00:00",
+  "method": "GET canonical metadata, branches and Git commit; prior tree API failures preserved",
+  "records": [
+    {
+      "repository_id": 1143951439,
+      "source": "fhemmer/hs-cli-confluence-search",
+      "observed_at": "2026-10-07T02:32:40.730104+00:00",
+      "metadata_size": 0,
+      "branches": [
+        {
+          "name": "main",
+          "commit": {
+            "sha": "d1414c2d5a3abdcd7f86ca858cb48c141dc514fc",
+            "url": "https://api.github.com/repos/fhemmer/hs-cli-confluence-search/commits/d1414c2d5a3abdcd7f86ca858cb48c141dc514fc"
+          },
+          "protected": false
+        }
+      ],
+      "evidence_url": "https://api.github.com/repos/fhemmer/hs-cli-confluence-search/branches",
+      "state": "empty_tree",
+      "commit_sha": "d1414c2d5a3abdcd7f86ca858cb48c141dc514fc",
+      "tree_sha": "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+    },
+    {
+      "repository_id": 996911586,
+      "source": "HemSoft/n8n-workflows",
+      "observed_at": "2026-10-07T02:32:41.556062+00:00",
+      "metadata_size": 0,
+      "branches": [],
+      "evidence_url": "https://api.github.com/repos/HemSoft/n8n-workflows/branches",
+      "state": "uninitialized"
+    }
+  ]
+}
