@@ -50,7 +50,7 @@ $global:SflCoverageInstallation = [ordered]@{
     permissions=@{actions='write';checks='write';contents='read';issues='write';metadata='read';pull_requests='write'}
 }
 $global:SflCoverageIdentity = [pscustomobject]@{
-    id=1408025382;full_name='hemsoft-dev/sfl-migration-pilot-private'
+    id=1408025382;full_name='hemsoft-dev/sfl-migration-pilot-private';temp_clone_token='fixture-sensitive-clone-value';nested=@{credential='fixture-hidden-value'}
     owner=@{id=338855369;login='hemsoft-dev';type='Organization'}
 }
 $identityBaseline = $global:SflCoverageIdentity | ConvertTo-Json -Depth 10
@@ -73,6 +73,13 @@ try {
     if ($result.http_status -ne 200 -or $result.repository_id -ne 1408025382 -or
         $result.request_url -cne 'https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/installation' -or
         $global:SflCoverageRequests.Count -ne 2) { throw 'Coverage receipt must bind the actual target and response.' }
+    $serializedResult = $result | ConvertTo-Json -Depth 20
+    if ($serializedResult -match 'temp_clone_token|fixture-sensitive-clone-value|fixture-hidden-value|credential') {
+        throw 'Coverage artifacts must project only approved identity fields, excluding credential-bearing metadata.'
+    }
+    if (($result.identity.repository.PSObject.Properties.Name | Sort-Object) -join ',' -cne 'full_name,id,owner') {
+        throw 'Repository identity projection must be an explicit minimal field allowlist.'
+    }
     $identityRequest = $global:SflCoverageRequests[0]
     if ($identityRequest.uri -cne 'https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private' -or
         $identityRequest.headers.Authorization -cne 'Bearer fixture-metadata-token' -or
@@ -137,6 +144,7 @@ try {
     try { Invoke-SflOrganizationCoverage -Targets @($extras[0]) -Jwt 'fixture-jwt' | Out-Null }
     catch { $caught = $_.Exception }
     if (-not [object]::ReferenceEquals($caught,$global:SflCoveragePrimaryException) -or
+        $caught.Data['SflCoverageRepository'] -cne 'hemsoft-dev/sfl-migration-pilot-private' -or
         ($global:SflCoverageRequests.method -join ',') -cne 'Post,Get,Delete') {
         throw 'Revocation failure must preserve the exact primary exception with no replay.'
     }

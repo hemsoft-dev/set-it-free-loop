@@ -106,7 +106,15 @@ function Get-SflOrganizationRepositoryCoverage {
             method = 'GET'
             http_status = [int]$identityResponse.StatusCode
             request_url = $identityUrl
-            repository = $identity
+            repository = [pscustomobject]@{
+                id = [long]$identity.id
+                full_name = [string]$identity.full_name
+                owner = [pscustomobject]@{
+                    id = [long]$identity.owner.id
+                    login = [string]$identity.owner.login
+                    type = [string]$identity.owner.type
+                }
+            }
         }
         installation = $installation
     }
@@ -152,7 +160,14 @@ function Invoke-SflOrganizationCoverage {
         $tokenResponse = $null
         $coverage = [Collections.Generic.List[object]]::new()
         foreach ($target in $Targets) {
-            $coverage.Add((Get-SflOrganizationRepositoryCoverage -Target $target -Jwt $Jwt -MetadataToken $metadataToken))
+            try {
+                $coverage.Add((Get-SflOrganizationRepositoryCoverage -Target $target -Jwt $Jwt -MetadataToken $metadataToken))
+            }
+            catch {
+                # Preserve the original error while carrying only the validated target name to the workflow.
+                $_.Exception.Data['SflCoverageRepository'] = [string]$target.repository
+                throw
+            }
         }
         return $coverage.ToArray()
     }
