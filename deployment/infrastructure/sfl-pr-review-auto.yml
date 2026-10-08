@@ -1268,31 +1268,57 @@ jobs:
               external_id: externalId,
               output: {title: "SFL Codex review validating", summary: result.reason},
             });
+            // BEGIN TESTABLE PUBLISHED CHECK UPDATE
+            async function updatePublishedCheck(update) {
+              for (let attempt = 0; attempt < 3; attempt += 1) {
+                try {
+                  return await github.rest.checks.update(update);
+                } catch (error) {
+                  if (error.status !== 404 || attempt === 2) throw error;
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+              }
+            }
+            // END TESTABLE PUBLISHED CHECK UPDATE
             let requiredPublished = null;
             const failPublishedSuccess = async changedReason => {
-              await github.rest.checks.update({
-                owner,
-                repo,
-                check_run_id: published.data.id,
-                status: "completed",
-                conclusion: "failure",
-                completed_at: new Date().toISOString(),
-                details_url: detailsURL,
-                external_id: externalId,
-                output: {title: "SFL Codex review invalidated", summary: changedReason},
-              });
+              core.setFailed(changedReason);
+              let invalidationError;
               if (requiredPublished) {
-                await github.rest.repos.createCommitStatus({
+                for (let attempt = 0; attempt < 3; attempt += 1) {
+                  try {
+                    await github.rest.repos.createCommitStatus({
+                      owner,
+                      repo,
+                      sha: requiredGateSha,
+                      state: "failure",
+                      context: "SFL Reviewer Gate Runner",
+                      target_url: detailsURL,
+                      description: "The reviewed pull request context changed during publication",
+                    });
+                    invalidationError = undefined;
+                    break;
+                  } catch (error) {
+                    invalidationError = error;
+                  }
+                }
+              }
+              try {
+                await github.rest.checks.update({
                   owner,
                   repo,
-                  sha: requiredGateSha,
-                  state: "failure",
-                  context: "SFL Reviewer Gate Runner",
-                  target_url: detailsURL,
-                  description: "The reviewed pull request context changed during publication",
+                  check_run_id: published.data.id,
+                  status: "completed",
+                  conclusion: "failure",
+                  completed_at: new Date().toISOString(),
+                  details_url: detailsURL,
+                  external_id: externalId,
+                  output: {title: "SFL Codex review invalidated", summary: changedReason},
                 });
+              } catch (error) {
+                invalidationError ||= error;
               }
-              core.setFailed(changedReason);
+              if (invalidationError) throw invalidationError;
             };
             const confirmedState = await publicationState();
             if (publicationChanged(confirmedState)) {
@@ -1309,40 +1335,58 @@ jobs:
               target_url: detailsURL,
               description: "Validating Codex review for the immutable pull request head",
             });
-            await github.rest.checks.update({
-              owner,
-              repo,
-              check_run_id: published.data.id,
-              status: "completed",
-              conclusion: "success",
-              completed_at: new Date().toISOString(),
-              details_url: detailsURL,
-              external_id: externalId,
-              output: {title, summary: result.reason + "\n\n<!-- sfl-gate-execution:" + Buffer.from(JSON.stringify({
-                repository_id: context.payload.repository.id,
-                repository: `${owner}/${repo}`,
-                run_id: context.runId,
-                run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
-                execution_sha: context.sha,
-                workflow_sha: process.env.GITHUB_WORKFLOW_SHA,
-                workflow_path: ".github/workflows/sfl-pr-review-auto.yml",
-                event: context.eventName,
+            let publicationFailureReason;
+            let publicationError;
+            try {
+              await updatePublishedCheck({
+                owner,
+                repo,
                 check_run_id: published.data.id,
+                status: "completed",
+                conclusion: "success",
+                completed_at: new Date().toISOString(),
+                details_url: detailsURL,
                 external_id: externalId,
-              })).toString("base64") + " -->"},
-            });
-            await github.rest.repos.createCommitStatus({
-              owner,
-              repo,
-              sha: requiredGateSha,
-              state: "success",
-              context: "SFL Reviewer Gate Runner",
-              target_url: detailsURL,
-              description: "Codex found no major issues on the reviewed pull request head",
-            });
-            const postSuccessState = await publicationState();
-            if (publicationChanged(postSuccessState)) {
-              await failPublishedSuccess(publicationChangeReason(postSuccessState));
+                output: {title, summary: result.reason + "\n\n<!-- sfl-gate-execution:" + Buffer.from(JSON.stringify({
+                  repository_id: context.payload.repository.id,
+                  repository: `${owner}/${repo}`,
+                  run_id: context.runId,
+                  run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+                  execution_sha: context.sha,
+                  workflow_sha: process.env.GITHUB_WORKFLOW_SHA,
+                  workflow_path: ".github/workflows/sfl-pr-review-auto.yml",
+                  event: context.eventName,
+                  check_run_id: published.data.id,
+                  external_id: externalId,
+                })).toString("base64") + " -->"},
+              });
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha: requiredGateSha,
+                state: "success",
+                context: "SFL Reviewer Gate Runner",
+                target_url: detailsURL,
+                description: "Codex found no major issues on the reviewed pull request head",
+              });
+              const postSuccessState = await publicationState();
+              if (publicationChanged(postSuccessState)) {
+                publicationFailureReason = publicationChangeReason(postSuccessState);
+              }
+            } catch (error) {
+              publicationError = error;
+              publicationFailureReason = "The published Codex review gate could not be verified";
+            }
+            if (publicationFailureReason) {
+              let invalidationError;
+              try {
+                await failPublishedSuccess(publicationFailureReason);
+              } catch (error) {
+                invalidationError = error;
+                core.info("The published gate could not be fully invalidated");
+              }
+              if (publicationError) throw publicationError;
+              if (invalidationError) throw invalidationError;
             }
 
   invalidate-pull-context:

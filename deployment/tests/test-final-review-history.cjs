@@ -229,9 +229,97 @@ async function repairCases(baseFixture, first, selected) {
   await repairFlow(before,snapshot);assert.equal(before.writes.length,0,'changed history before repair must prevent the success write');
 }
 
+const normalEnd=source.indexOf('\n  invalidate-pull-context:',repairEnd);
+assert(normalEnd>repairEnd);
+const normalFlow=new AsyncFunction('fixture','snapshot','Buffer',`
+const owner='hemsoft-dev',repo='fixture',currentHead='${head}',currentBase='${base}',pullNumber=42,contextToken='none';
+const artifact={html_url:'https://github.com/hemsoft-dev/fixture/pull/42'},pull={data:artifact};
+const result={action:'success',reason:'authenticated clean'},title='clean',externalId='fixture';
+const context={payload:{repository:{id:123}},runId:456,sha:currentBase,eventName:'issue_comment'};
+const core={info:()=>{},setFailed:reason=>fixture.failures.push(reason)};
+const setTimeout=(resolve,duration)=>{fixture.timers.push(duration);resolve();};
+const github={rest:{checks:{create:async data=>({data:{id:789}}),update:async data=>{
+  fixture.events.push('check:'+data.conclusion);
+  if(data.conclusion==='success'&&fixture.successCheckErrors?.length)throw fixture.successCheckErrors.shift();
+  if(data.conclusion==='success'&&fixture.successCheckError)throw fixture.successCheckError;
+  if(data.conclusion==='failure'&&fixture.failureCheckError)throw fixture.failureCheckError;
+}},repos:{createCommitStatus:async data=>{
+  fixture.writes.push(data);fixture.events.push('status:'+data.state);
+  if(data.state==='failure'&&fixture.blockingErrors?.length)throw fixture.blockingErrors.shift();
+  if(data.state==='success'&&fixture.onSuccess)fixture.onSuccess();
+  if(data.state==='success'&&fixture.successWriteError)throw fixture.successWriteError;
+  return {data:{id:890}};
+}}}};
+const publicationState=async()=>{
+  fixture.snapshots++;
+  if(fixture.beforeSnapshot)fixture.beforeSnapshot(fixture.snapshots);
+  return await snapshot(fixture);
+};
+${block('REQUIRED GATE TARGET')}
+${unindent(source.slice(stateEnd,repairStart))}
+${unindent(source.slice(repairEnd,normalEnd))}`);
+
+async function publicationCases(baseFixture,first,selected) {
+  const make=()=>({...baseFixture,comments:[first,selected],writes:[],events:[],failures:[],snapshots:0,timers:[]});
+  const stable=make();await normalFlow(stable,snapshot,Buffer);
+  assert.deepEqual(stable.writes.map(x=>x.state),['pending','success']);
+  for(const retries of [0,1,2,3]) {
+    const broken=make(),original=new Error('post-success GitHub snapshot failure');
+    broken.onSuccess=()=>{broken.comments=[selected];};
+    broken.beforeSnapshot=count=>{if(count===2)throw original;};
+    broken.blockingErrors=Array.from({length:retries},()=>new Error('blocking status API failure'));
+    broken.failureCheckError=new Error('failure audit API failure');
+    await assert.rejects(normalFlow(broken,snapshot,Buffer),error=>error===original);
+    assert.deepEqual(broken.writes.map(x=>x.state),['pending','success',...Array(Math.min(retries+1,3)).fill('failure')]);
+    assert(broken.events.indexOf('status:failure')<broken.events.indexOf('check:failure'),
+      'audit API failures cannot prevent required-status invalidation');
+    assert.equal(broken.failures.length,1);
+  }
+  const changed=make();changed.onSuccess=()=>{changed.comments=[selected];};
+  await normalFlow(changed,snapshot,Buffer);
+  assert.deepEqual(changed.writes.map(x=>x.state),['pending','success','failure']);
+  assert.equal(changed.failures.length,1);
+  const auditFailure=make(),auditError=new Error('success check update 404');
+  auditFailure.successCheckError=auditError;
+  await assert.rejects(normalFlow(auditFailure,snapshot,Buffer),error=>error===auditError);
+  assert.deepEqual(auditFailure.writes.map(x=>x.state),['pending','failure']);
+  const ambiguous=make(),writeError=new Error('success status accepted but response failed');
+  ambiguous.successWriteError=writeError;
+  await assert.rejects(normalFlow(ambiguous,snapshot,Buffer),error=>error===writeError);
+  assert.deepEqual(ambiguous.writes.map(x=>x.state),['pending','success','failure']);
+}
+
+async function publishedCheckRetryCases(baseFixture,first,selected) {
+  const make=()=>({...baseFixture,comments:[first,selected],writes:[],events:[],failures:[],snapshots:0,timers:[]});
+  for(const failures of [0,1,2]) {
+    const transient=make();
+    transient.successCheckErrors=Array.from({length:failures},()=>Object.assign(new Error('new check not yet found'),{status:404}));
+    await normalFlow(transient,snapshot,Buffer);
+    assert.deepEqual(transient.writes.map(x=>x.state),['pending','success']);
+    assert.equal(transient.events.filter(x=>x==='check:success').length,failures+1);
+    assert.deepEqual(transient.timers,Array(failures).fill(1000));
+    assert.equal(transient.failures.length,0);
+  }
+  const permanent=make();
+  const errors=Array.from({length:3},()=>Object.assign(new Error('persistent check 404'),{status:404}));
+  permanent.successCheckErrors=[...errors];
+  await assert.rejects(normalFlow(permanent,snapshot,Buffer),error=>error===errors[2]);
+  assert.deepEqual(permanent.writes.map(x=>x.state),['pending','failure']);
+  assert.deepEqual(permanent.timers,[1000,1000]);
+  assert.equal(permanent.events.filter(x=>x==='check:success').length,3);
+  for(const status of [400,401,403,422,500]) {
+    const denied=make(),error=Object.assign(new Error('other check API error'),{status});
+    denied.successCheckError=error;
+    await assert.rejects(normalFlow(denied,snapshot,Buffer),thrown=>thrown===error);
+    assert.deepEqual(denied.writes.map(x=>x.state),['pending','failure']);
+    assert.deepEqual(denied.timers,[]);
+    assert.equal(denied.events.filter(x=>x==='check:success').length,1);
+  }
+}
+
 (async () => {
   const mode = process.argv[3] || 'all';
-  assert(['all', 'probe-invalidation', 'probe-history', 'probe-revoked', 'probe-active', 'probe-retarget', 'probe-polling', 'probe-empty', 'probe-repair'].includes(mode));
+  assert(['all', 'probe-invalidation', 'probe-history', 'probe-revoked', 'probe-active', 'probe-retarget', 'probe-polling', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry'].includes(mode));
   if (['all', 'probe-polling'].includes(mode)) {
     for (const action of ['created', 'edited', 'deleted']) {
       await invalidationCase(`unprivileged marker ${action}`, exact, action === 'edited', false, false, null, action, 'read', 1);
@@ -245,8 +333,8 @@ async function repairCases(baseFixture, first, selected) {
     }
     await invalidationCase('revoked unregistered author', 'ordinary comment', false, false, false, null, 'created', 'read');
   }
-  if (mode.startsWith('probe-') && !['probe-invalidation', 'probe-history', 'probe-empty', 'probe-repair'].includes(mode)) return;
-  if (!['probe-history', 'probe-empty', 'probe-repair'].includes(mode)) {
+  if (mode.startsWith('probe-') && !['probe-invalidation', 'probe-history', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry'].includes(mode)) return;
+  if (!['probe-history', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry'].includes(mode)) {
   if (mode === 'all') {
   assert.match(source, /issue_comment:\s*types: \[created, edited, deleted\]/);
   const title = /run-name: >-\n\s*\$\{\{([\s\S]*?)\}\}/.exec(source);
@@ -306,5 +394,7 @@ async function repairCases(baseFixture, first, selected) {
     }
   }
   if (['all','probe-repair'].includes(mode)) await repairCases(fixture,first,selected);
+  if (['all','probe-publication'].includes(mode)) await publicationCases(fixture,first,selected);
+  if (['all','probe-check-retry'].includes(mode)) await publishedCheckRetryCases(fixture,first,selected);
   console.log('Production invalidation and fresh historical-publication regressions passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -80,7 +80,9 @@ func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
 		`status: "in_progress"`,
 		"const confirmedState = await publicationState();",
 		"const postSuccessState = await publicationState();",
-		"await failPublishedSuccess(publicationChangeReason(postSuccessState));",
+		"publicationFailureReason = publicationChangeReason(postSuccessState);",
+		"await failPublishedSuccess(publicationFailureReason);",
+		"if (publicationError) throw publicationError;",
 	} {
 		if !strings.Contains(canonical, required) {
 			t.Errorf("Codex observer is missing two-phase publication contract %q", required)
