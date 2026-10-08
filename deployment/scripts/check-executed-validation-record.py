@@ -1,15 +1,19 @@
 """Reject stale retained execution outputs after evidence-validator changes."""
 import ast
+import argparse
 import hashlib
 import json
 import pathlib
 import re
+import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 INPUTS = ('deployment/scripts/validate-executed-transfers.py',
           'deployment/tests/test_executed_transfers.py',
           'deployment/scripts/check-executed-validation-record.py')
-record = json.loads((ROOT / 'docs/organization-migration/execution/executed-transfer-validation.json').read_text())
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--record', type=pathlib.Path, default=ROOT / 'docs/organization-migration/execution/executed-transfer-validation.json')
+record = json.loads(parser.parse_args().record.read_text())
 expected = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in INPUTS}
 if record.get('inputs_sha256') != expected:
     raise ValueError('Retained validation output predates the current validator, corruption suite or record checker')
@@ -23,4 +27,9 @@ if not re.search(r'(?m)^Ran ' + str(count) + r' tests in [0-9.]+s$', tests['stde
     raise ValueError('Retained corruption suite output does not match its current test count and result')
 if record['command'] != ['python3', 'deployment/scripts/validate-executed-transfers.py', 'docs/organization-migration']:
     raise ValueError('Retained validator execution is not bound to the actual command')
+actual = subprocess.run(record['command'], cwd=ROOT, capture_output=True, text=True)
+if actual.returncode != 0:
+    raise RuntimeError('Current validator recomputation failed: ' + actual.stderr)
+if json.loads(actual.stdout) != record['result']:
+    raise ValueError('Retained validator result differs from the actual current validator output')
 print('Retained executed-transfer validation record matches the current validator and ' + str(count) + ' corruption tests')
