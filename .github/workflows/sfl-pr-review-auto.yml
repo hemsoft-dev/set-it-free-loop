@@ -4,7 +4,7 @@
 name: SFL Codex Review Observer
 run-name: >-
   ${{ github.event_name == 'issue_comment' &&
-      format('SFL Codex review request #{0}', github.event.issue.number) ||
+      format('SFL Codex comment #{0} request {1}', github.event.issue.number, github.event.comment.id) ||
       format('SFL {0} event', github.event_name) }}
 
 on:
@@ -82,10 +82,6 @@ jobs:
               }
             };
             let comment = await readRequestComment();
-            if (!await requesterAllowed(comment.data.user && comment.data.user.login)) {
-              core.info("Review requester does not have write or higher repository permission");
-              return;
-            }
             const pull = await github.rest.pulls.get({
               owner, repo, pull_number: pullNumber,
             });
@@ -133,8 +129,10 @@ jobs:
               for (const status of statuses) {
                 const creator = ((status.creator && status.creator.login) || "").toLowerCase();
                 if (status.context === "SFL Codex Review Request Registry" &&
-                    creator === author && (status.target_url || "").toLowerCase() === targetURL &&
-                    await requesterAllowed(creator)) {
+                    Boolean(author) && creator === author &&
+                    (status.target_url || "").toLowerCase() === targetURL) {
+                  // Registration authenticates historical identity. A revoked
+                  // requester can still withdraw that existing review evidence.
                   registered = true;
                   break;
                 }
@@ -190,10 +188,14 @@ jobs:
             }
             // END TESTABLE REQUEST CONTEXT PROVENANCE
             const terminalRequestIdentity = `:request:${commentId}:at:`;
+            const currentRequesterAllowed = await requesterAllowed(comment.data.user && comment.data.user.login);
+            if (!currentRequesterAllowed) {
+              core.info("Review requester does not have write or higher repository permission");
+            }
             const requestBodyExact = !commentDeleted &&
               comment.data.updated_at === comment.data.created_at &&
               (comment.data.body || "") === `@codex review\n\n${marker}`;
-            if (requestBodyExact && confirmedChecks.some(
+            if (requestBodyExact && currentRequesterAllowed && confirmedChecks.some(
               check => check.app && check.app.id === 15368 &&
                 check.status === "completed" &&
                 (check.external_id || "").includes(terminalRequestIdentity),
@@ -202,14 +204,14 @@ jobs:
               return;
             }
             const externalId = `sfl-codex-review:request-pending:${commentId}`;
-            if (requestBodyExact && confirmedChecks.some(
+            if (requestBodyExact && currentRequesterAllowed && confirmedChecks.some(
               check => check.app && check.app.id === 15368 && check.external_id === externalId,
             )) {
               core.info("This registered Codex review request already invalidated the prior gate");
               return;
             }
             // BEGIN TESTABLE REGISTERED REQUEST ADMISSION
-            const registeredRequestExact = requestBodyExact;
+            const registeredRequestExact = requestBodyExact && currentRequesterAllowed;
             const requestContextUsable = registeredRequestExact &&
               reviewContextUnambiguous(confirmedChecks, pullNumber, currentBase);
             // END TESTABLE REGISTERED REQUEST ADMISSION
@@ -337,6 +339,13 @@ jobs:
               return { action: "failure", reason: "authenticated Codex artifact has an unknown result shape" };
             }
 
+            function invalidationRequestCommentId(run, pullNumber) {
+              const match = new RegExp(`^SFL Codex comment #${pullNumber} request ([1-9][0-9]*)$`)
+                .exec((run && run.display_title) || "");
+              const id = match ? Number(match[1]) : NaN;
+              return Number.isSafeInteger(id) ? id : null;
+            }
+
             function isActiveInvalidationRun(run, pullNumber, owner) {
               if (!run || run.status === "completed") return false;
               if (run.event === "push") return true;
@@ -344,7 +353,8 @@ jobs:
                 // Identify a request invalidation candidate for this PR;
                 // activeInvalidationRuns verifies the actor before waiting.
                 return Boolean(run.actor && run.actor.login) &&
-                  run.display_title === `SFL Codex review request #${pullNumber}`;
+                  (run.display_title === `SFL Codex review request #${pullNumber}` ||
+                   invalidationRequestCommentId(run, pullNumber) !== null);
               }
               return run.event === "pull_request_target" &&
                 (run.pull_requests || []).some(candidate => candidate.number === pullNumber);
@@ -745,10 +755,35 @@ jobs:
                 run => run.id !== context.runId && events.includes(run.event) &&
                   isActiveInvalidationRun(run, pullNumber, owner),
               );
+              const statuses = candidates.some(run =>
+                run.event === "issue_comment" && invalidationRequestCommentId(run, pullNumber) !== null)
+                ? await github.paginate(github.rest.repos.listCommitStatusesForRef,
+                    {owner, repo, ref: currentHead, per_page: 100})
+                : [];
               const authorized = [];
               for (const run of candidates) {
-                if (run.event !== "issue_comment" ||
-                    await requesterAllowed((run.actor && run.actor.login) || "")) {
+                if (run.event !== "issue_comment") {
+                  authorized.push(run);
+                  continue;
+                }
+                const actor = ((run.actor && run.actor.login) || "").toLowerCase();
+                const requestId = invalidationRequestCommentId(run, pullNumber);
+                if (requestId === null) {
+                  // Legacy deployed runs lack a comment ID; conservatively wait
+                  // for an authorized actor's pre-upgrade invalidation to finish.
+                  if (await requesterAllowed(actor)) authorized.push(run);
+                  continue;
+                }
+                const target = `https://github.com/${owner}/${repo}/pull/${pullNumber}#issuecomment-${requestId}`.toLowerCase();
+                const registrations = statuses.filter(status =>
+                  status.context === "SFL Codex Review Request Registry" &&
+                  (status.target_url || "").toLowerCase() === target &&
+                  Boolean(status.creator && status.creator.login));
+                // Ignore ordinary comments even from current administrators.
+                // A historically registered author remains entitled to revoke
+                // their evidence, and a current writer may remove that comment.
+                if (registrations.length && (registrations.some(status =>
+                    status.creator.login.toLowerCase() === actor) || await requesterAllowed(actor))) {
                   authorized.push(run);
                 }
               }
@@ -1292,8 +1327,11 @@ jobs:
               headRepo.toLowerCase() === `${owner}/${repo}`.toLowerCase();
             const baseChanged = context.payload.action === "edited" &&
               Boolean(context.payload.changes && context.payload.changes.base);
+            const departedDefaultBranch = baseChanged &&
+              context.payload.changes.base.ref &&
+              context.payload.changes.base.ref.from === context.payload.repository.default_branch;
             const supportedPullContext = sameRepositoryHead &&
-              (pull.base.ref === context.payload.repository.default_branch || baseChanged);
+              (pull.base.ref === context.payload.repository.default_branch || departedDefaultBranch);
             // END TESTABLE SUPPORTED PULL CONTEXT
             if (!supportedPullContext) {
               core.info("Pull context does not target a supported same-repository default-branch review");
