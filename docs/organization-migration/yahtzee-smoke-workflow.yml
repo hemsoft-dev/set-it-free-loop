@@ -1,0 +1,23 @@
+name: Self-hosted runner smoke
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  smoke:
+    name: Verify mini runner
+    runs-on: [self-hosted, Linux, X64, mini, yahtzee]
+    timeout-minutes: 5
+    steps:
+      - name: Verify runner identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${RUNNER_NAME}" = "mini-github-runner-01"
+          test "${RUNNER_OS}" = "Linux"
+          test "${RUNNER_ARCH}" = "X64"
+          printf 'runner=%s os=%s arch=%s\n' \
+            "${RUNNER_NAME}" "${RUNNER_OS}" "${RUNNER_ARCH}"
+          uname -a

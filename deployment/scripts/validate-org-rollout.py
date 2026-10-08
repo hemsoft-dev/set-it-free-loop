@@ -4,6 +4,7 @@
 import argparse
 import base64
 import contextlib
+import copy
 import csv
 import datetime
 import hashlib
@@ -103,6 +104,18 @@ def terminal_run_time(run, observed_at, label):
     return completed
 
 
+def validate_actions_run_response(capture, run, repository, observed_at, label):
+    require(type(run.get('id')) is int and run['id'] > 0,
+            label + ' needs its actual Actions run ID')
+    response = capture.get('run_response', {})
+    validate_resource_response(response, 'https://api.github.com/repos/' + repository +
+                               '/actions/runs/' + str(run['id']), run)
+    completed = terminal_run_time(run, observed_at, label)
+    require(completed <= observed_time(response.get('observed_at'), label + ' run GET') <= observed_at,
+            label + ' primary run GET must follow completion and precede its capture')
+    return completed
+
+
 def validate_run_artifact(reference, directory, repository, run, artifact_name, filename, payload, observed_at):
     capture = local_capture(reference, directory, 'Actions output artifact')
     artifact = capture.get('artifact', {})
@@ -183,8 +196,6 @@ def validate_terminal_operation(operation, directory, cutover=None):
             capture.get('status') == 'completed' and type(capture.get('exit_code')) is int and
             capture['exit_code'] == 0, 'Terminal operation capture must bind successful CLI execution and revisions')
     timestamp = observed_time(capture.get('observed_at'), 'Terminal CLI operation')
-    if cutover is not None:
-        require(timestamp >= cutover, 'Terminal CLI operation must execute after destination/App cutover')
     result = capture.get('result', {})
     if operation['outcome'] == 'pull_request_merged':
         pr = result.get('pull_request', {})
@@ -193,9 +204,32 @@ def validate_terminal_operation(operation, directory, cutover=None):
                 pr.get('base', {}).get('repo', {}).get('id') == operation['repository_id'] and
                 pr['base']['repo'].get('full_name') == operation['repository'],
                 'Terminal mutation needs an independently captured merged repository PR and resulting revision')
-        require(observed_time(pr.get('merged_at'), 'Deployment PR merge') <= timestamp,
-                'CLI terminal capture must follow PR merge')
-    elif operation['outcome'] == 'no_changes':
+        number = operation['evidence_url'].rsplit('/', 1)[-1]
+        require(number.isdigit() and int(number) > 0 and pr.get('number') == int(number),
+                'Terminal mutation needs its actual repository PR number')
+        response = capture.get('pull_request_response', {})
+        validate_resource_response(response, 'https://api.github.com/repos/' + operation['repository'] +
+                                   '/pulls/' + number, pr)
+        created = observed_time(pr.get('created_at'), 'Deployment PR creation')
+        completed = observed_time(pr.get('merged_at'), 'Deployment PR merge')
+        require(created <= completed <= observed_time(response.get('observed_at'), 'Deployment PR GET') <= timestamp and
+                (cutover is None or created >= cutover),
+                'CLI terminal capture must follow its actual PR merge after cutover')
+        return completed
+    require(operation['outcome'] in {'no_changes', 'healthy', 'gate_removed'},
+            'Unsupported terminal CLI operation outcome')
+    execution = capture.get('execution', {})
+    started = observed_time(execution.get('started_at'), 'Terminal execution start')
+    completed = observed_time(execution.get('completed_at'), 'Terminal execution completion')
+    require(started == observed_time(capture.get('started_at'), 'Terminal capture start') and
+            started <= completed <= timestamp and completed - started <= datetime.timedelta(minutes=15) and
+            (cutover is None or started >= cutover),
+            'Terminal execution must finish within its bounded capture after cutover')
+    require(text(execution.get('command')) and isinstance(execution.get('argv'), list) and
+            execution['argv'] and all(text(arg) for arg in execution['argv']) and
+            type(execution.get('exit_code')) is int and execution['exit_code'] == 0,
+            'Terminal execution needs its actual successful command and arguments')
+    if operation['outcome'] == 'no_changes':
         execution = capture.get('execution', {})
         argv = execution.get('argv')
         require(operation.get('command') in {'init','sync'} and isinstance(argv, list) and string_list(argv) and
@@ -204,11 +238,6 @@ def validate_terminal_operation(operation, directory, cutover=None):
                 '--pr' in argv and execution.get('command') == 'gh sfl ' + operation['command'] and
                 type(execution.get('exit_code')) is int and execution['exit_code'] == 0,
                 'No-op needs its successful concrete CLI command and target arguments')
-        started = observed_time(execution.get('started_at'), 'No-op execution start')
-        completed = observed_time(execution.get('completed_at'), 'No-op execution completion')
-        require(started == observed_time(capture.get('started_at'), 'No-op capture start') and
-                started <= completed <= timestamp and completed - started <= datetime.timedelta(minutes=15) and
-                (cutover is None or started >= cutover), 'No-op execution must finish within its bounded capture after cutover')
         stdout = execution.get('stdout')
         require(isinstance(stdout, str) and
                 execution.get('stdout_sha256') == hashlib.sha256(stdout.encode()).hexdigest() and
@@ -220,15 +249,20 @@ def validate_terminal_operation(operation, directory, cutover=None):
                 result.get('revision_after') == operation['revision_after'],
                 'No-op needs captured zero changes at the observed unchanged revision')
     elif operation['outcome'] == 'healthy':
+        argv = execution['argv']
+        require(execution['command'] == 'gh sfl status' and argv[:3] == ['gh', 'sfl', 'status'] and
+                argv.count('--repo') == 1 and argv.index('--repo') + 1 < len(argv) and
+                argv[argv.index('--repo') + 1] == operation['repository'],
+                'Status must execute its concrete CLI command against its designated repository')
         require(operation['command'] == 'status' and operation['revision_before'] == operation['revision_after'] and
                 result.get('health') == 'healthy' and result.get('revision_sha') == operation['revision_after'] and
                 result.get('missing_files') == [] and result.get('drifted_files') == [],
                 'Status needs captured healthy deployment checks at its revision')
     elif operation['outcome'] == 'gate_removed':
-        require(result.get('gate_required') is False and result.get('unrelated_change_count') == 0 and
+        require(operation['command'] == 'uninstall-gate' and result.get('gate_required') is False and result.get('unrelated_change_count') == 0 and
                 result.get('preserved_unrelated_rules') is True,
                 'Gate uninstall needs captured absence and preservation of unrelated policy')
-    return timestamp
+    return completed
 
 
 def deployed_workflow_paths(tier, addons=(), components=None):
@@ -264,8 +298,7 @@ def bound_workflow_operation(operation, directory, repository_id, repository, sh
     terminal_run_time(run, timestamp, 'Workflow execution')
     run_id = int(url.rsplit('/', 1)[1])
     require(run.get('id') == run_id, 'Workflow execution needs its actual run ID')
-    validate_resource_response(capture.get('run_response', {}), 'https://api.github.com/repos/' + repository +
-        '/actions/runs/' + str(run_id), run)
+    validate_actions_run_response(capture, run, repository, timestamp, 'Workflow execution')
     if cutover is not None:
         require(created >= cutover, 'Workflow must execute after its independent destination/App cutover capture')
 
@@ -346,15 +379,16 @@ def validate_app_credential(proof, directory):
             metadata.get('installation_owner') == 'HemSoft' and metadata.get('target_type') == 'User',
             'App credential assertions must match the uploaded workflow metadata')
     observed_time(metadata.get('observed_at'), 'App credential metadata')
-    run = local_capture(proof.get('workflow_run_evidence_url'), directory, 'App credential workflow run')
+    run_capture = local_capture(proof.get('workflow_run_evidence_url'), directory, 'App credential workflow run')
+    run = {key: value for key, value in run_capture.items() if key not in {'captured_at', 'run_response'}}
     require(run.get('repository', {}).get('id') == proof['repository_id'] and
             run.get('repository', {}).get('full_name') == proof['repository'] and
             run.get('html_url') == proof['run_url'] and run.get('head_sha') == proof['reviewed_sha'] and
-            run.get('path') == proof['workflow'] and run.get('head_branch') == 'main' and
+            run.get('path') == proof['workflow'] and run.get('head_branch') == 'main' and run.get('event') == 'workflow_dispatch' and
             run.get('status') == 'completed' and run.get('conclusion') == 'success',
             'App credential capture must come from its successful reviewed main workflow run')
-    terminal_run_time(run, observed_time(run.get('captured_at'), 'App credential run capture'),
-                      'App credential workflow')
+    captured_at = observed_time(run_capture.get('captured_at'), 'App credential run capture')
+    validate_actions_run_response(run_capture, run, proof['repository'], captured_at, 'App credential workflow')
     implementations = proof.get('implementation_evidence')
     paths = (proof['workflow'], 'deployment/scripts/SflGitHubAppBootstrap.psm1')
     require(isinstance(implementations, dict) and set(implementations) == set(paths),
@@ -365,11 +399,11 @@ def validate_app_credential(proof, directory):
         require(actual == (pathlib.Path(__file__).resolve().parents[2] / path).read_bytes(),
                 'App credential implementation must equal the reviewed canonical source bytes')
         require(observed_time(capture.get('observed_at'), 'App credential implementation capture') <=
-                observed_time(run['captured_at'], 'App credential run capture'),
+                captured_at,
                 'App credential implementation must be captured with its reviewed run')
     validate_run_artifact(proof.get('credential_artifact_evidence_url'), directory, proof['repository'], run,
                           'sfl-app-credential-metadata', 'sfl-app-credential-metadata.json', metadata,
-                          observed_time(run['captured_at'], 'App credential run capture'))
+                          captured_at)
 
 
 def protection_semantics(value, repo, url_field=False):
@@ -1936,10 +1970,19 @@ def validate_runner_captures(proof, directory, earliest):
             require(run.get('repository',{}).get('id') == proof['repository_id'] and
                     run['repository'].get('full_name') == proof['repository'] and run.get('html_url') == proof['run_url'] and
                     run.get('head_sha') == proof['run_head_sha'] and run.get('status') == 'completed' and
-                    run.get('conclusion') == 'success' and capture.get('read_only') is True and
+                    run.get('conclusion') == 'success' and run.get('path') == '.github/workflows/self-hosted-smoke.yml' and
+                    run.get('event') == 'workflow_dispatch' and capture.get('read_only') is True and
                     observed_time(run.get('created_at'), 'Runner smoke creation') >= earliest,
                     'Runner smoke capture must prove a completed destination run at the recorded revision')
-            terminal_run_time(run, observed_time(capture['observed_at'], 'Runner capture'), 'Runner smoke')
+            captured_at = observed_time(capture['observed_at'], 'Runner capture')
+            validate_actions_run_response(capture, run, proof['repository'], captured_at, 'Runner smoke')
+            workflow = local_capture(proof.get('workflow_evidence_url'), directory, 'Runner smoke workflow')
+            actual_workflow = immutable_contents(workflow, proof['repository_id'], proof['repository'],
+                                                run['head_sha'], '.github/workflows/self-hosted-smoke.yml')
+            require(actual_workflow == (directory / 'yahtzee-smoke-workflow.yml').read_bytes() and
+                    observed_time(run['created_at'], 'Runner smoke creation') <=
+                    observed_time(workflow.get('observed_at'), 'Runner smoke workflow') <= captured_at,
+                    'Runner smoke must execute the reviewed read-only workflow bytes at its actual run head')
             jobs = local_capture(proof.get('jobs_evidence_url'), directory, 'Runner smoke jobs')
             require(type(run.get('id')) is int and run['id'] > 0 and
                     type(run.get('run_attempt')) is int and run['run_attempt'] > 0 and
@@ -2452,16 +2495,53 @@ def validate_unlinked_supabase(resource, baseline, directory, cutoff):
 
 
 
+def without_sfl_gate_rules(rules):
+    result = []
+    for original in rules:
+        rule = copy.deepcopy(original)
+        if rule.get('type') == 'required_status_checks':
+            checks = rule.get('parameters', {}).get('required_status_checks', [])
+            rule['parameters']['required_status_checks'] = [check for check in checks if not
+                (check.get('context') == 'SFL Reviewer Gate Runner' and check.get('integration_id') == 15368)]
+            if not rule['parameters']['required_status_checks']:
+                continue
+        result.append(rule)
+    return sorted(json.dumps(rule, sort_keys=True) for rule in result)
+
+
+def without_sfl_gate_classic(response):
+    if response['state'] == 'absent':
+        return None
+    policy = copy.deepcopy(response['data'])
+    checks = policy.get('required_status_checks')
+    if isinstance(checks, dict):
+        checks['contexts'] = [context for context in checks.get('contexts', []) if context != 'SFL Reviewer Gate Runner']
+        checks['checks'] = [check for check in checks.get('checks', []) if not
+            (check.get('context') == 'SFL Reviewer Gate Runner' and check.get('app_id') == 15368)]
+        if not checks['contexts'] and not checks['checks']:
+            policy['required_status_checks'] = None
+    return policy
+
+
 def validate_pilot_cleanup(receipts, directory, repository_id, repository, branch, operations, operation_times):
     ordered = ('init_pr_url', 'repeat_onboarding_evidence_url', 'sync_pr_url',
                'repeat_sync_evidence_url', 'status_evidence_url', 'gate_uninstall_evidence_url')
     require(all(operation_times[a] <= operation_times[b] for a,b in zip(ordered, ordered[1:])),
             'Pilot terminal operations must follow execution time as well as revision order')
-    prior = {k:v for k,v in receipts.items() if k not in {'gate_uninstall_evidence_url', 'final_gate_policy_evidence_url'}}
+    prior = {k:v for k,v in receipts.items() if k not in {
+        'gate_uninstall_evidence_url', 'pre_cleanup_gate_policy_evidence_url', 'final_gate_policy_evidence_url'}}
     prior['operation_receipts'] = {k:v for k,v in operations.items() if k != 'gate_uninstall_evidence_url'}
     latest = repository_terminal_times([{'repository_id':repository_id, 'validation':prior}], [], directory)[repository_id]
     removed_at = operation_times['gate_uninstall_evidence_url']
     require(removed_at >= latest, 'Pilot gate removal must follow the latest completed validation evidence')
+    before = local_capture(receipts.get('pre_cleanup_gate_policy_evidence_url'), directory, 'Pre-cleanup pilot gate policy')
+    execution = local_capture(operations['gate_uninstall_evidence_url']['capture_evidence_url'], directory,
+                              'Pilot gate removal execution')['execution']
+    require(before.get('repository_id') == repository_id and before.get('repository') == repository and
+            before.get('branch') == branch and latest <= observed_time(before.get('observed_at'), 'Pre-cleanup pilot policy') <=
+            observed_time(execution.get('started_at'), 'Pilot gate removal start'),
+            'Pre-cleanup policy must follow completed validation and precede the actual gate removal execution')
+    before_rules, before_classic = validate_branch_policy_responses(before, repository, branch, latest)
     policy = local_capture(receipts.get('final_gate_policy_evidence_url'), directory, 'Final pilot gate policy')
     require(policy.get('repository_id') == repository_id and policy.get('repository') == repository and
             policy.get('branch') == branch and observed_time(policy.get('observed_at'), 'Final pilot policy') >= removed_at,
@@ -2472,6 +2552,9 @@ def validate_pilot_cleanup(receipts, directory, repository_id, repository, branc
     contexts += [c.get('context') for r in rules['data'] if r.get('type') == 'required_status_checks'
                  for c in r.get('parameters', {}).get('required_status_checks', [])]
     require('SFL Reviewer Gate Runner' not in contexts, 'Final pilot policy must prove the SFL gate is absent')
+    require(without_sfl_gate_rules(before_rules['data']) == without_sfl_gate_rules(rules['data']) and
+            without_sfl_gate_classic(before_classic) == without_sfl_gate_classic(classic),
+            'Pilot gate cleanup must preserve all unrelated effective and classic policy')
 
 
 def validate_ledger_rows(rows, inventory, directory, expected, retained, candidates, expected_unused,

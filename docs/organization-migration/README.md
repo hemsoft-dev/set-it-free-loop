@@ -688,10 +688,20 @@ complete ruleset and protected-branch collections, and all detail responses.
 Any new or strengthened source policy must be reconciled with the reviewed
 preservation baseline. The original sealed inventory stays intact.
 
-Live pilot scenarios need exact successful Actions-run and artifact metadata
-GETs, bound to their terminal run, archive digest and captured output. Final
-pilot cleanup authenticates both effective-rule and classic-protection GETs on
-the actual default branch, captured after gate removal.
+Credential, runner and live scenario runs derive from exact successful
+`/actions/runs/{id}` GETs. Their `run_response.data` matches the raw run, and the
+GET follows run completion and precedes the capture. The source credential run
+must be its reviewed main workflow-dispatch run. Its raw run capture retains
+`captured_at` and `run_response` separately from the API fields.
+
+Pilot cleanup records `pre_cleanup_gate_policy_evidence_url` after all pilot
+validation and before the removal execution starts. Both that capture and the
+final policy include exact successful effective-rule and classic-protection
+GETs on the actual default branch. The final policy must preserve every
+unrelated rule and check after removing only the Actions-owned SFL requirement.
+Status and removal use validated execution completion times; merged operations
+use the actual PR merge time and an exact successful `pull_request_response`
+GET. A later observation cannot move an earlier operation past cutover.
 
 Repeated init and sync receipts include `execution.command`, the actual
 `execution.argv`, integer zero `exit_code`, start/completion timestamps, stdout
@@ -725,3 +735,11 @@ Registered review ancestry includes `compare_response`, the successful exact GET
 `/compare/{deployed_revision}...{reviewed_base_sha}`. Its raw `data` must equal
 the recorded comparison. Capture it after cutover and before the completed
 ancestry observation in pilot, consumer, source and new-repository review modes.
+
+The yahtzee destination smoke must be a workflow-dispatch execution of
+`.github/workflows/self-hosted-smoke.yml`. Its `workflow_evidence_url` captures
+immutable contents at the actual run head and matches the reviewed
+[zero-permission smoke workflow](yahtzee-smoke-workflow.yml). An unrelated
+successful job or a restored file with different bytes cannot qualify the
+runner. The inventory job allows 15 minutes for the full migration suite and
+subsequent validation.

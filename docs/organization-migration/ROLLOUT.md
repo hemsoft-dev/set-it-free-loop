@@ -567,11 +567,14 @@ identity, location, privacy and archive state.
 Pilot and final onboarding CLI operation receipts load `capture_evidence_url`
 with matching repository, release, command, revisions and terminal result. The
 capture records a completed execution with exit code zero. A mutation includes
-independent closed/merged PR metadata and the matching merge revision; a no-op
-includes captured zero changes and unchanged revisions; status includes healthy
-file checks at the observed revision. Gate uninstall includes the observed gate
-absence and preservation of unrelated rules. Issue fragments and self-declared
-booleans alone do not prove these outcomes.
+an exact successful `pull_request_response` GET, closed/merged PR metadata and
+the matching merge revision. Order it by the actual merge time. Status, no-op
+and gate removal record actual command arguments and start/completion times in
+`execution`, and use completion for ordering. Execution starts after cutover;
+a later capture cannot qualify an earlier operation. A no-op includes captured
+zero changes and unchanged revisions; status includes healthy file checks at
+the observed revision. `uninstall-gate` names the gate-only operation; record
+the actual policy-removal command rather than invent a CLI subcommand.
 
 Protected-source runtime proof uses checked-in distributed SFL product
 workflows from the full deployment catalog. Successful migration validation,
@@ -758,7 +761,11 @@ GETs and the immutable downloaded archive. Both metadata responses must match
 those recorded objects and follow their terminal observations. After pilot
 uninstall-gate, capture successful default-branch effective rules plus successful
 classic protection or the exact unprotected-branch404 response. Both observations
-must follow the actual removal and precede the final policy capture.
+must follow the actual removal and precede the final policy capture. Also save
+`pre_cleanup_gate_policy_evidence_url` from after the latest completed pilot
+validation and before removal starts. Compare both authenticated policies after
+removing only the Actions-owned SFL requirement. Preserve unrelated required
+checks, strictness, reviews and all other effective/classic policy.
 
 Capture current environment enumeration and each environment's secret names
 alongside repository secrets during the final source refresh. Preserve complete
@@ -784,3 +791,12 @@ its effective update time as `approved_at`; preserve the original creation time
 separately. For every registered review, capture the exact successful compare
 GET from the deployed revision to its actual reviewed base, including raw data,
 as `compare_response`. The ancestry observation follows that GET.
+
+Credential and runner run captures include `run_response` with the exact
+successful `/actions/runs/{id}` GET and raw data equal to the recorded run. The
+GET follows actual completion and precedes capture. The credential run must be
+the reviewed main workflow-dispatch run. For yahtzee, require a workflow-dispatch
+run of `.github/workflows/self-hosted-smoke.yml` and `workflow_evidence_url` with
+immutable contents at its actual head, equal to
+[the reviewed read-only workflow](yahtzee-smoke-workflow.yml). Preserve the
+existing runner's isolation, service, labels and executed-job requirements.
