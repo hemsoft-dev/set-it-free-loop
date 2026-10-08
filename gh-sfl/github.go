@@ -529,7 +529,12 @@ func deployViaGit(
 	commitMsg string,
 	reconcile bool,
 	w io.Writer,
+	expectedRevisions ...string,
 ) error {
+	expectedRevision := ""
+	if len(expectedRevisions) > 0 {
+		expectedRevision = expectedRevisions[0]
+	}
 	if err := applyHemSoftOwnership(fileMap); err != nil {
 		return fmt.Errorf("applying HemSoft deployment policy: %w", err)
 	}
@@ -541,11 +546,41 @@ func deployViaGit(
 
 	fmt.Fprintf(w, "  Cloning %s/%s...\n", owner, repo)
 	cloneURL := fmt.Sprintf("git@github-personal1:%s/%s.git", owner, repo)
-	cloneCmd := exec.Command("git", "clone", "--depth=1", cloneURL, tmpDir)
+	cloneCmd := exec.Command("git", "clone", "--depth=1", "--branch", branch, cloneURL, tmpDir)
 	if out, cloneErr := cloneCmd.CombinedOutput(); cloneErr != nil {
 		return fmt.Errorf("cloning: %s: %w", string(out), cloneErr)
 	}
 
+	runGit := func(args ...string) (string, error) {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = tmpDir
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+
+	if expectedRevision != "" {
+		head, err := runGit("rev-parse", "HEAD")
+		if err != nil {
+			return fmt.Errorf("reading cloned policy revision: %w", err)
+		}
+		if strings.TrimSpace(head) != expectedRevision {
+			return fmt.Errorf("default branch changed after consumer policy capture; rerun sync before direct delivery")
+		}
+	}
+	verifyRemoteRevision := func() error {
+		if expectedRevision == "" {
+			return nil
+		}
+		refs, err := runGit("ls-remote", "--exit-code", "origin", "refs/heads/"+branch)
+		if err != nil {
+			return fmt.Errorf("checking consumer policy revision before direct delivery: %w", err)
+		}
+		fields := strings.Fields(refs)
+		if len(fields) != 2 || fields[0] != expectedRevision || fields[1] != "refs/heads/"+branch {
+			return fmt.Errorf("default branch changed after consumer policy capture; rerun sync before direct delivery")
+		}
+		return nil
+	}
 	for _, managedPath := range obsoleteManagedPaths(fileMap, reconcile) {
 		target := filepath.Join(tmpDir, filepath.FromSlash(managedPath))
 		if removeErr := os.Remove(target); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
@@ -563,13 +598,6 @@ func deployViaGit(
 		}
 	}
 
-	runGit := func(args ...string) (string, error) {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = tmpDir
-		out, err := cmd.CombinedOutput()
-		return string(out), err
-	}
-
 	if _, err := runGit("add", "-A"); err != nil {
 		return fmt.Errorf("git add: %w", err)
 	}
@@ -577,6 +605,9 @@ func deployViaGit(
 	checkCmd := exec.Command("git", "diff", "--cached", "--quiet")
 	checkCmd.Dir = tmpDir
 	if checkCmd.Run() == nil {
+		if err := verifyRemoteRevision(); err != nil {
+			return err
+		}
 		fmt.Fprintf(w, "  No changes — already up to date.\n")
 		return nil
 	}
@@ -585,6 +616,9 @@ func deployViaGit(
 		return fmt.Errorf("git commit: %s: %w", out, err)
 	}
 
+	if err := verifyRemoteRevision(); err != nil {
+		return err
+	}
 	fmt.Fprintf(w, "  Pushing %d files to %s/%s...\n", len(fileMap), owner, repo)
 	if out, err := runGit("push", "origin", "HEAD"); err != nil {
 		if strings.Contains(out, "workflow") && strings.Contains(out, "scope") {

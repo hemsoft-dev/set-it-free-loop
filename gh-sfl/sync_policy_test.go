@@ -7,6 +7,10 @@ import (
 	"github.com/cli/go-gh/v2/pkg/api"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -274,5 +278,94 @@ func TestConsumerManifestSnapshotRejectsLegacyPresenceRace(t *testing.T) {
 	}
 	if err := validateConsumerManifestSnapshot(boundJSON, bound.RemotePaths, initial); err == nil {
 		t.Fatal("concurrent legacy manifest addition accepted")
+	}
+}
+
+func TestAbsentPolicyCannotOverwriteAConcurrentlyAddedPolicyViaGit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX Git shim integration")
+	}
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	remote := filepath.Join(directory, "remote.git")
+	seed := filepath.Join(directory, "seed")
+	run := func(dir string, args ...string) string {
+		cmd := exec.Command(git, args...)
+		cmd.Dir = dir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %s: %v", args, out, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run(directory, "init", "--bare", "--initial-branch=main", remote)
+	run(directory, "init", "--initial-branch=main", seed)
+	run(seed, "config", "user.name", "SFL regression fixture")
+	run(seed, "config", "user.email", "fixture@example.invalid")
+	write := func(path, body string) {
+		target := filepath.Join(seed, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, []byte(body), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".github/workflows/sfl-auditor.yml", "old auditor")
+	run(seed, "add", ".")
+	run(seed, "commit", "-m", "initial no-policy state")
+	captured := run(seed, "rev-parse", "HEAD")
+	write(".sfl/sync-policy.json", `{"version":1,"unmanagedWorkflows":["sfl-auditor.yml"]}`)
+	write(".github/workflows/sfl-auditor.yml", "manual consumer auditor")
+	run(seed, "add", ".")
+	run(seed, "commit", "-m", "add consumer policy and manual auditor")
+	advanced := run(seed, "rev-parse", "HEAD")
+	run(seed, "remote", "add", "origin", remote)
+	run(seed, "push", "origin", "main")
+	shim := filepath.Join(directory, "bin")
+	if err := os.Mkdir(shim, 0755); err != nil {
+		t.Fatal(err)
+	}
+	script := `#!/bin/sh
+if [ "$1" = clone ]; then
+ exec "$SFL_TEST_REAL_GIT" clone --branch main "$SFL_TEST_REMOTE" "$6"
+fi
+exec "$SFL_TEST_REAL_GIT" "$@"
+`
+	if err := os.WriteFile(filepath.Join(shim, "git"), []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SFL_TEST_REAL_GIT", git)
+	t.Setenv("SFL_TEST_REMOTE", remote)
+	t.Setenv("PATH", shim+string(os.PathListSeparator)+os.Getenv("PATH"))
+	err = deployViaGit("owner", "repo", "main", map[string]string{".github/workflows/sfl-auditor.yml": "unwanted upstream schedule"}, "sync", true, io.Discard, captured)
+	if err == nil || !strings.Contains(err.Error(), "default branch changed after consumer policy capture") {
+		t.Fatalf("concurrent policy addition not rejected: %v", err)
+	}
+	if actual := run(directory, "--git-dir", remote, "rev-parse", "main"); actual != advanced {
+		t.Fatalf("remote changed: %s", actual)
+	}
+	if actual := run(directory, "--git-dir", remote, "show", "main:.github/workflows/sfl-auditor.yml"); actual != "manual consumer auditor" {
+		t.Fatalf("consumer choice overwritten: %s", actual)
+	}
+}
+
+func TestAbsentConsumerPolicyStillBindsPRDeliveryToCapturedRevision(t *testing.T) {
+	rest := &changingPolicyBaseREST{fakeREST: fakeREST{fileContents: map[string]string{".github/workflows/sfl-auditor.yml": "manual consumer auditor"}}}
+	policy, revision, err := captureConsumerSyncPolicy(rest, "owner", "repo", "main")
+	if err != nil || policy != nil || revision != "base-sha" {
+		t.Fatalf("absence lost its immutable revision: policy=%v revision=%s err=%v", policy, revision, err)
+	}
+	graphQL := &fakeGraphQL{}
+	installDeploymentFakes(t, rest, graphQL)
+	_, err = deployViaPullRequestAtRevision("owner", "repo", "main", "sync", map[string]string{".github/workflows/sfl-auditor.yml": "unwanted upstream schedule"}, "sync", true, io.Discard, revision, consumerPreservedPaths(policy))
+	if err == nil || !strings.Contains(err.Error(), "default branch changed") {
+		t.Fatalf("new policy/default revision not refused: %v", err)
+	}
+	if len(rest.posts)+len(rest.patches)+len(rest.puts)+len(rest.deletes) != 0 || graphQL.variables != nil {
+		t.Fatal("stale absence overwrote consumer workflow")
 	}
 }

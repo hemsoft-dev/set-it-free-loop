@@ -111,35 +111,23 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		if clientErr != nil {
 			return fmt.Errorf("reading consumer sync policy: %w", clientErr)
 		}
-		var ref struct {
-			Object struct {
-				SHA string `json:"sha"`
-			} `json:"object"`
-		}
-		if err := client.Get(fmt.Sprintf("repos/%s/%s/git/ref/heads/%s", owner, repo, defaultBranch), &ref); err != nil {
-			return err
-		}
-		if ref.Object.SHA == "" {
-			return fmt.Errorf("cannot bind consumer sync policy to an empty default-branch revision")
-		}
-		consumerPolicy, err = readConsumerSyncPolicy(client, owner, repo, ref.Object.SHA)
+		consumerPolicy, policyRevision, err = captureConsumerSyncPolicy(client, owner, repo, defaultBranch)
 		if err != nil {
 			return err
 		}
+		if consumerPolicy != nil && !opts.pr {
+			return fmt.Errorf("consumer-owned workflow policy requires sync through --pr")
+		}
+		boundManifest, boundErr := readRemoteManifestWithFetcher(owner, repo, func(sourceOwner, sourceRepo, path, _ string) (string, error) {
+			return fetchFileRaw(sourceOwner, sourceRepo, path, policyRevision)
+		})
+		if boundErr != nil {
+			return fmt.Errorf("binding consumer policy to installed manifest: %w", boundErr)
+		}
+		if err := validateConsumerManifestSnapshot(initialManifestJSON, initialManifestPaths, boundManifest); err != nil {
+			return err
+		}
 		if consumerPolicy != nil {
-			if !opts.pr {
-				return fmt.Errorf("consumer-owned workflow policy requires sync through --pr")
-			}
-			policyRevision = ref.Object.SHA
-			boundManifest, boundErr := readRemoteManifestWithFetcher(owner, repo, func(sourceOwner, sourceRepo, path, _ string) (string, error) {
-				return fetchFileRaw(sourceOwner, sourceRepo, path, policyRevision)
-			})
-			if boundErr != nil {
-				return fmt.Errorf("binding consumer policy to installed manifest: %w", boundErr)
-			}
-			if err := validateConsumerManifestSnapshot(initialManifestJSON, initialManifestPaths, boundManifest); err != nil {
-				return err
-			}
 			fmt.Fprintf(stdout, "  Preserving consumer-owned workflows: %s\n", strings.Join(consumerPolicy.UnmanagedWorkflows, ", "))
 		}
 	}
@@ -244,7 +232,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	if opts.pr {
 		prURL, err = deployViaPullRequestAtRevision(owner, repo, defaultBranch, "sync", fileMap, commitMsg, true, stdout, policyRevision, consumerPreservedPaths(consumerPolicy))
 	} else {
-		err = deployViaGit(owner, repo, defaultBranch, fileMap, commitMsg, true, stdout)
+		err = deployViaGit(owner, repo, defaultBranch, fileMap, commitMsg, true, stdout, policyRevision)
 	}
 	if err != nil {
 		return fmt.Errorf("deploying files: %w", err)

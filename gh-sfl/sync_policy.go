@@ -122,3 +122,23 @@ func consumerOwnsWorkflow(policy *consumerSyncPolicy, name string) bool {
 	}
 	return false
 }
+
+// Both a present policy and its absence are bound to one default-branch commit.
+func captureConsumerSyncPolicy(client restAPI, owner, repo, branch string) (*consumerSyncPolicy, string, error) {
+	var ref struct {
+		Object struct {
+			SHA string `json:"sha"`
+		} `json:"object"`
+	}
+	if err := client.Get(fmt.Sprintf("repos/%s/%s/git/ref/heads/%s", owner, repo, branch), &ref); err != nil {
+		return nil, "", err
+	}
+	if ref.Object.SHA == "" {
+		return nil, "", fmt.Errorf("cannot bind consumer sync policy to an empty default-branch revision")
+	}
+	policy, err := readConsumerSyncPolicy(client, owner, repo, ref.Object.SHA)
+	if err != nil {
+		return nil, "", err
+	}
+	return policy, ref.Object.SHA, nil
+}
