@@ -192,7 +192,27 @@ def validate_pilots(directory):
                 timestamp(merged['merged_at']) <= timestamp(merged_capture['started_at']) <=
                 timestamp(merged_capture['completed_at']) <= timestamp(qualification['qualified_at']),
                 'Pilot merge requires its authenticated post-merge PR capture')
-        gate = merge['gate']
+        guarded_gate = merge['gate']
+        listing_name = prefix + '-live-all-checks.json'
+        listing_capture = read(execution, listing_name)
+        listing = api_receipt(execution, listing_name,
+            'repos/' + repo + '/commits/' + merge['head'] + '/check-runs?filter=all&per_page=100')
+        listed_gates = [check for check in listing['check_runs'] if check['id'] == guarded_gate['id']]
+        require(listing['total_count'] == len(listing['check_runs']) < 100 and
+                len({check['id'] for check in listing['check_runs']}) == len(listing['check_runs']) and
+                len(listed_gates) == 1,
+                'Pilot authenticated gate listing must be complete and contain one accepted gate')
+        gate = listed_gates[0]
+        # GitHub may clear check-run pull_requests after merge. Validate the
+        # preserved guard PR binding separately and compare every other field.
+        require({k: v for k, v in gate.items() if k != 'pull_requests'} ==
+                {k: v for k, v in guarded_gate.items() if k != 'pull_requests'} and
+                (gate['pull_requests'] == guarded_gate['pull_requests'] or
+                 (gate['pull_requests'] == [] and
+                  timestamp(merge['merged_at']) <= timestamp(listing_capture['started_at']))) and
+                timestamp(gate['completed_at']) <= timestamp(listing_capture['started_at']) <=
+                timestamp(listing_capture['completed_at']) <= timestamp(qualification['qualified_at']),
+                'Pilot authenticated gate listing disagrees with its accepted gate or chronology')
         request, native = merge['request'], merge['native_clean']
         repository_url = 'https://api.github.com/repos/' + repo
         require(all(comment['url'] == repository_url + '/issues/comments/' + str(comment['id']) and
@@ -200,7 +220,7 @@ def validate_pilots(directory):
                     comment['html_url'] == 'https://github.com/' + repo + '/pull/' +
                     str(merge['pr_number']) + '#issuecomment-' + str(comment['id'])
                     for comment in (request, native)), 'Pilot request binding URLs are invalid')
-        check_prs = gate['pull_requests']
+        check_prs = guarded_gate['pull_requests']
         require(gate['url'] == repository_url + '/check-runs/' + str(gate['id']) and
                 gate['html_url'] == 'https://github.com/' + repo + '/runs/' + str(gate['id']) and
                 len(check_prs) == 1 and

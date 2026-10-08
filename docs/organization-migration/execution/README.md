@@ -71,3 +71,5 @@ digest-pinned rc21 snapshot after the deterministic deployment header, source pi
 and default-branch quoting substitutions. This checks triggers, permissions and
 job wiring as well as testable code blocks. The authenticated coverage artifact
 listing must be captured after its workflow completes, before its digest is used.
+
+Historical live gates are derived from the authenticated, repository- and commit-bound check-run listings. Every accepted gate field matches the contemporaneous guard snapshot. GitHub cleared the private gate's pull-request array in its post-merge listing; its original PR association remains checked separately against the authenticated merged-PR capture. Empty associations are accepted only for captures made after the actual merge. Missing, incomplete, duplicate, mismatched or backdated listings fail validation.

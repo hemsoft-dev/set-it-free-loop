@@ -14,6 +14,62 @@ DIRECTORY = ROOT / 'docs/organization-migration'
 
 
 class ExecutedTransferTests(unittest.TestCase):
+    def test_pilot_authenticated_gate_listing_is_required(self):
+        original = VALIDATOR.read
+        for role in ('private', 'public'):
+            filename = 'rc21-' + role + '-live-all-checks.json'
+            def missing(directory, name):
+                if name == filename:
+                    raise FileNotFoundError(filename)
+                return original(directory, name)
+            with self.subTest(role=role), mock.patch.object(VALIDATOR, 'read', side_effect=missing):
+                with self.assertRaises(FileNotFoundError):
+                    VALIDATOR.validate(DIRECTORY)
+
+    def test_pilot_authenticated_gate_listing_endpoint(self):
+        for role in ('private', 'public'):
+            self.rejects('rc21-' + role + '-live-all-checks.json',
+                         lambda d: d.update(argv=['gh', 'api', 'repos/unrelated/commits/wrong/check-runs']),
+                         'Pilot API capture')
+
+    def test_pilot_authenticated_gate_listing_fields(self):
+        import json
+        for role in ('private', 'public'):
+            for field, value in [('id', 1), ('conclusion', 'failure'), ('external_id', 'unbound'),
+                                 ('output', {'title': 'forged', 'summary': 'unbound'})]:
+                def mutate(d):
+                    data = json.loads(d['stdout'])
+                    gate = next(x for x in data['check_runs'] if x['name'] == 'SFL Reviewer Gate Runner')
+                    gate[field] = value
+                    d['stdout'] = json.dumps(data)
+                with self.subTest(role=role, field=field):
+                    self.rejects('rc21-' + role + '-live-all-checks.json', mutate, 'authenticated gate listing')
+
+    def test_pilot_authenticated_gate_listing_duplicate(self):
+        import json
+        for role in ('private', 'public'):
+            def mutate(d):
+                data = json.loads(d['stdout'])
+                data['check_runs'].append(copy.deepcopy(data['check_runs'][0]))
+                data['total_count'] += 1
+                d['stdout'] = json.dumps(data)
+            self.rejects('rc21-' + role + '-live-all-checks.json', mutate, 'authenticated gate listing')
+
+    def test_pilot_authenticated_gate_listing_chronology(self):
+        for role in ('private', 'public'):
+            self.rejects('rc21-' + role + '-live-all-checks.json',
+                         lambda d: d.update(started_at='2000-01-01T00:00:00Z'),
+                         'authenticated gate listing')
+
+    def test_pilot_authenticated_gate_listing_complete(self):
+        import json
+        for role in ('private', 'public'):
+            def mutate(d):
+                data = json.loads(d['stdout'])
+                data['total_count'] += 1
+                d['stdout'] = json.dumps(data)
+            self.rejects('rc21-' + role + '-live-all-checks.json', mutate, 'authenticated gate listing')
+
     def test_original_dashboard_policy_capture_binding(self):
         for key, value in [('method', 'DELETE'), ('http_status', 403),
                            ('request_url', 'https://api.github.com/repos/HemSoft/unrelated/rulesets/11400445'),
@@ -386,7 +442,7 @@ class ExecutedTransferTests(unittest.TestCase):
                          lambda d: d['gate'].update(completed_at='2099-01-01T00:00:00Z'),
                          lambda d: d['gate'].update(external_id=d['gate']['external_id'].replace('pull:12:', 'pull:999:'))):
             self.rejects('rc21-private-live-guarded-merge.json', mutation,
-                         'gate is invalid|request binding is invalid')
+                         'authenticated gate listing|gate is invalid|request binding is invalid')
 
     def test_gate_urls_and_pull_identity_require_the_actual_pilot(self):
         for mutation in (lambda d: d['gate'].update(url='https://api.github.com/repos/other/repo/check-runs/1'),
@@ -398,7 +454,7 @@ class ExecutedTransferTests(unittest.TestCase):
                          lambda d: d['gate']['pull_requests'][0]['base']['repo'].update(id=1),
                          lambda d: d['gate']['pull_requests'][0]['head'].update(sha='0' * 40)):
             self.rejects('rc21-private-live-guarded-merge.json', mutation,
-                         'gate repository and pull request binding')
+                         'authenticated gate listing|gate repository and pull request binding')
 
     def test_release_payload_cannot_be_forged_under_original_signature(self):
         import base64
