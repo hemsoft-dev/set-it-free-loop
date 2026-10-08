@@ -158,7 +158,8 @@ def preflight(client, source, sha, run_id, policy):
     run = client.call('repos/' + source + '/actions/runs/' + str(run_id))
     require(run['repository']['id'] == SOURCE_ID and run['repository']['full_name'] == source and run['id'] == run_id and
             run['head_sha'] == sha and run['head_branch'] == 'main' and run['event'] == 'workflow_dispatch' and
-            run['path'] == WORKFLOW and run['status'] == 'completed' and run['conclusion'] == 'success' and
+            run['path'] in {WORKFLOW, WORKFLOW + '@main'} and
+            run['status'] == 'completed' and run['conclusion'] == 'success' and
             run['actor']['login'] == 'HemSoft' and run['triggering_actor']['login'] == 'HemSoft' and
             type(run['run_attempt']) is int and run['run_attempt'] > 0, 'Run is not a successful reviewed owner dispatch.')
     # Obtain the public policy from the exact executed Git revision, not a caller-supplied substitute.

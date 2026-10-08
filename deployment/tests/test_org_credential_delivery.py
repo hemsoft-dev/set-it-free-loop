@@ -86,6 +86,28 @@ class FakeGitHub:
 
 
 class DeliveryTests(unittest.TestCase):
+    def test_bare_and_main_qualified_run_paths_support_preparation_and_apply(self):
+        for path in (delivery.WORKFLOW, delivery.WORKFLOW + '@main'):
+            for apply in (False, True):
+                with self.subTest(path=path, apply=apply):
+                    client = FakeGitHub()
+                    client.run['path'] = path
+                    result = delivery.deliver(client, SOURCE, SHA, 1, client.policy, apply=apply)
+                    self.assertEqual(result['applied'], apply)
+                    writes = [method for method, _, _ in client.calls if method != 'GET']
+                    self.assertEqual(writes, ['POST', 'POST', 'PUT'] if apply else [])
+
+    def test_other_qualified_refs_fail_before_artifact_download_or_writes(self):
+        for path in (delivery.WORKFLOW + '@topic', delivery.WORKFLOW + '@refs/tags/main',
+                     delivery.WORKFLOW + '@main@topic', '.github/workflows/other.yml@main'):
+            with self.subTest(path=path):
+                client = FakeGitHub()
+                client.run['path'] = path
+                with self.assertRaises(delivery.DeliveryError):
+                    delivery.deliver(client, SOURCE, SHA, 1, client.policy, apply=True)
+                self.assertTrue(all(method == 'GET' for method, _, _ in client.calls))
+                self.assertFalse(any('/artifacts' in endpoint for _, endpoint, _ in client.calls))
+
     def test_preparation_reads_only_and_omits_ciphertext(self):
         client = FakeGitHub()
         result = delivery.deliver(client, SOURCE, SHA, 1, client.policy)
