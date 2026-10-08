@@ -39,7 +39,7 @@ items.filter(item => item.id);
 
 foreach ($pattern in @(
     'name: SFL Codex Review Observer',
-    "format('SFL Codex comment #{0} request {1}', github.event.issue.number, github.event.comment.id)",
+    "format('SFL Codex comment #{0} {1} {2}', github.event.issue.number,",
     'github.event.sender.id == 199175422',
     'const appId = 1144995',
     'const appSlug = "chatgpt-codex-connector"',

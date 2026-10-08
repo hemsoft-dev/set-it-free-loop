@@ -18,10 +18,10 @@ const commentURL = 'https://github.com/hemsoft-dev/fixture/pull/42#issuecomment-
 const scriptStart = source.indexOf('          script: |\n');
 const scriptEnd = source.indexOf('\n  observe:', scriptStart);
 assert(scriptStart >= 0 && scriptEnd > scriptStart);
-const invalidate = new AsyncFunction('github', 'context', 'core',
+const invalidate = new AsyncFunction('github', 'context', 'core', 'setTimeout',
   unindent(source.slice(scriptStart + '          script: |\n'.length, scriptEnd)));
 
-async function invalidationCase(name, body, edited, registered, oldTerminal, expected, action = edited ? 'edited' : 'created', permission = 'admin') {
+async function invalidationCase(name, body, edited, registered, oldTerminal, expected, action = edited ? 'edited' : 'created', permission = 'admin', expectedLookups = null) {
   const comment = {id: 101, body, user: {login: 'HemSoft'}, html_url: commentURL,
     created_at: '2026-10-08T00:00:01Z',
     updated_at: edited ? '2026-10-08T00:00:02Z' : '2026-10-08T00:00:01Z'};
@@ -32,7 +32,8 @@ async function invalidationCase(name, body, edited, registered, oldTerminal, exp
     conclusion: 'success', external_id: 'prior:request:101:at:1:artifact:c2'});
   // A prior pending check must not hide a later edit either.
   if (oldTerminal) checks.push({app: {id: 15368}, external_id: 'sfl-codex-review:request-pending:101'});
-  const writes = [], failures = [];
+  const writes = [], failures = [], timers = [];
+  let statusLookups = 0;
   const github = {rest: {
     repos: {getCollaboratorPermissionLevel: async ({username}) =>
       ({data: {permission, user: {login: username}}}),
@@ -47,12 +48,18 @@ async function invalidationCase(name, body, edited, registered, oldTerminal, exp
   }, paginate: async method => {
     if (method === 'checks') return checks;
     assert.equal(method, 'statuses');
+    statusLookups += 1;
     return registered ? [{context: 'SFL Codex Review Request Registry',
       creator: {login: 'HemSoft'}, target_url: commentURL}] : [];
   }};
   const context = {repo: {owner: 'hemsoft-dev', repo: 'fixture'}, payload: {
     issue: {number: 42}, comment, repository: {default_branch: 'main'}, action}};
-  await invalidate(github, context, {info: () => {}, setFailed: text => failures.push(text)});
+  await invalidate(github, context, {info: () => {}, setFailed: text => failures.push(text)},
+    (resolve, duration) => { timers.push(duration); resolve(); });
+  if (expectedLookups !== null) {
+    assert.equal(statusLookups, expectedLookups, name);
+    assert.equal(timers.length, 0, name);
+  }
   if (expected === null) { assert.equal(writes.length, 0, name); return; }
   assert.equal(writes.length, 2, name);
   const check = writes.find(([kind]) => kind === 'check')[1];
@@ -93,12 +100,13 @@ ${unindent(source.slice(stateStart, stateEnd))}
 return await publicationState();`);
 
 
-function titleForComment(id) {
+function titleForComment(id, body = 'ordinary comment') {
   const expression = /run-name: >-\n\s*\$\{\{([\s\S]*?)\}\}/.exec(source);
   assert(expression);
-  return new Function('github', 'format', `return ${expression[1]};`)(
-    {event_name: 'issue_comment', event: {action: 'created', issue: {number: 42}, comment: {id, body: exact}}},
-    (pattern, ...values) => pattern.replace(/\{([0-9]+)\}/g, (_, index) => String(values[Number(index)])));
+  return new Function('github', 'format', 'contains', `return ${expression[1]};`)(
+    {event_name: 'issue_comment', event: {action: 'created', issue: {number: 42}, comment: {id, body}}},
+    (pattern, ...values) => pattern.replace(/\{([0-9]+)\}/g, (_, index) => String(values[Number(index)])),
+    (value, needle) => String(value || '').includes(needle));
 }
 async function activeCases() {
   let start = source.indexOf('function invalidationRequestCommentId(');
@@ -113,10 +121,12 @@ async function activeCases() {
     ${unindent(source.slice(start,end))}
     ${block('ACTIVE INVALIDATIONS')}
     return (await activeInvalidationRuns()).map(run=>run.id);`);
-  const run = (actor, id=101) => ({id:1,event:'issue_comment',status:'queued',actor:{login:actor},display_title:titleForComment(id)});
+  const run = (actor, id=101, markerIntent=false) => ({id:1,event:'issue_comment',status:'queued',actor:{login:actor},display_title:titleForComment(id, markerIntent ? exact : 'ordinary comment')});
   const registration = (creator='author',url=commentURL) => ({context:'SFL Codex Review Request Registry',creator:{login:creator},target_url:url});
   const cases = [
     ['ordinary administrator comment', [run('admin')], [], ['admin'], []],
+    ['writer request before registry visibility', [run('admin',101,true)], [], ['admin'], [1]],
+    ['reader marker before registry visibility', [run('reader',101,true)], [], [], []],
     ['registered administrator request', [run('admin')], [registration('admin')], ['admin'], [1]],
     ['revoked registered author', [run('author')], [registration()], [], [1]],
     ['unprivileged other actor', [run('reader')], [registration()], [], []],
@@ -150,7 +160,12 @@ function retargetCases() {
 
 (async () => {
   const mode = process.argv[3] || 'all';
-  assert(['all', 'probe-invalidation', 'probe-history', 'probe-revoked', 'probe-active', 'probe-retarget'].includes(mode));
+  assert(['all', 'probe-invalidation', 'probe-history', 'probe-revoked', 'probe-active', 'probe-retarget', 'probe-polling'].includes(mode));
+  if (['all', 'probe-polling'].includes(mode)) {
+    for (const action of ['created', 'edited', 'deleted']) {
+      await invalidationCase(`unprivileged marker ${action}`, exact, action === 'edited', false, false, null, action, 'read', 1);
+    }
+  }
   if (['all', 'probe-active'].includes(mode)) await activeCases();
   if (['all', 'probe-retarget'].includes(mode)) retargetCases();
   if (['all', 'probe-revoked'].includes(mode)) {
@@ -165,12 +180,13 @@ function retargetCases() {
   assert.match(source, /issue_comment:\s*types: \[created, edited, deleted\]/);
   const title = /run-name: >-\n\s*\$\{\{([\s\S]*?)\}\}/.exec(source);
   assert(title);
-  const titleFor = new Function('github', 'format', `return ${title[1]};`);
+  const titleFor = new Function('github', 'format', 'contains', `return ${title[1]};`);
   const format = (pattern, ...values) => pattern.replace(/\{([0-9]+)\}/g, (_, index) => String(values[Number(index)]));
   for (const action of ['created', 'edited', 'deleted']) {
     for (const body of [exact, ` ${exact}`, 'erased request']) {
       const github = {event_name: 'issue_comment', event: {action, issue: {number: 42}, comment: {id: 101, body}}};
-      assert.equal(titleFor(github, format), 'SFL Codex comment #42 request 101');
+      assert.equal(titleFor(github, format, (value, needle) => String(value || '').includes(needle)),
+        body.includes('<!-- sfl-codex-review:head=') ? 'SFL Codex comment #42 request 101' : 'SFL Codex comment #42 comment 101');
     }
   }
   const condition = /invalidate-review-request:[\s\S]*?if: >-\n([\s\S]*?)\n    runs-on:/.exec(source);
