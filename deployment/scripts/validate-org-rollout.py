@@ -34,7 +34,8 @@ RETAINED_APP_DISPOSITION = 'No SFL App dependency; existing SFL credentials unus
 PILOT_SCENARIOS = {'findings':'gate_failed', 'pending_request':'gate_blocked', 'malformed_output':'gate_blocked',
                    'revoked_permission':'gate_blocked', 'permission_lookup_failure':'gate_blocked',
                    'forged_registration':'gate_blocked', 'edited_registration':'gate_blocked',
-                   'duplicate_delivery':'idempotent', 'new_head':'stale_gate_rejected', 'base_advance':'stale_gate_rejected'}
+                   'duplicate_delivery':'idempotent', 'new_head':'stale_gate_rejected', 'base_advance':'stale_gate_rejected',
+                   'overlapping_request':'gate_blocked', 'unregistered_base_context':'stale_gate_rejected'}
 # Franz's recorded October 6 decision. Expanding this set requires a new owner decision.
 APPROVED_RETAINED_IDS = {1162179521, 1169698740}
 RETENTION_RECEIPT = 'https://github.com/HemSoft/set-it-free-loop/issues/138#issuecomment-6028207635'
@@ -2570,7 +2571,7 @@ def replay_observer_fixture(workflow_json, repository_id, repository, sha, versi
     canonical = (root / 'deployment/infrastructure/sfl-pr-review-auto.yml').read_text()
     markers = [('// BEGIN TESTABLE ' + name, '// END TESTABLE ' + name) for name in
         ('CODEX OBSERVER', 'REQUESTER AUTHORIZATION', 'REQUESTER REFRESH', 'REQUEST REGISTRATION',
-         'REQUEST ELIGIBILITY', 'REQUIRED GATE REPAIR')]
+         'REQUEST ELIGIBILITY', 'REQUIRED GATE REPAIR', 'REVIEW CONTEXT PROVENANCE')]
     markers.append(('const existing = latestRequestChecks.find(', 'const detailsURL = artifact.html_url'))
     for begin, end in markers:
         require(source.count(begin) == canonical.count(begin) > 0 and
