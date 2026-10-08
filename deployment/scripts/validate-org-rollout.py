@@ -1107,6 +1107,34 @@ def validate_repository_enumeration(account, captured_at, earliest=None):
             'Final inventory list must derive from all raw account repository pages')
 
 
+def validate_wider_pilot_ordering(disposable_wider_verified, existing_wider_id, existing_completed_at, rollout_starts):
+    require(disposable_wider_verified or existing_completed_at is not None,
+            'Active rollout requires a verified wider-workflow and auditor pilot')
+    if not disposable_wider_verified:
+        require(all(existing_completed_at < started for rid, started in rollout_starts if rid != existing_wider_id),
+                'Existing wider pilot must finish validation before other active consumers start')
+
+
+def validate_existing_wider_pilot(row, directory, revision, cutover):
+    """Qualify the existing full consumer only after its normal rollout contracts pass."""
+    require(row.get('repository_id') == 1229335234 and
+            row.get('source') == 'HemSoft/hs-buddy' and row.get('destination') == 'hemsoft-dev/hs-buddy' and
+            row.get('health') == 'verified' and row.get('installed_tier') == row.get('selected_tier') == 'full',
+            'Existing wider pilot must preserve the designated hs-buddy full deployment')
+    runs, operations = row.get('wider_workflow_run_urls'), row.get('wider_operation_receipts')
+    require(isinstance(runs, list) and isinstance(operations, list) and len(runs) == len(operations) and len(runs) >= 2,
+            'Existing wider pilot needs distinct successful Auditor and non-Auditor runs')
+    allowed = deployed_workflow_paths('full', row['selected_addons']) - {'.github/workflows/sfl-pr-review-auto.yml'}
+    for run, operation in zip(runs, operations):
+        bound_workflow_operation(operation, directory, row['repository_id'], row['destination'],
+            row['deployment_sha'], row['manifest_version'], run, allowed, revision, cutover)
+    auditor = [(run, operation) for run, operation in zip(runs, operations)
+               if operation['workflow'] == '.github/workflows/sfl-auditor.yml']
+    require(len(auditor) == 1 and any(operation['workflow'] != '.github/workflows/sfl-auditor.yml' and
+            run != auditor[0][0] for run, operation in zip(runs, operations)),
+            'Existing wider pilot must execute one Auditor and a distinct non-Auditor workflow')
+
+
 def validate_final_inventory(proof, directory, expected, retained, approved_onboarding=None, pilot_branches=None):
     require(isinstance(proof, dict), 'Final completion needs a fresh independent repository inventory')
     reference = proof.get('evidence_url')
@@ -3253,6 +3281,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
     seen_matrix = set()
     verified_rollouts = 0
     rollout_start_times = []
+    existing_wider_id = matrix.get('existing_wider_validation_repository_id')
+    require(existing_wider_id is None or type(existing_wider_id) is int and existing_wider_id == 1229335234,
+            'Existing wider validation must name the designated baseline hs-buddy repository')
+    existing_wider_completed_at = None
     protected_source_completed_at = None
     for row in records:
         repo_id = row.get('repository_id')
@@ -3484,7 +3516,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                             row['installed_addons'] == manifest.get('addons', []) and
                             row['installed_components'] == manifest.get('components', []),
                             'Present installation must preserve its independently captured manifest configuration')
-            rollout_start_times.append(validate_pre_sync_installation(observed, directory, row))
+            rollout_start_times.append((repo_id, validate_pre_sync_installation(observed, directory, row)))
             if row['installed_tier'] == 'custom':
                 require(string_list(row['installed_components']) and bool(row['installed_components']),
                         'Installed custom tier needs observed components')
@@ -3571,6 +3603,10 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             validate_terminal_protections(row, directory, repo, revision)
             validate_consumer_default_head(row, directory, repo, revision,
                 repository_terminal_times([row], rows, directory)[repo_id])
+            if repo_id == existing_wider_id:
+                validate_existing_wider_pilot(row, directory, revision,
+                    max(app_transferred_at, observed_time(row['destination_protections']['observed_at'], 'Consumer transfer')))
+                existing_wider_completed_at = repository_terminal_times([row], rows, directory)[repo_id]
             verified_rollouts += 1
     if app_transfer['status'] == 'verified':
         require(all(row.get('retained_app_dependency', {}).get('status') == 'verified'
@@ -3763,8 +3799,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 'Completed rollout requires verified retained App dependencies')
         require(verified_pilot_visibilities == {'public', 'private'},
                 'Active rollout requires verified public and private onboarding pilots first')
-        require(verified_wider_pilot, 'Active rollout requires a verified wider-workflow and auditor pilot')
-        require(all(finished < started for finished in pilot_terminal_times for started in rollout_start_times),
+        validate_wider_pilot_ordering(verified_wider_pilot, existing_wider_id,
+                                     existing_wider_completed_at, rollout_start_times)
+        require(all(finished < started for finished in pilot_terminal_times for _, started in rollout_start_times),
                 'Both pilots must finish all validation before the first active rollout deployment')
     if source_complete:
         require(all(row.get('smoke_phase') == 'post_transfer' for row in rows

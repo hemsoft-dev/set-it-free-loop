@@ -755,3 +755,20 @@ immutable contents at the actual run head and matches the reviewed
 successful job or a restored file with different bytes cannot qualify the
 runner. The inventory job allows 15 minutes for the full migration suite and
 subsequent validation.
+
+## Existing wider workflow validation
+
+The optional `existing_wider_validation_repository_id` selects baseline hs-buddy
+ID `1229335234` as the wider workflow pilot. This preserves its observed full
+tier and existing credentials. It counts as one baseline repository, never as
+an extra source transfer or as a disposable public/private onboarding pilot.
+
+Its normal rollout contracts must all pass, including immutable deployment and
+release, registered review, effective gate, preserved policy and terminal default
+head. It must additionally execute one successful Auditor and a distinct
+successful non-Auditor workflow at that same deployed revision, with repository,
+release and primary Actions responses bound by the existing workflow validator.
+Both disposable pilots must finish before hs-buddy starts. When they remain
+reviewer-only, hs-buddy must finish wider validation before any other active
+consumer starts. This selection creates no App key, organization secret or
+model credential and does not change the retained personal repositories.
