@@ -14,6 +14,42 @@ DIRECTORY = ROOT / 'docs/organization-migration'
 
 
 class ExecutedTransferTests(unittest.TestCase):
+    def test_original_dashboard_policy_capture_binding(self):
+        for key, value in [('method', 'DELETE'), ('http_status', 403),
+                           ('request_url', 'https://api.github.com/repos/HemSoft/unrelated/rulesets/11400445'),
+                           ('observed_at', '2000-01-01T00:00:00Z')]:
+            self.rejects('repository-transfers/repository-transfer-1120402599.json',
+                         lambda d, k=key, v=value: d['before_policy']['ruleset_details'][0].update({k: v}),
+                         'Original dashboard policy')
+
+    def test_app_ownership_capture_chronology(self):
+        for key, value in [('started_at', '2000-01-01T00:00:00Z'),
+                           ('completed_at', '2000-01-01T00:00:00Z')]:
+            self.rejects('pr156-app-owned-metadata-current.json',
+                         lambda d, k=key, v=value: d.update({k: v}), 'ownership capture')
+
+    def test_pilot_final_default_head_capture(self):
+        import json
+        for role in ('private', 'public'):
+            def mutate(d):
+                data = json.loads(d['stdout'])
+                data['commit']['sha'] = '0' * 40
+                d['stdout'] = json.dumps(data)
+            self.rejects('rc21-' + role + '-post-live-after-cleanup-head.json', mutate, 'final default head')
+
+    def test_owned_app_public_discovery_is_rejected(self):
+        self.rejects('pr156-app-anonymous-discovery-primary.json',
+                     lambda d: d.update(http_status=200), 'unauthenticated public App endpoint')
+        self.rejects('pr156-app-anonymous-discovery-primary.json',
+                     lambda d: d.update(authentication='HemSoft'), 'unauthenticated public App endpoint')
+
+    def test_historical_gate_list_and_detail_primary_binding(self):
+        for role in ('private', 'public'):
+            self.rejects('rc21-' + role + '-live-before-rulesets.json',
+                         lambda d: d.update(exit_code=1), 'Pilot API capture')
+            self.rejects('rc21-' + role + '-post-live-precleanup-owned-gate.json',
+                         lambda d: d.update(argv=['gh', 'api', 'unrelated']), 'Pilot API capture')
+
     def test_actual_receipts_verify_identity_without_acceptance_claim(self):
         result = VALIDATOR.validate(DIRECTORY)
         self.assertEqual(result['transferred'], 65)
@@ -21,6 +57,7 @@ class ExecutedTransferTests(unittest.TestCase):
         self.assertFalse(result['migration_acceptance_complete'])
         self.assertEqual(result['owned_app_transfer'], 'verified')
         self.assertEqual(result['app_coverage_targets'], 68)
+        self.assertEqual(result['historical_pilot_premerge_strict_policy'], 'guard_snapshot_only')
 
     def test_executed_app_registration_and_run_are_primary_bound(self):
         self.rejects('pr156-app-owned-metadata-current.json',

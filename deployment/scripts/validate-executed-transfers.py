@@ -282,6 +282,26 @@ def validate_pilots(directory):
                 merge['rules'][0]['parameters']['required_status_checks'] ==
                 [{'context': 'SFL Reviewer Gate Runner', 'integration_id': 15368}],
                 'Pilot live merge did not use its strict required Actions gate')
+        # The original pre-merge list is primary, but no pre-merge detail GET was retained.
+        # Keep this historical limitation explicit rather than claiming independent strict-policy proof.
+        listed_capture = read(execution, prefix + '-live-before-rulesets.json')
+        listed = api_receipt(execution, prefix + '-live-before-rulesets.json',
+                            'repos/' + repo + '/rulesets?includes_parents=true&per_page=100')
+        require(timestamp(listed_capture['started_at']) <= timestamp(listed_capture['completed_at']) <=
+                timestamp(merge['merged_at']) and listed == merge['rulesets'] and
+                len(listed) == 1 and listed[0]['id'] == completion['owned_gate_id'] and
+                listed[0]['enforcement'] == 'active' and listed[0]['source'] == repo,
+                'Historical pilot needs its active repository-bound pre-merge policy list')
+        detail_capture = read(execution, prefix + '-post-live-precleanup-owned-gate.json')
+        detail = api_receipt(execution, prefix + '-post-live-precleanup-owned-gate.json',
+                             'repos/' + repo + '/rulesets/' + str(completion['owned_gate_id']))
+        require(timestamp(merge['merged_at']) <= timestamp(detail_capture['started_at']) <=
+                timestamp(detail_capture['completed_at']) <= timestamp(completion['observed_at']) and
+                detail['id'] == completion['owned_gate_id'] and detail['source'] == repo and
+                detail['enforcement'] == 'active' and detail['bypass_actors'] == [] and
+                detail['rules'] == [{'type': 'required_status_checks',
+                    'parameters': merge['rules'][0]['parameters']}],
+                'Historical pilot post-merge strict policy must match its guard snapshot')
         for operation in ('init', 'sync', 'status'):
             repeat = read(execution, prefix + '-post-live-repeat-' + operation + '.json')
             require(repeat['repository_id'] == repository_id and repeat['repository'] == repo and
@@ -307,6 +327,14 @@ def validate_pilots(directory):
                 timestamp(completion['completed_at']) <= timestamp(equivalence['actual_capture_started_at']) <=
                 timestamp(equivalence['actual_capture_completed_at']) <= timestamp(equivalence['observed_at']),
                 'Pilot final installed equivalence is not bound to its tested workflow')
+        final_head_capture = read(execution, prefix + '-post-live-after-cleanup-head.json')
+        final_head = api_receipt(execution, prefix + '-post-live-after-cleanup-head.json',
+                                 'repos/' + repo + '/branches/main')
+        require(final_head['name'] == 'main' and
+                final_head['commit']['sha'] == equivalence['final_default_revision_sha'] and
+                timestamp(completion['observed_at']) <= timestamp(final_head_capture['started_at']) <=
+                timestamp(final_head_capture['completed_at']) <= timestamp(equivalence['observed_at']),
+                'Pilot final default head needs its post-repeat branch GET')
         for kind, path in [('workflow', installed['path']), ('manifest', '.sfl/sfl.json')]:
             capture = read(execution, prefix + '-final-installed-' + kind + '-capture.json')
             require(capture['actor'] == 'HemSoft' and capture['exit_code'] == 0 and
@@ -463,7 +491,14 @@ def validate_dashboard_repair(execution):
             timestamp(receipt['submitted_at']) <= timestamp(repair['observed_at']) <= timestamp(response['observed_at']) <=
             timestamp(repair['repaired_at']) <= timestamp(receipt['verified_at']),
             'Dashboard repair needs its post-transfer repository-bound PUT response')
-    original = receipt['before_policy']['ruleset_details'][0]['data']
+    original_capture = receipt['before_policy']['ruleset_details'][0]
+    require(original_capture['method'] == 'GET' and original_capture['http_status'] == 200 and
+            original_capture['request_url'] ==
+            'https://api.github.com/repos/HemSoft/dashboard/rulesets/11400445' and
+            timestamp(receipt['before']['observed_at']) <= timestamp(original_capture['observed_at']) <=
+            timestamp(receipt['submitted_at']),
+            'Original dashboard policy needs its successful pre-transfer ruleset GET')
+    original = original_capture['data']
     dropped_capture = repair['before']['ruleset_details'][0]
     require(dropped_capture['method'] == 'GET' and dropped_capture['http_status'] == 200 and
             dropped_capture['request_url'] ==
@@ -515,6 +550,17 @@ def validate_app_phase(directory):
             run['path'] == '.github/workflows/verify-sfl-app-credential.yml' and
             run['status'] == 'completed' and run['conclusion'] == 'success',
             'App coverage requires its actual successful reviewed main workflow')
+    require(timestamp(run['updated_at']) <= timestamp(capture['started_at']) <=
+            timestamp(capture['completed_at']),
+            'App ownership capture must follow the successful coverage run')
+    visibility = read(execution, 'pr156-app-anonymous-discovery-primary.json')
+    require(visibility['method'] == 'GET' and visibility['request_url'] ==
+            'https://api.github.com/apps/sfl-app' and visibility['authentication'] == 'none' and
+            visibility['http_status'] == 404 and visibility['data']['message'] == 'Not Found' and
+            visibility['data']['status'] == '404' and
+            timestamp(run['updated_at']) <= timestamp(visibility['started_at']) <=
+            timestamp(visibility['completed_at']) <= timestamp(capture['started_at']),
+            'Owned App must not be discoverable through the unauthenticated public App endpoint')
     artifact_capture = read(execution, 'organization-app-coverage-artifact-primary.json')
     require(artifact_capture['actor'] == 'HemSoft' and artifact_capture['exit_code'] == 0 and
             artifact_capture['argv'] == ['gh', 'api', 'repos/hemsoft-dev/set-it-free-loop/actions/runs/37731379724/artifacts?per_page=100'],
@@ -727,6 +773,7 @@ def validate(directory):
             'retained': 2, 'archived_transferred': archive_count,
             'source_protection_evidence': 'incomplete',
             'source_protection_gap_repository_id': limitation['repository_id'],
+            'historical_pilot_premerge_strict_policy': 'guard_snapshot_only',
             'sfl_rollout': 'pending', 'migration_acceptance_complete': False}
 
 

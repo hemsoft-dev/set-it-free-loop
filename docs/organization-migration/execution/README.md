@@ -6,11 +6,11 @@ All 65 repository transfers and the owned SFL App transfer are complete. The two
 
 The transfer receipts preserve original repository IDs, refs, privacy, archive state and default branches. The private name collision maps to `hs-cli-confluence-search-fhemmer`. GitHub dropped dashboard's administrator bypass during transfer; its exact original value was restored and independently verified. The raw discrepancy and repair receipts remain part of the record.
 
-The SFL App is privately owned by hemsoft-dev with unchanged App/client identity and permission ceiling. Installation `169090497` covers all current and future organization repositories. The existing-key GET-only credential workflow passed at the canonical source revision. No organization credential delivery, key sealing or rotation is claimed.
+The SFL App is privately owned by hemsoft-dev with unchanged App/client identity and permission ceiling. Installation `169090497` covers all current and future organization repositories. The existing-key workflow passed at the canonical source revision. It verifies repository metadata without modifying repositories, creates a temporary scoped installation token with POST `/app/installations/169090497/access_tokens`, then revokes it with DELETE `/installation/token`. No organization credential delivery, key sealing or rotation is claimed.
 
 The independently verified immutable release used for this report's pilot captures is signed `v2.1.0-rc.21` at source `89425320ace3127a829d86e3b642fe2b31fd979e`. [Its download proof](rc21-independent-download-proof.json) verifies the default private installer, signatures, checksums and isolated CLI version/status. Earlier rc16 default-discovery failures and the rc20 unregistered old-base review gap are historical primary failures, superseded by verified fixes rather than relabeled as passes.
 
-[Both rc21 pilots are qualified](rc21-pilots-qualified-before-wider.json): 13 production-workflow fixtures per actual installed observer, authenticated registered live reviews with strict required Actions gates, and repeated signed init/sync/status with no PR or default-branch change. Fresh captures after terminal repeats preceded removal of only the owned temporary pilot rules. Synthetic negative fixtures are distinct from actual live provider executions. The deliberately failed pending-review runs held their gates until authenticated native completions succeeded.
+[The original rc21 operator record marked both pilots qualified](rc21-pilots-qualified-before-wider.json): 13 production-workflow fixtures per actual installed observer, authenticated registered live reviews with strict required Actions gates, and repeated signed init/sync/status with no PR or default-branch change. Fresh captures after terminal repeats preceded removal of only the owned temporary pilot rules. Synthetic negative fixtures are distinct from actual live provider executions. The deliberately failed pending-review runs held their gates until authenticated native completions succeeded.
 
 Hs-buddy's rollout and qualification belong to [issue #139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139). Historical wider-consumer receipts are retained for diagnosis; this transfer report does not qualify those workflows, their CI or consumer-owned hashes.
 
@@ -48,3 +48,19 @@ The historical rc21 invocation did not record its script digest at execution tim
 The coverage archive was downloaded independently after the report review and its SHA-256 equals the authenticated GitHub artifact digest. Its extracted JSON exactly matches the original coverage primary. CI validates the retained archive and extracted bytes together. The historical rc21 verifier stays byte-for-byte as retained; current acceptance parses the installed CLI version from its first line and rejects a dev build even if update discovery names rc21.
 
 Offline release validation uses OpenSSL to verify the retained DSSE payload signature against the certificate fingerprint pinned from the original successful `gh release verify` primary. The encoding follows the [DSSE protocol](https://github.com/secure-systems-lab/dsse/blob/master/protocol.md). This verifies retained payload integrity; the original GitHub verifier remains the evidence for certificate-chain, timestamp and release identity verification. OpenSSL must be available; missing tools fail validation. Pilot run and job captures must follow the captured terminal timestamps.
+
+App privacy is inferred from paired current provider responses: the unauthenticated
+[public discovery endpoint](pr156-app-anonymous-discovery-primary.json) returned
+404, followed by an authenticated owner GET that resolved the same App ID.
+GitHub documents that [this endpoint supports unauthenticated public resources](https://docs.github.com/en/rest/apps/apps#get-an-app).
+The API omits a public/private field; this is an explicit access-behavior inference,
+not a fabricated registration field or a settings-page observation.
+
+The historical rc21 pilot merges retained successful pre-merge ruleset-list GETs
+that show the owned gates active. Their strict check parameters survive only in
+the contemporaneous merge-guard snapshots and successful post-merge detail GETs.
+A separate primary detail GET from before each merge was not retained. This report
+therefore labels historical pre-merge strict-policy evidence `guard_snapshot_only`,
+without claiming independent primary verification of those parameters at merge
+time. Issue #139 remains open; final corrected-release pilots must retain their
+actual pre-merge effective-rule and ruleset-detail GETs before qualification.
