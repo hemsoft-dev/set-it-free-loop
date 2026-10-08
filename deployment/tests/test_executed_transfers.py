@@ -235,6 +235,33 @@ class ExecutedTransferTests(unittest.TestCase):
                          lambda d: d.update(actual_capture_started_at='2000-01-01T00:00:00Z')):
             self.rejects('rc21-private-final-installed-equivalence.json', mutation, 'final installed equivalence')
 
+    def test_final_manifest_git_blob_and_deployment_fields_rejected(self):
+        import base64
+        import hashlib
+        import json
+        original = VALIDATOR.read
+        for field, new in [('source', 'attacker/repo'), ('components', []),
+                           ('enginePolicy', {'defaultProfile': 'untrusted', 'workflows': []})]:
+            for rehash in (False, True):
+                def changed(directory, name):
+                    value = copy.deepcopy(original(directory, name))
+                    if name == 'rc21-private-final-installed-manifest-capture.json':
+                        data = value['data']
+                        manifest = json.loads(base64.b64decode(data['content']))
+                        manifest[field] = new
+                        content = json.dumps(manifest).encode()
+                        data['content'] = base64.b64encode(content).decode()
+                        if rehash:
+                            data['sha'] = hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
+                    elif name == 'rc21-private-final-installed-equivalence.json':
+                        value['manifest'][field] = new
+                    return value
+                with self.subTest(field=field, rehash=rehash), mock.patch.object(VALIDATOR, 'read', side_effect=changed):
+                    with self.assertRaisesRegex(ValueError, 'final installed manifest'):
+                        VALIDATOR.validate(DIRECTORY)
+        self.rejects('rc21-public-final-installed-manifest-capture.json',
+                     lambda d: d['data'].update(sha='0' * 40), 'final installed manifest')
+
     def test_cleanup_capture_and_deletion_order_rejected(self):
         self.rejects('rc21-private-post-live-after-cleanup-effective.json',
                      lambda d: d.update(started_at='2000-01-01T00:00:00Z'), 'predates gate removal')

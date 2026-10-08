@@ -264,8 +264,15 @@ def validate_pilots(directory):
                         'Pilot final installed bytes differ from the tested workflow')
             else:
                 final_manifest = json.loads(captured_content)
-                require(final_manifest == equivalence['manifest'] and final_manifest['sourceSha'] == source and
-                        final_manifest['version'] == version and final_manifest['tier'] == 'reviewer',
+                manifest_blob = hashlib.sha1(b'blob ' + str(len(captured_content)).encode() +
+                                             b'\0' + captured_content).hexdigest()
+                require(capture['data']['sha'] == manifest_blob and
+                        final_manifest == equivalence['manifest'] and final_manifest['sourceSha'] == source and
+                        final_manifest['version'] == version and final_manifest['tier'] == 'reviewer' and
+                        final_manifest['source'] == 'hemsoft-dev/set-it-free-loop' and
+                        final_manifest['components'] == ['sfl-pr-review-auto'] and
+                        final_manifest.get('addons', []) == [] and
+                        final_manifest['enginePolicy'] == {'defaultProfile': 'codex-gpt-55-high', 'workflows': []},
                         'Pilot final installed manifest differs from its canonical pin')
         deletion = read(execution, prefix + '-post-live-gate-only-cleanup.json')
         require(deletion['actor'] == 'HemSoft' and deletion['exit_code'] == 0 and
