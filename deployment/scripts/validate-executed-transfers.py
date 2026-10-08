@@ -381,7 +381,10 @@ def validate_release(execution):
     result = json.loads(invocation['stdout'])
     require(result['release_id'] == proof['release_id'] and result['checksum_verified'] is True and result['default_status'] == 'passed' and
             proof['version_output'] == (execution / 'rc21-version.log').read_text() and
-            result['version'] == proof['version_output'].strip() and 'Could not check for updates' not in proof['version_output'] and
+            result['version'] == proof['version_output'].strip() and
+            re.fullmatch(r'gh-sfl ' + re.escape(version) + r' \([0-9]{4}-[0-9]{2}-[0-9]{2}\) HemSoft',
+                         proof['version_output'].splitlines()[0]) is not None and
+            'Could not check for updates' not in proof['version_output'] and
             'Verified SHA-256 for gh-sfl_' + version + '_linux_amd64.' in (execution / 'rc21-installer.log').read_text() and
             'Could not resolve latest synchronized release' not in (execution / 'rc21-default-status.log').read_text(),
             'Independent installer or isolated CLI logs disagree with the successful verifier')
@@ -462,6 +465,24 @@ def validate_app_phase(directory):
             'App coverage independent artifact download did not succeed')
     content = (execution / 'organization-app-repository-coverage-primary.json').read_bytes()
     require(hashlib.sha256(content).hexdigest() == proof['artifact_json_sha256'], 'App coverage artifact bytes differ from the original proof')
+    archive = read(execution, 'pr156-app-coverage-archive-primary.json')
+    archive_bytes = base64.b64decode(archive['archive_base64'], validate=True)
+    require(archive['actor'] == 'HemSoft' and archive['exit_code'] == 0 and
+            archive['argv'] == ['gh', 'api', '--allow-escape-sequences',
+                'repos/hemsoft-dev/set-it-free-loop/actions/artifacts/11530141241/zip'] and
+            archive['artifact_id'] == artifacts[0]['id'] and archive['run_id'] == run['id'] and
+            archive['repository_id'] == 1169772257 and
+            timestamp(run['updated_at']) <= timestamp(archive['started_at']) <= timestamp(archive['completed_at']) and
+            artifacts[0]['digest'] == 'sha256:' + hashlib.sha256(archive_bytes).hexdigest() and
+            archive['archive_sha256'] == hashlib.sha256(archive_bytes).hexdigest() and
+            archive['json_sha256'] == hashlib.sha256(content).hexdigest(),
+            'App coverage archive does not match its authenticated artifact digest')
+    import io
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as downloaded:
+        require(downloaded.namelist() == [archive['member']] and
+                downloaded.read(archive['member']) == content,
+                'App coverage JSON differs from the digest-bound downloaded archive')
     coverage = json.loads(content)
     require(coverage['run_id'] == run['id'] and coverage['reviewed_sha'] == run['head_sha'] and
             coverage['app_id'] == proof['app_id'] == app['id'] and

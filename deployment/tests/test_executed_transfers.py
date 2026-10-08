@@ -49,7 +49,35 @@ class ExecutedTransferTests(unittest.TestCase):
                 value['artifact_json_sha256'] = hashlib.sha256(content).hexdigest()
             return value
         with mock.patch.object(pathlib.Path, 'read_bytes', read_bytes), mock.patch.object(VALIDATOR, 'read', read):
-            with self.assertRaisesRegex(ValueError, 'installation, permission or chronology'):
+            with self.assertRaisesRegex(ValueError, 'archive'):
+                VALIDATOR.validate(DIRECTORY)
+
+    def test_app_archive_digest_and_member_binding_rejected(self):
+        self.rejects('pr156-app-coverage-archive-primary.json',
+                     lambda d: d.update(archive_sha256='0' * 64), 'archive')
+        self.rejects('pr156-app-coverage-archive-primary.json',
+                     lambda d: d.update(member='unrelated.json'), 'archive')
+        self.rejects('organization-app-coverage-artifact-primary.json',
+                     lambda d: d['data']['artifacts'][1].update(digest='sha256:' + '0' * 64), 'archive')
+
+    def test_cli_version_first_line_rejects_dev_with_matching_update_tag(self):
+        import json
+        original_read = VALIDATOR.read
+        original_text = pathlib.Path.read_text
+        output = 'gh-sfl dev (2026-10-08) HemSoft\nLatest release (v2.1.0-rc.21)\n'
+        def read(directory, name):
+            value = copy.deepcopy(original_read(directory, name))
+            if name == 'rc21-independent-download-proof.json':
+                value['version_output'] = output
+            elif name == 'rc21-independent-default-download-verification.json':
+                result = json.loads(value['stdout'])
+                result['version'] = output.strip()
+                value['stdout'] = json.dumps(result)
+            return value
+        def read_text(path, *args, **kwargs):
+            return output if path.name == 'rc21-version.log' else original_text(path, *args, **kwargs)
+        with mock.patch.object(VALIDATOR, 'read', side_effect=read), mock.patch.object(pathlib.Path, 'read_text', read_text):
+            with self.assertRaisesRegex(ValueError, 'isolated CLI logs'):
                 VALIDATOR.validate(DIRECTORY)
 
     def test_protection_gap_derives_from_owner_cutover_and_audit_captures(self):
