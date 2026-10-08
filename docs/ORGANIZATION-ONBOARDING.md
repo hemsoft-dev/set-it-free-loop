@@ -62,3 +62,5 @@ A registered review author can edit or delete their request to invalidate its re
 Registered request history must retain a nonempty context without surrounding whitespace. Successful required-status repairs recheck current request history before and after writing; an intervening edit or deletion restores the blocking status.
 
 A retained invalidation check is not proof that its required commit status was published. Reruns repair the pending or failure status after authenticating the current request/context and preserving newer successful reviews. Default-branch departures remain blocking on the same head even when another nondefault base edit changes the live base before the departure event executes. Unsupported nondefault-to-nondefault events remain read-only.
+
+Delayed base-advance runs skip pull requests opened after the run was created, so an older base event cannot introduce an extra review context for a new pull request. Existing open pull requests retain base-advance invalidation.

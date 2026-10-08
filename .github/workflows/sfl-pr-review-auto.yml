@@ -1644,6 +1644,8 @@ jobs:
             });
             const invalidatePull = async pull => {
               if (pull.base.ref !== baseRef) return;
+              // This pull did not exist when the base-advance run was created.
+              if (Date.parse(pull.created_at || "") > baseAdvanceTime) return;
               const headRepo = pull.head.repo && pull.head.repo.full_name;
               if (!headRepo || headRepo.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) return;
               const invalidationId = `sfl-codex-review:base-advance:at:${baseAdvanceTime}:${context.runId}:${pull.number}`;

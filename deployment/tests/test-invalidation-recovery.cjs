@@ -70,6 +70,15 @@ async function run(name, checks, live, baseAdvance=false) {
       assert.deepEqual(await run(name,checks,live,baseAdvance),[]);
     });
   }
+  await verify('delayed base event does not invalidate a pull opened afterward',async()=>{
+    const live={...pull,created_at:'2026-10-08T00:00:01Z',base:{ref:'main',sha:base}};
+    assert.deepEqual(await run('invalidate-base-advance',[],live,true),[]);
+  });
+  await verify('base event still invalidates a previously open pull',async()=>{
+    const live={...pull,created_at:'2026-10-07T23:59:59Z',base:{ref:'main',sha:base}};
+    const writes=await run('invalidate-base-advance',[],live,true);
+    assert(writes.some(x=>x.kind==='status'&&x.state==='failure'));
+  });
   await verify('existing registered pending check repairs its missing commit status',async()=>{
     const token=`sfl-codex-review:pull-context:at:${Date.parse(created)}:${runId}`;
     const url=pull.html_url+'#issuecomment-101';
