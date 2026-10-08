@@ -14,6 +14,8 @@ on:
       - 'deployment/scripts/validate-executed-transfers.py'
       - 'deployment/tests/test_executed_transfers.py'
       - 'deployment/tests/run-org-observer-fixtures.cjs'
+      - 'deployment/infrastructure/sfl-pr-review-auto.yml'
+      - 'deployment/tests/observer-snapshots/**'
       - 'docs/organization-migration/**'
       - '.github/workflows/*.yml'
   push:
@@ -30,6 +32,8 @@ on:
       - 'deployment/scripts/validate-executed-transfers.py'
       - 'deployment/tests/test_executed_transfers.py'
       - 'deployment/tests/run-org-observer-fixtures.cjs'
+      - 'deployment/infrastructure/sfl-pr-review-auto.yml'
+      - 'deployment/tests/observer-snapshots/**'
       - 'docs/organization-migration/**'
       - '.github/workflows/*.yml'
 

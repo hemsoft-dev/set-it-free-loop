@@ -405,12 +405,127 @@ def validate_dashboard_repair(execution):
             'Dashboard repair changed another rule or failed to restore its original administrator bypass')
 
 
+def validate_app_phase(directory):
+    execution = directory / 'execution'
+    proof = read(execution, 'organization-app-coverage-verified.json')
+    capture = read(execution, 'pr156-app-owned-metadata-current.json')
+    app = capture['data']
+    require(capture['actor'] == 'HemSoft' and capture['exit_code'] == 0 and
+            capture['argv'] == ['gh', 'api', 'apps/sfl-app'] and app['id'] == 4448946 and app['slug'] == 'sfl-app' and
+            app['client_id'] == 'Iv23liwvwJJUh2bUIKLW' and
+            app['owner'] == {'id': 338855369, 'login': 'hemsoft-dev', 'type': 'Organization'} and
+            app['permissions'] == {'actions': 'write', 'checks': 'write', 'contents': 'read',
+                                   'issues': 'write', 'metadata': 'read', 'pull_requests': 'write'},
+            'Executed App transfer needs its owned organization registration capture')
+    run_capture = read(execution, 'organization-app-coverage-run-primary.json')
+    run = run_capture['data']
+    require(run_capture['actor'] == 'HemSoft' and run_capture['exit_code'] == 0 and
+            run_capture['argv'] == ['gh', 'api', 'repos/hemsoft-dev/set-it-free-loop/actions/runs/37731379724'] and
+            run['id'] == proof['run_id'] == 37731379724 and run['repository'] ==
+            {'id': 1169772257, 'full_name': 'hemsoft-dev/set-it-free-loop'} and
+            run['head_sha'] == proof['reviewed_sha'] == 'ee75f09992d7b54b5f9f89dc4ab59caa055e0f05' and
+            run['head_branch'] == 'main' and run['event'] == 'workflow_dispatch' and
+            run['path'] == '.github/workflows/verify-sfl-app-credential.yml' and
+            run['status'] == 'completed' and run['conclusion'] == 'success',
+            'App coverage requires its actual successful reviewed main workflow')
+    artifact_capture = read(execution, 'organization-app-coverage-artifact-primary.json')
+    require(artifact_capture['actor'] == 'HemSoft' and artifact_capture['exit_code'] == 0 and
+            artifact_capture['argv'] == ['gh', 'api', 'repos/hemsoft-dev/set-it-free-loop/actions/runs/37731379724/artifacts?per_page=100'],
+            'App coverage artifact list belongs to another workflow run')
+    artifacts = [a for a in artifact_capture['data']['artifacts'] if a['name'] == 'sfl-app-repository-coverage']
+    require(len(artifacts) == 1 and artifacts[0]['id'] == 11530141241 and
+            artifacts[0]['workflow_run']['id'] == run['id'] and
+            artifacts[0]['workflow_run']['repository_id'] == 1169772257 and
+            artifacts[0]['workflow_run']['head_sha'] == run['head_sha'], 'App coverage artifact lacks its reviewed run binding')
+    download = read(execution, 'pr156-app-coverage-independent-artifact-download.json')
+    require(download['actor'] == 'HemSoft' and download['exit_code'] == 0 and
+            download['argv'] == ['gh', 'run', 'download', '37731379724', '--repo', 'hemsoft-dev/set-it-free-loop',
+                '--name', 'sfl-app-repository-coverage', '--dir',
+                '/home/franz/github/hemsoft/set-it-free-loop/.git/merge-mission/pr156-app-coverage-primary'] and
+            timestamp(run['updated_at']) <= timestamp(download['started_at']),
+            'App coverage independent artifact download did not succeed')
+    content = (execution / 'organization-app-repository-coverage-primary.json').read_bytes()
+    require(hashlib.sha256(content).hexdigest() == proof['artifact_json_sha256'], 'App coverage artifact bytes differ from the original proof')
+    coverage = json.loads(content)
+    require(coverage['run_id'] == run['id'] and coverage['reviewed_sha'] == run['head_sha'] and
+            coverage['app_id'] == proof['app_id'] == app['id'] and
+            coverage['installation_id'] == proof['installation_id'] == 169090497 and
+            coverage['target_count'] == proof['verified_target_count'] == len(coverage['repositories']) == 68 and
+            proof['original_transfer_targets'] == 65 and proof['supplemental_validation_targets'] == 3 and
+            proof['retained_personal_ids_excluded'] == [1162179521, 1169698740] and
+            proof['repository_identity_binding_verified'] is True and proof['permission_ceiling_verified'] is True and
+            proof['metadata_projection_verified'] is True and proof['credential_changes'] is False,
+            'App coverage summary does not match its actual artifact')
+    expected = {row['id']: row['destination'] for row in read(directory, 'inventory.json')['repositories']
+                if row['id'] not in proof['retained_personal_ids_excluded']}
+    expected.update({1408025382: 'hemsoft-dev/sfl-migration-pilot-private',
+                     1408029795: 'hemsoft-dev/sfl-migration-pilot-public',
+                     1409692659: 'hemsoft-dev/sfl-migration-onboarding-proof'})
+    require({row['repository_id']: row['repository'] for row in coverage['repositories']} == expected,
+            'App coverage must reconcile all transferred IDs and the three validation repositories')
+    for row in coverage['repositories']:
+        repo = row['repository']
+        identity, installation = row['identity'], row['installation']
+        require(row['method'] == identity['method'] == 'GET' and row['http_status'] == identity['http_status'] == 200 and
+                row['request_url'] == 'https://api.github.com/repos/' + repo + '/installation' and
+                identity['request_url'] == 'https://api.github.com/repos/' + repo and
+                identity['repository']['id'] == row['repository_id'] and identity['repository']['full_name'] == repo and
+                identity['repository']['owner'] == app['owner'] and
+                installation['id'] == 169090497 and installation['app_id'] == app['id'] and
+                installation['client_id'] == app['client_id'] and installation['repository_selection'] == 'all' and
+                installation['account']['id'] == 338855369 and installation['account']['login'] == 'hemsoft-dev' and
+                installation['target_type'] == 'Organization' and installation['suspended_at'] is None and
+                installation['permissions'] == app['permissions'] and
+                timestamp(run['created_at']) <= timestamp(row['observed_at']) <= timestamp(coverage['observed_at']) <=
+                timestamp(run['updated_at']) <= timestamp(run_capture['started_at']),
+                'App coverage repository identity, installation, permission or chronology is invalid')
+    phase = read(execution, 'executed-phase-status.json')
+    require(phase['owned_app_transfer'] == {'status': 'verified', 'app_id': 4448946, 'owner': 'hemsoft-dev',
+            'installation_id': 169090497, 'coverage_targets': 68, 'evidence': 'organization-app-repository-coverage-primary.json'} and
+            phase['transfer_identity_targets'] == 65 and phase['retained_sources'] == 2 and
+            phase['migration_acceptance_complete'] is False and phase['sfl_rollout_complete'] is False and
+            timestamp(capture['completed_at']) <= timestamp(phase['observed_at']),
+            'Executed phase status must report completed App transfer separately from pending migration acceptance')
+
+
+def validate_protection_limitation(execution):
+    limitation = read(execution, 'fhemmer-protection-verification-limitation.json')
+    receipt = read(execution, limitation['primary_transfer_capture'])
+    browser = read(execution, limitation['older_owner_browser_capture'])
+    audit = read(execution, limitation['retrospective_supporting_capture'])
+    require(limitation['repository_id'] == receipt['repository_id'] == browser['repository_id'] == 1143951439 and
+            limitation['source'] == receipt['source'] == browser['source'] == 'fhemmer/hs-cli-confluence-search' and
+            limitation['destination'] == receipt['destination'] == 'hemsoft-dev/hs-cli-confluence-search-fhemmer' and
+            limitation['actual_transfer_started_at'] == receipt['started_at'] and
+            limitation['older_capture_observed_at'] == browser['observed_at'] and browser['owner_login'] == 'HemSoft' and
+            browser['source_transferred'] is False and browser['classic']['state'] == browser['rulesets']['state'] == 'absent' and
+            browser['classic']['url'] == 'https://github.com/fhemmer/hs-cli-confluence-search/settings/branches' and
+            browser['rulesets']['url'] == 'https://github.com/fhemmer/hs-cli-confluence-search/settings/rules' and
+            timestamp(browser['observed_at']) < timestamp(receipt['started_at']),
+            'Historical protection limitation must derive from its actual owner browser and transfer captures')
+    response = receipt['before_policy']['ruleset_pages'][0]
+    require(response['method'] == 'GET' and response['http_status'] == 403 and response['request_url'] ==
+            'https://api.github.com/repos/fhemmer/hs-cli-confluence-search/rulesets?includes_parents=true&per_page=100' and
+            response['data']['message'] == 'Upgrade to GitHub Pro or make this repository public to enable this feature.' and
+            response['data']['status'] == '403' and timestamp(browser['observed_at']) <= timestamp(response['observed_at']) <=
+            timestamp(receipt['submitted_at']), 'Historical protection gap requires its actual cutover API refusal')
+    events = re.findall(r'(?m)^\s*(?:HemSoft|fhemmer)\s+[–-]\s+([A-Za-z_]+\.[A-Za-z_]+)\s*$', audit['text'])
+    require(audit['url'] == 'https://github.com/organizations/fhemmer/settings/audit-log?q=created%3A%3E%3D2026-10-07' and
+            audit['capture_source'] == 'Shared owner browser visible fhemmer organization audit log' and
+            set(events) == {'repo.transfer_outgoing', 'integration_installation.repositories_removed'} and
+            audit['pagination'] == [] and
+            timestamp(receipt['verified_at']) <= timestamp(audit['observed_at']),
+            'Retrospective protection audit must retain its actual limited event capture')
+    return limitation
+
+
 def validate(directory):
     inventory = read(directory, 'inventory.json')
     execution = directory / 'execution'
     validate_source_gate(execution)
     validate_release(execution)
     validate_dashboard_repair(execution)
+    validate_app_phase(directory)
     final = read(execution, 'repository-first-final-inventory.json')
     direction = read(execution, 'owner-repository-first-direction.json')
     require(direction['repository_transfer_first'] is True and
@@ -485,14 +600,12 @@ def validate(directory):
     require((final['transferred'], final['private_transferred'], final['archived_transferred']) ==
             (65, private_count, archive_count) and archive_count == 13,
             'Final transfer counts do not derive from the actual receipts')
-    limitation = read(execution, 'fhemmer-protection-verification-limitation.json')
-    require(limitation['repository_id'] == 1143951439 and
-            timestamp(limitation['older_capture_observed_at']) < timestamp(limitation['actual_transfer_started_at']),
-            'Historical protection gap must retain its actual chronology')
+    limitation = validate_protection_limitation(execution)
     require(final['reviewer_rollout_complete'] is False,
             'This intermediate transfer report cannot claim completed SFL rollout')
     validate_pilots(directory)
-    return {'transfer_identity_and_refs': 'verified', 'transferred': 65,
+    return {'owned_app_transfer': 'verified', 'app_coverage_targets': 68,
+            'transfer_identity_and_refs': 'verified', 'transferred': 65,
             'retained': 2, 'archived_transferred': archive_count,
             'source_protection_evidence': 'incomplete',
             'source_protection_gap_repository_id': limitation['repository_id'],

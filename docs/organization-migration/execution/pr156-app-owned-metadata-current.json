@@ -1,0 +1,30 @@
+{
+  "started_at": "2026-10-08T12:56:26.385112+00:00",
+  "completed_at": "2026-10-08T12:56:26.632332+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "apps/sfl-app"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stderr": "",
+  "data": {
+    "id": 4448946,
+    "slug": "sfl-app",
+    "client_id": "Iv23liwvwJJUh2bUIKLW",
+    "permissions": {
+      "actions": "write",
+      "checks": "write",
+      "contents": "read",
+      "issues": "write",
+      "metadata": "read",
+      "pull_requests": "write"
+    },
+    "owner": {
+      "id": 338855369,
+      "login": "hemsoft-dev",
+      "type": "Organization"
+    }
+  }
+}

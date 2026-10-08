@@ -24,7 +24,7 @@
   "executed_transfer_corruption_tests": {
     "command": "python3 -m unittest deployment/tests/test_executed_transfers.py",
     "exit_code": 0,
-    "tests": 29,
-    "observed_at": "2026-10-08T12:41:10.144485+00:00"
+    "tests": 32,
+    "observed_at": "2026-10-08T13:00:31.232174+00:00"
   }
 }

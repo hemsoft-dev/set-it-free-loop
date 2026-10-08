@@ -19,6 +19,47 @@ class ExecutedTransferTests(unittest.TestCase):
         self.assertEqual(result['transferred'], 65)
         self.assertEqual(result['source_protection_evidence'], 'incomplete')
         self.assertFalse(result['migration_acceptance_complete'])
+        self.assertEqual(result['owned_app_transfer'], 'verified')
+        self.assertEqual(result['app_coverage_targets'], 68)
+
+    def test_executed_app_registration_and_run_are_primary_bound(self):
+        self.rejects('pr156-app-owned-metadata-current.json',
+                     lambda d: d['data']['owner'].update(id=8227352, login='HemSoft', type='User'),
+                     'organization registration')
+        self.rejects('organization-app-coverage-run-primary.json',
+                     lambda d: d['data'].update(conclusion='failure'), 'successful reviewed main workflow')
+        self.rejects('organization-app-coverage-verified.json',
+                     lambda d: d.update(installation_id=1), 'actual artifact')
+        self.rejects('executed-phase-status.json',
+                     lambda d: d['owned_app_transfer'].update(owner='HemSoft'), 'Executed phase status')
+
+    def test_rehashed_app_coverage_cannot_change_actual_installation_permissions(self):
+        import hashlib
+        import json
+        path = DIRECTORY / 'execution/organization-app-repository-coverage-primary.json'
+        changed = json.loads(path.read_bytes())
+        changed['repositories'][0]['installation']['permissions']['contents'] = 'write'
+        content = json.dumps(changed).encode()
+        real_bytes, real_read = pathlib.Path.read_bytes, VALIDATOR.read
+        def read_bytes(p):
+            return content if p == path else real_bytes(p)
+        def read(directory, name):
+            value = real_read(directory, name)
+            if name == 'organization-app-coverage-verified.json':
+                value['artifact_json_sha256'] = hashlib.sha256(content).hexdigest()
+            return value
+        with mock.patch.object(pathlib.Path, 'read_bytes', read_bytes), mock.patch.object(VALIDATOR, 'read', read):
+            with self.assertRaisesRegex(ValueError, 'installation, permission or chronology'):
+                VALIDATOR.validate(DIRECTORY)
+
+    def test_protection_gap_derives_from_owner_cutover_and_audit_captures(self):
+        self.rejects('fhemmer-protection-verification-limitation.json',
+                     lambda d: d.update(actual_transfer_started_at='2026-10-08T02:21:00Z'), 'actual owner browser')
+        self.rejects('repository-transfers/repository-transfer-1143951439.json',
+                     lambda d: d['before_policy']['ruleset_pages'][0].update(http_status=200), 'cutover API refusal')
+        self.rejects('fhemmer-post-transfer-browser-audit.json',
+                     lambda d: d.update(text=d['text'] + '\nHemSoft – repo.add_branch_protection_rule\n'),
+                     'limited event capture')
 
     def rejects(self, filename, mutate, message):
         original = VALIDATOR.read

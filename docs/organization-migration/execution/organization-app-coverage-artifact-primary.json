@@ -1,0 +1,45 @@
+{
+  "started_at": "2026-10-08T05:17:19.390218+00:00",
+  "completed_at": "2026-10-08T05:17:19.664544+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/hemsoft-dev/set-it-free-loop/actions/runs/37731379724/artifacts?per_page=100"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stderr": "",
+  "data": {
+    "total_count": 2,
+    "artifacts": [
+      {
+        "id": 11530420608,
+        "name": "sfl-app-credential-metadata",
+        "digest": "sha256:4dae420b00ce4bd92ecb17ecb670e675fb3435dfa6ca1f1c1d489f94125d7d3d",
+        "workflow_run": {
+          "id": 37731379724,
+          "repository_id": 1169772257,
+          "head_repository_id": 1169772257,
+          "head_branch": "main",
+          "head_sha": "ee75f09992d7b54b5f9f89dc4ab59caa055e0f05"
+        },
+        "expired": false,
+        "created_at": "2026-10-08T05:15:25Z"
+      },
+      {
+        "id": 11530141241,
+        "name": "sfl-app-repository-coverage",
+        "digest": "sha256:55fab293ffcde59e5e494d2c95ba513990a325480b9ea4f72e4c84c680258d78",
+        "workflow_run": {
+          "id": 37731379724,
+          "repository_id": 1169772257,
+          "head_repository_id": 1169772257,
+          "head_branch": "main",
+          "head_sha": "ee75f09992d7b54b5f9f89dc4ab59caa055e0f05"
+        },
+        "expired": false,
+        "created_at": "2026-10-08T05:15:27Z"
+      }
+    ]
+  }
+}
