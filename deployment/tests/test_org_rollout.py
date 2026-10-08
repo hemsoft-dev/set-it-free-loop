@@ -5379,6 +5379,66 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         catalog['tag_only_revisions'].append('b'*40);catalog_path.write_text(json.dumps(catalog))
         with self.assertRaisesRegex(ValueError,'reviewed immutable catalog'):check()
 
+    def existing_wider_fixture(self):
+        row={'repository_id':1229335234,'source':'HemSoft/hs-buddy','destination':'hemsoft-dev/hs-buddy',
+             'health':'verified','installed_tier':'full','selected_tier':'full','selected_addons':[],
+             'deployment_sha':'a'*40,'manifest_version':'2.1.0-rc.14'}
+        row['wider_workflow_run_urls']=['https://github.com/hemsoft-dev/hs-buddy/actions/runs/1',
+                                         'https://github.com/hemsoft-dev/hs-buddy/actions/runs/2']
+        row['wider_operation_receipts']=[]
+        for url,workflow in zip(row['wider_workflow_run_urls'],
+            ['.github/workflows/sfl-auditor.yml','.github/workflows/sfl-dispatcher.yml']):
+            operation={'repository_id':row['repository_id'],'repository':row['destination'],
+                       'deployment_sha':row['deployment_sha'],'release_version':row['manifest_version'],
+                       'evidence_url':url,'conclusion':'success','run_head_sha':'b'*40,'workflow':workflow}
+            self.bind_workflow_capture(operation)
+            row['wider_operation_receipts'].append(operation)
+        return row
+
+    def test_existing_wider_pilot_preserves_baseline_full_consumer(self):
+        row=self.existing_wider_fixture()
+        validator.validate_existing_wider_pilot(row,DIRECTORY,'b'*40,
+            validator.observed_time('2026-10-07T01:59:00Z','Cutover'))
+        for field,value in [('repository_id',1),('destination','hemsoft-dev/another'),
+                            ('installed_tier','not_installed'),('selected_tier','reviewer'),('health','pending_transfer')]:
+            changed=copy.deepcopy(row);changed[field]=value
+            with self.assertRaisesRegex(ValueError,'preserve the designated'):
+                validator.validate_existing_wider_pilot(changed,DIRECTORY,'b'*40,None)
+
+    def test_existing_wider_pilot_rejects_missing_distinct_auditor_and_forged_run_identity(self):
+        row=self.existing_wider_fixture()
+        changed=copy.deepcopy(row);changed['wider_workflow_run_urls']=changed['wider_workflow_run_urls'][:1]
+        changed['wider_operation_receipts']=changed['wider_operation_receipts'][:1]
+        with self.assertRaisesRegex(ValueError,'distinct successful'):
+            validator.validate_existing_wider_pilot(changed,DIRECTORY,'b'*40,None)
+        changed=copy.deepcopy(row);changed['wider_operation_receipts'][1]['repository_id']=1
+        with self.assertRaisesRegex(ValueError,'bind'):
+            validator.validate_existing_wider_pilot(changed,DIRECTORY,'b'*40,None)
+        changed=copy.deepcopy(row);changed['wider_operation_receipts'][1]['run_head_sha']='c'*40
+        with self.assertRaisesRegex(ValueError,'immutable run head'):
+            validator.validate_existing_wider_pilot(changed,DIRECTORY,'b'*40,None)
+        changed=copy.deepcopy(row);operation=changed['wider_operation_receipts'][1]
+        operation['workflow']='.github/workflows/sfl-auditor.yml';self.bind_workflow_capture(operation)
+        with self.assertRaisesRegex(ValueError,'one Auditor'):
+            validator.validate_existing_wider_pilot(changed,DIRECTORY,'b'*40,None)
+
+    def test_existing_wider_selection_rejects_arbitrary_repository(self):
+        self.matrix['existing_wider_validation_repository_id']=1
+        with self.assertRaisesRegex(ValueError,'designated baseline'):
+            self.check()
+
+    def test_existing_wider_pilot_must_finish_before_other_consumers(self):
+        early=validator.observed_time('2026-10-07T02:00:00Z','Start')
+        complete=validator.observed_time('2026-10-07T02:05:00Z','Complete')
+        late=validator.observed_time('2026-10-07T02:06:00Z','Later consumer')
+        validator.validate_wider_pilot_ordering(False,1229335234,complete,[(1229335234,early),(123,late)])
+        for started in [early,complete]:
+            with self.assertRaisesRegex(ValueError,'before other active'):
+                validator.validate_wider_pilot_ordering(False,1229335234,complete,[(1229335234,early),(123,started)])
+        with self.assertRaisesRegex(ValueError,'verified wider-workflow'):
+            validator.validate_wider_pilot_ordering(False,1229335234,None,[(1229335234,early)])
+        validator.validate_wider_pilot_ordering(True,None,None,[(123,early)])
+
 
 if __name__ == '__main__':
     unittest.main()
