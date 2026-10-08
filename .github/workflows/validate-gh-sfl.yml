@@ -62,6 +62,11 @@ jobs:
         working-directory: .
         run: ./deployment/tests/test-organization-policy.ps1
 
+      - name: Test organization App coverage scope
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-organization-coverage.ps1
+
       - name: Test legacy reviewer gate migration
         shell: pwsh
         working-directory: .
