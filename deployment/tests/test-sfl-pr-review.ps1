@@ -353,6 +353,22 @@ for (const fixture of cases) {
     throw new Error(`${fixture.name}: got ${JSON.stringify(got)}, want ${JSON.stringify(fixture.want)}`);
   }
 }
+const pendingFirst = {comment: first, requestTime: firstTime};
+const supersessionCases = [
+  {name: "overlap supersedes before first terminal", comments: [first, second], registrations: registeredRequestIds, want: true},
+  {name: "same-second overlap uses comment order", comments: [first, {...second, created_at: first.created_at, updated_at: first.created_at}], registrations: registeredRequestIds, want: true},
+  {name: "multiple overlapping requests supersede", comments: [first, second, recoveredRetry], registrations: registeredRequestIds, want: true},
+  {name: "different context does not supersede", comments: [first, otherContext], registrations: registeredRequestIds, want: false},
+  {name: "edited overlap cannot supersede", comments: [first, editedSecond], registrations: registeredRequestIds, want: false},
+  {name: "mutated overlap cannot supersede", comments: [first, sameSecondBodyMutation], registrations: registeredRequestIds, want: false},
+  {name: "unregistered overlap cannot supersede", comments: [first, second], registrations: new Set([1]), want: false},
+  {name: "newly observed registration supersedes", comments: [first, unregistered], registrations: refreshedRegistrations, want: true},
+  {name: "replayed original request does not supersede", comments: [first], registrations: registeredRequestIds, want: false},
+];
+for (const fixture of supersessionCases) {
+  const got = hasNewerRegisteredRequest(fixture.comments, fixture.registrations, "none", pendingFirst);
+  if (got !== fixture.want) throw new Error(`${fixture.name}: got ${got}, want ${fixture.want}`);
+}
 '@
 $eligibilityTest | node -
 if ($LASTEXITCODE -ne 0) {

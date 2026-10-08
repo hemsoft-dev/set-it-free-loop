@@ -631,6 +631,15 @@ jobs:
               }
               return eligible;
             };
+            // Artifact attribution requires a serial request. Supersession must also
+            // see overlapping registered requests, whose artifacts are ambiguous.
+            const hasNewerRegisteredRequest = (comments, registrations, contextToken, request) =>
+              requestCandidates(comments, Number.POSITIVE_INFINITY, registrations).some(
+                candidate => requestContextFromBody(candidate.comment.body) === contextToken &&
+                  (candidate.requestTime > request.requestTime ||
+                   (candidate.requestTime === request.requestTime &&
+                    candidate.comment.id > request.comment.id)),
+              );
             // END TESTABLE REQUEST ELIGIBILITY
             const candidateRequests = Number.isFinite(artifactTime)
               ? eligibleReviewRequests(triggerComments, artifactChecks, artifactTime)
@@ -847,16 +856,11 @@ jobs:
             );
             const requestTime = request && request.requestTime;
             const hasNewerMatchingRequest = (comments, checkRuns, statuses) =>
-              eligibleReviewRequests(
+              hasNewerRegisteredRequest(
                 comments,
-                checkRuns,
-                Number.POSITIVE_INFINITY,
                 historicalRequestIdsFromStatuses(statuses, comments),
-              ).some(
-                candidate => candidate.contextToken === contextToken &&
-                  (candidate.requestTime > requestTime ||
-                   (candidate.requestTime === requestTime &&
-                    candidate.comment.id > request.comment.id)),
+                contextToken,
+                request,
               );
             // BEGIN TESTABLE REQUIRED GATE REPAIR
             function requiredGateRepair(check, statuses) {
