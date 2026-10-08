@@ -1,0 +1,69 @@
+{
+  "observed_at": "2026-10-08T05:38:00.729805+00:00",
+  "source_sha": "197e0d2d7af1b60647e80148a9cfd75f81c95c16",
+  "release_version": "2.1.0-rc.18",
+  "pilots": {
+    "private": {
+      "completion": {
+        "observed_at": "2026-10-08T05:37:31.450491+00:00",
+        "repository": "hemsoft-dev/sfl-migration-pilot-private",
+        "merge_sha": "f0bd35c889ac67a6fc31659815985bd155231d6b",
+        "live_pr": 8,
+        "gate_only_cleanup": true,
+        "unrelated_policy_preserved": true,
+        "repeat_terminal_observations": [
+          "2026-10-08T05:36:00.706935+00:00",
+          "2026-10-08T05:36:08.024215+00:00",
+          "2026-10-08T05:36:14.023727+00:00"
+        ],
+        "precleanup_capture": "2026-10-08T05:37:28.574146+00:00"
+      },
+      "guarded_review_receipt": "rc18-private-live-smoke-guarded-merge.json",
+      "fixtures": [
+        "rc18-private-fixture-base_advance.json",
+        "rc18-private-fixture-denied_permission.json",
+        "rc18-private-fixture-duplicate_delivery.json",
+        "rc18-private-fixture-edited_registration.json",
+        "rc18-private-fixture-findings.json",
+        "rc18-private-fixture-forged_registration.json",
+        "rc18-private-fixture-malformed_output.json",
+        "rc18-private-fixture-new_head.json",
+        "rc18-private-fixture-pending_request.json",
+        "rc18-private-fixture-permission_lookup_failure.json",
+        "rc18-private-fixture-revoked_permission.json"
+      ],
+      "fixture_limit": "Synthetic API events against unmodified deployed workflow; no live negative provider event claim"
+    },
+    "public": {
+      "completion": {
+        "observed_at": "2026-10-08T05:37:49.001689+00:00",
+        "repository": "hemsoft-dev/sfl-migration-pilot-public",
+        "merge_sha": "a065feb2b91883706b7f3f45276a450d7f43f8fc",
+        "live_pr": 7,
+        "gate_only_cleanup": true,
+        "unrelated_policy_preserved": true,
+        "repeat_terminal_observations": [
+          "2026-10-08T05:36:22.429715+00:00",
+          "2026-10-08T05:36:29.613462+00:00",
+          "2026-10-08T05:36:35.590267+00:00"
+        ],
+        "precleanup_capture": "2026-10-08T05:37:46.197042+00:00"
+      },
+      "guarded_review_receipt": "rc18-public-live-smoke-guarded-merge.json",
+      "fixtures": [
+        "rc18-public-fixture-base_advance.json",
+        "rc18-public-fixture-denied_permission.json",
+        "rc18-public-fixture-duplicate_delivery.json",
+        "rc18-public-fixture-edited_registration.json",
+        "rc18-public-fixture-findings.json",
+        "rc18-public-fixture-forged_registration.json",
+        "rc18-public-fixture-malformed_output.json",
+        "rc18-public-fixture-new_head.json",
+        "rc18-public-fixture-pending_request.json",
+        "rc18-public-fixture-permission_lookup_failure.json",
+        "rc18-public-fixture-revoked_permission.json"
+      ],
+      "fixture_limit": "Synthetic API events against unmodified deployed workflow; no live negative provider event claim"
+    }
+  }
+}

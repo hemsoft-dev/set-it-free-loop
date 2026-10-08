@@ -1,0 +1,12 @@
+{
+  "repository_id": 1408025382,
+  "repository": "hemsoft-dev/sfl-migration-pilot-private",
+  "run_id": 37745009777,
+  "run_attempt": 1,
+  "execution_sha": "da157a8852a0c2bb004c9d38c989369339917ccc",
+  "workflow_sha": "da157a8852a0c2bb004c9d38c989369339917ccc",
+  "workflow_path": ".github/workflows/sfl-pr-review-auto.yml",
+  "event": "issue_comment",
+  "check_run_id": 113204519579,
+  "external_id": "sfl-codex-review:pull:10:base:da157a8852a0c2bb004c9d38c989369339917ccc:context:sfl-codex-review%3Apull-context%3Aat%3A1791445092000%3A37744655240:request:6055111297:at:1791445199000:artifact:c6055140904"
+}

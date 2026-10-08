@@ -1,0 +1,24 @@
+{
+  "observed_at": "2026-10-08T08:51:17.909489+00:00",
+  "scope": "local candidate before publication",
+  "go_toolchain": "1.25.14",
+  "go_vet": "passed",
+  "go_tests": "passed",
+  "reviewer_contract": "passed",
+  "platform_contract": "passed",
+  "release_metadata_linux_windows_build": "passed",
+  "rollout_tests": {
+    "count": 270,
+    "result": "passed"
+  },
+  "observer_fixtures": {
+    "count": 13,
+    "result": "passed"
+  },
+  "initial_path_failure": "Go absent from shell PATH; corrected with existing 1.25.14 toolchain",
+  "removed_owned_generated_bytecode": [
+    "deployment/scripts/__pycache__/validate-org-rollout.cpython-314.pyc",
+    "deployment/tests/__pycache__/test_org_rollout.cpython-314.pyc"
+  ],
+  "installed_runtime_qualified": false
+}

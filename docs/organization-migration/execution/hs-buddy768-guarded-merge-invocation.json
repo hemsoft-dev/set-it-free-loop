@@ -1,0 +1,16 @@
+{
+  "captured_at": "2026-10-08T07:53:45.656705+00:00",
+  "head": "372508f7c6238582ad951a295ac55bb4270860e3",
+  "base": "5060815944087dd9b3e6bacef932d5e0ab7bcd9b",
+  "actor": "HemSoft",
+  "readiness_verified": true,
+  "human_pr_observed_only": {
+    "number": 764,
+    "state": "open",
+    "head": "e15c51359d4ddd54f36835e5f7975d1dfa6efcbb",
+    "branch": "feat/gpui-dashboard"
+  },
+  "helper": "/home/franz/bin/mergepr.ps1",
+  "merged_sha": "c528c67c787acb39bc31f88f4abe080f2caa4e1d",
+  "merged_at": "2026-10-08T07:53:49Z"
+}

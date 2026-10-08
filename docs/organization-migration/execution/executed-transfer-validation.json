@@ -1,0 +1,43 @@
+{
+  "observed_at": "2026-10-08T10:57:15.146838+00:00",
+  "command": [
+    "python3",
+    "deployment/scripts/validate-executed-transfers.py",
+    "docs/organization-migration"
+  ],
+  "exit_code": 0,
+  "result": {
+    "archived_transferred": 13,
+    "migration_acceptance_complete": false,
+    "retained": 2,
+    "sfl_rollout": "pending",
+    "source_protection_evidence": "incomplete",
+    "source_protection_gap_repository_id": 1143951439,
+    "transfer_identity_and_refs": "verified",
+    "transferred": 65
+  },
+  "corruption_tests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "deployment/tests/test_executed_transfers.py"
+    ],
+    "exit_code": 0,
+    "tests": 9
+  },
+  "existing_migration_tests": {
+    "command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "deployment/tests",
+      "-p",
+      "test_org*.py"
+    ],
+    "exit_code": 0,
+    "tests": 311
+  }
+}

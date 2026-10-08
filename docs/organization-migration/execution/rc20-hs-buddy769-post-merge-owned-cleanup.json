@@ -1,0 +1,12 @@
+{
+  "observed_at": "2026-10-08T08:11:14.651829+00:00",
+  "revision": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+  "clean": true,
+  "only_owned_alias_removed_after_tree_equality": true,
+  "preserved_sha256": {
+    ".github/workflows/sfl-auditor.yml": "599b64fb97eee77018764a97e846e13fa1e09011dd6bfaaef3af4a352759ffe3",
+    ".github/workflows/sfl-dispatcher.yml": "569a0a3e4cfce7c13f53f65d906baf8a970ecae957424998247e73ca4d8cf6bd",
+    ".sfl/sync-policy.json": "9bcaeda72f9dea9283502cba58c3feaf78fecfbddbbeaa4a079009ddba84a933"
+  },
+  "retired_issue_processor_absent": true
+}

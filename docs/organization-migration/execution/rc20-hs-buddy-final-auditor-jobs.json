@@ -1,0 +1,160 @@
+{
+  "started_at": "2026-10-08T08:13:33.884089+00:00",
+  "completed_at": "2026-10-08T08:13:34.305915+00:00",
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stdout": {
+    "total_count": 1,
+    "jobs": [
+      {
+        "id": 113215053578,
+        "run_id": 37748311277,
+        "workflow_name": "SFL Auditor",
+        "head_branch": "main",
+        "run_url": "https://api.github.com/repos/hemsoft-dev/hs-buddy/actions/runs/37748311277",
+        "run_attempt": 1,
+        "node_id": "CR_kwDOSUYqws8AAAAaXCSfCg",
+        "head_sha": "ce3d68ee27f7f873580a4646af14aa2bb7158ac0",
+        "url": "https://api.github.com/repos/hemsoft-dev/hs-buddy/actions/jobs/113215053578",
+        "html_url": "https://github.com/hemsoft-dev/hs-buddy/actions/runs/37748311277/job/113215053578",
+        "status": "completed",
+        "conclusion": "success",
+        "created_at": "2026-10-08T08:12:32Z",
+        "started_at": "2026-10-08T08:12:34Z",
+        "completed_at": "2026-10-08T08:12:51Z",
+        "name": "audit",
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1,
+            "started_at": "2026-10-08T08:12:35Z",
+            "completed_at": "2026-10-08T08:12:36Z"
+          },
+          {
+            "name": "Verify SFL App configuration",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2,
+            "started_at": "2026-10-08T08:12:36Z",
+            "completed_at": "2026-10-08T08:12:36Z"
+          },
+          {
+            "name": "Mint GitHub App token",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3,
+            "started_at": "2026-10-08T08:12:36Z",
+            "completed_at": "2026-10-08T08:12:36Z"
+          },
+          {
+            "name": "Verify authentication",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4,
+            "started_at": "2026-10-08T08:12:36Z",
+            "completed_at": "2026-10-08T08:12:41Z"
+          },
+          {
+            "name": "Gather current state",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5,
+            "started_at": "2026-10-08T08:12:41Z",
+            "completed_at": "2026-10-08T08:12:43Z"
+          },
+          {
+            "name": "Check: orphaned agent:in-progress labels",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6,
+            "started_at": "2026-10-08T08:12:43Z",
+            "completed_at": "2026-10-08T08:12:43Z"
+          },
+          {
+            "name": "Check: conflicting labels",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7,
+            "started_at": "2026-10-08T08:12:43Z",
+            "completed_at": "2026-10-08T08:12:44Z"
+          },
+          {
+            "name": "Check: orphaned agent PRs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8,
+            "started_at": "2026-10-08T08:12:44Z",
+            "completed_at": "2026-10-08T08:12:44Z"
+          },
+          {
+            "name": "Check: stale unclaimed issues",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9,
+            "started_at": "2026-10-08T08:12:44Z",
+            "completed_at": "2026-10-08T08:12:45Z"
+          },
+          {
+            "name": "Check: stalled draft PRs without analyzer reviews",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10,
+            "started_at": "2026-10-08T08:12:45Z",
+            "completed_at": "2026-10-08T08:12:45Z"
+          },
+          {
+            "name": "Check: unexplained agent:pause",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11,
+            "started_at": "2026-10-08T08:12:45Z",
+            "completed_at": "2026-10-08T08:12:46Z"
+          },
+          {
+            "name": "Check: SFL review prerequisites",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12,
+            "started_at": "2026-10-08T08:12:46Z",
+            "completed_at": "2026-10-08T08:12:48Z"
+          },
+          {
+            "name": "Summary",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13,
+            "started_at": "2026-10-08T08:12:48Z",
+            "completed_at": "2026-10-08T08:12:48Z"
+          },
+          {
+            "name": "Post Mint GitHub App token",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 26,
+            "started_at": "2026-10-08T08:12:48Z",
+            "completed_at": "2026-10-08T08:12:49Z"
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 27,
+            "started_at": "2026-10-08T08:12:49Z",
+            "completed_at": "2026-10-08T08:12:49Z"
+          }
+        ],
+        "check_run_url": "https://api.github.com/repos/hemsoft-dev/hs-buddy/check-runs/113215053578",
+        "labels": [
+          "ubuntu-latest"
+        ],
+        "runner_id": 1000001539,
+        "runner_name": "GitHub Actions 1000001539",
+        "runner_group_id": 0,
+        "runner_group_name": "GitHub Actions"
+      }
+    ]
+  },
+  "stderr": ""
+}

@@ -1,0 +1,339 @@
+{
+  "completed_at": "2026-10-08T06:22:52.567258+00:00",
+  "records": [
+    {
+      "repository_id": 804681121,
+      "repository": "hemsoft-dev/Egg-Inc-Tracker",
+      "archived": true,
+      "private": true,
+      "observed_at": "2026-10-08T06:21:37.931237+00:00",
+      "refs": {
+        "refs/heads/bug/issue-23-remove-secrets": {
+          "sha": "842d8d5ed55dd3a46cdab7e0f41d15a31ed9e6e4",
+          "type": "commit"
+        },
+        "refs/heads/copilot/fix-22": {
+          "sha": "0f5137cddcd7b2ad129e3bb633a6ff82c8e519c5",
+          "type": "commit"
+        },
+        "refs/heads/devin/1752506488-optimize-players-api": {
+          "sha": "838a8f0a3cf36c972bec43b09abf2c1fab4e70fc",
+          "type": "commit"
+        },
+        "refs/heads/feature/eggday-goal": {
+          "sha": "d76084beb270be23eca528af8f987b214d2aaa0c",
+          "type": "commit"
+        },
+        "refs/heads/main": {
+          "sha": "adb319fd044ed98b310343d79718be8f56015836",
+          "type": "commit"
+        },
+        "refs/pull/10/head": {
+          "sha": "bb46df836901f4636e8c2bcf5fd2c9f4cc7cb790",
+          "type": "commit"
+        },
+        "refs/pull/15/head": {
+          "sha": "e1b6e1741bff7a8e45b1fc00fc9145ea64548898",
+          "type": "commit"
+        },
+        "refs/pull/17/head": {
+          "sha": "0d96bd9f447cb8325766f3175e91776e9f29275a",
+          "type": "commit"
+        },
+        "refs/pull/20/head": {
+          "sha": "b106f6ce0e72edf61166f2de43cfac8e3221fdca",
+          "type": "commit"
+        },
+        "refs/pull/24/head": {
+          "sha": "842d8d5ed55dd3a46cdab7e0f41d15a31ed9e6e4",
+          "type": "commit"
+        },
+        "refs/pull/25/head": {
+          "sha": "0f5137cddcd7b2ad129e3bb633a6ff82c8e519c5",
+          "type": "commit"
+        },
+        "refs/pull/26/head": {
+          "sha": "838a8f0a3cf36c972bec43b09abf2c1fab4e70fc",
+          "type": "commit"
+        },
+        "refs/pull/29/head": {
+          "sha": "a61fd294de8e4c5738bf32ac1938b1c238057599",
+          "type": "commit"
+        },
+        "refs/pull/8/head": {
+          "sha": "0d8be267fc7a07f506b0bf87baf8cdb77cb5c18b",
+          "type": "commit"
+        },
+        "refs/pull/9/head": {
+          "sha": "b418c018bd87a8c01e8886210e132691b6ea9a05",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-804681121.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 46445245,
+      "repository": "hemsoft-dev/ESO",
+      "archived": true,
+      "private": false,
+      "observed_at": "2026-10-08T06:21:38.627500+00:00",
+      "refs": {
+        "refs/heads/develop": {
+          "sha": "80643ac8d48177f0b3333077f3f8b12cdb1b556c",
+          "type": "commit"
+        },
+        "refs/heads/master": {
+          "sha": "bd2abe2fa0f64021d70b27ec0df61c9528548ec0",
+          "type": "commit"
+        },
+        "refs/heads/version0.1": {
+          "sha": "9cc963522146384db9ad99efd14bb6c3c5c308d0",
+          "type": "commit"
+        },
+        "refs/heads/version0.2": {
+          "sha": "28dc317103098c05dc1b6f47812d8a555549e7e4",
+          "type": "commit"
+        },
+        "refs/heads/version1.0": {
+          "sha": "ffe1117d50ad5709b291952b5a9fec68f4d54ecf",
+          "type": "commit"
+        },
+        "refs/tags/0.2": {
+          "sha": "09db63b4849538af909a21ee753bcdf6f3ae9714",
+          "type": "tag"
+        },
+        "refs/tags/1.0": {
+          "sha": "3958b0e51141365ed3ec3fbb8a9b7cb9bd7a6c11",
+          "type": "tag"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-46445245.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 1106290960,
+      "repository": "hemsoft-dev/ms-agent-framework-demo",
+      "archived": true,
+      "private": false,
+      "observed_at": "2026-10-08T06:21:39.189629+00:00",
+      "refs": {
+        "refs/heads/main": {
+          "sha": "e59f6e37b829b4d7c92297bc36f4e378a817d962",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-1106290960.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 579605475,
+      "repository": "hemsoft-dev/NWMM",
+      "archived": true,
+      "private": true,
+      "observed_at": "2026-10-08T06:21:39.811977+00:00",
+      "refs": {
+        "refs/heads/master": {
+          "sha": "c2298cfe41d8564890d74d91609b667acbca3774",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-579605475.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 223800408,
+      "repository": "hemsoft-dev/PeopleCare",
+      "archived": true,
+      "private": true,
+      "observed_at": "2026-10-08T06:21:40.456157+00:00",
+      "refs": {
+        "refs/heads/develop": {
+          "sha": "1e1d08600873db4c8ee7a605f84beb771f87c34d",
+          "type": "commit"
+        },
+        "refs/heads/master": {
+          "sha": "5237c8780bc58f60624dfaf1cbc2987306acbfe3",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-223800408.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 133669754,
+      "repository": "hemsoft-dev/PXContainerMagic",
+      "archived": true,
+      "private": false,
+      "observed_at": "2026-10-08T06:21:41.083952+00:00",
+      "refs": {
+        "refs/heads/develop": {
+          "sha": "fd20a631959f82873c10449300d0ba261919692f",
+          "type": "commit"
+        },
+        "refs/heads/master": {
+          "sha": "3797047e8acafe8ea4f0e7a2e87fd70e8f8b7b18",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-133669754.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 173613643,
+      "repository": "hemsoft-dev/PXFriends",
+      "archived": true,
+      "private": false,
+      "observed_at": "2026-10-08T06:21:41.676662+00:00",
+      "refs": {
+        "refs/heads/develop": {
+          "sha": "015c9baf98703b75857b41617dd2cfb579133137",
+          "type": "commit"
+        },
+        "refs/heads/master": {
+          "sha": "a53f3f0c9cb96b34c76d0abea919b6fe85b65a0d",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-173613643.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 124155847,
+      "repository": "hemsoft-dev/PXInfoPanel",
+      "archived": true,
+      "private": false,
+      "observed_at": "2026-10-08T06:21:42.257259+00:00",
+      "refs": {
+        "refs/heads/develop": {
+          "sha": "f820b43c33c35debb1f00f7ed9797f697899f4c5",
+          "type": "commit"
+        },
+        "refs/heads/master": {
+          "sha": "78b65877d407826ddfa8e1ee1f35a89f2bb83237",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-124155847.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 133668217,
+      "repository": "hemsoft-dev/PXVendorMagic",
+      "archived": true,
+      "private": false,
+      "observed_at": "2026-10-08T06:21:42.839261+00:00",
+      "refs": {
+        "refs/heads/develop": {
+          "sha": "27fe982c5df281a67df3e239207f3af2cb74857a",
+          "type": "commit"
+        },
+        "refs/heads/master": {
+          "sha": "7776f95a3d1cb52ee3c03f9c717cf7af73dcea84",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-133668217.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 85017515,
+      "repository": "hemsoft-dev/PXWritStatus",
+      "archived": true,
+      "private": false,
+      "observed_at": "2026-10-08T06:21:43.532807+00:00",
+      "refs": {
+        "refs/heads/develop": {
+          "sha": "671e3da3739bce0ccf1ad8525d5d01aed1b569bc",
+          "type": "commit"
+        },
+        "refs/heads/master": {
+          "sha": "5a3be6ad8e144a6ded4dc4a57d8320a5b3c911d8",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-85017515.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 286901159,
+      "repository": "hemsoft-dev/Relias.Lms.Enrollment",
+      "archived": true,
+      "private": true,
+      "observed_at": "2026-10-08T06:21:44.158562+00:00",
+      "refs": {
+        "refs/heads/master": {
+          "sha": "8822783dbdc9739d2fe9d906ba92d5d830651508",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-286901159.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 193121052,
+      "repository": "hemsoft-dev/TCE-Admin",
+      "archived": true,
+      "private": false,
+      "observed_at": "2026-10-08T06:21:44.890618+00:00",
+      "refs": {
+        "refs/heads/master": {
+          "sha": "72a404dea35912173c7a465a56a86a466b5e449a",
+          "type": "commit"
+        },
+        "refs/pull/1/head": {
+          "sha": "50f819dd6d3e2a57280921fbafa1c832ff7f5d7e",
+          "type": "commit"
+        },
+        "refs/pull/2/head": {
+          "sha": "eb25ce85b21c3874d66f0501c8bacafdf2332952",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-193121052.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    },
+    {
+      "repository_id": 223324060,
+      "repository": "hemsoft-dev/TimCoRetailManager",
+      "archived": true,
+      "private": true,
+      "observed_at": "2026-10-08T06:21:45.495701+00:00",
+      "refs": {
+        "refs/heads/master": {
+          "sha": "67fcf5beafcc0c5c3425df17a074f3cfc0f1a90c",
+          "type": "commit"
+        }
+      },
+      "archive_metadata_capture": "org-active-rollout-census-projected.json",
+      "immutable_transfer_capture": "repository-transfers/repository-transfer-223324060.json",
+      "mutation_performed": false,
+      "health": "archive identity, visibility and all refs preserved; no SFL deployment"
+    }
+  ],
+  "verified_count": 13
+}

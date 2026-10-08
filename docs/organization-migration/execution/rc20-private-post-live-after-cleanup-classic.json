@@ -1,0 +1,17 @@
+{
+  "started_at": "2026-10-08T07:47:53.280721+00:00",
+  "completed_at": "2026-10-08T07:47:53.556325+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/hemsoft-dev/sfl-migration-pilot-private/branches/main/protection"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 1,
+  "stdout": {
+    "message": "Branch not protected",
+    "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-branch-protection",
+    "status": 404
+  },
+  "stderr": "gh: Branch not protected (HTTP 404)\n"
+}

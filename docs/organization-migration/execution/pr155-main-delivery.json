@@ -1,0 +1,53 @@
+{
+  "observed_at": "2026-10-08T09:11:58.309174+00:00",
+  "pr_number": 155,
+  "merge_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+  "merged_at": "2026-10-08T09:10:43Z",
+  "reviewed_head": "ef3891a0395e7772f4601da64e39e38366c63d68",
+  "native_clean_artifact": 6056566041,
+  "registered_request_claim": false,
+  "owner_review_request": 6056500447,
+  "owned_source_worktree_and_branch_cleaned": true,
+  "main_ci": "success",
+  "signed_release_delivery": "verified",
+  "main_runs": [
+    {
+      "id": 37754845773,
+      "name": "SFL push event",
+      "head_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+      "conclusion": "success",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/actions/runs/37754845773"
+    },
+    {
+      "id": 37754845743,
+      "name": "Validate Release Workflow",
+      "head_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+      "conclusion": "success",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/actions/runs/37754845743"
+    },
+    {
+      "id": 37754845736,
+      "name": "Validate gh-sfl",
+      "head_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+      "conclusion": "success",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/actions/runs/37754845736"
+    },
+    {
+      "id": 37754845748,
+      "name": "Validate organization migration inventory",
+      "head_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+      "conclusion": "success",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/actions/runs/37754845748"
+    }
+  ],
+  "main_ci_verified_at": "2026-10-08T09:15:38.758491+00:00",
+  "publication_workflow": {
+    "id": 37755428462,
+    "status": "completed",
+    "conclusion": "success",
+    "source_sha": "89425320ace3127a829d86e3b642fe2b31fd979e",
+    "url": "https://github.com/hemsoft-dev/set-it-free-loop/actions/runs/37755428462"
+  },
+  "release_id": 406645777,
+  "independent_download_proof": "rc21-independent-download-proof.json"
+}

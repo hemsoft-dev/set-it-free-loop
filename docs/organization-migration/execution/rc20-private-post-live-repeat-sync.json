@@ -1,0 +1,31 @@
+{
+  "repository_id": 1408025382,
+  "repository": "hemsoft-dev/sfl-migration-pilot-private",
+  "default_branch": "main",
+  "cli_version": "2.1.0-rc.20",
+  "deployment_sha": "292336619aaf8a484e45590bb8897902c7ce7fce",
+  "release_version": "2.1.0-rc.20",
+  "started_at": "2026-10-08T07:45:55.760768+00:00",
+  "observed_at": "2026-10-08T07:46:03.853255+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "revision_before": "468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+  "revision_after": "468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+  "execution": {
+    "command": "gh sfl sync",
+    "argv": [
+      "gh",
+      "sfl",
+      "sync",
+      "--repo",
+      "hemsoft-dev/sfl-migration-pilot-private",
+      "--pr"
+    ],
+    "started_at": "2026-10-08T07:45:55.760768+00:00",
+    "completed_at": "2026-10-08T07:46:03.545619+00:00",
+    "exit_code": 0
+  },
+  "stdout": "Syncing SFL in hemsoft-dev/sfl-migration-pilot-private (current: 2.1.0-rc.20, tier: reviewer)\n\n  Reviewer rollout preflight: default branch main and Actions policy ready \u2713\n  Codex App connection: verify with a current-head review after deployment\n\n  \u2713 Source revision is current (version 2.1.0-rc.20, SHA 292336619aaf); verifying managed files for drift\n\n  Fetching 1 workflow files...\n    sfl-pr-review-auto.yml \u2713\n    .sfl/sfl.json \u2713\n\n  SFL sync is already up to date; no pull request needed\n\n\u2705 SFL synced to 2.1.0-rc.20 in hemsoft-dev/sfl-migration-pilot-private\n\n  Updating open PR branches...\n    No open sfl-pr branches to update.\n",
+  "stderr": "gh-sfl 2.1.0-rc.20 (2026-10-08) HemSoft\n",
+  "actor": "HemSoft"
+}

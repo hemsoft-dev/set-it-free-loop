@@ -1,0 +1,9 @@
+{
+  "started_at": "2026-10-08T05:37:29.755771+00:00",
+  "observed_at": "2026-10-08T05:37:30.269626+00:00",
+  "path": "repos/hemsoft-dev/sfl-migration-pilot-private/rulesets/24698524",
+  "method": "DELETE",
+  "exit_code": 0,
+  "response": null,
+  "stderr": ""
+}

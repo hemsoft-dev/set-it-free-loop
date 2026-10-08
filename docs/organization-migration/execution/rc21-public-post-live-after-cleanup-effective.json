@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-10-08T09:44:53.022137+00:00",
+  "completed_at": "2026-10-08T09:44:53.301537+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/hemsoft-dev/sfl-migration-pilot-public/rules/branches/main"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stdout": "[]",
+  "stderr": ""
+}

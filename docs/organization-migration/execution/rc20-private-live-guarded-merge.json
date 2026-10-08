@@ -1,0 +1,385 @@
+{
+  "observed_at": "2026-10-08T07:44:11.582436+00:00",
+  "pr_number": 10,
+  "head": "d1992cdbef92dc231945be7547db6caa630e2abd",
+  "base": "da157a8852a0c2bb004c9d38c989369339917ccc",
+  "gate": {
+    "id": 113204519579,
+    "name": "SFL Reviewer Gate Runner",
+    "node_id": "CR_kwDOU-zDJs8AAAAaW4Pimw",
+    "head_sha": "d1992cdbef92dc231945be7547db6caa630e2abd",
+    "external_id": "sfl-codex-review:pull:10:base:da157a8852a0c2bb004c9d38c989369339917ccc:context:sfl-codex-review%3Apull-context%3Aat%3A1791445092000%3A37744655240:request:6055111297:at:1791445199000:artifact:c6055140904",
+    "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/check-runs/113204519579",
+    "html_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/runs/113204519579",
+    "details_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/runs/113204519579",
+    "status": "completed",
+    "conclusion": "success",
+    "started_at": "2026-10-08T07:42:15Z",
+    "completed_at": "2026-10-08T07:42:17Z",
+    "output": {
+      "title": "SFL Codex review passed",
+      "summary": "Codex found no major issues on the current head\n\n<!-- sfl-gate-execution:eyJyZXBvc2l0b3J5X2lkIjoxNDA4MDI1MzgyLCJyZXBvc2l0b3J5IjoiaGVtc29mdC1kZXYvc2ZsLW1pZ3JhdGlvbi1waWxvdC1wcml2YXRlIiwicnVuX2lkIjozNzc0NTAwOTc3NywicnVuX2F0dGVtcHQiOjEsImV4ZWN1dGlvbl9zaGEiOiJkYTE1N2E4ODUyYTBjMmJiMDA0YzlkMzhjOTg5MzY5MzM5OTE3Y2NjIiwid29ya2Zsb3dfc2hhIjoiZGExNTdhODg1MmEwYzJiYjAwNGM5ZDM4Yzk4OTM2OTMzOTkxN2NjYyIsIndvcmtmbG93X3BhdGgiOiIuZ2l0aHViL3dvcmtmbG93cy9zZmwtcHItcmV2aWV3LWF1dG8ueW1sIiwiZXZlbnQiOiJpc3N1ZV9jb21tZW50IiwiY2hlY2tfcnVuX2lkIjoxMTMyMDQ1MTk1NzksImV4dGVybmFsX2lkIjoic2ZsLWNvZGV4LXJldmlldzpwdWxsOjEwOmJhc2U6ZGExNTdhODg1MmEwYzJiYjAwNGM5ZDM4Yzk4OTM2OTMzOTkxN2NjYzpjb250ZXh0OnNmbC1jb2RleC1yZXZpZXclM0FwdWxsLWNvbnRleHQlM0FhdCUzQTE3OTE0NDUwOTIwMDAlM0EzNzc0NDY1NTI0MDpyZXF1ZXN0OjYwNTUxMTEyOTc6YXQ6MTc5MTQ0NTE5OTAwMDphcnRpZmFjdDpjNjA1NTE0MDkwNCJ9 -->",
+      "text": null,
+      "annotations_count": 0,
+      "annotations_url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/check-runs/113204519579/annotations"
+    },
+    "check_suite": {
+      "id": 102255060188
+    },
+    "app": {
+      "id": 15368,
+      "client_id": "Iv1.05c79e9ad1f6bdfa",
+      "slug": "github-actions",
+      "node_id": "MDM6QXBwMTUzNjg=",
+      "owner": {
+        "login": "github",
+        "id": 9919,
+        "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/github",
+        "html_url": "https://github.com/github",
+        "followers_url": "https://api.github.com/users/github/followers",
+        "following_url": "https://api.github.com/users/github/following{/other_user}",
+        "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+        "organizations_url": "https://api.github.com/users/github/orgs",
+        "repos_url": "https://api.github.com/users/github/repos",
+        "events_url": "https://api.github.com/users/github/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/github/received_events",
+        "type": "Organization",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "name": "GitHub Actions",
+      "description": "Automate your workflow from idea to production",
+      "external_url": "https://help.github.com/en/actions",
+      "html_url": "https://github.com/apps/github-actions",
+      "created_at": "2018-07-30T09:30:17Z",
+      "updated_at": "2026-06-18T16:17:48Z",
+      "permissions": {
+        "actions": "write",
+        "administration": "read",
+        "artifact_metadata": "write",
+        "attestations": "write",
+        "checks": "write",
+        "code_quality": "write",
+        "contents": "write",
+        "copilot_requests": "write",
+        "deployments": "write",
+        "discussions": "write",
+        "drives": "write",
+        "issues": "write",
+        "merge_queues": "write",
+        "metadata": "read",
+        "models": "read",
+        "packages": "write",
+        "pages": "write",
+        "pull_requests": "write",
+        "repository_hooks": "write",
+        "repository_projects": "write",
+        "security_events": "write",
+        "statuses": "write",
+        "vulnerability_alerts": "read"
+      },
+      "events": [
+        "branch_protection_rule",
+        "check_run",
+        "check_suite",
+        "create",
+        "delete",
+        "deployment",
+        "deployment_status",
+        "discussion",
+        "discussion_comment",
+        "fork",
+        "gollum",
+        "issues",
+        "issue_comment",
+        "label",
+        "merge_group",
+        "milestone",
+        "page_build",
+        "public",
+        "pull_request",
+        "pull_request_review",
+        "pull_request_review_comment",
+        "push",
+        "registry_package",
+        "release",
+        "repository",
+        "repository_dispatch",
+        "status",
+        "watch",
+        "workflow_dispatch",
+        "workflow_run"
+      ]
+    },
+    "pull_requests": [
+      {
+        "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/pulls/10",
+        "id": 4783509628,
+        "number": 10,
+        "head": {
+          "ref": "migration/rc20-live-review",
+          "sha": "d1992cdbef92dc231945be7547db6caa630e2abd",
+          "repo": {
+            "id": 1408025382,
+            "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private",
+            "name": "sfl-migration-pilot-private"
+          }
+        },
+        "base": {
+          "ref": "main",
+          "sha": "da157a8852a0c2bb004c9d38c989369339917ccc",
+          "repo": {
+            "id": 1408025382,
+            "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private",
+            "name": "sfl-migration-pilot-private"
+          }
+        }
+      }
+    ]
+  },
+  "protection": null,
+  "rules": [
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          {
+            "context": "SFL Reviewer Gate Runner",
+            "integration_id": 15368
+          }
+        ]
+      },
+      "ruleset_source_type": "Repository",
+      "ruleset_source": "hemsoft-dev/sfl-migration-pilot-private",
+      "ruleset_id": 24704189
+    }
+  ],
+  "rulesets": [
+    {
+      "id": 24704189,
+      "name": "Require SFL Reviewer Gate Runner (sfl-migration-pilot-private)",
+      "target": "branch",
+      "source_type": "Repository",
+      "source": "hemsoft-dev/sfl-migration-pilot-private",
+      "enforcement": "active",
+      "node_id": "RRS_lACqUmVwb3NpdG9yec5T7MMmzgF49L0",
+      "_links": {
+        "self": {
+          "href": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/rulesets/24704189"
+        },
+        "html": {
+          "href": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/rules/24704189"
+        }
+      },
+      "created_at": "2026-10-08T03:37:34.602-04:00",
+      "updated_at": "2026-10-08T03:37:34.676-04:00"
+    }
+  ],
+  "checks": [
+    {
+      "bucket": "pass",
+      "link": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/runs/113204519579",
+      "name": "SFL Reviewer Gate Runner",
+      "state": "SUCCESS"
+    },
+    {
+      "bucket": "pass",
+      "link": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/actions/runs/37744655240/job/113203167916",
+      "name": "Invalidate Codex review for changed pull context",
+      "state": "SUCCESS"
+    },
+    {
+      "bucket": "skipping",
+      "link": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/actions/runs/37744655240/job/113203169473",
+      "name": "Invalidate prior gate for registered review request",
+      "state": "SKIPPED"
+    },
+    {
+      "bucket": "skipping",
+      "link": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/actions/runs/37744655240/job/113203169674",
+      "name": "Observe authenticated Codex review",
+      "state": "SKIPPED"
+    },
+    {
+      "bucket": "skipping",
+      "link": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/actions/runs/37744655240/job/113203169561",
+      "name": "Invalidate Codex reviews after base advance",
+      "state": "SKIPPED"
+    },
+    {
+      "bucket": "pass",
+      "link": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/pull/10#issuecomment-6055111297",
+      "name": "SFL Codex Review Request Registry",
+      "state": "SUCCESS"
+    },
+    {
+      "bucket": "pass",
+      "link": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/pull/10#issuecomment-6055140904",
+      "name": "SFL Reviewer Gate Runner",
+      "state": "SUCCESS"
+    }
+  ],
+  "native_clean": {
+    "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/issues/comments/6055140904",
+    "html_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/pull/10#issuecomment-6055140904",
+    "issue_url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/issues/10",
+    "id": 6055140904,
+    "node_id": "IC_kwDOU-zDJs8AAAABaOoeKA",
+    "user": {
+      "login": "chatgpt-codex-connector[bot]",
+      "id": 199175422,
+      "node_id": "BOT_kgDOC98s_g",
+      "avatar_url": "https://avatars.githubusercontent.com/in/1144995?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D",
+      "html_url": "https://github.com/apps/chatgpt-codex-connector",
+      "followers_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/followers",
+      "following_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/following{/other_user}",
+      "gists_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/subscriptions",
+      "organizations_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/orgs",
+      "repos_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/repos",
+      "events_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/chatgpt-codex-connector%5Bbot%5D/received_events",
+      "type": "Bot",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "created_at": "2026-10-08T07:41:33Z",
+    "updated_at": "2026-10-08T07:41:33Z",
+    "body": "Codex Review: Didn't find any major issues. Another round soon, please!\n\n**Reviewed commit:** `d1992cdbef`\n\n<details> <summary>\u2139\ufe0f About Codex in GitHub</summary>\n<br/>\n\n[Your team has set up Codex to review pull requests in this repo](https://chatgpt.com/codex/cloud/settings/general). Reviews are triggered when you\n- Open a pull request for review\n- Mark a draft as ready\n- Comment \"@codex review\".\n\nIf Codex has suggestions, it will comment; otherwise it will react with \ud83d\udc4d.\n\n\n\n\nCodex can also answer questions or update the PR. Try commenting \"@codex address that feedback\".\n            \n</details>",
+    "author_association": "NONE",
+    "reactions": {
+      "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/issues/comments/6055140904/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "performed_via_github_app": {
+      "id": 1144995,
+      "client_id": "Iv23liVemv8A9if9v0F2",
+      "slug": "chatgpt-codex-connector",
+      "node_id": "A_kwHOAOQ6Gs4AEXij",
+      "owner": {
+        "login": "openai",
+        "id": 14957082,
+        "node_id": "MDEyOk9yZ2FuaXphdGlvbjE0OTU3MDgy",
+        "avatar_url": "https://avatars.githubusercontent.com/u/14957082?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/openai",
+        "html_url": "https://github.com/openai",
+        "followers_url": "https://api.github.com/users/openai/followers",
+        "following_url": "https://api.github.com/users/openai/following{/other_user}",
+        "gists_url": "https://api.github.com/users/openai/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/openai/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/openai/subscriptions",
+        "organizations_url": "https://api.github.com/users/openai/orgs",
+        "repos_url": "https://api.github.com/users/openai/repos",
+        "events_url": "https://api.github.com/users/openai/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/openai/received_events",
+        "type": "Organization",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "name": "ChatGPT Codex Connector",
+      "description": "Bring ChatGPT and Codex to your GitHub repositories.",
+      "external_url": "https://www.chatgpt.com",
+      "html_url": "https://github.com/apps/chatgpt-codex-connector",
+      "created_at": "2025-02-14T01:37:05Z",
+      "updated_at": "2026-09-23T18:52:59Z",
+      "permissions": {
+        "actions": "write",
+        "checks": "read",
+        "contents": "write",
+        "emails": "read",
+        "issues": "write",
+        "metadata": "read",
+        "pull_requests": "write",
+        "statuses": "read",
+        "workflows": "write"
+      },
+      "events": [
+        "check_run",
+        "check_suite",
+        "commit_comment",
+        "issues",
+        "issue_comment",
+        "pull_request",
+        "pull_request_review",
+        "pull_request_review_comment",
+        "pull_request_review_thread",
+        "repository",
+        "status",
+        "sub_issues"
+      ]
+    },
+    "minimized": null
+  },
+  "request": {
+    "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/issues/comments/6055111297",
+    "html_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/pull/10#issuecomment-6055111297",
+    "issue_url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/issues/10",
+    "id": 6055111297,
+    "node_id": "IC_kwDOU-zDJs8AAAABaOmqgQ",
+    "user": {
+      "login": "HemSoft",
+      "id": 8227352,
+      "node_id": "MDQ6VXNlcjgyMjczNTI=",
+      "avatar_url": "https://avatars.githubusercontent.com/u/8227352?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/HemSoft",
+      "html_url": "https://github.com/HemSoft",
+      "followers_url": "https://api.github.com/users/HemSoft/followers",
+      "following_url": "https://api.github.com/users/HemSoft/following{/other_user}",
+      "gists_url": "https://api.github.com/users/HemSoft/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/HemSoft/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/HemSoft/subscriptions",
+      "organizations_url": "https://api.github.com/users/HemSoft/orgs",
+      "repos_url": "https://api.github.com/users/HemSoft/repos",
+      "events_url": "https://api.github.com/users/HemSoft/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/HemSoft/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "created_at": "2026-10-08T07:39:59Z",
+    "updated_at": "2026-10-08T07:39:59Z",
+    "author_association": "MEMBER",
+    "body": "@codex review\n\n<!-- sfl-codex-review:head=d1992cdbef92dc231945be7547db6caa630e2abd;base=da157a8852a0c2bb004c9d38c989369339917ccc;context=sfl-codex-review:pull-context:at:1791445092000:37744655240 -->",
+    "reactions": {
+      "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/issues/comments/6055111297/reactions",
+      "total_count": 0,
+      "+1": 0,
+      "-1": 0,
+      "laugh": 0,
+      "hooray": 0,
+      "confused": 0,
+      "heart": 0,
+      "rocket": 0,
+      "eyes": 0
+    },
+    "performed_via_github_app": null,
+    "minimized": null,
+    "pin": null
+  },
+  "gh_x_row": "#10 -      docs: v... Franz H... open  -   pass 0    pass   0/0! rc20-liv... 2m",
+  "source_sha": "292336619aaf8a484e45590bb8897902c7ce7fce",
+  "release_version": "2.1.0-rc.20",
+  "stage": "live",
+  "merge_sha": "468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+  "merged_at": "2026-10-08T07:44:15Z"
+}

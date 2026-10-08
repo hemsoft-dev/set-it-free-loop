@@ -1,0 +1,17 @@
+{
+  "observed_at": "2026-10-08T07:49:09.479331+00:00",
+  "repository": "hemsoft-dev/sfl-migration-pilot-public",
+  "owned_gate_id": 24704115,
+  "gate_ownership": "Upgrade pre-policy empty; signed CLI gate install created this sole exact required-status ruleset",
+  "live_merge_sha": "bea4c9310f6c1dcb110ac1ed111f2762f3b2fae4",
+  "after_terminal_captures": true,
+  "terminal_observations": [
+    "2026-10-08T07:46:19.193834+00:00",
+    "2026-10-08T07:46:26.882499+00:00",
+    "2026-10-08T07:46:33.438455+00:00"
+  ],
+  "unrelated_rules_preservation_required": true,
+  "qualified": true,
+  "unrelated_policy_preserved": true,
+  "completed_at": "2026-10-08T07:53:31.184595+00:00"
+}

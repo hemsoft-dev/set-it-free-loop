@@ -1,0 +1,22 @@
+{
+  "observed_at": "2026-10-08T05:20:09.853324+00:00",
+  "run_id": 37731379724,
+  "run_url": "https://github.com/hemsoft-dev/set-it-free-loop/actions/runs/37731379724",
+  "reviewed_sha": "ee75f09992d7b54b5f9f89dc4ab59caa055e0f05",
+  "app_id": 4448946,
+  "installation_id": 169090497,
+  "original_transfer_targets": 65,
+  "supplemental_validation_targets": 3,
+  "verified_target_count": 68,
+  "retained_personal_ids_excluded": [
+    1162179521,
+    1169698740
+  ],
+  "repository_identity_binding_verified": true,
+  "permission_ceiling_verified": true,
+  "metadata_projection_verified": true,
+  "temporary_metadata_token_revocation_required_for_run_success": true,
+  "artifact_json_sha256": "66ae90b69cbeccb5ee6781a78a2f93e55de05eb33bfe875f9a3b88a9869a71bc",
+  "credential_changes": false,
+  "limits": "App identity/installation/metadata proof; no model credential or review runtime claim."
+}

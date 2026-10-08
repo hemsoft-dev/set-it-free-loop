@@ -1,0 +1,30 @@
+{
+  "repository_id": 1408025382,
+  "repository": "hemsoft-dev/sfl-migration-pilot-private",
+  "default_branch": "main",
+  "cli_version": "2.1.0-rc.20",
+  "deployment_sha": "292336619aaf8a484e45590bb8897902c7ce7fce",
+  "release_version": "2.1.0-rc.20",
+  "started_at": "2026-10-08T07:46:04.950170+00:00",
+  "observed_at": "2026-10-08T07:46:10.683363+00:00",
+  "status": "completed",
+  "exit_code": 0,
+  "revision_before": "468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+  "revision_after": "468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+  "execution": {
+    "command": "gh sfl status",
+    "argv": [
+      "gh",
+      "sfl",
+      "status",
+      "--repo",
+      "hemsoft-dev/sfl-migration-pilot-private"
+    ],
+    "started_at": "2026-10-08T07:46:04.950170+00:00",
+    "completed_at": "2026-10-08T07:46:10.371452+00:00",
+    "exit_code": 0
+  },
+  "stdout": "SFL Status: hemsoft-dev/sfl-migration-pilot-private\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n  \u2713 Installed\n  Version:    2.1.0-rc.20\n  Tier:       reviewer\n  Deployed:   2026-10-08 07:21 UTC\n  By:         HemSoft\n  Components: sfl-pr-review-auto\n  Source SHA: 292336619aaf\n  \u2713 Latest synchronized release (v2.1.0-rc.20)\n\n  Reviewer package:\n    \u2713 .github/workflows/sfl-pr-review-auto.yml\n    \u2713 All reviewer package files match the pinned release source\n\n  Codex App:\n    ! The Codex GitHub App installation is verified by an authenticated review smoke test; GitHub CLI cannot inspect the owner's ChatGPT subscription connection\n\n  Reviewer prerequisites:\n    \u2713 Default branch: main\n    \u2713 GitHub Actions enabled\n\n  Merge posture:\n    \u2713 Gated by strict SFL reviewer gate runner check (Require SFL Reviewer Gate Runner (sfl-migration-pilot-private))\n\n  Latest reviewer run:\n    \u2713 success (https://github.com/hemsoft-dev/sfl-migration-pilot-private/actions/runs/37745009777)\n\n",
+  "stderr": "gh-sfl 2.1.0-rc.20 (2026-10-08) HemSoft\n",
+  "actor": "HemSoft"
+}

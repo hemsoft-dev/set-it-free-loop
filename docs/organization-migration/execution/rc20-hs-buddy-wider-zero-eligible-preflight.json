@@ -1,0 +1,19 @@
+{
+  "observed_at": "2026-10-08T07:57:02.997111+00:00",
+  "repository": "hemsoft-dev/hs-buddy",
+  "revision": "c528c67c787acb39bc31f88f4abe080f2caa4e1d",
+  "open_issues": 2,
+  "open_prs": 2,
+  "auditor_discrepancy_candidates": 0,
+  "dispatcher_model_or_promoter_candidates": 0,
+  "existing_prerequisite_issue_absent": true,
+  "observer_active": true,
+  "preflight_only_not_runtime_proof": true,
+  "primary_receipts": [
+    "rc20-hs-buddy-wider-preflight-issues.json",
+    "rc20-hs-buddy-wider-preflight-current-prs.json",
+    "rc20-hs-buddy-wider-preflight-current-head.json",
+    "rc20-hs-buddy-wider-preflight-prerequisite-issues.json",
+    "rc20-hs-buddy-installed-observer-metadata.json"
+  ]
+}

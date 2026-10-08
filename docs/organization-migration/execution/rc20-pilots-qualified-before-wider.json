@@ -1,0 +1,83 @@
+{
+  "qualified": true,
+  "version": "2.1.0-rc.20",
+  "release_tag": "v2.1.0-rc.20",
+  "source_sha": "292336619aaf8a484e45590bb8897902c7ce7fce",
+  "qualified_at": "2026-10-08T07:53:31.187231+00:00",
+  "pilots": {
+    "private": {
+      "completion": {
+        "observed_at": "2026-10-08T07:47:32.780440+00:00",
+        "repository": "hemsoft-dev/sfl-migration-pilot-private",
+        "owned_gate_id": 24704189,
+        "gate_ownership": "Upgrade pre-policy empty; subsequent signed CLI gate install created this sole exact required-status ruleset",
+        "live_merge_sha": "468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+        "after_terminal_captures": true,
+        "terminal_observations": [
+          "2026-10-08T07:45:54.849565+00:00",
+          "2026-10-08T07:46:03.853255+00:00",
+          "2026-10-08T07:46:10.683363+00:00"
+        ],
+        "unrelated_rules_preservation_required": true,
+        "qualified": true,
+        "unrelated_policy_preserved": true,
+        "completed_at": "2026-10-08T07:48:43.259454+00:00"
+      },
+      "execution_binding_receipt": "rc20-private-live-execution-binding.json",
+      "installed_terminal_receipt": "rc20-private-installed-live-observer-terminal.json",
+      "fixture_receipts": [
+        "rc20-private-fixture-permission_lookup_failure.json",
+        "rc20-private-fixture-forged_registration.json",
+        "rc20-private-fixture-overlapping_request.json",
+        "rc20-private-fixture-denied_permission.json",
+        "rc20-private-fixture-new_head.json",
+        "rc20-private-fixture-duplicate_delivery.json",
+        "rc20-private-fixture-base_advance.json",
+        "rc20-private-fixture-pending_request.json",
+        "rc20-private-fixture-malformed_output.json",
+        "rc20-private-fixture-edited_registration.json",
+        "rc20-private-fixture-revoked_permission.json",
+        "rc20-private-fixture-findings.json"
+      ],
+      "all_fixture_results_validated": true
+    },
+    "public": {
+      "completion": {
+        "observed_at": "2026-10-08T07:49:09.479331+00:00",
+        "repository": "hemsoft-dev/sfl-migration-pilot-public",
+        "owned_gate_id": 24704115,
+        "gate_ownership": "Upgrade pre-policy empty; signed CLI gate install created this sole exact required-status ruleset",
+        "live_merge_sha": "bea4c9310f6c1dcb110ac1ed111f2762f3b2fae4",
+        "after_terminal_captures": true,
+        "terminal_observations": [
+          "2026-10-08T07:46:19.193834+00:00",
+          "2026-10-08T07:46:26.882499+00:00",
+          "2026-10-08T07:46:33.438455+00:00"
+        ],
+        "unrelated_rules_preservation_required": true,
+        "qualified": true,
+        "unrelated_policy_preserved": true,
+        "completed_at": "2026-10-08T07:53:31.184595+00:00"
+      },
+      "execution_binding_receipt": "rc20-public-live-execution-binding.json",
+      "installed_terminal_receipt": "rc20-public-installed-live-observer-terminal.json",
+      "fixture_receipts": [
+        "rc20-public-fixture-permission_lookup_failure.json",
+        "rc20-public-fixture-forged_registration.json",
+        "rc20-public-fixture-pending_request.json",
+        "rc20-public-fixture-new_head.json",
+        "rc20-public-fixture-findings.json",
+        "rc20-public-fixture-overlapping_request.json",
+        "rc20-public-fixture-edited_registration.json",
+        "rc20-public-fixture-malformed_output.json",
+        "rc20-public-fixture-revoked_permission.json",
+        "rc20-public-fixture-base_advance.json",
+        "rc20-public-fixture-duplicate_delivery.json",
+        "rc20-public-fixture-denied_permission.json"
+      ],
+      "all_fixture_results_validated": true
+    }
+  },
+  "synthetic_negative_fixtures_distinct_from_live_execution": true,
+  "fixture_primary_audit_at": "2026-10-08T08:04:32.780040+00:00"
+}

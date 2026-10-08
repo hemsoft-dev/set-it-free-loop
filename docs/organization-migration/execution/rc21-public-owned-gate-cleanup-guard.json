@@ -1,0 +1,13 @@
+{
+  "observed_at": "2026-10-08T09:44:30.826594+00:00",
+  "repository": "hemsoft-dev/sfl-migration-pilot-public",
+  "owned_gate_id": 24712718,
+  "live_merge_sha": "54def8a24948b99136a87cd0cfa97580515867b5",
+  "after_terminal_captures": true,
+  "terminal_observations": [
+    "2026-10-08T09:43:25.455058+00:00",
+    "2026-10-08T09:43:33.661570+00:00",
+    "2026-10-08T09:43:40.050024+00:00"
+  ],
+  "unrelated_rules_preservation_required": true
+}

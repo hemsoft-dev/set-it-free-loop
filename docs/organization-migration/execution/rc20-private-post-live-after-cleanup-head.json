@@ -1,0 +1,111 @@
+{
+  "started_at": "2026-10-08T07:47:55.480469+00:00",
+  "completed_at": "2026-10-08T07:47:55.844295+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/hemsoft-dev/sfl-migration-pilot-private/branches/main"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stdout": {
+    "name": "main",
+    "commit": {
+      "sha": "468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+      "node_id": "C_kwDOU-zDJtoAKDQ2ODUyN2MxYjlmZmNjYzNhNTNkOGRmY2I5OWUwZmNkMmQxNzVmNTA",
+      "commit": {
+        "author": {
+          "name": "Franz Hemmer",
+          "email": "franz_hemmer@hotmail.com",
+          "date": "2026-10-08T07:44:14Z"
+        },
+        "committer": {
+          "name": "GitHub",
+          "email": "noreply@github.com",
+          "date": "2026-10-08T07:44:14Z"
+        },
+        "message": "docs: validate installed rc20 reviewer (#10)\n\nCo-authored-by: Franz Hemmer <8227352+HemSoft@users.noreply.github.com>",
+        "tree": {
+          "sha": "28c1bc3591843831f7e0d64fba1bc6af51643e8f",
+          "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/git/trees/28c1bc3591843831f7e0d64fba1bc6af51643e8f"
+        },
+        "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/git/commits/468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+        "comment_count": 0,
+        "verification": {
+          "verified": true,
+          "reason": "valid",
+          "signature": "-----BEGIN PGP SIGNATURE-----\n\nwsFcBAABCAAQBQJqx0nOCRC1aQ7uu5UhlAAAVuQQAJc+Mj03ezCqO7md+7He89ut\nt73EonekCh1Bv0IUQGdSOceAG5LlQ1GDH2YmphtTTBLiNp8wfWvRxm4/q6jx5RR9\n4O4hh0wXo114olRQT1QOSApp0BwV3XbjaZVGSXS9wJpYBIQf36NWUKotMlcFlZUs\n85NYsqATlPqM6qj9IcuPuF3MUL5uCwW44f82eDfP6HxdA7UJ/tEvBHoRH0ptQhN4\nJ+O+M5zLcLAVZKRJH15uQhZXniEZoZdCF3QCNBvq6q5hDoVW94CLMjKIwy7kpfDE\nyTrykYlOGD3fiHKU6lLTg33oJ24GMsb481GCHkBTX5JG9zBWdDIdUgbAacCJju45\nzQq50VhOVv2hQTYn5pMIDJUqrdtYizbLUdcSz3y9pYiJwvBFviJ5FaAtzwhI5vwi\nvo0VFir/T19xNnTAH0cVDZNdIRd7DLyhKgvINDJINTU1l6g/1ucJKq/cBfBhBn2N\nEjO3NJ4vJWMWJLFX2N5BdTtK1s++xF9WArVnMbfXhQnS3Q8oLd9is4j+2xXxXflU\nBFfCOHPNrJNAvl9So4J0lSiTePoq40+iHtvO5baaLekdEo2w4vzV380cFgKV/LAq\nkKBsOgMvwLdIiUc0on4HtlMlXAq5ov552t8pDhNsmlb69EzYOBEXg/m08HnRJuc2\nmsxgx1wjSAxV20Y84LIM\n=B8W+\n-----END PGP SIGNATURE-----\n",
+          "payload": "tree 28c1bc3591843831f7e0d64fba1bc6af51643e8f\nparent da157a8852a0c2bb004c9d38c989369339917ccc\nauthor Franz Hemmer <franz_hemmer@hotmail.com> 1791445454 -0400\ncommitter GitHub <noreply@github.com> 1791445454 -0400\n\ndocs: validate installed rc20 reviewer (#10)\n\nCo-authored-by: Franz Hemmer <8227352+HemSoft@users.noreply.github.com>",
+          "verified_at": "2026-10-08T07:44:15Z"
+        }
+      },
+      "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/commits/468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+      "html_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/commit/468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50",
+      "comments_url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/commits/468527c1b9ffccc3a53d8dfcb99e0fcd2d175f50/comments",
+      "author": {
+        "login": "HemSoft",
+        "id": 8227352,
+        "node_id": "MDQ6VXNlcjgyMjczNTI=",
+        "avatar_url": "https://avatars.githubusercontent.com/u/8227352?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/HemSoft",
+        "html_url": "https://github.com/HemSoft",
+        "followers_url": "https://api.github.com/users/HemSoft/followers",
+        "following_url": "https://api.github.com/users/HemSoft/following{/other_user}",
+        "gists_url": "https://api.github.com/users/HemSoft/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/HemSoft/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/HemSoft/subscriptions",
+        "organizations_url": "https://api.github.com/users/HemSoft/orgs",
+        "repos_url": "https://api.github.com/users/HemSoft/repos",
+        "events_url": "https://api.github.com/users/HemSoft/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/HemSoft/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "committer": {
+        "login": "web-flow",
+        "id": 19864447,
+        "node_id": "MDQ6VXNlcjE5ODY0NDQ3",
+        "avatar_url": "https://avatars.githubusercontent.com/u/19864447?v=4",
+        "gravatar_id": "",
+        "url": "https://api.github.com/users/web-flow",
+        "html_url": "https://github.com/web-flow",
+        "followers_url": "https://api.github.com/users/web-flow/followers",
+        "following_url": "https://api.github.com/users/web-flow/following{/other_user}",
+        "gists_url": "https://api.github.com/users/web-flow/gists{/gist_id}",
+        "starred_url": "https://api.github.com/users/web-flow/starred{/owner}{/repo}",
+        "subscriptions_url": "https://api.github.com/users/web-flow/subscriptions",
+        "organizations_url": "https://api.github.com/users/web-flow/orgs",
+        "repos_url": "https://api.github.com/users/web-flow/repos",
+        "events_url": "https://api.github.com/users/web-flow/events{/privacy}",
+        "received_events_url": "https://api.github.com/users/web-flow/received_events",
+        "type": "User",
+        "user_view_type": "public",
+        "site_admin": false
+      },
+      "parents": [
+        {
+          "sha": "da157a8852a0c2bb004c9d38c989369339917ccc",
+          "url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/commits/da157a8852a0c2bb004c9d38c989369339917ccc",
+          "html_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/commit/da157a8852a0c2bb004c9d38c989369339917ccc"
+        }
+      ]
+    },
+    "_links": {
+      "self": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/branches/main",
+      "html": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/tree/main"
+    },
+    "protected": false,
+    "protection": {
+      "enabled": false,
+      "required_status_checks": {
+        "enforcement_level": "off",
+        "contexts": [],
+        "checks": []
+      }
+    },
+    "protection_url": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-private/branches/main/protection"
+  },
+  "stderr": ""
+}

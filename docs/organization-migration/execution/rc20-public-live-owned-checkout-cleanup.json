@@ -1,0 +1,8 @@
+{
+  "repository": "hemsoft-dev/sfl-migration-pilot-public",
+  "observed_at": "2026-10-08T07:55:59.703165+00:00",
+  "clean": true,
+  "head": "bea4c9310f6c1dcb110ac1ed111f2762f3b2fae4",
+  "only_main_local_branch": true,
+  "helper_owned_branch_cleanup": true
+}

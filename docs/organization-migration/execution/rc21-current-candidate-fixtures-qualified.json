@@ -1,0 +1,9 @@
+{
+  "observed_at": "2026-10-08T08:54:48.303424+00:00",
+  "candidate_head": "c3c4a378943b925e7b30c5a5ed673a0ffa4bdfb3",
+  "count": 13,
+  "passed": true,
+  "installed_runtime_claim": false,
+  "capture_from_exact_git_object": true,
+  "earlier_uncommitted_candidate_provenance_superseded": true
+}

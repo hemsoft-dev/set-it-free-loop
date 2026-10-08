@@ -1,0 +1,14 @@
+{
+  "observed_at": "2026-10-08T05:37:31.450491+00:00",
+  "repository": "hemsoft-dev/sfl-migration-pilot-private",
+  "merge_sha": "f0bd35c889ac67a6fc31659815985bd155231d6b",
+  "live_pr": 8,
+  "gate_only_cleanup": true,
+  "unrelated_policy_preserved": true,
+  "repeat_terminal_observations": [
+    "2026-10-08T05:36:00.706935+00:00",
+    "2026-10-08T05:36:08.024215+00:00",
+    "2026-10-08T05:36:14.023727+00:00"
+  ],
+  "precleanup_capture": "2026-10-08T05:37:28.574146+00:00"
+}

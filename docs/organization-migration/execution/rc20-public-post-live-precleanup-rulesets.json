@@ -1,0 +1,33 @@
+{
+  "started_at": "2026-10-08T07:48:39.095526+00:00",
+  "completed_at": "2026-10-08T07:48:39.345228+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/hemsoft-dev/sfl-migration-pilot-public/rulesets?includes_parents=true&per_page=100"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stdout": [
+    {
+      "id": 24704115,
+      "name": "Require SFL Reviewer Gate Runner (sfl-migration-pilot-public)",
+      "target": "branch",
+      "source_type": "Repository",
+      "source": "hemsoft-dev/sfl-migration-pilot-public",
+      "enforcement": "active",
+      "node_id": "RRS_lACqUmVwb3NpdG9yec5T7NRjzgF49HM",
+      "_links": {
+        "self": {
+          "href": "https://api.github.com/repos/hemsoft-dev/sfl-migration-pilot-public/rulesets/24704115"
+        },
+        "html": {
+          "href": "https://github.com/hemsoft-dev/sfl-migration-pilot-public/rules/24704115"
+        }
+      },
+      "created_at": "2026-10-08T03:36:03.234-04:00",
+      "updated_at": "2026-10-08T03:36:03.320-04:00"
+    }
+  ],
+  "stderr": ""
+}
