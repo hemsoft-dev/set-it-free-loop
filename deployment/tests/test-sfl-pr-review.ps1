@@ -185,6 +185,100 @@ foreach ($statusWrite in $requiredStatusWrites) {
     }
 }
 
+$classifierMatch = [regex]::Match(
+    $canonical,
+    '(?s)// BEGIN TESTABLE CODEX OBSERVER\s*(.*?)\s*// END TESTABLE CODEX OBSERVER'
+)
+if (-not $classifierMatch.Success) { throw 'Could not locate the Codex classifier.' }
+$classifierTest = $classifierMatch.Groups[1].Value + "`n" + @'
+const assert = require("node:assert/strict");
+const head = "a".repeat(40);
+const input = {eventName: "issue_comment", currentHead: head, resolvedSha: head,
+  inlineCount: 0, requestMatchesCurrentBase: true, openPullCount: 1,
+  artifact: {user: {id:199175422,login:"chatgpt-codex-connector[bot]"},
+    performed_via_github_app:{id:1144995,slug:"chatgpt-codex-connector",owner:{login:"openai"}}}};
+for (const text of ["Didn't", "Did not"]) {
+  const artifact = {...input.artifact, body: `Codex Review: ${text} find any major issues.`};
+  assert.equal(classifyCodexArtifact({...input, artifact}).action, "success");
+  assert.notEqual(classifyCodexArtifact({...input, artifact, resolvedSha:"b".repeat(40)}).action, "success");
+  assert.notEqual(classifyCodexArtifact({...input, artifact, requestMatchesCurrentBase:false}).action, "success");
+  assert.notEqual(classifyCodexArtifact({...input, artifact:{...artifact,performed_via_github_app:{id:1}}}).action, "success");
+}
+for (const body of ["Codex Review: Did not find any major issues without checking.", "Did not find any major issues."]) {
+  assert.notEqual(classifyCodexArtifact({...input, artifact:{...input.artifact,body}}).action, "success");
+}
+'@
+$classifierTest | node -
+if ($LASTEXITCODE -ne 0) { throw 'Codex clean-result classifier tests failed.' }
+
+$requestProvenance = [regex]::Match($canonical,
+    '(?s)// BEGIN TESTABLE REQUEST CONTEXT PROVENANCE\s*(.*?)\s*// END TESTABLE REQUEST CONTEXT PROVENANCE')
+$reviewProvenance = [regex]::Match($canonical,
+    '(?s)// BEGIN TESTABLE REVIEW CONTEXT PROVENANCE\s*(.*?)\s*// END TESTABLE REVIEW CONTEXT PROVENANCE')
+if (-not $requestProvenance.Success -or -not $reviewProvenance.Success -or
+    $requestProvenance.Groups[1].Value -ne $reviewProvenance.Groups[1].Value) {
+    throw 'Request invalidation and observer must use identical review provenance checks.'
+}
+$requestPublication = [regex]::Match($canonical,
+    '(?s)const requestContextUsable = .*?core\.setFailed\(reason\);')
+if (-not $requestPublication.Success) { throw 'Could not locate the pending-request publication block.' }
+$requestPublicationTest = $requestProvenance.Groups[1].Value + "`n" + @'
+const assert = require("node:assert/strict");
+const publish = new (Object.getPrototypeOf(async function(){}).constructor)(
+  "reviewContextUnambiguous", "confirmedChecks", "pullNumber", "currentBase", "commentId",
+  "owner", "repo", "currentHead", "externalId", "comment", "github", "core",
+'@ + "`n" + (ConvertTo-Json $requestPublication.Value -Compress) + "`n" + @'
+);
+(async () => {
+  const base = "b".repeat(40);
+  const token = "sfl-codex-review:pull-context:at:123:456";
+  const context = {app:{id:15368},external_id:token,output:{text:JSON.stringify({schema:1,pull_number:1,action:"opened",base_sha:base})}};
+  const variants = [
+    ["opened", [context], "pending"],
+    ["missing", [], "failure"],
+    ["base advanced", [{...context,external_id:"sfl-codex-review:base-advance:at:123:456:1"}], "failure"],
+    ["reopened", [{...context,output:{text:JSON.stringify({schema:1,pull_number:1,action:"reopened",base_sha:base})}}], "failure"],
+    ["multiple", [context,{...context,external_id:"sfl-codex-review:pull-context:at:124:457"}], "failure"],
+  ];
+  for (const [name, checks, expected] of variants) {
+    const audits = [], statuses = [], failures = [];
+    const github = {rest:{checks:{create:async data => audits.push(data)},repos:{createCommitStatus:async data => statuses.push(data)}}};
+    await publish(reviewContextUnambiguous,checks,1,base,3,"hemsoft-dev","fixture","a".repeat(40),
+      "sfl-codex-review:request-pending:3",{data:{html_url:"https://github.com/hemsoft-dev/fixture/pull/1#issuecomment-3"}},
+      github,{setFailed:message => failures.push(message)});
+    assert.equal(audits.length,1,name); assert.equal(audits[0].conclusion,"failure",name);
+    assert.equal(statuses.length,1,name); assert.equal(statuses[0].state,expected,name);
+    assert.equal(failures.length,1,name);
+    if (expected === "failure") {
+      assert.match(audits[0].output.summary,/advance the branch to a new head/,name);
+      assert.match(statuses[0].description,/new head/,name);
+    }
+  }
+})().catch(error => {console.error(error);process.exitCode=1;});
+'@
+$requestPublicationTest | node -
+if ($LASTEXITCODE -ne 0) { throw 'Pending-request provenance publication tests failed.' }
+
+$scopeStart = $canonical.IndexOf('            const pull = context.payload.pull_request;')
+$scopeEnd = $canonical.IndexOf('            const workflowRun = await github.rest.actions.getWorkflowRun(', $scopeStart)
+if ($scopeStart -lt 0 -or $scopeEnd -le $scopeStart) { throw 'Could not locate pull invalidation scope guard.' }
+$scopeTest = @'
+const assert = require("node:assert/strict");
+const guard = new (Object.getPrototypeOf(async function(){}).constructor)("context","owner","repo","core","publish",
+'@ + "`n" + (ConvertTo-Json ($canonical.Substring($scopeStart, $scopeEnd - $scopeStart) + 'await publish();') -Compress) + "`n" + @'
+);
+(async () => {
+  for (const [base, full_name, expected] of [["main","hemsoft-dev/fixture",1],["develop","hemsoft-dev/fixture",0],["main","external/fork",0],["main",null,0]]) {
+    let writes = 0;
+    await guard({payload:{repository:{default_branch:"main"},pull_request:{base:{ref:base},head:{repo:full_name ? {full_name} : null}}}},
+      "hemsoft-dev","fixture",{info:()=>{}},async()=>writes++);
+    assert.equal(writes,expected);
+  }
+})().catch(error => {console.error(error);process.exitCode=1;});
+'@
+$scopeTest | node -
+if ($LASTEXITCODE -ne 0) { throw 'Unsupported pull-context invalidation tests failed.' }
+
 $gateTargetMatch = [regex]::Match(
     $canonical,
     '(?s)// BEGIN TESTABLE REQUIRED GATE TARGET\s*(.*?)\s*// END TESTABLE REQUIRED GATE TARGET'
@@ -319,6 +413,10 @@ const terminal = completed_at => ({
   completed_at,
   external_id: `${firstPrefix}:artifact:r123`,
 });
+const secondTerminal = completed_at => ({
+  ...terminal(completed_at),
+  external_id: `${requestGateExternalIdPrefix(pullNumber, currentBase, "none", second.id, Date.parse(second.created_at))}:artifact:r124`,
+});
 const cases = [
   {name: "overlap blocked", comments: [first, second], checks: [], want: [1]},
   {name: "revoked predecessor still blocks overlap", comments: [{...first,user:{login:"departed"}}, second], checks: [], want: [1]},
@@ -327,7 +425,9 @@ const cases = [
   {name: "edited marker is rejected", comments: [first, editedSecond], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
   {name: "same-second body mutation is rejected", comments: [first, sameSecondBodyMutation], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
   {name: "late terminal does not authorize retry", comments: [first, second], checks: [terminal("2026-08-19T00:00:02.500Z")], want: [1]},
-  {name: "later retry recovers after overlap", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:03Z")], want: [1, 4]},
+  {name: "third request cannot skip unresolved overlapping predecessor", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:03Z")], want: [1]},
+  {name: "serial completed requests allow third request", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:01.500Z"), secondTerminal("2026-08-19T00:00:03Z")], want: [1, 2, 4]},
+  {name: "same-second immediate predecessor terminal fails closed", comments: [first, second, recoveredRetry], checks: [terminal("2026-08-19T00:00:01.500Z"), secondTerminal(recoveredRetry.created_at)], want: [1, 2]},
   {name: "different contexts are independent", comments: [first, otherContext], checks: [], want: [1, 3]},
   {name: "unregistered owner marker is rejected", comments: [first, unregistered], checks: [terminal("2026-08-19T00:00:01.500Z")], want: [1]},
 ];

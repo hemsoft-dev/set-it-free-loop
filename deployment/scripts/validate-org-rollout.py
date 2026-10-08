@@ -2568,7 +2568,18 @@ def replay_observer_fixture(workflow_json, repository_id, repository, sha, versi
     runner = root / 'deployment/tests/run-org-observer-fixtures.cjs'
     require(hashlib.sha256(runner.read_bytes()).hexdigest() == runner_digest, 'Fixture runner changed before replay')
     source = json.loads(workflow_json)['content']
-    canonical = (root / 'deployment/infrastructure/sfl-pr-review-auto.yml').read_text()
+    # Historical installed receipts must be compared with their reviewed release,
+    # rather than whichever observer happens to be current when CI replays them.
+    snapshots = {'2.1.0-rc.21': ('deployment/tests/observer-snapshots/2.1.0-rc.21.yml',
+                              '86833629e9557bbe658147a190ae8b77b8166e6fb2919f2902b5e862930f556e')}
+    if version in snapshots:
+        snapshot_path, snapshot_digest = snapshots[version]
+        canonical_bytes = (root / snapshot_path).read_bytes()
+        require(hashlib.sha256(canonical_bytes).hexdigest() == snapshot_digest,
+                'Historical reviewed observer snapshot changed before replay')
+        canonical = canonical_bytes.decode()
+    else:
+        canonical = (root / 'deployment/infrastructure/sfl-pr-review-auto.yml').read_text()
     markers = [('// BEGIN TESTABLE ' + name, '// END TESTABLE ' + name) for name in
         ('CODEX OBSERVER', 'REQUESTER AUTHORIZATION', 'REQUESTER REFRESH', 'REQUEST REGISTRATION',
          'REQUEST ELIGIBILITY', 'REQUIRED GATE REPAIR', 'REVIEW CONTEXT PROVENANCE')]

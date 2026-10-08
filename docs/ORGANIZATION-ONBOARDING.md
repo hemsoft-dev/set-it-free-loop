@@ -4,7 +4,7 @@ The canonical source is [hemsoft-dev/set-it-free-loop](https://github.com/hemsof
 
 ## New repository
 
-Install the [checksum-verified canonical release](https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.21). With repository write access, run `gh sfl init --repo hemsoft-dev/REPOSITORY --pr`. The default tier is reviewer. Add owner-bound `.github/CODEOWNERS` only when no CODEOWNERS already exists, keeping it separate from SFL managed files. Review and merge the deployment PR, then run `gh sfl gate --repo hemsoft-dev/REPOSITORY`. Run a registered `gh sfl review --repo hemsoft-dev/REPOSITORY --pr NUMBER` on an actual consumer PR. Inspect the current head/base and successful Actions-owned gate before merging.
+Install the [checksum-verified canonical release](https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.22). With repository write access, run `gh sfl init --repo hemsoft-dev/REPOSITORY --pr`. The default tier is reviewer. Add owner-bound `.github/CODEOWNERS` only when no CODEOWNERS already exists, keeping it separate from SFL managed files. Review and merge the deployment PR, then run `gh sfl gate --repo hemsoft-dev/REPOSITORY`. Run a registered `gh sfl review --repo hemsoft-dev/REPOSITORY --pr NUMBER` on an actual consumer PR. Inspect the current head/base and successful Actions-owned gate before merging.
 
 Repeat init/sync through `--pr` and confirm no additional changes. `gh sfl status --repo hemsoft-dev/REPOSITORY` reports the deployed version, source pin, managed file drift and effective gate. Status alone does not turn an advisory deployment into a required gate.
 
@@ -54,3 +54,5 @@ The [main-only verification workflow](https://github.com/hemsoft-dev/set-it-free
 The App JWT and temporary metadata token stay in memory and are masked; it is never included in artifacts. Coverage receipts bind the actual repository ID/name/owner responses to the requested target, actual HTTP 200 installation response, organization installation, permission ceiling and observation time. These checks establish App coverage and credential validity; reviewer and wider-workflow runtime require their separate PR/run evidence in [#139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139).
 
 Setting `SFL_ENABLED=false` pauses request processing and result observation. It does not waive a required reviewer gate. Context invalidation continues to prevent an earlier green result from approving an unreviewed diff.
+
+If multiple review requests overlap on one head, a terminal older request does not authorize skipping the unresolved request between it and a later request. Advance the branch to a new head for unambiguous recovery. Context-invalid requests retain a failed gate with that instruction. The observer accepts both authenticated clean-review phrases, "Didn't find any major issues." and "Did not find any major issues.", after the same head, base, App and registration checks.

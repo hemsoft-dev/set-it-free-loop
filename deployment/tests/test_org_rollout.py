@@ -5440,5 +5440,41 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         validator.validate_wider_pilot_ordering(True,None,None,[(123,early)])
 
 
+class ObserverReleaseSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        validator.replay_observer_fixture.cache_clear()
+        self.addCleanup(validator.replay_observer_fixture.cache_clear)
+        self.snapshot = ROOT / 'deployment/tests/observer-snapshots/2.1.0-rc.21.yml'
+        self.digest = hashlib.sha256((ROOT / 'deployment/tests/run-org-observer-fixtures.cjs').read_bytes()).hexdigest()
+
+    def replay(self, content):
+        capture = {'repository_id': 1, 'repository': 'hemsoft-dev/fixture', 'revision_sha': 'c' * 40,
+                   'path': '.github/workflows/sfl-pr-review-auto.yml', 'content': content}
+        return validator.replay_observer_fixture(json.dumps(capture), 1, 'hemsoft-dev/fixture',
+            '89425320ace3127a829d86e3b642fe2b31fd979e', '2.1.0-rc.21', 'c' * 40, 'findings', self.digest)
+
+    def test_historical_receipt_replays_its_original_release_after_current_observer_changes(self):
+        original = self.snapshot.read_text()
+        self.assertNotEqual(original, (ROOT / 'deployment/infrastructure/sfl-pr-review-auto.yml').read_text())
+        result = self.replay(original)
+        self.assertEqual(result['outcome'], 'gate_failed')
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['release_version'], '2.1.0-rc.21')
+
+    def test_current_observer_cannot_be_relabeled_as_historical_release(self):
+        with self.assertRaisesRegex(ValueError, 'reviewed canonical code blocks'):
+            self.replay((ROOT / 'deployment/infrastructure/sfl-pr-review-auto.yml').read_text())
+
+    def test_corrupted_historical_snapshot_cannot_authorize_arbitrary_fixture_code(self):
+        original = self.snapshot.read_text()
+        real_read = pathlib.Path.read_bytes
+        def read(path):
+            data = real_read(path)
+            return data + b'corrupted snapshot' if path == self.snapshot else data
+        with patch.object(pathlib.Path, 'read_bytes', read):
+            with self.assertRaisesRegex(ValueError, 'Historical reviewed observer snapshot changed'):
+                self.replay(original)
+
+
 if __name__ == '__main__':
     unittest.main()
