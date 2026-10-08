@@ -158,9 +158,58 @@ function retargetCases() {
   assert.equal(event('release','main','fork/fixture'),false,'fork remains unsupported');
 }
 
+const repairStart = source.indexOf('const terminalState = await publicationState();');
+const repairEnd = source.indexOf('const detailsURL = artifact.html_url', repairStart);
+assert(repairStart >= 0 && repairEnd > repairStart);
+const repairFlow = new AsyncFunction('fixture', 'snapshot', `
+const owner='hemsoft-dev',repo='fixture',currentHead='${head}',currentBase='${base}',pullNumber=42,contextToken='none';
+const latestRequestChecks=fixture.checks,latestRequestStatuses=fixture.statuses,externalIdPrefix=fixture.repairPrefix;
+const artifact={html_url:'https://github.com/hemsoft-dev/fixture/pull/42'},pull={data:artifact};
+const core={info:()=>{},setFailed:reason=>fixture.failures.push(reason)};
+const github={rest:{repos:{createCommitStatus:async data=>{
+  fixture.writes.push(data);
+  if(data.state==='success'&&fixture.onSuccess)fixture.onSuccess();
+}}}};
+const publicationState=async()=>{
+  fixture.snapshots++;
+  if(fixture.beforeSnapshot)fixture.beforeSnapshot(fixture.snapshots);
+  return await snapshot(fixture);
+};
+${block('REQUIRED GATE REPAIR')}
+${unindent(source.slice(stateEnd, repairStart))}
+${unindent(source.slice(repairStart, repairEnd))}`);
+
+async function repairCases(baseFixture, first, selected) {
+  const repairPrefix=`sfl-codex-review:pull:42:base:${base}:context:none:request:2:at:${Date.parse(selected.created_at)}`;
+  const make=()=>({...baseFixture,comments:[first,selected],writes:[],failures:[],snapshots:0,repairPrefix,
+    checks:[...baseFixture.checks,{app:{id:15368},status:'completed',conclusion:'success',
+      external_id:repairPrefix+':artifact:c2',completed_at:'2026-10-08T00:00:04Z'}]});
+  const stable=make();await repairFlow(stable,snapshot);
+  assert.deepEqual(stable.writes.map(write=>write.state),['success'],'stable terminal repair');
+  const alreadyCorrect=make();alreadyCorrect.statuses=[...alreadyCorrect.statuses,
+    {context:'SFL Reviewer Gate Runner',creator:{login:'github-actions[bot]'},state:'success'}];
+  await repairFlow(alreadyCorrect,snapshot);assert.equal(alreadyCorrect.writes.length,0,'already-correct status remains untouched');
+  for(const [name,comments] of [
+    ['prior registered request edited',[{...first,updated_at:'2026-10-08T00:00:06Z'},selected]],
+    ['prior registered request deleted',[selected]],
+    ['selected registered request deleted',[first]],
+    ['selected registered request erased',[first,{...selected,body:'erased'}]],
+  ]) {
+    const during=make();during.onSuccess=()=>{during.comments=comments;};
+    await repairFlow(during,snapshot);
+    assert.deepEqual(during.writes.map(write=>write.state),['success','failure'],name);
+    assert.equal(during.failures.length,1,name);
+    assert(during.snapshots>=2,name);
+  }
+  const before=make();before.beforeSnapshot=count=>{
+    if(count===2)before.comments=[selected];
+  };
+  await repairFlow(before,snapshot);assert.equal(before.writes.length,0,'changed history before repair must prevent the success write');
+}
+
 (async () => {
   const mode = process.argv[3] || 'all';
-  assert(['all', 'probe-invalidation', 'probe-history', 'probe-revoked', 'probe-active', 'probe-retarget', 'probe-polling'].includes(mode));
+  assert(['all', 'probe-invalidation', 'probe-history', 'probe-revoked', 'probe-active', 'probe-retarget', 'probe-polling', 'probe-empty', 'probe-repair'].includes(mode));
   if (['all', 'probe-polling'].includes(mode)) {
     for (const action of ['created', 'edited', 'deleted']) {
       await invalidationCase(`unprivileged marker ${action}`, exact, action === 'edited', false, false, null, action, 'read', 1);
@@ -174,8 +223,8 @@ function retargetCases() {
     }
     await invalidationCase('revoked unregistered author', 'ordinary comment', false, false, false, null, 'created', 'read');
   }
-  if (mode.startsWith('probe-') && !['probe-invalidation', 'probe-history'].includes(mode)) return;
-  if (mode !== 'probe-history') {
+  if (mode.startsWith('probe-') && !['probe-invalidation', 'probe-history', 'probe-empty', 'probe-repair'].includes(mode)) return;
+  if (!['probe-history', 'probe-empty', 'probe-repair'].includes(mode)) {
   if (mode === 'all') {
   assert.match(source, /issue_comment:\s*types: \[created, edited, deleted\]/);
   const title = /run-name: >-\n\s*\$\{\{([\s\S]*?)\}\}/.exec(source);
@@ -227,5 +276,13 @@ function retargetCases() {
     {...first, body: ` ${first.body}`}, {...first, body: 'erased request'}]) {
     assert.equal((await snapshot({...fixture, comments: [changed, selected]})).requestStillAuthorized, false);
   }
+  if (['all','probe-empty'].includes(mode)) {
+    for(const context of ['', ' ', '\t']) {
+      const malformed={...first,body:first.body.replace('context=none',`context=${context}`)};
+      assert.equal((await snapshot({...fixture,comments:[malformed,selected]})).requestStillAuthorized,false,
+        'empty or whitespace historical context must block a later request');
+    }
+  }
+  if (['all','probe-repair'].includes(mode)) await repairCases(fixture,first,selected);
   console.log('Production invalidation and fresh historical-publication regressions passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
