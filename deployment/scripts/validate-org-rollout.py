@@ -196,7 +196,27 @@ def validate_terminal_operation(operation, directory, cutover=None):
         require(observed_time(pr.get('merged_at'), 'Deployment PR merge') <= timestamp,
                 'CLI terminal capture must follow PR merge')
     elif operation['outcome'] == 'no_changes':
-        require(result.get('change_count') == 0 and result.get('revision_before') == operation['revision_before'] and
+        execution = capture.get('execution', {})
+        argv = execution.get('argv')
+        require(operation.get('command') in {'init','sync'} and isinstance(argv, list) and string_list(argv) and
+                argv[:3] == ['gh','sfl',operation['command']] and argv.count('--repo') == 1 and
+                argv.index('--repo') + 1 < len(argv) and argv[argv.index('--repo') + 1] == operation['repository'] and
+                '--pr' in argv and execution.get('command') == 'gh sfl ' + operation['command'] and
+                type(execution.get('exit_code')) is int and execution['exit_code'] == 0,
+                'No-op needs its successful concrete CLI command and target arguments')
+        started = observed_time(execution.get('started_at'), 'No-op execution start')
+        completed = observed_time(execution.get('completed_at'), 'No-op execution completion')
+        require(started == observed_time(capture.get('started_at'), 'No-op capture start') and
+                started <= completed <= timestamp and completed - started <= datetime.timedelta(minutes=15) and
+                (cutover is None or started >= cutover), 'No-op execution must finish within its bounded capture after cutover')
+        stdout = execution.get('stdout')
+        require(isinstance(stdout, str) and
+                execution.get('stdout_sha256') == hashlib.sha256(stdout.encode()).hexdigest() and
+                any(line.strip() == 'SFL ' + operation['command'] + ' is already up to date; no pull request needed'
+                    for line in stdout.splitlines()), 'No-op result must derive from the actual successful CLI output')
+        require(type(result.get('change_count')) is int and result['change_count'] == 0 and
+                operation['revision_before'] == operation['revision_after'] and
+                result.get('revision_before') == operation['revision_before'] and
                 result.get('revision_after') == operation['revision_after'],
                 'No-op needs captured zero changes at the observed unchanged revision')
     elif operation['outcome'] == 'healthy':
@@ -1270,7 +1290,13 @@ def validate_registered_review(row, directory, repository, repository_id=None, t
             comparison.get('html_url') == 'https://github.com/' + repository + '/compare/' +
                 deployment_revision + '...' + row['review_base_sha'],
             'Reviewed base must contain the captured deployed revision')
-    observed_time(ancestry.get('observed_at'), 'Review deployment ancestry')
+    compare_response = ancestry.get('compare_response', {})
+    validate_resource_response(compare_response, 'https://api.github.com/repos/' + repository + '/compare/' +
+        deployment_revision + '...' + row['review_base_sha'], comparison)
+    compare_at = observed_time(compare_response.get('observed_at'), 'Review ancestry compare GET')
+    require(compare_at <= observed_time(ancestry.get('observed_at'), 'Review deployment ancestry') and
+            (cutover is None or compare_at >= cutover),
+            'Review ancestry comparison GET must follow cutover and precede its capture')
     identity = row.get('review_artifact_identity')
     require(isinstance(identity, dict) and identity.get('runtime') == 'sfl_registered_codex' and
             identity.get('app_id') == 1144995 and identity.get('bot_user_id') == 199175422 and identity.get('reviewed_head_sha') == row['review_head_sha'] and
@@ -1514,6 +1540,58 @@ def validate_branch_reference_files(branch, repo, captured_at):
     return references, unresolved_secret_scope, manifests
 
 
+def reviewed_environment_secrets(repo, directory):
+    historical = local_capture('runtime-metadata.json', directory, 'Reviewed environment inventory')
+    entries = [row for row in historical['repositories'] if row.get('source') == repo['full_name']]
+    require(len(entries) == 1 and isinstance(entries[0].get('environments'), list),
+            'Every source needs a reviewed environment inventory')
+    expected = {}
+    for environment in entries[0]['environments']:
+        name, secrets = environment.get('name'), environment.get('secret_names', {})
+        names = secrets.get('data')
+        require(text(name) and name not in expected and secrets.get('state') == 'observed' and
+                string_list(names) and len(names) == len(set(names)),
+                'Reviewed environments need unique names and observed secret-name inventories')
+        expected[name] = set(names)
+    refreshed = local_capture('runtime-refresh-evidence.json', directory, 'Reviewed environment secret refresh')
+    seen = set()
+    for record in refreshed['records']:
+        if not (record.get('repository_id') == repo['id'] or record.get('repository') == repo['full_name']):
+            continue
+        kind = record.get('kind', '')
+        if not kind.startswith('environment_secrets:'):
+            continue
+        name, data = kind.split(':', 1)[1], record.get('data', {})
+        names = data.get('names')
+        require(text(name) and name not in seen and record.get('state') == 'observed' and
+                string_list(names) and len(names) == len(set(names)) and
+                type(data.get('total_count')) is int and data['total_count'] == len(names),
+                'Reviewed environment refresh needs complete unique observed secret names')
+        seen.add(name)
+        expected[name] = set(names)
+    return expected
+
+
+def validate_environment_secret_refresh(current, repo, directory, timestamp, scanned_at):
+    base = 'https://api.github.com/repos/' + repo['full_name']
+    environments = validate_raw_page_chain(current.get('environment_pages'), base + '/environments?per_page=100',
+        timestamp, 'Fresh environment inventory', field='environments', earliest=scanned_at)
+    names = [environment.get('name') for environment in environments]
+    expected = reviewed_environment_secrets(repo, directory)
+    require(string_list(names) and len(names) == len(set(names)) and set(names) == set(expected),
+            'Current environment names changed; reconcile credential scopes before cutover')
+    pages = current.get('environment_secret_pages')
+    require(isinstance(pages, dict) and set(pages) == set(names),
+            'Every current environment needs its complete fresh secret-name GET pages')
+    for name in names:
+        secrets = validate_raw_page_chain(pages[name], base + '/environments/' +
+            urllib.parse.quote(name, safe='') + '/secrets?per_page=100', timestamp,
+            'Fresh environment secret names', field='secrets', earliest=scanned_at)
+        actual = [secret.get('name') for secret in secrets]
+        require(string_list(actual) and len(actual) == len(set(actual)) and set(actual) == expected[name],
+                'Current environment secret names changed; reconcile credentials and owner waivers before cutover')
+
+
 def validate_source_refresh(proof, directory, inventory, credential):
     capture = local_capture(proof, directory, 'Pre-cutover source refresh')
     require(capture.get('phase') == 'pre_cutover', 'Source refresh must precede cutover')
@@ -1566,6 +1644,7 @@ def validate_source_refresh(proof, directory, inventory, credential):
                     baseline['settings']['secret_names']['state'] == 'observed' and
                     set(names) == set(baseline['settings']['secret_names']['data']),
                     'Current repository secret names changed; reconcile credentials and owner waivers before cutover')
+            validate_environment_secret_refresh(current, baseline, directory, timestamp, scanned_at)
             runner_rows = validate_raw_page_chain(current.get('runner_pages'),
                 'https://api.github.com/repos/' + baseline['full_name'] + '/actions/runners?per_page=100',
                 timestamp, 'Fresh repository runner inventory', field='runners', earliest=scanned_at)
@@ -1966,6 +2045,16 @@ def validate_repository_transfer(reference, directory, repo, cutoff, scanned_rev
     transferred_at = datetime.datetime.fromtimestamp(milliseconds / 1000, datetime.timezone.utc)
     require(cutoff < transferred_at <= observed_time(capture['audit_export']['request']['observed_at'], 'Audit export request') <= captured_at,
             'Repository transfer must follow immutable ledger readiness and source recheck')
+    policy = local_capture(capture.get('source_protection_evidence_url'), directory, 'Immediate pre-transfer source policy')
+    policy_at = observed_time(policy.get('observed_at'), 'Immediate source policy')
+    require(policy.get('phase') == 'pre_transfer' and policy.get('repository_id') == repo['id'] and
+            policy.get('repository') == repo['full_name'] and policy.get('revision_sha') == scanned_revision[0] and
+            cutoff <= policy_at <= transferred_at and transferred_at - policy_at <= datetime.timedelta(seconds=60),
+            'Each transfer needs its source policy within 60 seconds before acceptance and after the final cutoff')
+    actual_policy = validate_protection_responses(policy, repo, repo['full_name'], scanned_revision[0], policy_at,
+        max(cutoff, transferred_at - datetime.timedelta(seconds=60)))
+    require(actual_policy == protection_contract(repo, directory),
+            'Late source protection changes must be reconciled with the reviewed preservation baseline before transfer')
     heads = local_capture(capture.get('destination_heads_evidence_url'), directory, 'Transferred branch heads')
     require(heads.get('repository_id') == repo['id'] and heads.get('repository') == repo['destination'] and
             heads.get('phase') == 'post_transfer' and
@@ -2971,7 +3060,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                         ('repository_id', 'repository', 'approved_by', 'approved_at', 'reason', 'disposition')),
                     'Scope exception must match its independent owner decision capture')
             receipt = capture.get('owner_comment', {})
-            require(receipt.get('author') == 'HemSoft' and receipt.get('created_at') == decision['approved_at'] and
+            require(receipt.get('author') == 'HemSoft' and
+                    observed_time(receipt.get('updated_at', receipt.get('created_at')), 'Effective scope approval') == approved_at and
                     re.fullmatch(r'https://github.com/(?:HemSoft|hemsoft-dev)/set-it-free-loop/issues/(?:138|139)#issuecomment-[1-9][0-9]*',
                                  receipt.get('url', '')) is not None and receipt.get('decision') == {
                         field: decision[field] for field in ('repository_id', 'repository', 'disposition', 'reason')},

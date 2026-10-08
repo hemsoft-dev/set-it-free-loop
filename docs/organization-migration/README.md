@@ -692,3 +692,36 @@ Live pilot scenarios need exact successful Actions-run and artifact metadata
 GETs, bound to their terminal run, archive digest and captured output. Final
 pilot cleanup authenticates both effective-rule and classic-protection GETs on
 the actual default branch, captured after gate removal.
+
+Repeated init and sync receipts include `execution.command`, the actual
+`execution.argv`, integer zero `exit_code`, start/completion timestamps, stdout
+and its SHA-256. The arguments target the recorded repository with `--pr`.
+Execution begins at the capture's `started_at`, follows cutover and completes
+within 15 minutes, before `observed_at`. The CLI output must contain the operation's
+canonical `SFL init is already up to date; no pull request needed` message or its `sync` equivalent.
+The captured result and both operation revisions must confirm zero changes.
+
+Every current source row includes complete raw `environment_pages` from
+`/environments?per_page=100` and `environment_secret_pages` keyed by every
+environment name. Secret pages use the URL-encoded environment name under
+`/environments/{name}/secrets?per_page=100`. All GETs fall between the fresh scan
+and completed source refresh. Compare names with the reviewed runtime inventory
+and supplemental environment-secret inventory. New or removed environments or
+secret names require credential and waiver reconciliation before cutover.
+Record secret names only.
+
+Each transfer receipt additionally references `source_protection_evidence_url`.
+Its `pre_transfer` capture binds the source ID/name and scanned default revision.
+Every primary policy GET and the completed capture must follow the final cutoff
+and fall within 60 seconds before the actual accepted transfer. Compare the full
+derived source contract with the reviewed preservation baseline before submitting
+the transfer; a late policy change requires another reviewed reconciliation.
+
+Scope-exception approvals use the owner's effective comment `updated_at`, falling
+back to `created_at` when absent. The wrapper and primary comment must agree with
+`approved_at`. An edited comment's original creation time is not its approval.
+
+Registered review ancestry includes `compare_response`, the successful exact GET
+`/compare/{deployed_revision}...{reviewed_base_sha}`. Its raw `data` must equal
+the recorded comparison. Capture it after cutover and before the completed
+ancestry observation in pilot, consumer, source and new-repository review modes.

@@ -759,3 +759,28 @@ those recorded objects and follow their terminal observations. After pilot
 uninstall-gate, capture successful default-branch effective rules plus successful
 classic protection or the exact unprotected-branch404 response. Both observations
 must follow the actual removal and precede the final policy capture.
+
+Capture current environment enumeration and each environment's secret names
+alongside repository secrets during the final source refresh. Preserve complete
+GET pages, response totals and pagination links in `environment_pages` and
+`environment_secret_pages`. Reconcile any changed environment or credential
+scope against the reviewed runtime inventory and credential ledger.
+
+Immediately before submitting each repository transfer, capture its complete
+source policy and compare it with the reviewed preservation contract. Save the
+`pre_transfer` capture as `source_protection_evidence_url` in that transfer's
+receipt. All policy GETs and its completed capture must be within 60 seconds
+before transfer acceptance and after the final cutoff. Refresh the capture if
+submission waits longer. Stop and reconcile any late protection change first.
+
+For repeat init/sync, save the actual command, argument array, exit code,
+start/completion times and stdout digest in the terminal capture's `execution`.
+Both operations must run with `--pr` against their designated repository and
+report the canonical no-PR-needed output at the unchanged revision. A copied
+zero-change summary alone does not satisfy either idempotence gate.
+
+When adding a scope-exception approval marker by editing an owner comment, record
+its effective update time as `approved_at`; preserve the original creation time
+separately. For every registered review, capture the exact successful compare
+GET from the deployed revision to its actual reviewed base, including raw data,
+as `compare_response`. The ancestry observation follows that GET.

@@ -99,7 +99,11 @@ class RolloutTests(unittest.TestCase):
                 check=value['check_run'];check.setdefault('id',int(check['html_url'].rsplit('/',1)[1]))
                 value.setdefault('check_response',{'method':'GET','http_status':200,'observed_at':value['observed_at'],
                     'request_url':'https://api.github.com/repos/'+name+'/check-runs/'+str(check['id']),'data':copy.deepcopy(check)})
-        if value.get('phase') in {'post_transfer','pre_cutover'} and 'rulesets' in value and 'classic' in value and any(
+        if all(key in value for key in ('comparison','deployed_revision','reviewed_base_sha','repository')):
+            value.setdefault('compare_response',{'method':'GET','http_status':200,'observed_at':value['observed_at'],
+                'request_url':'https://api.github.com/repos/'+value['repository']+'/compare/'+
+                    value['deployed_revision']+'...'+value['reviewed_base_sha'],'data':copy.deepcopy(value['comparison'])})
+        if value.get('phase') in {'post_transfer','pre_cutover','pre_transfer'} and 'rulesets' in value and 'classic' in value and any(
                 r['id']==value.get('repository_id') for r in self.inventory['repositories']):
             repo=next(r for r in self.inventory['repositories'] if r['id']==value['repository_id'])
             base='https://api.github.com/repos/'+value['repository'];at=value['observed_at']
@@ -172,7 +176,13 @@ class RolloutTests(unittest.TestCase):
 
     def transfer_capture(self, row, timestamp='2026-10-07T01:50:30Z'):
         source=json.loads((DIRECTORY/self.matrix['pre_cutover_source_evidence_url']).read_text())
-        original=next(r['source_head'] for a in source['accounts'] for r in a['repositories'] if r['id']==row['repository_id'])
+        current=next(r for a in source['accounts'] for r in a['repositories'] if r['id']==row['repository_id'])
+        original=current['source_head']
+        policy=json.loads((DIRECTORY/current['protection_evidence_url']).read_text())
+        policy.update(phase='pre_transfer')
+        policy_at=(validator.observed_time(timestamp,'fixture')-datetime.timedelta(seconds=5)).isoformat()
+        self.retime_policy(policy,policy_at)
+        policy_evidence=self.capture(policy)
         heads=json.loads(json.dumps(original).replace(row['source'],row['destination']))
         heads.update(phase='post_transfer',repository_id=row['repository_id'],repository=row['destination'],observed_at='2026-10-07T01:50:45Z')
         for page in heads['branches_response']['pages']:page['observed_at']=heads['observed_at']
@@ -189,8 +199,16 @@ class RolloutTests(unittest.TestCase):
             'repository_id':row['repository_id'],'repository':row['destination'],
             'audit_log_url':'https://github.com/organizations/hemsoft-dev/settings/audit-log',
             'observed_at':'2026-10-07T01:50:45Z','event':event,
+            'source_protection_evidence_url':policy_evidence,
             'destination_heads_evidence_url':head_evidence,
             'audit_export':self.audit_export_fixture([event],'2026-10-07T01:50:45Z')})
+
+    def retime_policy(self, policy, timestamp):
+        if isinstance(policy,dict):
+            if 'observed_at' in policy:policy['observed_at']=timestamp
+            for value in policy.values():self.retime_policy(value,timestamp)
+        elif isinstance(policy,list):
+            for value in policy:self.retime_policy(value,timestamp)
 
     def audit_export_fixture(self, events, timestamp):
         archive=gzip.compress(json.dumps(events).encode(),mtime=0)
@@ -532,8 +550,15 @@ class RolloutTests(unittest.TestCase):
             result={'health':'healthy','revision_sha':operation['revision_after'],'missing_files':[],'drifted_files':[]}
         elif operation['outcome']=='gate_removed':
             result={'gate_required':False,'unrelated_change_count':0,'preserved_unrelated_rules':True}
-        operation['capture_evidence_url']=self.capture({**operation,'status':'completed','exit_code':0,
-            'started_at':timestamp,'observed_at':timestamp,'result':result},directory)
+        capture={**operation,'status':'completed','exit_code':0,
+            'started_at':timestamp,'observed_at':timestamp,'result':result}
+        if operation['outcome']=='no_changes':
+            stdout='SFL '+operation['command']+' is already up to date; no pull request needed\n'
+            capture['execution']={'command':'gh sfl '+operation['command'],
+                'argv':['gh','sfl',operation['command'],'--repo',operation['repository'],'--pr'],
+                'exit_code':0,'started_at':timestamp,'completed_at':timestamp,
+                'stdout':stdout,'stdout_sha256':hashlib.sha256(stdout.encode()).hexdigest()}
+        operation['capture_evidence_url']=self.capture(capture,directory)
 
     def bind_workflow_capture(self, operation):
         operation['capture_evidence_url']=self.capture({'observed_at':'2026-10-07T02:00:00Z','run':{
@@ -716,6 +741,17 @@ class RolloutTests(unittest.TestCase):
                     'response_headers':{},'observed_at':'2026-10-07T01:49:30Z','data':{
                         'total_count':len(baseline['settings']['secret_names']['data']),
                         'secrets':[{'name':name} for name in baseline['settings']['secret_names']['data']]}}]
+                environments=validator.reviewed_environment_secrets(baseline,DIRECTORY)
+                current['environment_pages']=[{'method':'GET','http_status':200,
+                    'request_url':'https://api.github.com/repos/'+current['full_name']+'/environments?per_page=100',
+                    'response_headers':{},'observed_at':'2026-10-07T01:49:30Z',
+                    'data':{'total_count':len(environments),'environments':[{'name':name} for name in environments]}}]
+                current['environment_secret_pages']={name:[{'method':'GET','http_status':200,
+                    'request_url':'https://api.github.com/repos/'+current['full_name']+'/environments/'+
+                        urllib.parse.quote(name,safe='')+'/secrets?per_page=100',
+                    'response_headers':{},'observed_at':'2026-10-07T01:49:30Z',
+                    'data':{'total_count':len(names),'secrets':[{'name':key} for key in sorted(names)]}}]
+                    for name,names in environments.items()}
                 runners=[runner for item in json.loads((DIRECTORY/'runtime-metadata.json').read_text())['repositories']
                     if item['source']==current['full_name'] for runner in (item['repository_runners'].get('data') or [])]
                 current['runner_pages']=[{'method':'GET','http_status':200,
@@ -3440,6 +3476,8 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         capture['event'].update({'@timestamp':milliseconds,'created_at':milliseconds})
         capture['observed_at']='2026-10-07T01:56:30Z'
         capture['audit_export']=self.audit_export_fixture([capture['event']],capture['observed_at'])
+        policy_path=DIRECTORY/capture['source_protection_evidence_url'];policy=json.loads(policy_path.read_text())
+        self.retime_policy(policy,'2026-10-07T01:55:55Z');policy_path.write_text(json.dumps(policy))
         head_path=DIRECTORY/capture['destination_heads_evidence_url'];heads=json.loads(head_path.read_text())
         heads['observed_at']=capture['observed_at'];heads['repository_response']['observed_at']=capture['observed_at']
         for page in heads['branches_response']['pages']:page['observed_at']=capture['observed_at']
@@ -4703,6 +4741,131 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
         transfer_ref=self.transfer_capture(rollout);transfer=json.loads((DIRECTORY/transfer_ref).read_text());heads_path=DIRECTORY/transfer['destination_heads_evidence_url'];heads=json.loads(heads_path.read_text())
         heads['tag_refs_response']['data']=[{'ref':'refs/tags/new','object':{'type':'commit','sha':row['source_head']['head_sha']}}];heads_path.write_text(json.dumps(heads))
         with self.assertRaisesRegex(ValueError,'changed after the credential/reference scan'):validator.validate_repository_transfer(transfer_ref,DIRECTORY,repo,validator.observed_time('2026-10-07T01:50:00Z','fixture'),validator.source_revision(row['source_head'],repo))
+
+
+    def test_repeat_commands_need_concrete_successful_noop_executions(self):
+        self.complete_pilots()
+        operations=[p['validation_evidence']['operation_receipts'][key]
+            for p in self.matrix['disposable_validation_repositories'] for key in ('repeat_onboarding_evidence_url','repeat_sync_evidence_url')]
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);onboarding=self.onboarding_fixture(directory)
+            cases=[(operation,DIRECTORY) for operation in operations]+[
+                (onboarding['onboarding_operation_receipts'][key],directory)
+                for key in ('repeat_onboarding_url','repeat_sync_url')]
+            for operation,where in cases:
+                path=where/operation['capture_evidence_url'];original=json.loads(path.read_text())
+                validator.validate_terminal_operation(operation,where)
+                for mutation in ('missing','wrong-command','wrong-target','failed','early-completion','changed-output','bad-digest'):
+                    value=copy.deepcopy(original)
+                    if mutation=='missing':value.pop('execution')
+                    elif mutation=='wrong-command':value['execution']['argv'][2]='status'
+                    elif mutation=='wrong-target':value['execution']['argv'][4]='hemsoft-dev/other'
+                    elif mutation=='failed':value['execution']['exit_code']=1
+                    elif mutation=='early-completion':value['execution']['completed_at']='2026-10-07T00:00:00Z'
+                    elif mutation=='changed-output':
+                        value['execution']['stdout']='Created a pull request\n'
+                        value['execution']['stdout_sha256']=hashlib.sha256(value['execution']['stdout'].encode()).hexdigest()
+                    else:value['execution']['stdout_sha256']='f'*64
+                    path.write_text(json.dumps(value))
+                    with self.subTest(repository=operation['repository'],command=operation['command'],mutation=mutation),self.assertRaises(ValueError):
+                        validator.validate_terminal_operation(operation,where)
+                path.write_text(json.dumps(original))
+                changed=copy.deepcopy(operation);changed['revision_after']='a'*40
+                value=copy.deepcopy(original);value['revision_after']=changed['revision_after'];value['result']['revision_after']=changed['revision_after']
+                path.write_text(json.dumps(value))
+                with self.assertRaisesRegex(ValueError,'unchanged revision'):validator.validate_terminal_operation(changed,where)
+                path.write_text(json.dumps(original));validator.validate_terminal_operation(operation,where)
+
+    def test_fresh_source_environment_names_and_secrets_require_complete_gets(self):
+        self.complete_transfer_gates();credential=self.matrix['pre_transfer_credential_verification']
+        ref=self.matrix['pre_cutover_source_evidence_url'];path=DIRECTORY/ref;original=json.loads(path.read_text())
+        def check():validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        check()
+        for mutation in ('missing-enumeration','new-environment','missing-secrets','new-secret','failed','wrong-endpoint','stale','omitted-page'):
+            value=copy.deepcopy(original);row=next(r for a in value['accounts'] for r in a['repositories'] if r['full_name']=='HemSoft/dashboard')
+            if mutation=='missing-enumeration':row.pop('environment_pages')
+            elif mutation=='new-environment':
+                row['environment_pages'][0]['data']['environments'].append({'name':'new-production'})
+                row['environment_pages'][0]['data']['total_count']+=1
+            elif mutation=='missing-secrets':row['environment_secret_pages'].pop('Production')
+            else:
+                page=row['environment_secret_pages']['Production'][0]
+                if mutation=='new-secret':page['data']={'total_count':1,'secrets':[{'name':'SFL_APP_PRIVATE_KEY'}]}
+                elif mutation=='failed':page['http_status']=403
+                elif mutation=='wrong-endpoint':page['request_url']=page['request_url'].replace('/Production/','/Preview/')
+                elif mutation=='stale':page['observed_at']='2026-10-07T00:00:00Z'
+                else:page['response_headers']['Link']='<'+page['request_url']+'&page=2>; rel="next"'
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):check()
+        path.write_text(json.dumps(original));check()
+
+    def test_each_transfer_rechecks_immediate_source_protection_before_acceptance(self):
+        self.complete_transfer_gates();row=next(r for r in self.matrix['repositories'] if r['source']=='HemSoft/dashboard')
+        repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        source=json.loads((DIRECTORY/self.matrix['pre_cutover_source_evidence_url']).read_text())
+        head=next(r['source_head'] for a in source['accounts'] for r in a['repositories'] if r['id']==row['repository_id'])
+        revision=validator.source_revision(head,repo);cutoff=validator.observed_time('2026-10-07T01:50:10Z','fixture')
+        ref=self.transfer_capture(row);path=DIRECTORY/ref;original=json.loads(path.read_text())
+        policy_path=DIRECTORY/original['source_protection_evidence_url'];baseline=json.loads(policy_path.read_text())
+        def check():validator.validate_repository_transfer(ref,DIRECTORY,repo,cutoff,revision)
+        check()
+        for mutation in ('missing','old-summary','old-primary','future','failed','late-new-rule'):
+            capture=copy.deepcopy(original);policy=copy.deepcopy(baseline)
+            if mutation=='missing':capture.pop('source_protection_evidence_url')
+            elif mutation=='old-summary':self.retime_policy(policy,'2026-10-07T01:49:00Z')
+            elif mutation=='old-primary':policy['ruleset_pages'][0]['observed_at']='2026-10-07T01:49:00Z'
+            elif mutation=='future':self.retime_policy(policy,'2026-10-07T01:50:31Z')
+            elif mutation=='failed':policy['ruleset_pages'][0]['http_status']=403
+            else:
+                rule={'id':999,'name':'late strengthened source protection','target':'branch','enforcement':'active',
+                    'conditions':{},'rules':[{'type':'deletion'}],'bypass_actors':[]}
+                policy['rulesets'].append(rule);policy['ruleset_pages'][0]['data'].append({'id':999})
+                policy['ruleset_responses']['999']={'method':'GET','http_status':200,'observed_at':policy['observed_at'],
+                    'request_url':'https://api.github.com/repos/'+row['source']+'/rulesets/999','data':rule}
+            path.write_text(json.dumps(capture));policy_path.write_text(json.dumps(policy))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):check()
+        path.write_text(json.dumps(original));policy_path.write_text(json.dumps(baseline));check()
+
+    def test_edited_scope_approval_uses_primary_comment_update_time(self):
+        row=self.matrix['repositories'][0];row['health']='scope_exception';self.complete_transfer_gates()
+        row.update(transfer_evidence_url=self.transfer_capture(row),status_evidence_url='https://example.com/settings')
+        self.complete_scope_decision(row);self.complete_post_transfer_access(row);self.check()
+        path=DIRECTORY/row['exception_evidence_url'];value=json.loads(path.read_text())
+        primary_path=DIRECTORY/value['owner_comment_evidence_url'];primary=json.loads(primary_path.read_text())
+        value['owner_comment'].update(created_at='2026-10-06T19:00:00-04:00',updated_at=row['scope_exception_decision']['approved_at'])
+        primary['comment'].update(created_at=value['owner_comment']['created_at'],updated_at=value['owner_comment']['updated_at'])
+        path.write_text(json.dumps(value));primary_path.write_text(json.dumps(primary));self.check()
+        for mutation in ('wrong-summary-time','wrong-primary-time','wrong-owner'):
+            capture=copy.deepcopy(value);comment=copy.deepcopy(primary)
+            if mutation=='wrong-summary-time':capture['owner_comment']['updated_at']='2026-10-06T19:00:00-04:00'
+            elif mutation=='wrong-primary-time':comment['comment']['updated_at']='2026-10-06T19:00:00-04:00'
+            else:comment['comment']['user']['login']='other'
+            path.write_text(json.dumps(capture));primary_path.write_text(json.dumps(comment))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):self.check()
+        path.write_text(json.dumps(value));primary_path.write_text(json.dumps(primary));self.check()
+
+    def test_registered_review_ancestry_needs_exact_successful_primary_compare_get(self):
+        row=self.complete_rollout()
+        cases=[(row,DIRECTORY,row['repository_id'],row['destination'],'b'*40)]+[
+            (p['validation_evidence'],DIRECTORY,p['repository_id'],p['repository'],'b'*40)
+            for p in self.matrix['disposable_validation_repositories']]
+        with tempfile.TemporaryDirectory() as folder:
+            directory=pathlib.Path(folder);onboarding=self.onboarding_fixture(directory)
+            cases.append((onboarding,directory,onboarding['repository_id'],onboarding['repository'],'f'*40))
+            for proof,where,rid,name,deployed in cases:
+                path=where/proof['review_deployment_evidence_url'];original=json.loads(path.read_text())
+                def check():validator.validate_registered_review(proof,where,name,rid,'main',deployed)
+                check()
+                for mutation in ('missing','failed','wrong-endpoint','different-data','future'):
+                    value=copy.deepcopy(original)
+                    if mutation=='missing':value.pop('compare_response')
+                    elif mutation=='failed':value['compare_response']['http_status']=403
+                    elif mutation=='wrong-endpoint':value['compare_response']['request_url']=value['compare_response']['request_url'].replace('/compare/','/invented/')
+                    elif mutation=='different-data':value['compare_response']['data']['merge_base_commit']['sha']='a'*40
+                    else:value['compare_response']['observed_at']='2026-10-07T05:00:00Z'
+                    path.write_text(json.dumps(value))
+                    with self.subTest(repository=name,mutation=mutation),self.assertRaises(ValueError):check()
+                path.write_text(json.dumps(original));check()
 
 
 if __name__ == '__main__':
