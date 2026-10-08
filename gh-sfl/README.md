@@ -4,15 +4,19 @@ Deploy and manage the **SFL PR Reviewer** in GitHub repositories from the comman
 
 ## Installation
 
-From a private `HemSoft/set-it-free-loop` checkout, install a published release:
+From the private `hemsoft-dev/set-it-free-loop` checkout, install a published release:
 
 ```powershell
-.\deployment\scripts\install-gh-sfl-hemsoft.ps1 -ReleaseVersion 2.1.0-rc.3
+.\deployment\scripts\install-gh-sfl-hemsoft.ps1 -ReleaseVersion 2.1.0-rc.16
 ```
 
 The installer uses the active `HemSoft` GitHub CLI authentication to download
 the private Windows or Linux amd64 artifact and fails unless its SHA-256 value
-matches the release's `SHA256SUMS`. For development, omit `-ReleaseVersion` to
+matches the release's `SHA256SUMS`. The installer and release builder default to
+`hemsoft-dev/set-it-free-loop`; `-Repository HemSoft/set-it-free-loop` remains
+available for older release metadata. Published binaries embed the publishing
+owner, while the Go module path stays unchanged for import compatibility.
+For development, omit `-ReleaseVersion` to
 validate and build the checked-out source. No separate `HemSoft/gh-sfl`
 repository or local Relias checkout is used.
 

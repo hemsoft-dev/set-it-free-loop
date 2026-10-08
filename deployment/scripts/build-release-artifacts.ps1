@@ -9,7 +9,7 @@ param(
     [string] $Version,
     [string] $BuildDate = (Get-Date -Format 'yyyy-MM-dd'),
     [ValidateSet('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop')]
-    [string] $SourceRepository = 'HemSoft/set-it-free-loop'
+    [string] $SourceRepository = 'hemsoft-dev/set-it-free-loop'
 )
 
 Set-StrictMode -Version Latest

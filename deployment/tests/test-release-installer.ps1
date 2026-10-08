@@ -46,7 +46,7 @@ try {
     $fakeGh = Join-Path $fixtureRoot 'gh-fixture.ps1'
     @'
 $repositoryIndex = [Array]::IndexOf($args, '--repo')
-if ($repositoryIndex -lt 0 -or $args[$repositoryIndex + 1] -cne 'hemsoft-dev/set-it-free-loop') {
+if ($repositoryIndex -lt 0 -or $args[$repositoryIndex + 1] -cne $env:SFL_INSTALLER_EXPECTED_REPOSITORY) {
     throw 'Installer used the wrong release repository.'
 }
 $destinationIndex = [Array]::IndexOf($args, '--dir')
@@ -62,11 +62,17 @@ Get-ChildItem -LiteralPath $env:SFL_INSTALLER_FIXTURE -File |
 '@ | Set-Content -LiteralPath $fakeGh -Encoding utf8NoBOM
 
     $env:SFL_INSTALLER_FIXTURE = $releaseRoot
+    $env:SFL_INSTALLER_EXPECTED_REPOSITORY = 'hemsoft-dev/set-it-free-loop'
     Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
-    & $installer -Repository 'hemsoft-dev/set-it-free-loop' -ReleaseVersion $version -GitHubCliPath $fakeGh -WorkDir $downloadRoot -NoInstall
+    & $installer -ReleaseVersion $version -GitHubCliPath $fakeGh -WorkDir $downloadRoot -NoInstall
     if (-not (Test-Path -LiteralPath (Join-Path $downloadRoot $artifactName) -PathType Leaf)) {
         throw 'Release installer did not retain the verified artifact.'
     }
+
+    $env:SFL_INSTALLER_EXPECTED_REPOSITORY = 'HemSoft/set-it-free-loop'
+    & $installer -Repository 'HemSoft/set-it-free-loop' -ReleaseVersion $version `
+        -GitHubCliPath $fakeGh -WorkDir (Join-Path $fixtureRoot 'legacy-download') -NoInstall
+    $env:SFL_INSTALLER_EXPECTED_REPOSITORY = 'hemsoft-dev/set-it-free-loop'
 
     [System.IO.File]::WriteAllText($artifactPath, 'tampered release fixture')
     $failure = $null
@@ -82,6 +88,7 @@ Get-ChildItem -LiteralPath $env:SFL_INSTALLER_FIXTURE -File |
 }
 finally {
     Remove-Item Env:SFL_INSTALLER_FIXTURE -ErrorAction SilentlyContinue
+    Remove-Item Env:SFL_INSTALLER_EXPECTED_REPOSITORY -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $fixtureRoot) {
         Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
     }
