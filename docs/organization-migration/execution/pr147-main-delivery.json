@@ -1,0 +1,12 @@
+{
+  "status": "verified",
+  "merge_sha": "4d714b3fe2c153288a4c055e69be2fee9e5b5e36",
+  "main_runs": [
+    37721007166,
+    37721007178,
+    37721007188
+  ],
+  "release_run": 37721286089,
+  "app_credential_run": 37721429180,
+  "observed_at": "2026-10-08T03:12:53.736214+00:00"
+}

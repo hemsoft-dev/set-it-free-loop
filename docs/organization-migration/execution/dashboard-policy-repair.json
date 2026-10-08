@@ -1,0 +1,419 @@
+{
+  "observed_at": "2026-10-08T02:34:07.532377+00:00",
+  "repository_id": 1120402599,
+  "original_primary_capture": "repository-transfer-1120402599.json",
+  "before": {
+    "ruleset_pages": [
+      {
+        "method": "GET",
+        "request_url": "https://api.github.com/repos/hemsoft-dev/dashboard/rulesets?includes_parents=true&per_page=100",
+        "http_status": 200,
+        "observed_at": "2026-10-08T02:34:06.664376+00:00",
+        "response_headers": {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Expose-Headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+          "Cache-Control": "private, max-age=60, s-maxage=60",
+          "Content-Security-Policy": "default-src 'none'",
+          "Content-Type": "application/json; charset=utf-8",
+          "Date": "Thu, 08 Oct 2026 02:34:06 GMT",
+          "Etag": "W/\"9f769b5a0587c13aea4c0d6d5fb8f002b5f28b6224b98c8bf9aaf411b9de8d2e\"",
+          "Referrer-Policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+          "Server": "github.com",
+          "Strict-Transport-Security": "max-age=31536000; includeSubdomains; preload",
+          "Vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+          "X-Accepted-Oauth-Scopes": "repo",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "deny",
+          "X-Github-Api-Version-Selected": "2022-11-28",
+          "X-Github-Edge-Region": "iad",
+          "X-Github-Media-Type": "github.v3; format=json",
+          "X-Github-Request-Id": "8476:1ED51A:416926:D83CF8:6AC7011E",
+          "X-Oauth-Client-Id": "178c6fc778ccc68e1d6a",
+          "X-Oauth-Scopes": "admin:org, admin:public_key, gist, repo, user, workflow",
+          "X-Ratelimit-Limit": "5000",
+          "X-Ratelimit-Remaining": "4122",
+          "X-Ratelimit-Reset": "1791429265",
+          "X-Ratelimit-Resource": "core",
+          "X-Ratelimit-Used": "878",
+          "X-Xss-Protection": "0"
+        },
+        "data": [
+          {
+            "id": 11400445,
+            "name": "main branch protection",
+            "target": "branch",
+            "source_type": "Repository",
+            "source": "hemsoft-dev/dashboard",
+            "enforcement": "active",
+            "node_id": "RRS_lACqUmVwb3NpdG9yec5Cx_ynzgCt9P0",
+            "_links": {
+              "self": {
+                "href": "https://api.github.com/repos/hemsoft-dev/dashboard/rulesets/11400445"
+              },
+              "html": {
+                "href": "https://github.com/hemsoft-dev/dashboard/rules/11400445"
+              }
+            },
+            "created_at": "2025-12-26T03:01:52.191-05:00",
+            "updated_at": "2026-10-07T22:31:51.990-04:00"
+          }
+        ]
+      }
+    ],
+    "ruleset_details": [
+      {
+        "method": "GET",
+        "request_url": "https://api.github.com/repos/hemsoft-dev/dashboard/rulesets/11400445",
+        "http_status": 200,
+        "observed_at": "2026-10-08T02:34:06.942649+00:00",
+        "response_headers": {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Expose-Headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+          "Cache-Control": "private, max-age=60, s-maxage=60",
+          "Content-Security-Policy": "default-src 'none'",
+          "Content-Type": "application/json; charset=utf-8",
+          "Date": "Thu, 08 Oct 2026 02:34:06 GMT",
+          "Etag": "W/\"45d6ad598786c9ab4b3e5bfcff0a3e80ffbbe1252fa04b943ea8824be6fb1787\"",
+          "Referrer-Policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+          "Server": "github.com",
+          "Strict-Transport-Security": "max-age=31536000; includeSubdomains; preload",
+          "Vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+          "X-Accepted-Oauth-Scopes": "repo",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "deny",
+          "X-Github-Api-Version-Selected": "2022-11-28",
+          "X-Github-Edge-Region": "iad",
+          "X-Github-Media-Type": "github.v3; format=json",
+          "X-Github-Request-Id": "8484:E7841:409D3F:D4EEB5:6AC7011E",
+          "X-Oauth-Client-Id": "178c6fc778ccc68e1d6a",
+          "X-Oauth-Scopes": "admin:org, admin:public_key, gist, repo, user, workflow",
+          "X-Ratelimit-Limit": "5000",
+          "X-Ratelimit-Remaining": "4121",
+          "X-Ratelimit-Reset": "1791429265",
+          "X-Ratelimit-Resource": "core",
+          "X-Ratelimit-Used": "879",
+          "X-Xss-Protection": "0"
+        },
+        "data": {
+          "id": 11400445,
+          "name": "main branch protection",
+          "target": "branch",
+          "source_type": "Repository",
+          "source": "hemsoft-dev/dashboard",
+          "enforcement": "active",
+          "conditions": {
+            "ref_name": {
+              "exclude": [],
+              "include": [
+                "refs/heads/main"
+              ]
+            }
+          },
+          "rules": [
+            {
+              "type": "required_status_checks",
+              "parameters": {
+                "strict_required_status_checks_policy": true,
+                "do_not_enforce_on_create": false,
+                "required_status_checks": [
+                  {
+                    "context": "Quality Gates"
+                  }
+                ]
+              }
+            },
+            {
+              "type": "pull_request",
+              "parameters": {
+                "required_approving_review_count": 0,
+                "dismiss_stale_reviews_on_push": false,
+                "required_reviewers": [],
+                "require_code_owner_review": false,
+                "dismissal_restriction": {
+                  "enabled": false,
+                  "allowed_actors": []
+                },
+                "require_last_push_approval": false,
+                "required_review_thread_resolution": true,
+                "require_extra_approval_for_unattributed_changes": true,
+                "allowed_merge_methods": [
+                  "merge",
+                  "squash",
+                  "rebase"
+                ]
+              }
+            }
+          ],
+          "node_id": "RRS_lACqUmVwb3NpdG9yec5Cx_ynzgCt9P0",
+          "created_at": "2025-12-26T03:01:52.191-05:00",
+          "updated_at": "2026-10-07T22:31:51.990-04:00",
+          "bypass_actors": [],
+          "current_user_can_bypass": "never",
+          "_links": {
+            "self": {
+              "href": "https://api.github.com/repos/hemsoft-dev/dashboard/rulesets/11400445"
+            },
+            "html": {
+              "href": "https://github.com/hemsoft-dev/dashboard/rules/11400445"
+            }
+          }
+        }
+      }
+    ],
+    "protected_branch_pages": [
+      {
+        "method": "GET",
+        "request_url": "https://api.github.com/repos/hemsoft-dev/dashboard/branches?protected=true&per_page=100",
+        "http_status": 200,
+        "observed_at": "2026-10-08T02:34:07.266268+00:00",
+        "response_headers": {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Expose-Headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+          "Cache-Control": "private, max-age=60, s-maxage=60",
+          "Content-Security-Policy": "default-src 'none'",
+          "Content-Type": "application/json; charset=utf-8",
+          "Date": "Thu, 08 Oct 2026 02:34:07 GMT",
+          "Etag": "W/\"14cbe52f8fc916235ffd578b1975f208e8e8816a4eb2493d7f265abdee29a73b\"",
+          "Referrer-Policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+          "Server": "github.com",
+          "Strict-Transport-Security": "max-age=31536000; includeSubdomains; preload",
+          "Vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+          "X-Accepted-Oauth-Scopes": "",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "deny",
+          "X-Github-Api-Version-Selected": "2022-11-28",
+          "X-Github-Edge-Region": "iad",
+          "X-Github-Media-Type": "github.v3; format=json",
+          "X-Github-Request-Id": "8494:264B3C:41D7CC:D961EA:6AC7011F",
+          "X-Oauth-Client-Id": "178c6fc778ccc68e1d6a",
+          "X-Oauth-Scopes": "admin:org, admin:public_key, gist, repo, user, workflow",
+          "X-Ratelimit-Limit": "5000",
+          "X-Ratelimit-Remaining": "4120",
+          "X-Ratelimit-Reset": "1791429265",
+          "X-Ratelimit-Resource": "core",
+          "X-Ratelimit-Used": "880",
+          "X-Xss-Protection": "0"
+        },
+        "data": [
+          {
+            "name": "main",
+            "commit": {
+              "sha": "6cc0ae16599c417bbe8b3e198fa8299722de946c",
+              "url": "https://api.github.com/repos/hemsoft-dev/dashboard/commits/6cc0ae16599c417bbe8b3e198fa8299722de946c"
+            },
+            "protected": true,
+            "protection": {
+              "enabled": false,
+              "required_status_checks": {
+                "enforcement_level": "off",
+                "contexts": [],
+                "checks": []
+              }
+            },
+            "protection_url": "https://api.github.com/repos/hemsoft-dev/dashboard/branches/main/protection"
+          }
+        ]
+      }
+    ],
+    "classic": {
+      "main": {
+        "method": "GET",
+        "request_url": "https://api.github.com/repos/hemsoft-dev/dashboard/branches/main/protection",
+        "http_status": 404,
+        "observed_at": "2026-10-08T02:34:07.532157+00:00",
+        "response_headers": {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Expose-Headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+          "Content-Security-Policy": "default-src 'none'",
+          "Content-Type": "application/json; charset=utf-8",
+          "Date": "Thu, 08 Oct 2026 02:34:07 GMT",
+          "Referrer-Policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+          "Server": "github.com",
+          "Strict-Transport-Security": "max-age=31536000; includeSubdomains; preload",
+          "Vary": "Accept-Encoding, Accept, X-Requested-With",
+          "X-Accepted-Oauth-Scopes": "",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "deny",
+          "X-Github-Api-Version-Selected": "2022-11-28",
+          "X-Github-Edge-Region": "iad",
+          "X-Github-Media-Type": "github.v3; format=json",
+          "X-Github-Request-Id": "849C:1FF27E:420204:DA634A:6AC7011F",
+          "X-Oauth-Client-Id": "178c6fc778ccc68e1d6a",
+          "X-Oauth-Scopes": "admin:org, admin:public_key, gist, repo, user, workflow",
+          "X-Ratelimit-Limit": "5000",
+          "X-Ratelimit-Remaining": "4119",
+          "X-Ratelimit-Reset": "1791429265",
+          "X-Ratelimit-Resource": "core",
+          "X-Ratelimit-Used": "881",
+          "X-Xss-Protection": "0"
+        },
+        "data": {
+          "message": "Branch not protected",
+          "documentation_url": "https://docs.github.com/rest/branches/branch-protection#get-branch-protection",
+          "status": "404"
+        }
+      }
+    }
+  },
+  "payload": {
+    "name": "main branch protection",
+    "target": "branch",
+    "enforcement": "active",
+    "conditions": {
+      "ref_name": {
+        "exclude": [],
+        "include": [
+          "refs/heads/main"
+        ]
+      }
+    },
+    "rules": [
+      {
+        "type": "required_status_checks",
+        "parameters": {
+          "strict_required_status_checks_policy": true,
+          "do_not_enforce_on_create": false,
+          "required_status_checks": [
+            {
+              "context": "Quality Gates"
+            }
+          ]
+        }
+      },
+      {
+        "type": "pull_request",
+        "parameters": {
+          "required_approving_review_count": 0,
+          "dismiss_stale_reviews_on_push": false,
+          "required_reviewers": [],
+          "require_code_owner_review": false,
+          "dismissal_restriction": {
+            "enabled": false,
+            "allowed_actors": []
+          },
+          "require_last_push_approval": false,
+          "required_review_thread_resolution": true,
+          "require_extra_approval_for_unattributed_changes": true,
+          "allowed_merge_methods": [
+            "merge",
+            "squash",
+            "rebase"
+          ]
+        }
+      }
+    ],
+    "bypass_actors": [
+      {
+        "actor_id": 5,
+        "actor_type": "RepositoryRole",
+        "bypass_mode": "always"
+      }
+    ]
+  },
+  "scope": "Restore exactly the existing admin bypass removed by GitHub transfer; preserve every other rule",
+  "response": {
+    "method": "PUT",
+    "request_url": "https://api.github.com/repos/hemsoft-dev/dashboard/rulesets/11400445",
+    "http_status": 200,
+    "observed_at": "2026-10-08T02:34:08.231265+00:00",
+    "response_headers": {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Expose-Headers": "ETag, Link, Location, Retry-After, X-GitHub-OTP, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Used, X-RateLimit-Resource, X-RateLimit-Reset, X-OAuth-Scopes, X-Accepted-OAuth-Scopes, X-Poll-Interval, X-GitHub-Media-Type, X-GitHub-SSO, X-GitHub-Request-Id, Deprecation, Sunset, Warning",
+      "Cache-Control": "private, max-age=60, s-maxage=60",
+      "Content-Security-Policy": "default-src 'none'",
+      "Content-Type": "application/json; charset=utf-8",
+      "Date": "Thu, 08 Oct 2026 02:34:08 GMT",
+      "Etag": "W/\"7383dce62837e35d75541a1cc30e72614ed64eaa528cf283c52b69d127cd0321\"",
+      "Referrer-Policy": "origin-when-cross-origin, strict-origin-when-cross-origin",
+      "Server": "github.com",
+      "Strict-Transport-Security": "max-age=31536000; includeSubdomains; preload",
+      "Vary": "Accept, Authorization, Cookie, X-GitHub-OTP,Accept-Encoding, Accept, X-Requested-With",
+      "X-Accepted-Oauth-Scopes": "",
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "deny",
+      "X-Github-Api-Version-Selected": "2022-11-28",
+      "X-Github-Edge-Region": "iad",
+      "X-Github-Media-Type": "github.v3; format=json",
+      "X-Github-Request-Id": "84A8:4647E:3EA137:CE01DF:6AC7011F",
+      "X-Oauth-Client-Id": "178c6fc778ccc68e1d6a",
+      "X-Oauth-Scopes": "admin:org, admin:public_key, gist, repo, user, workflow",
+      "X-Ratelimit-Limit": "5000",
+      "X-Ratelimit-Remaining": "4661",
+      "X-Ratelimit-Reset": "1791429277",
+      "X-Ratelimit-Resource": "core",
+      "X-Ratelimit-Used": "339",
+      "X-Xss-Protection": "0"
+    },
+    "data": {
+      "id": 11400445,
+      "name": "main branch protection",
+      "target": "branch",
+      "source_type": "Repository",
+      "source": "hemsoft-dev/dashboard",
+      "enforcement": "active",
+      "conditions": {
+        "ref_name": {
+          "exclude": [],
+          "include": [
+            "refs/heads/main"
+          ]
+        }
+      },
+      "rules": [
+        {
+          "type": "required_status_checks",
+          "parameters": {
+            "strict_required_status_checks_policy": true,
+            "do_not_enforce_on_create": false,
+            "required_status_checks": [
+              {
+                "context": "Quality Gates"
+              }
+            ]
+          }
+        },
+        {
+          "type": "pull_request",
+          "parameters": {
+            "required_approving_review_count": 0,
+            "dismiss_stale_reviews_on_push": false,
+            "required_reviewers": [],
+            "require_code_owner_review": false,
+            "dismissal_restriction": {
+              "enabled": false,
+              "allowed_actors": []
+            },
+            "require_last_push_approval": false,
+            "required_review_thread_resolution": true,
+            "require_extra_approval_for_unattributed_changes": true,
+            "allowed_merge_methods": [
+              "merge",
+              "squash",
+              "rebase"
+            ]
+          }
+        }
+      ],
+      "node_id": "RRS_lACqUmVwb3NpdG9yec5Cx_ynzgCt9P0",
+      "created_at": "2025-12-26T03:01:52.191-05:00",
+      "updated_at": "2026-10-07T22:34:08.067-04:00",
+      "bypass_actors": [
+        {
+          "actor_id": 5,
+          "actor_type": "RepositoryRole",
+          "bypass_mode": "always"
+        }
+      ],
+      "current_user_can_bypass": "always",
+      "_links": {
+        "self": {
+          "href": "https://api.github.com/repos/hemsoft-dev/dashboard/rulesets/11400445"
+        },
+        "html": {
+          "href": "https://github.com/hemsoft-dev/dashboard/rules/11400445"
+        }
+      }
+    }
+  },
+  "repaired_at": "2026-10-08T02:34:08.231339+00:00"
+}

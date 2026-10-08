@@ -1,5 +1,10 @@
 # Organization migration preflight
 
+## Executed repository and App move
+
+[The executed migration receipts](execution/README.md) record all 65 completed repository transfers and the preserved App installation. The preparation records below retain their original scope and timestamps. Reviewer fleet completion remains pending in [#139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139).
+
+
 This runbook implements the discovery and planning portion of
 [issue #135](https://github.com/HemSoft/set-it-free-loop/issues/135).
 It does not transfer repositories, change visibility, buy a plan, or install a
