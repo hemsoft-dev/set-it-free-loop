@@ -12,7 +12,7 @@ on:
   push:
     branches: [main]
   issue_comment:
-    types: [created]
+    types: [created, edited, deleted]
   pull_request_review:
     types: [submitted]
   pull_request_target:
@@ -29,8 +29,7 @@ jobs:
     if: >-
       vars.SFL_ENABLED != 'false' &&
       github.event_name == 'issue_comment' &&
-      github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '@codex review')
+      github.event.issue.pull_request
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -71,15 +70,21 @@ jobs:
             // END TESTABLE REQUESTER AUTHORIZATION
             const pullNumber = context.payload.issue.number;
             const commentId = context.payload.comment.id;
-            const comment = await github.rest.issues.getComment({
-              owner, repo, comment_id: commentId,
-            });
+            let commentDeleted = context.payload.action === "deleted";
+            const readRequestComment = async () => {
+              try {
+                return await github.rest.issues.getComment({owner, repo, comment_id: commentId});
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                commentDeleted = true;
+                // GitHub's original event payload preserves the author and target.
+                // No write follows unless that identity has a matching CLI registry.
+                return {data: context.payload.comment};
+              }
+            };
+            let comment = await readRequestComment();
             if (!await requesterAllowed(comment.data.user && comment.data.user.login)) {
               core.info("Review requester does not have write or higher repository permission");
-              return;
-            }
-            if (comment.data.updated_at !== comment.data.created_at) {
-              core.info("Edited Codex review requests are not accepted");
               return;
             }
             const pull = await github.rest.pulls.get({
@@ -118,10 +123,6 @@ jobs:
             };
             const contextToken = reviewContextToken(await reviewerChecks());
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
-            if ((comment.data.body || "") !== `@codex review\n\n${marker}`) {
-              core.info("Codex review request does not contain the exact current SFL marker");
-              return;
-            }
             const targetURL = (comment.data.html_url || "").toLowerCase();
             let registered = false;
             for (let attempt = 0; attempt < 12 && !registered; attempt += 1) {
@@ -139,6 +140,12 @@ jobs:
                   break;
                 }
               }
+              // Ordinary comments cannot acquire a CLI registry asynchronously.
+              // A created request event retains its original marker even if the
+              // fetched body was subsequently edited or erased.
+              if (!registered && ![context.payload.comment.body, comment.data.body].some(
+                body => (body || "").includes("<!-- sfl-codex-review:head="),
+              )) break;
               if (!registered && attempt < 11) {
                 await new Promise(resolve => setTimeout(resolve, 5000));
               }
@@ -147,6 +154,7 @@ jobs:
               core.info("Codex review request was not registered by gh sfl review");
               return;
             }
+            comment = await readRequestComment();
             const confirmedPull = await github.rest.pulls.get({
               owner, repo, pull_number: pullNumber,
             });
@@ -183,7 +191,10 @@ jobs:
             }
             // END TESTABLE REQUEST CONTEXT PROVENANCE
             const terminalRequestIdentity = `:request:${commentId}:at:`;
-            if (confirmedChecks.some(
+            const requestBodyExact = !commentDeleted &&
+              comment.data.updated_at === comment.data.created_at &&
+              (comment.data.body || "") === `@codex review\n\n${marker}`;
+            if (requestBodyExact && confirmedChecks.some(
               check => check.app && check.app.id === 15368 &&
                 check.status === "completed" &&
                 (check.external_id || "").includes(terminalRequestIdentity),
@@ -192,13 +203,17 @@ jobs:
               return;
             }
             const externalId = `sfl-codex-review:request-pending:${commentId}`;
-            if (confirmedChecks.some(
+            if (requestBodyExact && confirmedChecks.some(
               check => check.app && check.app.id === 15368 && check.external_id === externalId,
             )) {
               core.info("This registered Codex review request already invalidated the prior gate");
               return;
             }
-            const requestContextUsable = reviewContextUnambiguous(confirmedChecks, pullNumber, currentBase);
+            // BEGIN TESTABLE REGISTERED REQUEST ADMISSION
+            const registeredRequestExact = requestBodyExact;
+            const requestContextUsable = registeredRequestExact &&
+              reviewContextUnambiguous(confirmedChecks, pullNumber, currentBase);
+            // END TESTABLE REGISTERED REQUEST ADMISSION
             const reason = requestContextUsable
               ? `Registered Codex review request ${commentId} is pending for pull request #${pullNumber}`
               : `This pull request head has ambiguous or unsupported review provenance; advance the branch to a new head, then request a Codex review.`;
@@ -233,7 +248,8 @@ jobs:
     if: >-
       vars.SFL_ENABLED != 'false' &&
       github.event.sender.id == 199175422 &&
-      ((github.event_name == 'issue_comment' && github.event.issue.pull_request) ||
+      ((github.event_name == 'issue_comment' && github.event.action == 'created' &&
+      github.event.issue.pull_request) ||
       github.event_name == 'pull_request_review')
     concurrency:
       group: sfl-codex-review-serialize-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}
@@ -1051,7 +1067,11 @@ jobs:
               const currentRequest = comments.find(comment => comment.id === request.comment.id);
               const requestStillAuthorized = Boolean(currentRequest) && isOwnerRequest(currentRequest) &&
                 registrations.has(currentRequest.id) && currentRequest.body === request.comment.body &&
-                currentRequest.updated_at === currentRequest.created_at;
+                currentRequest.updated_at === currentRequest.created_at &&
+                eligibleReviewRequests(comments, checkRuns, artifactTime, registrations).some(
+                  candidate => candidate.comment.id === currentRequest.id &&
+                    candidate.contextToken === contextToken,
+                );
               return {
                 requestStillAuthorized,
                 pull: currentPull.data,

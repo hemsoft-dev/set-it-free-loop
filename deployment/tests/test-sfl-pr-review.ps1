@@ -225,7 +225,7 @@ if (-not $requestPublication.Success) { throw 'Could not locate the pending-requ
 $requestPublicationTest = $requestProvenance.Groups[1].Value + "`n" + @'
 const assert = require("node:assert/strict");
 const publish = new (Object.getPrototypeOf(async function(){}).constructor)(
-  "reviewContextUnambiguous", "confirmedChecks", "pullNumber", "currentBase", "commentId",
+  "reviewContextUnambiguous", "registeredRequestExact", "confirmedChecks", "pullNumber", "currentBase", "commentId",
   "owner", "repo", "currentHead", "externalId", "comment", "github", "core",
 '@ + "`n" + (ConvertTo-Json $requestPublication.Value -Compress) + "`n" + @'
 );
@@ -243,7 +243,7 @@ const publish = new (Object.getPrototypeOf(async function(){}).constructor)(
   for (const [name, checks, expected] of variants) {
     const audits = [], statuses = [], failures = [];
     const github = {rest:{checks:{create:async data => audits.push(data)},repos:{createCommitStatus:async data => statuses.push(data)}}};
-    await publish(reviewContextUnambiguous,checks,1,base,3,"hemsoft-dev","fixture","a".repeat(40),
+    await publish(reviewContextUnambiguous,true,checks,1,base,3,"hemsoft-dev","fixture","a".repeat(40),
       "sfl-codex-review:request-pending:3",{data:{html_url:"https://github.com/hemsoft-dev/fixture/pull/1#issuecomment-3"}},
       github,{setFailed:message => failures.push(message)});
     assert.equal(audits.length,1,name); assert.equal(audits[0].conclusion,"failure",name);
@@ -697,3 +697,6 @@ for (const [state,want] of [[valid,1],...changedStates.map(state=>[state,0])]) {
 '@
 $cutoverTest | node -
 if ($LASTEXITCODE -ne 0) { throw 'Cutover admission or terminal publication preflight regression failed.' }
+
+& node (Join-Path $PSScriptRoot "test-final-review-history.cjs") $canonicalPath
+if ($LASTEXITCODE -ne 0) { throw "Final registered-history production regression failed." }
