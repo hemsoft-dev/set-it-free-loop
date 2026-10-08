@@ -4,7 +4,7 @@ The canonical source is [hemsoft-dev/set-it-free-loop](https://github.com/hemsof
 
 ## New repository
 
-Install the [checksum-verified canonical release](https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.19). With repository write access, run `gh sfl init --repo hemsoft-dev/REPOSITORY --pr`. The default tier is reviewer. Add owner-bound `.github/CODEOWNERS` only when no CODEOWNERS already exists, keeping it separate from SFL managed files. Review and merge the deployment PR, then run `gh sfl gate --repo hemsoft-dev/REPOSITORY`. Run a registered `gh sfl review --repo hemsoft-dev/REPOSITORY --pr NUMBER` on an actual consumer PR. Inspect the current head/base and successful Actions-owned gate before merging.
+Install the [checksum-verified canonical release](https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.20). With repository write access, run `gh sfl init --repo hemsoft-dev/REPOSITORY --pr`. The default tier is reviewer. Add owner-bound `.github/CODEOWNERS` only when no CODEOWNERS already exists, keeping it separate from SFL managed files. Review and merge the deployment PR, then run `gh sfl gate --repo hemsoft-dev/REPOSITORY`. Run a registered `gh sfl review --repo hemsoft-dev/REPOSITORY --pr NUMBER` on an actual consumer PR. Inspect the current head/base and successful Actions-owned gate before merging.
 
 Repeat init/sync through `--pr` and confirm no additional changes. `gh sfl status --repo hemsoft-dev/REPOSITORY` reports the deployed version, source pin, managed file drift and effective gate. Status alone does not turn an advisory deployment into a required gate.
 
@@ -33,7 +33,7 @@ Use `gh sfl sync --repo hemsoft-dev/REPOSITORY --pr` with this policy. The CLI b
 
 ## Review recovery
 
-A review is bound to the PR head, base and context. Findings, malformed results, pending requests and changed context block the gate. If the base advances, update the PR branch to a new head before requesting another review. `--retry` cannot safely reuse the same head across different bases because native Codex artifacts do not identify the originating base/request.
+A review is bound to the PR head, base and context. Findings, malformed results, pending requests and changed context block the gate. If the base advances, update the PR branch to a new head before requesting another review. `--retry` cannot safely reuse the same head across different bases because native Codex artifacts do not identify the originating base/request. A newer registered request also supersedes an older result when the requests overlap. The gate stays blocked because same-head artifacts cannot identify which overlapping request produced them. Update the branch to a new head, then register one review request and wait for its terminal result before retrying.
 
 ## Governance and credentials
 
