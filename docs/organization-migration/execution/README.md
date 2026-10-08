@@ -64,3 +64,10 @@ therefore labels historical pre-merge strict-policy evidence `guard_snapshot_onl
 without claiming independent primary verification of those parameters at merge
 time. Issue #139 remains open; final corrected-release pilots must retain their
 actual pre-merge effective-rule and ruleset-detail GETs before qualification.
+
+The final dashboard policy GET must follow its successful repair PUT and precede
+transfer verification. Installed historical pilot workflows must equal the full
+digest-pinned rc21 snapshot after the deterministic deployment header, source pin
+and default-branch quoting substitutions. This checks triggers, permissions and
+job wiring as well as testable code blocks. The authenticated coverage artifact
+listing must be captured after its workflow completes, before its digest is used.

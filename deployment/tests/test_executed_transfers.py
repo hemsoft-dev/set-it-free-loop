@@ -50,6 +50,28 @@ class ExecutedTransferTests(unittest.TestCase):
             self.rejects('rc21-' + role + '-post-live-precleanup-owned-gate.json',
                          lambda d: d.update(argv=['gh', 'api', 'unrelated']), 'Pilot API capture')
 
+    def test_final_dashboard_policy_capture_binding(self):
+        for key, value in [('method', 'DELETE'), ('http_status', 500),
+                           ('request_url', 'https://api.github.com/repos/hemsoft-dev/unrelated/rulesets/11400445'),
+                           ('observed_at', '2000-01-01T00:00:00Z')]:
+            self.rejects('repository-transfers/repository-transfer-1120402599.json',
+                         lambda d, k=key, v=value: d['after_policy']['ruleset_details'][0].update({k: v}),
+                         'Final dashboard policy')
+
+    def test_artifact_listing_capture_chronology(self):
+        for key in ('started_at', 'completed_at'):
+            self.rejects('organization-app-coverage-artifact-primary.json',
+                         lambda d, k=key: d.update({k: '2000-01-01T00:00:00Z'}), 'artifact listing capture')
+
+    def test_complete_pilot_workflow_trigger_drift_rejected(self):
+        import hashlib
+        def mutate(d):
+            d['content'] = d['content'].replace("branches: ['main']", "branches: ['unrelated']")
+            content = d['content'].encode()
+            d['blob_sha'] = hashlib.sha1(b'blob ' + str(len(content)).encode() + b'\0' + content).hexdigest()
+        for role in ('private', 'public'):
+            self.rejects('rc21-' + role + '-installed-observer-projected.json', mutate, 'complete workflow')
+
     def test_actual_receipts_verify_identity_without_acceptance_claim(self):
         result = VALIDATOR.validate(DIRECTORY)
         self.assertEqual(result['transferred'], 65)
@@ -436,7 +458,7 @@ class ExecutedTransferTests(unittest.TestCase):
                 value['workflow_sha256'] = digest
             return value
         with mock.patch.object(VALIDATOR, 'read', side_effect=changed):
-            with self.assertRaisesRegex(ValueError, 'reviewed source markers'):
+            with self.assertRaisesRegex(ValueError, 'complete workflow'):
                 VALIDATOR.validate(DIRECTORY)
 
     def test_accepted_response_is_bound_to_actual_transfer(self):

@@ -141,6 +141,20 @@ def validate_pilots(directory):
                 installed['path'] == '.github/workflows/sfl-pr-review-auto.yml' and
                 installed['blob_sha'] == blob and ('@' + source) in installed['content'],
                 'Installed pilot workflow identity or blob is invalid')
+        snapshot = (ROOT / 'deployment/tests/observer-snapshots/2.1.0-rc.21.yml').read_bytes()
+        require(hashlib.sha256(snapshot).hexdigest() ==
+                '86833629e9557bbe658147a190ae8b77b8166e6fb2919f2902b5e862930f556e',
+                'Historical reviewed observer snapshot changed')
+        source_ref = 'hemsoft-dev/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@' + source
+        expected_workflow = snapshot.decode().replace(
+            '# Source: HemSoft/set-it-free-loop/deployment/infrastructure/sfl-pr-review-auto.yml@main',
+            '# Source: ' + source_ref).replace('    branches: [main]', "    branches: ['main']", 1).replace(
+            '  SFL_REVIEW_BASE_BRANCH: main', "  SFL_REVIEW_BASE_BRANCH: 'main'", 1)
+        expected_workflow = '# Deployed from: ' + source_ref + '\n' + \
+            '# To upgrade: re-run deploy-workflow.ps1 at the desired SHA\n' + expected_workflow
+        require(installed['content'].replace('\r\n', '\n') == expected_workflow.replace('\r\n', '\n'),
+                'Installed pilot complete workflow differs from its reviewed release snapshot')
+
         expected_files = {prefix + '-fixture-' + scenario + '.json' for scenario in outcomes}
         require(set(summary['fixture_receipts']) == expected_files and
                 len(summary['fixture_receipts']) == len(expected_files) and
@@ -507,7 +521,14 @@ def validate_dashboard_repair(execution):
             timestamp(dropped_capture['observed_at']) <= timestamp(repair['observed_at']),
             'Dropped dashboard policy needs its successful post-transfer ruleset GET')
     dropped = dropped_capture['data']
-    final = receipt['after_policy']['ruleset_details'][0]['data']
+    final_capture = receipt['after_policy']['ruleset_details'][0]
+    require(final_capture['method'] == 'GET' and final_capture['http_status'] == 200 and
+            final_capture['request_url'] ==
+            'https://api.github.com/repos/hemsoft-dev/dashboard/rulesets/11400445' and
+            timestamp(response['observed_at']) <= timestamp(final_capture['observed_at']) <=
+            timestamp(receipt['verified_at']),
+            'Final dashboard policy needs its independently observed post-repair GET')
+    final = final_capture['data']
     def policy(value):
         # GitHub adds this disabled schema field during transfer; it has no enforcement effect.
         if isinstance(value, list): return [policy(item) for item in value]
@@ -565,6 +586,9 @@ def validate_app_phase(directory):
     require(artifact_capture['actor'] == 'HemSoft' and artifact_capture['exit_code'] == 0 and
             artifact_capture['argv'] == ['gh', 'api', 'repos/hemsoft-dev/set-it-free-loop/actions/runs/37731379724/artifacts?per_page=100'],
             'App coverage artifact list belongs to another workflow run')
+    require(timestamp(run['updated_at']) <= timestamp(artifact_capture['started_at']) <=
+            timestamp(artifact_capture['completed_at']),
+            'App artifact listing capture must follow its completed coverage run')
     artifacts = [a for a in artifact_capture['data']['artifacts'] if a['name'] == 'sfl-app-repository-coverage']
     require(len(artifacts) == 1 and artifacts[0]['id'] == 11530141241 and
             artifacts[0]['workflow_run']['id'] == run['id'] and
