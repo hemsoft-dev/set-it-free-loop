@@ -771,6 +771,30 @@ jobs:
               ).sort((left, right) => right.id - left.id)[0];
               return invalidation ? invalidation.external_id : "none";
             };
+            // BEGIN TESTABLE REVIEW CONTEXT PROVENANCE
+            function reviewContextUnambiguous(checkRuns, pullNumber, currentBase) {
+              // Native artifacts identify a head, but neither their start time nor
+              // originating base. Any previous context on that same head can
+              // therefore produce a late artifact for a different diff.
+              const contexts = checkRuns.filter(check => check.app && check.app.id === 15368 &&
+                ((check.external_id || "").startsWith("sfl-codex-review:pull-context:") ||
+                 (check.external_id || "").startsWith("sfl-codex-review:base-advance:")));
+              const tokens = [...new Set(contexts.map(check => check.external_id))];
+              if (tokens.length !== 1) return false;
+              if (!/^sfl-codex-review:pull-context:at:\d+:\d+$/.test(tokens[0])) return false;
+              // Keep the token compact: it is embedded in terminal check IDs.
+              // Structured check output carries the base/action provenance.
+              return contexts.every(check => {
+                let provenance;
+                try { provenance = JSON.parse((check.output && check.output.text) || ""); }
+                catch { return false; }
+                return provenance && provenance.schema === 1 &&
+                  provenance.pull_number === pullNumber &&
+                  (provenance.action === "opened" || provenance.action === "synchronize") &&
+                  provenance.base_sha === currentBase.toLowerCase();
+              });
+            }
+            // END TESTABLE REVIEW CONTEXT PROVENANCE
             const initialChecks = await github.paginate(
               github.rest.checks.listForRef,
               {
@@ -784,6 +808,10 @@ jobs:
               response => response.data,
             );
             const contextToken = reviewContextToken(initialChecks);
+            if (!reviewContextUnambiguous(initialChecks, pullNumber, currentBase)) {
+              core.info("Native Codex artifacts cannot prove their base in this head's context history; advance to a new head before requesting review");
+              return;
+            }
             const marker = `<!-- sfl-codex-review:head=${currentHead.toLowerCase()};base=${currentBase.toLowerCase()};context=${contextToken} -->`;
             const conflictingBaseRequest = hasHistoricalBaseConflict(triggerComments, requestStatuses) || triggerComments.some(
               comment => (isOwnerRequest(comment) || historicalRequestIdsFromStatuses(requestStatuses).has(comment.id)) &&
@@ -877,7 +905,8 @@ jobs:
                 : {state: expectedState};
             }
             // END TESTABLE REQUIRED GATE REPAIR
-            if (reviewContextToken(checks) !== contextToken) {
+            if (reviewContextToken(checks) !== contextToken ||
+                !reviewContextUnambiguous(checks, pullNumber, currentBase)) {
               core.info("The matching Codex request is not bound to the latest pull context");
               return;
             }
@@ -901,6 +930,10 @@ jobs:
               },
               response => response.data,
             );
+            if (!reviewContextUnambiguous(latestRequestChecks, pullNumber, currentBase)) {
+              core.info("The native review base became ambiguous before publication; advance to a new head");
+              return;
+            }
             const latestRequestStatuses = await github.paginate(
               github.rest.repos.listCommitStatusesForRef,
               {owner, repo, ref: currentHead, per_page: 100},
@@ -1040,6 +1073,7 @@ jobs:
                 pull: currentPull.data,
                 openPulls,
                 contextToken: reviewContextToken(checkRuns),
+                contextUnambiguous: reviewContextUnambiguous(checkRuns, pullNumber, currentBase),
                 supersededRequest: hasNewerMatchingRequest(comments, checkRuns, statuses),
                 lifecycleChanged: lifecycleToken !== initialLifecycleToken,
                 invalidationRuns,
@@ -1053,7 +1087,8 @@ jobs:
               state.supersededRequest ||
               state.lifecycleChanged ||
               state.invalidationRuns.length > 0 ||
-              state.contextToken !== contextToken;
+              state.contextToken !== contextToken ||
+              !state.contextUnambiguous;
             const publicationChangeReason = state => state.supersededRequest
               ? "A newer Codex review request superseded this result while it was being published"
               : state.lifecycleChanged
@@ -1234,10 +1269,12 @@ jobs:
               return;
             }
             const reason = context.payload.action === "edited"
-              ? `Pull request base changed to ${pull.base.ref} at ${pull.base.sha}; request a new Codex review with gh sfl review --retry.`
+              ? `Pull request base changed to ${pull.base.ref} at ${pull.base.sha}; advance the branch to a new head, then request a Codex review.`
               : context.payload.action === "synchronize"
                 ? `Pull request head changed to ${pull.head.sha}; request a Codex review for this exact head and base.`
-                : `Pull request #${pull.number} opened or reopened for ${pull.base.ref} at ${pull.base.sha}; request a Codex review for this exact pull request context.`;
+                : context.payload.action === "reopened"
+                  ? `Pull request #${pull.number} reopened; advance the branch to a new head before requesting review because earlier native artifacts cannot prove their base.`
+                  : `Pull request #${pull.number} opened for ${pull.base.ref} at ${pull.base.sha}; request a Codex review for this exact pull request context.`;
             const finalChecks = await github.paginate(
               github.rest.checks.listForRef,
               {
@@ -1277,7 +1314,12 @@ jobs:
               completed_at: new Date().toISOString(),
               details_url: pull.html_url,
               external_id: invalidationId,
-              output: {title: "SFL Codex review invalidated", summary: reason},
+              output: {
+                title: "SFL Codex review invalidated",
+                summary: reason,
+                text: JSON.stringify({schema: 1, pull_number: pull.number,
+                  action: context.payload.action, base_sha: pull.base.sha.toLowerCase()}),
+              },
             });
             await github.rest.repos.createCommitStatus({
               owner,

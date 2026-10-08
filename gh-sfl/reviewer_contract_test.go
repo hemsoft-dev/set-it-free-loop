@@ -420,3 +420,43 @@ func runActiveInvalidationFixture(t *testing.T, run map[string]any, pullNumber i
 	}
 	return result
 }
+
+// The fleet fixture executes the production guard rather than trusting only
+// the artifact classifier, which cannot establish a native artifact's base.
+func TestCodexObserverRejectsUnregisteredOldBaseCompletion(t *testing.T) {
+	content := readContractFile(t, filepath.Join("..", "deployment", "infrastructure", "sfl-pr-review-auto.yml"))
+	capture, err := json.Marshal(map[string]any{
+		"repository_id": 1, "repository": "hemsoft-dev/fixture", "revision_sha": strings.Repeat("a", 40),
+		"path": ".github/workflows/sfl-pr-review-auto.yml", "content": string(content),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := filepath.Join(t.TempDir(), "workflow.json")
+	output := filepath.Join(t.TempDir(), "receipt.json")
+	if err := os.WriteFile(input, capture, 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := []string{filepath.Join("..", "deployment", "tests", "run-org-observer-fixtures.cjs"),
+		"--workflow", input, "--repository-id", "1", "--repository", "hemsoft-dev/fixture",
+		"--deployment-sha", strings.Repeat("a", 40), "--release-version", "fixture", "--revision", strings.Repeat("a", 40),
+		"--scenario", "unregistered_base_context", "--output", output}
+	result, err := exec.Command("node", args...).CombinedOutput()
+	if err != nil {
+		t.Fatalf("context provenance fixture: %v\n%s", err, result)
+	}
+	var receipt struct {
+		Passed   bool   `json:"passed"`
+		Scenario string `json:"scenario"`
+	}
+	raw, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	if !receipt.Passed || receipt.Scenario != "unregistered_base_context" {
+		t.Fatalf("unexpected fixture receipt: %s", raw)
+	}
+}
