@@ -44,6 +44,12 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("reading manifest from %s/%s: %w\nHint: run 'gh sfl init' first to deploy SFL", owner, repo, err)
 	}
 
+	initialManifestPaths := slices.Clone(manifest.RemotePaths)
+	initialManifestJSON, err := json.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("capturing installed manifest: %w", err)
+	}
+
 	fmt.Fprintf(stdout, "Syncing SFL in %s/%s (current: %s, tier: %s)\n\n", owner, repo, manifest.Version, manifest.Tier)
 
 	release, err := resolveDeploymentRelease(opts.sourceRef)
@@ -96,6 +102,37 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		return fmt.Errorf("getting default branch: %w", err)
 	}
 
+	// Bind consumer policy to an immutable default-branch revision. PR delivery
+	// rejects a different default head before publishing any branch.
+	var consumerPolicy *consumerSyncPolicy
+	var policyRevision string
+	if installedTier != "reviewer" {
+		client, clientErr := newRESTClient()
+		if clientErr != nil {
+			return fmt.Errorf("reading consumer sync policy: %w", clientErr)
+		}
+		consumerPolicy, policyRevision, err = captureConsumerSyncPolicy(client, owner, repo, defaultBranch)
+		if err != nil {
+			return err
+		}
+		if consumerPolicy != nil && !opts.pr {
+			return fmt.Errorf("consumer-owned workflow policy requires sync through --pr")
+		}
+		boundManifest, boundErr := readRemoteManifestWithFetcher(owner, repo, func(sourceOwner, sourceRepo, path, _ string) (string, error) {
+			return fetchFileRaw(sourceOwner, sourceRepo, path, policyRevision)
+		})
+		if boundErr != nil {
+			return fmt.Errorf("binding consumer policy to installed manifest: %w", boundErr)
+		}
+		if err := validateConsumerManifestSnapshot(initialManifestJSON, initialManifestPaths, boundManifest); err != nil {
+			return err
+		}
+		if consumerPolicy != nil {
+			fmt.Fprintf(stdout, "  Preserving consumer-owned workflows: %s\n", strings.Join(consumerPolicy.UnmanagedWorkflows, ", "))
+		}
+	}
+	previousEnginePolicy := manifest.EnginePolicy
+
 	// Collect all files to deploy
 	fileMap := make(map[string]string)
 
@@ -105,6 +142,9 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 
 	fmt.Fprintf(stdout, "  Fetching %d workflow files...\n", totalWorkflows)
 	for _, wf := range workflows {
+		if consumerOwnsWorkflow(consumerPolicy, wf) {
+			continue
+		}
 		srcPath := sourceWorkflowPath(wf)
 		content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, sourceRef)
 		if fetchErr != nil {
@@ -122,6 +162,9 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "    %s ✓\n", wf)
 	}
 	for _, wf := range addonFiles {
+		if consumerOwnsWorkflow(consumerPolicy, wf) {
+			continue
+		}
 		srcPath := sourceWorkflowPath(wf)
 		content, fetchErr := fetchFileRaw(motherRepoOwner, motherRepoName, srcPath, sourceRef)
 		if fetchErr != nil {
@@ -152,6 +195,8 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 		}
 	}
 
+	applyConsumerSyncPolicy(fileMap, consumerPolicy)
+
 	// Preserve audit fields for a true no-op sync. Direct deployments compare
 	// raw bytes, while PR deployments intentionally ignore these audit fields.
 	deploymentMetadataCurrent := shouldPreserveSyncAudit(manifest, release, installedTier)
@@ -169,6 +214,7 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	manifest.DeployedAt = deployedAt
 	manifest.DeployedBy = deployedBy
 	manifest.EnginePolicy = hemSoftEnginePolicyManifestForFileMap(fileMap)
+	preserveConsumerEngineProfiles(manifest.EnginePolicy, previousEnginePolicy, consumerPolicy)
 	if err := writeManifestFiles(fileMap, manifest); err != nil {
 		return fmt.Errorf("marshaling manifest: %w", err)
 	}
@@ -184,9 +230,9 @@ func runSync(args []string, stdout io.Writer, stderr io.Writer) error {
 	fmt.Fprintf(stdout, "\n")
 	var prURL string
 	if opts.pr {
-		prURL, err = deployViaPullRequest(owner, repo, defaultBranch, "sync", fileMap, commitMsg, true, stdout)
+		prURL, err = deployViaPullRequestAtRevision(owner, repo, defaultBranch, "sync", fileMap, commitMsg, true, stdout, policyRevision, consumerPreservedPaths(consumerPolicy))
 	} else {
-		err = deployViaGit(owner, repo, defaultBranch, fileMap, commitMsg, true, stdout)
+		err = deployViaGit(owner, repo, defaultBranch, fileMap, commitMsg, true, stdout, policyRevision)
 	}
 	if err != nil {
 		return fmt.Errorf("deploying files: %w", err)
@@ -311,3 +357,16 @@ Examples:
   gh sfl sync --repo owner/repo --direct # Push directly (explicit opt-in)
   gh sfl sync --dry-run                # Preview changes without applying
 `
+
+// RemotePaths records file presence and is deliberately omitted from deployment JSON.
+// Compare it separately so concurrent legacy-manifest removal cannot be reversed.
+func validateConsumerManifestSnapshot(initialJSON []byte, initialPaths []string, bound *sflManifest) error {
+	boundJSON, err := json.Marshal(bound)
+	if err != nil {
+		return err
+	}
+	if string(boundJSON) != string(initialJSON) || !slices.Equal(bound.RemotePaths, initialPaths) {
+		return fmt.Errorf("installed manifest changed before consumer policy capture; rerun sync")
+	}
+	return nil
+}
