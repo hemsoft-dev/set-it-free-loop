@@ -139,7 +139,8 @@ foreach ($pattern in @(
     'Base-advance invalidation failed after attempting every pull request',
     'supersedesInvalidation(check.external_id, contextChangeTime, context.runId)',
     'supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId)',
-    'already has this exact invalidation; skipping rerun',
+    'if (!existingInvalidation && !finalChecks.some(check =>',
+    'if (!existingPendingCheck)',
     'received a newer context or successful Codex gate while invalidation was running',
     'conflictingBaseRequest',
     'reviewContextToken(confirmedChecks) !== contextToken',
@@ -226,7 +227,7 @@ $requestPublicationTest = $requestProvenance.Groups[1].Value + "`n" + @'
 const assert = require("node:assert/strict");
 const publish = new (Object.getPrototypeOf(async function(){}).constructor)(
   "reviewContextUnambiguous", "registeredRequestExact", "confirmedChecks", "pullNumber", "currentBase", "commentId",
-  "owner", "repo", "currentHead", "externalId", "comment", "github", "core",
+  "owner", "repo", "currentHead", "externalId", "comment", "github", "core", "existingPendingCheck",
 '@ + "`n" + (ConvertTo-Json $requestPublication.Value -Compress) + "`n" + @'
 );
 (async () => {
@@ -245,7 +246,7 @@ const publish = new (Object.getPrototypeOf(async function(){}).constructor)(
     const github = {rest:{checks:{create:async data => audits.push(data)},repos:{createCommitStatus:async data => statuses.push(data)}}};
     await publish(reviewContextUnambiguous,true,checks,1,base,3,"hemsoft-dev","fixture","a".repeat(40),
       "sfl-codex-review:request-pending:3",{data:{html_url:"https://github.com/hemsoft-dev/fixture/pull/1#issuecomment-3"}},
-      github,{setFailed:message => failures.push(message)});
+      github,{setFailed:message => failures.push(message)},false);
     assert.equal(audits.length,1,name); assert.equal(audits[0].conclusion,"failure",name);
     assert.equal(statuses.length,1,name); assert.equal(statuses[0].state,expected,name);
     assert.equal(failures.length,1,name);
@@ -703,3 +704,6 @@ if ($LASTEXITCODE -ne 0) { throw 'Cutover admission or terminal publication pref
 
 & node (Join-Path $PSScriptRoot "test-final-review-history.cjs") $canonicalPath
 if ($LASTEXITCODE -ne 0) { throw "Final registered-history production regression failed." }
+
+& node (Join-Path $PSScriptRoot "test-invalidation-recovery.cjs") $canonicalPath
+if ($LASTEXITCODE -ne 0) { throw "Production invalidation recovery regression failed." }

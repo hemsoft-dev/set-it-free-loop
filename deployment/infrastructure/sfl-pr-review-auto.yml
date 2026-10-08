@@ -210,12 +210,9 @@ jobs:
               return;
             }
             const externalId = `sfl-codex-review:request-pending:${commentId}`;
-            if (requestBodyExact && currentRequesterAllowed && confirmedChecks.some(
+            const existingPendingCheck = requestBodyExact && currentRequesterAllowed && confirmedChecks.some(
               check => check.app && check.app.id === 15368 && check.external_id === externalId,
-            )) {
-              core.info("This registered Codex review request already invalidated the prior gate");
-              return;
-            }
+            );
             // BEGIN TESTABLE REGISTERED REQUEST ADMISSION
             const registeredRequestExact = requestBodyExact && currentRequesterAllowed;
             const requestContextUsable = registeredRequestExact &&
@@ -224,18 +221,21 @@ jobs:
             const reason = requestContextUsable
               ? `Registered Codex review request ${commentId} is pending for pull request #${pullNumber}`
               : `This pull request head has ambiguous or unsupported review provenance; advance the branch to a new head, then request a Codex review.`;
-            await github.rest.checks.create({
-              owner,
-              repo,
-              name: "SFL Reviewer Gate Runner",
-              head_sha: currentHead,
-              status: "completed",
-              conclusion: "failure",
-              completed_at: new Date().toISOString(),
-              details_url: comment.data.html_url,
-              external_id: externalId,
-              output: {title: requestContextUsable ? "SFL Codex review pending" : "SFL Codex review blocked", summary: reason},
-            });
+            // Reuse the check, but repair a status POST that failed independently.
+            if (!existingPendingCheck) {
+              await github.rest.checks.create({
+                owner,
+                repo,
+                name: "SFL Reviewer Gate Runner",
+                head_sha: currentHead,
+                status: "completed",
+                conclusion: "failure",
+                completed_at: new Date().toISOString(),
+                details_url: comment.data.html_url,
+                external_id: externalId,
+                output: {title: requestContextUsable ? "SFL Codex review pending" : "SFL Codex review blocked", summary: reason},
+              });
+            }
             await github.rest.repos.createCommitStatus({
               owner,
               repo,
@@ -1492,10 +1492,6 @@ jobs:
             const existingInvalidation = reviewerChecks.some(
               check => check.app && check.app.id === 15368 && check.external_id === invalidationId,
             );
-            if (existingInvalidation) {
-              core.info(`Pull request #${pull.number} already has this exact invalidation; skipping rerun`);
-              return;
-            }
             const supersedingContext = reviewerChecks.find(
               check => check.app && check.app.id === 15368 &&
                 supersedesInvalidation(check.external_id, contextChangeTime, context.runId),
@@ -1521,7 +1517,7 @@ jobs:
             });
             if (livePull.data.state !== "open" ||
                 livePull.data.head.sha !== pull.head.sha ||
-                livePull.data.base.sha !== pull.base.sha) {
+                (!departedDefaultBranch && livePull.data.base.sha !== pull.base.sha)) {
               core.info(`Pull request #${pull.number} changed again after this context event; skipping stale invalidation`);
               return;
             }
@@ -1546,8 +1542,7 @@ jobs:
             );
             const finalContextExists = finalChecks.some(
               check => check.app && check.app.id === 15368 &&
-                (check.external_id === invalidationId ||
-                 supersedesInvalidation(check.external_id, contextChangeTime, context.runId)),
+                supersedesInvalidation(check.external_id, contextChangeTime, context.runId),
             );
             const finalSuccess = finalChecks.some(
               check => check.app && check.app.id === 15368 &&
@@ -1561,23 +1556,28 @@ jobs:
               core.info(`Pull request #${pull.number} received a newer context or successful Codex gate while invalidation was running`);
               return;
             }
-            await github.rest.checks.create({
-              owner,
-              repo,
-              name: "SFL Reviewer Gate Runner",
-              head_sha: pull.head.sha,
-              status: "completed",
-              conclusion: "failure",
-              completed_at: new Date().toISOString(),
-              details_url: pull.html_url,
-              external_id: invalidationId,
-              output: {
-                title: "SFL Codex review invalidated",
-                summary: reason,
-                text: JSON.stringify({schema: 1, pull_number: pull.number,
-                  action: context.payload.action, base_sha: pull.base.sha.toLowerCase()}),
-              },
-            });
+            // Check creation and commit-status publication can fail independently.
+            // A rerun repairs the status while preserving the authenticated check.
+            if (!existingInvalidation && !finalChecks.some(check =>
+                check.app && check.app.id === 15368 && check.external_id === invalidationId)) {
+              await github.rest.checks.create({
+                owner,
+                repo,
+                name: "SFL Reviewer Gate Runner",
+                head_sha: pull.head.sha,
+                status: "completed",
+                conclusion: "failure",
+                completed_at: new Date().toISOString(),
+                details_url: pull.html_url,
+                external_id: invalidationId,
+                output: {
+                  title: "SFL Codex review invalidated",
+                  summary: reason,
+                  text: JSON.stringify({schema: 1, pull_number: pull.number,
+                    action: context.payload.action, base_sha: pull.base.sha.toLowerCase()}),
+                },
+              });
+            }
             await github.rest.repos.createCommitStatus({
               owner,
               repo,
@@ -1662,10 +1662,6 @@ jobs:
               const existingInvalidation = reviewerChecks.some(
                 check => check.app && check.app.id === 15368 && check.external_id === invalidationId,
               );
-              if (existingInvalidation) {
-                core.info(`Pull request #${pull.number} already has this exact invalidation; skipping rerun`);
-                return;
-              }
               const supersedingContext = reviewerChecks.find(
                 check => check.app && check.app.id === 15368 &&
                   supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId),
@@ -1703,8 +1699,7 @@ jobs:
               );
               const finalContextExists = finalChecks.some(
                 check => check.app && check.app.id === 15368 &&
-                  (check.external_id === invalidationId ||
-                   supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId)),
+                  supersedesInvalidation(check.external_id, baseAdvanceTime, context.runId),
               );
               const finalSuccess = finalChecks.some(
                 check => check.app && check.app.id === 15368 &&
@@ -1718,18 +1713,23 @@ jobs:
                 core.info(`Pull request #${pull.number} received a newer context or successful Codex gate while invalidation was running`);
                 return;
               }
-              await github.rest.checks.create({
-                owner,
-                repo,
-                name: "SFL Reviewer Gate Runner",
-                head_sha: pull.head.sha,
-                status: "completed",
-                conclusion: "failure",
-                completed_at: new Date().toISOString(),
-                details_url: pull.html_url,
-                external_id: invalidationId,
-                output: {title: "SFL Codex review invalidated", summary: reason},
-              });
+              // Check creation and commit-status publication can fail independently.
+              // A rerun repairs the status while preserving the authenticated check.
+              if (!existingInvalidation && !finalChecks.some(check =>
+                  check.app && check.app.id === 15368 && check.external_id === invalidationId)) {
+                await github.rest.checks.create({
+                  owner,
+                  repo,
+                  name: "SFL Reviewer Gate Runner",
+                  head_sha: pull.head.sha,
+                  status: "completed",
+                  conclusion: "failure",
+                  completed_at: new Date().toISOString(),
+                  details_url: pull.html_url,
+                  external_id: invalidationId,
+                  output: {title: "SFL Codex review invalidated", summary: reason},
+                });
+              }
               await github.rest.repos.createCommitStatus({
                 owner,
                 repo,
