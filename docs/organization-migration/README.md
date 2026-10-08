@@ -1,5 +1,10 @@
 # Organization migration preflight
 
+## Executed repository and App move
+
+[The executed migration receipts](execution/README.md) record all 65 completed repository transfers and the preserved App installation. The preparation records below retain their original scope and timestamps. Reviewer fleet completion remains pending in [#139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139).
+
+
 This runbook implements the discovery and planning portion of
 [issue #135](https://github.com/HemSoft/set-it-free-loop/issues/135).
 It does not transfer repositories, change visibility, buy a plan, or install a
@@ -653,6 +658,13 @@ Runner smoke jobs derive from complete successful raw pages of the exact run
 attempt's jobs API. Record each response body, HTTP status, observation time and
 pagination headers. The executed smoke job must identify the preserved runner;
 a manually supplied job summary cannot establish machine continuity.
+
+The [current-resource reconciliation](ROLLOUT.md#current-resources-and-retired-history)
+preserves the later Windows runner/startup/main ruleset independently of the
+original sealed inventory. It also defines exact retired gh-x tag-only workflow
+proof and authenticated source-browser protection evidence for fhemmer's retained
+plan refusal. These reviewed preparations require fresh cutover observations;
+they do not establish a completed transfer or rollout.
 
 Transfer captures include the owner-authenticated JSON audit export request,
 ready response, successful truncation verification and downloaded gzip bytes.

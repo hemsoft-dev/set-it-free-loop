@@ -28,6 +28,20 @@ spec.loader.exec_module(validator)
 class RolloutTests(unittest.TestCase):
     def setUp(self):
         self.inventory = json.loads((DIRECTORY / 'inventory.json').read_text())
+        resource_path=DIRECTORY/'current-survival-resources.json';resource_original=resource_path.read_bytes()
+        self.addCleanup(resource_path.write_bytes,resource_original)
+        resource=json.loads(resource_original)
+        def synthetic_resource_times(value):
+            if isinstance(value,dict):
+                for key,item in value.items():
+                    if key in {'observed_at','captured_at','derived_at'}:value[key]='2026-10-07T01:47:00Z'
+                    else:synthetic_resource_times(item)
+            elif isinstance(value,list):
+                for item in value:synthetic_resource_times(item)
+        synthetic_resource_times(resource)
+        resource_bytes=(json.dumps(resource,indent=2)+'\n').encode();resource_path.write_bytes(resource_bytes)
+        resource_pin=patch.object(validator,'SURVIVAL_RESOURCES_SHA256',hashlib.sha256(resource_bytes).hexdigest())
+        resource_pin.start();self.addCleanup(resource_pin.stop)
         self.matrix = json.loads((DIRECTORY / 'rollout-matrix.json').read_text())
         self.scope = json.loads((DIRECTORY / 'scope-decisions.json').read_text())
         self.release_results={}
@@ -384,9 +398,14 @@ class RolloutTests(unittest.TestCase):
             response('routes','https://api.cloudflare.com/client/v4/zones/'+zone+'/workers/routes',{'success':True,'result':baseline['workers_routes']})
             smoke['observed_resource']=baseline
         elif kind=='repository_runner':
-            response('runner','https://api.github.com/repos/'+repository+'/actions/runners/'+str(resource),
-                {'id':int(resource),'name':'mini-github-runner-01','status':'online','busy':False,
-                 'labels':[{'name':name} for name in ('self-hosted','Linux','X64','mini','yahtzee')]})
+            if int(row['repository_id'])==validator.SURVIVAL_REPOSITORY_ID:
+                repo=next(repo for repo in self.inventory['repositories'] if repo['id']==validator.SURVIVAL_REPOSITORY_ID)
+                runner=copy.deepcopy(validator.reviewed_survival_resources(repo,directory)['runner'])
+                runner.update(status='online',busy=False)
+            else:
+                runner={'id':int(resource),'name':'mini-github-runner-01','status':'online','busy':False,
+                        'labels':[{'name':name} for name in ('self-hosted','Linux','X64','mini','yahtzee')]}
+            response('runner','https://api.github.com/repos/'+repository+'/actions/runners/'+str(resource),runner)
         elif kind=='supabase_project':
             baseline=validator.provider_preservation_baseline(row,self.inventory,directory)
             row['smoke_outcome']=smoke['outcome']='baseline_preserved'
@@ -432,6 +451,13 @@ class RolloutTests(unittest.TestCase):
                     name=previous['path'];body=json.dumps(previous['manifest']).encode()
                     file=json.loads((DIRECTORY/self.file_contents_capture(repo['id'],repo['full_name'],head,name,body)).read_text())
                     file.update(path=name,observed_at=data['observed_at'],manifest=previous['manifest'])
+                    scans[-1]['files'].append(file)
+                    scans[-1]['tree_response']['data']['tree'].append({'path':name,'type':'blob','sha':file['contents_response']['data']['sha']})
+                if repo['id'] == validator.SURVIVAL_REPOSITORY_ID:
+                    sealed=next(r for r in self.inventory['repositories'] if r['id']==repo['id'])
+                    name='.github/workflows/ci.yml';body=validator.reviewed_survival_resources(sealed,DIRECTORY)['workflow_bytes']
+                    file=json.loads((DIRECTORY/self.file_contents_capture(repo['id'],repo['full_name'],head,name,body)).read_text())
+                    file.update(path=name,observed_at=data['observed_at'])
                     scans[-1]['files'].append(file)
                     scans[-1]['tree_response']['data']['tree'].append({'path':name,'type':'blob','sha':file['contents_response']['data']['sha']})
         return self.capture({'phase':'pre_cutover','observed_at':'2026-10-07T01:48:00Z','repositories':scans})
@@ -771,6 +797,12 @@ class RolloutTests(unittest.TestCase):
                     for name,names in environments.items()}
                 runners=[runner for item in json.loads((DIRECTORY/'runtime-metadata.json').read_text())['repositories']
                     if item['source']==current['full_name'] for runner in (item['repository_runners'].get('data') or [])]
+                if current['id']==validator.SURVIVAL_REPOSITORY_ID:
+                    survival=validator.reviewed_survival_resources(baseline,DIRECTORY)
+                    runners=[copy.deepcopy(survival['runner'])]
+                    variable=copy.deepcopy(survival['capture']['variable_response'])
+                    variable['observed_at']='2026-10-07T01:49:30Z'
+                    current['variable_responses']={'UE_RUNNER_ENABLED':variable}
                 current['runner_pages']=[{'method':'GET','http_status':200,
                     'request_url':'https://api.github.com/repos/'+current['full_name']+'/actions/runners?per_page=100',
                     'response_headers':{},'observed_at':'2026-10-07T01:49:30Z','data':{'total_count':len(runners),'runners':runners}}]
@@ -833,6 +865,8 @@ class RolloutTests(unittest.TestCase):
                     'revision_sha':runner['run_head_sha'],'observed_at':common['observed_at'],
                     'contents_response':self.file_response(repo['destination'],runner['run_head_sha'],
                         '.github/workflows/self-hosted-smoke.yml',(DIRECTORY/'yahtzee-smoke-workflow.yml').read_bytes())})
+            if repo['id']==validator.SURVIVAL_REPOSITORY_ID:
+                self.bind_windows_runner(row,repo)
             if row['health'] == 'source_verified':
                 continue
             row['destination_protections'] = dict(validator.protection_contract(repo),
@@ -843,6 +877,40 @@ class RolloutTests(unittest.TestCase):
         for repo in self.inventory['repositories']:
             self.verify_source_ledger(repo['id'])
         self.bind_ledger_readiness()
+
+    def bind_windows_runner(self,row,repo):
+        resources=validator.reviewed_survival_resources(repo,DIRECTORY)
+        actual=copy.deepcopy(resources['runner']);actual.update(status='online',busy=False)
+        at='2026-10-07T02:00:00Z'
+        common={'phase':'post_transfer','observed_at':at,'repository_id':repo['id'],
+                'repository':repo['destination'],'runner_id':10}
+        proof={'repository_id':repo['id'],'repository':repo['destination'],'runner_id':10,
+               'online':True,'idle':True,'startup_model':'windows_logon_task','startup_active':True,
+               'run_conclusion':'success','run_head_sha':'e'*40,'smoke_job_id':10,
+               'run_url':'https://github.com/'+repo['destination']+'/actions/runs/10'}
+        proof['registration_evidence_url']=self.capture(dict(common,runner=actual,
+            runner_response={'method':'GET','http_status':200,'observed_at':at,
+                'request_url':'https://api.github.com/repos/'+repo['destination']+'/actions/runners/10',
+                'data':copy.deepcopy(actual)}))
+        host=copy.deepcopy(resources['capture']['host_capture']);host['observed_at']=at
+        host['data']['configurations'][0]['gitHubUrl']='https://github.com/'+repo['destination']
+        task=copy.deepcopy(resources['capture']['startup_capture']);task['observed_at']=at
+        proof['startup_evidence_url']=self.capture(dict(common,host_capture=host,startup_capture=task))
+        proof['jobs_evidence_url']=self.capture({'request_url':'https://api.github.com/repos/'+repo['destination']+
+            '/actions/runs/10/attempts/1/jobs?per_page=100','all_pages':True,'total_count':1,'observed_at':at,
+            'jobs':[{'id':10,'name':'Build and simulation tests','run_id':10,'run_attempt':1,
+                'head_sha':proof['run_head_sha'],'runner_id':10,'runner_name':actual['name'],
+                'labels':[label['name'] for label in actual['labels']],'status':'completed','conclusion':'success',
+                'started_at':at,'completed_at':at}]})
+        proof['run_evidence_url']=self.capture(dict(common,verification_mode='existing_build_and_simulation_tests',
+            run={'id':10,'run_attempt':1,'repository':{'id':repo['id'],'full_name':repo['destination']},
+                'html_url':proof['run_url'],'head_sha':proof['run_head_sha'],'head_branch':repo['default_branch'],
+                'path':'.github/workflows/ci.yml@'+repo['default_branch'],'event':'workflow_dispatch',
+                'status':'completed','conclusion':'success','created_at':at,'updated_at':at}))
+        proof['workflow_evidence_url']=self.capture({'repository_id':repo['id'],'repository':repo['destination'],
+            'revision_sha':proof['run_head_sha'],'observed_at':at,'contents_response':self.file_response(
+                repo['destination'],proof['run_head_sha'],'.github/workflows/ci.yml',resources['workflow_bytes'])})
+        row['post_transfer_runner']=proof
 
     def bind_ledger_readiness(self):
         rows=copy.deepcopy(self.rows)
@@ -2760,6 +2828,115 @@ class RolloutTests(unittest.TestCase):
             changed[field]=value;path.write_text(json.dumps(changed))
             with self.subTest(field=field),self.assertRaises(ValueError):self.check()
             path.write_text(json.dumps(original))
+
+    def test_windows_continuity_requires_original_registration_and_startup(self):
+        self.complete_transfer_gates()
+        row=next(r for r in self.matrix['repositories'] if r['repository_id']==validator.SURVIVAL_REPOSITORY_ID)
+        proof=row['post_transfer_runner'];earliest=validator.observed_time('2026-10-07T01:59:00Z','fixture')
+        validator.validate_runner_captures(proof,DIRECTORY,earliest)
+        path=DIRECTORY/proof['registration_evidence_url'];original=json.loads(path.read_text())
+        for mutation in ('missing-get','failed-get','wrong-runner','wrong-labels','stale-get'):
+            value=copy.deepcopy(original)
+            if mutation=='missing-get':value.pop('runner_response')
+            elif mutation=='failed-get':value['runner_response']['http_status']=403
+            elif mutation=='wrong-runner':value['runner']['id']=11
+            elif mutation=='wrong-labels':value['runner']['labels'].append({'name':'unreviewed'})
+            else:value['runner_response']['observed_at']='2026-10-07T01:00:00Z'
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_runner_captures(proof,DIRECTORY,earliest)
+        path.write_text(json.dumps(original))
+        path=DIRECTORY/proof['startup_evidence_url'];original=json.loads(path.read_text())
+        for mutation in ('directory','disabled','principal','action','trigger','stale-host','listener','service'):
+            value=copy.deepcopy(original);host=value['host_capture'];task=value['startup_capture']['data']
+            if mutation=='directory':host['data']['configurations'][0]['directory']=r'C:\unreviewed'
+            elif mutation=='disabled':task['enabled']=False
+            elif mutation=='principal':task['principal']['runLevel']='Highest'
+            elif mutation=='action':task['actions'][0]['Arguments']='--replace'
+            elif mutation=='trigger':task['triggers'][0]['Enabled']=False
+            elif mutation=='stale-host':host['observed_at']='2026-10-07T01:00:00Z'
+            elif mutation=='listener':host['data']['processes'][0]['ExecutablePath']=r'C:\other\Runner.Listener.exe'
+            else:host['data']['services']=[{'name':'new-service'}]
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_runner_captures(proof,DIRECTORY,earliest)
+        path.write_text(json.dumps(original))
+        validator.validate_runner_captures(proof,DIRECTORY,earliest)
+
+    def test_windows_continuity_executes_reviewed_existing_ci_on_current_attempt(self):
+        self.complete_transfer_gates()
+        row=next(r for r in self.matrix['repositories'] if r['repository_id']==validator.SURVIVAL_REPOSITORY_ID)
+        proof=row['post_transfer_runner'];earliest=validator.observed_time('2026-10-07T01:59:00Z','fixture')
+        path=DIRECTORY/proof['run_evidence_url'];original=json.loads(path.read_text())
+        for valid in ('.github/workflows/ci.yml','.github/workflows/ci.yml@main'):
+            value=copy.deepcopy(original);value['run']['path']=valid;value['run_response']['data']=copy.deepcopy(value['run'])
+            path.write_text(json.dumps(value));validator.validate_runner_captures(proof,DIRECTORY,earliest)
+        for mutation in ('wrong-ref','wrong-workflow','wrong-branch','wrong-event','wrong-mode','stale-run'):
+            value=copy.deepcopy(original)
+            if mutation=='wrong-ref':value['run']['path']='.github/workflows/ci.yml@feature'
+            elif mutation=='wrong-workflow':value['run']['path']='.github/workflows/self-hosted-smoke.yml'
+            elif mutation=='wrong-branch':value['run']['head_branch']='feature'
+            elif mutation=='wrong-event':value['run']['event']='push'
+            elif mutation=='wrong-mode':value['verification_mode']='read_only'
+            else:value['run']['created_at']='2026-10-07T01:00:00Z'
+            value['run_response']['data']=copy.deepcopy(value['run']);path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_runner_captures(proof,DIRECTORY,earliest)
+        path.write_text(json.dumps(original))
+        path=DIRECTORY/proof['jobs_evidence_url'];original=json.loads(path.read_text())
+        for field,value in (('name','unreviewed job'),('runner_id',11),('run_attempt',2),('conclusion','skipped')):
+            changed=copy.deepcopy(original);changed['jobs'][0][field]=value
+            changed['pages'][0]['data']['jobs']=copy.deepcopy(changed['jobs']);path.write_text(json.dumps(changed))
+            with self.subTest(field=field),self.assertRaises(ValueError):
+                validator.validate_runner_captures(proof,DIRECTORY,earliest)
+        path.write_text(json.dumps(original))
+        validator.validate_runner_captures(proof,DIRECTORY,earliest)
+
+    def test_current_windows_resources_are_pinned_without_replacing_inventory(self):
+        repo=next(r for r in self.inventory['repositories'] if r['id']==validator.SURVIVAL_REPOSITORY_ID)
+        current=validator.protection_contract(repo);original=validator.original_protection_contract(repo,DIRECTORY)
+        self.assertEqual(original['rulesets'],[])
+        self.assertEqual(len(current['rulesets']),1)
+        path=DIRECTORY/'current-survival-resources.json';data=path.read_bytes()
+        path.write_bytes(data+b' ')
+        with self.assertRaisesRegex(ValueError,'reviewed preparation capture'):validator.protection_contract(repo)
+        path.write_bytes(data)
+        self.assertEqual(validator.protection_contract(repo),current)
+
+    def test_windows_pre_cutover_preserves_enabled_variable_and_runner_labels(self):
+        self.complete_transfer_gates();credential=self.matrix['pre_transfer_credential_verification']
+        ref=self.matrix['pre_cutover_source_evidence_url'];path=DIRECTORY/ref;original=json.loads(path.read_text())
+        validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        for mutation in ('missing-variable','disabled-variable','stale-variable','changed-labels','offline','removed-runner'):
+            value=copy.deepcopy(original);row=next(r for a in value['accounts'] for r in a['repositories']
+                if r['id']==validator.SURVIVAL_REPOSITORY_ID)
+            if mutation=='missing-variable':row.pop('variable_responses')
+            elif mutation=='disabled-variable':row['variable_responses']['UE_RUNNER_ENABLED']['data']['value']='false'
+            elif mutation=='stale-variable':row['variable_responses']['UE_RUNNER_ENABLED']['observed_at']='2026-10-07T01:00:00Z'
+            elif mutation=='changed-labels':row['runner_pages'][0]['data']['runners'][0]['labels'].pop()
+            elif mutation=='offline':row['runner_pages'][0]['data']['runners'][0]['status']='offline'
+            else:row['runner_pages'][0]['data'].update(runners=[],total_count=0)
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):
+                validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        path.write_text(json.dumps(original))
+
+    def test_windows_workflow_drift_is_rejected_before_cutover(self):
+        self.complete_transfer_gates();credential=self.matrix['pre_transfer_credential_verification']
+        ref=self.matrix['pre_cutover_source_evidence_url'];source=json.loads((DIRECTORY/ref).read_text())
+        validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
+        path=DIRECTORY/source['reference_scan_evidence_url'];scan=json.loads(path.read_text())
+        row=next(r for r in scan['repositories'] if r['repository_id']==validator.SURVIVAL_REPOSITORY_ID)
+        repo=next(r for r in self.inventory['repositories'] if r['id']==row['repository_id'])
+        name='.github/workflows/ci.yml';body=validator.reviewed_survival_resources(repo,DIRECTORY)['workflow_bytes']
+        changed=body+b'\n# Unreviewed workflow revision\n'
+        file=json.loads((DIRECTORY/self.file_contents_capture(repo['id'],repo['full_name'],row['head_sha'],name,changed)).read_text())
+        file.update(path=name,observed_at=row['observed_at'])
+        row['files']=[file if f['path']==name else f for f in row['files']]
+        next(entry for entry in row['tree_response']['data']['tree'] if entry['path']==name)['sha']=file['contents_response']['data']['sha']
+        path.write_text(json.dumps(scan))
+        with self.assertRaisesRegex(ValueError,'Windows workflow must match'):
+            validator.validate_source_refresh(ref,DIRECTORY,self.inventory,credential)
 
 
     def test_pilot_scenarios_load_executed_fixture_output(self):
@@ -5045,6 +5222,162 @@ let observed;const github={rest:{checks:{update:async x=>{observed=x}}}};
             '.github/workflows/self-hosted-smoke.yml',b'name: destructive workflow\npermissions: write-all\n')
         workflow_path.write_text(json.dumps(workflow))
         with self.assertRaisesRegex(ValueError,'reviewed read-only workflow bytes'):validator.validate_runner_captures(proof,DIRECTORY,cutoff)
+
+
+    def test_source_free_plan_refusal_requires_fresh_owner_browser_proof(self):
+        repo=next(r for r in self.inventory['repositories'] if r['id']==validator.FHEMMER_REPOSITORY_ID)
+        at='2026-10-08T02:00:00Z';earliest=validator.observed_time('2026-10-08T01:55:00Z','fixture')
+        browser={'phase':'pre_cutover'}
+        for page,suffix,phrase in [('classic','branches','Classic branch protections have not been configured'),
+                                  ('rulesets','rules',"You haven't created any rulesets")]:
+            url='https://github.com/'+repo['full_name']+'/settings/'+suffix
+            value={'url':url,'login':'HemSoft','observed_at':at,
+                   'visible_text':'Settings: '+repo['full_name']+'\n'+phrase}
+            if page=='classic':value.update(repository=repo['full_name'],repository_id=str(repo['id']))
+            browser[page]={'toolIcon':{'pageUrl':url},'value':value}
+        browser_path=DIRECTORY/self.capture(browser)
+        reference=self.capture({'phase':'pre_cutover','repository_id':repo['id'],'repository':repo['full_name'],
+            'revision_sha':'e'*40,'observed_at':at,'rulesets':[],'classic':{},'owner_browser_evidence_url':browser_path.name})
+        policy=json.loads((DIRECTORY/reference).read_text())
+        policy['ruleset_pages'][0].update(http_status=403,data={'message':
+            'Upgrade to GitHub Pro or make this repository public to enable this feature.'})
+        def check(value=policy):
+            return validator.validate_protection_responses(value,repo,repo['full_name'],'e'*40,
+                validator.observed_time(at,'fixture'),earliest,directory=DIRECTORY)
+        self.assertEqual(check(),{'rulesets':[],'classic':{}})
+        self.assertEqual(policy['ruleset_pages'][0]['http_status'],403)
+        immediate=copy.deepcopy(policy);immediate['phase']='pre_transfer'
+        browser_path.write_text(json.dumps(dict(browser,phase='pre_transfer')))
+        self.assertEqual(check(immediate),{'rulesets':[],'classic':{}})
+        with self.assertRaisesRegex(ValueError,'current cutover phase'):check()
+        browser_path.write_text(json.dumps(browser))
+        for mutation in ('wrong-owner','wrong-id','wrong-url','stale','missing-absence','wrong-phase'):
+            value=copy.deepcopy(browser)
+            if mutation=='wrong-owner':value['rulesets']['value']['login']='another-owner'
+            elif mutation=='wrong-id':value['classic']['value']['repository_id']='42'
+            elif mutation=='wrong-url':value['rulesets']['value']['url']=value['classic']['value']['url']
+            elif mutation=='stale':value['classic']['value']['observed_at']='2026-10-08T01:00:00Z'
+            elif mutation=='missing-absence':value['rulesets']['value']['visible_text']='Settings: '+repo['full_name']
+            else:value['phase']='preparation'
+            browser_path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):check()
+        browser_path.write_text(json.dumps(browser))
+        for mutation in ('quota-refusal','missing-browser','new-protected-branch','post-transfer'):
+            value=copy.deepcopy(policy)
+            if mutation=='quota-refusal':value['ruleset_pages'][0]['data']['message']='API rate limit exceeded'
+            elif mutation=='missing-browser':value.pop('owner_browser_evidence_url')
+            elif mutation=='new-protected-branch':value['protected_branch_pages'][0]['data']=[{'name':'main'}]
+            else:value['phase']='post_transfer'
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):check(value)
+
+    def test_tag_only_manifest_disagreement_preserves_current_branch_consistency(self):
+        repo=next(r for r in self.inventory['repositories'] if r['full_name']=='HemSoft/hs-buddy')
+        base='https://api.github.com/repos/'+repo['full_name'];at='2026-10-08T02:00:00Z'
+        def branch(head,bodies):
+            files=[];tree=[]
+            for path,body in bodies.items():
+                file={'repository_id':repo['id'],'repository':repo['full_name'],'revision_sha':head,
+                    'path':path,'observed_at':at,'contents_response':self.file_response(repo['full_name'],head,path,body),
+                    'manifest':json.loads(body)}
+                files.append(file);tree.append({'path':path,'type':'blob','sha':file['contents_response']['data']['sha']})
+            return {'head_sha':head,'tree_sha':'f'*40,'files':files,
+                'commit_response':{'http_status':200,'request_url':base+'/git/commits/'+head,
+                    'data':{'sha':head,'tree':{'sha':'f'*40}}},
+                'tree_response':{'http_status':200,'request_url':base+'/git/trees/'+'f'*40+'?recursive=1',
+                    'data':{'sha':'f'*40,'truncated':False,'tree':tree}}}
+        row=dict(branch('e'*40,{}),repository_id=repo['id'],source=repo['full_name'],observed_at=at,
+            referenced_secret_names=[],state='observed',
+            ref_response={'http_status':200,'request_url':base+'/git/ref/heads/main',
+                'data':{'ref':'refs/heads/main','object':{'type':'commit','sha':'e'*40}}},
+            branches_response={'http_status':200,'request_url':base+'/branches?per_page=100','all_pages':True,
+                'data':[{'name':'main','commit':{'sha':'e'*40}}]},
+            tag_refs_response={'method':'GET','http_status':200,'request_url':base+'/git/matching-refs/tags/',
+                'observed_at':at,'response_headers':{},
+                'data':[{'ref':'refs/tags/historical','object':{'type':'commit','sha':'d'*40}}]},tag_object_responses={},
+            branch_scans=[branch('d'*40,{'sfl.json':b'{"version":"legacy"}',
+                                      '.sfl/sfl.json':b'{"version":"canonical"}'})])
+        path=DIRECTORY/self.capture({'phase':'pre_cutover','observed_at':at,'repositories':[row]})
+        value=json.loads(path.read_text())
+        revisions,_,manifests=validator.validate_reference_scan(path.name,DIRECTORY,{'repositories':[repo]})
+        self.assertEqual(revisions[repo['id']][0],'e'*40);self.assertEqual(manifests,{})
+        target=value['repositories'][0]
+        target['branches_response']['data'].append({'name':'restored-history','commit':{'sha':'d'*40}})
+        target['branches_response']['pages'][0]['data']=copy.deepcopy(target['branches_response']['data'])
+        path.write_text(json.dumps(value))
+        with self.assertRaisesRegex(ValueError,'canonical and legacy installation manifests disagree'):
+            validator.validate_reference_scan(path.name,DIRECTORY,{'repositories':[repo]})
+
+    def historical_credential_fixture(self):
+        repo=next(r for r in self.inventory['repositories'] if r['id']==1262580000)
+        catalog=json.loads((DIRECTORY/'historical-workflow-reconciliation.json').read_text())
+        entry=next(e for e in catalog['blobs'] if e['path']=='sfl.json')
+        body=(ROOT/'deployment/tests/fixtures/retired-gh-x-sfl.json').read_bytes()
+        at='2026-10-08T02:00:00Z';base='https://api.github.com/repos/'+repo['full_name']
+        file={'repository_id':repo['id'],'repository':repo['full_name'],'revision_sha':entry['source_revision'],
+            'path':'sfl.json','observed_at':at,'contents_response':self.file_response(repo['full_name'],entry['source_revision'],'sfl.json',body)}
+        history={'head_sha':entry['source_revision'],'files':[file]}
+        def response(suffix,data,status=200):return {'method':'GET','http_status':status,'observed_at':at,
+            'request_url':base+suffix,'response_headers':{},'data':data}
+        retired={path:response('/actions/workflows/'+path.rsplit('/',1)[1],
+            {'id':wid,'path':path,'state':'deleted'} if wid else {'message':'Not Found'},200 if wid else 404)
+            for path,wid in {'.github/workflows/sfl-pr-review-auto.yml':337272622,
+                '.github/workflows/sfl-pr-review.lock.yml':325052102,'.github/workflows/sfl-pr-review-recovery.yml':None}.items()}
+        capture={'phase':'pre_cutover','repository_id':repo['id'],'repository':repo['full_name'],'head_sha':'e'*40,
+            'observed_at':at,'metadata_response':response('',{'id':repo['id'],'full_name':repo['full_name']}),
+            'default_ref_response':response('/git/ref/heads/main',{'ref':'refs/heads/main','object':{'sha':'e'*40}}),
+            'workflow_pages':[response('/actions/workflows?per_page=100',{'total_count':1,
+                'workflows':[{'id':1,'path':'.github/workflows/ci.yml','state':'active'}]})],
+            'historical_workflow_responses':retired}
+        path=DIRECTORY/self.capture(capture)
+        row={'head_sha':'e'*40,'files':[],'branch_scans':[history],'inactive_historical_workflows_evidence_url':path.name}
+        revision=('e'*40,'f'*40,{'main':'e'*40},{'refs/tags/history':{'commit_sha':entry['source_revision']}})
+        return repo,row,revision,history,path,capture
+
+    def test_inactive_history_cannot_use_evidence_after_source_refresh(self):
+        repo,row,revision,history,path,original=self.historical_credential_fixture()
+        scanned=validator.observed_time('2026-10-08T01:55:00Z','fixture')
+        refresh=validator.observed_time('2026-10-08T02:01:00Z','fixture')
+        def check():
+            validator.validate_inactive_historical_references(row,repo,revision,[history],
+                ['OPENROUTER_API_KEY','SFL_APP_PRIVATE_KEY'],DIRECTORY,scanned,latest_at=refresh)
+        check()
+        future=copy.deepcopy(original);future['observed_at']='2026-10-08T02:02:00Z'
+        path.write_text(json.dumps(future))
+        with self.assertRaisesRegex(ValueError,'precede source refresh'):check()
+        future=copy.deepcopy(original);future['metadata_response']['observed_at']='2026-10-08T02:02:00Z'
+        path.write_text(json.dumps(future))
+        with self.assertRaisesRegex(ValueError,'identity GETs'):check()
+
+    def test_retired_history_requires_exact_bytes_and_current_primary_metadata(self):
+        repo,row,revision,history,path,original=self.historical_credential_fixture()
+        waived=['OPENROUTER_API_KEY','SFL_APP_PRIVATE_KEY'];scanned=validator.observed_time('2026-10-08T01:55:00Z','fixture')
+        def check(r=row,v=revision,h=history):
+            validator.validate_inactive_historical_references(r,repo,v,[h],waived,DIRECTORY,scanned)
+        check()
+        for mutation in ('wrong-head','stale','missing-get','failed-get','enabled','wrong-workflow-id','registered','omitted-page'):
+            value=copy.deepcopy(original)
+            if mutation=='wrong-head':value['head_sha']='b'*40
+            elif mutation=='stale':value['metadata_response']['observed_at']='2026-10-08T01:00:00Z'
+            elif mutation=='missing-get':value['historical_workflow_responses'].pop('.github/workflows/sfl-pr-review-recovery.yml')
+            elif mutation=='failed-get':value['historical_workflow_responses']['.github/workflows/sfl-pr-review-auto.yml']['http_status']=403
+            elif mutation=='enabled':value['historical_workflow_responses']['.github/workflows/sfl-pr-review-auto.yml']['data']['state']='active'
+            elif mutation=='wrong-workflow-id':value['historical_workflow_responses']['.github/workflows/sfl-pr-review-auto.yml']['data']['id']=42
+            elif mutation=='registered':value['workflow_pages'][0]['data']['workflows'][0]['path']='.github/workflows/sfl-pr-review-auto.yml'
+            else:value['workflow_pages'][0]['response_headers']['Link']='<'+value['workflow_pages'][0]['request_url']+'&page=2>; rel="next"'
+            path.write_text(json.dumps(value))
+            with self.subTest(mutation=mutation),self.assertRaises(ValueError):check()
+        path.write_text(json.dumps(original))
+        current=copy.deepcopy(revision);current[2]['restored']=history['head_sha']
+        with self.assertRaisesRegex(ValueError,'current branch'):check(v=current)
+        restored=copy.deepcopy(row);restored['files']=[{'path':'.github/workflows/sfl-pr-review-auto.yml'}]
+        with self.assertRaisesRegex(ValueError,'restored historical'):check(r=restored)
+        changed=copy.deepcopy(history);changed['files'][0]['contents_response']=self.file_response(repo['full_name'],history['head_sha'],
+            'sfl.json',b'{"key":"${{ secrets.SFL_APP_PRIVATE_KEY }}"}')
+        with self.assertRaisesRegex(ValueError,'reviewed exact bytes'):check(h=changed)
+        catalog_path=DIRECTORY/'historical-workflow-reconciliation.json';catalog_bytes=catalog_path.read_bytes()
+        self.addCleanup(catalog_path.write_bytes,catalog_bytes);catalog=json.loads(catalog_bytes)
+        catalog['tag_only_revisions'].append('b'*40);catalog_path.write_text(json.dumps(catalog))
+        with self.assertRaisesRegex(ValueError,'reviewed immutable catalog'):check()
 
 
 if __name__ == '__main__':

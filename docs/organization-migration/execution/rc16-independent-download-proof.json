@@ -1,0 +1,14 @@
+{
+  "observed_at": "2026-10-08T03:13:34.152847+00:00",
+  "source_repository": "hemsoft-dev/set-it-free-loop",
+  "source_sha": "4d714b3fe2c153288a4c055e69be2fee9e5b5e36",
+  "release_version": "2.1.0-rc.16",
+  "expected_sha256": "47bd8fd2c2a214d71167adccfec8532ce718f565f0765a6e0ab01e78abd045c4",
+  "actual_sha256": "47bd8fd2c2a214d71167adccfec8532ce718f565f0765a6e0ab01e78abd045c4",
+  "checksum_verified": true,
+  "gh_sfl_version": "gh-sfl 2.1.0-rc.16 (2026-10-07) HemSoft\n\u26a0 Could not check for updates\n",
+  "isolated_data_home": ".git/merge-mission/rc16-clean-download/isolated-data",
+  "release_attestation_exit_code": 0,
+  "release_attestation_verified": true,
+  "installer_session": 51608
+}

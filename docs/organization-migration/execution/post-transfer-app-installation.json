@@ -1,0 +1,18 @@
+{
+  "observed_at": "2026-10-08 03:10:40 UTC",
+  "operator_result": {
+    "argv": [
+      "api",
+      "orgs/hemsoft-dev/installations",
+      "--jq",
+      ".installations[] | select(.app_id==4448946) | {id,app_id,client_id,account:.account.login,repository_selection,permissions,suspended_at}"
+    ],
+    "exit_code": 0,
+    "stdout": "{\"account\":\"hemsoft-dev\",\"app_id\":4448946,\"client_id\":\"Iv23liwvwJJUh2bUIKLW\",\"id\":169090497,\"permissions\":{\"actions\":\"write\",\"checks\":\"write\",\"contents\":\"read\",\"issues\":\"write\",\"metadata\":\"read\",\"pull_requests\":\"write\"},\"repository_selection\":\"all\",\"suspended_at\":null}\n",
+    "stderr": ""
+  },
+  "browser_transfer_id": 66896,
+  "organization_installation_id": 169090497,
+  "private_key_fingerprint_preserved": "SHA256:WL8xLmiyxCgGabPjS7KnxzxTDFo8ykCffQ00yCvsEzI=",
+  "sealing_or_org_secret_writes": false
+}

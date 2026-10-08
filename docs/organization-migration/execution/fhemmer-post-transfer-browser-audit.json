@@ -1,0 +1,18 @@
+{
+  "observed_at": "2026-10-08T03:44:22.047Z",
+  "capture_source": "Shared owner browser visible fhemmer organization audit log",
+  "dates": [
+    {
+      "datetime": "2026-10-08T02:20:57Z",
+      "text": ""
+    },
+    {
+      "datetime": "2026-10-08T02:20:56Z",
+      "text": ""
+    }
+  ],
+  "pagination": [],
+  "text": "HemSoft Developments\nsettings\n\nOrganization\n\nSwitch settings context\nGeneral\nPolicies\nAccess\nBilling and licensing\nOrganization roles\nRepository roles\nMember privileges\nImport/Export\nModeration\nCode, planning, and automation\nRepository\nCustom properties\nCodespaces\nSandboxes\nPreview\nPlanning\nCopilot\nActions\nWebhooks\nDiscussions\nPackages\nPages\nSecurity and quality\nAuthentication security\nAdvanced Security\nCode quality\nDeploy keys\nCompliance\nVerified and approved domains\nSecrets and variables\nThird-party Access\nGitHub Apps\nOAuth app policy\nPersonal access tokens\nIntegrations\nScheduled reminders\nArchive\nLogs\nSponsorship log\nAudit log\nDeleted repositories\nDeveloper settings\nEvents\nSettings\nAudit log\nFilters\n Export \n Clear current search query\nEvents matching search query\n\t\nHemSoft – repo.transfer_outgoing\nTransferred fhemmer/hs-cli-confluence-search to hemsoft-dev/hs-cli-confluence-search-fhemmer\nUnited States  …\n\t\nfhemmer – integration_installation.repositories_removed\nRemoved the following repositories from the blacksmith.sh integration via the API:\nfhemmer/hs-cli-confluence-search\nUnited States  …\nNewer Older\n ProTip! Exclude events created by you with -actor:HemSoft",
+  "url": "https://github.com/organizations/fhemmer/settings/audit-log?q=created%3A%3E%3D2026-10-07",
+  "interpretation": "Retrospective supporting evidence: only transfer and installation removal events shown for October 7 onward. Does not replace a fresh pre-transfer policy capture or establish completeness of GitHub event coverage."
+}

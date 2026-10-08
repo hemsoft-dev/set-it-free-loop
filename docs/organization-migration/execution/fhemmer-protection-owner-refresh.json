@@ -1,0 +1,17 @@
+{
+  "observed_at": "2026-10-07T17:31:57+00:00",
+  "repository_id": 1143951439,
+  "source": "fhemmer/hs-cli-confluence-search",
+  "owner_login": "HemSoft",
+  "classic": {
+    "url": "https://github.com/fhemmer/hs-cli-confluence-search/settings/branches",
+    "state": "absent"
+  },
+  "rulesets": {
+    "url": "https://github.com/fhemmer/hs-cli-confluence-search/settings/rules",
+    "state": "absent",
+    "source_plan_notice": true
+  },
+  "purpose": "read-only owner refresh; repeat immediately before cutover",
+  "source_transferred": false
+}

@@ -12,6 +12,7 @@ import gzip
 import functools
 import io
 import json
+import ntpath
 import os
 import pathlib
 import re
@@ -41,6 +42,9 @@ HEALTH = {'pending_transfer', 'pending_rollout', 'failed', 'verified', 'archived
 LEDGER_STATUS = {'owner_verification_pending', 'partial_provider_verified', 'verified'}
 SFL_APP_PERMISSIONS = {'actions':'write', 'checks':'write', 'contents':'read',
                        'issues':'write', 'metadata':'read', 'pull_requests':'write'}
+GHX_HISTORY_CATALOG_SHA256 = 'a95712b0121ab3c4d0b4b985727eff0dd82eb0ca4081218733ac39bb388c8c78'
+SURVIVAL_REPOSITORY_ID = 1399232444
+SURVIVAL_RESOURCES_SHA256 = 'a53f01ba88db330c6e370a0c959c1c993bebe3b37e1abae68b7fa987c01b880a'
 
 
 def require(condition, message):
@@ -419,7 +423,7 @@ def protection_semantics(value, repo, url_field=False):
     return value
 
 
-def protection_contract(repo, directory=None):
+def original_protection_contract(repo, directory=None):
     rulesets = repo['settings']['rulesets']
     if rulesets.get('state') == 'unverified':
         require(repo['id'] == FHEMMER_REPOSITORY_ID, 'Unverified baseline rulesets need independent resolution')
@@ -453,7 +457,128 @@ def protection_contract(repo, directory=None):
     return {'rulesets': rules, 'classic': classic}
 
 
-def validate_protection_responses(capture, repo, repository, revision, timestamp, earliest=None, strict_after=False):
+def reviewed_survival_resources(repo, directory):
+    """An additive current-resource contract; the original inventory seal remains intact."""
+    path = directory / 'current-survival-resources.json'
+    require(path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == SURVIVAL_RESOURCES_SHA256,
+            'Current Windows resources must match their reviewed preparation capture')
+    capture = json.loads(path.read_bytes())
+    require(repo['id'] == SURVIVAL_REPOSITORY_ID and repo['full_name'] == 'HemSoft/survival-shelter-opus55' and
+            capture.get('repository_id') == repo['id'] and capture.get('repository') == repo['full_name'] and
+            capture.get('phase') == 'preparation' and capture.get('transfer_gate_cleared') is False and
+            capture.get('baseline_inventory_sha256') == hashlib.sha256((directory / 'inventory.json').read_bytes()).hexdigest() and
+            capture.get('baseline_integrity_sha256') == hashlib.sha256((directory / 'evidence-integrity.json').read_bytes()).hexdigest(),
+            'Current Windows resources must preserve the sealed source identity and inventory')
+    derived_at = observed_time(capture.get('derived_at'), 'Current resource preparation')
+    policy = capture.get('policy_capture', {})
+    policy_at = observed_time(policy.get('observed_at'), 'Current Windows policy')
+    require(policy.get('repository_id') == repo['id'] and policy.get('repository') == repo['full_name'] and
+            immutable_sha(policy.get('revision_sha')) and policy_at <= derived_at,
+            'Current Windows policy needs its actual source revision and primary capture')
+    contract = validate_protection_responses(policy, repo, repo['full_name'], policy['revision_sha'], policy_at)
+    original = original_protection_contract(repo, directory)
+    require(all(rule in contract['rulesets'] for rule in original['rulesets']) and
+            all(contract['classic'].get(name) == value for name, value in original['classic'].items()),
+            'Current Windows reconciliation must preserve every original protection')
+    runners = validate_raw_page_chain(capture.get('runner_pages'),
+        'https://api.github.com/repos/' + repo['full_name'] + '/actions/runners?per_page=100',
+        derived_at, 'Reviewed Windows runner inventory', field='runners')
+    require(len(runners) == 1 and runners[0].get('id') == 10 and runners[0].get('name') == 'DESKTOP-7ES73Q4' and
+            runners[0].get('os') == 'Windows' and
+            {label.get('name') for label in runners[0].get('labels', [])} == {'self-hosted', 'Windows', 'X64', 'ue5.7'},
+            'Current Windows reconciliation needs its exact runner identity and labels')
+    variable = capture.get('variable_response', {})
+    validate_resource_response(variable, 'https://api.github.com/repos/' + repo['full_name'] +
+                               '/actions/variables/UE_RUNNER_ENABLED', variable.get('data'))
+    require(variable['data'].get('name') == 'UE_RUNNER_ENABLED' and variable['data'].get('value') == 'true' and
+            observed_time(variable.get('observed_at'), 'Reviewed runner variable') <= derived_at,
+            'Current Windows reconciliation must retain its enabled CI variable')
+    workflow = capture.get('workflow_capture', {})
+    workflow_bytes = immutable_contents(workflow, repo['id'], repo['full_name'], policy['revision_sha'], '.github/workflows/ci.yml')
+    require(observed_time(workflow.get('observed_at'), 'Reviewed Windows workflow') <= derived_at,
+            'Windows workflow must retain its immutable source capture')
+    validate_windows_startup(capture['host_capture'], capture['startup_capture'], repo, runners[0], derived_at)
+    return {'capture':capture, 'policy':contract, 'runner':runners[0], 'workflow_bytes':workflow_bytes,
+            'observed_at':policy_at}
+
+
+def protection_contract(repo, directory=None):
+    if directory is None:
+        directory = pathlib.Path(__file__).resolve().parents[2] / 'docs/organization-migration'
+    if repo['id'] == SURVIVAL_REPOSITORY_ID:
+        return reviewed_survival_resources(repo, directory)['policy']
+    return original_protection_contract(repo, directory)
+
+
+def validate_windows_startup(host_capture, task_capture, repo, runner, latest, earliest=None):
+    for capture in (host_capture, task_capture):
+        at = observed_time(capture.get('observed_at'), 'Windows startup capture')
+        require(capture.get('host_alias') == 'laptop' and at <= latest and (earliest is None or at >= earliest),
+                'Windows startup must be captured on its existing host after cutover')
+    host, task = host_capture.get('data', {}), task_capture.get('data', {})
+    require(host.get('computer') == task.get('computer') == runner['name'] and host.get('services') == [],
+            'Windows continuity must preserve the observed foreground startup mechanism')
+    configurations = host.get('configurations', [])
+    require(len(configurations) == 1 and configurations[0].get('agentId') == runner['id'] and
+            configurations[0].get('agentName') == runner['name'] and configurations[0].get('workFolder') == '_work' and
+            configurations[0].get('gitHubUrl') in {'https://github.com/' + repo['full_name'],
+                                                   'https://github.com/' + repo['destination']},
+            'Windows host registration must preserve its repository-bound agent')
+    root = ntpath.normcase(ntpath.normpath(configurations[0].get('directory', '')))
+    expected_root = ntpath.normcase(r'C:\Users\User\actions-runner\survival-shelter')
+    require(root == expected_root, 'Windows runner must preserve its existing work directory')
+    processes = host.get('processes', [])
+    require(len(processes) == 1 and processes[0].get('Name') == 'Runner.Listener.exe' and
+            type(processes[0].get('ProcessId')) is int and processes[0]['ProcessId'] > 0 and
+            ntpath.normcase(ntpath.normpath(processes[0].get('ExecutablePath', ''))) ==
+                ntpath.join(root, 'bin', 'runner.listener.exe'),
+            'Windows startup must observe the existing runner listener')
+    actions, triggers = task.get('actions', []), task.get('triggers', [])
+    require(task.get('name') == 'GitHub Actions runner - HemSoft-survival-shelter-opus55' and
+            task.get('path') in {'\\', '\\\\'} and task.get('enabled') is True and task.get('state') == 'Running' and
+            task.get('principal') == {'user':'User', 'logonType':'Interactive', 'runLevel':'Limited'} and
+            len(actions) == 1 and actions[0].get('Arguments') in {None, ''} and
+            ntpath.normcase(ntpath.normpath(actions[0].get('Execute', ''))) == ntpath.join(root, 'run.cmd') and
+            ntpath.normcase(ntpath.normpath(actions[0].get('WorkingDirectory', ''))) == root and
+            len(triggers) == 1 and triggers[0].get('Enabled') is True and
+            triggers[0].get('CimClass', {}).get('CimSystemProperties', {}).get('ClassName') == 'MSFT_TaskLogonTrigger',
+            'Windows continuity must preserve the exact enabled logon task, action and limited principal')
+
+
+def validate_source_browser_protection(capture, repo, repository, timestamp, earliest, directory):
+    """Keep the Free-plan API refusal visible and verify the source owner DOM separately."""
+    require(repo['id'] == FHEMMER_REPOSITORY_ID and repository == 'fhemmer/hs-cli-confluence-search' and
+            repository == repo['full_name'] and capture.get('phase') in {'pre_cutover','pre_transfer'} and earliest is not None,
+            'Owner-browser protection fallback is limited to the inaccessible fhemmer source')
+    pages = capture.get('ruleset_pages')
+    require(isinstance(pages, list) and len(pages) == 1, 'Source plan refusal needs its exact primary GET')
+    response = pages[0]
+    require(response.get('method') == 'GET' and response.get('http_status') == 403 and
+            response.get('request_url') == 'https://api.github.com/repos/' + repository +
+                '/rulesets?includes_parents=true&per_page=100' and
+            response.get('data', {}).get('message') ==
+                'Upgrade to GitHub Pro or make this repository public to enable this feature.' and
+            earliest <= observed_time(response.get('observed_at'), 'Source plan refusal') <= timestamp and
+            capture.get('ruleset_responses') == {},
+            'Only the observed plan refusal permits independent source owner verification')
+    browser = local_capture(capture.get('owner_browser_evidence_url'), directory, 'Fresh source owner protection')
+    require(browser.get('phase') == capture['phase'], 'Source owner DOM needs its current cutover phase')
+    for page, suffix, phrase in [('classic', 'branches', 'Classic branch protections have not been configured'),
+                                 ('rulesets', 'rules', "You haven't created any rulesets")]:
+        result = browser.get(page, {})
+        value = result.get('value', {})
+        url = 'https://github.com/' + repository + '/settings/' + suffix
+        require(result.get('toolIcon', {}).get('pageUrl') == url and value.get('url') == url and
+                value.get('login') == 'HemSoft' and
+                'Settings: ' + repository in value.get('visible_text', '') and phrase in value.get('visible_text', '') and
+                earliest <= observed_time(value.get('observed_at'), 'Fresh source owner DOM') <= timestamp,
+                'Source owner DOM must independently prove current authenticated repository protection absence')
+        if page == 'classic':
+            require(value.get('repository') == repository and value.get('repository_id') == str(repo['id']),
+                    'Classic owner DOM must bind the immutable repository identity')
+
+
+def validate_protection_responses(capture, repo, repository, revision, timestamp, earliest=None, strict_after=False, directory=None):
     base = 'https://api.github.com/repos/' + repository
     metadata = capture.get('repository_response', {})
     validate_resource_response(metadata, base, metadata.get('data'))
@@ -472,8 +597,15 @@ def validate_protection_responses(capture, repo, repository, revision, timestamp
         require(ref['data'].get('ref') == 'refs/heads/' + repo['default_branch'] and
                 ref['data'].get('object', {}).get('sha') == revision,
                 'Protection responses need their current default branch revision')
-    rules = validate_raw_page_chain(capture.get('ruleset_pages'), base + '/rulesets?includes_parents=true&per_page=100',
-        timestamp, 'Destination rulesets', earliest=earliest)
+    blocked_source = repository == 'fhemmer/hs-cli-confluence-search' and any(
+        page.get('http_status') == 403 for page in capture.get('ruleset_pages', []))
+    if blocked_source:
+        require(directory is not None, 'Source owner DOM needs its migration evidence directory')
+        validate_source_browser_protection(capture, repo, repository, timestamp, earliest, directory)
+        rules = []
+    else:
+        rules = validate_raw_page_chain(capture.get('ruleset_pages'), base + '/rulesets?includes_parents=true&per_page=100',
+            timestamp, 'Destination rulesets', earliest=earliest)
     details = capture.get('ruleset_responses', {})
     ids = [rule.get('id') for rule in rules]
     require(all(type(rule_id) is int and rule_id > 0 for rule_id in ids) and len(ids) == len(set(ids)) and
@@ -488,6 +620,8 @@ def validate_protection_responses(capture, repo, repository, revision, timestamp
             ('id', 'name', 'target', 'enforcement', 'conditions', 'rules', 'bypass_actors')})
     branches = validate_raw_page_chain(capture.get('protected_branch_pages'), base + '/branches?protected=true&per_page=100',
         timestamp, 'Destination protected branches', earliest=earliest)
+    require(not blocked_source or (branches == [] and capture.get('classic_responses') == {}),
+            'Source owner protection absence must agree with the complete protected branch GETs')
     names = [branch.get('name') for branch in branches]
     classic = capture.get('classic_responses', {})
     require(string_list(names) and len(names) == len(set(names)) and isinstance(classic, dict) and set(classic) == set(names),
@@ -1474,7 +1608,7 @@ def source_revision(row, repo, earliest=None):
     return head, tree, branch_heads, tags
 
 
-def validate_reference_scan(reference, directory, inventory):
+def validate_reference_scan(reference, directory, inventory, latest_at=None):
     scan = local_capture(reference, directory, 'Fresh complete source reference scan')
     timestamp = observed_time(scan.get('observed_at'), 'Fresh source scan')
     expected = {repo['id']: repo for repo in inventory['repositories']}
@@ -1482,6 +1616,7 @@ def validate_reference_scan(reference, directory, inventory):
     require(scan.get('phase') == 'pre_cutover' and isinstance(rows, list) and len(rows) == len(expected),
             'Fresh reference scan must cover every sealed repository')
     revisions, manifests = {}, {}
+    unused = local_capture('legacy-unused-credential-owner-evidence.json', directory, 'Unused legacy credential scope')
     for row in rows:
         repo_id = row.get('repository_id')
         require(repo_id in expected and repo_id not in revisions, 'Fresh source scan has unexpected or duplicate IDs')
@@ -1500,6 +1635,9 @@ def validate_reference_scan(reference, directory, inventory):
                 {branch.get('head_sha') for branch in branch_scans} == other_heads,
                 'Fresh scan must inspect every distinct non-default branch and tagged commit')
         references, unresolved_secret_scope = set(), False
+        waived = next((r['unused_repository_secret_names'] for r in unused['repositories'] if r['repository_id'] == repo_id), [])
+        conflicts = []
+        current_heads = set(revision[2].values())
         for branch in [row] + branch_scans:
             head, tree_sha = branch.get('head_sha'), branch.get('tree_sha')
             commit = branch.get('commit_response', {})
@@ -1508,23 +1646,104 @@ def validate_reference_scan(reference, directory, inventory):
                     commit.get('data', {}).get('sha') == head and commit['data'].get('tree', {}).get('sha') == tree_sha,
                     'Scanned branch must match its immutable commit and tree')
             branch_references, branch_unresolved, branch_manifests = validate_branch_reference_files(
-                branch, repo, observed_time(row['observed_at'], 'Repository reference scan'))
+                branch, repo, observed_time(row['observed_at'], 'Repository reference scan'),
+                require_consistent_manifests=head in current_heads)
             references.update(branch_references)
             unresolved_secret_scope |= branch_unresolved
+            if branch_references.intersection(name.upper() for name in waived):
+                conflicts.append(branch)
             if head == revision[0]:
                 manifests.update({repo_id: manifest for manifest in branch_manifests})
         require({name.upper() for name in row.get('referenced_secret_names', [])} == references,
                 'Fresh credential reference conclusions must derive from every captured workflow')
-        unused = local_capture('legacy-unused-credential-owner-evidence.json', directory, 'Unused legacy credential scope')
-        waived = next((r['unused_repository_secret_names'] for r in unused['repositories'] if r['repository_id'] == repo_id), [])
         require(not waived or not unresolved_secret_scope,
                 'Inherited or dynamic secret scope needs reconciliation before an unused-credential waiver')
-        require(not references.intersection(name.upper() for name in waived),
-                'A newly referenced legacy credential needs reconciliation and fresh validation')
+        if conflicts:
+            validate_inactive_historical_references(row, repo, revision, conflicts, waived, directory, timestamp, latest_at=latest_at)
     return revisions, timestamp, manifests
 
 
-def validate_branch_reference_files(branch, repo, captured_at):
+def secret_references(source):
+    names = {name.upper() for name in re.findall(r'secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)', source, re.I)}
+    names.update(name.upper() for name in re.findall(r"secrets\s*\[\s*['\"]([^'\"]+)['\"]\s*\]", source, re.I))
+    return names
+
+
+def validate_inactive_historical_references(row, repo, revision, conflicts, waived, directory, scanned_at, latest_at=None):
+    """Reconcile only the reviewed retired gh-x bytes, never current branch references."""
+    require(repo['id'] == 1262580000 and repo['full_name'] == 'HemSoft/gh-x' and
+            set(waived) == {'OPENROUTER_API_KEY', 'SFL_APP_PRIVATE_KEY'},
+            'A newly referenced legacy credential needs reconciliation and fresh validation')
+    catalog_path = directory / 'historical-workflow-reconciliation.json'
+    require(catalog_path.is_file() and hashlib.sha256(catalog_path.read_bytes()).hexdigest() == GHX_HISTORY_CATALOG_SHA256,
+            'Historical credential treatment must match the reviewed immutable catalog')
+    catalog = json.loads(catalog_path.read_bytes())
+    require(catalog.get('repository_id') == repo['id'] and catalog.get('repository') == repo['full_name'] and
+            set(catalog.get('secret_names', [])) == set(waived) and catalog.get('owner_unused_receipt') == LEGACY_UNUSED_RECEIPT,
+            'Historical reconciliation needs its exact repository and existing owner-unused scope')
+    current_heads = set(revision[2].values())
+    allowed_heads = set(catalog['tag_only_revisions'])
+    require(all(branch['head_sha'] not in current_heads and branch['head_sha'] in allowed_heads for branch in conflicts),
+            'Unused credentials cannot be referenced on any current branch or an unreconciled tagged revision')
+    allowed = {(entry['path'], entry['blob_sha']): entry for entry in catalog['blobs']}
+    retired_paths = {entry['path'] for entry in catalog['blobs'] if entry['path'].startswith('.github/workflows/')}
+    for branch in [row] + row['branch_scans']:
+        if branch['head_sha'] in current_heads:
+            require(not retired_paths.intersection(file['path'] for file in branch['files']),
+                    'A restored historical SFL workflow invalidates its inactive credential treatment')
+    for branch in conflicts:
+        for file in branch['files']:
+            body = immutable_contents(file, repo['id'], repo['full_name'], branch['head_sha'], file['path'])
+            if not secret_references(body.decode('utf-8')).intersection(waived):
+                continue
+            entry = allowed.get((file['path'], file['contents_response']['data']['sha']))
+            require(entry is not None and hashlib.sha256(body).hexdigest() == entry['sha256'],
+                    'Historical credential reference differs from its reviewed exact bytes')
+
+    capture = local_capture(row.get('inactive_historical_workflows_evidence_url'), directory, 'Fresh inactive workflow metadata')
+    at = observed_time(capture.get('observed_at'), 'Inactive workflow metadata')
+    require(capture.get('phase') == 'pre_cutover' and capture.get('repository_id') == repo['id'] and
+            capture.get('repository') == repo['full_name'] and capture.get('head_sha') == revision[0] and at >= scanned_at and (latest_at is None or at <= latest_at),
+            'Inactive workflow evidence must follow the complete scan at its current source head and precede source refresh')
+    base = 'https://api.github.com/repos/' + repo['full_name']
+    for name, url in [('metadata_response', base),
+                      ('default_ref_response', base + '/git/ref/heads/' + urllib.parse.quote(repo['default_branch'], safe=''))]:
+        response = capture.get(name, {})
+        validate_resource_response(response, url, response.get('data'))
+        require(scanned_at <= observed_time(response.get('observed_at'), 'Inactive workflow identity') <= at,
+                'Inactive workflow identity GETs must follow the complete scan')
+    require(capture['metadata_response']['data'].get('id') == repo['id'] and
+            capture['metadata_response']['data'].get('full_name') == repo['full_name'] and
+            capture['default_ref_response']['data'].get('ref') == 'refs/heads/' + repo['default_branch'] and
+            capture['default_ref_response']['data'].get('object', {}).get('sha') == revision[0],
+            'Inactive workflow metadata needs the independently captured source repository and head')
+    workflows = validate_raw_page_chain(capture.get('workflow_pages'), base + '/actions/workflows?per_page=100',
+        at, 'Current registered workflows', field='workflows', earliest=scanned_at)
+    require(not retired_paths.intersection(workflow.get('path') for workflow in workflows),
+            'A registered historical workflow invalidates its inactive credential treatment')
+    expected = {'.github/workflows/sfl-pr-review-auto.yml': 337272622,
+                '.github/workflows/sfl-pr-review.lock.yml': 325052102,
+                '.github/workflows/sfl-pr-review-recovery.yml': None}
+    responses = capture.get('historical_workflow_responses')
+    require(isinstance(responses, dict) and set(responses) == set(expected),
+            'Inactive history needs each exact retired workflow GET')
+    for path, workflow_id in expected.items():
+        response = responses[path]
+        require(response.get('method') == 'GET' and response.get('request_url') ==
+                base + '/actions/workflows/' + path.rsplit('/', 1)[1] and
+                scanned_at <= observed_time(response.get('observed_at'), 'Retired workflow GET') <= at,
+                'Retired workflow GET must be fresh and resource-bound')
+        data = response.get('data', {})
+        if workflow_id is None:
+            require(response.get('http_status') == 404 and data.get('message') == 'Not Found',
+                    'Retired recovery workflow must be actually unavailable')
+        else:
+            require(response.get('http_status') == 200 and data.get('id') == workflow_id and
+                    data.get('path') == path and data.get('state') == 'deleted',
+                    'Historical SFL workflow must remain deleted at its exact observed identity')
+
+
+def validate_branch_reference_files(branch, repo, captured_at, require_consistent_manifests=True):
     repo_id = repo['id']
     head, tree_sha = branch['head_sha'], branch['tree_sha']
     tree = branch.get('tree_response', {})
@@ -1559,8 +1778,7 @@ def validate_branch_reference_files(branch, repo, captured_at):
                 captured_at,
                 'Scanned file must match the complete Git tree blob')
         source = body.decode('utf-8')
-        references.update(name.upper() for name in re.findall(r'secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)', source, re.I))
-        references.update(name.upper() for name in re.findall(r"secrets\s*\[\s*['\"]([^'\"]+)['\"]\s*\]", source, re.I))
+        references.update(secret_references(source))
         unresolved_secret_scope |= bool(re.search(r"(?im)^\s*secrets\s*:\s*(['\"]?)inherit\1\s*(?:#.*)?$", source))
         unresolved_secret_scope |= any(re.fullmatch(r"\s*['\"][A-Za-z_][A-Za-z0-9_]*['\"]\s*", match[1]) is None
             for match in re.finditer(r'\bsecrets\s*\[([^\]]*)\]', source, re.I))
@@ -1568,7 +1786,7 @@ def validate_branch_reference_files(branch, repo, captured_at):
             for expression in re.findall(r'\$\{\{(.*?)\}\}', source, re.S))
         if path in {'.sfl/sfl.json', 'sfl.json'}:
             require(file.get('manifest') == json.loads(body), 'Fresh installation manifest must derive from immutable bytes')
-            require(not manifests or manifests[0] == file['manifest'],
+            require(not require_consistent_manifests or not manifests or manifests[0] == file['manifest'],
                     'Fresh canonical and legacy installation manifests disagree')
             manifests.append(file['manifest'])
     return references, unresolved_secret_scope, manifests
@@ -1637,7 +1855,7 @@ def validate_source_refresh(proof, directory, inventory, credential):
     require(timestamp >= observed_time(credential_run.get('captured_at'), 'App credential run capture'),
             'Source refresh must follow the captured completed credential workflow')
     expected = {r['id']: r for r in inventory['repositories']}
-    revisions, scanned_at, manifests = validate_reference_scan(capture.get('reference_scan_evidence_url'), directory, inventory)
+    revisions, scanned_at, manifests = validate_reference_scan(capture.get('reference_scan_evidence_url'), directory, inventory, latest_at=timestamp)
     run = credential_run.get('run', credential_run)
     require(scanned_at <= observed_time(run.get('created_at'), 'Fresh credential run creation') and
             timestamp - observed_time(run.get('updated_at'), 'Fresh credential run completion') <= datetime.timedelta(minutes=15),
@@ -1667,7 +1885,8 @@ def validate_source_refresh(proof, directory, inventory, credential):
                     policy.get('repository') == baseline['full_name'] and policy.get('revision_sha') == head.get('head_sha') and
                     scanned_at <= policy_at <= timestamp,
                     'Fresh source policy must bind its repository revision and current refresh boundary')
-            actual_policy = validate_protection_responses(policy, baseline, baseline['full_name'], head.get('head_sha'), policy_at, scanned_at)
+            actual_policy = validate_protection_responses(policy, baseline, baseline['full_name'], head.get('head_sha'), policy_at, scanned_at,
+                                                         directory=directory)
             require(current.get('protections') == actual_policy == protection_contract(baseline, directory),
                     'Source protections must derive from complete current primary GETs and match the reviewed preservation baseline')
             secret_rows = validate_raw_page_chain(current.get('secret_pages'),
@@ -1691,6 +1910,30 @@ def validate_source_refresh(proof, directory, inventory, credential):
                 (record.get('repository_id') == repo_id or record.get('repository') == baseline['full_name']) and
                 record['kind'] == 'runners' and record.get('state') == 'observed'
                 for runner in record.get('data', {}).get('runners', []))
+            if repo_id == SURVIVAL_REPOSITORY_ID:
+                survival = reviewed_survival_resources(baseline, directory)
+                scan = local_capture(capture['reference_scan_evidence_url'], directory, 'Fresh complete source reference scan')
+                scanned_repository = next(row for row in scan['repositories'] if row['repository_id'] == repo_id)
+                workflows = [file for file in scanned_repository['files'] if file['path'] == '.github/workflows/ci.yml']
+                require(len(workflows) == 1 and
+                        immutable_contents(workflows[0], repo_id, baseline['full_name'], head['head_sha'],
+                                           '.github/workflows/ci.yml') == survival['workflow_bytes'],
+                        'Current Windows workflow must match its reviewed pinned bytes before cutover')
+                expected_runners.add(survival['runner']['id'])
+                require(scanned_at >= survival['observed_at'],
+                        'Source scan must follow the reviewed current Windows resource observations')
+                actual_runner = next((runner for runner in runner_rows if runner.get('id') == 10), {})
+                require(actual_runner.get('name') == survival['runner']['name'] and actual_runner.get('os') == 'Windows' and
+                        actual_runner.get('status') == 'online' and actual_runner.get('busy') is False and
+                        {label.get('name') for label in actual_runner.get('labels', [])} ==
+                            {label['name'] for label in survival['runner']['labels']},
+                        'Current Windows runner must preserve its online idle identity and labels')
+                variable = current.get('variable_responses', {}).get('UE_RUNNER_ENABLED', {})
+                validate_resource_response(variable, 'https://api.github.com/repos/' + baseline['full_name'] +
+                                           '/actions/variables/UE_RUNNER_ENABLED', variable.get('data'))
+                require(variable['data'].get('name') == 'UE_RUNNER_ENABLED' and variable['data'].get('value') == 'true' and
+                        scanned_at <= observed_time(variable.get('observed_at'), 'Fresh runner variable') <= timestamp,
+                        'Current Windows CI needs its freshly preserved enabled runner variable')
             require(all(type(runner_id) is int and runner_id > 0 for runner_id in runner_ids) and
                     len(runner_ids) == len(set(runner_ids)) and set(runner_ids) == expected_runners,
                     'Current repository runner registrations changed; reconcile the runner ledger before cutover')
@@ -1936,12 +2179,29 @@ def validate_consumer_default_head(row, directory, repo, revision, latest):
 def validate_runner_captures(proof, directory, earliest):
     registration = local_capture(proof.get('registration_evidence_url'), directory, 'Destination runner')
     runner = registration.get('runner', {})
-    sealed = local_capture('yahtzee-runner-owner-evidence.json', directory, 'Sealed runner')
-    baseline = sealed['runner']
+    windows = proof['repository_id'] == SURVIVAL_REPOSITORY_ID
+    if windows:
+        inventory = json.loads((directory / 'inventory.json').read_text())
+        repo = next(repo for repo in inventory['repositories'] if repo['id'] == SURVIVAL_REPOSITORY_ID)
+        survival = reviewed_survival_resources(repo, directory)
+        baseline = survival['runner']
+        fields = ('registration_evidence_url', 'startup_evidence_url', 'run_evidence_url')
+        workflow_path, expected_workflow = '.github/workflows/ci.yml', survival['workflow_bytes']
+        require(proof['repository'] == repo['destination'] and proof['runner_id'] == 10,
+                'Windows continuity must bind the exact destination and preserved registration')
+    else:
+        require(proof['repository_id'] == 1188676172 and proof['runner_id'] == 21,
+                'Linux runner continuity must preserve its sealed repository registration')
+        sealed = local_capture('yahtzee-runner-owner-evidence.json', directory, 'Sealed runner')
+        baseline = sealed['runner']
+        fields = ('registration_evidence_url', 'isolation_evidence_url', 'service_evidence_url', 'run_evidence_url')
+        workflow_path = '.github/workflows/self-hosted-smoke.yml'
+        expected_workflow = (directory / 'yahtzee-smoke-workflow.yml').read_bytes()
     labels = {label['name'] if isinstance(label, dict) else label for label in runner.get('labels', [])}
+    baseline_labels = {label['name'] if isinstance(label, dict) else label for label in baseline['labels']}
     require(runner.get('id') == baseline['id'] and runner.get('name') == baseline['name'] and
-            labels == set(baseline['labels']), 'Runner registration must preserve its sealed identity and labels')
-    for field in ('registration_evidence_url','isolation_evidence_url','service_evidence_url','run_evidence_url'):
+            labels == baseline_labels, 'Runner registration must preserve its sealed identity and labels')
+    for field in fields:
         capture = local_capture(proof.get(field), directory, 'Destination runner')
         require(capture.get('phase') == 'post_transfer' and
                 capture.get('repository_id') == proof['repository_id'] and capture.get('repository') == proof['repository'] and
@@ -1952,6 +2212,17 @@ def validate_runner_captures(proof, directory, earliest):
             require(capture.get('runner',{}).get('id') == proof['runner_id'] and
                     capture['runner'].get('status') == 'online' and capture['runner'].get('busy') is False,
                     'Runner registration capture must prove online and idle state')
+            if windows:
+                response = capture.get('runner_response', {})
+                validate_resource_response(response, 'https://api.github.com/repos/' + proof['repository'] +
+                                           '/actions/runners/10', runner)
+                require(runner.get('os') == 'Windows' and earliest <=
+                        observed_time(response.get('observed_at'), 'Windows runner GET') <=
+                        observed_time(capture['observed_at'], 'Windows registration capture'),
+                        'Windows registration must derive from its fresh destination runner GET')
+        elif field == 'startup_evidence_url':
+            validate_windows_startup(capture.get('host_capture', {}), capture.get('startup_capture', {}),
+                                     repo, runner, observed_time(capture['observed_at'], 'Windows startup'), earliest)
         elif field == 'isolation_evidence_url':
             checks = capture.get('isolation_checks')
             require(capture.get('tailscale_present') is False and isinstance(checks,list) and len(checks) == 6 and
@@ -1970,16 +2241,21 @@ def validate_runner_captures(proof, directory, earliest):
             require(run.get('repository',{}).get('id') == proof['repository_id'] and
                     run['repository'].get('full_name') == proof['repository'] and run.get('html_url') == proof['run_url'] and
                     run.get('head_sha') == proof['run_head_sha'] and run.get('status') == 'completed' and
-                    run.get('conclusion') == 'success' and run.get('path') == '.github/workflows/self-hosted-smoke.yml' and
-                    run.get('event') == 'workflow_dispatch' and capture.get('read_only') is True and
+                    run.get('conclusion') == 'success' and
+                    (run.get('path') == workflow_path or (windows and
+                     run.get('path') == workflow_path + '@' + repo['default_branch'])) and
+                    run.get('event') == 'workflow_dispatch' and
+                    ((windows and run.get('head_branch') == repo['default_branch'] and
+                      capture.get('verification_mode') == 'existing_build_and_simulation_tests') or
+                     (not windows and capture.get('read_only') is True)) and
                     observed_time(run.get('created_at'), 'Runner smoke creation') >= earliest,
                     'Runner smoke capture must prove a completed destination run at the recorded revision')
             captured_at = observed_time(capture['observed_at'], 'Runner capture')
             validate_actions_run_response(capture, run, proof['repository'], captured_at, 'Runner smoke')
             workflow = local_capture(proof.get('workflow_evidence_url'), directory, 'Runner smoke workflow')
             actual_workflow = immutable_contents(workflow, proof['repository_id'], proof['repository'],
-                                                run['head_sha'], '.github/workflows/self-hosted-smoke.yml')
-            require(actual_workflow == (directory / 'yahtzee-smoke-workflow.yml').read_bytes() and
+                                                run['head_sha'], workflow_path)
+            require(actual_workflow == expected_workflow and
                     observed_time(run['created_at'], 'Runner smoke creation') <=
                     observed_time(workflow.get('observed_at'), 'Runner smoke workflow') <= captured_at,
                     'Runner smoke must execute the reviewed read-only workflow bytes at its actual run head')
@@ -2012,6 +2288,8 @@ def validate_runner_captures(proof, directory, earliest):
                     observed_time(job.get('completed_at'), 'Runner job completion') <=
                     observed_time(run['updated_at'], 'Runner smoke completion'),
                     'Runner smoke job must execute successfully on the preserved self-hosted runner and labels')
+            require(not windows or job.get('name') == 'Build and simulation tests',
+                    'Windows continuity must execute the existing build and simulation job')
 
 
 def validate_transfer_audit_export(export, organization, captured_at):
@@ -2095,7 +2373,7 @@ def validate_repository_transfer(reference, directory, repo, cutoff, scanned_rev
             cutoff <= policy_at <= transferred_at and transferred_at - policy_at <= datetime.timedelta(seconds=60),
             'Each transfer needs its source policy within 60 seconds before acceptance and after the final cutoff')
     actual_policy = validate_protection_responses(policy, repo, repo['full_name'], scanned_revision[0], policy_at,
-        max(cutoff, transferred_at - datetime.timedelta(seconds=60)))
+        max(cutoff, transferred_at - datetime.timedelta(seconds=60)), directory=directory)
     require(actual_policy == protection_contract(repo, directory),
             'Late source protection changes must be reconciled with the reviewed preservation baseline before transfer')
     heads = local_capture(capture.get('destination_heads_evidence_url'), directory, 'Transferred branch heads')
@@ -2409,9 +2687,19 @@ def validate_provider_success(smoke, row, inventory, directory, repository):
                 'Cloudflare Worker success needs its enabled preserved workers.dev URL and route configuration')
     elif kind == 'repository_runner':
         runner = response('runner', 'https://api.github.com/repos/' + repository + '/actions/runners/' + str(resource))
-        require(runner.get('id') == int(resource) and runner.get('name') == 'mini-github-runner-01' and
+        if int(row['repository_id']) == SURVIVAL_REPOSITORY_ID:
+            repo = next(repo for repo in inventory['repositories'] if repo['id'] == SURVIVAL_REPOSITORY_ID)
+            baseline = reviewed_survival_resources(repo, directory)['runner']
+            require(str(baseline['id']) == resource and runner.get('os') == 'Windows',
+                    'Windows runner resource must preserve its observed OS and registration')
+            expected_name, expected_labels = baseline['name'], {label['name'] for label in baseline['labels']}
+        else:
+            require(int(row['repository_id']) == 1188676172 and resource == '21',
+                    'Runner provider observation needs a reviewed repository and registration')
+            expected_name, expected_labels = 'mini-github-runner-01', {'self-hosted', 'Linux', 'X64', 'mini', 'yahtzee'}
+        require(runner.get('id') == int(resource) and runner.get('name') == expected_name and
                 runner.get('status') == 'online' and runner.get('busy') is False and
-                {label.get('name') for label in runner.get('labels', [])} == {'self-hosted', 'Linux', 'X64', 'mini', 'yahtzee'},
+                {label.get('name') for label in runner.get('labels', [])} == expected_labels,
                 'Runner success needs its actual online idle repository registration and preserved labels')
     elif kind == 'supabase_project':
         baseline = provider_preservation_baseline(row, inventory, directory)
@@ -2839,6 +3127,8 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
         if capture['kind'] == 'runners' and capture.get('state') == 'observed':
             for runner in capture.get('data', {}).get('runners', []):
                 runner_resources.add((by_source[capture['repository']], str(runner['id'])))
+    survival = reviewed_survival_resources(expected[SURVIVAL_REPOSITORY_ID], directory)
+    runner_resources.add((SURVIVAL_REPOSITORY_ID, str(survival['runner']['id'])))
     vercel_capture = json.loads((directory / 'vercel-provider-evidence.json').read_text())
     vercel_resources = {(project['link']['repoId'], project['id']) for project in vercel_capture['projects']}
     require(all(repo_id in expected for repo_id, _ in vercel_resources), 'Captured Vercel resource targets unknown repository')
@@ -3044,14 +3334,21 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
                 proof = row.get('post_transfer_runner')
                 require(isinstance(proof, dict) and proof.get('repository_id') == repo_id and
                         proof.get('repository') == repo['destination'] and str(proof.get('runner_id')) == resource_id and
-                        proof.get('online') is True and proof.get('idle') is True and proof.get('isolated') is True and
-                        proof.get('service_active') is True and proof.get('run_conclusion') == 'success' and
+                        proof.get('online') is True and proof.get('idle') is True and proof.get('run_conclusion') == 'success' and
                         immutable_sha(proof.get('run_head_sha')),
                         'Completed runner transfer needs structured destination continuity and smoke evidence')
+                if repo_id == SURVIVAL_REPOSITORY_ID:
+                    require(proof.get('startup_model') == 'windows_logon_task' and proof.get('startup_active') is True,
+                            'Windows completion needs its preserved active logon startup task')
+                    runner_fields = ('registration_evidence_url', 'startup_evidence_url', 'run_url')
+                else:
+                    require(proof.get('isolated') is True and proof.get('service_active') is True,
+                            'Linux structured destination continuity needs its existing isolation and active service')
+                    runner_fields = ('registration_evidence_url', 'isolation_evidence_url', 'service_evidence_url', 'run_url')
                 require(re.fullmatch('https://github.com/' + re.escape(repo['destination']) + r'/actions/runs/[1-9][0-9]*',
                                      proof.get('run_url', '')) is not None,
                         'Runner smoke must belong to its destination repository')
-                for field in ('registration_evidence_url', 'isolation_evidence_url', 'service_evidence_url', 'run_url'):
+                for field in runner_fields:
                     evidence(proof.get(field), directory)
                 validate_runner_captures(proof, directory, max(source_refreshed_at,
                     app_transferred_at if app_transfer['status'] == 'verified' else source_refreshed_at,

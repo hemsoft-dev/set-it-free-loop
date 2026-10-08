@@ -1,0 +1,615 @@
+{
+  "observed_at": "2026-10-08T02:38:31.967188+00:00",
+  "transferred": 65,
+  "private_transferred": 23,
+  "archived_transferred": 13,
+  "retained": [
+    {
+      "id": 1162179521,
+      "source": "HemSoft/now-leadership-group"
+    },
+    {
+      "id": 1169698740,
+      "source": "HemSoft/set-it-free-loop-site"
+    }
+  ],
+  "receipts": [
+    {
+      "repository_id": 1143951439,
+      "source": "fhemmer/hs-cli-confluence-search",
+      "destination": "hemsoft-dev/hs-cli-confluence-search-fhemmer",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1143951439.json",
+      "verified_at": "2026-10-08T02:20:59.060649+00:00"
+    },
+    {
+      "repository_id": 1349305052,
+      "source": "HemSoft/.github",
+      "destination": "hemsoft-dev/.github",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1349305052.json",
+      "verified_at": "2026-10-08T02:31:46.423722+00:00"
+    },
+    {
+      "repository_id": 1127994043,
+      "source": "HemSoft/7d2d-mods",
+      "destination": "hemsoft-dev/7d2d-mods",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1127994043.json",
+      "verified_at": "2026-10-08T02:21:07.755911+00:00"
+    },
+    {
+      "repository_id": 1107806657,
+      "source": "HemSoft/advent-of-code-2025",
+      "destination": "hemsoft-dev/advent-of-code-2025",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1107806657.json",
+      "verified_at": "2026-10-08T02:21:16.632509+00:00"
+    },
+    {
+      "repository_id": 1126133188,
+      "source": "HemSoft/agents",
+      "destination": "hemsoft-dev/agents",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1126133188.json",
+      "verified_at": "2026-10-08T02:21:23.061573+00:00"
+    },
+    {
+      "repository_id": 1136522036,
+      "source": "HemSoft/ai-conductor",
+      "destination": "hemsoft-dev/ai-conductor",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1136522036.json",
+      "verified_at": "2026-10-08T02:21:29.502837+00:00"
+    },
+    {
+      "repository_id": 1318635011,
+      "source": "HemSoft/buddy-ios",
+      "destination": "hemsoft-dev/buddy-ios",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1318635011.json",
+      "verified_at": "2026-10-08T02:21:38.319726+00:00"
+    },
+    {
+      "repository_id": 987895155,
+      "source": "HemSoft/cli-tools",
+      "destination": "hemsoft-dev/cli-tools",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-987895155.json",
+      "verified_at": "2026-10-08T02:21:44.566239+00:00"
+    },
+    {
+      "repository_id": 1214914496,
+      "source": "HemSoft/codexbar",
+      "destination": "hemsoft-dev/codexbar",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1214914496.json",
+      "verified_at": "2026-10-08T02:21:56.960556+00:00"
+    },
+    {
+      "repository_id": 1285058368,
+      "source": "HemSoft/codexbar-ios",
+      "destination": "hemsoft-dev/codexbar-ios",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1285058368.json",
+      "verified_at": "2026-10-08T02:22:07.226414+00:00"
+    },
+    {
+      "repository_id": 1298365902,
+      "source": "HemSoft/codexbar-mac",
+      "destination": "hemsoft-dev/codexbar-mac",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1298365902.json",
+      "verified_at": "2026-10-08T02:22:16.482825+00:00"
+    },
+    {
+      "repository_id": 1120402599,
+      "source": "HemSoft/dashboard",
+      "destination": "hemsoft-dev/dashboard",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1120402599.json",
+      "verified_at": "2026-10-08T02:34:10.550519+00:00"
+    },
+    {
+      "repository_id": 1096201366,
+      "source": "HemSoft/dashboard-tui",
+      "destination": "hemsoft-dev/dashboard-tui",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1096201366.json",
+      "verified_at": "2026-10-08T02:22:25.225168+00:00"
+    },
+    {
+      "repository_id": 987270315,
+      "source": "HemSoft/dashcam",
+      "destination": "hemsoft-dev/dashcam",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-987270315.json",
+      "verified_at": "2026-10-08T02:22:34.134524+00:00"
+    },
+    {
+      "repository_id": 804681121,
+      "source": "HemSoft/Egg-Inc-Tracker",
+      "destination": "hemsoft-dev/Egg-Inc-Tracker",
+      "private": true,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-804681121.json",
+      "verified_at": "2026-10-08T02:22:42.941753+00:00"
+    },
+    {
+      "repository_id": 46445245,
+      "source": "HemSoft/ESO",
+      "destination": "hemsoft-dev/ESO",
+      "private": false,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-46445245.json",
+      "verified_at": "2026-10-08T02:22:50.082178+00:00"
+    },
+    {
+      "repository_id": 1234389239,
+      "source": "HemSoft/gh-prx",
+      "destination": "hemsoft-dev/gh-prx",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1234389239.json",
+      "verified_at": "2026-10-08T02:22:58.618096+00:00"
+    },
+    {
+      "repository_id": 1262580000,
+      "source": "HemSoft/gh-x",
+      "destination": "hemsoft-dev/gh-x",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1262580000.json",
+      "verified_at": "2026-10-08T02:35:04.226019+00:00"
+    },
+    {
+      "repository_id": 1141008729,
+      "source": "HemSoft/github-cli-sdk-demo",
+      "destination": "hemsoft-dev/github-cli-sdk-demo",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1141008729.json",
+      "verified_at": "2026-10-08T02:23:05.173126+00:00"
+    },
+    {
+      "repository_id": 941842262,
+      "source": "HemSoft/HemChat",
+      "destination": "hemsoft-dev/HemChat",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-941842262.json",
+      "verified_at": "2026-10-08T02:23:13.953353+00:00"
+    },
+    {
+      "repository_id": 1398757511,
+      "source": "HemSoft/hemsoft-bench",
+      "destination": "hemsoft-dev/hemsoft-bench",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1398757511.json",
+      "verified_at": "2026-10-08T02:23:20.501389+00:00"
+    },
+    {
+      "repository_id": 1107323158,
+      "source": "HemSoft/hemsoft-power-ai",
+      "destination": "hemsoft-dev/hemsoft-power-ai",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1107323158.json",
+      "verified_at": "2026-10-08T02:23:27.221831+00:00"
+    },
+    {
+      "repository_id": 1271503908,
+      "source": "HemSoft/hoarders-heaven",
+      "destination": "hemsoft-dev/hoarders-heaven",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1271503908.json",
+      "verified_at": "2026-10-08T02:23:33.978065+00:00"
+    },
+    {
+      "repository_id": 1229335234,
+      "source": "HemSoft/hs-buddy",
+      "destination": "hemsoft-dev/hs-buddy",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1229335234.json",
+      "verified_at": "2026-10-08T02:27:13.002487+00:00"
+    },
+    {
+      "repository_id": 1169875606,
+      "source": "HemSoft/hs-buddy-vscode-extension",
+      "destination": "hemsoft-dev/hs-buddy-vscode-extension",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1169875606.json",
+      "verified_at": "2026-10-08T02:27:21.955237+00:00"
+    },
+    {
+      "repository_id": 1143972745,
+      "source": "HemSoft/hs-cli-confluence-search",
+      "destination": "hemsoft-dev/hs-cli-confluence-search",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1143972745.json",
+      "verified_at": "2026-10-08T02:27:28.651179+00:00"
+    },
+    {
+      "repository_id": 1141615583,
+      "source": "HemSoft/hs-cli-prs",
+      "destination": "hemsoft-dev/hs-cli-prs",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1141615583.json",
+      "verified_at": "2026-10-08T02:27:37.585391+00:00"
+    },
+    {
+      "repository_id": 1141507514,
+      "source": "HemSoft/hs-cli-template",
+      "destination": "hemsoft-dev/hs-cli-template",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1141507514.json",
+      "verified_at": "2026-10-08T02:27:46.388181+00:00"
+    },
+    {
+      "repository_id": 1145574258,
+      "source": "HemSoft/hs-conductor",
+      "destination": "hemsoft-dev/hs-conductor",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1145574258.json",
+      "verified_at": "2026-10-08T02:27:55.412664+00:00"
+    },
+    {
+      "repository_id": 1122850110,
+      "source": "HemSoft/hs-landing-page",
+      "destination": "hemsoft-dev/hs-landing-page",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1122850110.json",
+      "verified_at": "2026-10-08T02:34:20.090388+00:00"
+    },
+    {
+      "repository_id": 1360796394,
+      "source": "HemSoft/hs-pi-dashboard",
+      "destination": "hemsoft-dev/hs-pi-dashboard",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1360796394.json",
+      "verified_at": "2026-10-08T02:28:04.250847+00:00"
+    },
+    {
+      "repository_id": 1255413023,
+      "source": "HemSoft/hs-tui-launcher",
+      "destination": "hemsoft-dev/hs-tui-launcher",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1255413023.json",
+      "verified_at": "2026-10-08T02:28:12.739599+00:00"
+    },
+    {
+      "repository_id": 992260357,
+      "source": "HemSoft/mcp-server-demo",
+      "destination": "hemsoft-dev/mcp-server-demo",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-992260357.json",
+      "verified_at": "2026-10-08T02:28:19.571033+00:00"
+    },
+    {
+      "repository_id": 1353177297,
+      "source": "HemSoft/minibot",
+      "destination": "hemsoft-dev/minibot",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1353177297.json",
+      "verified_at": "2026-10-08T02:28:26.693408+00:00"
+    },
+    {
+      "repository_id": 1119892824,
+      "source": "HemSoft/modern-web-stack-poc",
+      "destination": "hemsoft-dev/modern-web-stack-poc",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1119892824.json",
+      "verified_at": "2026-10-08T02:28:33.534163+00:00"
+    },
+    {
+      "repository_id": 1106290960,
+      "source": "HemSoft/ms-agent-framework-demo",
+      "destination": "hemsoft-dev/ms-agent-framework-demo",
+      "private": false,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-1106290960.json",
+      "verified_at": "2026-10-08T02:28:40.116966+00:00"
+    },
+    {
+      "repository_id": 996911586,
+      "source": "HemSoft/n8n-workflows",
+      "destination": "hemsoft-dev/n8n-workflows",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-996911586.json",
+      "verified_at": "2026-10-08T02:28:46.696827+00:00"
+    },
+    {
+      "repository_id": 1086124099,
+      "source": "HemSoft/neo4j-graphrag-poc",
+      "destination": "hemsoft-dev/neo4j-graphrag-poc",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1086124099.json",
+      "verified_at": "2026-10-08T02:28:55.829087+00:00"
+    },
+    {
+      "repository_id": 982944435,
+      "source": "HemSoft/notes",
+      "destination": "hemsoft-dev/notes",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-982944435.json",
+      "verified_at": "2026-10-08T02:29:02.686990+00:00"
+    },
+    {
+      "repository_id": 579605475,
+      "source": "HemSoft/NWMM",
+      "destination": "hemsoft-dev/NWMM",
+      "private": true,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-579605475.json",
+      "verified_at": "2026-10-08T02:29:09.931487+00:00"
+    },
+    {
+      "repository_id": 945738366,
+      "source": "HemSoft/pe-bot",
+      "destination": "hemsoft-dev/pe-bot",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-945738366.json",
+      "verified_at": "2026-10-08T02:29:16.825983+00:00"
+    },
+    {
+      "repository_id": 223800408,
+      "source": "HemSoft/PeopleCare",
+      "destination": "hemsoft-dev/PeopleCare",
+      "private": true,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-223800408.json",
+      "verified_at": "2026-10-08T02:29:23.582091+00:00"
+    },
+    {
+      "repository_id": 1135799306,
+      "source": "HemSoft/prs",
+      "destination": "hemsoft-dev/prs",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1135799306.json",
+      "verified_at": "2026-10-08T02:29:30.702298+00:00"
+    },
+    {
+      "repository_id": 1148500296,
+      "source": "HemSoft/public-skills",
+      "destination": "hemsoft-dev/public-skills",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1148500296.json",
+      "verified_at": "2026-10-08T02:29:39.838797+00:00"
+    },
+    {
+      "repository_id": 133669754,
+      "source": "HemSoft/PXContainerMagic",
+      "destination": "hemsoft-dev/PXContainerMagic",
+      "private": false,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-133669754.json",
+      "verified_at": "2026-10-08T02:29:46.387203+00:00"
+    },
+    {
+      "repository_id": 173613643,
+      "source": "HemSoft/PXFriends",
+      "destination": "hemsoft-dev/PXFriends",
+      "private": false,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-173613643.json",
+      "verified_at": "2026-10-08T02:29:53.091901+00:00"
+    },
+    {
+      "repository_id": 124155847,
+      "source": "HemSoft/PXInfoPanel",
+      "destination": "hemsoft-dev/PXInfoPanel",
+      "private": false,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-124155847.json",
+      "verified_at": "2026-10-08T02:29:59.749180+00:00"
+    },
+    {
+      "repository_id": 133668217,
+      "source": "HemSoft/PXVendorMagic",
+      "destination": "hemsoft-dev/PXVendorMagic",
+      "private": false,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-133668217.json",
+      "verified_at": "2026-10-08T02:30:06.526260+00:00"
+    },
+    {
+      "repository_id": 85017515,
+      "source": "HemSoft/PXWritStatus",
+      "destination": "hemsoft-dev/PXWritStatus",
+      "private": false,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-85017515.json",
+      "verified_at": "2026-10-08T02:30:13.444646+00:00"
+    },
+    {
+      "repository_id": 1002223819,
+      "source": "HemSoft/rag-poc",
+      "destination": "hemsoft-dev/rag-poc",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1002223819.json",
+      "verified_at": "2026-10-08T02:30:22.279920+00:00"
+    },
+    {
+      "repository_id": 1266823833,
+      "source": "HemSoft/ralph-loops",
+      "destination": "hemsoft-dev/ralph-loops",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1266823833.json",
+      "verified_at": "2026-10-08T02:30:29.268673+00:00"
+    },
+    {
+      "repository_id": 286901159,
+      "source": "HemSoft/Relias.Lms.Enrollment",
+      "destination": "hemsoft-dev/Relias.Lms.Enrollment",
+      "private": true,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-286901159.json",
+      "verified_at": "2026-10-08T02:30:36.431814+00:00"
+    },
+    {
+      "repository_id": 1358408598,
+      "source": "HemSoft/reports",
+      "destination": "hemsoft-dev/reports",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1358408598.json",
+      "verified_at": "2026-10-08T02:34:29.477226+00:00"
+    },
+    {
+      "repository_id": 1169772257,
+      "source": "HemSoft/set-it-free-loop",
+      "destination": "hemsoft-dev/set-it-free-loop",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1169772257.json",
+      "verified_at": "2026-10-08T02:35:11.450261+00:00"
+    },
+    {
+      "repository_id": 1120321254,
+      "source": "HemSoft/skills",
+      "destination": "hemsoft-dev/skills",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1120321254.json",
+      "verified_at": "2026-10-08T02:30:45.464886+00:00"
+    },
+    {
+      "repository_id": 1070353109,
+      "source": "HemSoft/spam-removal-agent",
+      "destination": "hemsoft-dev/spam-removal-agent",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1070353109.json",
+      "verified_at": "2026-10-08T02:30:55.309756+00:00"
+    },
+    {
+      "repository_id": 1104960030,
+      "source": "HemSoft/subtitle-translator",
+      "destination": "hemsoft-dev/subtitle-translator",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1104960030.json",
+      "verified_at": "2026-10-08T02:31:02.060840+00:00"
+    },
+    {
+      "repository_id": 1076389234,
+      "source": "HemSoft/summarist",
+      "destination": "hemsoft-dev/summarist",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1076389234.json",
+      "verified_at": "2026-10-08T02:34:36.400236+00:00"
+    },
+    {
+      "repository_id": 1399232444,
+      "source": "HemSoft/survival-shelter-opus55",
+      "destination": "hemsoft-dev/survival-shelter-opus55",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1399232444.json",
+      "verified_at": "2026-10-08T02:34:56.160239+00:00"
+    },
+    {
+      "repository_id": 193121052,
+      "source": "HemSoft/TCE-Admin",
+      "destination": "hemsoft-dev/TCE-Admin",
+      "private": false,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-193121052.json",
+      "verified_at": "2026-10-08T02:31:08.926637+00:00"
+    },
+    {
+      "repository_id": 1039658773,
+      "source": "HemSoft/tickdown",
+      "destination": "hemsoft-dev/tickdown",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1039658773.json",
+      "verified_at": "2026-10-08T02:31:19.211831+00:00"
+    },
+    {
+      "repository_id": 223324060,
+      "source": "HemSoft/TimCoRetailManager",
+      "destination": "hemsoft-dev/TimCoRetailManager",
+      "private": true,
+      "archived": true,
+      "receipt_file": "repository-transfers/repository-transfer-223324060.json",
+      "verified_at": "2026-10-08T02:31:25.923599+00:00"
+    },
+    {
+      "repository_id": 995371240,
+      "source": "HemSoft/weather-cli",
+      "destination": "hemsoft-dev/weather-cli",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-995371240.json",
+      "verified_at": "2026-10-08T02:19:31.773459+00:00"
+    },
+    {
+      "repository_id": 1188676172,
+      "source": "HemSoft/yahtzee",
+      "destination": "hemsoft-dev/yahtzee",
+      "private": false,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1188676172.json",
+      "verified_at": "2026-10-08T02:34:46.098549+00:00"
+    },
+    {
+      "repository_id": 1332684620,
+      "source": "HemSoft/yahtzee-bench",
+      "destination": "hemsoft-dev/yahtzee-bench",
+      "private": true,
+      "archived": false,
+      "receipt_file": "repository-transfers/repository-transfer-1332684620.json",
+      "verified_at": "2026-10-08T02:31:34.894613+00:00"
+    }
+  ],
+  "sfl_app_and_credentials": "Deferred at this snapshot; subsequent App transfer verified in post-transfer-app-installation.json; organization credential delivery remains incomplete",
+  "local_other_agent_checkouts": "unchanged",
+  "execution_record_kind": "Repository-first transfer snapshot at observed_at; subsequent App verification captured separately",
+  "app_completion_evidence_url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/138#issuecomment-6051388689",
+  "reviewer_rollout_complete": false,
+  "subsequent_app_capture": "post-transfer-app-installation.json",
+  "protection_verification_limitations": [
+    {
+      "repository_id": 1143951439,
+      "evidence": "fhemmer-protection-verification-limitation.json"
+    }
+  ]
+}
