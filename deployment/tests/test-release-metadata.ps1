@@ -16,7 +16,7 @@ $release = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\release-met
 $workflow = Get-Content -LiteralPath (Join-Path $repoRoot '.github\workflows\publish-private-prerelease.yml') -Raw
 $failures = [System.Collections.Generic.List[string]]::new()
 if (-not $ExpectedRepository) {
-    $ExpectedRepository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'HemSoft/set-it-free-loop' }
+    $ExpectedRepository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'hemsoft-dev/set-it-free-loop' }
 }
 if ($ExpectedRepository -notin @('HemSoft/set-it-free-loop', 'hemsoft-dev/set-it-free-loop') -or
     $release.distribution.repository -ine $ExpectedRepository -or

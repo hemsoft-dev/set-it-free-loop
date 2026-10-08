@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
-  "reviewedAt": "2026-10-06",
+  "reviewedAt": "2026-10-07",
   "distribution": {
-    "repository": "HemSoft/set-it-free-loop",
-    "version": "2.1.0-rc.15",
+    "repository": "hemsoft-dev/set-it-free-loop",
+    "version": "2.1.0-rc.16",
     "visibility": "private",
-    "tag": "v2.1.0-rc.15",
+    "tag": "v2.1.0-rc.16",
     "prerelease": true
   },
   "reviewerRuntime": {
@@ -29,7 +29,7 @@
     ]
   },
   "cliSource": {
-    "repository": "HemSoft/set-it-free-loop",
+    "repository": "hemsoft-dev/set-it-free-loop",
     "path": "gh-sfl",
     "module": "github.com/HemSoft/set-it-free-loop/gh-sfl",
     "buildScript": "deployment/scripts/install-gh-sfl-hemsoft.ps1"
