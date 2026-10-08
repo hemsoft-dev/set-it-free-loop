@@ -98,6 +98,16 @@ return await publicationState();`);
   if (mode !== 'probe-history') {
   if (mode === 'all') {
   assert.match(source, /issue_comment:\s*types: \[created, edited, deleted\]/);
+  const title = /run-name: >-\n\s*\$\{\{([\s\S]*?)\}\}/.exec(source);
+  assert(title);
+  const titleFor = new Function('github', 'format', `return ${title[1]};`);
+  const format = (pattern, value) => pattern.replace('{0}', String(value));
+  for (const action of ['created', 'edited', 'deleted']) {
+    for (const body of [exact, ` ${exact}`, 'erased request']) {
+      const github = {event_name: 'issue_comment', event: {action, issue: {number: 42}, comment: {body}}};
+      assert.equal(titleFor(github, format), 'SFL Codex review request #42');
+    }
+  }
   const condition = /invalidate-review-request:[\s\S]*?if: >-\n([\s\S]*?)\n    runs-on:/.exec(source);
   assert(condition);
   const admits = new Function('github', 'vars', `return Boolean(${condition[1]});`);
@@ -130,6 +140,8 @@ return await publicationState();`);
       context: 'SFL Codex Review Request Registry', creator: {login: 'HemSoft'},
       target_url: `https://github.com/hemsoft-dev/fixture/pull/42#issuecomment-${id}`}))};
   assert.equal((await snapshot({...fixture, comments: [first, selected]})).requestStillAuthorized, true);
+  assert.equal((await snapshot({...fixture, comments: [selected]})).requestStillAuthorized, false,
+    'deleted historical registration must block a fresh snapshot');
   for (const changed of [{...first, updated_at: '2026-10-08T00:00:06Z'},
     {...first, body: ` ${first.body}`}, {...first, body: 'erased request'}]) {
     assert.equal((await snapshot({...fixture, comments: [changed, selected]})).requestStillAuthorized, false);

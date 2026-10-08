@@ -4,7 +4,6 @@
 name: SFL Codex Review Observer
 run-name: >-
   ${{ github.event_name == 'issue_comment' &&
-      startsWith(github.event.comment.body, '@codex review') &&
       format('SFL Codex review request #{0}', github.event.issue.number) ||
       format('SFL {0} event', github.event_name) }}
 
@@ -1068,6 +1067,7 @@ jobs:
               const requestStillAuthorized = Boolean(currentRequest) && isOwnerRequest(currentRequest) &&
                 registrations.has(currentRequest.id) && currentRequest.body === request.comment.body &&
                 currentRequest.updated_at === currentRequest.created_at &&
+                !hasHistoricalBaseConflict(comments, statuses) &&
                 eligibleReviewRequests(comments, checkRuns, artifactTime, registrations).some(
                   candidate => candidate.comment.id === currentRequest.id &&
                     candidate.contextToken === contextToken,
