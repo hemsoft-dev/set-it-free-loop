@@ -226,6 +226,24 @@ class ExecutedTransferTests(unittest.TestCase):
                      lambda d: d['data'].update(full_name='hemsoft-dev/now-leadership-group'),
                      'Captured repository identity')
 
+    def test_retained_projection_requires_successful_primary_receipt(self):
+        primary = 'pr156-sixth-retained-nlg-current-primary.json'
+        for mutation in (lambda d: d.update(actor='someone-else'),
+                         lambda d: d.update(exit_code=1),
+                         lambda d: d.update(argv=['gh', 'api', 'rate_limit']),
+                         lambda d: d.update(started_at='2000-01-01T00:00:00Z'),
+                         lambda d: d.update(completed_at='2099-01-01T00:00:00Z'),
+                         lambda d: d.update(stdout='{}')):
+            self.rejects(primary, mutation, 'successful command receipt')
+        original = VALIDATOR.read
+        def missing(directory, name):
+            if name == primary:
+                raise FileNotFoundError(name)
+            return original(directory, name)
+        with mock.patch.object(VALIDATOR, 'read', side_effect=missing):
+            with self.assertRaises(FileNotFoundError):
+                VALIDATOR.validate(DIRECTORY)
+
     def test_old_source_metadata_rejected(self):
         self.rejects('repository-transfers/repository-transfer-1143951439.json',
                      lambda d: d['before'].update(observed_at='2000-01-01T00:00:00Z'),
@@ -310,6 +328,18 @@ class ExecutedTransferTests(unittest.TestCase):
                          lambda d: d['gate'].update(external_id=d['gate']['external_id'].replace('pull:12:', 'pull:999:'))):
             self.rejects('rc21-private-live-guarded-merge.json', mutation,
                          'gate is invalid|request binding is invalid')
+
+    def test_gate_urls_and_pull_identity_require_the_actual_pilot(self):
+        for mutation in (lambda d: d['gate'].update(url='https://api.github.com/repos/other/repo/check-runs/1'),
+                         lambda d: d['gate'].update(html_url='https://github.com/other/repo/runs/1'),
+                         lambda d: d['gate'].update(pull_requests=[]),
+                         lambda d: d['gate']['pull_requests'][0].update(number=999),
+                         lambda d: d['gate']['pull_requests'][0].update(url='https://api.github.com/repos/other/repo/pulls/12'),
+                         lambda d: d['gate']['pull_requests'][0]['head']['repo'].update(id=1),
+                         lambda d: d['gate']['pull_requests'][0]['base']['repo'].update(id=1),
+                         lambda d: d['gate']['pull_requests'][0]['head'].update(sha='0' * 40)):
+            self.rejects('rc21-private-live-guarded-merge.json', mutation,
+                         'gate repository and pull request binding')
 
     def test_arbitrary_installed_text_cannot_qualify_by_rehashing(self):
         import hashlib

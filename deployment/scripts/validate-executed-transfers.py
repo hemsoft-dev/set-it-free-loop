@@ -147,6 +147,18 @@ def validate_pilots(directory):
                 'Pilot merge requires its authenticated post-merge PR capture')
         gate = merge['gate']
         request, native = merge['request'], merge['native_clean']
+        repository_url = 'https://api.github.com/repos/' + repo
+        check_prs = gate['pull_requests']
+        require(gate['url'] == repository_url + '/check-runs/' + str(gate['id']) and
+                gate['html_url'] == 'https://github.com/' + repo + '/runs/' + str(gate['id']) and
+                len(check_prs) == 1 and
+                check_prs[0]['number'] == merge['pr_number'] and
+                check_prs[0]['url'] == repository_url + '/pulls/' + str(merge['pr_number']) and
+                all(check_prs[0][side]['repo']['id'] == repository_id and
+                    check_prs[0][side]['repo']['url'] == repository_url and
+                    check_prs[0][side]['repo']['name'] == repo.split('/')[1] and
+                    check_prs[0][side]['sha'] == merge[side] for side in ('head', 'base')),
+                'Pilot gate repository and pull request binding is invalid')
         require(binding['repository_id'] == repository_id and binding['repository'] == repo and
                 binding['execution_sha'] == binding['workflow_sha'] == installed['revision_sha'] == merge['base'] and
                 binding['event'] == 'issue_comment' and binding['workflow_path'] == installed['path'] and
@@ -587,6 +599,18 @@ def validate(directory):
         for field in ('private', 'visibility', 'archived', 'default_branch'):
             require(actual[field] == expected[repository_id][field],
                     'Retained repository configuration differs from the inventory')
+        primary_name = {1162179521: 'pr156-sixth-retained-nlg-current-primary.json',
+                        1169698740: 'pr156-sixth-retained-sfl-site-current-primary.json'}[repository_id]
+        require(capture['primary_receipt'] == primary_name,
+                'Retained repository primary receipt reference differs from its capture')
+        primary = read(execution, primary_name)
+        require(primary['actor'] == capture['actor'] == 'HemSoft' and primary['exit_code'] == 0 and
+                primary['argv'] == ['gh', 'api', 'repos/' + name, '--jq',
+                                    '{id,full_name,private,visibility,archived,default_branch}'] and
+                timestamp(final['observed_at']) <= timestamp(primary['started_at']) ==
+                timestamp(capture['capture_started_at']) <= timestamp(primary['completed_at']) ==
+                timestamp(capture['observed_at']) and json.loads(primary['stdout']) == actual,
+                'Retained repository projection differs from its successful command receipt')
     receipts = final['receipts']
     require(len(receipts) == 65 and len({row['repository_id'] for row in receipts}) == 65 and
             {row['repository_id'] for row in receipts} == set(expected) - set(retained),
