@@ -361,6 +361,30 @@ class ExecutedTransferTests(unittest.TestCase):
                                                 completed_at='2000-01-01T00:00:01Z'),
                              'capture must follow terminal completion')
 
+    def test_dropped_dashboard_policy_capture_is_repository_bound(self):
+        for field, value in (('method', 'DELETE'), ('http_status', 500),
+                             ('request_url', 'https://api.github.com/repos/other/repo/rulesets/11400445'),
+                             ('observed_at', '2000-01-01T00:00:00Z')):
+            self.rejects('dashboard-policy-repair.json',
+                         lambda d: d['before']['ruleset_details'][0].update({field: value}),
+                         'post-transfer ruleset GET')
+
+    def test_destination_refs_cannot_precede_transfer_acceptance(self):
+        def backdate(value):
+            submitted = VALIDATOR.timestamp(value['submitted_at'])
+            accepted = VALIDATOR.timestamp(value['transfer_response']['observed_at'])
+            midpoint = submitted + (accepted - submitted) / 2
+            value['after_refs']['responses'][0]['observed_at'] = midpoint.isoformat()
+        self.rejects('repository-transfers/repository-transfer-1143951439.json', backdate,
+                     'outside its transfer phase')
+
+    def test_request_and_native_comment_urls_bind_the_actual_pilot(self):
+        for comment in ('request', 'native_clean'):
+            for field in ('url', 'issue_url', 'html_url'):
+                self.rejects('rc21-private-live-guarded-merge.json',
+                             lambda d: d[comment].update({field: 'https://github.com/other/repo/pull/999'}),
+                             'request binding URLs')
+
     def test_arbitrary_installed_text_cannot_qualify_by_rehashing(self):
         import hashlib
         original = VALIDATOR.read

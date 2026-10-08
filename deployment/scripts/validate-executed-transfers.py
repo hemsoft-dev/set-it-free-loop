@@ -181,6 +181,11 @@ def validate_pilots(directory):
         gate = merge['gate']
         request, native = merge['request'], merge['native_clean']
         repository_url = 'https://api.github.com/repos/' + repo
+        require(all(comment['url'] == repository_url + '/issues/comments/' + str(comment['id']) and
+                    comment['issue_url'] == repository_url + '/issues/' + str(merge['pr_number']) and
+                    comment['html_url'] == 'https://github.com/' + repo + '/pull/' +
+                    str(merge['pr_number']) + '#issuecomment-' + str(comment['id'])
+                    for comment in (request, native)), 'Pilot request binding URLs are invalid')
         check_prs = gate['pull_requests']
         require(gate['url'] == repository_url + '/check-runs/' + str(gate['id']) and
                 gate['html_url'] == 'https://github.com/' + repo + '/runs/' + str(gate['id']) and
@@ -459,7 +464,14 @@ def validate_dashboard_repair(execution):
             timestamp(repair['repaired_at']) <= timestamp(receipt['verified_at']),
             'Dashboard repair needs its post-transfer repository-bound PUT response')
     original = receipt['before_policy']['ruleset_details'][0]['data']
-    dropped = repair['before']['ruleset_details'][0]['data']
+    dropped_capture = repair['before']['ruleset_details'][0]
+    require(dropped_capture['method'] == 'GET' and dropped_capture['http_status'] == 200 and
+            dropped_capture['request_url'] ==
+            'https://api.github.com/repos/hemsoft-dev/dashboard/rulesets/11400445' and
+            timestamp(receipt['transfer_response']['observed_at']) <=
+            timestamp(dropped_capture['observed_at']) <= timestamp(repair['observed_at']),
+            'Dropped dashboard policy needs its successful post-transfer ruleset GET')
+    dropped = dropped_capture['data']
     final = receipt['after_policy']['ruleset_details'][0]['data']
     def policy(value):
         # GitHub adds this disabled schema field during transfer; it has no enforcement effect.
@@ -692,7 +704,8 @@ def validate(directory):
                 'Transfer needs its accepted API response and destination organization')
         before_refs = refs(receipt['before_refs'], repo['full_name'], repo['default_branch'],
                            timestamp(inventory['captured_at']), submitted)
-        after_refs = refs(receipt['after_refs'], repo['destination'], repo['default_branch'], submitted, verified)
+        after_refs = refs(receipt['after_refs'], repo['destination'], repo['default_branch'],
+                          timestamp(accepted['observed_at']), verified)
         require(before_refs == after_refs,
                 f'Transfer changed refs for repository {repo["id"]}')
         require(timestamp(inventory['captured_at']) <= timestamp(receipt['before']['observed_at']) <= timestamp(receipt['submitted_at']) <
