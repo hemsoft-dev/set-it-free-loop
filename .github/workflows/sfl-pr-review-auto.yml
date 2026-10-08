@@ -198,7 +198,7 @@ jobs:
             if (!currentRequesterAllowed) {
               core.info("Review requester does not have write or higher repository permission");
             }
-            const requestBodyExact = !commentDeleted &&
+            const requestBodyExact = context.payload.action === "created" && !commentDeleted &&
               comment.data.updated_at === comment.data.created_at &&
               (comment.data.body || "") === `@codex review\n\n${marker}`;
             if (requestBodyExact && currentRequesterAllowed && confirmedChecks.some(

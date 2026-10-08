@@ -79,13 +79,14 @@ async function run(name, checks, live, baseAdvance=false) {
     const writes=await run('invalidate-base-advance',[],live,true);
     assert(writes.some(x=>x.kind==='status'&&x.state==='failure'));
   });
-  await verify('existing registered pending check repairs its missing commit status',async()=>{
+  async function runRequest(action, terminal=false) {
     const token=`sfl-codex-review:pull-context:at:${Date.parse(created)}:${runId}`;
     const url=pull.html_url+'#issuecomment-101';
     const comment={id:101,user:{login:'HemSoft'},created_at:created,updated_at:created,html_url:url,
       body:`@codex review\n\n<!-- sfl-codex-review:head=${head};base=${base};context=${token} -->`};
     const checks=[{id:100,app:{id:15368},external_id:token,output:{text:JSON.stringify({schema:1,pull_number:42,action:'opened',base_sha:base})}},
       {id:101,app:{id:15368},external_id:'sfl-codex-review:request-pending:101'}];
+    if (terminal) checks.push({app:{id:15368},status:'completed',conclusion:'success',external_id:'sfl-codex-review:pull:42:request:101:at:1:artifact:c2'});
     const writes=[];
     const github={rest:{issues:{getComment:async()=>({data:comment})},
       pulls:{get:async()=>({data:{...pull,base:{ref:'main',sha:base}}})},
@@ -93,9 +94,24 @@ async function run(name, checks, live, baseAdvance=false) {
       repos:{getCollaboratorPermissionLevel:async()=>({data:{permission:'admin',user:{login:'HemSoft'}}}),
         listCommitStatusesForRef:'statuses',createCommitStatus:async v=>writes.push({kind:'status',...v})}},
       paginate:async method=>method==='checks'?checks:[{context:'SFL Codex Review Request Registry',creator:{login:'HemSoft'},target_url:url}]};
-    await job('invalidate-review-request','observe')(github,{repo:context.repo,payload:{action:'created',issue:{number:42},comment,repository:{default_branch:'main'}}},{info:()=>{},setFailed:()=>{}});
+    await job('invalidate-review-request','observe')(github,{repo:context.repo,payload:{action,issue:{number:42},comment,repository:{default_branch:'main'}}},{info:()=>{},setFailed:()=>{}});
+    return writes;
+  }
+  await verify('existing registered pending check repairs its missing commit status',async()=>{
+    const writes=await runRequest('created');
     assert(writes.some(x=>x.kind==='status'&&x.state==='pending'));
     assert(!writes.some(x=>x.kind==='check'),'existing pending check is retained');
+  });
+  await verify('edited request with identical timestamps invalidates prior terminal success',async()=>{
+    const writes=await runRequest('edited',true);
+    assert(writes.some(x=>x.kind==='status'&&x.state==='failure'));
+  });
+  await verify('edited request with identical timestamps invalidates existing pending status',async()=>{
+    const writes=await runRequest('edited');
+    assert(writes.some(x=>x.kind==='status'&&x.state==='failure'));
+  });
+  await verify('created request with terminal evidence stays idempotent',async()=>{
+    assert.deepEqual(await runRequest('created',true),[]);
   });
   if(failures.length)throw new Error(`${failures.length} invalidation recovery cases failed`);
 })().catch(error=>{console.error(error);process.exitCode=1;});
