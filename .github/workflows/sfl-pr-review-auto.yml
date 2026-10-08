@@ -789,20 +789,34 @@ jobs:
                   status.context === "SFL Codex Review Request Registry" &&
                   (status.target_url || "").toLowerCase() === target &&
                   Boolean(status.creator && status.creator.login));
-                // Ignore ordinary comments even from current administrators.
-                // A historically registered author remains entitled to revoke
-                // their evidence, and a current writer may remove that comment.
-                // The run title preserves marker intent from the event payload,
-                // including a later-erased body. Hold a writer's request before
-                // its CLI registry POST becomes visible. Older rc25 titles lack
-                // this distinction, so their active runs remain conservative.
-                const materializingRequest = run.display_title ===
-                  `SFL Codex comment #${pullNumber} request ${requestId}`;
-                if ((registrations.length && (registrations.some(status =>
-                    status.creator.login.toLowerCase() === actor) || await requesterAllowed(actor))) ||
-                    (materializingRequest && await requesterAllowed(actor))) {
-                  authorized.push(run);
+                // Registered authors may revoke their evidence after access loss.
+                // A title with marker intent is only a candidate for a fresh request:
+                // quoted or malformed markers must not block ordinary publication.
+                const registeredInvalidation = registrations.length &&
+                  (registrations.some(status => status.creator.login.toLowerCase() === actor) ||
+                   await requesterAllowed(actor));
+                let materializingRequest = false;
+                if (!registeredInvalidation && !registrations.length &&
+                    run.display_title === `SFL Codex comment #${pullNumber} request ${requestId}` &&
+                    await requesterAllowed(actor)) {
+                  let comment;
+                  try {
+                    comment = (await github.rest.issues.getComment({
+                      owner, repo, comment_id: requestId,
+                    })).data;
+                  } catch (error) {
+                    if (error.status !== 404) throw error;
+                  }
+                  const token = requestContextFromBody(comment && comment.body);
+                  materializingRequest = Boolean(comment && token &&
+                    comment.id === requestId &&
+                    (comment.html_url || "").toLowerCase() === target &&
+                    ((comment.user && comment.user.login) || "").toLowerCase() === actor &&
+                    Number.isFinite(Date.parse(comment.created_at || "")) &&
+                    comment.updated_at === comment.created_at &&
+                    comment.body === `@codex review\n\n${baseMarker}context=${token} -->`);
                 }
+                if (registeredInvalidation || materializingRequest) authorized.push(run);
               }
               return authorized;
             };

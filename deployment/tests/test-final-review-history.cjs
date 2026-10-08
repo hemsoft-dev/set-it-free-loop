@@ -114,9 +114,16 @@ async function activeCases() {
   const end = source.indexOf('function requestGateExternalIdPrefix(', start);
   assert(start >= 0 && end > start);
   const classify = new AsyncFunction('fixture', `
-    const owner='hemsoft-dev',repo='fixture',pullNumber=42,currentHead='${head}',context={runId:99};
+    const owner='hemsoft-dev',repo='fixture',pullNumber=42,currentHead='${head}',currentBase='${base}',context={runId:99};
+    const baseMarker='<!-- sfl-codex-review:head=${head};base=${base};';
+    ${block('REQUEST ELIGIBILITY').split('const requestOrder =')[0]}
     const requesterAllowed=async login=>fixture.allowed.includes(login);
-    const github={rest:{actions:{listWorkflowRuns:'runs'},repos:{listCommitStatusesForRef:'statuses'}},
+    const github={rest:{actions:{listWorkflowRuns:'runs'},repos:{listCommitStatusesForRef:'statuses'},
+      issues:{getComment:async({comment_id})=>{
+        if(fixture.error)throw fixture.error;
+        if(fixture.comment===null)throw Object.assign(new Error('deleted'),{status:404});
+        return {data:fixture.comment || {id:comment_id,body:fixture.exact,html_url:'https://github.com/hemsoft-dev/fixture/pull/42#issuecomment-'+comment_id,user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:01Z'}};
+      }}},
       paginate:async(method,args)=>method==='runs'?(args.status==='queued'?fixture.runs:[]):fixture.statuses};
     ${unindent(source.slice(start,end))}
     ${block('ACTIVE INVALIDATIONS')}
@@ -127,6 +134,24 @@ async function activeCases() {
     ['ordinary administrator comment', [run('admin')], [], ['admin'], []],
     ['writer request before registry visibility', [run('admin',101,true)], [], ['admin'], [1]],
     ['reader marker before registry visibility', [run('reader',101,true)], [], [], []],
+    ...[
+      ['quoted marker', `An earlier request said:\n${exact}`],
+      ['trailing prose', `${exact}\nordinary follow-up`],
+      ['old head', exact.replace(head,'c'.repeat(40))],
+      ['old base', exact.replace(base,'c'.repeat(40))],
+      ['empty context', exact.replace(token,'')],
+      ['padded context', exact.replace(token,' '+token)],
+    ].map(([name,body])=>[name,[{...run('admin',101,true),display_title:titleForComment(101,body)}],[],['admin'],[],
+      {id:101,body,html_url:commentURL,user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:01Z'}]),
+    ['deleted registry-free marker', [run('admin',101,true)], [], ['admin'], [], null],
+    ['deleted revoked registered request', [run('author',101,true)], [registration()], [], [1], null],
+    ['edited registry-free marker', [run('admin',101,true)], [], ['admin'], [],
+      {id:101,body:exact,html_url:commentURL,user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:02Z'}],
+    ['different comment target', [run('admin',101,true)], [], ['admin'], [],
+      {id:101,body:exact,html_url:commentURL.replace('/42#','/43#'),user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:01Z'}],
+    ['different author before registry', [run('admin',101,true)], [], ['admin'], [],
+      {id:101,body:exact,html_url:commentURL,user:{login:'other'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:01Z'}],
+
     ['registered administrator request', [run('admin')], [registration('admin')], ['admin'], [1]],
     ['revoked registered author', [run('author')], [registration()], [], [1]],
     ['unprivileged other actor', [run('reader')], [registration()], [], []],
@@ -142,9 +167,11 @@ async function activeCases() {
     ['completed comment run', [{...run('admin'),status:'completed'}], [registration('admin')], ['admin'], []],
     ['legacy writer run', [{...run('admin'),display_title:'SFL Codex review request #42'}], [], ['admin'], [1]],
   ];
-  for (const [name,runs,statuses,allowed,want] of cases) {
-    assert.deepEqual(await classify({runs,statuses,allowed}),want,name);
+  for (const [name,runs,statuses,allowed,want,comment] of cases) {
+    assert.deepEqual(await classify({runs,statuses,allowed,comment,exact}),want,name);
   }
+  const error=Object.assign(new Error('comment verification unavailable'),{status:500});
+  await assert.rejects(classify({runs:[run('admin',101,true)],statuses:[],allowed:['admin'],exact,error}),observed=>observed===error);
 }
 function retargetCases() {
   const supported = new Function('pull','context','headRepo','owner','repo',
