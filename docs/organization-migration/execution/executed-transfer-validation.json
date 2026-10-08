@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-08T11:26:22.678725+00:00",
+  "observed_at": "2026-10-08T11:54:50.299598+00:00",
   "command": [
     "python3",
     "deployment/scripts/validate-executed-transfers.py",
@@ -19,12 +19,18 @@
   "corruption_tests": {
     "command": [
       "python3",
+      "-B",
       "-m",
       "unittest",
-      "deployment/tests/test_executed_transfers.py"
+      "discover",
+      "-s",
+      "deployment/tests",
+      "-p",
+      "test_executed_transfers.py",
+      "-v"
     ],
     "exit_code": 0,
-    "tests": 12
+    "tests": 17
   },
   "existing_migration_tests": {
     "command": [

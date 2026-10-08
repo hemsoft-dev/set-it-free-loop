@@ -69,6 +69,44 @@ class ExecutedTransferTests(unittest.TestCase):
         self.rejects('repository-first-final-inventory.json',
                      lambda d: d['retained'].append(d['retained'][0]), 'two unique rows')
 
+    def test_retained_repository_requires_post_transfer_identity(self):
+        self.rejects('retained-repository-1162179521.json',
+                     lambda d: d.update(observed_at='2026-10-07T00:00:00Z'), 'follow the transfer phase')
+        self.rejects('retained-repository-1162179521.json',
+                     lambda d: d['data'].update(full_name='hemsoft-dev/now-leadership-group'),
+                     'Captured repository identity')
+
+    def test_old_source_metadata_rejected(self):
+        self.rejects('repository-transfers/repository-transfer-1143951439.json',
+                     lambda d: d['before'].update(observed_at='2000-01-01T00:00:00Z'),
+                     'Transfer capture chronology')
+
+    def test_post_hoc_owner_direction_rejected(self):
+        self.rejects('owner-repository-first-direction.json',
+                     lambda d: d.update(recorded_at='2099-01-01T00:00:00Z'), 'Owner direction must predate')
+
+    def test_pilot_qualification_graph_rejects_corruption(self):
+        cases = [
+            ('rc21-pilots-qualified-before-wider.json', lambda d: d.update(qualified=False), 'summary'),
+            ('rc21-private-fixture-findings.json', lambda d: d.update(outcome='gate_passed'), 'fixture'),
+            ('rc21-private-fixture-base_advance.json', lambda d: d.update(workflow_sha256='0' * 64), 'fixture'),
+            ('rc21-private-live-guarded-merge.json', lambda d: d['gate'].update(conclusion='failure'), 'gate'),
+            ('rc21-private-live-guarded-merge.json', lambda d: d['request'].update(id=1), 'request binding'),
+            ('rc21-private-post-live-repeat-sync.json', lambda d: d.update(revision_after='1' * 40), 'terminal repeat'),
+            ('rc21-private-completed-live-pilot-validation.json', lambda d: d.update(qualified=False), 'completion summary'),
+        ]
+        for filename, mutation, message in cases:
+            with self.subTest(filename=filename):
+                self.rejects(filename, mutation, message)
+
+    def test_pilot_live_run_must_be_successful(self):
+        import json
+        def corrupt(d):
+            run = json.loads(d['stdout'])
+            run['conclusion'] = 'failure'
+            d['stdout'] = json.dumps(run)
+        self.rejects('rc21-public-live-runtime-run.json', corrupt, 'did not complete successfully')
+
     def test_accepted_response_is_bound_to_actual_transfer(self):
         for field, value in [('method', 'DELETE'), ('request_url', 'https://api.github.com/rate_limit'),
                              ('observed_at', '2026-10-06T00:00:00Z')]:
