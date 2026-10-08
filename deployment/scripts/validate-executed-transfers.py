@@ -67,6 +67,8 @@ def validate(directory):
     expected = {row['id']: row for row in inventory['repositories']}
     require(len(expected) == 67 and len(inventory['repositories']) == 67,
             'Original inventory must contain 67 unique identities')
+    require(len(final['retained']) == 2 and len({row['id'] for row in final['retained']}) == 2,
+            'Retained inventory must contain exactly two unique rows')
     retained = {row['id']: row['source'] for row in final['retained']}
     require(retained == {1162179521: 'HemSoft/now-leadership-group',
                          1169698740: 'HemSoft/set-it-free-loop-site'},
@@ -97,8 +99,14 @@ def validate(directory):
                 'Final inventory disagrees with captured visibility or archive state')
         submitted = timestamp(receipt['submitted_at'])
         verified = timestamp(receipt['verified_at'])
-        require(receipt['transfer_response']['http_status'] == 202 and
-                receipt['transfer_payload']['new_owner'] == inventory['destination_login'],
+        accepted = receipt['transfer_response']
+        require(accepted['method'] == 'POST' and accepted['http_status'] == 202 and
+                accepted['request_url'] == 'https://api.github.com/repos/' + repo['full_name'] + '/transfer' and
+                accepted['data']['id'] == repo['id'] and
+                submitted <= timestamp(accepted['observed_at']) <= timestamp(receipt['after']['observed_at']) and
+                receipt['transfer_payload']['new_owner'] == inventory['destination_login'] and
+                receipt['transfer_payload'].get('new_name', repo['full_name'].split('/')[1]) ==
+                repo['destination'].split('/')[1],
                 'Transfer needs its accepted API response and destination organization')
         before_refs = refs(receipt['before_refs'], repo['full_name'],
                            timestamp(inventory['captured_at']), submitted)

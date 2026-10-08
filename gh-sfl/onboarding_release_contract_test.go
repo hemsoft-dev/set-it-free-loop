@@ -2,8 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
-	"strings"
+	"regexp"
 	"testing"
 )
 
@@ -31,7 +32,35 @@ func TestOnboardingReleaseLinkMatchesDistribution(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "https://github.com/" + metadata.Distribution.Repository + "/releases/tag/" + metadata.Distribution.Tag
-	if !strings.Contains(string(doc), "("+want+")") {
-		t.Fatalf("onboarding install link must match distribution metadata: %s", want)
+	if err := checkOnboardingInstallLink(string(doc), want); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func checkOnboardingInstallLink(doc, want string) error {
+	pattern := regexp.MustCompile(`(?m)^Install the \[checksum-verified canonical release\]\(([^)]+)\)\.`)
+	matches := pattern.FindAllStringSubmatch(doc, -1)
+	if len(matches) != 1 || matches[0][1] != want {
+		return fmt.Errorf("designated onboarding install link must uniquely match distribution metadata: %s", want)
+	}
+	return nil
+}
+
+func TestOnboardingInstallLinkRejectsIncidentalOrDuplicateReleaseURLs(t *testing.T) {
+	want := "https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.21"
+	correct := "Install the [checksum-verified canonical release](" + want + ")."
+	for name, doc := range map[string]string{
+		"history only":                           "Release history: [latest](" + want + ")",
+		"stale instruction with current history": "Install the [checksum-verified canonical release](https://example.com/stale).\n" + want,
+		"duplicate instruction":                  correct + "\n" + correct,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if checkOnboardingInstallLink(doc, want) == nil {
+				t.Fatal("invalid installation instruction was accepted")
+			}
+		})
+	}
+	if err := checkOnboardingInstallLink(correct, want); err != nil {
+		t.Fatal(err)
 	}
 }

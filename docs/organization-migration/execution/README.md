@@ -28,3 +28,5 @@ python3 -m unittest deployment/tests/test_executed_transfers.py
 ```
 
 This check derives refs from the actual GitHub matching-ref responses, including the captured empty n8n repository response. It reports 65 verified transfers, two retained sources and 13 transferred archives. Its successful exit does not mean that migration acceptance, source protection evidence or the SFL rollout is complete. The original strict rollout validator remains unchanged.
+
+The executed transfer validator binds each accepted POST response to its repository ID, transfer URL and submission interval, and rejects duplicate retained rows. Pending-review failure-log references resolve to their committed primary logs. The onboarding contract checks the designated checksum-verified install instruction; version bumps update that instruction, and documentation-only changes trigger its Go test. The release-version helper changes affect future version updates; current signed rc21 assets and runtime Go/observer code remain unchanged.

@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-08T10:57:15.146838+00:00",
+  "observed_at": "2026-10-08T11:26:22.678725+00:00",
   "command": [
     "python3",
     "deployment/scripts/validate-executed-transfers.py",
@@ -24,7 +24,7 @@
       "deployment/tests/test_executed_transfers.py"
     ],
     "exit_code": 0,
-    "tests": 9
+    "tests": 12
   },
   "existing_migration_tests": {
     "command": [
@@ -39,5 +39,28 @@
     ],
     "exit_code": 0,
     "tests": 311
+  },
+  "release_contract": {
+    "command": [
+      "pwsh",
+      "-NoProfile",
+      "-File",
+      "deployment/tests/test-release-metadata.ps1"
+    ],
+    "exit_code": 0,
+    "toolchain": "Go1.25.14"
+  },
+  "onboarding_contract": {
+    "command": [
+      "go",
+      "test",
+      "./...",
+      "-run",
+      "TestOnboarding",
+      "-count=1"
+    ],
+    "working_directory": "gh-sfl",
+    "exit_code": 0,
+    "toolchain": "Go1.25.14"
   }
 }
