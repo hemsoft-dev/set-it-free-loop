@@ -7,8 +7,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	gh "github.com/cli/go-gh/v2"
 )
 
 var version = "dev"
@@ -157,26 +155,49 @@ func formatVersion(ver, date string) string {
 }
 
 func fetchLatestRelease(owner, repo string) (string, error) {
-	if client, ok, err := sourceReadClient(owner, repo); err != nil {
-		return "", err
-	} else if ok {
-		var release struct {
-			TagName string `json:"tag_name"`
-		}
-		if err := client.Get(fmt.Sprintf("repos/%s/%s/releases/latest", owner, repo), &release); err != nil {
-			return "", fmt.Errorf("fetching latest release: %w", err)
-		}
-		return strings.TrimSpace(release.TagName), nil
-	}
-
-	stdoutBuf, stderrBuf, err := gh.Exec(
-		"api", fmt.Sprintf("repos/%s/%s/releases/latest", owner, repo),
-		"--jq", ".tag_name",
-	)
+	client, scoped, err := sourceReadClient(owner, repo)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", stderrBuf.String(), err)
+		return "", err
 	}
-	return strings.TrimSpace(stdoutBuf.String()), nil
+	if !scoped {
+		client, err = newRESTClient()
+		if err != nil {
+			return "", fmt.Errorf("creating release discovery client: %w", err)
+		}
+	}
+	var latestTag string
+	var latestAt time.Time
+	var latestID int64
+	for page := 1; ; page++ {
+		var releases []struct {
+			ID          int64     `json:"id"`
+			TagName     string    `json:"tag_name"`
+			Draft       bool      `json:"draft"`
+			PublishedAt time.Time `json:"published_at"`
+		}
+		path := fmt.Sprintf("repos/%s/%s/releases?per_page=100&page=%d", owner, repo, page)
+		if err := client.Get(path, &releases); err != nil {
+			return "", fmt.Errorf("fetching published releases: %w", err)
+		}
+		for _, release := range releases {
+			tag := strings.TrimSpace(release.TagName)
+			if release.Draft || release.PublishedAt.IsZero() || !strings.HasPrefix(tag, "v") ||
+				!semanticVersionPattern.MatchString(strings.TrimPrefix(tag, "v")) {
+				continue
+			}
+			if latestTag == "" || release.PublishedAt.After(latestAt) ||
+				(release.PublishedAt.Equal(latestAt) && release.ID > latestID) {
+				latestTag, latestAt, latestID = tag, release.PublishedAt, release.ID
+			}
+		}
+		if len(releases) < 100 {
+			break
+		}
+	}
+	if latestTag == "" {
+		return "", fmt.Errorf("no published semantic-version SFL release found in %s/%s", owner, repo)
+	}
+	return latestTag, nil
 }
 
 var fetchLatestReleaseFunc = fetchLatestRelease

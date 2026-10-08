@@ -163,3 +163,5 @@ cd gh-sfl
 This checks formatting, runs `go vet` and `go test`, then builds with version
 metadata. Omit `-NoInstall` to install the result into the `gh` extensions
 directory.
+
+Release discovery uses the most recently published semantic-version release, including private prereleases. Drafts and unrelated tags are excluded. An explicit `--source-ref` continues to select a specific immutable release; deployment still checks its tag against `VERSION`.
