@@ -114,19 +114,51 @@ async function activeCases() {
   const end = source.indexOf('function requestGateExternalIdPrefix(', start);
   assert(start >= 0 && end > start);
   const classify = new AsyncFunction('fixture', `
-    const owner='hemsoft-dev',repo='fixture',pullNumber=42,currentHead='${head}',context={runId:99};
+    const owner='hemsoft-dev',repo='fixture',pullNumber=42,currentHead='${head}',currentBase='${base}',context={runId:99};
+    const baseMarker='<!-- sfl-codex-review:head=${head};base=${base};';
+    ${block('REQUEST ELIGIBILITY').split('const requestOrder =')[0]}
+    ${block('REVIEW CONTEXT PROVENANCE')}
     const requesterAllowed=async login=>fixture.allowed.includes(login);
-    const github={rest:{actions:{listWorkflowRuns:'runs'},repos:{listCommitStatusesForRef:'statuses'}},
-      paginate:async(method,args)=>method==='runs'?(args.status==='queued'?fixture.runs:[]):fixture.statuses};
+    const github={rest:{actions:{listWorkflowRuns:'runs'},repos:{listCommitStatusesForRef:'statuses'},checks:{listForRef:'checks'},
+      issues:{getComment:async({comment_id})=>{
+        if(fixture.error)throw fixture.error;
+        if(fixture.comment===null)throw Object.assign(new Error('deleted'),{status:404});
+        return {data:fixture.comment || {id:comment_id,body:fixture.exact,html_url:'https://github.com/hemsoft-dev/fixture/pull/42#issuecomment-'+comment_id,user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:01Z'}};
+      }}},
+      paginate:async(method,args)=>method==='runs'?(args.status==='queued'?fixture.runs:[]):method==='checks'?(fixture.checks || [{app:{id:15368},external_id:fixture.token,output:{text:JSON.stringify({schema:1,pull_number:42,action:'opened',base_sha:currentBase})}}]):fixture.statuses};
     ${unindent(source.slice(start,end))}
     ${block('ACTIVE INVALIDATIONS')}
-    return (await activeInvalidationRuns()).map(run=>run.id);`);
+    const results=[];
+    for(const step of fixture.steps || [{}]){
+      Object.assign(fixture,step);
+      results.push((await activeInvalidationRuns()).map(run=>run.id));
+    }
+    return fixture.steps ? results : results[0];`);
   const run = (actor, id=101, markerIntent=false) => ({id:1,event:'issue_comment',status:'queued',actor:{login:actor},display_title:titleForComment(id, markerIntent ? exact : 'ordinary comment')});
   const registration = (creator='author',url=commentURL) => ({context:'SFL Codex Review Request Registry',creator:{login:creator},target_url:url});
   const cases = [
     ['ordinary administrator comment', [run('admin')], [], ['admin'], []],
     ['writer request before registry visibility', [run('admin',101,true)], [], ['admin'], [1]],
     ['reader marker before registry visibility', [run('reader',101,true)], [], [], []],
+    ...[
+      ['quoted marker', `An earlier request said:\n${exact}`],
+      ['trailing prose', `${exact}\nordinary follow-up`],
+      ['old head', exact.replace(head,'c'.repeat(40))],
+      ['old base', exact.replace(base,'c'.repeat(40))],
+      ['arbitrary context', exact.replace(token,'foo')],
+      ['empty context', exact.replace(token,'')],
+      ['padded context', exact.replace(token,' '+token)],
+    ].map(([name,body])=>[name,[{...run('admin',101,true),display_title:titleForComment(101,body)}],[],['admin'],[],
+      {id:101,body,html_url:commentURL,user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:01Z'}]),
+    ['deleted registry-free marker', [run('admin',101,true)], [], ['admin'], [], null],
+    ['deleted revoked registered request', [run('author',101,true)], [registration()], [], [1], null],
+    ['edited registry-free marker', [run('admin',101,true)], [], ['admin'], [],
+      {id:101,body:exact,html_url:commentURL,user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:02Z'}],
+    ['different comment target', [run('admin',101,true)], [], ['admin'], [],
+      {id:101,body:exact,html_url:commentURL.replace('/42#','/43#'),user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:01Z'}],
+    ['different author before registry', [run('admin',101,true)], [], ['admin'], [],
+      {id:101,body:exact,html_url:commentURL,user:{login:'other'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:01Z'}],
+
     ['registered administrator request', [run('admin')], [registration('admin')], ['admin'], [1]],
     ['revoked registered author', [run('author')], [registration()], [], [1]],
     ['unprivileged other actor', [run('reader')], [registration()], [], []],
@@ -142,9 +174,32 @@ async function activeCases() {
     ['completed comment run', [{...run('admin'),status:'completed'}], [registration('admin')], ['admin'], []],
     ['legacy writer run', [{...run('admin'),display_title:'SFL Codex review request #42'}], [], ['admin'], [1]],
   ];
-  for (const [name,runs,statuses,allowed,want] of cases) {
-    assert.deepEqual(await classify({runs,statuses,allowed}),want,name);
+  for (const [name,runs,statuses,allowed,want,comment] of cases) {
+    if(process.argv[3]==='probe-pinned' && name==='arbitrary context')continue;
+    assert.deepEqual(await classify({runs,statuses,allowed,comment,exact,token}),want,name);
   }
+  if(process.argv[3] !== 'probe-pinned') {
+    const trusted={app:{id:15368},external_id:token,output:{text:JSON.stringify({schema:1,pull_number:42,action:'opened',base_sha:base})}};
+    for(const checks of [[],[{...trusted,app:{id:1}}],[{...trusted,output:{text:'malformed'}}],
+      [{...trusted,output:{text:JSON.stringify({schema:1,pull_number:42,action:'opened',base_sha:'c'.repeat(40)})}}],
+      [trusted,{...trusted,external_id:token+'1'}]]) {
+      assert.deepEqual(await classify({runs:[run('admin',101,true)],statuses:[],allowed:['admin'],exact,token,checks}),[],'materializing request requires unique authenticated current context provenance');
+    }
+  }
+  if(process.argv[3] !== 'probe-context') {
+    for(const changed of [null,{id:101,body:exact+' edited',html_url:commentURL,user:{login:'admin'},created_at:'2026-10-08T00:00:01Z',updated_at:'2026-10-08T00:00:02Z'}]) {
+      const runs=[run('admin',101,true)];
+      assert.deepEqual(await classify({runs,statuses:[],allowed:['admin'],exact,token,steps:[{}, {comment:changed}, {runs:[]}] }),[[1],[1],[]],'verified request remains serialized after mutation until its active run ends');
+    }
+  }
+  if(process.argv[3] !== 'probe-context') {
+    assert.deepEqual(await classify({runs:[run('admin',101,true)],statuses:[],allowed:['admin'],exact,token,
+      steps:[{}, {allowed:[],comment:null}, {runs:[]}] }),[[1],[1],[]],'verified request stays serialized after authorization loss until its active run ends');
+    assert.deepEqual(await classify({runs:[run('admin',101,true)],statuses:[],allowed:['admin'],exact,token,
+      steps:[{}, {runs:[{...run('admin',101,true),id:2}],comment:null}] }),[[1],[]],'verified identity does not transfer to another run');
+  }
+  const error=Object.assign(new Error('comment verification unavailable'),{status:500});
+  await assert.rejects(classify({runs:[run('admin',101,true)],statuses:[],allowed:['admin'],exact,token,error}),observed=>observed===error);
 }
 function retargetCases() {
   const supported = new Function('pull','context','headRepo','owner','repo',
@@ -319,13 +374,13 @@ async function publishedCheckRetryCases(baseFixture,first,selected) {
 
 (async () => {
   const mode = process.argv[3] || 'all';
-  assert(['all', 'probe-invalidation', 'probe-history', 'probe-revoked', 'probe-active', 'probe-retarget', 'probe-polling', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry'].includes(mode));
+  assert(['all', 'probe-invalidation', 'probe-history', 'probe-revoked', 'probe-active', 'probe-retarget', 'probe-polling', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry', 'probe-context', 'probe-pinned'].includes(mode));
   if (['all', 'probe-polling'].includes(mode)) {
     for (const action of ['created', 'edited', 'deleted']) {
       await invalidationCase(`unprivileged marker ${action}`, exact, action === 'edited', false, false, null, action, 'read', 1);
     }
   }
-  if (['all', 'probe-active'].includes(mode)) await activeCases();
+  if (['all', 'probe-active', 'probe-context', 'probe-pinned'].includes(mode)) await activeCases();
   if (['all', 'probe-retarget'].includes(mode)) retargetCases();
   if (['all', 'probe-revoked'].includes(mode)) {
     for (const [action, body] of [['edited', 'erased request'], ['deleted', exact], ['created', exact]]) {
@@ -333,8 +388,8 @@ async function publishedCheckRetryCases(baseFixture,first,selected) {
     }
     await invalidationCase('revoked unregistered author', 'ordinary comment', false, false, false, null, 'created', 'read');
   }
-  if (mode.startsWith('probe-') && !['probe-invalidation', 'probe-history', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry'].includes(mode)) return;
-  if (!['probe-history', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry'].includes(mode)) {
+  if (mode.startsWith('probe-') && !['probe-invalidation', 'probe-history', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry', 'probe-context', 'probe-pinned'].includes(mode)) return;
+  if (!['probe-history', 'probe-empty', 'probe-repair', 'probe-publication', 'probe-check-retry', 'probe-context', 'probe-pinned'].includes(mode)) {
   if (mode === 'all') {
   assert.match(source, /issue_comment:\s*types: \[created, edited, deleted\]/);
   const title = /run-name: >-\n\s*\$\{\{([\s\S]*?)\}\}/.exec(source);
@@ -395,6 +450,6 @@ async function publishedCheckRetryCases(baseFixture,first,selected) {
   }
   if (['all','probe-repair'].includes(mode)) await repairCases(fixture,first,selected);
   if (['all','probe-publication'].includes(mode)) await publicationCases(fixture,first,selected);
-  if (['all','probe-check-retry'].includes(mode)) await publishedCheckRetryCases(fixture,first,selected);
+  if (['all','probe-check-retry', 'probe-context', 'probe-pinned'].includes(mode)) await publishedCheckRetryCases(fixture,first,selected);
   console.log('Production invalidation and fresh historical-publication regressions passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });
