@@ -747,6 +747,7 @@ jobs:
               }
             }
             // BEGIN TESTABLE ACTIVE INVALIDATIONS
+            const verifiedMaterializingRequests = new Set();
             const activeInvalidationRuns = async () => {
               const activeStatuses = ["requested", "queued", "in_progress", "waiting", "pending"];
               const events = ["pull_request_target", "push", "issue_comment"];
@@ -795,8 +796,9 @@ jobs:
                 const registeredInvalidation = registrations.length &&
                   (registrations.some(status => status.creator.login.toLowerCase() === actor) ||
                    await requesterAllowed(actor));
-                let materializingRequest = false;
-                if (!registeredInvalidation && !registrations.length &&
+                const verifiedRequestIdentity = `${run.id}:${requestId}:${actor}`;
+                let materializingRequest = verifiedMaterializingRequests.has(verifiedRequestIdentity);
+                if (!registeredInvalidation && !materializingRequest && !registrations.length &&
                     run.display_title === `SFL Codex comment #${pullNumber} request ${requestId}` &&
                     await requesterAllowed(actor)) {
                   let comment;
@@ -815,6 +817,15 @@ jobs:
                     Number.isFinite(Date.parse(comment.created_at || "")) &&
                     comment.updated_at === comment.created_at &&
                     comment.body === `@codex review\n\n${baseMarker}context=${token} -->`);
+                  if (materializingRequest) {
+                    const currentContextChecks = await github.paginate(github.rest.checks.listForRef,
+                      {owner, repo, ref: currentHead, check_name: "SFL Reviewer Gate Runner",
+                       filter: "all", per_page: 100}, response => response.data);
+                    materializingRequest = reviewContextUnambiguous(currentContextChecks, pullNumber, currentBase) &&
+                      currentContextChecks.some(check => check.app && check.app.id === 15368 &&
+                        check.external_id === token);
+                    if (materializingRequest) verifiedMaterializingRequests.add(verifiedRequestIdentity);
+                  }
                 }
                 if (registeredInvalidation || materializingRequest) authorized.push(run);
               }
