@@ -42,10 +42,14 @@ def metadata(capture, repository_id, name):
     return data
 
 
-def refs(capture, repository, earliest, latest):
+def refs(capture, repository, default_branch, earliest, latest):
     responses = capture['responses']
     require(len(responses) == 1, 'Expected the complete matching-refs GET response')
     response = responses[0]
+    headers = response.get('response_headers')
+    require(isinstance(headers, dict) and any(k.lower() == 'x-github-request-id' for k in headers) and
+            not any('rel="next"' in v for k, v in headers.items() if k.lower() == 'link'),
+            'Refs capture must include its original terminal pagination headers')
     require(response['method'] == 'GET' and response['http_status'] in {200, 409} and
             response['request_url'] == 'https://api.github.com/repos/' + repository + '/git/matching-refs/',
             'Refs need a successful repository-bound matching-refs capture')
@@ -62,6 +66,8 @@ def refs(capture, repository, earliest, latest):
                 row['object']['type'] in {'commit', 'tag'}, 'Captured refs are malformed or duplicated')
         result[row['ref']] = {key: row['object'][key] for key in ('sha', 'type')}
     require(result == capture['refs'], 'Ref summary must derive from the primary response')
+    require('refs/heads/' + default_branch in result,
+            'Nonempty repository refs must include the declared default branch')
     return result
 
 
@@ -127,6 +133,18 @@ def validate_pilots(directory):
                 'Pilot qualification references the wrong live evidence')
         binding = read(execution, summary['execution_binding_receipt'])
         merge = read(execution, prefix + '-live-guarded-merge.json')
+        merged_capture = read(execution, prefix + '-live-merged-pr-current.json')
+        merged = merged_capture['data']
+        require(merged_capture['actor'] == 'HemSoft' and merged_capture['exit_code'] == 0 and
+                merged_capture['argv'] == ['gh', 'api', 'repos/' + repo + '/pulls/' + str(merge['pr_number'])] and
+                merged['number'] == merge['pr_number'] and merged['state'] == 'closed' and merged['merged'] is True and
+                merged['head']['repo']['id'] == merged['base']['repo']['id'] == repository_id and
+                merged['head']['repo']['full_name'] == merged['base']['repo']['full_name'] == repo and
+                merged['head']['sha'] == merge['head'] and merged['base']['sha'] == merge['base'] and
+                merged['merge_commit_sha'] == merge['merge_sha'] and merged['merged_at'] == merge['merged_at'] and
+                timestamp(merged['merged_at']) <= timestamp(merged_capture['started_at']) <=
+                timestamp(merged_capture['completed_at']) <= timestamp(qualification['qualified_at']),
+                'Pilot merge requires its authenticated post-merge PR capture')
         gate = merge['gate']
         request, native = merge['request'], merge['native_clean']
         require(binding['repository_id'] == repository_id and binding['repository'] == repo and
@@ -211,6 +229,9 @@ def validate_pilots(directory):
                     repeat['exit_code'] == repeat['execution']['exit_code'] == 0 and repeat['actor'] == 'HemSoft' and
                     repeat['revision_before'] == repeat['revision_after'] == merge['merge_sha'] and
                     repeat['execution']['command'] == 'gh sfl ' + operation and
+                    repeat['execution']['argv'] == ['gh', 'sfl', operation, '--repo', repo] +
+                    (['--tier', 'reviewer', '--source-ref', 'v' + version] if operation == 'init' else []) +
+                    (['--pr'] if operation != 'status' else []) and
                     timestamp(merge['merged_at']) <= timestamp(repeat['started_at']) <=
                     timestamp(repeat['execution']['completed_at']) <= timestamp(completion['observed_at']),
                     'Pilot terminal repeat is invalid or changed the default revision')
@@ -268,9 +289,128 @@ def validate_pilots(directory):
                 'Pilot cleanup did not preserve unrelated policy')
 
 
+def validate_source_gate(execution):
+    created = read(execution, 'rc21-source-only-org-review-gate-create.json')
+    require(created['actor'] == 'HemSoft' and created['exit_code'] == 0 and
+            created['argv'][:6] == ['gh', 'api', '--include', '--method', 'POST', 'orgs/hemsoft-dev/rulesets'] and
+            created['stdout'].startswith('HTTP/2.0 201 Created\n'), 'Source gate creation needs its successful organization POST')
+    gate = json.loads(created['stdout'].split('\n\n', 1)[1])
+    require(gate == read(execution, 'rc21-source-only-org-review-gate-created-primary.json') and
+            gate['id'] == 24716278 and gate['source_type'] == 'Organization' and gate['source'] == 'hemsoft-dev' and
+            gate['target'] == 'branch' and gate['enforcement'] == 'active' and gate['bypass_actors'] == [] and
+            gate['conditions'] == {'repository_id': {'repository_ids': [1169772257]},
+                                  'ref_name': {'exclude': [], 'include': ['~DEFAULT_BRANCH']}} and
+            gate['rules'] == [{'type': 'required_status_checks', 'parameters': {
+                'strict_required_status_checks_policy': True, 'do_not_enforce_on_create': False,
+                'required_status_checks': [{'context': 'SFL Reviewer Gate Runner', 'integration_id': 15368}]}}],
+            'Source organization gate changed its scope, integration or bypass policy')
+    before_name, after_name = 'rc21-before-source-governance-unrelated-detail.json', 'rc21-source-org-gate-after-unrelated.json'
+    endpoint = 'orgs/hemsoft-dev/rulesets/24698223'
+    before, after = api_receipt(execution, before_name, endpoint), api_receipt(execution, after_name, endpoint)
+    require(before == after and before['id'] == 24698223 and
+            timestamp(read(execution, before_name)['completed_at']) <= timestamp(created['started_at']) <=
+            timestamp(created['completed_at']) <= timestamp(read(execution, after_name)['started_at']),
+            'Source gate creation must preserve the unrelated organization rule')
+
+
+def validate_release(execution):
+    proof = read(execution, 'rc21-independent-download-proof.json')
+    source, version, repo = '89425320ace3127a829d86e3b642fe2b31fd979e', '2.1.0-rc.21', 'hemsoft-dev/set-it-free-loop'
+    tag = 'v' + version
+    require(proof['repository'] == repo and proof['source_sha'] == source and proof['version'] == version and
+            proof['release_id'] == 406645777 and proof['immutable'] is True and proof['signed_release_verified'] is True and
+            proof['default_status_exit_code'] == 0 and proof['installer_default_source'] == repo,
+            'Independent release summary has an invalid identity or result')
+    release_capture = read(execution, 'pr156-rc21-release-metadata-primary.json')
+    tag_capture = read(execution, 'pr156-rc21-release-tag-primary.json')
+    for capture, endpoint in [(release_capture, 'repos/' + repo + '/releases/tags/' + tag),
+                              (tag_capture, 'repos/' + repo + '/git/ref/tags/' + tag)]:
+        require(capture['actor'] == 'HemSoft' and capture['exit_code'] == 0 and capture['argv'] == ['gh', 'api', endpoint],
+                'Independent release needs its repository-bound API captures')
+    release, ref = release_capture['data'], tag_capture['data']
+    require(release['id'] == proof['release_id'] and release['tag_name'] == tag and
+            release['immutable'] is True and release['prerelease'] is True and release['draft'] is False and
+            ref['ref'] == 'refs/tags/' + tag and ref['object']['type'] == 'commit' and ref['object']['sha'] == source,
+            'Immutable release API identity differs from its proof')
+    signed = read(execution, 'rc21-signed-release-verification-primary.json')
+    envelope = signed['attestation']['bundle']['dsseEnvelope']
+    statement = signed['verificationResult']['statement']
+    require(json.loads(base64.b64decode(envelope['payload'])) == statement and bool(envelope['signatures']) and
+            signed['verificationResult']['signature']['certificate']['subjectAlternativeName'] == 'https://dotcom.releases.github.com',
+            'Release signature verification primary does not bind its signed statement')
+    predicate = statement['predicate']
+    require(statement['_type'] == 'https://in-toto.io/Statement/v1' and
+            statement['predicateType'] == 'https://in-toto.io/attestation/release/v0.2' and
+            predicate['repository'] == repo and predicate['repositoryId'] == predicate['packageId'] == '1169772257' and
+            predicate['ownerId'] == '338855369' and predicate['databaseId'] == str(proof['release_id']) and predicate['tag'] == tag,
+            'Release signature statement belongs to another repository or release')
+    subjects = statement['subject']
+    require(subjects[0] == {'uri': 'pkg:github/' + repo + '@' + tag, 'digest': {'sha1': source}},
+            'Release signature source SHA differs from its proof')
+    sums_bytes = (execution / 'rc21-SHA256SUMS').read_bytes()
+    sums = dict((line.split()[1], line.split()[0]) for line in sums_bytes.decode().splitlines())
+    signed_assets = {item['name']: item['digest']['sha256'] for item in subjects[1:]}
+    require(proof['digests'] == sums and signed_assets == {**sums, 'SHA256SUMS': hashlib.sha256(sums_bytes).hexdigest()} and
+            {item['name']: item['digest'] for item in release['assets']} ==
+            {name: 'sha256:' + digest for name, digest in signed_assets.items()},
+            'Release asset digests do not match the signed checksum primary')
+    invocation = read(execution, 'rc21-independent-default-download-verification.json')
+    require(hashlib.sha256((execution / 'rc21-independent-download-verifier.py').read_bytes()).hexdigest() ==
+            '003d0035ac48c149db6d71361b8292ed27291f50a6ce6654684e9db6dd21867f',
+            'Independent verifier implementation differs from the executed checksum, signature and installer contract')
+    require(invocation['actor'] == 'HemSoft' and invocation['exit_code'] == 0 and
+            invocation['argv'] == ['python3', '/home/franz/github/hemsoft/set-it-free-loop/.git/merge-mission/verify-rc21-download.py'] and
+            timestamp(release['published_at']) <= timestamp(invocation['started_at']) <= timestamp(proof['observed_at']) <=
+            timestamp(invocation['completed_at']), 'Independent release verifier did not complete after publication')
+    result = json.loads(invocation['stdout'])
+    require(result['release_id'] == proof['release_id'] and result['checksum_verified'] is True and result['default_status'] == 'passed' and
+            proof['version_output'] == (execution / 'rc21-version.log').read_text() and
+            result['version'] == proof['version_output'].strip() and 'Could not check for updates' not in proof['version_output'] and
+            'Verified SHA-256 for gh-sfl_' + version + '_linux_amd64.' in (execution / 'rc21-installer.log').read_text() and
+            'Could not resolve latest synchronized release' not in (execution / 'rc21-default-status.log').read_text(),
+            'Independent installer or isolated CLI logs disagree with the successful verifier')
+
+
+def validate_dashboard_repair(execution):
+    repair = read(execution, 'dashboard-policy-repair.json')
+    receipt = read(execution, 'repository-transfers/repository-transfer-1120402599.json')
+    require(repair['repository_id'] == 1120402599 and
+            repair['original_primary_capture'] == 'repository-transfers/repository-transfer-1120402599.json',
+            'Dashboard repair must bind its original repository receipt')
+    response = repair['response']
+    require(response['method'] == 'PUT' and response['http_status'] == 200 and
+            response['request_url'] == 'https://api.github.com/repos/hemsoft-dev/dashboard/rulesets/11400445' and
+            timestamp(receipt['submitted_at']) <= timestamp(repair['observed_at']) <= timestamp(response['observed_at']) <=
+            timestamp(repair['repaired_at']) <= timestamp(receipt['verified_at']),
+            'Dashboard repair needs its post-transfer repository-bound PUT response')
+    original = receipt['before_policy']['ruleset_details'][0]['data']
+    dropped = repair['before']['ruleset_details'][0]['data']
+    final = receipt['after_policy']['ruleset_details'][0]['data']
+    def policy(value):
+        # GitHub adds this disabled schema field during transfer; it has no enforcement effect.
+        if isinstance(value, list): return [policy(item) for item in value]
+        if isinstance(value, dict): return {k: policy(v) for k, v in value.items()
+            if not (k == 'dismissal_restriction' and v == {'enabled': False, 'allowed_actors': []})}
+        return value
+    fields = ('name', 'target', 'enforcement', 'conditions', 'rules', 'bypass_actors')
+    expected = policy({key: original[key] for key in fields})
+    require(original['id'] == dropped['id'] == final['id'] == response['data']['id'] == 11400445 and
+            expected['bypass_actors'] == [{'actor_id': 5, 'actor_type': 'RepositoryRole', 'bypass_mode': 'always'}] and
+            dropped['bypass_actors'] == [] and
+            policy({key: dropped[key] for key in fields if key != 'bypass_actors'}) ==
+            {key: expected[key] for key in fields if key != 'bypass_actors'} and
+            policy(repair['payload']) == expected and
+            policy({key: response['data'][key] for key in fields}) == expected and
+            policy({key: final[key] for key in fields}) == expected,
+            'Dashboard repair changed another rule or failed to restore its original administrator bypass')
+
+
 def validate(directory):
     inventory = read(directory, 'inventory.json')
     execution = directory / 'execution'
+    validate_source_gate(execution)
+    validate_release(execution)
+    validate_dashboard_repair(execution)
     final = read(execution, 'repository-first-final-inventory.json')
     direction = read(execution, 'owner-repository-first-direction.json')
     require(direction['repository_transfer_first'] is True and
@@ -330,9 +470,9 @@ def validate(directory):
                 receipt['transfer_payload'].get('new_name', repo['full_name'].split('/')[1]) ==
                 repo['destination'].split('/')[1],
                 'Transfer needs its accepted API response and destination organization')
-        before_refs = refs(receipt['before_refs'], repo['full_name'],
+        before_refs = refs(receipt['before_refs'], repo['full_name'], repo['default_branch'],
                            timestamp(inventory['captured_at']), submitted)
-        after_refs = refs(receipt['after_refs'], repo['destination'], submitted, verified)
+        after_refs = refs(receipt['after_refs'], repo['destination'], repo['default_branch'], submitted, verified)
         require(before_refs == after_refs,
                 f'Transfer changed refs for repository {repo["id"]}')
         require(timestamp(inventory['captured_at']) <= timestamp(receipt['before']['observed_at']) <= timestamp(receipt['submitted_at']) <

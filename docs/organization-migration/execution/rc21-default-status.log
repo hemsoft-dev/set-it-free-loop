@@ -1,0 +1,29 @@
+SFL Status: hemsoft-dev/sfl-migration-pilot-private
+────────────────────────────────────────
+
+  ✓ Installed
+  Version:    2.1.0-rc.20
+  Tier:       reviewer
+  Deployed:   2026-10-08 07:21 UTC
+  By:         HemSoft
+  Components: sfl-pr-review-auto
+  Source SHA: 292336619aaf
+  ↑ Update available — run 'gh sfl init --repo hemsoft-dev/sfl-migration-pilot-private'
+
+  Reviewer package:
+    ✓ .github/workflows/sfl-pr-review-auto.yml
+    ✓ All reviewer package files match the pinned release source
+
+  Codex App:
+    ! The Codex GitHub App installation is verified by an authenticated review smoke test; GitHub CLI cannot inspect the owner's ChatGPT subscription connection
+
+  Reviewer prerequisites:
+    ✓ Default branch: main
+    ✓ GitHub Actions enabled
+
+  Merge posture:
+    ✗ Advisory-only; required reviewer gate is missing
+
+  Latest reviewer run:
+    ✓ success (https://github.com/hemsoft-dev/sfl-migration-pilot-private/actions/runs/37745009777)
+

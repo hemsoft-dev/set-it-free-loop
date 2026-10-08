@@ -20,5 +20,11 @@
     "deployment/scripts/__pycache__/validate-org-rollout.cpython-314.pyc",
     "deployment/tests/__pycache__/test_org_rollout.cpython-314.pyc"
   ],
-  "installed_runtime_qualified": false
+  "installed_runtime_qualified": false,
+  "executed_transfer_corruption_tests": {
+    "command": "python3 -m unittest deployment/tests/test_executed_transfers.py",
+    "exit_code": 0,
+    "tests": 29,
+    "observed_at": "2026-10-08T12:41:10.144485+00:00"
+  }
 }

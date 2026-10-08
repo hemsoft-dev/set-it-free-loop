@@ -1,0 +1,101 @@
+{
+  "attestation": {
+    "bundle": {
+      "mediaType": "application/vnd.dev.sigstore.bundle.v0.3+json",
+      "verificationMaterial": {
+        "certificate": {
+          "rawBytes": "MIICKzCCAbCgAwIBAgIUFEsbikF1pCGydxjUbs+jmoS800MwCgYIKoZIzj0EAwMwODEVMBMGA1UEChMMR2l0SHViLCBJbmMuMR8wHQYDVQQDExZGdWxjaW8gSW50ZXJtZWRpYXRlIGwxMB4XDTI2MDYxMjAwMDAwMFoXDTI3MDYxMjAwMDAwMFowKjEVMBMGA1UEChMMR2l0SHViLCBJbmMuMREwDwYDVQQDEwhBdHRlc3RlcjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABGUVEVNqcSQmA0J45gqVHzCQkSWaZn4DucVDFhO4Q5OWgVdOP4WF44OUvFXQm9lDfRrHMsIVHEbvMfL7SHOVuVWjgaUwgaIwDgYDVR0PAQH/BAQDAgeAMBMGA1UdJQQMMAoGCCsGAQUFBwMDMAwGA1UdEwEB/wQCMAAwHQYDVR0OBBYEFDrgKNmcXl2HuRedxYt9HulXf/9IMB8GA1UdIwQYMBaAFMDhuFKkS08+3no4EQbPSY6hRZszMC0GA1UdEQQmMCSGImh0dHBzOi8vZG90Y29tLnJlbGVhc2VzLmdpdGh1Yi5jb20wCgYIKoZIzj0EAwMDaQAwZgIxAJnC2khPGWJqZiEFvgyv0rktYBinUh6AkDn43wYSgUhzm8aRUa+rF25Qk1ZeoGi3IAIxAIgIBMwOkMqDQ1DVCJydaIZu1bxtvgX9Anva7kRDZrboNxsAllbdnorYRTm9mxkZaQ=="
+        },
+        "timestampVerificationData": {
+          "rfc3161Timestamps": [
+            {
+              "signedTimestamp": "MIIC0jADAgEAMIICyQYJKoZIhvcNAQcCoIICujCCArYCAQMxDTALBglghkgBZQMEAgIwgbwGCyqGSIb3DQEJEAEEoIGsBIGpMIGmAgEBBgkrBgEEAYO/MAIwMTANBglghkgBZQMEAgEFAAQgA34yKSwCuoiQ6c090J0WrEeNvRWWdEtZ0KV7QKCHZNECFQDqGsm3c2SU6h0h34zq5UNhWQYqDxgPMjAyNjEwMDgwOTE3MTBaMAMCAQGgNqQ0MDIxFTATBgNVBAoTDEdpdEh1YiwgSW5jLjEZMBcGA1UEAxMQVFNBIFRpbWVzdGFtcGluZ6AAMYIB3zCCAdsCAQEwSjAyMRUwEwYDVQQKEwxHaXRIdWIsIEluYy4xGTAXBgNVBAMTEFRTQSBpbnRlcm1lZGlhdGUCFBcz29bp/g76H6hT8wF4gebJRzNSMAsGCWCGSAFlAwQCAqCCAQUwGgYJKoZIhvcNAQkDMQ0GCyqGSIb3DQEJEAEEMBwGCSqGSIb3DQEJBTEPFw0yNjEwMDgwOTE3MTBaMD8GCSqGSIb3DQEJBDEyBDCxPMXaLrCBhcU1C7xOijVrQ422+l6hGd4u/ZY4bX9HtgNhTUm4aHR4Kkf9Q0cSdHQwgYcGCyqGSIb3DQEJEAIvMXgwdjB0MHIEIEQWyK5zFGpjoTfC5Vvo3nDjya8wc785i6q6qNsIF87XME4wNqQ0MDIxFTATBgNVBAoTDEdpdEh1YiwgSW5jLjEZMBcGA1UEAxMQVFNBIGludGVybWVkaWF0ZQIUFzPb1un+DvofqFPzAXiB5slHM1IwCgYIKoZIzj0EAwMEaDBmAjEAnDDbUVg4NaxnXOA2VaUySKH+w/e4bd2M2i83+ZwhjHBvbb2ALQxURO6ng1P1TW1zAjEAy0G1HzkC1GXIRz4R8eG7bXALBQEpbDG6QL9JG8qQK2nP8SoV4QtyNIQjfkX+jeFK"
+            }
+          ]
+        }
+      },
+      "dsseEnvelope": {
+        "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJzdWJqZWN0IjpbeyJ1cmkiOiJwa2c6Z2l0aHViL2hlbXNvZnQtZGV2L3NldC1pdC1mcmVlLWxvb3BAdjIuMS4wLXJjLjIxIiwiZGlnZXN0Ijp7InNoYTEiOiI4OTQyNTMyMGFjZTMxMjdhODI5ZDg2ZTNiNjQyZmUyYjMxZmQ5NzllIn19LHsibmFtZSI6ImdoLXNmbF8yLjEuMC1yYy4yMV9saW51eF9hbWQ2NCIsImRpZ2VzdCI6eyJzaGEyNTYiOiJkYmYwMmM5MWQ0ZmVkNTg4NWFjMzJjYTUwMTU2YzMwMGRiYWQ0NGExNWNlN2E0OGQyODNhNDVlMjQyMGJiNDhkIn19LHsibmFtZSI6ImdoLXNmbF8yLjEuMC1yYy4yMV93aW5kb3dzX2FtZDY0LmV4ZSIsImRpZ2VzdCI6eyJzaGEyNTYiOiI3M2YzMzZhNThjZDBmMThiNjQ1NTNjNTY4NmNlZWRlOTYxMmVmOWQ3NDg0YmM2NjY3ZjQyYzY2OTUzZGRlMjRjIn19LHsibmFtZSI6Imluc3RhbGwtZ2gtc2ZsLWhlbXNvZnQucHMxIiwiZGlnZXN0Ijp7InNoYTI1NiI6IjY2YWM3ZWIwZTVkZmY4YTUwNTc3YzkyZmUyMTQwN2IzNDU1YzJiNGZkNzMyODA5YWZlYmQwMGI4MTI2NzM3MzAifX0seyJuYW1lIjoiU0hBMjU2U1VNUyIsImRpZ2VzdCI6eyJzaGEyNTYiOiJmNjQ3ZWFmNzNjOGFjNjFiNzE1NjcwZTdkZDc5ZmQwMDFlZGQ3YTI1MTYyNjlkNWI0YWE1NmI4ZDIxM2M3MzdkIn19XSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9hdHRlc3RhdGlvbi9yZWxlYXNlL3YwLjIiLCJwcmVkaWNhdGUiOnsiZGF0YWJhc2VJZCI6IjQwNjY0NTc3NyIsIm93bmVySWQiOiIzMzg4NTUzNjkiLCJwYWNrYWdlSWQiOiIxMTY5NzcyMjU3IiwicHVybCI6InBrZzpnaXRodWIvaGVtc29mdC1kZXYvc2V0LWl0LWZyZWUtbG9vcEB2Mi4xLjAtcmMuMjEiLCJyZXBvc2l0b3J5IjoiaGVtc29mdC1kZXYvc2V0LWl0LWZyZWUtbG9vcCIsInJlcG9zaXRvcnlJZCI6IjExNjk3NzIyNTciLCJ0YWciOiJ2Mi4xLjAtcmMuMjEifX0=",
+        "payloadType": "application/vnd.in-toto+json",
+        "signatures": [
+          {
+            "sig": "MEYCIQCq2wEd2gfVtNG9SfMixMbhatSch5fPSnCxsXM3aQ7ktgIhAJuIexW7xqz5BOWWuGDB/I0nOKYuVIowvpiG0ru8sEAW"
+          }
+        ]
+      }
+    },
+    "bundle_url": "",
+    "initiator": ""
+  },
+  "verificationResult": {
+    "mediaType": "application/vnd.dev.sigstore.verificationresult+json;version=0.1",
+    "signature": {
+      "certificate": {
+        "certificateIssuer": "CN=Fulcio Intermediate l1,O=GitHub\\, Inc.",
+        "subjectAlternativeName": "https://dotcom.releases.github.com"
+      }
+    },
+    "verifiedTimestamps": [
+      {
+        "type": "TimestampAuthority",
+        "uri": "timestamp.githubapp.com",
+        "timestamp": "2026-10-08T09:17:10Z"
+      }
+    ],
+    "verifiedIdentity": {
+      "subjectAlternativeName": {
+        "subjectAlternativeName": "",
+        "regexp": "^https://dotcom\\.releases\\.github\\.com$"
+      },
+      "issuer": {
+        "issuer": "",
+        "regexp": ".*"
+      }
+    },
+    "statement": {
+      "_type": "https://in-toto.io/Statement/v1",
+      "subject": [
+        {
+          "uri": "pkg:github/hemsoft-dev/set-it-free-loop@v2.1.0-rc.21",
+          "digest": {
+            "sha1": "89425320ace3127a829d86e3b642fe2b31fd979e"
+          }
+        },
+        {
+          "name": "gh-sfl_2.1.0-rc.21_linux_amd64",
+          "digest": {
+            "sha256": "dbf02c91d4fed5885ac32ca50156c300dbad44a15ce7a48d283a45e2420bb48d"
+          }
+        },
+        {
+          "name": "gh-sfl_2.1.0-rc.21_windows_amd64.exe",
+          "digest": {
+            "sha256": "73f336a58cd0f18b64553c5686ceede9612ef9d7484bc6667f42c66953dde24c"
+          }
+        },
+        {
+          "name": "install-gh-sfl-hemsoft.ps1",
+          "digest": {
+            "sha256": "66ac7eb0e5dff8a50577c92fe21407b3455c2b4fd732809afebd00b812673730"
+          }
+        },
+        {
+          "name": "SHA256SUMS",
+          "digest": {
+            "sha256": "f647eaf73c8ac61b715670e7dd79fd001edd7a2516269d5b4aa56b8d213c737d"
+          }
+        }
+      ],
+      "predicateType": "https://in-toto.io/attestation/release/v0.2",
+      "predicate": {
+        "databaseId": "406645777",
+        "ownerId": "338855369",
+        "packageId": "1169772257",
+        "purl": "pkg:github/hemsoft-dev/set-it-free-loop@v2.1.0-rc.21",
+        "repository": "hemsoft-dev/set-it-free-loop",
+        "repositoryId": "1169772257",
+        "tag": "v2.1.0-rc.21"
+      }
+    }
+  }
+}

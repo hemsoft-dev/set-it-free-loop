@@ -1,0 +1,34 @@
+{
+  "started_at": "2026-10-08T09:44:51.113403+00:00",
+  "completed_at": "2026-10-08T09:44:51.687682+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/hemsoft-dev/sfl-migration-pilot-private/pulls/12"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stderr": "",
+  "data": {
+    "number": 12,
+    "state": "closed",
+    "merged": true,
+    "merged_at": "2026-10-08T09:42:21Z",
+    "merge_commit_sha": "01ca85bd09714ab17d2b6a018006b3b6fb022409",
+    "html_url": "https://github.com/hemsoft-dev/sfl-migration-pilot-private/pull/12",
+    "head": {
+      "sha": "df6c8dca850b614096894098106c7a5e397e61bf",
+      "repo": {
+        "id": 1408025382,
+        "full_name": "hemsoft-dev/sfl-migration-pilot-private"
+      }
+    },
+    "base": {
+      "sha": "465c4329fffb3b356f5e9f0b278caa6def40265d",
+      "repo": {
+        "id": 1408025382,
+        "full_name": "hemsoft-dev/sfl-migration-pilot-private"
+      }
+    }
+  }
+}

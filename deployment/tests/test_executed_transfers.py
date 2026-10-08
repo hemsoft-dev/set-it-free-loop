@@ -37,6 +37,69 @@ class ExecutedTransferTests(unittest.TestCase):
         self.rejects('repository-transfers/repository-transfer-1143951439.json',
                      lambda d: d['after']['data'].update(id=1), 'Captured repository identity')
 
+    def test_pilot_merge_requires_actual_post_merge_identity(self):
+        self.rejects('rc21-private-live-merged-pr-current.json',
+                     lambda d: d['data'].update(merged=False), 'post-merge PR capture')
+        self.rejects('rc21-public-live-merged-pr-current.json',
+                     lambda d: d['data']['head']['repo'].update(id=1), 'post-merge PR capture')
+
+    def test_terminal_repeat_cannot_target_another_repository(self):
+        for op in ('init', 'sync', 'status'):
+            self.rejects('rc21-private-post-live-repeat-' + op + '.json',
+                         lambda d: d['execution']['argv'].__setitem__(4, 'hemsoft-dev/unrelated'),
+                         'terminal repeat')
+
+    def test_source_gate_scope_and_unrelated_policy_are_validated(self):
+        import json
+        def wrong_scope(d):
+            headers, body = d['stdout'].split('\n\n', 1)
+            gate = json.loads(body)
+            gate['conditions']['repository_id']['repository_ids'] = [1]
+            d['stdout'] = headers + '\n\n' + json.dumps(gate)
+        self.rejects('rc21-source-only-org-review-gate-create.json', wrong_scope, 'Source organization gate')
+        def changed_rule(d):
+            rule = json.loads(d['stdout'])
+            rule['bypass_actors'] = [{'actor_id': 1}]
+            d['stdout'] = json.dumps(rule)
+        self.rejects('rc21-source-org-gate-after-unrelated.json', changed_rule, 'unrelated organization rule')
+
+    def test_refs_cannot_drop_both_default_branch_captures(self):
+        def drop(d):
+            for side in ('before_refs', 'after_refs'):
+                d[side]['refs'].clear()
+                d[side]['responses'][0]['data'].clear()
+        self.rejects('repository-transfers/repository-transfer-1143951439.json', drop, 'declared default branch')
+
+    def test_refs_require_original_terminal_pagination_metadata(self):
+        self.rejects('repository-transfers/repository-transfer-1143951439.json',
+                     lambda d: d['before_refs']['responses'][0].pop('response_headers'), 'pagination headers')
+        self.rejects('repository-transfers/repository-transfer-1143951439.json',
+                     lambda d: d['before_refs']['responses'][0]['response_headers'].update(
+                         Link='<https://api.github.com/repos/fhemmer/hs-cli-confluence-search/git/matching-refs/?page=2>; rel="next"'),
+                     'pagination headers')
+
+    def test_release_summary_is_bound_to_signed_primary_and_api(self):
+        for field, value in [('source_sha', '0' * 40), ('immutable', False), ('signed_release_verified', False),
+                             ('default_status_exit_code', 1)]:
+            self.rejects('rc21-independent-download-proof.json',
+                         lambda d, key=field, new=value: d.update({key: new}), 'release summary')
+        self.rejects('rc21-independent-download-proof.json',
+                     lambda d: d['digests'].update({'gh-sfl_2.1.0-rc.21_linux_amd64': '0' * 64}), 'asset digests')
+        self.rejects('pr156-rc21-release-metadata-primary.json',
+                     lambda d: d['data'].update(immutable=False), 'Immutable release API')
+        self.rejects('rc21-signed-release-verification-primary.json',
+                     lambda d: d['verificationResult']['statement']['predicate'].update(repositoryId='1'),
+                     'signed statement')
+
+    def test_dashboard_repair_is_bound_to_original_policy(self):
+        self.rejects('dashboard-policy-repair.json',
+                     lambda d: d['payload'].update(bypass_actors=[]), 'administrator bypass')
+        self.rejects('dashboard-policy-repair.json',
+                     lambda d: d['response'].update(request_url='https://api.github.com/repos/hemsoft-dev/unrelated/rulesets/11400445'),
+                     'PUT response')
+        self.rejects('dashboard-policy-repair.json',
+                     lambda d: d['response']['data']['rules'].clear(), 'administrator bypass')
+
     def test_changed_ref_rejected(self):
         self.rejects('repository-transfers/repository-transfer-1143951439.json',
                      lambda d: d['after_refs']['refs'].clear(), 'Ref summary must derive')

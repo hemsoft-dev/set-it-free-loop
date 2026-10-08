@@ -1,0 +1,47 @@
+{
+  "started_at": "2026-10-08T12:38:01.076589+00:00",
+  "completed_at": "2026-10-08T12:38:01.447309+00:00",
+  "argv": [
+    "gh",
+    "api",
+    "repos/hemsoft-dev/set-it-free-loop/releases/tags/v2.1.0-rc.21"
+  ],
+  "actor": "HemSoft",
+  "exit_code": 0,
+  "stderr": "",
+  "data": {
+    "id": 406645777,
+    "tag_name": "v2.1.0-rc.21",
+    "immutable": true,
+    "prerelease": true,
+    "draft": false,
+    "published_at": "2026-10-08T09:17:09Z",
+    "html_url": "https://github.com/hemsoft-dev/set-it-free-loop/releases/tag/v2.1.0-rc.21",
+    "assets": [
+      {
+        "name": "gh-sfl_2.1.0-rc.21_linux_amd64",
+        "digest": "sha256:dbf02c91d4fed5885ac32ca50156c300dbad44a15ce7a48d283a45e2420bb48d",
+        "size": 7807160,
+        "id": 621331864
+      },
+      {
+        "name": "gh-sfl_2.1.0-rc.21_windows_amd64.exe",
+        "digest": "sha256:73f336a58cd0f18b64553c5686ceede9612ef9d7484bc6667f42c66953dde24c",
+        "size": 8138240,
+        "id": 621331857
+      },
+      {
+        "name": "install-gh-sfl-hemsoft.ps1",
+        "digest": "sha256:66ac7eb0e5dff8a50577c92fe21407b3455c2b4fd732809afebd00b812673730",
+        "size": 7864,
+        "id": 621331865
+      },
+      {
+        "name": "SHA256SUMS",
+        "digest": "sha256:f647eaf73c8ac61b715670e7dd79fd001edd7a2516269d5b4aa56b8d213c737d",
+        "size": 293,
+        "id": 621331860
+      }
+    ]
+  }
+}
