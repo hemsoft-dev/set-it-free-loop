@@ -12,6 +12,25 @@ Repeat init/sync through `--pr` and confirm no additional changes. `gh sfl statu
 
 Use `gh sfl sync --repo hemsoft-dev/REPOSITORY --pr`. Preserve existing tiers, addons, unmanaged files, archive state and unrelated protections. No archived repository is unarchived for rollout. The personal now-leadership-group and set-it-free-loop-site repositories remain outside this organization rollout.
 
+## Consumer-owned wider workflows
+
+A full or custom consumer can place a versioned `.sfl/sync-policy.json` on its default branch to keep deliberate wider-workflow changes outside sync's replacement and deletion set. For example, hs-buddy keeps its manual Auditor, manual Dispatcher and retired issue processor under consumer control:
+
+```json
+{
+  "version": 1,
+  "unmanagedWorkflows": [
+    "sfl-auditor.yml",
+    "sfl-dispatcher.yml",
+    "issue-processor.md"
+  ]
+}
+```
+
+Only recognized wider workflow filenames are accepted. The native reviewer cannot be exempted. An excluded file stays present or absent exactly as the consumer maintains it; source updates to that workflow require a separate consumer PR. Existing recorded engine choices for excluded workflows are retained and do not establish that a retired component is enabled. The full tier and addons remain unchanged.
+
+Use `gh sfl sync --repo hemsoft-dev/REPOSITORY --pr` with this policy. The CLI binds the policy to the default-branch revision and rejects a moved base or an existing sync PR that changes those consumer-owned files. Direct sync is refused when a policy exists. Repeat sync still updates required reviewer files and reconciles other managed files, including retired review workflows.
+
 ## Review recovery
 
 A review is bound to the PR head, base and context. Findings, malformed results, pending requests and changed context block the gate. If the base advances, update the PR branch to a new head before requesting another review. `--retry` cannot safely reuse the same head across different bases because native Codex artifacts do not identify the originating base/request.

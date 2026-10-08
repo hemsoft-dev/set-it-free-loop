@@ -950,7 +950,7 @@ func obsoleteManagedPaths(desired map[string]string, reconcile bool) []string {
 	return result
 }
 
-func deploymentFilesState(client restAPI, owner, repo, branch string, desired map[string]string, reconcile bool) (bool, []fileDeletion, error) {
+func deploymentFilesState(client restAPI, owner, repo, branch string, desired map[string]string, reconcile bool, preservedPaths ...string) (bool, []fileDeletion, error) {
 	paths := make([]string, 0, len(desired))
 	for path := range desired {
 		paths = append(paths, path)
@@ -982,6 +982,9 @@ func deploymentFilesState(client restAPI, owner, repo, branch string, desired ma
 
 	var deletions []fileDeletion
 	for _, path := range obsoleteManagedPaths(desired, reconcile) {
+		if slices.Contains(preservedPaths, path) {
+			continue
+		}
 		_, exists, err := deploymentFileContent(client, owner, repo, branch, path)
 		if err != nil {
 			return false, nil, err
@@ -996,12 +999,30 @@ func deploymentFilesState(client restAPI, owner, repo, branch string, desired ma
 // deployViaPullRequest creates a GitHub-authored commit so repositories that
 // require signed commits can still receive SFL updates through normal review.
 func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map[string]string, commitMsg string, reconcile bool, w io.Writer) (string, error) {
+	return deployViaPullRequestAtRevision(owner, repo, baseBranch, operation, fileMap, commitMsg, reconcile, w, "", nil)
+}
+
+func deployViaPullRequestAtRevision(owner, repo, baseBranch, operation string, fileMap map[string]string, commitMsg string, reconcile bool, w io.Writer, policyRevision string, preservedPaths []string) (string, error) {
 	if err := applyHemSoftOwnership(fileMap); err != nil {
 		return "", fmt.Errorf("applying HemSoft deployment policy: %w", err)
 	}
 	restClient, err := newRESTClient()
 	if err != nil {
 		return "", fmt.Errorf("creating GitHub REST client: %w", err)
+	}
+
+	if policyRevision != "" {
+		var ref struct {
+			Object struct {
+				SHA string `json:"sha"`
+			} `json:"object"`
+		}
+		if err := restClient.Get(fmt.Sprintf("repos/%s/%s/git/ref/heads/%s", owner, repo, baseBranch), &ref); err != nil {
+			return "", err
+		}
+		if ref.Object.SHA != policyRevision {
+			return "", fmt.Errorf("default branch changed after consumer policy capture; rerun sync before publishing")
+		}
 	}
 
 	existingPR, err := findOpenDeploymentPR(restClient, owner, repo, baseBranch, operation)
@@ -1014,7 +1035,7 @@ func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map
 	expectedHeadSHA := existingPR.HeadSHA
 	createdBranch := false
 	if existingPR.URL == "" {
-		matches, _, stateErr := deploymentFilesState(restClient, owner, repo, baseBranch, fileMap, reconcile)
+		matches, _, stateErr := deploymentFilesState(restClient, owner, repo, baseBranch, fileMap, reconcile, preservedPaths...)
 		if stateErr != nil {
 			return "", stateErr
 		}
@@ -1036,6 +1057,10 @@ func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map
 			return "", fmt.Errorf("getting %s head: GitHub returned an empty commit SHA", baseBranch)
 		}
 
+		if policyRevision != "" && refResponse.Object.SHA != policyRevision {
+			return "", fmt.Errorf("default branch changed after consumer policy capture; rerun sync before publishing")
+		}
+
 		branch = deploymentBranchName(operation, deploymentNow())
 		expectedHeadSHA = refResponse.Object.SHA
 		createRefBody, err := jsonBody(map[string]string{
@@ -1053,6 +1078,22 @@ func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map
 		return "", fmt.Errorf("existing SFL %s pull request is missing its branch or head SHA", operation)
 	}
 
+	if existingPR.URL != "" && policyRevision != "" {
+		for _, path := range preservedPaths {
+			current, exists, err := deploymentFileContent(restClient, owner, repo, branch, path)
+			if err != nil {
+				return "", err
+			}
+			approved, approvedExists, err := deploymentFileContent(restClient, owner, repo, policyRevision, path)
+			if err != nil {
+				return "", err
+			}
+			if exists != approvedExists || !bytes.Equal(current, approved) {
+				return "", fmt.Errorf("existing deployment PR changes consumer-owned workflow %s; preserve the default-branch choice before syncing", path)
+			}
+		}
+	}
+
 	cleanupBranch := func() error {
 		if !createdBranch {
 			return nil
@@ -1061,7 +1102,7 @@ func deployViaPullRequest(owner, repo, baseBranch, operation string, fileMap map
 		return restClient.Delete(deletePath, nil)
 	}
 
-	matches, deletions, err := deploymentFilesState(restClient, owner, repo, branch, fileMap, reconcile)
+	matches, deletions, err := deploymentFilesState(restClient, owner, repo, branch, fileMap, reconcile, preservedPaths...)
 	if err != nil {
 		_ = cleanupBranch()
 		return "", err
