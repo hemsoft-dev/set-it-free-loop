@@ -341,6 +341,26 @@ class ExecutedTransferTests(unittest.TestCase):
             self.rejects('rc21-private-live-guarded-merge.json', mutation,
                          'gate repository and pull request binding')
 
+    def test_release_payload_cannot_be_forged_under_original_signature(self):
+        import base64
+        import json
+        def forge(value):
+            value['verificationResult']['statement']['subject'][1]['digest']['sha256'] = '0' * 64
+            value['attestation']['bundle']['dsseEnvelope']['payload'] = base64.b64encode(
+                json.dumps(value['verificationResult']['statement']).encode()).decode()
+        self.rejects('rc21-signed-release-verification-primary.json', forge, 'DSSE signature')
+        self.rejects('rc21-signed-release-verification-primary.json',
+                     lambda d: d['attestation']['bundle']['dsseEnvelope']['signatures'][0].update(sig='AAAA'),
+                     'DSSE signature')
+
+    def test_live_run_and_jobs_cannot_be_observed_before_completion(self):
+        for role in ('private', 'public'):
+            for suffix in ('run', 'jobs'):
+                self.rejects(f'rc21-{role}-live-runtime-{suffix}.json',
+                             lambda d: d.update(started_at='2000-01-01T00:00:00Z',
+                                                completed_at='2000-01-01T00:00:01Z'),
+                             'capture must follow terminal completion')
+
     def test_arbitrary_installed_text_cannot_qualify_by_rehashing(self):
         import hashlib
         original = VALIDATOR.read

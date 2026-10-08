@@ -8,6 +8,8 @@ import importlib.util
 import json
 import pathlib
 import re
+import subprocess
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 REPLAY_SPEC = importlib.util.spec_from_file_location(
@@ -77,6 +79,37 @@ def api_receipt(execution, name, endpoint):
     require(capture['actor'] == 'HemSoft' and capture['exit_code'] == 0 and
             capture['argv'] == ['gh', 'api', endpoint], 'Pilot API capture is not bound to its endpoint')
     return json.loads(capture['stdout'])
+
+
+def verify_retained_release_signature(signed):
+    """Verify retained DSSE bytes with the leaf previously trusted by gh release verify.
+
+    The certificate fingerprint is pinned to the committed historical successful
+    verifier evidence. This checks payload integrity offline, without asserting a
+    new certificate-chain, timestamp or transparency-log verification.
+    """
+    bundle = signed['attestation']['bundle']
+    certificate = base64.b64decode(bundle['verificationMaterial']['certificate']['rawBytes'], validate=True)
+    require(hashlib.sha256(certificate).hexdigest() == 'a69a47367524e2ad7b911dc194178e76501b8dd5420fe8332c740157805d332a',
+            'Retained release signature certificate differs from the reviewed signer')
+    envelope = bundle['dsseEnvelope']
+    require(envelope['payloadType'] == 'application/vnd.in-toto+json' and len(envelope['signatures']) == 1,
+            'Retained release signature envelope is unsupported')
+    payload_type = envelope['payloadType'].encode('utf-8')
+    payload = base64.b64decode(envelope['payload'], validate=True)
+    signature = base64.b64decode(envelope['signatures'][0]['sig'], validate=True)
+    pae = b'DSSEv1 ' + str(len(payload_type)).encode() + b' ' + payload_type + b' ' + str(len(payload)).encode() + b' ' + payload
+    public_key = subprocess.run(['openssl', 'x509', '-inform', 'DER', '-pubkey', '-noout'],
+                                input=certificate, capture_output=True, check=True).stdout
+    with tempfile.TemporaryDirectory(prefix='sfl-release-signature-') as directory:
+        root = pathlib.Path(directory)
+        (root / 'public-key.pem').write_bytes(public_key)
+        (root / 'payload.pae').write_bytes(pae)
+        (root / 'signature.der').write_bytes(signature)
+        result = subprocess.run(['openssl', 'dgst', '-sha256', '-verify', str(root / 'public-key.pem'),
+                                 '-signature', str(root / 'signature.der'), str(root / 'payload.pae')],
+                                capture_output=True)
+        require(result.returncode == 0, 'Retained release DSSE signature does not authenticate its payload')
 
 
 def validate_pilots(directory):
@@ -198,6 +231,16 @@ def validate_pilots(directory):
                 run['status'] == 'completed' and run['conclusion'] == 'success',
                 'Pilot installed live run did not complete successfully')
         jobs = api_receipt(execution, prefix + '-live-runtime-jobs.json', endpoint + '/jobs?per_page=100')
+        run_capture = read(execution, summary['installed_terminal_receipt'])
+        jobs_capture = read(execution, prefix + '-live-runtime-jobs.json')
+        require(timestamp(run['created_at']) <= timestamp(run['run_started_at']) <= timestamp(run['updated_at']) <=
+                timestamp(run_capture['started_at']) <= timestamp(run_capture['completed_at']) <=
+                timestamp(jobs_capture['started_at']) <= timestamp(jobs_capture['completed_at']) <=
+                timestamp(qualification['qualified_at']) and
+                jobs['total_count'] == len(jobs['jobs']) and
+                all(job['status'] == 'completed' and
+                    timestamp(job['completed_at']) <= timestamp(jobs_capture['started_at']) for job in jobs['jobs']),
+                'Pilot live run and jobs capture must follow terminal completion')
         observers = [j for j in jobs['jobs'] if j['name'] == 'Observe authenticated Codex review']
         require(len(observers) == 1 and observers[0]['run_id'] == run['id'] and
                 observers[0]['head_sha'] == run['head_sha'] and observers[0]['conclusion'] == 'success',
@@ -357,6 +400,7 @@ def validate_release(execution):
     require(json.loads(base64.b64decode(envelope['payload'])) == statement and bool(envelope['signatures']) and
             signed['verificationResult']['signature']['certificate']['subjectAlternativeName'] == 'https://dotcom.releases.github.com',
             'Release signature verification primary does not bind its signed statement')
+    verify_retained_release_signature(signed)
     predicate = statement['predicate']
     require(statement['_type'] == 'https://in-toto.io/Statement/v1' and
             statement['predicateType'] == 'https://in-toto.io/attestation/release/v0.2' and
