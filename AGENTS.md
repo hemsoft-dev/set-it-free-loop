@@ -10,16 +10,15 @@ When using GitHub CLI or GitHub MCP/API tools for this repository, use the
 `HemSoft` GitHub account.
 
 When using Git remotes for this repository, use the `github-personal1` SSH
-profile. This profile authenticates to GitHub as `HemSoft`. The existing authorized remote
+profile. This profile authenticates to GitHub as `HemSoft`. The canonical authorized remote
 URL is:
 
 ```text
-git@github-personal1:HemSoft/set-it-free-loop.git
+git@github-personal1:hemsoft-dev/set-it-free-loop.git
 ```
 
-GitHub redirects this existing remote to
-`git@github-personal1:hemsoft-dev/set-it-free-loop.git`. Preserve the
-`github-personal1` authentication profile for either path. Do not rewrite other
+The previous `HemSoft/set-it-free-loop` remote redirects to this canonical path.
+Preserve the `github-personal1` authentication profile for either path. Do not rewrite other
 agents' remotes or checkouts during a migration.
 
 Do not use `github-work1` for this repository. That profile authenticates as

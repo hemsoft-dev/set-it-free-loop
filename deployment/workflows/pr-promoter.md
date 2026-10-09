@@ -160,7 +160,7 @@ are unavailable, call `noop` with message
 Use GitHub CLI to convert the existing draft PR directly:
 
 ```bash
-gh pr ready <number> --repo HemSoft/hs-buddy
+gh pr ready <number> --repo "${{ github.repository }}"
 ```
 
 This is the authoritative transition for draft -> non-draft and does not rely
@@ -295,7 +295,7 @@ If authentication fails, call `noop` with message
 Use GitHub CLI to squash-merge the PR and delete the source branch:
 
 ```bash
-gh pr merge <number> --squash --delete-branch --repo HemSoft/hs-buddy
+gh pr merge <number> --squash --delete-branch --repo "${{ github.repository }}"
 ```
 
 This is the authoritative merge mechanism.

@@ -89,11 +89,11 @@ param(
 
     [switch] $Compile,
 
-    [string] $ScheduleSeed = "HemSoft/set-it-free-loop",
+    [string] $ScheduleSeed = "hemsoft-dev/set-it-free-loop",
 
     [string] $CloneDir = "$env:TEMP\sfl-deploy",
 
-    [string] $SourceRepository = 'HemSoft/set-it-free-loop'
+    [string] $SourceRepository = 'hemsoft-dev/set-it-free-loop'
 )
 
 Set-StrictMode -Version Latest

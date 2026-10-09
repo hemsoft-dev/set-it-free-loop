@@ -12,8 +12,8 @@ import (
 var version = "dev"
 var buildDate = ""
 
-// Kept on the legacy source until cutover. Release builds can set this with -X.
-var motherRepoOwner = "HemSoft"
+// Release builds can override the canonical source owner with -X.
+var motherRepoOwner = "hemsoft-dev"
 
 const (
 	motherRepoName  = "set-it-free-loop"

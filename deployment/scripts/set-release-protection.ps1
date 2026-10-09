@@ -4,7 +4,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Repository = 'HemSoft/set-it-free-loop',
+    [string] $Repository = 'hemsoft-dev/set-it-free-loop',
     [switch] $Plan
 )
 
