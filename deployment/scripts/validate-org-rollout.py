@@ -3444,8 +3444,9 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             require(isinstance(operations, list) and len(operations) == len(runs),
                     'Protected source needs bound workflow operation receipts')
             for run, operation in zip(runs, operations):
-                source_workflows = deployed_workflow_paths('full') & {'.github/workflows/' + path.name for path in
-                                    (pathlib.Path(__file__).resolve().parents[2] / '.github/workflows').glob('*.yml')}
+                # These receipts prove execution at proof['source_sha'], not the
+                # current checkout. Retirement must not invalidate immutable history.
+                source_workflows = deployed_workflow_paths('full')
                 bound_workflow_operation(operation, directory, repo_id, row['destination'],
                                          proof['source_sha'], proof['release_version'], run, source_workflows, proof['source_sha'],
                                          max(app_transferred_at, observed_time(row['destination_protections']['observed_at'], 'Source transfer')))

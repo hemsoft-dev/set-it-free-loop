@@ -322,7 +322,8 @@ class RolloutTests(unittest.TestCase):
                 source_path=('.github/workflows/'+name if name.endswith('.lock.yml') else
                     ('deployment/infrastructure/' if name in {'sfl-pr-review-auto.yml','sfl-dispatcher.yml','sfl-auditor.yml'}
                      else 'deployment/workflows/')+name)
-                source=(ROOT/source_path).read_bytes();installed=source.decode()
+                fixture_path = ROOT / ('deployment/tests/fixtures/retired-source-workflows/' + name if name.endswith('.lock.yml') else source_path)
+                source=fixture_path.read_bytes();installed=source.decode()
                 if name=='sfl-pr-review-auto.yml':
                     ref=row['deployment_source']+'/'+source_path+'@'+row['deployment_sha']
                     branch=row['gate_policy']['branch'].replace("'","''")

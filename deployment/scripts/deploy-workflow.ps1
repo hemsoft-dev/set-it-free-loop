@@ -13,7 +13,7 @@
 
     3. Local materialization: Apply the central engine policy to local workflow
        author files and optionally compile the staged .github workflows.
-       .\deploy-workflow.ps1 -Local -Compile
+       # -Local is retired; use the central App runbook.
 
     For each target repo, this script:
       1. Clones the repo (direct clone — no fork; assumes write access within the org)
@@ -46,9 +46,7 @@
     Comma-separated list of target repos in "org/repo" format.
 
 .PARAMETER Local
-    Materialize the central engine policy into local deployment and staging
-    workflow markdown. When used without -Workflow or -Tier, updates every
-    deployment/workflows/*.md file except _TEMPLATE.md.
+    Retired. Refuses before local workflow materialization or GitHub access.
 
 .PARAMETER Compile
     With -Local, compile the materialized .github/workflows/*.md files via gh aw.
@@ -68,7 +66,7 @@
     .\deploy-workflow.ps1 -Tier review -Repos "HemSoft/app1,HemSoft/app2"
     .\deploy-workflow.ps1 -Tier full -Repos "HemSoft/app1,HemSoft/app2"
     .\deploy-workflow.ps1 -Tier standard -Repos "HemSoft/myapp" -DryRun
-    .\deploy-workflow.ps1 -Local -Compile
+    # -Local is retired; use the central App runbook.
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -98,6 +96,12 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+# Source repository consumer automation is retired. Stop before reading files,
+# invoking GitHub or materializing workflows, including the former dry-run path.
+if ($Local) {
+    throw 'Source SFL deployment is retired. -Local materialization is disabled; use the central App runbook.'
+}
 
 # ─── Validate parameters ─────────────────────────────────────────────────────
 

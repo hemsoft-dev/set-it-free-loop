@@ -13,6 +13,8 @@ on:
       - 'deployment/scripts/set-release-version.ps1'
       - 'deployment/tests/test-release-metadata.ps1'
       - 'deployment/tests/test-release-installer.ps1'
+      - 'deployment/tests/test-sfl-pr-review.ps1'
+      - 'deployment/scripts/deploy-workflow.ps1'
       - 'VERSION'
       - 'deployment/legacy-source-manifest.json'
       - 'deployment/release-metadata.json'
@@ -30,6 +32,8 @@ on:
       - 'deployment/scripts/set-release-version.ps1'
       - 'deployment/tests/test-release-metadata.ps1'
       - 'deployment/tests/test-release-installer.ps1'
+      - 'deployment/tests/test-sfl-pr-review.ps1'
+      - 'deployment/scripts/deploy-workflow.ps1'
       - 'VERSION'
       - 'deployment/legacy-source-manifest.json'
       - 'deployment/release-metadata.json'
@@ -84,6 +88,7 @@ jobs:
         run: |
           ./deployment/tests/test-release-metadata.ps1
           ./deployment/tests/test-release-installer.ps1
+          ./deployment/tests/test-sfl-pr-review.ps1
 
       - name: Build release contract artifacts
         shell: pwsh

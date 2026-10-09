@@ -10,6 +10,10 @@ The former root manifest is preserved as `deployment/legacy-source-manifest.json
 for release compatibility, outside the installed-manifest paths. Version updates
 and release contract tests use that catalog without recreating an installation.
 
+Historical compiled source workflows are retained outside `.github/workflows`
+as immutable test fixtures for the migration ledger. `deploy-workflow.ps1 -Local`
+now refuses before materialization or GitHub access, including dry runs.
+
 Legacy deployment templates and CLI compatibility code remain available for
 historical consumers. They are not an instruction to reinstall repository SFL
 workflows. Template tests still validate compatibility, while asserting that the

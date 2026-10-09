@@ -699,3 +699,18 @@ if ($LASTEXITCODE -ne 0) { throw 'Cutover admission or terminal publication pref
 
 & node (Join-Path $PSScriptRoot "test-final-review-history.cjs") $canonicalPath
 if ($LASTEXITCODE -ne 0) { throw "Final registered-history production regression failed." }
+
+# A maintainer cannot restore executable source workflows through the old entry point.
+foreach ($dryRun in @($false, $true)) {
+    $refused = $false
+    try {
+        & (Join-Path $repoRoot 'deployment/scripts/deploy-workflow.ps1') -Local -Compile -DryRun:$dryRun
+    } catch {
+        if ($_.Exception.Message -notlike 'Source SFL deployment is retired*') { throw }
+        $refused = $true
+    }
+    if (-not $refused -or (Test-Path -LiteralPath $stagedPath)) {
+        throw 'Legacy local materialization recreated a source deployment.'
+    }
+}
+Write-Output 'Source retirement and local materialization refusal passed.'
