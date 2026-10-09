@@ -27,12 +27,11 @@ func normalizeLineEndings(content []byte) string {
 	return strings.ReplaceAll(string(content), "\r\n", "\n")
 }
 
-func TestCodexObserverCanonicalAndStagedMatch(t *testing.T) {
+func TestLegacyCodexObserverTemplateAndSourceRetirement(t *testing.T) {
 	root := filepath.Join("..")
 	canonicalBytes := readContractFile(t, filepath.Join(root, "deployment", "infrastructure", "sfl-pr-review-auto.yml"))
-	staged := readContractFile(t, filepath.Join(root, ".github", "workflows", "sfl-pr-review-auto.yml"))
-	if normalizeLineEndings(canonicalBytes) != normalizeLineEndings(staged) {
-		t.Fatal("staged Codex observer differs from canonical deployment source")
+	if _, err := os.Stat(filepath.Join(root, ".github", "workflows", "sfl-pr-review-auto.yml")); !os.IsNotExist(err) {
+		t.Fatal("retired consumer observer must not be installed in the source repository")
 	}
 	canonical := string(canonicalBytes)
 

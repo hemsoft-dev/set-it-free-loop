@@ -1,3 +1,5 @@
+> The repository observer and its required SFL gate are retired. The contracts below describe the retained legacy template. Use the [central service runbook](../central-reviewer/README.md) for the organization App pilot.
+
 # SFL reviewer migration baseline
 
 HemSoft no longer maintains byte-level parity with the Relias compiled reviewer.
@@ -36,8 +38,9 @@ and current pull request head.
   malformed classification fixtures.
 - gh-sfl/review_test.go proves one head-bound trigger comment and duplicate
   suppression.
-- deployment/tests/test-sfl-pr-review.ps1 proves canonical/staged identity,
-  legacy artifact removal, and absence of OpenRouter engine configuration.
+- deployment/tests/test-sfl-pr-review.ps1 validates the retained canonical
+  template, the absence of the retired source observer, and the absence of
+  OpenRouter engine configuration.
 - deployment/tests/test-sfl-review-platform.ps1 proves deployment and gate
   wiring.
 

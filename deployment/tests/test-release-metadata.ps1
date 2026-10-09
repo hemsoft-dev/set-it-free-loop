@@ -10,7 +10,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
 $version = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Raw).Trim()
-$manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'sfl.json') -Raw | ConvertFrom-Json
+$manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\legacy-source-manifest.json') -Raw | ConvertFrom-Json
 $release = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\release-metadata.json') -Raw |
     ConvertFrom-Json
 $workflow = Get-Content -LiteralPath (Join-Path $repoRoot '.github\workflows\publish-private-prerelease.yml') -Raw
@@ -33,7 +33,7 @@ if (-not [string]::IsNullOrWhiteSpace($ExpectedVersion) -and $version -ne $Expec
     $failures.Add("VERSION '$version' differs from requested release '$ExpectedVersion'.")
 }
 if ($manifest.version -ne $version) {
-    $failures.Add("sfl.json version '$($manifest.version)' differs from VERSION '$version'.")
+    $failures.Add("Legacy source catalog version '$($manifest.version)' differs from VERSION '$version'.")
 }
 if ($release.distribution.version -ne $version) {
     $failures.Add("Release distribution version '$($release.distribution.version)' differs from VERSION '$version'.")
@@ -148,13 +148,13 @@ try {
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs\ORGANIZATION-ONBOARDING.md') `
         -Destination (Join-Path $fixtureRoot 'docs\ORGANIZATION-ONBOARDING.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'VERSION') -Destination (Join-Path $fixtureRoot 'VERSION')
-    Copy-Item -LiteralPath (Join-Path $repoRoot 'sfl.json') -Destination (Join-Path $fixtureRoot 'sfl.json')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'deployment\legacy-source-manifest.json') -Destination (Join-Path $fixtureRoot 'deployment\legacy-source-manifest.json')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'deployment\release-metadata.json') `
         -Destination (Join-Path $fixtureRoot 'deployment\release-metadata.json')
     & (Join-Path $repoRoot 'deployment\scripts\set-release-version.ps1') `
         -Version '9.8.7-rc.2+contract' -RepositoryRoot $fixtureRoot | Out-Null
     $fixtureVersion = (Get-Content -LiteralPath (Join-Path $fixtureRoot 'VERSION') -Raw).Trim()
-    $fixtureManifest = Get-Content -LiteralPath (Join-Path $fixtureRoot 'sfl.json') -Raw | ConvertFrom-Json
+    $fixtureManifest = Get-Content -LiteralPath (Join-Path $fixtureRoot 'deployment\legacy-source-manifest.json') -Raw | ConvertFrom-Json
     $fixtureMetadata = Get-Content -LiteralPath (Join-Path $fixtureRoot 'deployment\release-metadata.json') -Raw |
         ConvertFrom-Json
     if ($fixtureVersion -ne '9.8.7-rc.2+contract' -or

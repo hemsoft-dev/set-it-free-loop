@@ -131,3 +131,6 @@ GitHub rate-limit responses preserve `Retry-After` and primary reset deadlines i
  through retry and health. Ordinary human comments and approvals do not invalidate
  review context. Delayed default-branch deliveries already captured by the live
  base are ignored.
+
+The [October 9 qualification report](../docs/central-reviewer/2026-10-09-pilot.md)
+records the actual consumer rollback, live hs-buddy checks and paused finish.

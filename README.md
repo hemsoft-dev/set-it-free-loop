@@ -11,12 +11,13 @@ It converts quality signals and feature requests into governed, measurable softw
 
 ## Organization PR reviewer
 
-The reviewer is moving to the organization-installed SFL GitHub App and one
+The reviewer uses the organization-installed SFL GitHub App and one
 central service on mini. Consumer repositories need no SFL Actions workflow or
 SFL model/App credential. Native Codex remains the review engine.
 
 The only authorized qualification target is `hemsoft-dev/hs-buddy`. Organization
-SFL workflows remain paused. See the [central reviewer runbook](central-reviewer/README.md)
+SFL workflows remain paused. See the [central reviewer runbook](central-reviewer/README.md) and
+the [qualification report](docs/central-reviewer/2026-10-09-pilot.md)
 and [tracking issue #139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139)
 for setup, scope, live evidence and remaining work. Broader activation requires a
 separate owner instruction.
@@ -29,9 +30,10 @@ This is the **canonical home** of the Set it Free Loop operating model. It conta
 
 | Folder | Purpose |
 |--------|---------|
-| `.github/workflows/` | **Staging** — workflows run on *this repo* first (dogfooding + verification) |
-| `deployment/` | **Production** — everything needed to onboard a consumer repo |
-| `deployment/workflows/` | Graduated workflow library, ready to deploy |
+| `.github/workflows/` | Repository validation and manual release/credential tooling |
+| `central-reviewer/` | Central organization App service and mini runbook |
+| `deployment/` | Retained legacy templates, governance and release compatibility |
+| `deployment/workflows/` | Historical workflow library; repository SFL deployment is retired |
 | `deployment/governance/` | Label taxonomy, policy, and setup scripts |
 | `deployment/scripts/` | Multi-repo deployment tooling |
 | `.github/prompts/` | VS Code Copilot intake prompts |
@@ -39,7 +41,10 @@ This is the **canonical home** of the Set it Free Loop operating model. It conta
 
 ---
 
-## How the loop works
+## Historical autonomous loop
+
+Autonomous execution remains paused. This diagram describes the retired
+per-repository orchestration.
 
 ```
 Scheduled workflow runs
@@ -119,7 +124,7 @@ documented in [docs/ORGANIZATION-DEPLOYMENT.md](docs/ORGANIZATION-DEPLOYMENT.md)
 Releases are deliberately manual. A version change is prepared on a branch with
 `deployment/scripts/set-release-version.ps1`, reviewed through a pull request,
 and merged before `Publish Private Prerelease` may run on `main`. The workflow
-fails closed unless `VERSION`, `sfl.json`, release metadata, the requested tag,
+fails closed unless `VERSION`, the legacy source catalog, release metadata, the requested tag,
 the default branch, and the immutable tag ruleset agree. It builds Windows and
 Linux amd64 binaries, publishes `SHA256SUMS`, and proves a fresh authenticated
 download through the installer. See [docs/RELEASING.md](docs/RELEASING.md).
@@ -127,7 +132,10 @@ download through the installer. See [docs/RELEASING.md](docs/RELEASING.md).
 Stable publication remains disabled until the prerelease and pilot evidence in
 [`TODO.md`](TODO.md) is complete.
 
-### How it works
+### Historical consumer versioning
+
+The consumer manifest and badge procedures below belong to the retired deployment.
+The central reviewer needs neither a consumer manifest nor a repository workflow.
 
 | Repo | Version source | Badge shows |
 |------|---------------|-------------|
@@ -164,7 +172,10 @@ The deploy script reads the current `VERSION`, creates a PR with updated workflo
 
 ---
 
-## Workflow lifecycle
+## Historical workflow lifecycle
+
+The staging lifecycle below is retained as design history. It is not permission
+to create or enable autonomous source workflows.
 
 ```
 /new-workflow prompt in VS Code
@@ -178,7 +189,7 @@ Nothing enters `deployment/` without having run successfully in staging first.
 
 ---
 
-## Adding a new workflow
+## Historical workflow authoring
 
 1. Open VS Code in this repo
 2. Run `/new-workflow` in GitHub Copilot Chat
