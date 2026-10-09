@@ -677,3 +677,27 @@ func TestVerificationErrorsWithdrawExistingSuccess(t *testing.T) {
 		})
 	}
 }
+
+func TestQueuedDeliveryPersistsAnOwnedPRSnapshot(t *testing.T) {
+	s := testServer(t)
+	working := PRState{Head: headA, SeenHeads: []string{headA}, CheckID: 42}
+	if err := s.persistPull(17, &working); err != nil {
+		t.Fatal(err)
+	}
+	// A worker can prepare its next publication while the webhook goroutine
+	// acknowledges another delivery. Only persisted PR state may be serialized.
+	working.Head = headB
+	working.SeenHeads[0] = headB
+	working.CheckID = 99
+	if w := request(s, "pull_request", "concurrent-delivery", openedEvent(s), true); w.Code != 202 {
+		t.Fatal(w.Code)
+	}
+	reloaded, err := newServer(s.config, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := reloaded.state.Pulls[17]
+	if got.Head != headA || got.SeenHeads[0] != headA || got.CheckID != 42 {
+		t.Fatal("webhook acknowledgement persisted unpublished worker changes")
+	}
+}

@@ -385,7 +385,9 @@ func (s *Server) process(ctx context.Context, j Job) error {
 func (s *Server) persistPull(n int, p *PRState) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.state.Pulls[n] = p
+	snapshot := *p
+	snapshot.SeenHeads = append([]string(nil), p.SeenHeads...)
+	s.state.Pulls[n] = &snapshot
 	return atomicJSON(s.statePath, s.state)
 }
 func (s *Server) queuedContextChange(n int, current string) bool {
