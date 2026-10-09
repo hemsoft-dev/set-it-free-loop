@@ -9,17 +9,13 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).ProviderPath
 
 $canonicalPath = Join-Path $repoRoot 'deployment\infrastructure\sfl-pr-review-auto.yml'
 $stagedPath = Join-Path $repoRoot '.github\workflows\sfl-pr-review-auto.yml'
-foreach ($path in @($canonicalPath, $stagedPath)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        throw "Missing subscription-backed Codex observer: $path"
-    }
+if (-not (Test-Path -LiteralPath $canonicalPath -PathType Leaf)) {
+    throw "Missing retained legacy observer template: $canonicalPath"
 }
-
+if (Test-Path -LiteralPath $stagedPath) {
+    throw 'Retired consumer observer must not be installed in the source repository.'
+}
 $canonical = Get-Content -LiteralPath $canonicalPath -Raw
-$staged = Get-Content -LiteralPath $stagedPath -Raw
-if (-not (Test-NormalizedTextEqual $canonical $staged)) {
-    throw 'Canonical and staged Codex observers differ.'
-}
 
 $invalidNestedPaginationMapperMatches = [regex]::Matches(
     $canonical,
