@@ -9,6 +9,18 @@
 The Set it Free Loop is a continuous quality improvement operating model for software repositories.
 It converts quality signals and feature requests into governed, measurable software delivery — automatically.
 
+## Organization PR reviewer
+
+The reviewer is moving to the organization-installed SFL GitHub App and one
+central service on mini. Consumer repositories need no SFL Actions workflow or
+SFL model/App credential. Native Codex remains the review engine.
+
+The only authorized qualification target is `hemsoft-dev/hs-buddy`. Organization
+SFL workflows remain paused. See the [central reviewer runbook](central-reviewer/README.md)
+and [tracking issue #139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139)
+for setup, scope, live evidence and remaining work. Broader activation requires a
+separate owner instruction.
+
 ---
 
 ## What this repo is
@@ -50,7 +62,11 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 
 ---
 
-## Onboarding a consumer repo (3 steps)
+## Historical per-repository deployment (retired)
+
+The instructions below describe the previous architecture. Do not run them to
+install the PR reviewer; use the central App runbook above. Autonomous workflows
+remain paused.
 
 ### 1. Set up labels
 
@@ -62,10 +78,10 @@ See [SOLVING-SOFTWARE-ENGINEERING.md](SOLVING-SOFTWARE-ENGINEERING.md) for the f
 
 ```powershell
 # Deploy the full autonomous loop
-.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "HemSoft/repository"
+.\deployment\scripts\deploy-workflow.ps1 -Tier full -Repos "hemsoft-dev/repository"
 
 # Or deploy the subscription-backed Codex pull request reviewer
-.\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "HemSoft/repository"
+.\deployment\scripts\deploy-workflow.ps1 -Tier review -Repos "hemsoft-dev/repository"
 
 # Or start with hygiene-only
 .\deployment\scripts\deploy-workflow.ps1 -Tier minimal -Repos "org/repo"
@@ -83,7 +99,7 @@ Reviewer installation, current-head evidence, and optional gating are documented
 For the private HemSoft CLI path, install a checksum-verified release with
 `.\deployment\scripts\install-gh-sfl-hemsoft.ps1 -ReleaseVersion <version>` or
 build repository-owned source with `.\gh-sfl\build.ps1 -NoInstall`. No local
-Relias checkout is required. `gh sfl init --repo HemSoft/repository`
+Relias checkout is required. `gh sfl init --repo hemsoft-dev/repository`
 defaults to the reviewer-only tier and opens a deployment pull request.
 
 ---
