@@ -1,0 +1,17 @@
+[Unit]
+Description=SFL organization App reviewer, hs-buddy pilot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/home/franz/.local/bin/sfl-reviewer --config /home/franz/.config/sfl-reviewer/config.json
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+MemoryMax=192M
+TasksMax=32
+
+[Install]
+WantedBy=default.target
