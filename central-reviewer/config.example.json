@@ -1,0 +1,11 @@
+{
+  "enabled": false,
+  "listen": "127.0.0.1:3791",
+  "state_directory": "/home/franz/.local/state/sfl-reviewer",
+  "app_id": 4448946,
+  "installation_id": 169090497,
+  "repository_id": 1229335234,
+  "repository": "hemsoft-dev/hs-buddy",
+  "private_key_file": "/home/franz/.config/sfl-reviewer/app.pem",
+  "webhook_secret_file": "/home/franz/.config/sfl-reviewer/webhook-secret"
+}

@@ -1,0 +1,40 @@
+name: Validate central reviewer
+
+on:
+  pull_request:
+    paths:
+      - 'central-reviewer/**'
+      - '.github/workflows/validate-central-reviewer.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'central-reviewer/**'
+      - '.github/workflows/validate-central-reviewer.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Central reviewer quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: central-reviewer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: central-reviewer/go.mod
+          cache: false
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Race-test webhook, durable worker and native review controls
+        run: go test -race -count=1 ./...
+      - name: Build
+        run: go build -trimpath .
