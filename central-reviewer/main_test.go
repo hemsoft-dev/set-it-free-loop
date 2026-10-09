@@ -195,7 +195,7 @@ func fakeFor(s *Server) *fakeGitHub {
 }
 func cleanArtifact() Artifact {
 	created := time.Now().Add(-5 * time.Second).UTC().Format(time.RFC3339)
-	return Artifact{ID: 91, User: User{ID: 199175422, Login: "chatgpt-codex-connector[bot]", Type: "Bot"}, App: &App{ID: 1144995, Slug: "chatgpt-codex-connector", Owner: User{Login: "openai"}}, Body: "Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** `aaaaaaaa`", Created: created, Updated: created}
+	return Artifact{ID: 91, NodeID: "comment-91", User: User{ID: 199175422, Login: "chatgpt-codex-connector[bot]", Type: "Bot"}, App: &App{ID: 1144995, Slug: "chatgpt-codex-connector", Owner: User{Login: "openai"}}, Body: "Codex Review: Didn't find any major issues.\n\n**Reviewed commit:** `aaaaaaaa`", Created: created, Updated: created}
 }
 func (f *fakeGitHub) handler(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
@@ -250,7 +250,11 @@ func (f *fakeGitHub) handler(w http.ResponseWriter, r *http.Request) {
 			value = map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": end < len(f.closedHeads), "endCursor": strconv.Itoa(end)}}}}}
 			break
 		}
-		value = map[string]any{"data": map[string]any{"node": map[string]any{"id": "comment-91", "fullDatabaseId": "91", "author": map[string]any{"login": "chatgpt-codex-connector", "databaseId": 199175422}, "editor": map[string]any{"login": "chatgpt-codex-connector", "databaseId": f.editorID}}}}
+		var editor any
+		if f.editorID != 0 {
+			editor = map[string]any{"login": "chatgpt-codex-connector", "databaseId": f.editorID}
+		}
+		value = map[string]any{"data": map[string]any{"node": map[string]any{"id": "comment-91", "fullDatabaseId": "91", "author": map[string]any{"login": "chatgpt-codex-connector", "databaseId": 199175422}, "editor": editor}}}
 	case path == "/pulls/17/reviews":
 		value = f.reviews
 	case strings.HasPrefix(path, "/commits/") && strings.HasSuffix(path, "/pulls"):
@@ -909,5 +913,21 @@ func TestClosedHeadAssociationBeyondFirstPage(t *testing.T) {
 	}
 	if lastConclusion(t, f) != "action_required" {
 		t.Fatal("closed head beyond first page was missed")
+	}
+}
+
+func TestSameSecondHumanEditorCannotQualifyLegacyResult(t *testing.T) {
+	s := testServer(t)
+	f := fakeFor(s)
+	f.editorID = 42
+	attachFake(t, s, f)
+	if f.comments[0].Created != f.comments[0].Updated {
+		t.Fatal("control requires matching REST timestamps")
+	}
+	if err := s.process(context.Background(), openedJob(s)); err != nil {
+		t.Fatal(err)
+	}
+	if lastConclusion(t, f) != "action_required" {
+		t.Fatal("same-second human edit qualified")
 	}
 }

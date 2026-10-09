@@ -608,6 +608,13 @@ func (s *Server) evaluate(ctx context.Context, p Pull, state PRState) (string, s
 		if commit.SHA != state.Head {
 			continue
 		}
+		editor, e := s.github.codexCommentProvenance(ctx, a)
+		if e != nil {
+			return "", "", e
+		}
+		if !editor {
+			return "action_required", "The native result's editor is not verified; it cannot prove this review.", nil
+		}
 		if !cleanResult.MatchString(a.Body) {
 			return "failure", "Authenticated Codex reported an unsupported result; inspect the review.", nil
 		}
@@ -744,7 +751,7 @@ func (s *Server) cleanSummary(ctx context.Context, p Pull, state PRState, a Arti
 	if commit.SHA != state.Head {
 		return false, nil
 	}
-	editor, e := s.github.summaryEditor(ctx, a)
+	editor, e := s.github.codexCommentProvenance(ctx, a)
 	if e != nil || !editor {
 		return false, e
 	}

@@ -26,8 +26,9 @@ The service verifies Codex bot ID 199175422, its login, App ID 1144995, slug and
 owner. A legacy unedited clean comment must identify the current commit. A current
 automatic summary must have one completed Code Review row naming that commit,
 a completion time after the observed context, a fresh native thumbs-up, and no
-native eyes reaction or current-head findings. GitHub GraphQL verifies the summary
-editor as the immutable Codex bot. Human-edited summaries never establish success.
+native eyes reaction or current-head findings. GitHub GraphQL verifies comment
+authorship and the last editor as the immutable Codex bot, including edits within
+the same REST timestamp second. Human-edited results never establish success.
 
 Open/merged commit associations and all closed-unmerged PRs' recorded final heads
 are checked independently. A shared head is rejected. The closed-head scan does

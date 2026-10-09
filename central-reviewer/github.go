@@ -279,7 +279,7 @@ type Reaction struct {
 	User    User   `json:"user"`
 }
 
-func (g *githubClient) summaryEditor(ctx context.Context, a Artifact) (bool, error) {
+func (g *githubClient) codexCommentProvenance(ctx context.Context, a Artifact) (bool, error) {
 	if a.NodeID == "" {
 		return false, nil
 	}
@@ -311,8 +311,8 @@ func (g *githubClient) summaryEditor(ctx context.Context, a Artifact) (bool, err
 	if n == nil || n.ID != a.NodeID || n.Database != strconv.FormatInt(a.ID, 10) || n.Author.ID != 199175422 || n.Author.Login != "chatgpt-codex-connector" {
 		return false, nil
 	}
-	if a.Created == a.Updated {
-		return true, nil
+	if n.Editor != nil {
+		return n.Editor.ID == 199175422 && n.Editor.Login == "chatgpt-codex-connector", nil
 	}
-	return n.Editor != nil && n.Editor.ID == 199175422 && n.Editor.Login == "chatgpt-codex-connector", nil
+	return a.Created == a.Updated, nil
 }
