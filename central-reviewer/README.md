@@ -123,3 +123,11 @@ The central implementation and consumer rollback are tracked in
 [issue #139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139). Earlier
 per-repository pilot reports document the retired architecture and do not prove
 this service's live qualification.
+
+GitHub rate-limit responses preserve `Retry-After` and primary reset deadlines in
+ durable jobs without consuming ordinary failure attempts. The client stops API
+ requests during that cooldown. Verification timeouts withdraw existing proof
+ with a separate 30-second recovery context; GitHub write outages remain visible
+ through retry and health. Ordinary human comments and approvals do not invalidate
+ review context. Delayed default-branch deliveries already captured by the live
+ base are ignored.

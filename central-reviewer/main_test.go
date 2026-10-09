@@ -442,6 +442,8 @@ func TestQueuedAndPublicationChangesBlockSuccess(t *testing.T) {
 			case "queued-findings", "queued-deletion":
 				event := openedEvent(s)
 				kind := "pull_request_review"
+				event.Review = cleanArtifact()
+				event.Comment = cleanArtifact()
 				if mode == "queued-deletion" {
 					kind = "issue_comment"
 					event.Issue.Number = 17
@@ -929,5 +931,81 @@ func TestSameSecondHumanEditorCannotQualifyLegacyResult(t *testing.T) {
 	}
 	if lastConclusion(t, f) != "action_required" {
 		t.Fatal("same-second human edit qualified")
+	}
+}
+
+func TestUnrelatedQueuedActivityAndCapturedPushDoNotInvalidate(t *testing.T) {
+	for _, kind := range []string{"issue_comment", "pull_request_review", "push"} {
+		t.Run(kind, func(t *testing.T) {
+			s := testServer(t)
+			f := fakeFor(s)
+			attachFake(t, s, f)
+			if err := s.process(context.Background(), openedJob(s)); err != nil {
+				t.Fatal(err)
+			}
+			e := openedEvent(s)
+			e.Issue.Number = 17
+			e.After = baseA
+			e.Comment = Artifact{User: User{ID: 1, Login: "human"}}
+			e.Review = e.Comment
+			raw, _ := json.Marshal(e)
+			j := Job{ID: "conversation", Kind: kind, Payload: raw, Received: time.Now()}
+			s.state.Jobs = []Job{j}
+			if s.queuedContextChange(17, "current") {
+				t.Fatal("unrelated event blocks publication")
+			}
+			if kind == "push" {
+				if err := s.reconcile(context.Background(), 17, j, e); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := s.process(context.Background(), j); err != nil {
+				t.Fatal(err)
+			}
+			if lastConclusion(t, f) != "success" || s.state.Pulls[17].Blocked != "" {
+				t.Fatal("unchanged context permanently invalidated")
+			}
+		})
+	}
+}
+func TestExpiredVerificationContextStillWithdraws(t *testing.T) {
+	s := testServer(t)
+	f := fakeFor(s)
+	attachFake(t, s, f)
+	if err := s.process(context.Background(), openedJob(s)); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := s.process(ctx, openedJob(s)); err == nil {
+		t.Fatal("expired verification accepted")
+	}
+	if lastConclusion(t, f) != "action_required" {
+		t.Fatal("expired context prevented withdrawal")
+	}
+}
+func TestRateLimitPreservesDurableRetryAndClientCooldown(t *testing.T) {
+	for _, status := range []int{403, 429} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			calls := 0
+			until := time.Now().Add(3 * time.Minute).Truncate(time.Second)
+			h := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.Header().Set("Retry-After", "120")
+				w.Header().Set("X-RateLimit-Remaining", "0")
+				w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(until.Unix(), 10))
+				w.WriteHeader(status)
+			}))
+			defer h.Close()
+			g := &githubClient{baseURL: h.URL, client: h.Client()}
+			err := g.request(context.Background(), "GET", "/rate", "test", nil, nil)
+			j := Job{Attempts: 4}
+			retryJob(&j, fmt.Errorf("wrapped: %w", err), time.Now())
+			if j.Attempts != 4 || j.Dead || j.Next.Before(until) {
+				t.Fatal("rate limit burned attempt or lost deadline")
+			}
+			if g.request(context.Background(), "GET", "/rate", "test", nil, nil) == nil || calls != 1 {
+				t.Fatal("cooldown sent another request")
+			}
+		})
 	}
 }

@@ -79,6 +79,7 @@ type Event struct {
 		Pull   json.RawMessage `json:"pull_request"`
 	} `json:"issue"`
 	Ref     string   `json:"ref"`
+	After   string   `json:"after"`
 	Comment Artifact `json:"comment"`
 	Review  Artifact `json:"review"`
 }
@@ -338,10 +339,7 @@ func (s *Server) run(ctx context.Context) {
 				s.state.Jobs = append(s.state.Jobs[:i], s.state.Jobs[i+1:]...)
 			} else {
 				j := &s.state.Jobs[i]
-				j.Attempts++
-				j.Error = err.Error()
-				j.Dead = j.Attempts >= 5
-				j.Next = time.Now().Add(time.Duration(1<<j.Attempts) * time.Second)
+				retryJob(j, err, time.Now())
 				log.Printf("delivery %s attempt %d failed: %v", j.ID, j.Attempts, err)
 			}
 			break
@@ -354,6 +352,17 @@ func (s *Server) run(ctx context.Context) {
 		}
 		s.mu.Unlock()
 	}
+}
+func retryJob(j *Job, err error, now time.Time) {
+	j.Error = err.Error()
+	var limited *rateLimitError
+	if errors.As(err, &limited) {
+		j.Next = limited.Until
+		return
+	}
+	j.Attempts++
+	j.Dead = j.Attempts >= 5
+	j.Next = now.Add(time.Duration(1<<j.Attempts) * time.Second)
 }
 func (s *Server) process(ctx context.Context, j Job) error {
 	var e Event
@@ -400,7 +409,17 @@ func (s *Server) queuedContextChange(n int, current string) bool {
 		if json.Unmarshal(j.Payload, &e) != nil {
 			return true
 		}
-		if j.Kind == "push" || (j.Kind == "pull_request" || j.Kind == "pull_request_review") && e.Pull.Number == n || j.Kind == "issue_comment" && e.Issue.Number == n {
+		p := s.state.Pulls[n]
+		if j.Kind == "push" && (p == nil || e.After != p.Base) {
+			return true
+		}
+		if j.Kind == "pull_request" && e.Pull.Number == n {
+			return true
+		}
+		if j.Kind == "pull_request_review" && e.Pull.Number == n && codex(e.Review, false) {
+			return true
+		}
+		if j.Kind == "issue_comment" && e.Issue.Number == n && codex(e.Comment, true) {
 			return true
 		}
 		if p := s.state.Pulls[n]; p != nil && j.Kind == "pull_request" && e.Pull.Head.SHA == p.Head {
@@ -425,7 +444,9 @@ func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err 
 		}
 		s.mu.Unlock()
 		if state.Head != "" {
-			if withdraw := s.publish(ctx, n, &state, "action_required", "Current review context could not be verified; retry pending."); withdraw != nil {
+			recoveryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if withdraw := s.publish(recoveryCtx, n, &state, "action_required", "Current review context could not be verified; retry pending."); withdraw != nil {
 				err = fmt.Errorf("%w; check withdrawal failed: %v", err, withdraw)
 			}
 		}
@@ -490,7 +511,7 @@ func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err 
 		if !fresh {
 			state.Blocked = "This head has no fresh, observed PR context. Open a new PR or push a substantive new commit after pilot setup."
 		}
-	} else if state.Base != p.Base.SHA || state.Timeline != timeline || j.Kind == "push" || j.Kind == "pull_request" && event.Pull.Head.SHA == state.Head && (event.Action == "edited" || event.Action == "reopened" || event.Action == "converted_to_draft") {
+	} else if state.Base != p.Base.SHA || state.Timeline != timeline || j.Kind == "pull_request" && event.Pull.Head.SHA == state.Head && (event.Action == "edited" || event.Action == "reopened" || event.Action == "converted_to_draft") {
 		state.Blocked = "The PR context changed on this head. A substantive new commit and a fresh Codex review are required."
 		state.Base = p.Base.SHA
 		state.Timeline = timeline
@@ -544,8 +565,13 @@ func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err 
 			return e
 		}
 		if fresh.Head.SHA != state.Head || fresh.Base.SHA != state.Base || freshTimeline != state.Timeline || fresh.State != "open" || fresh.Draft || fresh.Base.Ref != repo.DefaultBranch || s.queuedContextChange(n, j.ID) {
-			state.Blocked = "Context changed during publication; the prior result is invalid."
-			if e = s.publish(ctx, n, &state, "action_required", state.Blocked); e != nil {
+			// Queue-only evidence changes withdraw proof temporarily. Their own
+			// reconciliation determines whether the context is permanently invalid.
+			reason := "Context changed during publication; waiting for reconciliation."
+			if fresh.Head.SHA != state.Head || fresh.Base.SHA != state.Base || freshTimeline != state.Timeline || fresh.State != "open" || fresh.Draft || fresh.Base.Ref != repo.DefaultBranch {
+				state.Blocked = reason
+			}
+			if e = s.publish(ctx, n, &state, "action_required", reason); e != nil {
 				return e
 			}
 		}

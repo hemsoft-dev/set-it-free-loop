@@ -22,11 +22,12 @@ import (
 )
 
 type githubClient struct {
-	config  Config
-	client  *http.Client
-	baseURL string
-	token   string
-	expires time.Time
+	config    Config
+	client    *http.Client
+	baseURL   string
+	notBefore time.Time
+	token     string
+	expires   time.Time
 }
 
 func newGitHub(c Config) *githubClient {
@@ -63,7 +64,31 @@ func (g *githubClient) jwt() (string, error) {
 	}
 	return input + "." + base64.RawURLEncoding.EncodeToString(sig), nil
 }
+
+type rateLimitError struct{ Until time.Time }
+
+func (e *rateLimitError) Error() string {
+	return "GitHub rate limited until " + e.Until.UTC().Format(time.RFC3339)
+}
+func retryDeadline(resp *http.Response, now time.Time) time.Time {
+	var until time.Time
+	if seconds, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && seconds >= 0 {
+		until = now.Add(time.Duration(seconds) * time.Second)
+	} else if date, err := http.ParseTime(resp.Header.Get("Retry-After")); err == nil {
+		until = date
+	}
+	if reset, err := strconv.ParseInt(resp.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil && resp.Header.Get("X-RateLimit-Remaining") == "0" && time.Unix(reset, 0).After(until) {
+		until = time.Unix(reset, 0)
+	}
+	if !until.After(now) {
+		until = now.Add(time.Minute)
+	}
+	return until.Add(time.Second)
+}
 func (g *githubClient) request(ctx context.Context, method, path, token string, input, output any) error {
+	if time.Now().Before(g.notBefore) {
+		return &rateLimitError{Until: g.notBefore}
+	}
 	var body io.Reader
 	if input != nil {
 		raw, err := json.Marshal(input)
@@ -86,6 +111,10 @@ func (g *githubClient) request(ctx context.Context, method, path, token string, 
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == 429 || resp.StatusCode == 403 && (resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0") {
+		g.notBefore = retryDeadline(resp, time.Now())
+		return &rateLimitError{Until: g.notBefore}
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("GitHub %s %s returned HTTP %d", method, path, resp.StatusCode)
 	}
