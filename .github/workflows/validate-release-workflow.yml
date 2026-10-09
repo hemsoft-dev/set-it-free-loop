@@ -14,7 +14,7 @@ on:
       - 'deployment/tests/test-release-metadata.ps1'
       - 'deployment/tests/test-release-installer.ps1'
       - 'VERSION'
-      - 'sfl.json'
+      - 'deployment/legacy-source-manifest.json'
       - 'deployment/release-metadata.json'
       - 'gh-sfl/**'
   push:
@@ -31,7 +31,7 @@ on:
       - 'deployment/tests/test-release-metadata.ps1'
       - 'deployment/tests/test-release-installer.ps1'
       - 'VERSION'
-      - 'sfl.json'
+      - 'deployment/legacy-source-manifest.json'
       - 'deployment/release-metadata.json'
       - 'gh-sfl/**'
 

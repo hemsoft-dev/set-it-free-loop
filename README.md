@@ -103,7 +103,7 @@ documented in [docs/ORGANIZATION-DEPLOYMENT.md](docs/ORGANIZATION-DEPLOYMENT.md)
 Releases are deliberately manual. A version change is prepared on a branch with
 `deployment/scripts/set-release-version.ps1`, reviewed through a pull request,
 and merged before `Publish Private Prerelease` may run on `main`. The workflow
-fails closed unless `VERSION`, `sfl.json`, release metadata, the requested tag,
+fails closed unless `VERSION`, the legacy source catalog, release metadata, the requested tag,
 the default branch, and the immutable tag ruleset agree. It builds Windows and
 Linux amd64 binaries, publishes `SHA256SUMS`, and proves a fresh authenticated
 download through the installer. See [docs/RELEASING.md](docs/RELEASING.md).

@@ -6,6 +6,10 @@ manifest are removed under [issue #139](https://github.com/hemsoft-dev/set-it-fr
 The organization App replacement is limited to the hs-buddy pilot on mini.
 Native Codex remains the review engine; ordinary validation/release workflows remain.
 
+The former root manifest is preserved as `deployment/legacy-source-manifest.json`
+for release compatibility, outside the installed-manifest paths. Version updates
+and release contract tests use that catalog without recreating an installation.
+
 Legacy deployment templates and CLI compatibility code remain available for
 historical consumers. They are not an instruction to reinstall repository SFL
 workflows. Template tests still validate compatibility, while asserting that the

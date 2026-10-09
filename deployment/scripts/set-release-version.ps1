@@ -19,7 +19,7 @@ if ($Version -notmatch $semanticVersionPattern) {
 }
 
 $versionPath = Join-Path $RepositoryRoot 'VERSION'
-$manifestPath = Join-Path $RepositoryRoot 'sfl.json'
+$manifestPath = Join-Path $RepositoryRoot 'deployment\legacy-source-manifest.json'
 $metadataPath = Join-Path $RepositoryRoot 'deployment\release-metadata.json'
 $onboardingPath = Join-Path $RepositoryRoot 'docs\ORGANIZATION-ONBOARDING.md'
 foreach ($path in @($versionPath, $manifestPath, $metadataPath, $onboardingPath)) {
