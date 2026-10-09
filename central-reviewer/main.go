@@ -405,7 +405,26 @@ func (s *Server) queuedContextChange(n int, current string) bool {
 	}
 	return false
 }
-func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) error {
+func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err error) {
+	// Withdraw existing proof if a later API read cannot verify its context.
+	// GitHub write failures remain visible through durable retry and health.
+	defer func() {
+		if err == nil || !s.enabled() {
+			return
+		}
+		s.mu.Lock()
+		previous := s.state.Pulls[n]
+		var state PRState
+		if previous != nil {
+			state = *previous
+		}
+		s.mu.Unlock()
+		if state.CheckID != 0 {
+			if withdraw := s.publish(ctx, n, &state, "action_required", "Current review context could not be verified; retry pending."); withdraw != nil {
+				err = fmt.Errorf("%w; check withdrawal failed: %v", err, withdraw)
+			}
+		}
+	}()
 	p, repo, err := s.github.pull(ctx, n)
 	if err != nil {
 		return err

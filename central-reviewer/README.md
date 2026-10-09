@@ -97,6 +97,10 @@ the latest 10,000 completed deliveries; checks remain idempotent after that wind
 At most 1,000 jobs can queue. Each failed job gets five attempts with exponential
 backoff, then remains visible as a dead letter. Pending context jobs prevent success.
 
+An API verification error attempts to withdraw any prior green check before durable
+retry. If GitHub also rejects the withdrawal, recovery remains visible in the queue
+and health response; a write cannot be guaranteed while GitHub is unavailable.
+
 A public webhook accepts at most 1 MiB. Bad signatures never enqueue work.
 Installation tokens are short-lived, stay in memory, and are restricted to the
 single pilot repository with Checks write and Contents, Issues, Pull requests read.

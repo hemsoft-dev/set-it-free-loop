@@ -179,6 +179,7 @@ type fakeGitHub struct {
 	failPath         string
 	pullGets         int
 	changeAfterWrite bool
+	failAfterSuccess bool
 	reactions        []Reaction
 	editorID         int64
 }
@@ -196,6 +197,10 @@ func (f *fakeGitHub) handler(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
+	if f.failAfterSuccess && strings.HasSuffix(r.URL.Path, "/pulls/17") && len(f.writes) > 0 && f.writes[0]["conclusion"] == "success" {
+		w.WriteHeader(500)
+		return
+	}
 	if r.URL.Path == f.failPath {
 		w.WriteHeader(500)
 		return
@@ -644,6 +649,30 @@ func TestCurrentAutomaticCodexSummary(t *testing.T) {
 			}
 			if mode != "clean" && got == "success" {
 				t.Fatal("unsafe automatic result qualified")
+			}
+		})
+	}
+}
+
+func TestVerificationErrorsWithdrawExistingSuccess(t *testing.T) {
+	for _, mode := range []string{"later-review-read", "post-publication-read"} {
+		t.Run(mode, func(t *testing.T) {
+			s := testServer(t)
+			f := fakeFor(s)
+			attachFake(t, s, f)
+			if mode == "post-publication-read" {
+				f.failAfterSuccess = true
+			} else {
+				if err := s.process(context.Background(), openedJob(s)); err != nil {
+					t.Fatal(err)
+				}
+				f.failPath = "/repos/hemsoft-dev/hs-buddy/issues/17/comments"
+			}
+			if err := s.process(context.Background(), openedJob(s)); err == nil {
+				t.Fatal("verification error swallowed")
+			}
+			if lastConclusion(t, f) != "action_required" {
+				t.Fatal("unverified success was retained")
 			}
 		})
 	}
