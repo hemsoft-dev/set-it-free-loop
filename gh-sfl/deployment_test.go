@@ -1674,7 +1674,7 @@ func TestManifestUsesCanonicalSchemaAndReadsLegacyFields(t *testing.T) {
 	if err := json.Unmarshal(legacy, &manifest); err != nil {
 		t.Fatalf("unmarshal legacy manifest: %v", err)
 	}
-	if manifest.MotherRepo != motherRepoOwner+"/"+motherRepoName {
+	if manifest.MotherRepo != "HemSoft/"+motherRepoName {
 		t.Errorf("legacy source = %q", manifest.MotherRepo)
 	}
 	if manifest.SourceSHA != "0123456789012345678901234567890123456789" {

@@ -26,11 +26,11 @@ workflows so their provenance stays consistent.
 Review-only deployment uses the existing connected Codex integration and requires
 no SFL App private key or model API key. A successful observer installation does
 not prove that the intended SFL PR Reviewer App has been restored or rolled out.
-That runtime evidence is tracked in [issue #139](https://github.com/HemSoft/set-it-free-loop/issues/139).
+That runtime evidence is tracked in [issue #139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139).
 
 ## After the transfer gates pass
 
-[Issue #138](https://github.com/HemSoft/set-it-free-loop/issues/138) requires owner verification of provider resources, billing and access,
+[Issue #138](https://github.com/hemsoft-dev/set-it-free-loop/issues/138) requires owner verification of provider resources, billing and access,
 runner registrations, environment credential inventories, and protection settings
 before any repository or App transfer. It also owns the actual new-source release
 and installer verification. Local fixture tests cannot satisfy those gates.
@@ -59,7 +59,7 @@ Install only after that private release exists:
 
 The installer downloads the executable and `SHA256SUMS` from the selected private
 repository and verifies the executable before installing or running it. Record the
-release URL, digest, and `gh sfl version` in [#138](https://github.com/HemSoft/set-it-free-loop/issues/138). The Go module path deliberately
+release URL, digest, and `gh sfl version` in [#138](https://github.com/hemsoft-dev/set-it-free-loop/issues/138). The Go module path deliberately
 remains `github.com/HemSoft/set-it-free-loop/gh-sfl` to preserve compatibility.
 Historical references and the valid individual CODEOWNER `@HemSoft` remain valid;
 no organization team is invented as part of source cutover.

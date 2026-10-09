@@ -130,7 +130,7 @@ Consumer sfl.json: 2.0.0      ← deployed version (behind)
 After deploying, add this to the consumer's README:
 
 ```markdown
-[![SFL](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2F<ORG>%2F<REPO>%2Fmain%2Fsfl.json&query=%24.version&label=SFL&color=FFD700&style=flat-square)](https://github.com/HemSoft/set-it-free-loop)
+[![SFL](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2F<ORG>%2F<REPO>%2Fmain%2Fsfl.json&query=%24.version&label=SFL&color=FFD700&style=flat-square)](https://github.com/hemsoft-dev/set-it-free-loop)
 ```
 
 Replace `<ORG>/<REPO>` with the consumer's GitHub org and repo name.
