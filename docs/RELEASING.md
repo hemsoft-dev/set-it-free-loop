@@ -14,8 +14,9 @@ command:
   -ExpectedVersion 2.1.0-rc.3 -RequirePrerelease
 ```
 
-The command updates `VERSION`, `sfl.json`, and the distribution version, tag,
-and prerelease marker in `deployment/release-metadata.json`. Commit those files
+The command updates `VERSION`, `deployment/legacy-source-manifest.json`, and the
+distribution version, tag and prerelease marker in `deployment/release-metadata.json`.
+Commit those files
 with the release implementation and merge them through an ordinary reviewed PR.
 
 ## Protect releases and tags

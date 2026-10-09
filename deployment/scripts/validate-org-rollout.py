@@ -21,6 +21,17 @@ import tempfile
 import urllib.parse
 import zipfile
 
+# Immutable source deployment paths at baseline 7a15964. These historical
+# operation receipts must not depend on current CLI tiers or installed files.
+HISTORICAL_SOURCE_WORKFLOWS = frozenset('.github/workflows/' + name for name in (
+    'daily-repo-status.lock.yml', 'issue-processor.lock.yml',
+    'pr-analyzer-general.lock.yml', 'pr-analyzer-quality.lock.yml',
+    'pr-analyzer-security.lock.yml', 'pr-analyzer-testing.lock.yml',
+    'pr-fixer.lock.yml', 'pr-promoter.lock.yml', 'repo-audit.lock.yml',
+    'sfl-auditor.lock.yml', 'sfl-dispatcher.yml', 'sfl-pr-review-auto.yml',
+    'simplisticate.lock.yml',
+))
+
 TIERS = {'review', 'reviewer', 'minimal', 'standard', 'full', 'custom'}
 INIT_TIERS = {'reviewer', 'minimal', 'standard', 'full'}
 APPROVED_PILOTS = {1408025382: ('hemsoft-dev/sfl-migration-pilot-private', 'private'),
@@ -3446,7 +3457,7 @@ def validate(inventory, rows, matrix, directory, scope_decisions=None):
             for run, operation in zip(runs, operations):
                 # These receipts prove execution at proof['source_sha'], not the
                 # current checkout. Retirement must not invalidate immutable history.
-                source_workflows = deployed_workflow_paths('full')
+                source_workflows = HISTORICAL_SOURCE_WORKFLOWS
                 bound_workflow_operation(operation, directory, repo_id, row['destination'],
                                          proof['source_sha'], proof['release_version'], run, source_workflows, proof['source_sha'],
                                          max(app_transferred_at, observed_time(row['destination_protections']['observed_at'], 'Source transfer')))

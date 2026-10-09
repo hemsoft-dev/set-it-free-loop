@@ -2735,6 +2735,7 @@ class RolloutTests(unittest.TestCase):
         for filters_for_event in filters:
             paths=re.findall(r"      - '([^']+)'",filters_for_event)
             self.assertIn('deployment/tests/run-org-observer-fixtures.cjs',paths)
+            self.assertIn('deployment/tests/fixtures/retired-source-workflows/**',paths)
             for source_workflow in ('validate-gh-sfl.yml','sfl-pr-review-auto.yml','renamed-source-workflow.yml'):
                 with self.subTest(workflow=source_workflow):
                     self.assertTrue(any(fnmatch.fnmatch('.github/workflows/'+source_workflow,path) for path in paths))
@@ -3103,6 +3104,20 @@ class RolloutTests(unittest.TestCase):
         row=self.complete_source();self.check();operation=row['in_place_evidence']['workflow_operation_receipts'][0]
         operation['workflow']='.github/workflows/validate-org-migration.yml';self.bind_workflow_capture(operation)
         with self.assertRaisesRegex(ValueError,'expected deployed workflow'):self.check()
+
+    def test_source_runtime_rejects_consumer_auditor_path(self):
+        row=self.complete_source();self.check();operation=row['in_place_evidence']['workflow_operation_receipts'][0]
+        operation['workflow']='.github/workflows/sfl-auditor.yml';self.bind_workflow_capture(operation)
+        with self.assertRaisesRegex(ValueError,'expected deployed workflow'):self.check()
+
+    def test_source_historical_paths_do_not_follow_current_tiers(self):
+        from unittest.mock import patch
+        self.complete_source()
+        original=validator.deployed_workflow_paths
+        def changed(tier, *args, **kwargs):
+            return set() if tier=='full' and not args and not kwargs else original(tier, *args, **kwargs)
+        with patch.object(validator,'deployed_workflow_paths',side_effect=changed):
+            self.check()
 
     def test_final_inventory_preserves_default_branch(self):
         expected={r['id']:r for r in self.inventory['repositories']};retained=set(validator.APPROVED_RETAINED_IDS)
