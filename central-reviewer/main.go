@@ -455,13 +455,19 @@ func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err 
 		// Never attach pilot checks to another agent's pre-existing PR.
 		return nil
 	}
-	if j.Kind == "reconcile" && previous != nil && state.Head != p.Head.SHA {
-		state.Blocked = "Head changed before its signed synchronize event was observed; waiting for delivery."
+	freshEvent := j.Kind == "pull_request" && (event.Action == "opened" || event.Action == "synchronize") && event.Pull.Head.SHA == p.Head.SHA && event.Pull.Base.SHA == p.Base.SHA && event.Pull.Base.Ref == repo.DefaultBranch
+	if state.Head != p.Head.SHA && !freshEvent {
+		// Native reviews and old PR deliveries can arrive before synchronize.
+		// Enroll an observed new PR, but do not consume its unobserved head.
+		state.Blocked = "Head changed before its matching signed PR event was observed; waiting for delivery."
+		if state.Head == "" {
+			return s.persistPull(n, &state)
+		}
 		return s.publish(ctx, n, &state, "action_required", state.Blocked)
 	}
 	state.Closed = p.State != "open"
 	if state.Head != p.Head.SHA {
-		fresh := j.Kind == "pull_request" && (event.Action == "opened" || event.Action == "synchronize") && event.Pull.Head.SHA == p.Head.SHA && event.Pull.Base.SHA == p.Base.SHA && event.Pull.Base.Ref == repo.DefaultBranch
+		fresh := freshEvent
 		created, _ := time.Parse(time.RFC3339, p.Created)
 		if previous == nil && (!created.After(started) || event.Action != "opened") {
 			fresh = false

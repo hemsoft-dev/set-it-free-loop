@@ -180,6 +180,7 @@ type fakeGitHub struct {
 	pullGets         int
 	changeAfterWrite bool
 	failAfterSuccess bool
+	checkHead        string
 	reactions        []Reaction
 	editorID         int64
 }
@@ -243,11 +244,10 @@ func (f *fakeGitHub) handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		f.writes = append(f.writes, body)
-		sha := f.pull.Head.SHA
 		if h, ok := body["head_sha"].(string); ok {
-			sha = h
+			f.checkHead = h
 		}
-		value = map[string]any{"id": 42, "app": map[string]any{"id": 4448946}, "head_sha": sha}
+		value = map[string]any{"id": 42, "app": map[string]any{"id": 4448946}, "head_sha": f.checkHead}
 	default:
 		w.WriteHeader(404)
 		return
@@ -699,5 +699,48 @@ func TestQueuedDeliveryPersistsAnOwnedPRSnapshot(t *testing.T) {
 	got := reloaded.state.Pulls[17]
 	if got.Head != headA || got.SeenHeads[0] != headA || got.CheckID != 42 {
 		t.Fatal("webhook acknowledgement persisted unpublished worker changes")
+	}
+}
+
+func TestOutOfOrderDeliveryDoesNotConsumeUnobservedHead(t *testing.T) {
+	for _, first := range []string{"review-before-sync", "old-sync-before-new-sync", "late-opened"} {
+		t.Run(first, func(t *testing.T) {
+			s := testServer(t)
+			f := fakeFor(s)
+			attachFake(t, s, f)
+			if first != "late-opened" {
+				if err := s.process(context.Background(), openedJob(s)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.pull.Head.SHA = headB
+			f.associated = []Pull{f.pull}
+			f.comments[0].Body = "Codex Review: Didn't find any major issues.\n**Reviewed commit:** `" + headB + "`"
+			e := openedEvent(s)
+			kind := "pull_request"
+			if first == "review-before-sync" {
+				kind = "pull_request_review"
+			} else if first != "late-opened" {
+				e.Action = "synchronize"
+			}
+			raw, _ := json.Marshal(e)
+			job := Job{ID: "out-of-order", Kind: kind, Payload: raw, Received: time.Now().Add(-9 * time.Second)}
+			if err := s.process(context.Background(), job); err != nil {
+				t.Fatal(err)
+			}
+			if s.state.Pulls[17].Head == headB {
+				t.Fatal("unobserved head consumed before its signed context")
+			}
+			e.Action = "synchronize"
+			e.Pull.Head.SHA = headB
+			raw, _ = json.Marshal(e)
+			job = Job{ID: "matching-context", Kind: "pull_request", Payload: raw, Received: time.Now().Add(-8 * time.Second)}
+			if err := s.process(context.Background(), job); err != nil {
+				t.Fatal(err)
+			}
+			if lastConclusion(t, f) != "success" || s.state.Pulls[17].Head != headB {
+				t.Fatal("matching delivery did not recover legitimate review")
+			}
+		})
 	}
 }
