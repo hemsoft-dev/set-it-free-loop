@@ -222,7 +222,55 @@ func (g *githubClient) uniqueHead(ctx context.Context, p Pull) error {
 	if len(pulls) != 1 || pulls[0].Number != p.Number {
 		return fmt.Errorf("head is associated with multiple or unknown pull requests")
 	}
-	return nil
+	// The commit association endpoint omits closed-unmerged pull requests.
+	// Independently scan their recorded heads rather than treating omission
+	// as proof of exclusivity.
+	owner, name, _ := strings.Cut(g.config.Repository, "/")
+	cursor := ""
+	for page := 0; page < 100; page++ {
+		var response struct {
+			Errors []json.RawMessage `json:"errors"`
+			Data   struct {
+				Repository *struct {
+					Pulls struct {
+						Nodes []struct {
+							Number int    `json:"number"`
+							Head   string `json:"headRefOid"`
+						} `json:"nodes"`
+						Page struct {
+							More   bool   `json:"hasNextPage"`
+							Cursor string `json:"endCursor"`
+						} `json:"pageInfo"`
+					} `json:"pullRequests"`
+				} `json:"repository"`
+			} `json:"data"`
+		}
+		variables := map[string]any{"owner": owner, "name": name}
+		if cursor != "" {
+			variables["after"] = cursor
+		}
+		query := `query($owner:String!,$name:String!,$after:String){repository(owner:$owner,name:$name){pullRequests(states:[CLOSED],first:100,after:$after){nodes{number headRefOid} pageInfo{hasNextPage endCursor}}}}`
+		if err = g.call(ctx, "POST", "/graphql", map[string]any{"query": query, "variables": variables}, &response); err != nil {
+			return err
+		}
+		if len(response.Errors) != 0 || response.Data.Repository == nil {
+			return fmt.Errorf("GitHub closed-head history query failed")
+		}
+		connection := response.Data.Repository.Pulls
+		for _, other := range connection.Nodes {
+			if other.Number != p.Number && other.Head == p.Head.SHA {
+				return fmt.Errorf("head is also recorded on a closed-unmerged pull request")
+			}
+		}
+		if !connection.Page.More {
+			return nil
+		}
+		if connection.Page.Cursor == "" || connection.Page.Cursor == cursor {
+			return fmt.Errorf("invalid closed-head pagination")
+		}
+		cursor = connection.Page.Cursor
+	}
+	return fmt.Errorf("closed-head history exceeds safety limit")
 }
 
 type Reaction struct {

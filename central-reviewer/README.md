@@ -29,7 +29,10 @@ a completion time after the observed context, a fresh native thumbs-up, and no
 native eyes reaction or current-head findings. GitHub GraphQL verifies the summary
 editor as the immutable Codex bot. Human-edited summaries never establish success.
 
-A head associated with another PR is rejected, including a closed PR. A changed
+Open/merged commit associations and all closed-unmerged PRs' recorded final heads
+are checked independently. A shared head is rejected. The closed-head scan does
+not prove that an abandoned intermediate commit never appeared in a historical
+closed PR; that historical coverage limit remains explicit for this pilot. A changed
 base, retarget, close/reopen, draft conversion or observed default-branch push
 invalidates the current head permanently. Push a substantive new commit before
 seeking a fresh result. Returning to an earlier head cannot restore its review.

@@ -306,8 +306,7 @@ func (s *Server) run(ctx context.Context) {
 			continue
 		}
 		if err := s.schedulePolls(); err != nil {
-			log.Printf("poll scheduling failed: %v", err)
-			continue
+			log.Printf("poll scheduling failed; draining existing jobs: %v", err)
 		}
 		s.mu.Lock()
 		var job *Job
@@ -401,7 +400,11 @@ func (s *Server) queuedContextChange(n int, current string) bool {
 		if json.Unmarshal(j.Payload, &e) != nil {
 			return true
 		}
-		if j.Kind == "push" || j.Kind == "pull_request" && e.Pull.Number == n {
+		if j.Kind == "push" || (j.Kind == "pull_request" || j.Kind == "pull_request_review") && e.Pull.Number == n || j.Kind == "issue_comment" && e.Issue.Number == n {
+			return true
+		}
+		if p := s.state.Pulls[n]; p != nil && j.Kind == "pull_request" && e.Pull.Head.SHA == p.Head {
+			// Another PR event can change this head's exclusive association.
 			return true
 		}
 	}
@@ -421,7 +424,7 @@ func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err 
 			state = *previous
 		}
 		s.mu.Unlock()
-		if state.CheckID != 0 {
+		if state.Head != "" {
 			if withdraw := s.publish(ctx, n, &state, "action_required", "Current review context could not be verified; retry pending."); withdraw != nil {
 				err = fmt.Errorf("%w; check withdrawal failed: %v", err, withdraw)
 			}
@@ -455,6 +458,7 @@ func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err 
 		// Never attach pilot checks to another agent's pre-existing PR.
 		return nil
 	}
+	state.Closed = p.State != "open"
 	freshEvent := j.Kind == "pull_request" && (event.Action == "opened" || event.Action == "synchronize") && event.Pull.Head.SHA == p.Head.SHA && event.Pull.Base.SHA == p.Base.SHA && event.Pull.Base.Ref == repo.DefaultBranch
 	if state.Head != p.Head.SHA && !freshEvent {
 		// Native reviews and old PR deliveries can arrive before synchronize.
@@ -465,7 +469,6 @@ func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err 
 		}
 		return s.publish(ctx, n, &state, "action_required", state.Blocked)
 	}
-	state.Closed = p.State != "open"
 	if state.Head != p.Head.SHA {
 		fresh := freshEvent
 		created, _ := time.Parse(time.RFC3339, p.Created)
@@ -487,7 +490,7 @@ func (s *Server) reconcile(ctx context.Context, n int, j Job, event Event) (err 
 		if !fresh {
 			state.Blocked = "This head has no fresh, observed PR context. Open a new PR or push a substantive new commit after pilot setup."
 		}
-	} else if state.Base != p.Base.SHA || state.Timeline != timeline || j.Kind == "push" || j.Kind == "pull_request" && (event.Action == "edited" || event.Action == "reopened" || event.Action == "converted_to_draft") {
+	} else if state.Base != p.Base.SHA || state.Timeline != timeline || j.Kind == "push" || j.Kind == "pull_request" && event.Pull.Head.SHA == state.Head && (event.Action == "edited" || event.Action == "reopened" || event.Action == "converted_to_draft") {
 		state.Blocked = "The PR context changed on this head. A substantive new commit and a fresh Codex review are required."
 		state.Base = p.Base.SHA
 		state.Timeline = timeline

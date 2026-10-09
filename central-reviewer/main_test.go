@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -181,6 +182,8 @@ type fakeGitHub struct {
 	changeAfterWrite bool
 	failAfterSuccess bool
 	checkHead        string
+	checkExternal    string
+	closedHeads      []Pull
 	reactions        []Reaction
 	editorID         int64
 }
@@ -211,6 +214,8 @@ func (f *fakeGitHub) handler(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "":
 		value = f.repo
+	case path == "/pulls":
+		value = []Pull{}
 	case path == "/pulls/17":
 		f.pullGets++
 		if f.changeAfterWrite && len(f.writes) > 0 {
@@ -224,13 +229,38 @@ func (f *fakeGitHub) handler(w http.ResponseWriter, r *http.Request) {
 	case path == "/issues/17/reactions":
 		value = f.reactions
 	case path == "/graphql":
+		var input struct {
+			Query     string            `json:"query"`
+			Variables map[string]string `json:"variables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if strings.Contains(input.Query, "pullRequests(states:[CLOSED]") {
+			start, _ := strconv.Atoi(input.Variables["after"])
+			end := start + 100
+			if end > len(f.closedHeads) {
+				end = len(f.closedHeads)
+			}
+			nodes := []map[string]any{}
+			for _, p := range f.closedHeads[start:end] {
+				nodes = append(nodes, map[string]any{"number": p.Number, "headRefOid": p.Head.SHA})
+			}
+			value = map[string]any{"data": map[string]any{"repository": map[string]any{"pullRequests": map[string]any{"nodes": nodes, "pageInfo": map[string]any{"hasNextPage": end < len(f.closedHeads), "endCursor": strconv.Itoa(end)}}}}}
+			break
+		}
 		value = map[string]any{"data": map[string]any{"node": map[string]any{"id": "comment-91", "fullDatabaseId": "91", "author": map[string]any{"login": "chatgpt-codex-connector", "databaseId": 199175422}, "editor": map[string]any{"login": "chatgpt-codex-connector", "databaseId": f.editorID}}}}
 	case path == "/pulls/17/reviews":
 		value = f.reviews
 	case strings.HasPrefix(path, "/commits/") && strings.HasSuffix(path, "/pulls"):
 		value = f.associated
 	case strings.HasPrefix(path, "/commits/") && strings.HasSuffix(path, "/check-runs"):
-		value = map[string]any{"total_count": 0, "check_runs": []any{}}
+		if f.checkHead == "" {
+			value = map[string]any{"total_count": 0, "check_runs": []any{}}
+		} else {
+			value = map[string]any{"total_count": 1, "check_runs": []any{map[string]any{"id": 42, "app": map[string]any{"id": 4448946}, "external_id": f.checkExternal}}}
+		}
 	case strings.HasPrefix(path, "/commits/"):
 		sha := strings.TrimPrefix(path, "/commits/")
 		if len(sha) >= 7 && len(sha) < 40 && strings.HasPrefix(headA, sha) {
@@ -246,6 +276,9 @@ func (f *fakeGitHub) handler(w http.ResponseWriter, r *http.Request) {
 		f.writes = append(f.writes, body)
 		if h, ok := body["head_sha"].(string); ok {
 			f.checkHead = h
+		}
+		if external, ok := body["external_id"].(string); ok {
+			f.checkExternal = external
 		}
 		value = map[string]any{"id": 42, "app": map[string]any{"id": 4448946}, "head_sha": f.checkHead}
 	default:
@@ -390,7 +423,7 @@ func TestFreshNewHeadCanReview(t *testing.T) {
 	}
 }
 func TestQueuedAndPublicationChangesBlockSuccess(t *testing.T) {
-	for _, mode := range []string{"queued-push", "publication-race", "unknown-first-event", "historical-pr"} {
+	for _, mode := range []string{"queued-push", "queued-findings", "queued-deletion", "publication-race", "unknown-first-event", "historical-pr"} {
 		t.Run(mode, func(t *testing.T) {
 			s := testServer(t)
 			f := fakeFor(s)
@@ -402,6 +435,15 @@ func TestQueuedAndPublicationChangesBlockSuccess(t *testing.T) {
 				event.Ref = "refs/heads/main"
 				raw, _ := json.Marshal(event)
 				s.state.Jobs = []Job{{ID: "push", Kind: "push", Payload: raw}}
+			case "queued-findings", "queued-deletion":
+				event := openedEvent(s)
+				kind := "pull_request_review"
+				if mode == "queued-deletion" {
+					kind = "issue_comment"
+					event.Issue.Number = 17
+				}
+				raw, _ := json.Marshal(event)
+				s.state.Jobs = []Job{{ID: "evidence-change", Kind: kind, Payload: raw}}
 			case "publication-race":
 				f.changeAfterWrite = true
 			case "unknown-first-event":
@@ -432,8 +474,8 @@ func TestAPIErrorCannotPublishSuccess(t *testing.T) {
 	if e := s.process(context.Background(), openedJob(s)); e == nil {
 		t.Fatal("API failure swallowed")
 	}
-	if len(f.writes) != 0 {
-		t.Fatal("API failure wrote success")
+	if lastConclusion(t, f) != "action_required" {
+		t.Fatal("API failure retained success")
 	}
 }
 func TestInstallationTokenScopeAndJWT(t *testing.T) {
@@ -742,5 +784,130 @@ func TestOutOfOrderDeliveryDoesNotConsumeUnobservedHead(t *testing.T) {
 				t.Fatal("matching delivery did not recover legitimate review")
 			}
 		})
+	}
+}
+
+func TestUnrecordedSuccessfulCheckIsRecoveredAndWithdrawn(t *testing.T) {
+	s := testServer(t)
+	f := fakeFor(s)
+	attachFake(t, s, f)
+	if err := s.process(context.Background(), openedJob(s)); err != nil {
+		t.Fatal(err)
+	}
+	state := *s.state.Pulls[17]
+	state.CheckID = 0
+	if err := s.persistPull(17, &state); err != nil {
+		t.Fatal(err)
+	}
+	f.failPath = "/repos/hemsoft-dev/hs-buddy/issues/17/comments"
+	if err := s.process(context.Background(), openedJob(s)); err == nil {
+		t.Fatal("verification error swallowed")
+	}
+	if lastConclusion(t, f) != "action_required" || len(f.writes) != 2 || s.state.Pulls[17].CheckID != 42 {
+		t.Fatal("unrecorded success was not recovered and withdrawn")
+	}
+}
+func TestFullQueueStillDrains(t *testing.T) {
+	s := testServer(t)
+	f := fakeFor(s)
+	attachFake(t, s, f)
+	s.state.Pulls[17] = &PRState{Head: headA, Base: baseA}
+	e := openedEvent(s)
+	e.Ref = "refs/heads/main"
+	raw, _ := json.Marshal(e)
+	for i := 0; i < 1000; i++ {
+		s.state.Jobs = append(s.state.Jobs, Job{ID: fmt.Sprintf("capacity-%d", i), Kind: "push", Payload: raw, Received: time.Now()})
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { s.run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+	deadline := time.After(3 * time.Second)
+	for {
+		s.mu.Lock()
+		remaining := len(s.state.Jobs)
+		s.mu.Unlock()
+		if remaining < 1000 {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("full queue never drained")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+func TestClosedHeadAndSupersededEventControls(t *testing.T) {
+	for _, mode := range []string{"closed-unmerged-association", "superseded-edited", "unobserved-head-closed"} {
+		t.Run(mode, func(t *testing.T) {
+			s := testServer(t)
+			f := fakeFor(s)
+			attachFake(t, s, f)
+			if mode == "closed-unmerged-association" {
+				other := f.pull
+				other.Number = 99
+				other.State = "closed"
+				f.closedHeads = []Pull{other}
+			}
+			if err := s.process(context.Background(), openedJob(s)); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "closed-unmerged-association" {
+				if lastConclusion(t, f) != "action_required" {
+					t.Fatal("closed head reused")
+				}
+				return
+			}
+			e := openedEvent(s)
+			e.Action = "edited"
+			e.Pull.Head.SHA = headB
+			if mode == "unobserved-head-closed" {
+				f.pull.Head.SHA = headB
+				f.pull.State = "closed"
+				e.Action = "closed"
+			}
+			raw, _ := json.Marshal(e)
+			job := Job{ID: "context-control", Kind: "pull_request", Payload: raw, Received: time.Now()}
+			if err := s.process(context.Background(), job); err != nil {
+				t.Fatal(err)
+			}
+			if mode == "superseded-edited" {
+				if lastConclusion(t, f) != "success" {
+					t.Fatal("event from another head invalidated current review")
+				}
+			} else {
+				if !s.state.Pulls[17].Closed {
+					t.Fatal("closure was not retained")
+				}
+				if err := s.schedulePolls(); err != nil {
+					t.Fatal(err)
+				}
+				if len(s.state.Jobs) != 0 {
+					t.Fatal("closed unobserved head still polls")
+				}
+			}
+		})
+	}
+}
+
+func TestClosedHeadAssociationBeyondFirstPage(t *testing.T) {
+	s := testServer(t)
+	f := fakeFor(s)
+	attachFake(t, s, f)
+	for i := 0; i < 100; i++ {
+		other := f.pull
+		other.Number = 100 + i
+		other.Head.SHA = headB
+		f.closedHeads = append(f.closedHeads, other)
+	}
+	other := f.pull
+	other.Number = 300
+	f.closedHeads = append(f.closedHeads, other)
+	if err := s.process(context.Background(), openedJob(s)); err != nil {
+		t.Fatal(err)
+	}
+	if lastConclusion(t, f) != "action_required" {
+		t.Fatal("closed head beyond first page was missed")
 	}
 }
