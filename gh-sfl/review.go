@@ -1177,6 +1177,6 @@ Flags:
 
 Examples:
   gh sfl review 94
-  gh sfl review --repo HemSoft/hs-buddy --pr 94
-  gh sfl review --repo HemSoft/hs-buddy --pr 94 --retry
+  gh sfl review --repo hemsoft-dev/hs-buddy --pr 94
+  gh sfl review --repo hemsoft-dev/hs-buddy --pr 94 --retry
 `
