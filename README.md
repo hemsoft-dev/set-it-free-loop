@@ -16,7 +16,8 @@ central service on mini. Consumer repositories need no SFL Actions workflow or
 SFL model/App credential. Native Codex remains the review engine.
 
 The only authorized qualification target is `hemsoft-dev/hs-buddy`. Organization
-SFL workflows remain paused. See the [central reviewer runbook](central-reviewer/README.md)
+SFL workflows remain paused. See the [central reviewer runbook](central-reviewer/README.md) and
+the [qualification report](docs/central-reviewer/2026-10-09-pilot.md)
 and [tracking issue #139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139)
 for setup, scope, live evidence and remaining work. Broader activation requires a
 separate owner instruction.
