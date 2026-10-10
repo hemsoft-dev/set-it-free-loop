@@ -1,10 +1,21 @@
 # Source repository SFL retirement
 
-The source repository no longer runs its own consumer SFL deployment. Its
+SFL is frozen by owner instruction as of 2026-10-09. The source repository has
+no active GitHub Actions workflows: all remaining validation, publishing and
+credential workflows are removed from `.github/workflows` and retained only as
+inactive regression fixtures in `deployment/tests/fixtures/retired-source-workflows`.
+Repository Actions and historical workflow registrations are disabled.
+
+The organization App installation and central mini reviewer service are retired.
+The previous hs-buddy pilot is no longer active. Consumer SFL credentials and
+configuration have been removed; native reviews and unrelated consumer CI remain
+independent. The source implementation and historical records are retained for
+reference. Do not deploy or reactivate SFL.
+
+The earlier consumer retirement under
+[issue #139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139) removed the
 reviewer observer, autonomous workflows, generated maintenance and root deployment
-manifest are removed under [issue #139](https://github.com/hemsoft-dev/set-it-free-loop/issues/139).
-The organization App replacement is limited to the hs-buddy pilot on mini.
-Native Codex remains the review engine; ordinary validation/release workflows remain.
+manifest. The details below preserve that historical implementation record.
 
 The former root manifest is preserved as `deployment/legacy-source-manifest.json`
 for release compatibility, outside the installed-manifest paths. Version updates
@@ -17,8 +28,8 @@ now refuses before materialization or GitHub access, including dry runs.
 Legacy deployment templates and CLI compatibility code remain available for
 historical consumers. They are not an instruction to reinstall repository SFL
 workflows. Template tests still validate compatibility, while asserting that the
-consumer observer is absent from this repository. Existing consumer records,
-labels, credentials and migration evidence remain.
+consumer observer is absent from this repository. Historical consumer records and migration evidence remain. Live SFL
+labels, configuration and credential copies are retired under the project freeze.
 
 Removed source deployment paths:
 
