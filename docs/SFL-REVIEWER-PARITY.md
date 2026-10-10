@@ -1,3 +1,5 @@
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions, not an active setup or deployment procedure. Do not install, configure, dispatch or restart SFL. See the repository README for the freeze status.
+
 > The repository observer and its required SFL gate are retired. The contracts below describe the retained legacy template. Use the [central service runbook](../central-reviewer/README.md) for the organization App pilot.
 
 # SFL reviewer migration baseline

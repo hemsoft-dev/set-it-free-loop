@@ -412,7 +412,11 @@ def validate_app_credential(proof, directory):
     for path in paths:
         capture = local_capture(implementations[path], directory, 'App credential implementation')
         actual = immutable_contents(capture, proof['repository_id'], proof['repository'], proof['reviewed_sha'], path)
-        require(actual == (pathlib.Path(__file__).resolve().parents[2] / path).read_bytes(),
+        source_root = pathlib.Path(__file__).resolve().parents[2]
+        # The source is frozen; this exact historical workflow is an inactive sample.
+        implementation_path = (source_root / 'deployment/tests/fixtures/retired-source-workflows/verify-sfl-app-credential.yml'
+                               if path == '.github/workflows/verify-sfl-app-credential.yml' else source_root / path)
+        require(actual == implementation_path.read_bytes(),
                 'App credential implementation must equal the reviewed canonical source bytes')
         require(observed_time(capture.get('observed_at'), 'App credential implementation capture') <=
                 captured_at,

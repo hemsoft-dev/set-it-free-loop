@@ -1,0 +1,118 @@
+name: Validate gh-sfl
+
+on:
+  pull_request:
+    paths:
+      - 'gh-sfl/**'
+      - 'docs/ORGANIZATION-ONBOARDING.md'
+      - 'deployment/**'
+      - '.github/workflows/sfl-pr-review*'
+      - '.github/workflows/validate-gh-sfl.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'gh-sfl/**'
+      - 'docs/ORGANIZATION-ONBOARDING.md'
+      - 'deployment/**'
+      - '.github/workflows/sfl-pr-review*'
+      - '.github/workflows/validate-gh-sfl.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: gh-sfl
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: gh-sfl/go.mod
+          cache-dependency-path: gh-sfl/go.sum
+
+      - name: Check formatting
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            printf 'Files require gofmt:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+      - name: Test GitHub App credential bootstrap
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-github-app-bootstrap.ps1
+
+      - name: Test organization scope and permission policy
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-organization-policy.ps1
+
+      - name: Test organization App coverage scope
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-organization-coverage.ps1
+
+      - name: Test legacy reviewer gate migration
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-review-gate.ps1
+
+      - name: Test SFL Auditor behavior
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-auditor.ps1
+
+      - name: Test SFL reviewer source and lock parity
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-pr-review.ps1
+
+      - name: Test SFL reviewer platform contract
+        shell: pwsh
+        working-directory: .
+        run: ./deployment/tests/test-sfl-review-platform.ps1
+
+  cross-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, windows]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: gh-sfl/go.mod
+          cache-dependency-path: gh-sfl/go.sum
+
+      - name: Build ${{ matrix.goos }} amd64
+        env:
+          CGO_ENABLED: 0
+          GOARCH: amd64
+          GOOS: ${{ matrix.goos }}
+        shell: bash
+        working-directory: gh-sfl
+        run: go build -trimpath -buildvcs=false -o "${RUNNER_TEMP}/gh-sfl-${GOOS}-amd64" .

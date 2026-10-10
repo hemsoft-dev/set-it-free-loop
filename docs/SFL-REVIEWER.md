@@ -1,3 +1,5 @@
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions, not an active setup or deployment procedure. Do not install, configure, dispatch or restart SFL. See the repository README for the freeze status.
+
 > Reviewer deployment status, October 9, 2026: the per-repository observer below is retired for the organization App replacement. Use the [central reviewer runbook](../central-reviewer/README.md). Only hs-buddy qualification is authorized, and organization workflows remain paused. Do not reinstall this historical workflow.
 
 # HemSoft SFL pull request reviewer

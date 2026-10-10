@@ -1,3 +1,5 @@
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions, not an active setup or deployment procedure. Do not install, configure, dispatch or restart SFL. See the repository README for the freeze status.
+
 # CATALOG.md — Set it Free Loop™ Workflow Library
 
 Workflows listed here have graduated from staging (`.github/workflows/`) and are ready to deploy to consumer repos.

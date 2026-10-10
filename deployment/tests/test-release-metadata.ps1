@@ -13,7 +13,7 @@ $version = (Get-Content -LiteralPath (Join-Path $repoRoot 'VERSION') -Raw).Trim(
 $manifest = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\legacy-source-manifest.json') -Raw | ConvertFrom-Json
 $release = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\release-metadata.json') -Raw |
     ConvertFrom-Json
-$workflow = Get-Content -LiteralPath (Join-Path $repoRoot '.github\workflows\publish-private-prerelease.yml') -Raw
+$workflow = Get-Content -LiteralPath (Join-Path $repoRoot 'deployment\tests\fixtures\retired-source-workflows\publish-private-prerelease.yml') -Raw
 $failures = [System.Collections.Generic.List[string]]::new()
 if (-not $ExpectedRepository) {
     $ExpectedRepository = if ($env:GITHUB_REPOSITORY) { $env:GITHUB_REPOSITORY } else { 'hemsoft-dev/set-it-free-loop' }

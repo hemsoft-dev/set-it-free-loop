@@ -1,3 +1,5 @@
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions, not an active setup or deployment procedure. Do not install, configure, dispatch or restart SFL. See the repository README for the freeze status.
+
 # Organization App reviewer pilot
 
 The SFL GitHub App is installed once on `hemsoft-dev`. This Linux service receives

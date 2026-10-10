@@ -1,3 +1,5 @@
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions, not an active setup or deployment procedure. Do not install, configure, dispatch or restart SFL. See the repository README for the freeze status.
+
 # Organization onboarding
 
 The canonical source is [hemsoft-dev/set-it-free-loop](https://github.com/hemsoft-dev/set-it-free-loop). Authenticate the operator as HemSoft; use the `github-personal1` SSH profile. The private SFL App and native Codex installation cover all current and future organization repositories. Reviewer deployments require neither an App private key nor a model credential.

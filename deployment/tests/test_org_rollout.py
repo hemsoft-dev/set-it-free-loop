@@ -21,6 +21,7 @@ from unittest.mock import patch
 
 ROOT = pathlib.Path(__file__).parents[2]
 DIRECTORY = ROOT / 'docs' / 'organization-migration'
+SOURCE_WORKFLOW_FIXTURES = ROOT / 'deployment/tests/fixtures/retired-source-workflows'
 spec = importlib.util.spec_from_file_location('validate_org_rollout', ROOT / 'deployment/scripts/validate-org-rollout.py')
 validator = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(validator)
@@ -753,7 +754,7 @@ class RolloutTests(unittest.TestCase):
         proof=self.matrix['pre_transfer_credential_verification']
         proof['implementation_evidence']={path:self.capture({'repository_id':proof['repository_id'],
             'repository':proof['repository'],'revision_sha':proof['reviewed_sha'],'observed_at':'2026-10-07T01:48:25Z',
-            'contents_response':self.file_response(proof['repository'],proof['reviewed_sha'],path,(ROOT/path).read_bytes())})
+            'contents_response':self.file_response(proof['repository'],proof['reviewed_sha'],path,(SOURCE_WORKFLOW_FIXTURES/pathlib.Path(path).name if path.startswith('.github/workflows/') else ROOT/path).read_bytes())})
             for path in (proof['workflow'],'deployment/scripts/SflGitHubAppBootstrap.psm1')}
         proof['credential_metadata_evidence_url']=self.capture({**{field:proof[field] for field in
             ('repository_id','repository','reviewed_sha','run_url','app_id','client_id','owner',
@@ -2726,10 +2727,10 @@ class RolloutTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'must contain the captured deployed'):
                 validator.validate_final_onboarding(proof,directory,{},'hemsoft-dev',4448946)
 
-    def test_source_workflow_glob_triggers_inventory_for_pr_and_main_push(self):
+    def test_retired_source_workflow_glob_triggers_inventory_for_pr_and_main_push(self):
         import fnmatch
         import re
-        workflow=(ROOT/'.github/workflows/validate-org-migration.yml').read_text()
+        workflow=(SOURCE_WORKFLOW_FIXTURES/'validate-org-migration.yml').read_text()
         filters=re.findall(r'    paths:\n((?:      - .*\n)+)',workflow)
         self.assertEqual(len(filters),2)
         for filters_for_event in filters:
