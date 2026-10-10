@@ -1,3 +1,5 @@
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions, not an active setup or deployment procedure. Do not install, configure, dispatch or restart SFL. See the repository README for the freeze status.
+
 # Transfer gates and organization rollout
 
 Use this with the [migration baseline and transfer procedure](README.md),
@@ -181,7 +183,7 @@ The [owner transfer preparation warning](sfl-app-transfer-warning-evidence.json)
 explicitly states that transfer automatically uninstalls the App from the personal
 account. Reconcile all 64 selected repositories and the two retained personal
 repositories before proceeding. No transfer has been submitted.
-The manual [owned App credential check](../../.github/workflows/verify-sfl-app-credential.yml)
+The manual [owned App credential check](../../deployment/tests/fixtures/retired-source-workflows/verify-sfl-app-credential.yml)
 uses the existing source repository secret inside GitHub Actions to authenticate
 GET-only App identity and installation checks. Dispatch it on reviewed main and
 record its exact run/SHA. It checks the approved App/client IDs, owner, source

@@ -1,6 +1,10 @@
+## Project freeze
+
+SFL is frozen by owner instruction as of 2026-10-09. Preserve its source and history for reference. Do not reactivate automation, deploy the reviewer, recreate SFL credentials or install the App without a new explicit owner instruction. The current retirement cleanup may be completed under the existing instruction.
+
 ## Repository Identity
 
-This checkout is the private `hemsoft-dev/set-it-free-loop` repository,
+This checkout is the frozen `hemsoft-dev/set-it-free-loop` repository,
 transferred from `HemSoft/set-it-free-loop` with its original repository ID
 `1169772257`. Use `hemsoft-dev/set-it-free-loop` for GitHub API and release
 repository arguments. GitHub Actions sets `GITHUB_REPOSITORY` to that canonical
