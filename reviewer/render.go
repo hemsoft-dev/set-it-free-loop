@@ -19,10 +19,12 @@ type Document struct {
 	Inline  []InlineComment `json:"inline"`
 }
 
+var credentialText = regexp.MustCompile(`(?i)\b(?:gh[pousr]_|github_pat_|sk-(?:proj-|ant-)?|xox[baprs]-)[a-z0-9_-]{16,}|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b`)
 var externalLink = regexp.MustCompile(`(?i)(?:https?://|ftp://|www\.)[^\s]+`)
 var markdownEscaper = strings.NewReplacer("\\", "\\\\", "`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)", "!", "\\!", "#", "\\#", "|", "\\|", "~", "\\~")
 
 func safeText(s string) string {
+	s = credentialText.ReplaceAllString(s, "[redacted credential]")
 	s = externalLink.ReplaceAllString(s, "[external link omitted]")
 	s = strings.Map(func(r rune) rune {
 		if r == '@' {

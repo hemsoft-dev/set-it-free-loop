@@ -86,3 +86,10 @@ func TestCheckpointDoesNotAliasReportsAndRejectsOrphanPhases(t *testing.T) {
 		t.Fatal("orphan phase consumed provider budget")
 	}
 }
+
+func TestRendererRedactsRecognizableCredentialStrings(t *testing.T) {
+	token := "ghp_" + strings.Repeat("a", 36)
+	if strings.Contains(safeText("Credential "+token), token) {
+		t.Fatal("credential-shaped value survived rendering")
+	}
+}
