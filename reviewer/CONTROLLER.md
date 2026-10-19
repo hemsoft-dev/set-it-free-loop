@@ -40,6 +40,13 @@ sessions begin, including jobs queued on earlier dates.
 Only one lease may exist. Expiration does not authorize stealing it. A separately
 qualified supervisor must prove the worker has stopped before `ReleaseStopped`.
 Drivers supplied to `RunStopped` must return only after worker termination.
+
+Broker-equipped drivers also return trusted per-attempt source receipts, kept
+separately from citation-validation reads. Source attempts, including failures,
+are persisted under the reserved attempt ID before output is accepted. Audit
+storage failure keeps the lease for explicit stopped-worker recovery; see
+[SOURCE.md](SOURCE.md). A fake in-process transport does not qualify the official
+worker's separate identity or filesystem/network boundary.
 The library cannot prove process termination or external OS isolation. Those
 remain live qualification gates. Generation/lease checks fence old workers from
 saving evidence after cancellation or replacement.

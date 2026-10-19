@@ -20,6 +20,7 @@ import (
 var ErrDeferred = errors.New("durable state requires reconciliation")
 var ErrFenced = errors.New("worker lease or request generation is no longer current")
 var ErrRefundPending = errors.New("before-work refund requires durable recovery before lease release")
+var ErrSourceAuditPending = errors.New("source audit could not be persisted; stopped-worker recovery required before lease release")
 
 type Enrollment struct{ RepositoryID, InstallationID, AppID, BotID, OwnerID int64 }
 
@@ -85,6 +86,14 @@ type DurableJob struct {
 	AttemptRound     int
 	AttemptChargeDay string
 	ChargeDays       []string
+	AttemptID        string
+	AttemptInputHash string
+	SourceAttempts   []SourceAttempt
+}
+
+type SourceAttempt struct {
+	ID     string
+	Access *SourceAccess
 }
 type WriteIntent struct {
 	ID, Kind                string
@@ -607,6 +616,43 @@ func (s *Store) RefundStoppedBeforeWork(ctx context.Context, id, token string, p
 	})
 }
 
+// RecordStoppedSourceAccess is a trusted recovery write after a driver has
+// stopped. It persists broker evidence for the exact reserved attempt without
+// starting provider work. Repeating the identical write is safe; a different
+// receipt or attempt is rejected. After ErrSourceAuditPending, repair storage,
+// record Outcome.FailedSourceAccess with the retained nonce/attempt ID, then
+// release the stopped lease. Unknown provider work remains charged.
+// A trusted original BeforeWork failure must also be refunded through
+// RefundStoppedBeforeWork before ReleaseStopped.
+func (s *Store) RecordStoppedSourceAccess(ctx context.Context, id, token, attemptID string, access *SourceAccess) error {
+	return s.update(ctx, func(d *DurableState) error {
+		j := d.Jobs[id]
+		if j == nil || token == "" || j.LeaseToken != token || !j.Outstanding || attemptID == "" || j.AttemptID != attemptID || access == nil {
+			return ErrFenced
+		}
+		limits, err := protocolLimits(j.Job)
+		if err != nil {
+			return err
+		}
+		if err = access.validateCaptured(j.Job.Snapshot, limits, j.AttemptInputHash); err != nil {
+			return err
+		}
+		for _, old := range j.SourceAttempts {
+			if old.ID == attemptID {
+				if Digest(old.Access) != Digest(access) {
+					return ErrFenced
+				}
+				return nil
+			}
+		}
+		if len(j.SourceAttempts) >= 128 {
+			return errors.New("source attempt retention cap reached")
+		}
+		j.SourceAttempts = append(j.SourceAttempts, SourceAttempt{attemptID, cloneSourceAccess(access)})
+		return nil
+	})
+}
+
 // DurableReviewer reserves a session before provider work and persists validated
 // evidence before returning it to Engine. Unknown/crashed attempts consume budget.
 // It is an offline seam: the supplied underlying Reviewer must be trusted.
@@ -620,6 +666,17 @@ type DurableReviewer struct {
 }
 
 func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, error) {
+	report, _, err := r.ReviewSource(ctx, session)
+	return report, err
+}
+
+func (r DurableReviewer) ReviewSource(ctx context.Context, session Session) (Report, *SourceAccess, error) {
+	var access *SourceAccess
+	report, err := r.review(ctx, session, func(a *SourceAccess) { access = cloneSourceAccess(a) })
+	return report, access, err
+}
+
+func (r DurableReviewer) review(ctx context.Context, session Session, capture func(*SourceAccess)) (Report, error) {
 	now := r.Now
 	if now == nil {
 		now = time.Now
@@ -634,6 +691,7 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 	if session.Limits != expectedLimits || session.JobID != r.Job.ID || session.Snapshot != r.Job.Snapshot || session.ConfigHash != r.Job.Config.Hash() || session.PacketHash != Digest(r.Job.Packet) {
 		return Report{}, ErrFenced
 	}
+	attemptID := randomToken()
 	err = r.Store.update(ctx, func(d *DurableState) error {
 		j, err := fenced(d, r.Job.ID, r.Token, now())
 		if err != nil {
@@ -661,6 +719,8 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 		j.Outstanding = true
 		j.AttemptProvider = session.Identity.Provider
 		j.AttemptRound = session.Round
+		j.AttemptID = attemptID
+		j.AttemptInputHash = Digest(session)
 		j.LeaseUntil = now().Add(j.Job.Config.Limits.Timeout + time.Minute)
 		return nil
 	})
@@ -670,7 +730,14 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 		}
 		return Report{}, err
 	}
-	report, err := r.Inner.Review(ctx, session)
+	report, access, err := reviewSource(ctx, r.Inner, session)
+	capture(access)
+	if access != nil {
+		auditErr := r.Store.RecordStoppedSourceAccess(context.WithoutCancel(ctx), r.Job.ID, r.Token, attemptID, access)
+		if auditErr != nil {
+			return Report{}, errors.Join(err, ErrSourceAuditPending, auditErr)
+		}
+	}
 	if err != nil {
 		var pe PhaseError
 		if errors.As(err, &pe) && pe.BeforeWork {
@@ -709,7 +776,7 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 	if err != nil || len(encoded) > session.Limits.OutputBytes {
 		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, errors.New("durable report exceeds output bound"))
 	}
-	a := Artifact{JobHash: Digest(r.Job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}}
+	a := Artifact{JobHash: Digest(r.Job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}, SourceAccess: cloneSourceAccess(access)}
 	if reader != nil {
 		reads, coverage := reader.Evidence()
 		a.ValidationReads = append([]ReadRecord{}, reads...)
@@ -827,7 +894,7 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 		wrapped.Reviewers[provider] = DurableReviewer{Store: s, Job: j.Job, Token: token, Inner: inner, Reader: engine.Reader, Now: now}
 	}
 	out, runErr := wrapped.Run(ctx, j.Job, j.Checkpoint)
-	if errors.Is(runErr, ErrRefundPending) {
+	if errors.Is(runErr, ErrRefundPending) || errors.Is(runErr, ErrSourceAuditPending) {
 		// Retain the nonce and attempt metadata for an explicit stopped-worker
 		// refund after storage repair. Releasing would discard that recovery path.
 		return out, runErr

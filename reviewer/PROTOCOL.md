@@ -29,6 +29,12 @@ The deterministic ledger records each allegation, original provider/round, every
 
 `Artifact.ValidationReads` records the engine's source-validation reads. It does not claim to contain the model's complete source-access audit; the separately qualified reader/broker must retain those actual access receipts. Authoritative omissions survive in reports and artifacts. Resumed phases preserve their prior coverage.
 
+`Artifact.SourceAccess` separately retains the session-bound broker receipt from
+source-capable adapters. Fake workers exercise actual broker reads; legacy
+reviewers have a nil receipt rather than invented zero-read evidence. Durable
+attempt history preserves broker reads on errors as well as successful phases.
+See [SOURCE.md](SOURCE.md) for capability, budget, recovery and live-boundary limits.
+
 ## Rendering and validation
 
 `Render` produces a bounded summary and inline candidates. It combines exact duplicate allegations while preserving their IDs and assessments, neutralizes mentions, removes external model links and escapes model HTML/Markdown. Only trusted snapshot source links are generated. Inline eligibility comes from a trusted diff-line map; other valid locations remain in the summary. Revisions, selected models, CLI/auth mappings, config and release provenance are recorded in generated metadata.

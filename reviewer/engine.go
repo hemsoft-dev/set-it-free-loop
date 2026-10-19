@@ -57,11 +57,12 @@ func protocolLimits(j Job) (Limits, error) {
 }
 
 type Artifact struct {
-	JobHash         string       `json:"job_hash"`
-	InputHash       string       `json:"input_hash"`
-	Report          Report       `json:"report"`
-	ValidationReads []ReadRecord `json:"validation_reads"`
-	Coverage        []Coverage   `json:"coverage"`
+	JobHash         string        `json:"job_hash"`
+	InputHash       string        `json:"input_hash"`
+	Report          Report        `json:"report"`
+	ValidationReads []ReadRecord  `json:"validation_reads"`
+	Coverage        []Coverage    `json:"coverage"`
+	SourceAccess    *SourceAccess `json:"source_access,omitempty"`
 }
 
 type Assessment struct {
@@ -83,13 +84,14 @@ type Entry struct {
 }
 
 type Outcome struct {
-	Job              Job        `json:"job"`
-	State            string     `json:"state"`
-	Artifacts        []Artifact `json:"artifacts"`
-	Ledger           []Entry    `json:"ledger"`
-	ExecutedSessions int        `json:"executed_sessions"`
-	ConsumedSessions int        `json:"consumed_sessions"`
-	InvalidPhases    int        `json:"invalid_phases"`
+	Job                Job           `json:"job"`
+	State              string        `json:"state"`
+	Artifacts          []Artifact    `json:"artifacts"`
+	Ledger             []Entry       `json:"ledger"`
+	ExecutedSessions   int           `json:"executed_sessions"`
+	ConsumedSessions   int           `json:"consumed_sessions"`
+	InvalidPhases      int           `json:"invalid_phases"`
+	FailedSourceAccess *SourceAccess `json:"failed_source_access,omitempty"`
 }
 
 type Checkpoint struct {
@@ -111,6 +113,7 @@ func (o Outcome) Checkpoint() Checkpoint {
 		copies[i].Report.Coverage = append([]Coverage{}, a.Report.Coverage...)
 		copies[i].ValidationReads = append([]ReadRecord{}, a.ValidationReads...)
 		copies[i].Coverage = append([]Coverage{}, a.Coverage...)
+		copies[i].SourceAccess = cloneSourceAccess(a.SourceAccess)
 	}
 	return Checkpoint{Digest(o.Job), copies, o.ConsumedSessions}
 }
@@ -241,9 +244,10 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 				}
 				out.ExecutedSessions++
 				out.ConsumedSessions++
-				report, callErr := reviewer.Review(phase, session)
+				report, access, callErr := reviewSource(phase, reviewer, session)
 				deadlineErr := phase.Err()
 				if callErr != nil {
+					out.FailedSourceAccess = cloneSourceAccess(access)
 					if phaseState(callErr) == "invalid_output" {
 						out.InvalidPhases++
 					}
@@ -256,7 +260,11 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 				if deadlineErr != nil {
 					return fail(phaseState(deadlineErr), deadlineErr)
 				}
-				artifact = Artifact{JobHash: Digest(job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}}
+				artifact = Artifact{JobHash: Digest(job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}, SourceAccess: access}
+			}
+			if err := artifact.SourceAccess.validate(session); err != nil {
+				out.InvalidPhases++
+				return fail("invalid_output", err)
 			}
 			encoded, err := json.Marshal(artifact.Report)
 			if err != nil {
@@ -288,6 +296,12 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 			validated, err = mergeReaderCoverage(validated, reader)
 			if err != nil {
 				return fail("invalid_output", err)
+			}
+			if artifact.SourceAccess != nil {
+				validated, err = mergeCoverageRecords(validated, artifact.SourceAccess.Coverage)
+				if err != nil {
+					return fail("invalid_output", err)
+				}
 			}
 			encoded, err = json.Marshal(validated)
 			if err != nil || len(encoded) > session.Limits.OutputBytes {
