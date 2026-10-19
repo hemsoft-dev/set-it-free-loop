@@ -104,6 +104,9 @@ func (a Adapter) Review(ctx context.Context, s Session) (Report, error) {
 	if a.Driver == nil {
 		return Report{}, ErrLiveBlocked
 	}
+	if a.Reader != nil && a.Reader.snapshot != s.Snapshot {
+		return Report{}, errors.New("reader belongs to another captured snapshot")
+	}
 	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
 	defer cancel()
 	for _, peer := range s.PeerReports {
@@ -141,6 +144,36 @@ func (a Adapter) Review(ctx context.Context, s Session) (Report, error) {
 	if err := a.verifyReport(ctx, s, r); err != nil {
 		return Report{}, err
 	}
+	r, err = mergeReaderCoverage(r, a.Reader)
+	if err != nil {
+		return Report{}, err
+	}
+	if err := ValidateReport(r, s); err != nil {
+		return Report{}, err
+	}
+	if data, err := json.Marshal(r); err != nil || len(data) > s.Limits.OutputBytes {
+		return Report{}, errors.New("normalized report with coverage exceeds output bound")
+	}
+	return r, nil
+}
+
+func mergeReaderCoverage(r Report, reader *Reader) (Report, error) {
+	if reader == nil {
+		return r, nil
+	}
+	_, coverage := reader.Evidence()
+	merged := append(append([]Coverage{}, r.Coverage...), coverage...)
+	seen := map[Coverage]bool{}
+	r.Coverage = []Coverage{}
+	for _, c := range merged {
+		if !seen[c] {
+			r.Coverage = append(r.Coverage, c)
+			seen[c] = true
+		}
+	}
+	if len(r.Coverage) > 256 {
+		return Report{}, errors.New("authoritative coverage limit exceeded")
+	}
 	return r, nil
 }
 
@@ -158,10 +191,8 @@ func (a Adapter) verifyReport(ctx context.Context, s Session, r Report) error {
 	if a.Reader == nil || a.Reader.snapshot != s.Snapshot {
 		return errors.New("missing same-snapshot source verifier")
 	}
-	for _, anchor := range anchors {
-		if err := a.Reader.Verify(ctx, anchor); err != nil {
-			return errors.New("finding or judgment evidence does not match captured source")
-		}
+	if err := a.Reader.VerifyAll(ctx, anchors); err != nil {
+		return errors.New("finding or judgment evidence does not match captured source")
 	}
 	return nil
 }

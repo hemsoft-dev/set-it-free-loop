@@ -80,8 +80,8 @@ func (r *Reader) Read(ctx context.Context, revision, p string) (string, error) {
 	defer r.mu.Unlock()
 	fail := func(reason string) (string, error) {
 		loggedPath := p
-		if len(loggedPath) > 512 {
-			loggedPath = "[invalid oversized path]"
+		if !validPath(loggedPath) {
+			loggedPath = ""
 		}
 		if len(r.coverage) < 256 {
 			r.coverage = append(r.coverage, Coverage{loggedPath, reason})
@@ -158,6 +158,42 @@ func (r *Reader) Verify(ctx context.Context, a Anchor) error {
 	lines := strings.Split(s, "\n")
 	if a.Line > len(lines) || lines[a.Line-1] != a.Quote {
 		return errors.New("source quote does not match snapshot line")
+	}
+	return nil
+}
+
+// VerifyAll reads each source object once for a bounded group of citations.
+// Validation must not exhaust the model's reader budget merely by rereading
+// the same file separately for every cited line.
+func (r *Reader) VerifyAll(ctx context.Context, anchors []Anchor) error {
+	if len(anchors) > 1024 {
+		return errors.New("too many source anchors")
+	}
+	groups := map[string][]Anchor{}
+	for _, a := range anchors {
+		if !validAnchor(a, r.snapshot) {
+			return errors.New("invalid source anchor")
+		}
+		key := a.Revision + "\x00" + a.Path
+		groups[key] = append(groups[key], a)
+	}
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		group := groups[key]
+		text, err := r.Read(ctx, group[0].Revision, group[0].Path)
+		if err != nil {
+			return err
+		}
+		lines := strings.Split(text, "\n")
+		for _, a := range group {
+			if a.Line > len(lines) || lines[a.Line-1] != a.Quote {
+				return errors.New("source quote does not match snapshot line")
+			}
+		}
 	}
 	return nil
 }

@@ -215,6 +215,7 @@ func (s Session) Validate() error {
 	}
 	seen := map[string]bool{}
 	known := map[string]bool{}
+	withdrawn := map[string]bool{}
 	for _, pr := range s.PeerReports {
 		if !pr.Provider.Valid() || pr.Round < 1 || pr.Round >= s.Round {
 			return errors.New("unexpected peer report round/provider")
@@ -240,6 +241,12 @@ func (s Session) Validate() error {
 		for _, f := range pr.Findings {
 			known[f.ID] = true
 		}
+		for _, id := range pr.Retractions {
+			withdrawn[id] = true
+		}
+	}
+	for id := range withdrawn {
+		delete(known, id)
 	}
 	if len(s.FocusIDs) > 160 {
 		return errors.New("too many focus IDs")
@@ -372,7 +379,7 @@ func ValidateReport(r Report, s Session) error {
 	for _, pr := range s.PeerReports {
 		for _, f := range pr.Findings {
 			prior[f.ID] = f
-			if pr.Provider != r.Provider && (s.Round == 2 || focus[f.ID]) {
+			if (pr.Provider != r.Provider && s.Round == 2) || (s.Round == 3 && focus[f.ID]) {
 				required[f.ID] = true
 			}
 		}
@@ -437,17 +444,20 @@ func ValidateReport(r Report, s Session) error {
 		}
 		judged[j.FindingID] = true
 	}
-	for id := range required {
-		if !judged[id] {
-			return errors.New("missing peer finding disposition")
-		}
-	}
 	retracted := map[string]bool{}
 	for _, id := range r.Retractions {
 		if _, ok := prior[id]; !ok || !strings.HasPrefix(id, string(r.Provider)+":") || retracted[id] || (s.Round == 3 && !focus[id]) {
 			return errors.New("invalid origin retraction")
 		}
 		retracted[id] = true
+	}
+	for id := range required {
+		if !judged[id] && !retracted[id] {
+			return errors.New("missing focused or peer finding disposition")
+		}
+		if judged[id] && retracted[id] {
+			return errors.New("ambiguous response and retraction")
+		}
 	}
 	for _, c := range r.Coverage {
 		if (c.Path != "" && !validPath(c.Path)) || len(c.Reason) == 0 || len(c.Reason) > 1024 {

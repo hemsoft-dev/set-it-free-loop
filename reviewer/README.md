@@ -45,7 +45,7 @@ qualified driver must supply only that job's reader and no ambient MCP servers. 
 
 `Reader` accepts only listed paths and the three captured revisions. It caps
 calls, bytes, search results and evidence logs, verifies quoted source anchors,
-and records omissions. `GitStore` invokes a trusted absolute Git executable
+and records omissions. Accepted reports merge authoritative reader coverage, even when the model omits it. Citation batches read each object once. R3 focus excludes withdrawn claims and requires a response or origin retraction for each focused own finding. `GitStore` invokes a trusted absolute Git executable
 without shell, user environment or checkout. Symlinks, submodules, binaries,
 missing objects, cross-job references and exhausted limits become coverage
 limitations, never evidence of clean code. Candidate hooks and instructions are
