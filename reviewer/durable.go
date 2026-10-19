@@ -63,6 +63,7 @@ type PRRecord struct {
 	Generation     int64
 	Paused         bool
 	HistoryThrough time.Time
+	PauseRequestID int64
 	Configs        []ConfigRecord
 	Commands       []CommandRecord
 	Requests       []NativeRequest
@@ -92,6 +93,7 @@ type WriteIntent struct {
 	BodyHash, Marker, State string
 	ReceiptID               int64
 	CreatedAt               time.Time
+	ReceiptTime             time.Time
 }
 type RemoteReceipt struct {
 	ID, AuthorID     int64
@@ -259,81 +261,83 @@ func (s *Store) CaptureCommands(ctx context.Context, scope Scope, events []Comma
 	// Stable original creation order, never caller/pagination order.
 	ordered := append([]CommandEvent{}, events...)
 	sortCommands(ordered)
-	return s.update(ctx, func(d *DurableState) error {
-		p, err := prRecord(d, scope)
-		if err != nil {
-			return err
+	return s.update(ctx, func(d *DurableState) error { return applyCommands(d, scope, ordered, through) })
+}
+func applyCommands(d *DurableState, scope Scope, ordered []CommandEvent, through time.Time) error {
+	p, err := prRecord(d, scope)
+	if err != nil {
+		return err
+	}
+	if through.Before(p.HistoryThrough) {
+		return ErrDeferred
+	}
+	for _, event := range ordered {
+		if event.AuthorID != OwnerID || !strings.HasPrefix(event.Body, "/sfl ") {
+			continue
 		}
-		if through.Before(p.HistoryThrough) {
+		found := false
+		for _, old := range p.Commands {
+			if old.Command.EventID == event.ID {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		if event.CreatedAt.After(through) {
 			return ErrDeferred
 		}
-		for _, event := range ordered {
-			if event.AuthorID != OwnerID || !strings.HasPrefix(event.Body, "/sfl ") {
-				continue
-			}
-			found := false
-			for _, old := range p.Commands {
-				if old.Command.EventID == event.ID {
-					found = true
-					break
-				}
-			}
-			if found {
-				continue
-			}
-			if event.CreatedAt.After(through) {
-				return ErrDeferred
-			}
-			command, parseErr := ParseCommand(event)
-			if event.ID <= 0 || event.CreatedAt.IsZero() {
-				return errors.New("invalid platform command identity")
-			}
-			if parseErr != nil {
-				command = Command{EventID: event.ID, AuthorID: OwnerID, BodyHash: Digest(event.Body), Action: "reject", Values: map[string]string{}}
-			}
-			if !p.HistoryThrough.IsZero() && !event.CreatedAt.After(p.HistoryThrough) {
-				return ErrDeferred
-			}
-			if len(p.Commands) >= 64 {
-				return errors.New("command retention cap reached")
-			}
-			current := p.Configs[len(p.Configs)-1]
-			// Proposals form a FIFO chain. None becomes effective before its own
-			// platform acknowledgment; dispatch enforces the same order.
-			if len(p.Commands) > 0 {
-				last := p.Commands[len(p.Commands)-1]
-				current.Config = last.Config
-				current.Version = last.Version
-			}
-
-			next := current.Config
-			if parseErr == nil {
-				next, parseErr = ApplyConfig(current.Config, d.Defaults, command)
-			}
-			if parseErr != nil {
-				command.Action = "reject"
-				next = current.Config
-			}
-			version := current.Version
-			if command.Action == "configure" || command.Action == "reset" {
-				version++
-			}
-			if command.Action == "cancel" {
-				p.Generation++
-				p.CurrentRequest = 0
-			}
-			body := fmt.Sprintf("SFL %s accepted. Configuration version %d, hash %s. Configuration applies to the next native owner review request after this acknowledgment. No inference was started.", command.Action, version, next.Hash())
-			if parseErr != nil {
-				body = "SFL command rejected: " + parseErr.Error() + ". Configuration is unchanged. No inference was started."
-			}
-			intent := newIntent("ack", scope, p.Generation, 0, Snapshot{}, "", Document{Summary: body, Inline: []InlineComment{}}, event.CreatedAt)
-			d.Writes[intent.ID] = &intent
-			p.Commands = append(p.Commands, CommandRecord{command, event.CreatedAt, next, version, intent.ID})
+		command, parseErr := ParseCommand(event)
+		if event.ID <= 0 || event.CreatedAt.IsZero() {
+			return errors.New("invalid platform command identity")
 		}
-		p.HistoryThrough = through
-		return nil
-	})
+		if parseErr != nil {
+			command = Command{EventID: event.ID, AuthorID: OwnerID, BodyHash: Digest(event.Body), Action: "reject", Values: map[string]string{}}
+		}
+		if !p.HistoryThrough.IsZero() && !event.CreatedAt.After(p.HistoryThrough) {
+			return ErrDeferred
+		}
+		if len(p.Commands) >= 64 {
+			return errors.New("command retention cap reached")
+		}
+		current := p.Configs[len(p.Configs)-1]
+		// Proposals form a FIFO chain. None becomes effective before its own
+		// platform acknowledgment; dispatch enforces the same order.
+		if len(p.Commands) > 0 {
+			last := p.Commands[len(p.Commands)-1]
+			current.Config = last.Config
+			current.Version = last.Version
+		}
+
+		next := current.Config
+		if parseErr == nil {
+			next, parseErr = ApplyConfig(current.Config, d.Defaults, command)
+		}
+		if parseErr != nil {
+			command.Action = "reject"
+			next = current.Config
+		}
+		version := current.Version
+		if command.Action == "configure" || command.Action == "reset" {
+			version++
+		}
+		if command.Action == "cancel" {
+			p.Generation++
+			p.CurrentRequest = 0
+		}
+		body := fmt.Sprintf("SFL %s accepted. Configuration version %d, hash %s. Configuration applies to the next native owner review request after this acknowledgment. No inference was started.", command.Action, version, next.Hash())
+		if parseErr != nil {
+			body = "SFL command rejected: " + parseErr.Error() + ". Configuration is unchanged. No inference was started."
+		}
+		intent := newIntent("ack", scope, p.Generation, 0, Snapshot{}, "", Document{Summary: body, Inline: []InlineComment{}}, event.CreatedAt)
+		d.Writes[intent.ID] = &intent
+		p.Commands = append(p.Commands, CommandRecord{command, event.CreatedAt, next, version, intent.ID})
+	}
+	p.HistoryThrough = through
+	return nil
 }
+
 func sortCommands(events []CommandEvent) {
 	sort.Slice(events, func(i, j int) bool {
 		if events[i].CreatedAt.Equal(events[j].CreatedAt) {
@@ -352,56 +356,60 @@ func (s *Store) RecordRequest(ctx context.Context, scope Scope, r NativeRequest,
 	if r.RequesterID != OwnerID {
 		return ErrIgnored
 	}
-	return s.update(ctx, func(d *DurableState) error {
-		p, err := prRecord(d, scope)
-		if err != nil {
-			return err
-		}
-		if r.BotID != d.Enrollment.BotID || r.ID <= 0 || r.CreatedAt.IsZero() || r.Snapshot.PR != scope.PR || r.Snapshot.RepositoryID != scope.RepositoryID {
-			return errors.New("untrusted native request")
-		}
-		if err := r.Snapshot.Validate(); err != nil {
-			return err
-		}
-		for i, old := range p.Requests {
-			if old.ID == r.ID {
-				immutableOld, immutableNew := old, r
-				immutableOld.Removed = false
-				immutableOld.Admitted = false
-				immutableNew.Admitted = false
-				immutableNew.Removed = false
-				if Digest(immutableOld) != Digest(immutableNew) {
-					return errors.New("request identity changed")
+	return s.update(ctx, func(d *DurableState) error { return applyRequest(d, scope, r) })
+}
+func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
+	p, err := prRecord(d, scope)
+	if err != nil {
+		return err
+	}
+	if r.BotID != d.Enrollment.BotID || r.ID <= 0 || r.CreatedAt.IsZero() || r.Snapshot.PR != scope.PR || r.Snapshot.RepositoryID != scope.RepositoryID {
+		return errors.New("untrusted native request")
+	}
+	if err := r.Snapshot.Validate(); err != nil {
+		return err
+	}
+	for i, old := range p.Requests {
+		if old.ID == r.ID {
+			immutableOld, immutableNew := old, r
+			immutableOld.Removed = false
+			immutableOld.Admitted = false
+			immutableNew.Admitted = false
+			immutableNew.Removed = false
+			if Digest(immutableOld) != Digest(immutableNew) {
+				return errors.New("request identity changed")
+			}
+			if r.Removed && !old.Removed {
+				p.Requests[i].Removed = true
+				if p.CurrentRequest == r.ID {
+					p.Generation++
+					p.CurrentRequest = 0
 				}
-				if r.Removed && !old.Removed {
-					p.Requests[i].Removed = true
-					if p.CurrentRequest == r.ID {
-						p.Generation++
-						p.CurrentRequest = 0
-					}
-				}
-				return nil
 			}
+			return nil
 		}
-		if len(p.Requests) >= 64 {
-			return errors.New("request retention cap reached")
+	}
+	if len(p.Requests) >= 64 {
+		return errors.New("request retention cap reached")
+	}
+	p.Requests = append(p.Requests, r)
+	latest := r
+	for _, old := range p.Requests {
+		if old.CreatedAt.Equal(r.CreatedAt) && old.ID != r.ID {
+			p.Paused = true
 		}
-		p.Requests = append(p.Requests, r)
-		latest := r
-		for _, old := range p.Requests {
-			if old.CreatedAt.Equal(r.CreatedAt) && old.ID != r.ID {
-				p.Paused = true
-			}
-			if old.CreatedAt.After(latest.CreatedAt) {
-				latest = old
-			}
+		if old.CreatedAt.After(latest.CreatedAt) {
+			latest = old
 		}
-		if latest.ID == r.ID && !r.Removed {
-			p.Generation++
-			p.CurrentRequest = r.ID
+	}
+	if latest.ID == r.ID {
+		p.Generation++
+		p.CurrentRequest = r.ID
+		if r.Removed {
+			p.CurrentRequest = 0
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // Admit maps platform request time to confirmed ACK time. Equal timestamps and
@@ -575,6 +583,8 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 	if session.Limits != expectedLimits || session.JobID != r.Job.ID || session.Snapshot != r.Job.Snapshot || session.ConfigHash != r.Job.Config.Hash() || session.PacketHash != Digest(r.Job.Packet) {
 		return Report{}, ErrFenced
 	}
+	chargedForAttempt := false
+	attemptDay := now().UTC().Format("2006-01-02")
 	err = r.Store.update(ctx, func(d *DurableState) error {
 		j, err := fenced(d, r.Job.ID, r.Token, now())
 		if err != nil {
@@ -592,8 +602,9 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 				}
 			}
 			if count >= j.Job.Config.DailyReviews {
-				return ErrDeferred
+				return PhaseError{State: "quota_wait", BeforeWork: true}
 			}
+			chargedForAttempt = true
 			j.ChargeDays = append(j.ChargeDays, day)
 		}
 		j.Checkpoint.ConsumedSessions++
@@ -616,6 +627,15 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 					return e
 				}
 				j.Checkpoint.ConsumedSessions--
+				if chargedForAttempt {
+					days := []string{}
+					for _, day := range j.ChargeDays {
+						if day != attemptDay {
+							days = append(days, day)
+						}
+					}
+					j.ChargeDays = days
+				}
 				j.Outstanding = false
 				return nil
 			})
@@ -692,21 +712,60 @@ type Discovery struct {
 }
 
 func (s *Store) Discover(ctx context.Context, batch Discovery) error {
-	if !batch.Complete {
+	if !batch.Complete || batch.Through.IsZero() {
 		return ErrDeferred
 	}
-	if err := s.CaptureCommands(ctx, batch.Scope, batch.Commands, batch.Through, true); err != nil {
-		return err
-	}
-	for _, r := range batch.Requests {
-		if r.CreatedAt.After(batch.Through) {
-			return ErrDeferred
-		}
-		if err := s.RecordRequest(ctx, batch.Scope, r, true); err != nil && !errors.Is(err, ErrIgnored) {
+	ordered := append([]CommandEvent{}, batch.Commands...)
+	sortCommands(ordered)
+	return s.update(ctx, func(d *DurableState) error {
+		pr, err := prRecord(d, batch.Scope)
+		if err != nil {
 			return err
 		}
-	}
-	return nil
+		wasPaused := pr.Paused
+		pausedRequest := pr.PauseRequestID
+		if err = applyCommands(d, batch.Scope, ordered, batch.Through); err != nil {
+			return err
+		}
+		for _, r := range batch.Requests {
+			if r.CreatedAt.After(batch.Through) {
+				return ErrDeferred
+			}
+			if r.RequesterID != OwnerID {
+				continue
+			}
+			if err = applyRequest(d, batch.Scope, r); err != nil {
+				return err
+			}
+		}
+		if wasPaused && pr.CurrentRequest != 0 && pr.CurrentRequest != pausedRequest {
+			safe := true
+			var latest NativeRequest
+			for _, r := range pr.Requests {
+				if r.ID == pr.CurrentRequest {
+					latest = r
+				}
+			}
+			if latest.Removed || latest.ID == 0 {
+				safe = false
+			}
+			for _, r := range pr.Requests {
+				if r.ID != latest.ID && !r.CreatedAt.Before(latest.CreatedAt) {
+					safe = false
+				}
+			}
+			for _, w := range d.Writes {
+				if w.Scope == batch.Scope && (w.State == "unknown" || w.State == "dispatched" || w.State == "postcheck_pending" || w.State == "annotation_pending") {
+					safe = false
+				}
+			}
+			if safe {
+				pr.Paused = false
+				pr.PauseRequestID = 0
+			}
+		}
+		return nil
+	})
 }
 
 // RunStopped composes durable phase reservations and Engine. Underlying drivers

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -13,8 +14,11 @@ import (
 // implementation or credential acquisition is supplied in this offline module.
 // Scan must exhaust pagination; hashes cover the entire normalized document,
 // including inline comments. Caller-provided markers alone are never receipts.
+// History is complete post-POST native event history, not merely pending users.
+// Annotate must idempotently update the known review, never append new comments.
 type Remote interface {
 	Current(context.Context, Scope) (RemoteState, error)
+	History(context.Context, Scope) (Discovery, error)
 	Post(context.Context, WriteIntent) (RemoteReceipt, error)
 	Scan(context.Context, Scope, string) ([]RemoteReceipt, bool, error)
 	Annotate(context.Context, Scope, int64, string) error
@@ -40,6 +44,11 @@ func (p Publisher) now() time.Time {
 func redactDocument(doc Document, secrets []string) Document {
 	doc.Inline = append([]InlineComment{}, doc.Inline...)
 	values := append([]string{}, secrets...)
+	for _, secret := range secrets {
+		if secret != "" {
+			values = append(values, safeText(secret), url.PathEscape(secret), url.QueryEscape(secret))
+		}
+	}
 	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
 	redact := func(s string) string {
 		for _, secret := range values {
@@ -98,7 +107,7 @@ func (p Publisher) confirm(ctx context.Context, id string, receipt RemoteReceipt
 		if w == nil || !validateReceipt(*w, receipt, d.Enrollment.BotID) {
 			return errors.New("untrusted remote receipt")
 		}
-		if w.State == "confirmed" {
+		if w.State == "confirmed" || w.State == "postcheck_pending" || w.State == "annotation_pending" {
 			if w.ReceiptID != receipt.ID {
 				return ErrDeferred
 			}
@@ -111,12 +120,12 @@ func (p Publisher) confirm(ctx context.Context, id string, receipt RemoteReceipt
 		if w.Kind == "ack" {
 			for _, command := range pr.Commands {
 				if command.WriteID == id {
-					if !receipt.CreatedAt.After(command.CreatedAt) {
+					if receipt.CreatedAt.Before(command.CreatedAt) {
 						return ErrDeferred
 					}
 					if command.Command.Action == "configure" || command.Command.Action == "reset" {
 						last := pr.Configs[len(pr.Configs)-1]
-						if command.Version != last.Version+1 || !receipt.CreatedAt.After(last.EffectiveAt) {
+						if command.Version != last.Version+1 || receipt.CreatedAt.Before(last.EffectiveAt) {
 							return ErrDeferred
 						}
 						pr.Configs = append(pr.Configs, ConfigRecord{command.Version, command.Config, receipt.CreatedAt})
@@ -125,7 +134,11 @@ func (p Publisher) confirm(ctx context.Context, id string, receipt RemoteReceipt
 			}
 		}
 		w.State = "confirmed"
+		if w.Kind == "review" {
+			w.State = "postcheck_pending"
+		}
 		w.ReceiptID = receipt.ID
+		w.ReceiptTime = receipt.CreatedAt
 		return nil
 	})
 }
@@ -137,6 +150,9 @@ func (p Publisher) Reconcile(ctx context.Context, id string) error {
 	w := d.Writes[id]
 	if w == nil || !d.Enrollment.accepts(w.Scope) {
 		return ErrIgnored
+	}
+	if w.State == "postcheck_pending" || w.State == "annotation_pending" {
+		return p.postcheck(ctx, *w, w.ReceiptID)
 	}
 	if w.State != "unknown" && w.State != "dispatched" {
 		return ErrDeferred
@@ -237,6 +253,16 @@ func (p Publisher) markStale(ctx context.Context, w WriteIntent, current RemoteS
 	err := p.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
 		pr := d.PRs[w.Scope.key()]
 		pr.Paused = true
+		pr.PauseRequestID = pr.CurrentRequest
+		var latest NativeRequest
+		for _, request := range pr.Requests {
+			if request.CreatedAt.After(latest.CreatedAt) {
+				latest = request
+			}
+		}
+		if latest.ID != 0 {
+			pr.PauseRequestID = latest.ID
+		}
 		// Preserve B locally even when publishing A cleared its native pending state.
 		// A can never fulfill B. Complete trusted discovery must later reconcile it.
 		if current.Request.ID != 0 && current.Request.ID != w.RequestID && current.Request.RequesterID == OwnerID && current.Request.BotID == d.Enrollment.BotID {
@@ -255,8 +281,11 @@ func (p Publisher) markStale(ctx context.Context, w WriteIntent, current RemoteS
 		target := d.Writes[w.ID]
 		if target.State == "prepared" {
 			target.State = "stale"
-		} else if target.State == "confirmed" {
+		} else if target.State == "confirmed" || target.State == "postcheck_pending" || target.State == "annotation_pending" {
 			target.State = "superseded"
+			if current.Access {
+				target.State = "annotation_pending"
+			}
 		}
 		for _, j := range d.Jobs {
 			if Digest(j.Job) == w.JobHash {
@@ -271,25 +300,64 @@ func (p Publisher) markStale(ctx context.Context, w WriteIntent, current RemoteS
 	return fmt.Errorf("%w: %s", ErrDeferred, reason)
 }
 func (p Publisher) postcheck(ctx context.Context, w WriteIntent, receiptID int64) error {
+	saved, err := p.Store.Snapshot(ctx)
+	if err != nil {
+		return err
+	}
+	if target := saved.Writes[w.ID]; target != nil {
+		w = *target
+	} else {
+		return ErrDeferred
+	}
 	current, err := p.Remote.Current(ctx, w.Scope)
 	if err != nil {
 		return err
+	}
+	if current.Access {
+		history, historyErr := p.Remote.History(ctx, w.Scope)
+		if historyErr != nil {
+			return historyErr
+		}
+		if history.Scope != w.Scope || !history.Complete || history.Through.Before(w.ReceiptTime) {
+			return ErrDeferred
+		}
+		if err = p.Store.Discover(ctx, history); err != nil {
+			return err
+		}
+		current, err = p.Remote.Current(ctx, w.Scope)
+		if err != nil {
+			return err
+		}
 	}
 	d, err := p.Store.Snapshot(ctx)
 	if err != nil {
 		return err
 	}
 	pr := d.PRs[w.Scope.key()]
-	// GitHub may remove A's pending request on successful completion. Absence is
-	// acceptable only when local history still names A and its generation.
+	// Absence is accepted only after complete post-POST request history. B may
+	// have appeared and been cleared without ever being in the local poll cache.
 	sameRequest := current.Request.ID == 0 || (current.Request.ID == w.RequestID && current.Request.RequesterID == OwnerID && current.Request.BotID == d.Enrollment.BotID)
 	valid := current.Access && current.Open && current.Snapshot == w.Snapshot && sameRequest && !pr.Paused && pr.Generation == w.Generation && pr.CurrentRequest == w.RequestID
 	if valid {
-		return nil
+		return p.Store.update(ctx, func(d *DurableState) error {
+			target := d.Writes[w.ID]
+			if target.State != "postcheck_pending" {
+				return ErrDeferred
+			}
+			pr := d.PRs[w.Scope.key()]
+			if pr.Paused || pr.Generation != w.Generation || pr.CurrentRequest != w.RequestID {
+				return ErrFenced
+			}
+			target.State = "confirmed"
+			return nil
+		})
 	}
 	staleErr := p.markStale(ctx, w, current, "snapshot, access or request changed during publication")
 	if current.Access {
 		if err = p.Remote.Annotate(ctx, w.Scope, receiptID, "Superseded SFL snapshot review. This review does not fulfill a later request. Reconciliation is required."); err != nil {
+			return errors.Join(staleErr, err)
+		}
+		if err = p.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error { d.Writes[w.ID].State = "superseded"; return nil }); err != nil {
 			return errors.Join(staleErr, err)
 		}
 	}

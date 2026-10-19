@@ -3,6 +3,7 @@ package reviewer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,14 +58,18 @@ func writes(t *testing.T, s *Store, kind string) []WriteIntent {
 }
 
 type fakeRemote struct {
-	state              RemoteState
-	receipts           []RemoteReceipt
-	complete           bool
-	posts, annotations int
-	post               func(WriteIntent) (RemoteReceipt, error)
+	state                                 RemoteState
+	receipts                              []RemoteReceipt
+	complete                              bool
+	posts, annotations                    int
+	post                                  func(WriteIntent) (RemoteReceipt, error)
+	history                               []NativeRequest
+	currentErr, historyErr, annotationErr error
 }
 
-func (f *fakeRemote) Current(context.Context, Scope) (RemoteState, error) { return f.state, nil }
+func (f *fakeRemote) Current(context.Context, Scope) (RemoteState, error) {
+	return f.state, f.currentErr
+}
 func (f *fakeRemote) Post(_ context.Context, w WriteIntent) (RemoteReceipt, error) {
 	f.posts++
 	if f.post != nil {
@@ -79,7 +84,17 @@ func (f *fakeRemote) Scan(context.Context, Scope, string) ([]RemoteReceipt, bool
 }
 func (f *fakeRemote) Annotate(context.Context, Scope, int64, string) error {
 	f.annotations++
-	return nil
+	return f.annotationErr
+}
+func (f *fakeRemote) History(_ context.Context, scope Scope) (Discovery, error) {
+	requests := f.history
+	if requests == nil {
+		requests = []NativeRequest{}
+		if f.state.Request.ID != 0 {
+			requests = append(requests, f.state.Request)
+		}
+	}
+	return Discovery{Scope: scope, Requests: requests, Through: controlTime.Add(9 * time.Minute), Complete: f.complete}, f.historyErr
 }
 func liveFake(r NativeRequest) *fakeRemote {
 	return &fakeRemote{state: RemoteState{true, true, r.Snapshot, r}, complete: true}
@@ -482,5 +497,186 @@ func TestInvalidOwnerCommandCannotPoisonDiscovery(t *testing.T) {
 	p := d.PRs[alphaScope().key()]
 	if len(p.Commands) != 2 || p.Commands[0].Command.Action != "reject" || p.Commands[1].Config.Mode != CodexOnly || p.Commands[1].Version != 2 {
 		t.Fatal("invalid command poisoned following configuration", p)
+	}
+}
+
+func TestDiscoveryIsAtomicAndRemovedLatestFencesOldWork(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	before, _ := s.Snapshot(ctx)
+	event := commandEvent(4, "/sfl config mode=codex-only", controlTime.Add(4*time.Minute))
+	bad := native(0, controlTime.Add(5*time.Minute))
+	err := s.Discover(ctx, Discovery{Scope: alphaScope(), Commands: []CommandEvent{event}, Requests: []NativeRequest{bad}, Through: controlTime.Add(6 * time.Minute), Complete: true})
+	after, _ := s.Snapshot(ctx)
+	if err == nil || Digest(before) != Digest(after) {
+		t.Fatal("partial discovery batch committed", err)
+	}
+	removed := native(2, controlTime.Add(4*time.Minute))
+	removed.Removed = true
+	if err = s.Discover(ctx, Discovery{Scope: alphaScope(), Requests: []NativeRequest{removed}, Through: controlTime.Add(6 * time.Minute), Complete: true}); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := s.Snapshot(ctx)
+	p := d.PRs[alphaScope().key()]
+	if p.CurrentRequest != 0 || p.Generation <= job.Generation {
+		t.Fatal("removed latest left older job current", p)
+	}
+	if _, err = s.Claim(ctx, job.ID, controlTime.Add(7*time.Minute)); !errors.Is(err, ErrFenced) {
+		t.Fatal("old job still runnable", err)
+	}
+}
+func TestBeforeWorkRefundRemovesItsDailyCharge(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	engine := testEngine(t, func(context.Context, Session) (Report, error) {
+		return Report{}, PhaseError{State: "quota_wait", BeforeWork: true}
+	})
+	out, err := s.RunStopped(ctx, job.ID, engine, func() time.Time { return now })
+	if err == nil || out.State != "quota_wait" {
+		t.Fatal(out, err)
+	}
+	d, _ := s.Snapshot(ctx)
+	if d.Jobs[job.ID].Checkpoint.ConsumedSessions != 0 || len(d.Jobs[job.ID].ChargeDays) != 0 {
+		t.Fatal("before-work failure retained daily charge")
+	}
+	if _, err = s.Claim(ctx, job.ID, now); err != nil {
+		t.Fatal("refunded job could not resume", err)
+	}
+}
+func TestPostPublicationChecksAndAnnotationRemainRetryable(t *testing.T) {
+	for _, annotation := range []bool{false, true} {
+		t.Run(fmt.Sprint(annotation), func(t *testing.T) {
+			s, out, remote := completeFixture(t)
+			ctx := context.Background()
+			p := Publisher{Store: s, Remote: remote}
+			intent, err := p.Prepare(ctx, out, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			remote.post = func(w WriteIntent) (RemoteReceipt, error) {
+				if annotation {
+					remote.state.Snapshot.Base = strings.Repeat("f", 40)
+					remote.annotationErr = errors.New("annotation response lost")
+				} else {
+					remote.currentErr = errors.New("transient postcheck read")
+				}
+				return RemoteReceipt{55, 9003, w.Marker, w.BodyHash, controlTime.Add(6 * time.Minute)}, nil
+			}
+			if err = p.Dispatch(ctx, intent.ID); err == nil {
+				t.Fatal("injected recovery failure ignored")
+			}
+			d, _ := s.Snapshot(ctx)
+			expected := "postcheck_pending"
+			if annotation {
+				expected = "annotation_pending"
+			}
+			if d.Writes[intent.ID].State != expected {
+				t.Fatal("lost retry state", d.Writes[intent.ID].State)
+			}
+			remote.currentErr = nil
+			remote.annotationErr = nil
+			err = p.Reconcile(ctx, intent.ID)
+			if annotation {
+				if !errors.Is(err, ErrDeferred) {
+					t.Fatal(err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			d, _ = s.Snapshot(ctx)
+			expected = "confirmed"
+			if annotation {
+				expected = "superseded"
+			}
+			if d.Writes[intent.ID].State != expected || remote.posts != 1 {
+				t.Fatal("postcheck did not recover safely", d.Writes[intent.ID].State, remote.posts)
+			}
+		})
+	}
+}
+func TestPostHistoryFindsBThatWasNeverLocallyObserved(t *testing.T) {
+	s, out, remote := completeFixture(t)
+	ctx := context.Background()
+	p := Publisher{Store: s, Remote: remote}
+	intent, err := p.Prepare(ctx, out, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote.post = func(w WriteIntent) (RemoteReceipt, error) {
+		b := native(2, controlTime.Add(6*time.Minute))
+		b.Removed = true
+		remote.history = []NativeRequest{native(1, controlTime.Add(time.Minute)), b}
+		remote.state.Request = NativeRequest{}
+		return RemoteReceipt{56, 9003, w.Marker, w.BodyHash, controlTime.Add(7 * time.Minute)}, nil
+	}
+	if err = p.Dispatch(ctx, intent.ID); !errors.Is(err, ErrDeferred) {
+		t.Fatal("unobserved B disappeared silently", err)
+	}
+	d, _ := s.Snapshot(ctx)
+	pr := d.PRs[alphaScope().key()]
+	if !pr.Paused || pr.PauseRequestID != 2 || len(pr.Requests) != 2 {
+		t.Fatal("B history not retained", pr)
+	}
+	// A later unambiguous fresh owner request can recover the paused PR.
+	c := native(3, controlTime.Add(10*time.Minute))
+	if err = s.Discover(ctx, Discovery{Scope: alphaScope(), Requests: []NativeRequest{c}, Through: controlTime.Add(11 * time.Minute), Complete: true}); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = s.Snapshot(ctx)
+	pr = d.PRs[alphaScope().key()]
+	if pr.Paused || pr.CurrentRequest != 3 {
+		t.Fatal("reconciled fresh request cannot recover", pr)
+	}
+}
+func TestKnownSecretsAreRedactedAfterRenderingTransforms(t *testing.T) {
+	for _, secret := range []string{"sensitive_secret", "a<b&c", "secret with spaces", "path/with?query"} {
+		doc := Document{Summary: safeText(secret) + " " + secret, Inline: []InlineComment{{"source.go", 1, safeText(secret)}}}
+		redacted := redactDocument(doc, []string{secret})
+		if strings.Contains(redacted.Summary, secret) || strings.Contains(redacted.Summary, safeText(secret)) || strings.Contains(redacted.Inline[0].Body, safeText(secret)) {
+			t.Fatal("rendered encoding leaked known secret", secret)
+		}
+	}
+}
+
+func TestResumedDailyCapKeepsQuotaWaitRetryable(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	firstDay := controlTime.Add(4 * time.Minute)
+	engine := testEngine(t, func(_ context.Context, session Session) (Report, error) {
+		if session.Identity.Provider == Claude {
+			return Report{}, PhaseError{State: "quota_wait", BeforeWork: true}
+		}
+		return protocolReport(session), nil
+	})
+	if out, err := s.RunStopped(ctx, job.ID, engine, func() time.Time { return firstDay }); err == nil || out.ConsumedSessions != 1 {
+		t.Fatal("partial fixture", out, err)
+	}
+	// Four independent jobs on other PRs consume the next day's quota.
+	nextDay := controlTime.Add(24*time.Hour + 2*time.Minute)
+	for i := 2; i <= 5; i++ {
+		scope := alphaScope()
+		scope.PR = i
+		r := native(int64(i), controlTime.Add(24*time.Hour))
+		r.Snapshot.PR = i
+		if err := s.Discover(ctx, Discovery{Scope: scope, Requests: []NativeRequest{r}, Through: nextDay, Complete: true}); err != nil {
+			t.Fatal(err)
+		}
+		b, err := s.Admit(ctx, scope, r.ID, job.Release, "evidence", nextDay)
+		if err != nil {
+			t.Fatal(err)
+		}
+		successful := testEngine(t, func(_ context.Context, session Session) (Report, error) { return protocolReport(session), nil })
+		if _, err = s.RunStopped(ctx, b.ID, successful, func() time.Time { return nextDay }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := s.RunStopped(ctx, job.ID, engine, func() time.Time { return nextDay })
+	if err == nil || out.State != "quota_wait" || out.ConsumedSessions != 1 {
+		t.Fatal("resumed quota changed to outage", out, err)
+	}
+	d, _ := s.Snapshot(ctx)
+	if d.Jobs[job.ID].State != "quota_wait" {
+		t.Fatal("job permanently non-claimable")
 	}
 }

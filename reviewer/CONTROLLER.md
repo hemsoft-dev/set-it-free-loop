@@ -78,3 +78,18 @@ concurrent SQLite handles, crash session accounting, lease expiration, stale
 base, cancel fencing and the adverse A/B outcome. These are simulated transport
 results. They do not establish subscription support, official-client confinement,
 App picker eligibility, actual GitHub rendering or a successful live alpha.
+
+Complete `Discover` batches commit commands, native events and the cutoff in one
+SQLite transaction. A newly discovered latest request that is already removed
+still fences older work. After publication, the transport must retrieve complete
+native history through at least the receipt timestamp, including requests that
+appeared and disappeared between polls. A currently empty reviewer list alone
+cannot prove there was no B request. A fresh unambiguous owner request can clear
+a reconciled pause after pending writes/checks finish.
+
+Accepted review receipts enter `postcheck_pending`; transient reads retain that
+state for `Reconcile`. Supersession annotations use `annotation_pending` and an
+idempotent update of the known review ID. They never append a new review/comment.
+A trusted before-work failure refunds both the session and any day charge first
+introduced by that attempt. A resumed job hitting the daily cap remains in
+`quota_wait`. Final secret redaction covers raw and rendered encodings.
