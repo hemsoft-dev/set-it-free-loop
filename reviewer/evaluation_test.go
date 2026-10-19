@@ -37,9 +37,10 @@ func syntheticResults(c EvaluationCorpus, p EvaluationPlan) []EvaluationResult {
 	for caseIndex, test := range c.Cases {
 		for position, arm := range p.Order(caseIndex, 0) {
 			started := p.CreatedAt.Add(time.Duration(1+caseIndex*6+position) * 2 * time.Minute)
-			r := EvaluationResult{PacketHash: test.PacketHash, OutputBytesLimit: p.Config.Limits.OutputBytes, CaseID: test.ID, Arm: arm, CorpusHash: c.Hash(), PlanHash: p.Hash(), ReportHash: strings.Repeat("f", 64), Snapshot: test.Snapshot, StartedAt: started, State: "complete", Sessions: arm.Sessions(), Providers: arm.Schedule(), FindingIDs: []string{}, Labels: []FindingLabel{}, LabelledAt: started.Add(time.Hour), Latency: time.Minute, Queue: time.Second}
+			r := EvaluationResult{FindingStatuses: map[string]string{}, PacketHash: test.PacketHash, OutputBytesLimit: p.Config.Limits.OutputBytes, CaseID: test.ID, Arm: arm, CorpusHash: c.Hash(), PlanHash: p.Hash(), ReportHash: strings.Repeat("f", 64), Snapshot: test.Snapshot, StartedAt: started, State: "complete", Sessions: arm.Sessions(), Providers: arm.Schedule(), FindingIDs: []string{}, Labels: []FindingLabel{}, LabelledAt: started.Add(time.Hour), Latency: time.Minute, Queue: time.Second}
 			if !test.Clean {
 				r.FindingIDs = []string{"f1"}
+				r.FindingStatuses["f1"] = "unverified"
 				r.Labels = []FindingLabel{{"f1", true, []string{"d1"}, OwnerID, "synthetic actionability only"}}
 			}
 			results = append(results, r)
@@ -79,6 +80,7 @@ func TestEvaluationFailuresStayInRecallAndCleanDenominators(t *testing.T) {
 		if r.Arm == ArmAdversarial && (r.CaseID == "synthetic-0" || r.CaseID == "synthetic-10") {
 			r.State = "quota_wait"
 			r.FindingIDs = []string{}
+			r.FindingStatuses = map[string]string{}
 			r.Labels = []FindingLabel{}
 			r.Sessions = 0
 			r.Providers = []Provider{}
@@ -326,5 +328,61 @@ func TestCommonFrozenOutputCapAcrossAllArms(t *testing.T) {
 	}), engine.Reader)
 	if err == nil || out.State != "invalid_output" {
 		t.Fatal("invalid control output misclassified", out, err)
+	}
+}
+
+func TestFinalSelfCritiqueCannotIntroduceUnexaminedAllegations(t *testing.T) {
+	job := testJob()
+	job.Config.Mode = CodexOnly
+	job.Config.Limits.OutputBytes = EvaluationOutputBytes
+	engine := testEngine(t, nil)
+	out, err := RunSelfCritique(context.Background(), job, Codex, controlFunc(func(_ context.Context, s ControlSession) (ControlReport, error) {
+		r := fakeControl(s)
+		if s.Step == 4 {
+			finding := testFinding(Codex)
+			finding.ID = "codex-late"
+			r.Findings = []Finding{finding}
+		}
+		return r, nil
+	}), engine.Reader)
+	if err == nil || out.State != "invalid_output" || len(out.Ledger) != 0 || out.ConsumedSessions != 4 {
+		t.Fatal("late unexamined control finding accepted", out, err)
+	}
+}
+func TestEvaluationCountersFollowLedgerAndRetainTurnUsage(t *testing.T) {
+	c := syntheticCorpus()
+	p := syntheticPlan(c)
+	runs := syntheticResults(c, p)
+	runs[0].Corroborated = 1
+	if _, err := ScoreEvaluation(c, p, runs); err == nil {
+		t.Fatal("empty ledger fabricated corroboration")
+	}
+	runs = syntheticResults(c, p)
+	for i := range runs {
+		runs[i].TurnsKnown = true
+		runs[i].Turns = runs[i].Sessions * 2
+	}
+	score, err := ScoreEvaluation(c, p, runs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, arm := range score.Arms {
+		if arm.Turns != 20*arm.Arm.Sessions()*2 || arm.TurnsUnknown != 0 {
+			t.Fatal("turn totals lost", arm)
+		}
+	}
+	// Withdrawn IDs remain auditable but do not inflate active precision counts.
+	runs = syntheticResults(c, p)
+	for i := range runs {
+		if runs[i].CaseID == "synthetic-10" && runs[i].Arm == ArmAdversarial {
+			runs[i].FindingStatuses["f1"] = "retracted"
+			runs[i].Concessions = 1
+			runs[i].Labels[0].Actionable = false
+			runs[i].Labels[0].DefectIDs = []string{}
+		}
+	}
+	score, err = ScoreEvaluation(c, p, runs)
+	if err != nil || score.Arms[0].Precision.Denominator != 9 || score.Arms[0].Concessions != 1 || score.Arms[0].TurnsUnknown != 20 {
+		t.Fatal("withdrawals or unknown turn usage scored incorrectly", score, err)
 	}
 }

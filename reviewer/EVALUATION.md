@@ -110,3 +110,16 @@ one material defect. The scorer checks actual start-time chronology against the
 frozen arm rotation, rejects substantive counters on failed runs and rejects
 peer-corroboration counters from any arm without peer examination. Descriptive
 cross-arm deltas and provisional-goal results accompany the mandatory stop gate.
+
+The final self-critique session cannot introduce new allegations, because no
+session remains to examine them. Earlier control additions must receive an
+explicit disposition or withdrawal in a later session. Record this control
+restriction alongside production adversarial mode's permitted late findings.
+
+Retain a status for every ledger finding ID and derive corroboration, dispute
+and concession counters from those statuses. Withdrawn IDs stay auditable and
+receive no active precision/recall credit. Clean-control success remains strict:
+any retained allegation, including a withdrawal, fails that case's clean metric.
+Record actual provider turns and their availability separately from tokens;
+unknown turns never become a zero-turn success. Aggregate turns and unknown-run
+counts per arm alongside sessions and token usage.

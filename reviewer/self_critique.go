@@ -94,6 +94,10 @@ func RunSelfCritique(ctx context.Context, job Job, provider Provider, worker Con
 			cancel()
 			return fail(err)
 		}
+		if step == 4 && len(report.Findings) > 0 {
+			cancel()
+			return fail(errors.New("final self-critique cannot introduce unexamined allegations"))
+		}
 		raw, err := json.Marshal(report)
 		if err == nil {
 			report, err = DecodeStrict[ControlReport](raw, limits.OutputBytes)

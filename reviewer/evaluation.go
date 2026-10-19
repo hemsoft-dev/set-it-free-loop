@@ -176,6 +176,9 @@ type FindingLabel struct {
 	Rationale  string
 }
 type EvaluationResult struct {
+	FindingStatuses                     map[string]string
+	Turns                               int
+	TurnsKnown                          bool
 	PacketHash                          string
 	OutputBytesLimit                    int
 	CaseID                              string
@@ -219,6 +222,7 @@ func fraction(n, d int) Fraction {
 }
 
 type ArmScore struct {
+	Turns, TurnsUnknown                                    int
 	ProvisionalGoalsMet                                    bool
 	Arm                                                    EvaluationArm
 	Precision, Recall, CleanSuccess                        Fraction
@@ -280,7 +284,7 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 	for _, run := range results {
 		test, ok := cases[run.CaseID]
 		key := fmt.Sprintf("%s/%s/%d", run.CaseID, run.Arm, run.Repeat)
-		if !ok || run.Arm.Sessions() == 0 || seen[key] || run.Repeat < 0 || run.Repeat >= p.Repeats || run.CorpusHash != c.Hash() || run.PlanHash != p.Hash() || run.Snapshot != test.Snapshot || run.PacketHash != test.PacketHash || run.OutputBytesLimit != p.Config.Limits.OutputBytes || !run.StartedAt.After(p.CreatedAt) || run.Latency < 0 || run.Queue < 0 || run.InputTokens < 0 || run.OutputTokens < 0 || run.Corroborated < 0 || run.Disputed < 0 || run.Concessions < 0 {
+		if !ok || run.Arm.Sessions() == 0 || seen[key] || run.Repeat < 0 || run.Repeat >= p.Repeats || run.CorpusHash != c.Hash() || run.PlanHash != p.Hash() || run.Snapshot != test.Snapshot || run.PacketHash != test.PacketHash || run.OutputBytesLimit != p.Config.Limits.OutputBytes || !run.StartedAt.After(p.CreatedAt) || run.Latency < 0 || run.Queue < 0 || run.InputTokens < 0 || run.OutputTokens < 0 || run.Corroborated < 0 || run.Disputed < 0 || run.Concessions < 0 || run.Turns < 0 || (run.TurnsKnown && run.Turns > p.Config.Limits.MaxTurns*run.Sessions) {
 			return score, errors.New("invalid/duplicate run or changed evaluation provenance")
 		}
 		seen[key] = true
@@ -318,6 +322,29 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 			}
 			ids[id] = true
 		}
+		if len(run.FindingStatuses) != len(ids) {
+			return score, errors.New("every retained finding needs one ledger status")
+		}
+		corroborated, disputed, retracted := 0, 0, 0
+		for id, status := range run.FindingStatuses {
+			if !ids[id] {
+				return score, errors.New("status refers to unknown finding")
+			}
+			switch status {
+			case "corroborated":
+				corroborated++
+			case "disputed":
+				disputed++
+			case "retracted":
+				retracted++
+			case "unverified":
+			default:
+				return score, errors.New("invalid retained finding status")
+			}
+		}
+		if run.Corroborated != corroborated || run.Disputed != disputed || run.Concessions != retracted {
+			return score, errors.New("ledger counters differ from retained finding statuses")
+		}
 		if len(run.Labels) != len(ids) {
 			return score, errors.New("every reported finding requires human actionability judgment")
 		}
@@ -332,6 +359,9 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 				return score, errors.New("invalid human actionability label")
 			}
 			labels[label.FindingID] = true
+			if run.FindingStatuses[label.FindingID] == "retracted" && label.Actionable {
+				return score, errors.New("withdrawn allegation cannot count as an actionable prediction")
+			}
 			if label.Actionable && len(label.DefectIDs) == 0 {
 				return score, errors.New("actionable finding requires ground-truth match")
 			}
@@ -382,7 +412,11 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 				}
 			} else {
 				a.Completed++
-				predicted += len(run.FindingIDs)
+				for _, status := range run.FindingStatuses {
+					if status != "retracted" {
+						predicted++
+					}
+				}
 				test := cases[run.CaseID]
 				if test.Clean && len(run.FindingIDs) == 0 {
 					cleanOK++
@@ -405,6 +439,11 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 				}
 				latencies = append(latencies, run.Latency)
 				queues = append(queues, run.Queue)
+			}
+			if !run.TurnsKnown {
+				a.TurnsUnknown++
+			} else {
+				a.Turns += run.Turns
 			}
 			if !run.UsageKnown {
 				a.UsageUnknown++

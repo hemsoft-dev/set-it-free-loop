@@ -93,3 +93,9 @@ idempotent update of the known review ID. They never append a new review/comment
 A trusted before-work failure refunds both the session and any day charge first
 introduced by that attempt. A resumed job hitting the daily cap remains in
 `quota_wait`. Final secret redaction covers raw and rendered encodings.
+
+A crash after the final phase and before outbox preparation can recover through
+`RecoverCompleted`. It reconstructs the deterministic outcome using cached
+validated reports, supplies no provider workers and repeats immutable source
+validation. Publication compares the proposed ledger with those durable reports;
+a caller cannot replace allegations while retaining genuine phase receipts.

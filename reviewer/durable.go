@@ -815,3 +815,18 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 	}
 	return out, runErr
 }
+
+// RecoverCompleted reconstructs a completed outcome after a crash before outbox
+// preparation. It supplies no provider workers, so only validated cached phases
+// can be used. Source validation is repeated against the immutable snapshot.
+func (s *Store) RecoverCompleted(ctx context.Context, id string, source func(Snapshot) (*Reader, error)) (Outcome, error) {
+	d, err := s.Snapshot(ctx)
+	if err != nil {
+		return Outcome{}, err
+	}
+	j := d.Jobs[id]
+	if j == nil || j.LeaseToken != "" || j.Outstanding || (j.State != "dual_complete" && j.State != "single_complete") || len(j.Checkpoint.Artifacts) != j.Job.Config.MaxSessions() {
+		return Outcome{}, ErrDeferred
+	}
+	return (Engine{Reader: source}).Run(ctx, j.Job, j.Checkpoint)
+}

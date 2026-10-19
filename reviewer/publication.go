@@ -90,6 +90,13 @@ func (p Publisher) Prepare(ctx context.Context, out Outcome, diff map[string]map
 		if j.State != out.State || Digest(j.Checkpoint) != Digest(out.Checkpoint()) {
 			return errors.New("outcome is not the persisted completion")
 		}
+		reports := make([]Report, 0, len(j.Checkpoint.Artifacts))
+		for _, artifact := range j.Checkpoint.Artifacts {
+			reports = append(reports, artifact.Report)
+		}
+		if Digest(buildLedger(reports, j.Job.Config.Mode)) != Digest(out.Ledger) {
+			return errors.New("publication ledger differs from validated durable reports")
+		}
 		for _, w := range d.Writes {
 			if w.Kind == "review" && w.JobHash == Digest(out.Job) {
 				intent = *w

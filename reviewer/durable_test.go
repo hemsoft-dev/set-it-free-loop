@@ -734,3 +734,22 @@ func TestCancelledWorkerDoesNotReportAnOutageOrConsumeBeforeWork(t *testing.T) {
 		t.Fatal("cancel consumed inference budget")
 	}
 }
+
+func TestCrashAfterCompletionRecoversWithoutProviderWork(t *testing.T) {
+	s, out, remote := completeFixture(t)
+	ctx := context.Background()
+	source := testEngine(t, nil).Reader
+	recovered, err := s.RecoverCompleted(ctx, out.Job.ID, source)
+	if err != nil || recovered.ExecutedSessions != 0 || recovered.State != out.State || Digest(recovered.Ledger) != Digest(out.Ledger) {
+		t.Fatal("completed crash gap cannot recover", recovered, err)
+	}
+	publisher := Publisher{Store: s, Remote: remote}
+	if _, err = publisher.Prepare(ctx, recovered, nil); err != nil {
+		t.Fatal("recovered completion not publishable", err)
+	}
+	// A caller cannot replace the deterministic ledger while retaining real reports.
+	recovered.Ledger[0].Finding.Body = "forged allegation"
+	if _, err = publisher.Prepare(ctx, recovered, nil); err == nil {
+		t.Fatal("forged ledger accepted")
+	}
+}
