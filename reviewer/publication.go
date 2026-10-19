@@ -46,7 +46,11 @@ func redactDocument(doc Document, secrets []string) Document {
 	values := append([]string{}, secrets...)
 	for _, secret := range secrets {
 		if secret != "" {
-			values = append(values, safeText(secret), url.PathEscape(secret), url.QueryEscape(secret))
+			segments := strings.Split(secret, "/")
+			for i := range segments {
+				segments[i] = url.PathEscape(segments[i])
+			}
+			values = append(values, safeText(secret), url.PathEscape(secret), url.QueryEscape(secret), strings.Join(segments, "/"))
 		}
 	}
 	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })

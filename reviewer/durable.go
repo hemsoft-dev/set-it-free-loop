@@ -59,15 +59,16 @@ type CommandRecord struct {
 	WriteID   string
 }
 type PRRecord struct {
-	Scope          Scope
-	Generation     int64
-	Paused         bool
-	HistoryThrough time.Time
-	PauseRequestID int64
-	Configs        []ConfigRecord
-	Commands       []CommandRecord
-	Requests       []NativeRequest
-	CurrentRequest int64
+	Scope            Scope
+	Generation       int64
+	Paused           bool
+	HistoryThrough   time.Time
+	PauseRequestID   int64
+	CancelledThrough time.Time
+	Configs          []ConfigRecord
+	Commands         []CommandRecord
+	Requests         []NativeRequest
+	CurrentRequest   int64
 }
 type DurableJob struct {
 	Job             Job
@@ -323,6 +324,9 @@ func applyCommands(d *DurableState, scope Scope, ordered []CommandEvent, through
 			version++
 		}
 		if command.Action == "cancel" {
+			if event.CreatedAt.After(p.CancelledThrough) {
+				p.CancelledThrough = event.CreatedAt
+			}
 			p.Generation++
 			p.CurrentRequest = 0
 		}
@@ -405,6 +409,13 @@ func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
 	if latest.ID == r.ID {
 		p.Generation++
 		p.CurrentRequest = r.ID
+		if !r.CreatedAt.After(p.CancelledThrough) {
+			p.CurrentRequest = 0
+			if r.CreatedAt.Equal(p.CancelledThrough) {
+				p.Paused = true
+				p.PauseRequestID = r.ID
+			}
+		}
 		if r.Removed {
 			p.CurrentRequest = 0
 		}
@@ -615,6 +626,9 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, ErrFenced) {
+			return Report{}, errors.Join(context.Canceled, ErrFenced, PhaseError{State: "cancelled", BeforeWork: true})
+		}
 		return Report{}, err
 	}
 	report, err := r.Inner.Review(ctx, session)
@@ -689,6 +703,9 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 		j.Outstanding = false
 		return nil
 	})
+	if errors.Is(err, ErrFenced) {
+		return Report{}, errors.Join(context.Canceled, ErrFenced)
+	}
 	return report, err
 }
 

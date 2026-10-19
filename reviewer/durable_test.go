@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -630,10 +631,14 @@ func TestPostHistoryFindsBThatWasNeverLocallyObserved(t *testing.T) {
 	}
 }
 func TestKnownSecretsAreRedactedAfterRenderingTransforms(t *testing.T) {
-	for _, secret := range []string{"sensitive_secret", "a<b&c", "secret with spaces", "path/with?query"} {
-		doc := Document{Summary: safeText(secret) + " " + secret, Inline: []InlineComment{{"source.go", 1, safeText(secret)}}}
+	for _, secret := range []string{"sensitive_secret", "a<b&c", "secret with spaces", "path/with?query", "path/with spaces"} {
+		segments := strings.Split(secret, "/")
+		for i := range segments {
+			segments[i] = url.PathEscape(segments[i])
+		}
+		doc := Document{Summary: safeText(secret) + " " + secret + " " + strings.Join(segments, "/"), Inline: []InlineComment{{"source.go", 1, safeText(secret)}}}
 		redacted := redactDocument(doc, []string{secret})
-		if strings.Contains(redacted.Summary, secret) || strings.Contains(redacted.Summary, safeText(secret)) || strings.Contains(redacted.Inline[0].Body, safeText(secret)) {
+		if strings.Contains(redacted.Summary, secret) || strings.Contains(redacted.Summary, safeText(secret)) || strings.Contains(redacted.Summary, strings.Join(segments, "/")) || strings.Contains(redacted.Inline[0].Body, safeText(secret)) {
 			t.Fatal("rendered encoding leaked known secret", secret)
 		}
 	}
@@ -678,5 +683,54 @@ func TestResumedDailyCapKeepsQuotaWaitRetryable(t *testing.T) {
 	d, _ := s.Snapshot(ctx)
 	if d.Jobs[job.ID].State != "quota_wait" {
 		t.Fatal("job permanently non-claimable")
+	}
+}
+
+func TestLateDiscoveredRequestCannotUndoCancellation(t *testing.T) {
+	for _, minutes := range []int{1, 3, 4} {
+		t.Run(fmt.Sprint(minutes), func(t *testing.T) {
+			s, _ := openFixtureStore(t)
+			ctx := context.Background()
+			cancel := commandEvent(3, "/sfl cancel", controlTime.Add(3*time.Minute))
+			request := native(1, controlTime.Add(time.Duration(minutes)*time.Minute))
+			if err := s.Discover(ctx, Discovery{Scope: alphaScope(), Commands: []CommandEvent{cancel}, Requests: []NativeRequest{request}, Through: controlTime.Add(5 * time.Minute), Complete: true}); err != nil {
+				t.Fatal(err)
+			}
+			d, _ := s.Snapshot(ctx)
+			p := d.PRs[alphaScope().key()]
+			if minutes < 4 && p.CurrentRequest != 0 {
+				t.Fatal("cancelled historical request reactivated", p)
+			}
+			if minutes == 3 && !p.Paused {
+				t.Fatal("equal cancel/request time guessed")
+			}
+			if minutes == 4 && (p.CurrentRequest != 1 || p.Paused) {
+				t.Fatal("fresh request after cancel lost", p)
+			}
+		})
+	}
+}
+
+func TestCancelledWorkerDoesNotReportAnOutageOrConsumeBeforeWork(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	token, err := s.Claim(ctx, job.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustCapture(t, s, []CommandEvent{commandEvent(5, "/sfl cancel", controlTime.Add(3*time.Minute))}, now)
+	limits, _ := protocolLimits(job)
+	session, _ := NewSession(job.ID, job.Snapshot, job.Config.Hash(), Codex, 1, job.Packet, nil, nil, limits)
+	calls := 0
+	worker := DurableReviewer{Store: s, Job: job, Token: token, Now: func() time.Time { return now }, Inner: reviewFunc(func(context.Context, Session) (Report, error) { calls++; return Report{}, nil })}
+	_, err = worker.Review(ctx, session)
+	var pe PhaseError
+	if phaseState(err) != "cancelled" || !errors.As(err, &pe) || !pe.BeforeWork || calls != 0 {
+		t.Fatal("fenced job reported outage or invoked provider", err, calls)
+	}
+	d, _ := s.Snapshot(ctx)
+	if d.Jobs[job.ID].Checkpoint.ConsumedSessions != 0 {
+		t.Fatal("cancel consumed inference budget")
 	}
 }
