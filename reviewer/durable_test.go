@@ -793,3 +793,69 @@ func TestAuthRecoveryPreservesCapturedStateAndBudget(t *testing.T) {
 		t.Fatal("auth recovery failed", out, err, calls)
 	}
 }
+
+func TestClaimReturnsAtomicJobEvenWhenLaterReadIsCancelled(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	claimed, err := s.claimJob(ctx, job.ID, controlTime.Add(4*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if _, err = s.Snapshot(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatal("fault fixture did not cancel post-claim read", err)
+	}
+	if claimed.LeaseToken == "" || Digest(claimed.Job) != Digest(job) || claimed.Checkpoint.JobHash != Digest(job) {
+		t.Fatal("claim lost atomic recovery data", claimed)
+	}
+	// No worker started, and the caller retains the nonce needed to release it.
+	if err = s.ReleaseStopped(context.WithoutCancel(ctx), job.ID, claimed.LeaseToken, "queued"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Claim(context.Background(), job.ID, controlTime.Add(5*time.Minute)); err != nil {
+		t.Fatal("global lease stranded", err)
+	}
+}
+func TestLocalCancelRetiresPreparedOutboxWithoutPost(t *testing.T) {
+	s, out, remote := completeFixture(t)
+	ctx := context.Background()
+	publisher := Publisher{Store: s, Remote: remote}
+	intent, err := publisher.Prepare(ctx, out, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustCapture(t, s, []CommandEvent{commandEvent(9, "/sfl cancel", controlTime.Add(3*time.Minute))}, controlTime.Add(4*time.Minute))
+	if err = publisher.Dispatch(ctx, intent.ID); !errors.Is(err, ErrFenced) || remote.posts != 0 {
+		t.Fatal("cancelled dispatch", err, remote.posts)
+	}
+	d, _ := s.Snapshot(ctx)
+	if d.Writes[intent.ID].State != "stale" {
+		t.Fatal("prepared review permanently stranded")
+	}
+	if err = s.Prune(ctx, controlTime.Add(40*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = s.Snapshot(ctx)
+	if d.Jobs[out.Job.ID] != nil || d.Writes[intent.ID] != nil {
+		t.Fatal("cancelled job consumed retention slot")
+	}
+}
+func TestSupersededQueuedJobIsRetiredAndPrunable(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	b := native(2, controlTime.Add(4*time.Minute))
+	if err := s.RecordRequest(ctx, alphaScope(), b, true); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := s.Snapshot(ctx)
+	if d.Jobs[job.ID].State != "stale" {
+		t.Fatal("superseded queued job never retired")
+	}
+	if err := s.Prune(ctx, controlTime.Add(40*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = s.Snapshot(ctx)
+	if d.Jobs[job.ID] != nil {
+		t.Fatal("superseded job permanently consumes a slot")
+	}
+}

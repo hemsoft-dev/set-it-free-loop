@@ -339,6 +339,7 @@ func applyCommands(d *DurableState, scope Scope, ordered []CommandEvent, through
 		p.Commands = append(p.Commands, CommandRecord{command, event.CreatedAt, next, version, intent.ID})
 	}
 	p.HistoryThrough = through
+	retireFencedJobs(d, p)
 	return nil
 }
 
@@ -367,6 +368,7 @@ func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
 	if err != nil {
 		return err
 	}
+	defer func() { retireFencedJobs(d, p) }()
 	if r.BotID != d.Enrollment.BotID || r.ID <= 0 || r.CreatedAt.IsZero() || r.Snapshot.PR != scope.PR || r.Snapshot.RepositoryID != scope.RepositoryID {
 		return errors.New("untrusted native request")
 	}
@@ -488,7 +490,8 @@ func (s *Store) Admit(ctx context.Context, scope Scope, requestID int64, release
 
 // Claim does not steal expired leases. A qualified supervisor must prove the old
 // process stopped and call ReleaseStopped before another physical worker starts.
-func (s *Store) Claim(ctx context.Context, id string, now time.Time) (string, error) {
+func (s *Store) claimJob(ctx context.Context, id string, now time.Time) (*DurableJob, error) {
+	var captured *DurableJob
 	token := randomToken()
 	err := s.update(ctx, func(d *DurableState) error {
 		j := d.Jobs[id]
@@ -523,20 +526,26 @@ func (s *Store) Claim(ctx context.Context, id string, now time.Time) (string, er
 		j.LeaseToken = token
 		j.LeaseUntil = now.Add(j.Job.Config.Limits.Timeout)
 		j.State = "running"
+		copy := *j
+		captured = &copy
 		return nil
 	})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	d, err := s.Snapshot(ctx)
+	if captured == nil {
+		return nil, ErrDeferred
+	}
+	return captured, nil
+}
+func (s *Store) Claim(ctx context.Context, id string, now time.Time) (string, error) {
+	captured, err := s.claimJob(ctx, id, now)
 	if err != nil {
 		return "", err
 	}
-	if d.Jobs[id].LeaseToken != token {
-		return "", ErrDeferred
-	}
-	return token, nil
+	return captured.LeaseToken, nil
 }
+
 func fenced(d *DurableState, id, token string, now time.Time) (*DurableJob, error) {
 	j := d.Jobs[id]
 	if j == nil || token == "" || j.LeaseToken != token || !now.Before(j.LeaseUntil) {
@@ -563,6 +572,7 @@ func (s *Store) ReleaseStopped(ctx context.Context, id, token string, state stri
 		j.LeaseUntil = time.Time{}
 		j.Outstanding = false
 		j.State = state
+		retireFencedJobs(d, d.PRs[j.Scope.key()])
 		return nil
 	})
 }
@@ -792,15 +802,11 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 	if now == nil {
 		now = time.Now
 	}
-	token, err := s.Claim(ctx, id, now())
+	j, err := s.claimJob(ctx, id, now())
 	if err != nil {
 		return Outcome{}, err
 	}
-	d, err := s.Snapshot(ctx)
-	if err != nil {
-		return Outcome{}, err
-	}
-	j := d.Jobs[id]
+	token := j.LeaseToken
 	wrapped := Engine{Reader: engine.Reader, Reviewers: map[Provider]Reviewer{}}
 	for provider, inner := range engine.Reviewers {
 		wrapped.Reviewers[provider] = DurableReviewer{Store: s, Job: j.Job, Token: token, Inner: inner, Reader: engine.Reader, Now: now}
@@ -851,4 +857,16 @@ func (s *Store) ResumeUnavailable(ctx context.Context, id string, now time.Time)
 		j.State = "queued"
 		return nil
 	})
+}
+
+func retireFencedJobs(d *DurableState, p *PRRecord) {
+	for _, j := range d.Jobs {
+		if j.Scope == p.Scope && (j.Job.Generation != p.Generation || j.RequestID != p.CurrentRequest) {
+			if p.CurrentRequest == 0 {
+				j.State = "cancelled"
+			} else {
+				j.State = "stale"
+			}
+		}
+	}
 }

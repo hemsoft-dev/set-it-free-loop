@@ -312,7 +312,11 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 		if run.Arm != ArmAdversarial && run.Corroborated != 0 {
 			return score, errors.New("arm cannot produce peer corroboration")
 		}
-		if len(run.FindingIDs) > p.Config.Limits.MaxFindings*run.Arm.Sessions() {
+		findingPhases := run.Arm.Sessions()
+		if run.Arm == ArmCodexControl || run.Arm == ArmClaudeControl {
+			findingPhases--
+		}
+		if len(run.FindingIDs) > p.Config.Limits.MaxFindings*findingPhases {
 			return score, errors.New("result exceeds frozen finding budget")
 		}
 		ids := map[string]bool{}
@@ -329,6 +333,9 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 		for id, status := range run.FindingStatuses {
 			if !ids[id] {
 				return score, errors.New("status refers to unknown finding")
+			}
+			if (run.Arm == ArmIndependent || run.Arm == ArmCodex || run.Arm == ArmClaude) && status != "unverified" {
+				return score, errors.New("R1-only arm cannot critique or withdraw findings")
 			}
 			switch status {
 			case "corroborated":

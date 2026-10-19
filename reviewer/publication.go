@@ -217,6 +217,7 @@ func (p Publisher) Dispatch(ctx context.Context, id string) error {
 	if w.Kind == "review" && (!matchingRemote(*w, current) || current.Request.BotID != d.Enrollment.BotID) {
 		return p.markStale(ctx, *w, current, "stale before dispatch")
 	}
+	locallyFenced := false
 	err = p.Store.update(ctx, func(d *DurableState) error {
 		target := d.Writes[id]
 		if target == nil || target.State != "prepared" {
@@ -224,7 +225,15 @@ func (p Publisher) Dispatch(ctx context.Context, id string) error {
 		}
 		pr := d.PRs[target.Scope.key()]
 		if target.Kind == "review" && (pr.Paused || pr.Generation != target.Generation || pr.CurrentRequest != target.RequestID) {
-			return ErrFenced
+			target.State = "stale"
+			for _, job := range d.Jobs {
+				if Digest(job.Job) == target.JobHash && job.State != "cancelled" {
+					job.State = "stale"
+				}
+			}
+			locallyFenced = true
+			retireFencedJobs(d, pr)
+			return nil
 		}
 		if target.Kind == "ack" {
 			for _, command := range pr.Commands {
@@ -241,6 +250,9 @@ func (p Publisher) Dispatch(ctx context.Context, id string) error {
 	})
 	if err != nil {
 		return err
+	}
+	if locallyFenced {
+		return ErrFenced
 	}
 	receipt, postErr := p.Remote.Post(ctx, *w)
 	if postErr != nil || !validateReceipt(*w, receipt, d.Enrollment.BotID) {

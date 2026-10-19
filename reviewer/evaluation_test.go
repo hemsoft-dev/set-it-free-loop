@@ -386,3 +386,28 @@ func TestEvaluationCountersFollowLedgerAndRetainTurnUsage(t *testing.T) {
 		t.Fatal("withdrawals or unknown turn usage scored incorrectly", score, err)
 	}
 }
+
+func TestR1OnlyArmsCannotFabricateCritiquesOrWithdrawals(t *testing.T) {
+	c := syntheticCorpus()
+	p := syntheticPlan(c)
+	for _, arm := range []EvaluationArm{ArmIndependent, ArmCodex, ArmClaude} {
+		for _, status := range []string{"disputed", "retracted"} {
+			runs := syntheticResults(c, p)
+			for i := range runs {
+				if runs[i].CaseID == "synthetic-10" && runs[i].Arm == arm {
+					runs[i].FindingStatuses["f1"] = status
+					if status == "disputed" {
+						runs[i].Disputed = 1
+					} else {
+						runs[i].Concessions = 1
+						runs[i].Labels[0].Actionable = false
+						runs[i].Labels[0].DefectIDs = []string{}
+					}
+				}
+			}
+			if _, err := ScoreEvaluation(c, p, runs); err == nil {
+				t.Fatal("R1-only arm fabricated critique", arm, status)
+			}
+		}
+	}
+}

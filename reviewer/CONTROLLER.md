@@ -106,3 +106,10 @@ request without changing its snapshot, config, release, artifacts or consumed
 budget. It does no inference, is never called by configuration comments, and
 rejects expired/exhausted, cancelled, superseded or paused jobs. Unknown provider
 work remains charged; this recovery cannot create additional session capacity.
+
+A lease claim returns its captured job/checkpoint from the claiming transaction.
+There is no fallible post-commit read that can hide the committed lease nonce.
+`RunStopped` uses that atomic result directly. Superseded/cancelled generations
+retire their jobs while preserving any live lease for supervisor-confirmed stop.
+A prepared review caught by a local fence becomes stale without POST, so safe
+terminal jobs/intents can be pruned rather than permanently consuming queue slots.
