@@ -113,3 +113,18 @@ There is no fallible post-commit read that can hide the committed lease nonce.
 retire their jobs while preserving any live lease for supervisor-confirmed stop.
 A prepared review caught by a local fence becomes stale without POST, so safe
 terminal jobs/intents can be pruned rather than permanently consuming queue slots.
+
+An accessible closed PR also retires a prepared review without POST. Lost access
+continues to defer. Terminal invalid-output jobs become eligible for retention
+pruning; unknown writes and live leases still prevent deletion.
+
+Before-work refunds retain the outstanding phase and any newly introduced day
+charge in SQLite. They match the exact lease nonce and phase, so an expired lease
+does not prevent refunding a worker that is known to have stopped before work.
+If the refund write fails, `ErrRefundPending` preserves both errors and
+`RunStopped` keeps the lease. After storage repair, a trusted controller with
+proof of the stopped pre-work failure calls `RefundStoppedBeforeWork` using that
+nonce/provider/round, then `ReleaseStopped` with the original failure state.
+Never release or start a replacement worker while the refund remains unresolved.
+Duplicate refunds and a different phase are rejected. Unknown provider work is
+still charged. No real worker supervisor or automatic repair is supplied.

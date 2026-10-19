@@ -19,6 +19,7 @@ import (
 
 var ErrDeferred = errors.New("durable state requires reconciliation")
 var ErrFenced = errors.New("worker lease or request generation is no longer current")
+var ErrRefundPending = errors.New("before-work refund requires durable recovery before lease release")
 
 type Enrollment struct{ RepositoryID, InstallationID, AppID, BotID, OwnerID int64 }
 
@@ -71,18 +72,19 @@ type PRRecord struct {
 	CurrentRequest   int64
 }
 type DurableJob struct {
-	Job             Job
-	Scope           Scope
-	RequestID       int64
-	CreatedAt       time.Time
-	State           string
-	Checkpoint      Checkpoint
-	LeaseToken      string
-	LeaseUntil      time.Time
-	Outstanding     bool
-	AttemptProvider Provider
-	AttemptRound    int
-	ChargeDays      []string
+	Job              Job
+	Scope            Scope
+	RequestID        int64
+	CreatedAt        time.Time
+	State            string
+	Checkpoint       Checkpoint
+	LeaseToken       string
+	LeaseUntil       time.Time
+	Outstanding      bool
+	AttemptProvider  Provider
+	AttemptRound     int
+	AttemptChargeDay string
+	ChargeDays       []string
 }
 type WriteIntent struct {
 	ID, Kind                string
@@ -571,8 +573,36 @@ func (s *Store) ReleaseStopped(ctx context.Context, id, token string, state stri
 		j.LeaseToken = ""
 		j.LeaseUntil = time.Time{}
 		j.Outstanding = false
+		j.AttemptChargeDay = ""
 		j.State = state
 		retireFencedJobs(d, d.PRs[j.Scope.key()])
+		return nil
+	})
+}
+
+// RefundStoppedBeforeWork refunds only the exact outstanding attempt. The trusted
+// caller must prove that its worker stopped before doing provider work. A lease
+// is never stolen on expiry, so its nonce still authorizes this refund after
+// timeout or cancellation. After ErrRefundPending, retry this transaction after
+// repairing storage, then call ReleaseStopped; do not start another worker.
+func (s *Store) RefundStoppedBeforeWork(ctx context.Context, id, token string, provider Provider, round int) error {
+	return s.update(ctx, func(d *DurableState) error {
+		j := d.Jobs[id]
+		if j == nil || token == "" || j.LeaseToken != token || !j.Outstanding || j.AttemptProvider != provider || j.AttemptRound != round || j.Checkpoint.ConsumedSessions <= 0 {
+			return ErrFenced
+		}
+		j.Checkpoint.ConsumedSessions--
+		if j.AttemptChargeDay != "" {
+			days := []string{}
+			for _, day := range j.ChargeDays {
+				if day != j.AttemptChargeDay {
+					days = append(days, day)
+				}
+			}
+			j.ChargeDays = days
+		}
+		j.AttemptChargeDay = ""
+		j.Outstanding = false
 		return nil
 	})
 }
@@ -604,8 +634,6 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 	if session.Limits != expectedLimits || session.JobID != r.Job.ID || session.Snapshot != r.Job.Snapshot || session.ConfigHash != r.Job.Config.Hash() || session.PacketHash != Digest(r.Job.Packet) {
 		return Report{}, ErrFenced
 	}
-	chargedForAttempt := false
-	attemptDay := now().UTC().Format("2006-01-02")
 	err = r.Store.update(ctx, func(d *DurableState) error {
 		j, err := fenced(d, r.Job.ID, r.Token, now())
 		if err != nil {
@@ -615,6 +643,7 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 			return ErrFenced
 		}
 		day := now().UTC().Format("2006-01-02")
+		j.AttemptChargeDay = ""
 		if !chargedOn(j, day) {
 			count := 0
 			for _, other := range d.Jobs {
@@ -625,7 +654,7 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 			if count >= j.Job.Config.DailyReviews {
 				return PhaseError{State: "quota_wait", BeforeWork: true}
 			}
-			chargedForAttempt = true
+			j.AttemptChargeDay = day
 			j.ChargeDays = append(j.ChargeDays, day)
 		}
 		j.Checkpoint.ConsumedSessions++
@@ -645,55 +674,40 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 	if err != nil {
 		var pe PhaseError
 		if errors.As(err, &pe) && pe.BeforeWork {
-			_ = r.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
-				j, e := fenced(d, r.Job.ID, r.Token, now())
-				if e != nil {
-					return e
-				}
-				j.Checkpoint.ConsumedSessions--
-				if chargedForAttempt {
-					days := []string{}
-					for _, day := range j.ChargeDays {
-						if day != attemptDay {
-							days = append(days, day)
-						}
-					}
-					j.ChargeDays = days
-				}
-				j.Outstanding = false
-				return nil
-			})
+			if refundErr := r.Store.RefundStoppedBeforeWork(context.WithoutCancel(ctx), r.Job.ID, r.Token, session.Identity.Provider, session.Round); refundErr != nil {
+				return Report{}, errors.Join(err, ErrRefundPending, fmt.Errorf("persist before-work refund: %w", refundErr))
+			}
 		}
 		return Report{}, err
 	}
 	encoded, err := json.Marshal(report)
 	if err != nil {
-		return Report{}, err
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
 	}
 	report, err = DecodeStrict[Report](encoded, session.Limits.OutputBytes)
 	if err != nil {
-		return Report{}, err
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
 	}
 	if err = ValidateReport(report, session); err != nil {
-		return Report{}, err
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
 	}
 	var reader *Reader
 	if r.Reader != nil {
 		reader, err = r.Reader(r.Job.Snapshot)
 		if err != nil {
-			return Report{}, err
+			return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
 		}
 	}
 	if err = (Adapter{Reader: reader}).verifyReport(ctx, session, report); err != nil {
-		return Report{}, err
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
 	}
 	report, err = mergeReaderCoverage(report, reader)
 	if err != nil {
-		return Report{}, err
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
 	}
 	encoded, err = json.Marshal(report)
 	if err != nil || len(encoded) > session.Limits.OutputBytes {
-		return Report{}, errors.New("durable report exceeds output bound")
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, errors.New("durable report exceeds output bound"))
 	}
 	a := Artifact{JobHash: Digest(r.Job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}}
 	if reader != nil {
@@ -711,6 +725,7 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 		}
 		j.Checkpoint.Artifacts = append(j.Checkpoint.Artifacts, a)
 		j.Outstanding = false
+		j.AttemptChargeDay = ""
 		return nil
 	})
 	if errors.Is(err, ErrFenced) {
@@ -812,6 +827,11 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 		wrapped.Reviewers[provider] = DurableReviewer{Store: s, Job: j.Job, Token: token, Inner: inner, Reader: engine.Reader, Now: now}
 	}
 	out, runErr := wrapped.Run(ctx, j.Job, j.Checkpoint)
+	if errors.Is(runErr, ErrRefundPending) {
+		// Retain the nonce and attempt metadata for an explicit stopped-worker
+		// refund after storage repair. Releasing would discard that recovery path.
+		return out, runErr
+	}
 	state := out.State
 	if err = s.ReleaseStopped(context.WithoutCancel(ctx), id, token, state); err != nil {
 		return out, errors.Join(runErr, err)

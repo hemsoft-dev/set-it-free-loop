@@ -211,7 +211,13 @@ func (p Publisher) Dispatch(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	if !current.Access || !current.Open {
+	if !current.Access {
+		return ErrDeferred
+	}
+	if !current.Open && w.Kind == "review" {
+		return p.markStale(ctx, *w, current, "PR closed before dispatch")
+	}
+	if !current.Open {
 		return ErrDeferred
 	}
 	if w.Kind == "review" && (!matchingRemote(*w, current) || current.Request.BotID != d.Enrollment.BotID) {
@@ -396,7 +402,7 @@ func (s *Store) Prune(ctx context.Context, now time.Time) error {
 			if j.LeaseToken != "" || now.Sub(j.CreatedAt) < time.Duration(j.Job.Config.RetentionDays)*24*time.Hour {
 				continue
 			}
-			if j.State != "dual_complete" && j.State != "single_complete" && j.State != "cancelled" && j.State != "stale" && j.State != "incomplete_expired" {
+			if j.State != "dual_complete" && j.State != "single_complete" && j.State != "cancelled" && j.State != "stale" && j.State != "incomplete_expired" && j.State != "invalid_output" {
 				continue
 			}
 			safe := true

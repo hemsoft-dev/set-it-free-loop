@@ -859,3 +859,192 @@ func TestSupersededQueuedJobIsRetiredAndPrunable(t *testing.T) {
 		t.Fatal("superseded job permanently consumes a slot")
 	}
 }
+
+func TestClosedPRRetiresPreparedReviewButAccessLossDefers(t *testing.T) {
+	for _, access := range []bool{false, true} {
+		t.Run(fmt.Sprint(access), func(t *testing.T) {
+			s, out, remote := completeFixture(t)
+			ctx := context.Background()
+			publisher := Publisher{Store: s, Remote: remote}
+			intent, err := publisher.Prepare(ctx, out, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			remote.state.Access = access
+			remote.state.Open = false
+			if err = publisher.Dispatch(ctx, intent.ID); !errors.Is(err, ErrDeferred) || remote.posts != 0 {
+				t.Fatal("closed PR dispatch", err, remote.posts)
+			}
+			d, err := s.Snapshot(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "prepared"
+			if access {
+				want = "stale"
+			}
+			if d.Writes[intent.ID].State != want {
+				t.Fatal("incorrect access/closure disposition", d.Writes[intent.ID])
+			}
+			if err = s.Prune(ctx, controlTime.Add(40*24*time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+			d, err = s.Snapshot(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if access && (d.Jobs[out.Job.ID] != nil || d.Writes[intent.ID] != nil) {
+				t.Fatal("closed PR permanently consumed retention slots")
+			}
+			if !access && (d.Jobs[out.Job.ID] == nil || d.Writes[intent.ID] == nil) {
+				t.Fatal("access loss discarded an unconfirmed write")
+			}
+		})
+	}
+}
+
+func TestInvalidOutputJobExpiresAfterRetention(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	engine := testEngine(t, func(context.Context, Session) (Report, error) { return Report{}, nil })
+	out, err := s.RunStopped(ctx, job.ID, engine, func() time.Time { return now })
+	if err == nil || out.State != "invalid_output" {
+		t.Fatal("fixture did not produce terminal invalid output", out, err)
+	}
+	if err = s.Prune(ctx, now.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	d, err := s.Snapshot(ctx)
+	if err != nil || d.Jobs[job.ID] == nil {
+		t.Fatal("pruned before retention", err)
+	}
+	if err = s.Prune(ctx, now.Add(40*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	d, err = s.Snapshot(ctx)
+	if err != nil || d.Jobs[job.ID] != nil {
+		t.Fatal("terminal malformed output permanently consumed a slot", err)
+	}
+}
+
+func TestSlowBeforeWorkFailureRefundsExpiredLease(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	engine := testEngine(t, func(context.Context, Session) (Report, error) {
+		now = now.Add(job.Config.Limits.Timeout + 2*time.Minute)
+		return Report{}, PhaseError{State: "auth_failed", BeforeWork: true}
+	})
+	out, err := s.RunStopped(ctx, job.ID, engine, func() time.Time { return now })
+	if err == nil || errors.Is(err, ErrRefundPending) || out.State != "auth_failed" {
+		t.Fatal(out, err)
+	}
+	d, err := s.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := d.Jobs[job.ID]
+	if j.Checkpoint.ConsumedSessions != 0 || len(j.ChargeDays) != 0 || j.Outstanding || j.LeaseToken != "" {
+		t.Fatal("expired lease prevented a trusted no-work refund", j)
+	}
+	if err = s.ResumeUnavailable(ctx, job.ID, now); err != nil {
+		t.Fatal("no-work auth failure could not recover", err)
+	}
+}
+
+func TestBeforeWorkRefundPreservesExistingDayCharge(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	engine := testEngine(t, func(_ context.Context, session Session) (Report, error) {
+		if session.Identity.Provider == Codex {
+			return protocolReport(session), nil
+		}
+		return Report{}, PhaseError{State: "quota_wait", BeforeWork: true}
+	})
+	out, err := s.RunStopped(ctx, job.ID, engine, func() time.Time { return now })
+	if err == nil || out.State != "quota_wait" {
+		t.Fatal(out, err)
+	}
+	d, err := s.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := d.Jobs[job.ID]
+	if j.Checkpoint.ConsumedSessions != 1 || len(j.Checkpoint.Artifacts) != 1 || len(j.ChargeDays) != 1 || j.ChargeDays[0] != now.UTC().Format("2006-01-02") || j.AttemptChargeDay != "" {
+		t.Fatal("refunded a charge from earlier successful work", j)
+	}
+}
+
+func TestFailedRefundRetainsLeaseForExplicitDurableRecovery(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	// Three earlier uncertain attempts left exactly one session available.
+	if err := s.update(ctx, func(d *DurableState) error {
+		d.Jobs[job.ID].Checkpoint.ConsumedSessions = 3
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	preflightErr := errors.New("fixture authentication failure before work")
+	engine := testEngine(t, func(context.Context, Session) (Report, error) {
+		_, err := s.db.Exec(`CREATE TRIGGER refund_fault BEFORE UPDATE ON state BEGIN SELECT RAISE(FAIL, 'refund_fault'); END`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Report{}, errors.Join(preflightErr, PhaseError{State: "auth_failed", BeforeWork: true})
+	})
+	out, err := s.RunStopped(ctx, job.ID, engine, func() time.Time { return now })
+	if !errors.Is(err, preflightErr) || !errors.Is(err, ErrRefundPending) || !strings.Contains(err.Error(), "refund_fault") || out.State != "auth_failed" {
+		t.Fatal("refund failure or original phase error was discarded", out, err)
+	}
+	d, err := s.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := d.Jobs[job.ID]
+	if j.LeaseToken == "" || !j.Outstanding || j.Checkpoint.ConsumedSessions != 4 || j.AttemptChargeDay == "" {
+		t.Fatal("failed refund lost durable recovery metadata", j)
+	}
+	if _, err = s.db.Exec("DROP TRIGGER refund_fault"); err != nil {
+		t.Fatal(err)
+	}
+	var sequence int
+	var schema, path string
+	if err = s.db.QueryRow("PRAGMA database_list").Scan(&sequence, &schema, &path); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = OpenStore(path, alphaEnrollment(), DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.RefundStoppedBeforeWork(ctx, job.ID, j.LeaseToken, Claude, 1); !errors.Is(err, ErrFenced) {
+		t.Fatal("refunded a different outstanding phase", err)
+	}
+	if err = s.RefundStoppedBeforeWork(ctx, job.ID, j.LeaseToken, Codex, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RefundStoppedBeforeWork(ctx, job.ID, j.LeaseToken, Codex, 1); !errors.Is(err, ErrFenced) {
+		t.Fatal("duplicate refund consumed another session", err)
+	}
+	if err = s.ReleaseStopped(ctx, job.ID, j.LeaseToken, "auth_failed"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ResumeUnavailable(ctx, job.ID, now); err != nil {
+		t.Fatal("failed refund permanently exhausted final session", err)
+	}
+	d, err = s.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j = d.Jobs[job.ID]
+	if j.Checkpoint.ConsumedSessions != 3 || len(j.ChargeDays) != 0 || j.AttemptChargeDay != "" || j.Outstanding || j.LeaseToken != "" || j.State != "queued" {
+		t.Fatal("explicit recovery did not restore the actual budget", j)
+	}
+}
