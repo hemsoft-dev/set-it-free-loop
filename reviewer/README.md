@@ -21,15 +21,15 @@ disabled; record results at the exact PR head and rerun locally during review.
 ## Boundaries
 
 `Session` captures immutable target/head/base/merge-base IDs, head-repository
-provenance, config hash, pinned provider/model/client/auth identity and phase
+provenance, config hash, job/packet/policy hashes, pinned provider/model/client/auth identity and phase
 limits. Both Codex and Claude adapters exist from the first version. Unknown
 JSON fields, trailing values, oversized output and wrong provenance fail the
-phase. An auth/client/model precheck happens before provider work and is checked
+phase. `NewSession` precomputes immutable hash headers for the model to copy, validates both frozen R1 reports for R2 and R1/R2 lineage plus focus IDs for R3, and rejects empty packets. Peer dispositions, own retractions and coverage references are validated, and finding/judgment quotes must pass the same-snapshot reader before success. An auth/client/model precheck happens before provider work and is checked
 again afterward. There is no fallback to another provider or API billing.
 
 `Adapter.Invocation` creates a candidate official-client argument/environment
 manifest. It never executes that manifest. The trusted `Driver` seam must
-normalize the pinned CLI transport into the versioned `Report` contract and
+use the pure `NormalizeCLIOutput` decoder for the pinned CLI transport and
 enforce the declared turn/tool/memory/network limits inside a qualified worker.
 `DisabledLiveDriver` always returns a blocked error. A future production driver
 requires a separate reviewed change after live gates pass; substituting a fake
@@ -41,7 +41,7 @@ Codex feature switches and Claude safe/restricted/tool/MCP settings are candidat
 controls based on the installed help. They have not passed a credential-bearing
 tool inventory or hostile-client probe. No CLI permission flag is treated as an
 OS boundary. The manifest currently has no source-broker configuration; a
-qualified driver must supply only that job's reader and no ambient MCP servers.
+qualified driver must supply only that job's reader and no ambient MCP servers. The generated strict Report schema is mounted read-only for Codex and passed through Claude's schema option. `NormalizeCLIOutput` requires a completed Codex JSONL turn or a successful Claude result envelope, rejects forbidden tool traces and malformed/incomplete output, and replaces model-reported usage with available client metadata. CLI turn counts are not a bound on internal inference calls; that bound still requires external qualification.
 
 `Reader` accepts only listed paths and the three captured revisions. It caps
 calls, bytes, search results and evidence logs, verifies quoted source anchors,
@@ -64,9 +64,11 @@ input to refresh; the callback sees only the current leased state.
 
 Applicable public-target subscription support, account-specific entitlements and
 overflow controls, new native-App eligibility, externally enforced isolation,
-official-client response normalization, tool/resource enforcement and explicit
+qualified official-client transport, tool/resource enforcement and explicit
 owner activation remain required. If a client cannot remove a forbidden
 capability, record it blocked; do not weaken the contract or declare v1 complete.
 Keep [the tracking issue](https://github.com/hemsoft-dev/set-it-free-loop/issues/172)
 open while its acceptance criteria remain unmet. Raw transcripts and credentials
 never belong in public artifacts.
+
+Transport references: [Codex JSONL and schema output](https://learn.chatgpt.com/docs/non-interactive-mode), [Claude structured results](https://code.claude.com/docs/en/headless). These documents support the offline decoders; live compatibility remains unproven.

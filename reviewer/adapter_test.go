@@ -13,8 +13,11 @@ func testSnapshot() Snapshot {
 	return Snapshot{RepositoryID, RepositoryID, 1, strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)}
 }
 func testSession(p Provider) Session {
-	i, _ := PinnedIdentity(p)
-	return Session{"job-1", testSnapshot(), Digest("config"), i, 1, "same immutable evidence", nil, DefaultLimits()}
+	s, err := NewSession("job-1", testSnapshot(), Digest("config"), p, 1, "same immutable evidence", nil, nil, DefaultLimits())
+	if err != nil {
+		panic(err)
+	}
+	return s
 }
 
 type fakeDriver struct {
@@ -39,7 +42,7 @@ func (f *fakeDriver) Execute(ctx context.Context, _ Invocation) ([]byte, Identit
 	return f.data, f.actual, f.err
 }
 func fakeReport(s Session) Report {
-	return Report{Provider: s.Identity.Provider, Round: s.Round, SnapshotHash: Digest(s.Snapshot), ConfigHash: s.ConfigHash}
+	return Report{JobID: s.JobID, PolicyVersion: s.PolicyVersion, PacketHash: s.PacketHash, Provider: s.Identity.Provider, Round: s.Round, SnapshotHash: Digest(s.Snapshot), ConfigHash: s.ConfigHash, Findings: []Finding{}, Judgments: []Judgment{}, Retractions: []string{}, Coverage: []Coverage{}}
 }
 
 func TestBothAdaptersContractAndNoAmbientCredentials(t *testing.T) {
@@ -48,7 +51,7 @@ func TestBothAdaptersContractAndNoAmbientCredentials(t *testing.T) {
 			s := testSession(p)
 			data, _ := json.Marshal(fakeReport(s))
 			f := &fakeDriver{inspect: s.Identity, actual: s.Identity, data: data}
-			a := Adapter{p, f, t.TempDir()}
+			a := Adapter{Provider: p, Driver: f, AuthDirectory: t.TempDir()}
 			t.Setenv("GH_TOKEN", "github-canary")
 			t.Setenv("OPENAI_API_KEY", "api-canary")
 			t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "claude-canary")
@@ -75,7 +78,7 @@ func TestAuthPrecheckRejectsBeforeProviderWork(t *testing.T) {
 	wrong := s.Identity
 	wrong.AuthMode = "api_key"
 	f := &fakeDriver{inspect: wrong, actual: s.Identity}
-	a := Adapter{Codex, f, t.TempDir()}
+	a := Adapter{Provider: Codex, Driver: f, AuthDirectory: t.TempDir()}
 	if _, err := a.Review(context.Background(), s); err == nil || f.calls != 0 {
 		t.Fatal("auth precheck did not fence execution")
 	}
@@ -107,13 +110,13 @@ func TestAdapterFailsClosedAndBoundsOutput(t *testing.T) {
 				local.Limits.Timeout = time.Millisecond
 			}
 			f := &fakeDriver{inspect: s.Identity, actual: s.Identity, data: tc.data, err: tc.err, delay: tc.delay}
-			if _, err := (Adapter{Claude, f, t.TempDir()}).Review(context.Background(), local); err == nil {
+			if _, err := (Adapter{Provider: Claude, Driver: f, AuthDirectory: t.TempDir()}).Review(context.Background(), local); err == nil {
 				t.Fatal("accepted incomplete provider phase")
 			}
 		})
 	}
 	for _, d := range []Driver{nil, DisabledLiveDriver{}} {
-		if _, err := (Adapter{Claude, d, t.TempDir()}).Review(context.Background(), s); !errors.Is(err, ErrLiveBlocked) {
+		if _, err := (Adapter{Provider: Claude, Driver: d, AuthDirectory: t.TempDir()}).Review(context.Background(), s); !errors.Is(err, ErrLiveBlocked) {
 			t.Fatal(err)
 		}
 	}
