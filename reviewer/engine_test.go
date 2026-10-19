@@ -318,3 +318,9 @@ func TestProtocolReservesSerializedPeerInput(t *testing.T) {
 		t.Fatal("oversize packet admitted")
 	}
 }
+
+func TestPhaseDeadlineIsExpiration(t *testing.T) {
+	if phaseState(context.DeadlineExceeded) != "incomplete_expired" || phaseState(context.Canceled) != "cancelled" {
+		t.Fatal("deadline misreported as outage")
+	}
+}

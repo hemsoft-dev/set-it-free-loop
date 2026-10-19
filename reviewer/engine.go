@@ -71,14 +71,15 @@ type Assessment struct {
 }
 
 type Entry struct {
-	Finding     Finding      `json:"finding"`
-	Origin      Provider     `json:"origin"`
-	RaisedRound int          `json:"raised_round"`
-	Status      string       `json:"status"`
-	History     []Assessment `json:"history"`
-	RelatedIDs  []string     `json:"related_ids"`
-	SeverityMin int          `json:"severity_min"`
-	SeverityMax int          `json:"severity_max"`
+	Finding      Finding      `json:"finding"`
+	Origin       Provider     `json:"origin"`
+	RaisedRound  int          `json:"raised_round"`
+	Status       string       `json:"status"`
+	History      []Assessment `json:"history"`
+	WithdrawnIDs []string     `json:"withdrawn_ids"`
+	RelatedIDs   []string     `json:"related_ids"`
+	SeverityMin  int          `json:"severity_min"`
+	SeverityMax  int          `json:"severity_max"`
 }
 
 type Outcome struct {
@@ -132,6 +133,9 @@ type Engine struct {
 }
 
 func phaseState(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "incomplete_expired"
+	}
 	if errors.Is(err, context.Canceled) {
 		return "cancelled"
 	}

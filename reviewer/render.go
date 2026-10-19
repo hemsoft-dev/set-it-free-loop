@@ -111,6 +111,9 @@ func Render(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
 			if entry.SeverityMin != entry.SeverityMax {
 				text += fmt.Sprintf("Severity disagreement: P%d through P%d.\n", entry.SeverityMin, entry.SeverityMax)
 			}
+			if len(entry.WithdrawnIDs) > 0 {
+				text += "Withdrawn duplicate IDs: " + safeText(strings.Join(entry.WithdrawnIDs, ", ")) + ".\n"
+			}
 			if len(entry.RelatedIDs) > 0 {
 				text += "Related allegation IDs: " + safeText(strings.Join(entry.RelatedIDs, ", ")) + ".\n"
 			}
@@ -188,9 +191,16 @@ func renderGroups(entries []Entry) []Entry {
 		if i, ok := indexes[key]; ok {
 			g := &groups[i]
 			g.History = append(g.History, e.History...)
+			if e.Status == "retracted" {
+				g.WithdrawnIDs = append(g.WithdrawnIDs, e.Finding.ID)
+			}
 			g.RelatedIDs = append(g.RelatedIDs, e.Finding.ID)
 			if e.Status != "retracted" {
 				if g.Status == "retracted" {
+					g.RelatedIDs = append(g.RelatedIDs, g.Finding.ID)
+					g.Finding = e.Finding
+					g.Origin = e.Origin
+					g.RaisedRound = e.RaisedRound
 					g.Status = e.Status
 					g.SeverityMin = e.SeverityMin
 					g.SeverityMax = e.SeverityMax
@@ -208,6 +218,9 @@ func renderGroups(entries []Entry) []Entry {
 				}
 			}
 		} else {
+			if e.Status == "retracted" {
+				e.WithdrawnIDs = append([]string{}, e.Finding.ID)
+			}
 			indexes[key] = len(groups)
 			e.History = append([]Assessment{}, e.History...)
 			e.RelatedIDs = append([]string{}, e.RelatedIDs...)

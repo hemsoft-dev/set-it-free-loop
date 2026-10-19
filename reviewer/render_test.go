@@ -134,3 +134,16 @@ func TestPublicationBoundsRetainOversizeLedger(t *testing.T) {
 		t.Fatal("valid ledger cannot publish bounded document", err)
 	}
 }
+
+func TestWithdrawnDuplicateCannotRepresentActiveGroup(t *testing.T) {
+	first := Entry{Finding: testFinding(Codex), Origin: Codex, RaisedRound: 1, Status: "retracted", SeverityMin: 2, SeverityMax: 2}
+	active := first
+	active.Finding.ID = "claude-active"
+	active.Origin = Claude
+	active.RaisedRound = 2
+	active.Status = "corroborated"
+	groups := renderGroups([]Entry{first, active})
+	if len(groups) != 1 || groups[0].Finding.ID != active.Finding.ID || groups[0].Origin != Claude || groups[0].RaisedRound != 2 || len(groups[0].WithdrawnIDs) != 1 || groups[0].WithdrawnIDs[0] != first.Finding.ID {
+		t.Fatal("withdrawn provenance survived as active", groups)
+	}
+}
