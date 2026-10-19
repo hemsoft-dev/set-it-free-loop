@@ -1,5 +1,12 @@
 ## Project freeze
 
+Owner exception, October 19, 2026: the explicit merge-mission invocation
+authorizes offline implementation, tests, documentation and guarded merges for
+the new `reviewer/` alpha module and issues #172 through #177. Use fake providers
+and fake GitHub transports. This exception does not activate the retired
+modules or authorize App installation, credential recreation, live inference,
+provider-policy exceptions or paid usage. Keep those separately evidenced gates.
+
 SFL is frozen by owner instruction as of 2026-10-09. Preserve its source and history for reference. Do not reactivate automation, deploy the reviewer, recreate SFL credentials or install the App without a new explicit owner instruction. The current retirement cleanup may be completed under the existing instruction.
 
 ## Repository Identity
