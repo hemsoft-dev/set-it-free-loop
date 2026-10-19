@@ -31,9 +31,13 @@ again afterward. There is no fallback to another provider or API billing.
 manifest. It never executes that manifest. The trusted `Driver` seam must
 use the pure `NormalizeCLIOutput` decoder for the pinned CLI transport and
 enforce the declared turn/tool/memory/network limits inside a qualified worker.
-`DisabledLiveDriver` always returns a blocked error. A future production driver
-requires a separate reviewed change after live gates pass; substituting a fake
-driver is not isolation proof.
+`DisabledLiveDriver` always returns a blocked error. The reusable
+[worker transport](WORKER.md) supplies bounded JSONL framing, phase cancellation,
+trusted pre/post identity inspection and fail-closed supervisor-stop handling.
+Its tests launch fake wrapper executables. Official-client wrappers and a
+qualified OS launcher remain separate implementation work; live execution waits
+for passing gates and activation authority. Substituting a fake is not isolation
+proof.
 
 The inspected pins are Codex CLI 0.163.0 with `gpt-6-astra` and Claude Code
 2.1.303 with `claude-opus-5-5`. Pins do not establish account model access.

@@ -732,6 +732,11 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 	}
 	report, access, err := reviewSource(ctx, r.Inner, session)
 	capture(access)
+	if errors.Is(err, ErrWorkerStopPending) {
+		// No stopped-worker write, refund or lease release is safe until the
+		// supervisor recovers the physical worker. Return the retained audit.
+		return Report{}, err
+	}
 	if access != nil {
 		auditErr := r.Store.RecordStoppedSourceAccess(context.WithoutCancel(ctx), r.Job.ID, r.Token, attemptID, access)
 		if auditErr != nil {
@@ -894,9 +899,9 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 		wrapped.Reviewers[provider] = DurableReviewer{Store: s, Job: j.Job, Token: token, Inner: inner, Reader: engine.Reader, Now: now}
 	}
 	out, runErr := wrapped.Run(ctx, j.Job, j.Checkpoint)
-	if errors.Is(runErr, ErrRefundPending) || errors.Is(runErr, ErrSourceAuditPending) {
-		// Retain the nonce and attempt metadata for an explicit stopped-worker
-		// refund after storage repair. Releasing would discard that recovery path.
+	if errors.Is(runErr, ErrRefundPending) || errors.Is(runErr, ErrSourceAuditPending) || errors.Is(runErr, ErrWorkerStopPending) {
+		// Retain the nonce and attempt metadata for physical-worker, audit or
+		// refund recovery. Releasing would discard that recovery path.
 		return out, runErr
 	}
 	state := out.State

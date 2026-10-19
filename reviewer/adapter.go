@@ -18,6 +18,7 @@ type Invocation struct {
 	Environment   []string
 	Input         []byte
 	OutputLimit   int
+	Limits        Limits
 	ReadOnlyFiles map[string][]byte
 	Source        SourceTools `json:"-"`
 }
@@ -95,7 +96,7 @@ func (a Adapter) Invocation(s Session, environment map[string]string) (Invocatio
 	for _, k := range keys {
 		values = append(values, k+"="+env[k])
 	}
-	return Invocation{Provider: a.Provider, Args: args, Environment: values, Input: input, OutputLimit: s.Limits.OutputBytes, ReadOnlyFiles: map[string][]byte{"sfl-report.schema.json": ReportSchema()}}, nil
+	return Invocation{Provider: a.Provider, Args: args, Environment: values, Input: input, OutputLimit: s.Limits.OutputBytes, Limits: s.Limits, ReadOnlyFiles: map[string][]byte{"sfl-report.schema.json": ReportSchema()}}, nil
 }
 
 func (a Adapter) Review(ctx context.Context, s Session) (Report, error) {
