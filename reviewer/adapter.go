@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -99,30 +100,30 @@ func (a Adapter) Invocation(s Session, environment map[string]string) (Invocatio
 func (a Adapter) Review(ctx context.Context, s Session) (Report, error) {
 	inv, err := a.Invocation(s, nil)
 	if err != nil {
-		return Report{}, err
+		return Report{}, adapterValidation(err, true)
 	}
 	if a.Driver == nil {
-		return Report{}, ErrLiveBlocked
+		return Report{}, errors.Join(PhaseError{State: "blocked", BeforeWork: true}, ErrLiveBlocked)
 	}
 	if a.Reader != nil && a.Reader.snapshot != s.Snapshot {
-		return Report{}, errors.New("reader belongs to another captured snapshot")
+		return Report{}, adapterValidation(errors.New("reader belongs to another captured snapshot"), true)
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
 	defer cancel()
 	for _, peer := range s.PeerReports {
 		if err := a.verifyReport(ctx, s, peer); err != nil {
-			return Report{}, err
+			return Report{}, adapterValidation(err, true)
 		}
 	}
 	identity, err := a.Driver.Inspect(ctx, inv)
 	if err != nil {
-		return Report{}, err
+		return Report{}, errors.Join(PhaseError{State: phaseState(err), BeforeWork: true}, err)
 	}
 	if identity != s.Identity {
-		return Report{}, errors.New("subscription auth/client/model precheck failed")
+		return Report{}, adapterIdentity(identity, s.Identity, true)
 	}
 	if ctx.Err() != nil {
-		return Report{}, ctx.Err()
+		return Report{}, errors.Join(ctx.Err(), PhaseError{State: phaseState(ctx.Err()), BeforeWork: true})
 	}
 	data, identity, err := a.Driver.Execute(ctx, inv)
 	if err != nil {
@@ -132,27 +133,27 @@ func (a Adapter) Review(ctx context.Context, s Session) (Report, error) {
 		return Report{}, ctx.Err()
 	}
 	if identity != s.Identity {
-		return Report{}, errors.New("actual client/model/auth identity differs from captured job")
+		return Report{}, adapterIdentity(identity, s.Identity, false)
 	}
 	r, err := DecodeStrict[Report](data, s.Limits.OutputBytes)
 	if err != nil {
-		return Report{}, err
+		return Report{}, adapterValidation(err, false)
 	}
 	if err := ValidateReport(r, s); err != nil {
-		return Report{}, err
+		return Report{}, adapterValidation(err, false)
 	}
 	if err := a.verifyReport(ctx, s, r); err != nil {
-		return Report{}, err
+		return Report{}, adapterValidation(err, false)
 	}
 	r, err = mergeReaderCoverage(r, a.Reader)
 	if err != nil {
-		return Report{}, err
+		return Report{}, adapterValidation(err, false)
 	}
 	if err := ValidateReport(r, s); err != nil {
-		return Report{}, err
+		return Report{}, adapterValidation(err, false)
 	}
 	if data, err := json.Marshal(r); err != nil || len(data) > s.Limits.OutputBytes {
-		return Report{}, errors.New("normalized report with coverage exceeds output bound")
+		return Report{}, adapterValidation(errors.New("normalized report with coverage exceeds output bound"), false)
 	}
 	return r, nil
 }
@@ -192,7 +193,18 @@ func (a Adapter) verifyReport(ctx context.Context, s Session, r Report) error {
 		return errors.New("missing same-snapshot source verifier")
 	}
 	if err := a.Reader.VerifyAll(ctx, anchors); err != nil {
-		return errors.New("finding or judgment evidence does not match captured source")
+		return fmt.Errorf("finding or judgment evidence does not match captured source: %w", err)
 	}
 	return nil
+}
+
+func adapterValidation(err error, beforeWork bool) error {
+	return errors.Join(PhaseError{State: "invalid_output", BeforeWork: beforeWork}, err)
+}
+func adapterIdentity(actual, expected Identity, beforeWork bool) error {
+	state := "invalid_output"
+	if actual.AuthMode != expected.AuthMode {
+		state = "auth_failed"
+	}
+	return errors.Join(PhaseError{State: state, BeforeWork: beforeWork}, errors.New("official client/model/subscription identity differs from captured job"))
 }

@@ -244,6 +244,9 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 				report, callErr := reviewer.Review(phase, session)
 				deadlineErr := phase.Err()
 				if callErr != nil {
+					if phaseState(callErr) == "invalid_output" {
+						out.InvalidPhases++
+					}
 					var phaseErr PhaseError
 					if errors.As(callErr, &phaseErr) && phaseErr.BeforeWork {
 						out.ConsumedSessions--

@@ -1,0 +1,892 @@
+package reviewer
+
+import (
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	_ "modernc.org/sqlite"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+)
+
+var ErrDeferred = errors.New("durable state requires reconciliation")
+var ErrFenced = errors.New("worker lease or request generation is no longer current")
+var ErrRefundPending = errors.New("before-work refund requires durable recovery before lease release")
+
+type Enrollment struct{ RepositoryID, InstallationID, AppID, BotID, OwnerID int64 }
+
+func (e Enrollment) Validate() error {
+	if e.RepositoryID != RepositoryID || e.OwnerID != OwnerID || e.InstallationID <= 0 || e.AppID <= 0 || e.BotID <= 0 {
+		return errors.New("exact alpha enrollment required")
+	}
+	return nil
+}
+
+type Scope struct {
+	RepositoryID, InstallationID int64
+	PR                           int
+}
+
+func (e Enrollment) accepts(s Scope) bool {
+	return s.RepositoryID == e.RepositoryID && s.InstallationID == e.InstallationID && s.PR > 0
+}
+func (s Scope) key() string { return fmt.Sprintf("%d/%d/%d", s.RepositoryID, s.InstallationID, s.PR) }
+
+type NativeRequest struct {
+	ID, RequesterID, BotID int64
+	CreatedAt              time.Time
+	Snapshot               Snapshot
+	Removed                bool
+	Admitted               bool
+}
+type ConfigRecord struct {
+	Version     int64
+	Config      Config
+	EffectiveAt time.Time
+}
+type CommandRecord struct {
+	Command   Command
+	CreatedAt time.Time
+	Config    Config
+	Version   int64
+	WriteID   string
+}
+type PRRecord struct {
+	Scope            Scope
+	Generation       int64
+	Paused           bool
+	HistoryThrough   time.Time
+	PauseRequestID   int64
+	CancelledThrough time.Time
+	Configs          []ConfigRecord
+	Commands         []CommandRecord
+	Requests         []NativeRequest
+	CurrentRequest   int64
+}
+type DurableJob struct {
+	Job              Job
+	Scope            Scope
+	RequestID        int64
+	CreatedAt        time.Time
+	State            string
+	Checkpoint       Checkpoint
+	LeaseToken       string
+	LeaseUntil       time.Time
+	Outstanding      bool
+	AttemptProvider  Provider
+	AttemptRound     int
+	AttemptChargeDay string
+	ChargeDays       []string
+}
+type WriteIntent struct {
+	ID, Kind                string
+	Scope                   Scope
+	RequestID, Generation   int64
+	JobHash                 string
+	Snapshot                Snapshot
+	Document                Document
+	BodyHash, Marker, State string
+	ReceiptID               int64
+	CreatedAt               time.Time
+	ReceiptTime             time.Time
+}
+type RemoteReceipt struct {
+	ID, AuthorID     int64
+	Marker, BodyHash string
+	CreatedAt        time.Time
+}
+type DurableState struct {
+	Enrollment Enrollment
+	Defaults   Config
+	PRs        map[string]*PRRecord
+	Jobs       map[string]*DurableJob
+	Writes     map[string]*WriteIntent
+}
+
+// Store keeps one bounded state record in SQLite. An IMMEDIATE transaction
+// serializes every mutation across handles/processes. Remote calls never hold it.
+// A dedicated private service directory is required, not the interactive home.
+type Store struct{ db *sql.DB }
+
+func OpenStore(path string, e Enrollment, defaults Config) (*Store, error) {
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+	if err := defaults.Validate(); err != nil {
+		return nil, err
+	}
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("absolute state path required")
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	if resolved != filepath.Clean(filepath.Dir(path)) {
+		return nil, errors.New("state directory ancestors must not be symlinks")
+	}
+	parent, err := os.Lstat(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	if !parent.IsDir() || parent.Mode().Perm() != 0700 {
+		return nil, errors.New("state directory must be private")
+	}
+	if info, err := os.Lstat(path); err == nil {
+		if !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
+			return nil, errors.New("unsafe state file")
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
+	if err == nil {
+		f.Close()
+	} else if !os.IsExist(err) {
+		return nil, err
+	}
+	dsn := (&url.URL{Scheme: "file", Path: path}).String() + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_txlock=immediate"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	s := &Store{db}
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), data BLOB NOT NULL)`)
+	if err == nil {
+		err = s.update(context.Background(), func(d *DurableState) error {
+			if d.PRs == nil {
+				d.Enrollment = e
+				d.Defaults = defaults
+				d.PRs = map[string]*PRRecord{}
+				d.Jobs = map[string]*DurableJob{}
+				d.Writes = map[string]*WriteIntent{}
+				return nil
+			}
+			if d.Enrollment != e || d.Defaults.Hash() != defaults.Hash() {
+				return errors.New("enrollment/default changes require explicit migration")
+			}
+			return nil
+		})
+	}
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return s, nil
+}
+func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) update(ctx context.Context, fn func(*DurableState) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var raw []byte
+	err = tx.QueryRowContext(ctx, "SELECT data FROM state WHERE id=1").Scan(&raw)
+	d := DurableState{}
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if len(raw) > 0 {
+		if err = json.Unmarshal(raw, &d); err != nil {
+			return err
+		}
+	}
+	if err = fn(&d); err != nil {
+		return err
+	}
+	if len(d.PRs) > 64 || len(d.Jobs) > 128 || len(d.Writes) > 512 {
+		return errors.New("durable record cap reached")
+	}
+	raw, err = json.Marshal(d)
+	if err != nil {
+		return err
+	}
+	if len(raw) > 16<<20 {
+		return errors.New("durable byte cap reached")
+	}
+	_, err = tx.ExecContext(ctx, "INSERT INTO state(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", raw)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+func (s *Store) Snapshot(ctx context.Context) (DurableState, error) {
+	var raw []byte
+	err := s.db.QueryRowContext(ctx, "SELECT data FROM state WHERE id=1").Scan(&raw)
+	var d DurableState
+	if err == nil {
+		err = json.Unmarshal(raw, &d)
+	}
+	return d, err
+}
+func prRecord(d *DurableState, scope Scope) (*PRRecord, error) {
+	if !d.Enrollment.accepts(scope) {
+		return nil, errors.New("out-of-scope event")
+	}
+	p := d.PRs[scope.key()]
+	if p == nil {
+		p = &PRRecord{Scope: scope, Generation: 1, Configs: []ConfigRecord{{Version: 1, Config: d.Defaults}}}
+		d.PRs[scope.key()] = p
+	}
+	return p, nil
+}
+func randomToken() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b[:])
+}
+func newIntent(kind string, scope Scope, gen, request int64, snapshot Snapshot, jobHash string, doc Document, now time.Time) WriteIntent {
+	id := randomToken()
+	marker := "<!-- sfl-alpha:" + id + " -->"
+	doc.Summary += "\n\n" + marker
+	return WriteIntent{ID: id, Kind: kind, Scope: scope, RequestID: request, Generation: gen, Snapshot: snapshot, JobHash: jobHash, Document: doc, BodyHash: Digest(doc), Marker: marker, State: "prepared", CreatedAt: now}
+}
+
+// CaptureCommands requires a complete, paginated original-event history through
+// a trusted platform cutoff. It sorts discovery order and never rewrites accepted
+// command bodies. Unknown ACK writes pause dependent admission.
+func (s *Store) CaptureCommands(ctx context.Context, scope Scope, events []CommandEvent, through time.Time, complete bool) error {
+	if !complete || through.IsZero() {
+		return ErrDeferred
+	}
+	// Stable original creation order, never caller/pagination order.
+	ordered := append([]CommandEvent{}, events...)
+	sortCommands(ordered)
+	return s.update(ctx, func(d *DurableState) error { return applyCommands(d, scope, ordered, through) })
+}
+func applyCommands(d *DurableState, scope Scope, ordered []CommandEvent, through time.Time) error {
+	p, err := prRecord(d, scope)
+	if err != nil {
+		return err
+	}
+	if through.Before(p.HistoryThrough) {
+		return ErrDeferred
+	}
+	for _, event := range ordered {
+		if event.AuthorID != OwnerID || !strings.HasPrefix(event.Body, "/sfl ") {
+			continue
+		}
+		found := false
+		for _, old := range p.Commands {
+			if old.Command.EventID == event.ID {
+				found = true
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		if event.CreatedAt.After(through) {
+			return ErrDeferred
+		}
+		command, parseErr := ParseCommand(event)
+		if event.ID <= 0 || event.CreatedAt.IsZero() {
+			return errors.New("invalid platform command identity")
+		}
+		if parseErr != nil {
+			command = Command{EventID: event.ID, AuthorID: OwnerID, BodyHash: Digest(event.Body), Action: "reject", Values: map[string]string{}}
+		}
+		if !p.HistoryThrough.IsZero() && !event.CreatedAt.After(p.HistoryThrough) {
+			return ErrDeferred
+		}
+		if len(p.Commands) >= 64 {
+			return errors.New("command retention cap reached")
+		}
+		current := p.Configs[len(p.Configs)-1]
+		// Proposals form a FIFO chain. None becomes effective before its own
+		// platform acknowledgment; dispatch enforces the same order.
+		if len(p.Commands) > 0 {
+			last := p.Commands[len(p.Commands)-1]
+			current.Config = last.Config
+			current.Version = last.Version
+		}
+
+		next := current.Config
+		if parseErr == nil {
+			next, parseErr = ApplyConfig(current.Config, d.Defaults, command)
+		}
+		if parseErr != nil {
+			command.Action = "reject"
+			next = current.Config
+		}
+		version := current.Version
+		if command.Action == "configure" || command.Action == "reset" {
+			version++
+		}
+		if command.Action == "cancel" {
+			if event.CreatedAt.After(p.CancelledThrough) {
+				p.CancelledThrough = event.CreatedAt
+			}
+			p.Generation++
+			p.CurrentRequest = 0
+		}
+		body := fmt.Sprintf("SFL %s accepted. Configuration version %d, hash %s. Configuration applies to the next native owner review request after this acknowledgment. No inference was started.", command.Action, version, next.Hash())
+		if parseErr != nil {
+			body = "SFL command rejected: " + parseErr.Error() + ". Configuration is unchanged. No inference was started."
+		}
+		intent := newIntent("ack", scope, p.Generation, 0, Snapshot{}, "", Document{Summary: body, Inline: []InlineComment{}}, event.CreatedAt)
+		d.Writes[intent.ID] = &intent
+		p.Commands = append(p.Commands, CommandRecord{command, event.CreatedAt, next, version, intent.ID})
+	}
+	p.HistoryThrough = through
+	retireFencedJobs(d, p)
+	return nil
+}
+
+func sortCommands(events []CommandEvent) {
+	sort.Slice(events, func(i, j int) bool {
+		if events[i].CreatedAt.Equal(events[j].CreatedAt) {
+			return events[i].ID < events[j].ID
+		}
+		return events[i].CreatedAt.Before(events[j].CreatedAt)
+	})
+}
+
+// RecordRequest accepts only complete trusted native history, with immutable
+// requester/target IDs. Re-observation is idempotent; pushes cannot create jobs.
+func (s *Store) RecordRequest(ctx context.Context, scope Scope, r NativeRequest, complete bool) error {
+	if !complete {
+		return ErrDeferred
+	}
+	if r.RequesterID != OwnerID {
+		return ErrIgnored
+	}
+	return s.update(ctx, func(d *DurableState) error { return applyRequest(d, scope, r) })
+}
+func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
+	p, err := prRecord(d, scope)
+	if err != nil {
+		return err
+	}
+	defer func() { retireFencedJobs(d, p) }()
+	if r.BotID != d.Enrollment.BotID || r.ID <= 0 || r.CreatedAt.IsZero() || r.Snapshot.PR != scope.PR || r.Snapshot.RepositoryID != scope.RepositoryID {
+		return errors.New("untrusted native request")
+	}
+	if err := r.Snapshot.Validate(); err != nil {
+		return err
+	}
+	for i, old := range p.Requests {
+		if old.ID == r.ID {
+			immutableOld, immutableNew := old, r
+			immutableOld.Removed = false
+			immutableOld.Admitted = false
+			immutableNew.Admitted = false
+			immutableNew.Removed = false
+			if Digest(immutableOld) != Digest(immutableNew) {
+				return errors.New("request identity changed")
+			}
+			if r.Removed && !old.Removed {
+				p.Requests[i].Removed = true
+				if p.CurrentRequest == r.ID {
+					p.Generation++
+					p.CurrentRequest = 0
+				}
+			}
+			return nil
+		}
+	}
+	if len(p.Requests) >= 64 {
+		return errors.New("request retention cap reached")
+	}
+	p.Requests = append(p.Requests, r)
+	latest := r
+	for _, old := range p.Requests {
+		if old.CreatedAt.Equal(r.CreatedAt) && old.ID != r.ID {
+			p.Paused = true
+		}
+		if old.CreatedAt.After(latest.CreatedAt) {
+			latest = old
+		}
+	}
+	if latest.ID == r.ID {
+		p.Generation++
+		p.CurrentRequest = r.ID
+		if !r.CreatedAt.After(p.CancelledThrough) {
+			p.CurrentRequest = 0
+			if r.CreatedAt.Equal(p.CancelledThrough) {
+				p.Paused = true
+				p.PauseRequestID = r.ID
+			}
+		}
+		if r.Removed {
+			p.CurrentRequest = 0
+		}
+	}
+	return nil
+}
+
+// Admit maps platform request time to confirmed ACK time. Equal timestamps and
+// incomplete command history defer, even if poll discovery order differs.
+func (s *Store) Admit(ctx context.Context, scope Scope, requestID int64, release, packet string, now time.Time) (Job, error) {
+	var job Job
+	err := s.update(ctx, func(d *DurableState) error {
+		p, err := prRecord(d, scope)
+		if err != nil {
+			return err
+		}
+		if p.Paused || p.CurrentRequest != requestID {
+			return ErrDeferred
+		}
+		var request NativeRequest
+		for _, r := range p.Requests {
+			if r.ID == requestID {
+				request = r
+			}
+		}
+		if request.ID == 0 || request.Removed || request.CreatedAt.After(p.HistoryThrough) {
+			return ErrDeferred
+		}
+		for _, c := range p.Commands {
+			if d.Writes[c.WriteID].State != "confirmed" {
+				return ErrDeferred
+			}
+		}
+		selected := p.Configs[0]
+		for _, c := range p.Configs[1:] {
+			if request.CreatedAt.Equal(c.EffectiveAt) {
+				return ErrDeferred
+			}
+			if request.CreatedAt.After(c.EffectiveAt) && c.Version > selected.Version {
+				selected = c
+			}
+		}
+		id := fmt.Sprintf("native-%d-%d", scope.PR, requestID)
+		if old := d.Jobs[id]; old != nil {
+			job = old.Job
+			return nil
+		}
+		if request.Admitted {
+			return ErrDeferred
+		}
+		for _, old := range d.Jobs {
+			if old.Scope == scope && old.RequestID == requestID {
+				return ErrDeferred
+			}
+		}
+		job = Job{ID: id, RequesterID: OwnerID, Generation: p.Generation, Snapshot: request.Snapshot, Config: selected.Config, ConfigVersion: selected.Version, Release: release, Packet: packet}
+		if err := job.Validate(); err != nil {
+			return err
+		}
+		for i := range p.Requests {
+			if p.Requests[i].ID == requestID {
+				p.Requests[i].Admitted = true
+			}
+		}
+		d.Jobs[id] = &DurableJob{Job: job, Scope: scope, RequestID: requestID, CreatedAt: now, State: "queued", Checkpoint: Checkpoint{JobHash: Digest(job), Artifacts: []Artifact{}}}
+		return nil
+	})
+	return job, err
+}
+
+// Claim does not steal expired leases. A qualified supervisor must prove the old
+// process stopped and call ReleaseStopped before another physical worker starts.
+func (s *Store) claimJob(ctx context.Context, id string, now time.Time) (*DurableJob, error) {
+	var captured *DurableJob
+	token := randomToken()
+	err := s.update(ctx, func(d *DurableState) error {
+		j := d.Jobs[id]
+		if j == nil {
+			return ErrFenced
+		}
+		p := d.PRs[j.Scope.key()]
+		if p.Paused || p.Generation != j.Job.Generation || p.CurrentRequest != j.RequestID {
+			return ErrFenced
+		}
+		for _, other := range d.Jobs {
+			if other.LeaseToken != "" {
+				return ErrDeferred
+			}
+		}
+		if now.Sub(j.CreatedAt) > j.Job.Config.QuotaWait {
+			j.State = "incomplete_expired"
+			return nil
+		}
+		if j.State != "queued" && j.State != "quota_wait" {
+			return ErrDeferred
+		}
+		daily := 0
+		for _, other := range d.Jobs {
+			if chargedOn(other, now.UTC().Format("2006-01-02")) {
+				daily++
+			}
+		}
+		if j.Checkpoint.ConsumedSessions == 0 && daily >= j.Job.Config.DailyReviews {
+			return ErrDeferred
+		}
+		j.LeaseToken = token
+		j.LeaseUntil = now.Add(j.Job.Config.Limits.Timeout)
+		j.State = "running"
+		copy := *j
+		captured = &copy
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if captured == nil {
+		return nil, ErrDeferred
+	}
+	return captured, nil
+}
+func (s *Store) Claim(ctx context.Context, id string, now time.Time) (string, error) {
+	captured, err := s.claimJob(ctx, id, now)
+	if err != nil {
+		return "", err
+	}
+	return captured.LeaseToken, nil
+}
+
+func fenced(d *DurableState, id, token string, now time.Time) (*DurableJob, error) {
+	j := d.Jobs[id]
+	if j == nil || token == "" || j.LeaseToken != token || !now.Before(j.LeaseUntil) {
+		return nil, ErrFenced
+	}
+	p := d.PRs[j.Scope.key()]
+	if p.Paused || p.Generation != j.Job.Generation || p.CurrentRequest != j.RequestID {
+		return nil, ErrFenced
+	}
+	return j, nil
+}
+func (s *Store) ReleaseStopped(ctx context.Context, id, token string, state string) error {
+	switch state {
+	case "queued", "quota_wait", "cancelled", "provider_unavailable", "auth_failed", "blocked", "dual_complete", "single_complete", "invalid_output", "incomplete_expired":
+	default:
+		return errors.New("invalid terminal state")
+	}
+	return s.update(ctx, func(d *DurableState) error {
+		j := d.Jobs[id]
+		if j == nil || token == "" || j.LeaseToken != token {
+			return ErrFenced
+		}
+		j.LeaseToken = ""
+		j.LeaseUntil = time.Time{}
+		j.Outstanding = false
+		j.AttemptChargeDay = ""
+		j.State = state
+		retireFencedJobs(d, d.PRs[j.Scope.key()])
+		return nil
+	})
+}
+
+// RefundStoppedBeforeWork refunds only the exact outstanding attempt. The trusted
+// caller must prove that its worker stopped before doing provider work. A lease
+// is never stolen on expiry, so its nonce still authorizes this refund after
+// timeout or cancellation. After ErrRefundPending, retry this transaction after
+// repairing storage, then call ReleaseStopped; do not start another worker.
+func (s *Store) RefundStoppedBeforeWork(ctx context.Context, id, token string, provider Provider, round int) error {
+	return s.update(ctx, func(d *DurableState) error {
+		j := d.Jobs[id]
+		if j == nil || token == "" || j.LeaseToken != token || !j.Outstanding || j.AttemptProvider != provider || j.AttemptRound != round || j.Checkpoint.ConsumedSessions <= 0 {
+			return ErrFenced
+		}
+		j.Checkpoint.ConsumedSessions--
+		if j.AttemptChargeDay != "" {
+			days := []string{}
+			for _, day := range j.ChargeDays {
+				if day != j.AttemptChargeDay {
+					days = append(days, day)
+				}
+			}
+			j.ChargeDays = days
+		}
+		j.AttemptChargeDay = ""
+		j.Outstanding = false
+		return nil
+	})
+}
+
+// DurableReviewer reserves a session before provider work and persists validated
+// evidence before returning it to Engine. Unknown/crashed attempts consume budget.
+// It is an offline seam: the supplied underlying Reviewer must be trusted.
+type DurableReviewer struct {
+	Store  *Store
+	Job    Job
+	Token  string
+	Inner  Reviewer
+	Reader func(Snapshot) (*Reader, error)
+	Now    func() time.Time
+}
+
+func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, error) {
+	now := r.Now
+	if now == nil {
+		now = time.Now
+	}
+	if err := session.Validate(); err != nil {
+		return Report{}, err
+	}
+	expectedLimits, err := protocolLimits(r.Job)
+	if err != nil {
+		return Report{}, err
+	}
+	if session.Limits != expectedLimits || session.JobID != r.Job.ID || session.Snapshot != r.Job.Snapshot || session.ConfigHash != r.Job.Config.Hash() || session.PacketHash != Digest(r.Job.Packet) {
+		return Report{}, ErrFenced
+	}
+	err = r.Store.update(ctx, func(d *DurableState) error {
+		j, err := fenced(d, r.Job.ID, r.Token, now())
+		if err != nil {
+			return err
+		}
+		if Digest(j.Job) != Digest(r.Job) || j.Outstanding || j.Checkpoint.ConsumedSessions >= j.Job.Config.MaxSessions() {
+			return ErrFenced
+		}
+		day := now().UTC().Format("2006-01-02")
+		j.AttemptChargeDay = ""
+		if !chargedOn(j, day) {
+			count := 0
+			for _, other := range d.Jobs {
+				if chargedOn(other, day) {
+					count++
+				}
+			}
+			if count >= j.Job.Config.DailyReviews {
+				return PhaseError{State: "quota_wait", BeforeWork: true}
+			}
+			j.AttemptChargeDay = day
+			j.ChargeDays = append(j.ChargeDays, day)
+		}
+		j.Checkpoint.ConsumedSessions++
+		j.Outstanding = true
+		j.AttemptProvider = session.Identity.Provider
+		j.AttemptRound = session.Round
+		j.LeaseUntil = now().Add(j.Job.Config.Limits.Timeout + time.Minute)
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, ErrFenced) {
+			return Report{}, errors.Join(context.Canceled, ErrFenced, PhaseError{State: "cancelled", BeforeWork: true})
+		}
+		return Report{}, err
+	}
+	report, err := r.Inner.Review(ctx, session)
+	if err != nil {
+		var pe PhaseError
+		if errors.As(err, &pe) && pe.BeforeWork {
+			if refundErr := r.Store.RefundStoppedBeforeWork(context.WithoutCancel(ctx), r.Job.ID, r.Token, session.Identity.Provider, session.Round); refundErr != nil {
+				return Report{}, errors.Join(err, ErrRefundPending, fmt.Errorf("persist before-work refund: %w", refundErr))
+			}
+		}
+		return Report{}, err
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
+	}
+	report, err = DecodeStrict[Report](encoded, session.Limits.OutputBytes)
+	if err != nil {
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
+	}
+	if err = ValidateReport(report, session); err != nil {
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
+	}
+	var reader *Reader
+	if r.Reader != nil {
+		reader, err = r.Reader(r.Job.Snapshot)
+		if err != nil {
+			return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
+		}
+	}
+	if err = (Adapter{Reader: reader}).verifyReport(ctx, session, report); err != nil {
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
+	}
+	report, err = mergeReaderCoverage(report, reader)
+	if err != nil {
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, err)
+	}
+	encoded, err = json.Marshal(report)
+	if err != nil || len(encoded) > session.Limits.OutputBytes {
+		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, errors.New("durable report exceeds output bound"))
+	}
+	a := Artifact{JobHash: Digest(r.Job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}}
+	if reader != nil {
+		reads, coverage := reader.Evidence()
+		a.ValidationReads = append([]ReadRecord{}, reads...)
+		a.Coverage = append([]Coverage{}, coverage...)
+	}
+	err = r.Store.update(ctx, func(d *DurableState) error {
+		j, e := fenced(d, r.Job.ID, r.Token, now())
+		if e != nil {
+			return e
+		}
+		if !j.Outstanding || j.AttemptProvider != session.Identity.Provider || j.AttemptRound != session.Round {
+			return ErrFenced
+		}
+		j.Checkpoint.Artifacts = append(j.Checkpoint.Artifacts, a)
+		j.Outstanding = false
+		j.AttemptChargeDay = ""
+		return nil
+	})
+	if errors.Is(err, ErrFenced) {
+		return Report{}, errors.Join(context.Canceled, ErrFenced)
+	}
+	return report, err
+}
+
+func chargedOn(j *DurableJob, day string) bool {
+	for _, old := range j.ChargeDays {
+		if old == day {
+			return true
+		}
+	}
+	return false
+}
+
+// Discovery is normalized complete pagination from the qualified transport,
+// including removal/re-request history. Partial pages cannot advance a cutoff.
+type Discovery struct {
+	Scope    Scope
+	Commands []CommandEvent
+	Requests []NativeRequest
+	Through  time.Time
+	Complete bool
+}
+
+func (s *Store) Discover(ctx context.Context, batch Discovery) error {
+	if !batch.Complete || batch.Through.IsZero() {
+		return ErrDeferred
+	}
+	ordered := append([]CommandEvent{}, batch.Commands...)
+	sortCommands(ordered)
+	return s.update(ctx, func(d *DurableState) error {
+		pr, err := prRecord(d, batch.Scope)
+		if err != nil {
+			return err
+		}
+		wasPaused := pr.Paused
+		pausedRequest := pr.PauseRequestID
+		if err = applyCommands(d, batch.Scope, ordered, batch.Through); err != nil {
+			return err
+		}
+		for _, r := range batch.Requests {
+			if r.CreatedAt.After(batch.Through) {
+				return ErrDeferred
+			}
+			if r.RequesterID != OwnerID {
+				continue
+			}
+			if err = applyRequest(d, batch.Scope, r); err != nil {
+				return err
+			}
+		}
+		if wasPaused && pr.CurrentRequest != 0 && pr.CurrentRequest != pausedRequest {
+			safe := true
+			var latest NativeRequest
+			for _, r := range pr.Requests {
+				if r.ID == pr.CurrentRequest {
+					latest = r
+				}
+			}
+			if latest.Removed || latest.ID == 0 {
+				safe = false
+			}
+			for _, r := range pr.Requests {
+				if r.ID != latest.ID && !r.CreatedAt.Before(latest.CreatedAt) {
+					safe = false
+				}
+			}
+			for _, w := range d.Writes {
+				if w.Scope == batch.Scope && (w.State == "unknown" || w.State == "dispatched" || w.State == "postcheck_pending" || w.State == "annotation_pending") {
+					safe = false
+				}
+			}
+			if safe {
+				pr.Paused = false
+				pr.PauseRequestID = 0
+			}
+		}
+		return nil
+	})
+}
+
+// RunStopped composes durable phase reservations and Engine. Underlying drivers
+// must return only after their worker is stopped, including timeout/cancellation.
+// This method never starts a service, chooses credentials or publishes a review.
+func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now func() time.Time) (Outcome, error) {
+	if now == nil {
+		now = time.Now
+	}
+	j, err := s.claimJob(ctx, id, now())
+	if err != nil {
+		return Outcome{}, err
+	}
+	token := j.LeaseToken
+	wrapped := Engine{Reader: engine.Reader, Reviewers: map[Provider]Reviewer{}}
+	for provider, inner := range engine.Reviewers {
+		wrapped.Reviewers[provider] = DurableReviewer{Store: s, Job: j.Job, Token: token, Inner: inner, Reader: engine.Reader, Now: now}
+	}
+	out, runErr := wrapped.Run(ctx, j.Job, j.Checkpoint)
+	if errors.Is(runErr, ErrRefundPending) {
+		// Retain the nonce and attempt metadata for an explicit stopped-worker
+		// refund after storage repair. Releasing would discard that recovery path.
+		return out, runErr
+	}
+	state := out.State
+	if err = s.ReleaseStopped(context.WithoutCancel(ctx), id, token, state); err != nil {
+		return out, errors.Join(runErr, err)
+	}
+	return out, runErr
+}
+
+// RecoverCompleted reconstructs a completed outcome after a crash before outbox
+// preparation. It supplies no provider workers, so only validated cached phases
+// can be used. Source validation is repeated against the immutable snapshot.
+func (s *Store) RecoverCompleted(ctx context.Context, id string, source func(Snapshot) (*Reader, error)) (Outcome, error) {
+	d, err := s.Snapshot(ctx)
+	if err != nil {
+		return Outcome{}, err
+	}
+	j := d.Jobs[id]
+	if j == nil || j.LeaseToken != "" || j.Outstanding || (j.State != "dual_complete" && j.State != "single_complete") || len(j.Checkpoint.Artifacts) != j.Job.Config.MaxSessions() {
+		return Outcome{}, ErrDeferred
+	}
+	return (Engine{Reader: source}).Run(ctx, j.Job, j.Checkpoint)
+}
+
+// ResumeUnavailable is an explicit trusted-controller recovery action for the
+// existing native request. It performs no inference and resets no budgets,
+// config, release or artifacts. Call only after the external cause is repaired;
+// configuration comments alone never invoke it or create a review request.
+func (s *Store) ResumeUnavailable(ctx context.Context, id string, now time.Time) error {
+	return s.update(ctx, func(d *DurableState) error {
+		j := d.Jobs[id]
+		if j == nil || j.LeaseToken != "" || j.Outstanding {
+			return ErrDeferred
+		}
+		if j.State != "auth_failed" && j.State != "provider_unavailable" && j.State != "blocked" {
+			return ErrDeferred
+		}
+		pr := d.PRs[j.Scope.key()]
+		if pr.Paused || pr.Generation != j.Job.Generation || pr.CurrentRequest != j.RequestID {
+			return ErrFenced
+		}
+		if now.Sub(j.CreatedAt) > j.Job.Config.QuotaWait || j.Checkpoint.ConsumedSessions >= j.Job.Config.MaxSessions() {
+			return ErrDeferred
+		}
+		j.State = "queued"
+		return nil
+	})
+}
+
+func retireFencedJobs(d *DurableState, p *PRRecord) {
+	for _, j := range d.Jobs {
+		if j.Scope == p.Scope && (j.Job.Generation != p.Generation || j.RequestID != p.CurrentRequest) {
+			if p.CurrentRequest == 0 {
+				j.State = "cancelled"
+			} else {
+				j.State = "stale"
+			}
+		}
+	}
+}

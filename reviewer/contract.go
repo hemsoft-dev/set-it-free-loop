@@ -322,6 +322,10 @@ func requireShape(data []byte, t reflect.Type, depth int) error {
 	if depth > 32 || bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
 		return errors.New("null or excessive nesting in structured output")
 	}
+	if t == reflect.TypeOf(time.Time{}) {
+		var timestamp time.Time
+		return json.Unmarshal(data, &timestamp)
+	}
 	switch t.Kind() {
 	case reflect.Struct:
 		var fields map[string]json.RawMessage
