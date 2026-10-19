@@ -558,10 +558,14 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 	if err := session.Validate(); err != nil {
 		return Report{}, err
 	}
-	if session.JobID != r.Job.ID || session.Snapshot != r.Job.Snapshot || session.ConfigHash != r.Job.Config.Hash() || session.PacketHash != Digest(r.Job.Packet) {
+	expectedLimits, err := protocolLimits(r.Job)
+	if err != nil {
+		return Report{}, err
+	}
+	if session.Limits != expectedLimits || session.JobID != r.Job.ID || session.Snapshot != r.Job.Snapshot || session.ConfigHash != r.Job.Config.Hash() || session.PacketHash != Digest(r.Job.Packet) {
 		return Report{}, ErrFenced
 	}
-	err := r.Store.update(ctx, func(d *DurableState) error {
+	err = r.Store.update(ctx, func(d *DurableState) error {
 		j, err := fenced(d, r.Job.ID, r.Token, now())
 		if err != nil {
 			return err

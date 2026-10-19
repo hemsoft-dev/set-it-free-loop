@@ -302,7 +302,8 @@ func TestLeaseDoesNotStealExpiredWorkerAndCrashConsumesBudget(t *testing.T) {
 	if _, err = s.Claim(ctx, job.ID, now.Add(time.Hour)); !errors.Is(err, ErrDeferred) {
 		t.Fatal("expired worker stolen", err)
 	}
-	session, _ := NewSession(job.ID, job.Snapshot, job.Config.Hash(), Codex, 1, job.Packet, nil, nil, job.Config.Limits)
+	limits, _ := protocolLimits(job)
+	session, _ := NewSession(job.ID, job.Snapshot, job.Config.Hash(), Codex, 1, job.Packet, nil, nil, limits)
 	crashed := DurableReviewer{Store: s, Job: job, Token: token, Now: func() time.Time { return now }, Inner: reviewFunc(func(context.Context, Session) (Report, error) { panic("simulated worker death") })}
 	func() {
 		defer func() {
@@ -416,7 +417,8 @@ func TestDurablePhaseResumesWithoutRepeatingValidatedWork(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine := testEngine(t, func(_ context.Context, session Session) (Report, error) { return protocolReport(session), nil })
-	session, _ := NewSession(job.ID, job.Snapshot, job.Config.Hash(), Codex, 1, job.Packet, nil, nil, job.Config.Limits)
+	limits, _ := protocolLimits(job)
+	session, _ := NewSession(job.ID, job.Snapshot, job.Config.Hash(), Codex, 1, job.Packet, nil, nil, limits)
 	// A phase completed and persisted, then the process died before Engine returned.
 	worker := DurableReviewer{Store: s, Job: job, Token: token, Inner: engine.Reviewers[Codex], Reader: engine.Reader, Now: func() time.Time { return now }}
 	if _, err = worker.Review(ctx, session); err != nil {
