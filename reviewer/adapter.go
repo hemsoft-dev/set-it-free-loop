@@ -19,6 +19,7 @@ type Invocation struct {
 	Input         []byte
 	OutputLimit   int
 	ReadOnlyFiles map[string][]byte
+	Source        SourceTools `json:"-"`
 }
 
 // Driver is a trusted transport seam for a separately qualified isolated worker.
@@ -98,10 +99,51 @@ func (a Adapter) Invocation(s Session, environment map[string]string) (Invocatio
 }
 
 func (a Adapter) Review(ctx context.Context, s Session) (Report, error) {
+	r, _, err := a.ReviewSource(ctx, s)
+	return r, err
+}
+
+func (a Adapter) ReviewSource(ctx context.Context, s Session) (Report, *SourceAccess, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
+	defer cancel()
+	var broker *sourceBroker
+	if a.Reader != nil {
+		var err error
+		broker, err = newSourceBroker(ctx, s, a.Reader)
+		if err != nil {
+			return Report{}, nil, adapterValidation(err, true)
+		}
+	}
+	var source SourceTools
+	if broker != nil {
+		source = broker
+	}
+	r, err := a.review(ctx, s, source)
+	if broker == nil {
+		return r, nil, err
+	}
+	access := broker.seal()
+	if err == nil {
+		r, err = mergeCoverageRecords(r, access.Coverage)
+		if err == nil {
+			err = ValidateReport(r, s)
+		}
+		if data, encodeErr := json.Marshal(r); err == nil && (encodeErr != nil || len(data) > s.Limits.OutputBytes) {
+			err = errors.New("report with source-access omissions exceeds output bound")
+		}
+		if err != nil {
+			err = adapterValidation(err, false)
+		}
+	}
+	return r, access, err
+}
+
+func (a Adapter) review(ctx context.Context, s Session, source SourceTools) (Report, error) {
 	inv, err := a.Invocation(s, nil)
 	if err != nil {
 		return Report{}, adapterValidation(err, true)
 	}
+	inv.Source = source
 	if a.Driver == nil {
 		return Report{}, errors.Join(PhaseError{State: "blocked", BeforeWork: true}, ErrLiveBlocked)
 	}
@@ -126,6 +168,9 @@ func (a Adapter) Review(ctx context.Context, s Session) (Report, error) {
 		return Report{}, errors.Join(ctx.Err(), PhaseError{State: phaseState(ctx.Err()), BeforeWork: true})
 	}
 	data, identity, err := a.Driver.Execute(ctx, inv)
+	if broker, ok := source.(*sourceBroker); ok {
+		broker.revoke()
+	}
 	if err != nil {
 		return Report{}, err
 	}
@@ -163,6 +208,10 @@ func mergeReaderCoverage(r Report, reader *Reader) (Report, error) {
 		return r, nil
 	}
 	_, coverage := reader.Evidence()
+	return mergeCoverageRecords(r, coverage)
+}
+
+func mergeCoverageRecords(r Report, coverage []Coverage) (Report, error) {
 	merged := append(append([]Coverage{}, r.Coverage...), coverage...)
 	seen := map[Coverage]bool{}
 	r.Coverage = []Coverage{}

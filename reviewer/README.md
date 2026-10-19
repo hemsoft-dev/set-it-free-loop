@@ -40,8 +40,9 @@ The inspected pins are Codex CLI 0.163.0 with `gpt-6-astra` and Claude Code
 Codex feature switches and Claude safe/restricted/tool/MCP settings are candidate
 controls based on the installed help. They have not passed a credential-bearing
 tool inventory or hostile-client probe. No CLI permission flag is treated as an
-OS boundary. The manifest currently has no source-broker configuration; a
-qualified driver must supply only that job's reader and no ambient MCP servers. The generated strict Report schema is mounted read-only for Codex and passed through Claude's schema option. `NormalizeCLIOutput` requires a completed Codex JSONL turn or a successful Claude result envelope, rejects forbidden tool traces and malformed/incomplete output, and replaces model-reported usage with available client metadata. CLI turn counts are not a bound on internal inference calls; that bound still requires external qualification.
+OS boundary. The CLI manifests have no qualified reader RPC/MCP mapping. Fake
+drivers receive only the session-bound [source capability](SOURCE.md); a future
+qualified driver must map that job's reader and no ambient MCP servers. The generated strict Report schema is mounted read-only for Codex and passed through Claude's schema option. `NormalizeCLIOutput` requires a completed Codex JSONL turn or a successful Claude result envelope, rejects forbidden tool traces and malformed/incomplete output, and replaces model-reported usage with available client metadata. CLI turn counts are not a bound on internal inference calls; that bound still requires external qualification.
 
 `Reader` accepts only listed paths and the three captured revisions. It caps
 calls, bytes, search results and evidence logs, verifies quoted source anchors,
