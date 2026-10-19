@@ -42,7 +42,11 @@ type ControlOutcome struct {
 func RunSelfCritique(ctx context.Context, job Job, provider Provider, worker ControlReviewer, source func(Snapshot) (*Reader, error)) (ControlOutcome, error) {
 	out := ControlOutcome{State: "incomplete", Reports: []ControlReport{}, Ledger: []Entry{}}
 	fail := func(err error) (ControlOutcome, error) {
-		out.State = phaseState(err)
+		out.State = "invalid_output"
+		var pe PhaseError
+		if errors.As(err, &pe) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrLiveBlocked) {
+			out.State = phaseState(err)
+		}
 		out.Ledger = nil
 		return out, err
 	}
@@ -58,8 +62,8 @@ func RunSelfCritique(ctx context.Context, job Job, provider Provider, worker Con
 	if available < 4096 {
 		return fail(errors.New("control packet leaves no history budget"))
 	}
-	if cap := available / 3; limits.OutputBytes > cap {
-		limits.OutputBytes = cap
+	if len(packet) > EvaluationPacketBytes || limits.InputBytes != DefaultLimits().InputBytes || limits.OutputBytes > EvaluationOutputBytes || limits.OutputBytes > available/3 {
+		return fail(errors.New("control must honor the common frozen evaluation byte limits"))
 	}
 	entries := map[string]*Entry{}
 	var order []string
@@ -84,7 +88,7 @@ func RunSelfCritique(ctx context.Context, job Job, provider Provider, worker Con
 			if errors.As(err, &pe) && pe.BeforeWork {
 				out.ConsumedSessions--
 			}
-			return fail(err)
+			return fail(errors.Join(PhaseError{State: phaseState(err)}, err))
 		}
 		if err = phase.Err(); err != nil {
 			cancel()

@@ -16,13 +16,19 @@ type DefectLabel struct {
 	ID, Rationale, Evidence string
 	Material                bool
 }
+
+const EvaluationPacketBytes = 64 << 10
+const EvaluationOutputBytes = 32 << 10
+
 type EvaluationCase struct {
-	ID                  string
-	Snapshot            Snapshot
-	Clean               bool
-	HumanID             int64
-	Rationale, Evidence string
-	Defects             []DefectLabel
+	PacketHash            string
+	SerializedPacketBytes int
+	ID                    string
+	Snapshot              Snapshot
+	Clean                 bool
+	HumanID               int64
+	Rationale, Evidence   string
+	Defects               []DefectLabel
 }
 type EvaluationCorpus struct {
 	Version       int
@@ -38,13 +44,18 @@ func (c EvaluationCorpus) Validate() error {
 	if c.Version != 1 || c.RepositoryID != RepositoryID || c.FrozenAt.IsZero() || c.HumanID != OwnerID || strings.TrimSpace(c.LabelEvidence) == "" || len(c.Cases) < 20 || len(c.Cases) > 100 {
 		return errors.New("requires an owner-labeled frozen corpus of 20 to 100 cases")
 	}
-	clean := 0
+	clean, material := 0, 0
 	seen := map[string]bool{}
+	snapshots := map[string]bool{}
 	for _, test := range c.Cases {
 		if test.ID == "" || seen[test.ID] || test.HumanID != OwnerID || strings.TrimSpace(test.Rationale) == "" || strings.TrimSpace(test.Evidence) == "" {
 			return errors.New("missing/duplicate case or human label provenance")
 		}
 		seen[test.ID] = true
+		if snapshots[Digest(test.Snapshot)] || !digestPattern.MatchString(test.PacketHash) || test.SerializedPacketBytes <= 0 || test.SerializedPacketBytes > EvaluationPacketBytes {
+			return errors.New("duplicate snapshot or invalid frozen packet metadata")
+		}
+		snapshots[Digest(test.Snapshot)] = true
 		if err := test.Snapshot.Validate(); err != nil {
 			return err
 		}
@@ -60,10 +71,16 @@ func (c EvaluationCorpus) Validate() error {
 				return errors.New("invalid evidence-backed defect label")
 			}
 			labels[d.ID] = true
+			if d.Material {
+				material++
+			}
 		}
 		if !test.Clean && len(test.Defects) == 0 {
 			return errors.New("non-clean case requires defect evidence")
 		}
+	}
+	if material == 0 {
+		return errors.New("requires at least one material-defect case")
 	}
 	if clean < 10 {
 		return errors.New("requires at least ten human-labeled clean controls")
@@ -133,6 +150,9 @@ func (p EvaluationPlan) Validate(c EvaluationCorpus) error {
 	if err := p.Config.Validate(); err != nil {
 		return err
 	}
+	if p.Config.Limits.InputBytes != DefaultLimits().InputBytes || p.Config.Limits.OutputBytes > EvaluationOutputBytes {
+		return errors.New("freeze a common output cap no larger than 32 KiB with 256 KiB input for every arm")
+	}
 	if p.Config.Mode != Adversarial || p.Config.PeerRounds != 1 {
 		return errors.New("evaluation uses default four-session dual protocol")
 	}
@@ -156,6 +176,8 @@ type FindingLabel struct {
 	Rationale  string
 }
 type EvaluationResult struct {
+	PacketHash                          string
+	OutputBytesLimit                    int
 	CaseID                              string
 	Arm                                 EvaluationArm
 	Repeat                              int
@@ -197,6 +219,7 @@ func fraction(n, d int) Fraction {
 }
 
 type ArmScore struct {
+	ProvisionalGoalsMet                                    bool
 	Arm                                                    EvaluationArm
 	Precision, Recall, CleanSuccess                        Fraction
 	Completed, Failures, QuotaWaits, UsageUnknown, Missing int
@@ -204,7 +227,14 @@ type ArmScore struct {
 	Corroborated, Disputed, Concessions                    int
 	LatencyP50, LatencyP95, QueueP50, QueueP95             time.Duration
 }
+type ArmComparison struct {
+	Against                                 EvaluationArm
+	PrecisionDelta, RecallDelta, CleanDelta *float64
+	Interpretation                          string
+}
+
 type EvaluationScore struct {
+	Comparisons          []ArmComparison
 	CorpusHash, PlanHash string
 	Arms                 []ArmScore
 	Rollout              string
@@ -250,7 +280,7 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 	for _, run := range results {
 		test, ok := cases[run.CaseID]
 		key := fmt.Sprintf("%s/%s/%d", run.CaseID, run.Arm, run.Repeat)
-		if !ok || run.Arm.Sessions() == 0 || seen[key] || run.Repeat < 0 || run.Repeat >= p.Repeats || run.CorpusHash != c.Hash() || run.PlanHash != p.Hash() || run.Snapshot != test.Snapshot || !run.StartedAt.After(p.CreatedAt) || run.Latency < 0 || run.Queue < 0 || run.InputTokens < 0 || run.OutputTokens < 0 || run.Corroborated < 0 || run.Disputed < 0 || run.Concessions < 0 {
+		if !ok || run.Arm.Sessions() == 0 || seen[key] || run.Repeat < 0 || run.Repeat >= p.Repeats || run.CorpusHash != c.Hash() || run.PlanHash != p.Hash() || run.Snapshot != test.Snapshot || run.PacketHash != test.PacketHash || run.OutputBytesLimit != p.Config.Limits.OutputBytes || !run.StartedAt.After(p.CreatedAt) || run.Latency < 0 || run.Queue < 0 || run.InputTokens < 0 || run.OutputTokens < 0 || run.Corroborated < 0 || run.Disputed < 0 || run.Concessions < 0 {
 			return score, errors.New("invalid/duplicate run or changed evaluation provenance")
 		}
 		seen[key] = true
@@ -269,11 +299,17 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 				return score, errors.New("incomplete run or missing human assessment time")
 			}
 		case "quota_wait", "auth_failed", "provider_unavailable", "invalid_output", "cancelled", "incomplete_expired":
-			if len(run.FindingIDs) != 0 || len(run.Labels) != 0 {
+			if len(run.FindingIDs) != 0 || len(run.Labels) != 0 || run.Corroborated != 0 || run.Disputed != 0 || run.Concessions != 0 {
 				return score, errors.New("failed run exposed partial findings")
 			}
 		default:
 			return score, errors.New("unknown evaluation outcome")
+		}
+		if run.Arm != ArmAdversarial && run.Corroborated != 0 {
+			return score, errors.New("arm cannot produce peer corroboration")
+		}
+		if len(run.FindingIDs) > p.Config.Limits.MaxFindings*run.Arm.Sessions() {
+			return score, errors.New("result exceeds frozen finding budget")
 		}
 		ids := map[string]bool{}
 		for _, id := range run.FindingIDs {
@@ -310,6 +346,27 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 			}
 		}
 		byArm[run.Arm] = append(byArm[run.Arm], run)
+	}
+	// Validate actual chronology against each frozen case/repeat rotation.
+	for caseIndex, test := range c.Cases {
+		for repeat := 0; repeat < p.Repeats; repeat++ {
+			ranks := map[EvaluationArm]int{}
+			for i, arm := range p.Order(caseIndex, repeat) {
+				ranks[arm] = i
+			}
+			group := []EvaluationResult{}
+			for _, run := range results {
+				if run.CaseID == test.ID && run.Repeat == repeat {
+					group = append(group, run)
+				}
+			}
+			sort.Slice(group, func(i, j int) bool { return group[i].StartedAt.Before(group[j].StartedAt) })
+			for i := 1; i < len(group); i++ {
+				if !group[i].StartedAt.After(group[i-1].StartedAt) || ranks[group[i].Arm] <= ranks[group[i-1].Arm] {
+					return score, errors.New("cross-arm execution order differs from frozen rotation")
+				}
+			}
+		}
 	}
 	for _, arm := range EvaluationArms() {
 		a := ArmScore{Arm: arm}
@@ -366,7 +423,19 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 		a.LatencyP95 = quantile(latencies, .95)
 		a.QueueP50 = quantile(queues, .5)
 		a.QueueP95 = quantile(queues, .95)
+		a.ProvisionalGoalsMet = a.Missing == 0 && a.Failures == 0 && a.Precision.Rate != nil && a.Recall.Rate != nil && a.CleanSuccess.Rate != nil && *a.Precision.Rate >= .9 && *a.Recall.Rate >= .7 && *a.CleanSuccess.Rate >= .9
 		score.Arms = append(score.Arms, a)
+	}
+	dual := score.Arms[0]
+	delta := func(a, b *float64) *float64 {
+		if a == nil || b == nil {
+			return nil
+		}
+		d := *a - *b
+		return &d
+	}
+	for _, other := range score.Arms[1:] {
+		score.Comparisons = append(score.Comparisons, ArmComparison{Against: other.Arm, PrecisionDelta: delta(dual.Precision.Rate, other.Precision.Rate), RecallDelta: delta(dual.Recall.Rate, other.Recall.Rate), CleanDelta: delta(dual.CleanSuccess.Rate, other.CleanSuccess.Rate), Interpretation: "Descriptive differences only. Paired human analysis and uncertainty are required; these differences do not establish superiority."})
 	}
 	return score, nil
 }

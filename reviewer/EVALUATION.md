@@ -100,3 +100,13 @@ on this repo. Record deferred cases, subscription impact, recovery and maintenan
 plus p50 under ten minutes and p95 under twenty minutes when online and quota is
 available. Verify stop/rollback before claiming pilot completion. No org expansion,
 automatic push reviews, autonomous fixes, approvals or merges belong to this alpha.
+
+The frozen evaluation cap is at most 32 KiB of report output per session, with
+256 KiB session input and serialized packets no larger than 64 KiB. Every arm
+must honor the same configured output cap; the harness rejects a control that
+would reduce it. Results bind the frozen packet hash and exact output cap.
+Corpus validation rejects repeated immutable snapshots and requires at least
+one material defect. The scorer checks actual start-time chronology against the
+frozen arm rotation, rejects substantive counters on failed runs and rejects
+peer-corroboration counters from any arm without peer examination. Descriptive
+cross-arm deltas and provisional-goal results accompany the mandatory stop gate.

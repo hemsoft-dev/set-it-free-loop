@@ -5,6 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +21,7 @@ func syntheticCorpus() EvaluationCorpus {
 	for i := 0; i < 20; i++ {
 		snapshot := testSnapshot()
 		snapshot.PR = i + 1
-		test := EvaluationCase{ID: fmt.Sprintf("synthetic-%d", i), Snapshot: snapshot, Clean: i < 10, HumanID: OwnerID, Rationale: "synthetic unit-test label", Evidence: "synthetic evidence", Defects: []DefectLabel{}}
+		test := EvaluationCase{PacketHash: Digest("synthetic immutable evidence"), SerializedPacketBytes: 30, ID: fmt.Sprintf("synthetic-%d", i), Snapshot: snapshot, Clean: i < 10, HumanID: OwnerID, Rationale: "synthetic unit-test label", Evidence: "synthetic evidence", Defects: []DefectLabel{}}
 		if !test.Clean {
 			test.Defects = append(test.Defects, DefectLabel{"d1", "synthetic defect", "synthetic source", true})
 		}
@@ -26,13 +30,14 @@ func syntheticCorpus() EvaluationCorpus {
 	return c
 }
 func syntheticPlan(c EvaluationCorpus) EvaluationPlan {
-	return EvaluationPlan{Version: 1, CorpusHash: c.Hash(), TrustedRelease: strings.Repeat("d", 40), Policy: PolicyVersion, Config: DefaultConfig(), CreatedAt: c.FrozenAt.Add(time.Minute), Repeats: 1}
+	return EvaluationPlan{Version: 1, CorpusHash: c.Hash(), TrustedRelease: strings.Repeat("d", 40), Policy: PolicyVersion, Config: func() Config { cfg := DefaultConfig(); cfg.Limits.OutputBytes = EvaluationOutputBytes; return cfg }(), CreatedAt: c.FrozenAt.Add(time.Minute), Repeats: 1}
 }
 func syntheticResults(c EvaluationCorpus, p EvaluationPlan) []EvaluationResult {
 	results := []EvaluationResult{}
-	for _, test := range c.Cases {
-		for _, arm := range EvaluationArms() {
-			r := EvaluationResult{CaseID: test.ID, Arm: arm, CorpusHash: c.Hash(), PlanHash: p.Hash(), ReportHash: strings.Repeat("f", 64), Snapshot: test.Snapshot, StartedAt: p.CreatedAt.Add(time.Minute), State: "complete", Sessions: arm.Sessions(), Providers: arm.Schedule(), FindingIDs: []string{}, Labels: []FindingLabel{}, LabelledAt: p.CreatedAt.Add(time.Hour), Latency: time.Minute, Queue: time.Second}
+	for caseIndex, test := range c.Cases {
+		for position, arm := range p.Order(caseIndex, 0) {
+			started := p.CreatedAt.Add(time.Duration(1+caseIndex*6+position) * 2 * time.Minute)
+			r := EvaluationResult{PacketHash: test.PacketHash, OutputBytesLimit: p.Config.Limits.OutputBytes, CaseID: test.ID, Arm: arm, CorpusHash: c.Hash(), PlanHash: p.Hash(), ReportHash: strings.Repeat("f", 64), Snapshot: test.Snapshot, StartedAt: started, State: "complete", Sessions: arm.Sessions(), Providers: arm.Schedule(), FindingIDs: []string{}, Labels: []FindingLabel{}, LabelledAt: started.Add(time.Hour), Latency: time.Minute, Queue: time.Second}
 			if !test.Clean {
 				r.FindingIDs = []string{"f1"}
 				r.Labels = []FindingLabel{{"f1", true, []string{"d1"}, OwnerID, "synthetic actionability only"}}
@@ -160,6 +165,7 @@ func fakeControl(s ControlSession) ControlReport {
 func TestEqualSessionSelfCritiqueControl(t *testing.T) {
 	for _, provider := range []Provider{Codex, Claude} {
 		job := testJob()
+		job.Config.Limits.OutputBytes = EvaluationOutputBytes
 		if provider == Codex {
 			job.Config.Mode = CodexOnly
 		} else {
@@ -181,6 +187,7 @@ func TestEqualSessionSelfCritiqueControl(t *testing.T) {
 }
 func TestSelfCritiqueCannotReturnPartialOrForgeSupport(t *testing.T) {
 	job := testJob()
+	job.Config.Limits.OutputBytes = EvaluationOutputBytes
 	job.Config.Mode = CodexOnly
 	engine := testEngine(t, nil)
 	out, err := RunSelfCritique(context.Background(), job, Codex, controlFunc(func(_ context.Context, s ControlSession) (ControlReport, error) {
@@ -201,5 +208,123 @@ func TestSelfCritiqueCannotReturnPartialOrForgeSupport(t *testing.T) {
 	}), engine.Reader)
 	if err == nil {
 		t.Fatal("unexamined self-finding accepted")
+	}
+}
+
+func TestScoreCommandReadsRetainedFiles(t *testing.T) {
+	c := syntheticCorpus()
+	p := syntheticPlan(c)
+	runs := syntheticResults(c, p)
+	dir := t.TempDir()
+	args := []string{"run", "./cmd/evalscore"}
+	for _, item := range []struct {
+		name  string
+		value any
+	}{{"corpus.json", c}, {"plan.json", p}, {"results.json", runs}} {
+		raw, err := json.Marshal(item.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, item.name)
+		if err = os.WriteFile(path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+		args = append(args, path)
+	}
+	command := exec.Command(filepath.Join(runtime.GOROOT(), "bin", "go"), args...)
+	raw, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatal("offline CLI failed", err, string(raw))
+	}
+	var score EvaluationScore
+	if err = json.Unmarshal(raw, &score); err != nil {
+		t.Fatal(err)
+	}
+	if len(score.Arms) != 6 || len(score.Comparisons) != 5 || !score.Arms[0].ProvisionalGoalsMet || score.Comparisons[0].PrecisionDelta == nil || *score.Comparisons[0].PrecisionDelta != 0 {
+		t.Fatal("wrong CLI score", score)
+	}
+}
+
+func TestFrozenCorpusRejectsNoMaterialAndDuplicateSnapshots(t *testing.T) {
+	c := syntheticCorpus()
+	for i := range c.Cases {
+		for j := range c.Cases[i].Defects {
+			c.Cases[i].Defects[j].Material = false
+		}
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("recall-free corpus accepted")
+	}
+	c = syntheticCorpus()
+	c.Cases[1].Snapshot = c.Cases[0].Snapshot
+	if err := c.Validate(); err == nil {
+		t.Fatal("duplicate snapshot overweighted corpus")
+	}
+}
+func TestEvaluationRejectsCrossArmReorderingAndPartialCounters(t *testing.T) {
+	c := syntheticCorpus()
+	p := syntheticPlan(c)
+	runs := syntheticResults(c, p)
+	runs[0].StartedAt, runs[1].StartedAt = runs[1].StartedAt, runs[0].StartedAt
+	if _, err := ScoreEvaluation(c, p, runs); err == nil {
+		t.Fatal("frozen order not enforced")
+	}
+	runs = syntheticResults(c, p)
+	runs[0].State = "quota_wait"
+	runs[0].Sessions = 0
+	runs[0].Providers = []Provider{}
+	runs[0].Corroborated = 1
+	if _, err := ScoreEvaluation(c, p, runs); err == nil {
+		t.Fatal("failed run fabricated ledger counters")
+	}
+	runs = syntheticResults(c, p)
+	for i := range runs {
+		if runs[i].Arm == ArmCodexControl {
+			runs[i].Corroborated = 1
+			break
+		}
+	}
+	if _, err := ScoreEvaluation(c, p, runs); err == nil {
+		t.Fatal("self-confirmation became peer support")
+	}
+}
+func TestCommonFrozenOutputCapAcrossAllArms(t *testing.T) {
+	c := syntheticCorpus()
+	p := syntheticPlan(c)
+	p.Config.Limits.OutputBytes = DefaultLimits().OutputBytes
+	if err := p.Validate(c); err == nil {
+		t.Fatal("unequal effective output limits permitted")
+	}
+	p = syntheticPlan(c)
+	for _, mode := range []Mode{Adversarial, IndependentPair, CodexOnly, ClaudeOnly} {
+		job := testJob()
+		job.Config = p.Config
+		job.Config.Mode = mode
+		job.Packet = strings.Repeat("x", EvaluationPacketBytes-2)
+		limits, err := protocolLimits(job)
+		if err != nil || limits.OutputBytes != p.Config.Limits.OutputBytes {
+			t.Fatal("production arm cap changed", mode, err, limits)
+		}
+	}
+	job := testJob()
+	job.Config = p.Config
+	job.Config.Mode = CodexOnly
+	engine := testEngine(t, nil)
+	_, err := RunSelfCritique(context.Background(), job, Codex, controlFunc(func(_ context.Context, s ControlSession) (ControlReport, error) {
+		if s.Limits.OutputBytes != p.Config.Limits.OutputBytes {
+			t.Fatal("self-control cap differs")
+		}
+		return fakeControl(s), nil
+	}), engine.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := RunSelfCritique(context.Background(), job, Codex, controlFunc(func(_ context.Context, s ControlSession) (ControlReport, error) {
+		r := fakeControl(s)
+		r.InputHash = "forged"
+		return r, nil
+	}), engine.Reader)
+	if err == nil || out.State != "invalid_output" {
+		t.Fatal("invalid control output misclassified", out, err)
 	}
 }
