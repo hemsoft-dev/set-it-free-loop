@@ -82,10 +82,12 @@ func Render(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
 	if len(out.Ledger) == 0 {
 		b.WriteString("No findings reported within the stated coverage. This does not establish that omitted or unreadable code is clean.\n\n")
 	}
+	ledger := renderGroups(out.Ledger)
+	omitted := 0
 	for _, status := range []string{"corroborated", "disputed", "unverified", "retracted"} {
 		var section strings.Builder
 		seen := map[string]bool{}
-		for _, entry := range out.Ledger {
+		for _, entry := range ledger {
 			if entry.Status != status {
 				continue
 			}
@@ -112,12 +114,7 @@ func Render(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
 			if len(entry.RelatedIDs) > 0 {
 				text += "Related allegation IDs: " + safeText(strings.Join(entry.RelatedIDs, ", ")) + ".\n"
 			}
-			var history []Assessment
-			for _, related := range out.Ledger {
-				if related.Status == status && related.Finding.Title == f.Title && related.Finding.Body == f.Body && related.Finding.Anchor == f.Anchor {
-					history = append(history, related.History...)
-				}
-			}
+			history := entry.History
 			for _, assessment := range history {
 				if !assessment.Provider.Valid() {
 					return doc, fmt.Errorf("invalid assessment identity")
@@ -130,8 +127,12 @@ func Render(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
 					text += fmt.Sprintf("Evidence: [%s:%d](%s).\n", safeText(a.Path), a.Line, sourceURL(out.Job.Snapshot, a))
 				}
 			}
+			if b.Len()+section.Len()+len(text) > 48<<10 {
+				omitted++
+				continue
+			}
 			section.WriteString("### " + text + "\n")
-			if status == "corroborated" && diffLines[f.Anchor.Path][f.Anchor.Line] {
+			if status == "corroborated" && diffLines[f.Anchor.Path][f.Anchor.Line] && len(doc.Inline) < 40 && len(text) < (16<<10)-64 {
 				doc.Inline = append(doc.Inline, InlineComment{f.Anchor.Path, f.Anchor.Line, "Model-assessed peer support.\n\n" + text})
 			}
 		}
@@ -140,16 +141,27 @@ func Render(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
 			b.WriteString("## " + label + "\n\n" + section.String())
 		}
 	}
+	if omitted > 0 {
+		fmt.Fprintf(&b, "Publication limit: %d finding groups omitted from this summary; retained in the durable ledger. This review is not exhaustive.\n\n", omitted)
+	}
 	b.WriteString("## Coverage\n\n")
 	coverageCount := 0
 	for _, artifact := range out.Artifacts {
 		for _, c := range append(append([]Coverage(nil), artifact.Report.Coverage...), artifact.Coverage...) {
-			fmt.Fprintf(&b, "- %s R%d: %s %s\n", artifact.Report.Provider, artifact.Report.Round, safeText(c.Path), safeText(c.Reason))
+			if b.Len() < 60<<10 {
+				fmt.Fprintf(&b, "- %s R%d: %s %s\n", artifact.Report.Provider, artifact.Report.Round, safeText(c.Path), safeText(c.Reason))
+			} else {
+				omitted++
+				continue
+			}
 			coverageCount++
 		}
 	}
 	if coverageCount == 0 {
 		b.WriteString("No explicit omissions reported. Source-reader limits and inspected evidence still bound this review.\n")
+	}
+	if omitted > 0 {
+		b.WriteString("\nSome retained evidence exceeded publication limits. See the durable job record for complete findings and coverage.\n")
 	}
 	doc.Summary = b.String()
 	if len(doc.Summary) > 64<<10 || len(doc.Inline) > 40 {
@@ -161,4 +173,46 @@ func Render(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
 		}
 	}
 	return doc, nil
+}
+
+// Exact duplicate allegations share one conservative status and all history.
+// An unresolved objection to either ID blocks inline publication for the group.
+func renderGroups(entries []Entry) []Entry {
+	groups := []Entry{}
+	indexes := map[string]int{}
+	for _, e := range entries {
+		key := Digest(struct {
+			Title, Body string
+			Anchor      Anchor
+		}{e.Finding.Title, e.Finding.Body, e.Finding.Anchor})
+		if i, ok := indexes[key]; ok {
+			g := &groups[i]
+			g.History = append(g.History, e.History...)
+			g.RelatedIDs = append(g.RelatedIDs, e.Finding.ID)
+			if e.Status != "retracted" {
+				if g.Status == "retracted" {
+					g.Status = e.Status
+					g.SeverityMin = e.SeverityMin
+					g.SeverityMax = e.SeverityMax
+				}
+				if e.SeverityMin < g.SeverityMin {
+					g.SeverityMin = e.SeverityMin
+				}
+				if e.SeverityMax > g.SeverityMax {
+					g.SeverityMax = e.SeverityMax
+				}
+				if e.Status == "disputed" || g.SeverityMin != g.SeverityMax {
+					g.Status = "disputed"
+				} else if e.Status == "unverified" && g.Status != "disputed" {
+					g.Status = "unverified"
+				}
+			}
+		} else {
+			indexes[key] = len(groups)
+			e.History = append([]Assessment{}, e.History...)
+			e.RelatedIDs = append([]string{}, e.RelatedIDs...)
+			groups = append(groups, e)
+		}
+	}
+	return groups
 }

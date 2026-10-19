@@ -93,3 +93,44 @@ func TestRendererRedactsRecognizableCredentialStrings(t *testing.T) {
 		t.Fatal("credential-shaped value survived rendering")
 	}
 }
+
+func TestExactDuplicateObjectionBlocksInline(t *testing.T) {
+	e := testEngine(t, func(_ context.Context, s Session) (Report, error) {
+		r := protocolReport(s)
+		if s.Round == 2 && s.Identity.Provider == Claude {
+			r.Judgments[0].Verdict = "reject"
+			r.Judgments[0].Reason = "Unresolved objection"
+		}
+		return r, nil
+	})
+	out, err := e.Run(context.Background(), testJob(), Checkpoint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Render(out, map[string]map[int]bool{"source.go": {1: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Inline) != 0 || !strings.Contains(doc.Summary, "Unresolved objection") || strings.Contains(doc.Summary, "## Peer-supported findings") {
+		t.Fatal("duplicate hid objection", doc)
+	}
+}
+
+func TestPublicationBoundsRetainOversizeLedger(t *testing.T) {
+	e := testEngine(t, func(_ context.Context, s Session) (Report, error) { return protocolReport(s), nil })
+	out, err := e.Run(context.Background(), testJob(), Checkpoint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := out.Ledger[0]
+	out.Ledger = nil
+	for i := 0; i < 100; i++ {
+		entry := seed
+		entry.Finding.Title = strings.Repeat("large finding ", 300) + string(rune('A'+i))
+		out.Ledger = append(out.Ledger, entry)
+	}
+	doc, err := Render(out, map[string]map[int]bool{"source.go": {1: true}})
+	if err != nil || len(doc.Summary) > 64<<10 || len(doc.Inline) > 40 || !strings.Contains(doc.Summary, "Publication limit") || len(out.Ledger) != 100 {
+		t.Fatal("valid ledger cannot publish bounded document", err)
+	}
+}

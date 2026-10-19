@@ -25,7 +25,7 @@ Completed 4 required phases. Peer support is model-assessed, not proof of a defe
 Source-grounded allegation
 
 Source: [source.go:1](https://github.com/hemsoft-dev/set-it-free-loop/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/source.go#L1). Finding `claude:one`, claude R1.
-Related allegation IDs: codex:one.
+Related allegation IDs: codex:one, codex:one.
 
 codex R2, confirm: Source supports this allegation
 Evidence: [source.go:1](https://github.com/hemsoft-dev/set-it-free-loop/blob/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/source.go#L1).

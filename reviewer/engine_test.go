@@ -290,3 +290,31 @@ func TestUnresolvedRejectionSurvivesLaterInabilityToVerify(t *testing.T) {
 		}
 	}
 }
+
+func TestProtocolReservesSerializedPeerInput(t *testing.T) {
+	job := testJob()
+	job.Packet = strings.Repeat("e", 60<<10)
+	limits, err := protocolLimits(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	e := testEngine(t, func(_ context.Context, s Session) (Report, error) {
+		calls++
+		if _, err := (Adapter{Provider: s.Identity.Provider, AuthDirectory: "/fake"}).Invocation(s, nil); err != nil {
+			t.Fatal("selected phase exceeded input", err)
+		}
+		r := protocolReport(s)
+		if s.Round == 1 {
+			r.Coverage = []Coverage{{Path: "source.go", Reason: strings.Repeat("x", 500)}}
+		}
+		return r, nil
+	})
+	if _, err := e.Run(context.Background(), job, Checkpoint{}); err != nil || calls != 4 || limits.OutputBytes >= job.Config.Limits.OutputBytes {
+		t.Fatal("aggregate phase budget", err, calls, limits)
+	}
+	job.Packet = strings.Repeat("x", job.Config.Limits.InputBytes)
+	if _, err := e.Run(context.Background(), job, Checkpoint{}); err == nil || calls != 4 {
+		t.Fatal("oversize packet admitted")
+	}
+}

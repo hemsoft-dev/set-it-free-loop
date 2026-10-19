@@ -27,8 +27,33 @@ func (j Job) Validate() error {
 	if err := j.Config.Validate(); err != nil {
 		return err
 	}
-	_, err := NewSession(j.ID, j.Snapshot, j.Config.Hash(), j.Config.Providers()[0], 1, j.Packet, nil, nil, j.Config.Limits)
+	limits, err := protocolLimits(j)
+	if err != nil {
+		return err
+	}
+	_, err = NewSession(j.ID, j.Snapshot, j.Config.Hash(), j.Config.Providers()[0], 1, j.Packet, nil, nil, limits)
 	return err
+}
+
+// Reserve aggregate input space for frozen peer reports, JSON escaping, focus
+// IDs and trusted task metadata. A phase cannot admit an output that makes the
+// selected later round impossible solely because of serialized input size.
+func protocolLimits(j Job) (Limits, error) {
+	l := j.Config.Limits
+	packet, _ := json.Marshal(j.Packet)
+	reserve := 64 << 10
+	peers := 1
+	if j.Config.Mode == Adversarial {
+		peers = 2 * j.Config.PeerRounds
+	}
+	available := l.InputBytes - len(packet) - reserve
+	if available < 4096 {
+		return l, errors.New("evidence packet leaves insufficient bounded peer input space")
+	}
+	if cap := available / peers; l.OutputBytes > cap {
+		l.OutputBytes = cap
+	}
+	return l, nil
 }
 
 type Artifact struct {
@@ -132,6 +157,10 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 	if err := job.Validate(); err != nil {
 		return fail("invalid_admission", err)
 	}
+	limits, err := protocolLimits(job)
+	if err != nil {
+		return fail("invalid_admission", err)
+	}
 	resume := checkpoint.Artifacts
 	if (checkpoint.JobHash != "" && checkpoint.JobHash != Digest(job)) || ((len(resume) > 0 || checkpoint.ConsumedSessions > 0) && checkpoint.JobHash != Digest(job)) || checkpoint.ConsumedSessions < len(resume) || checkpoint.ConsumedSessions > job.Config.MaxSessions() {
 		return fail("invalid_output", errors.New("invalid durable session accounting"))
@@ -185,7 +214,7 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 			if err := json.Unmarshal(peerBytes, &frozen); err != nil {
 				return fail("invalid_output", err)
 			}
-			session, err := NewSession(job.ID, job.Snapshot, job.Config.Hash(), provider, round, job.Packet, frozen, focus, job.Config.Limits)
+			session, err := NewSession(job.ID, job.Snapshot, job.Config.Hash(), provider, round, job.Packet, frozen, focus, limits)
 			if err != nil {
 				return fail("invalid_output", err)
 			}
@@ -227,7 +256,7 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 				out.InvalidPhases++
 				return fail("invalid_output", err)
 			}
-			validated, err := DecodeStrict[Report](encoded, job.Config.Limits.OutputBytes)
+			validated, err := DecodeStrict[Report](encoded, session.Limits.OutputBytes)
 			if err == nil {
 				err = ValidateReport(validated, session)
 			}
@@ -254,7 +283,7 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 				return fail("invalid_output", err)
 			}
 			encoded, err = json.Marshal(validated)
-			if err != nil || len(encoded) > job.Config.Limits.OutputBytes {
+			if err != nil || len(encoded) > session.Limits.OutputBytes {
 				return fail("invalid_output", errors.New("report with authoritative coverage exceeds output bound"))
 			}
 			if err := phase.Err(); err != nil {
