@@ -472,3 +472,15 @@ func TestUnknownPublicationSurvivesRetentionAndSecretRedaction(t *testing.T) {
 		t.Fatal("unknown write lost on retention")
 	}
 }
+
+func TestInvalidOwnerCommandCannotPoisonDiscovery(t *testing.T) {
+	s, _ := openFixtureStore(t)
+	bad := commandEvent(1, "/sfl config endpoint=https://invalid.example", controlTime.Add(time.Minute))
+	good := commandEvent(2, "/sfl config mode=codex-only", controlTime.Add(2*time.Minute))
+	mustCapture(t, s, []CommandEvent{bad, good}, controlTime.Add(3*time.Minute))
+	d, _ := s.Snapshot(context.Background())
+	p := d.PRs[alphaScope().key()]
+	if len(p.Commands) != 2 || p.Commands[0].Command.Action != "reject" || p.Commands[1].Config.Mode != CodexOnly || p.Commands[1].Version != 2 {
+		t.Fatal("invalid command poisoned following configuration", p)
+	}
+}

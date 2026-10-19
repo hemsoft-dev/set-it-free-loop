@@ -151,8 +151,9 @@ func Render(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
 	coverageCount := 0
 	for _, artifact := range out.Artifacts {
 		for _, c := range append(append([]Coverage(nil), artifact.Report.Coverage...), artifact.Coverage...) {
-			if b.Len() < 60<<10 {
-				fmt.Fprintf(&b, "- %s R%d: %s %s\n", artifact.Report.Provider, artifact.Report.Round, safeText(c.Path), safeText(c.Reason))
+			line := fmt.Sprintf("- %s R%d: %s %s\n", artifact.Report.Provider, artifact.Report.Round, safeText(c.Path), safeText(c.Reason))
+			if b.Len()+len(line) < 60<<10 {
+				b.WriteString(line)
 			} else {
 				omitted++
 				continue

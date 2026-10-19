@@ -284,9 +284,12 @@ func (s *Store) CaptureCommands(ctx context.Context, scope Scope, events []Comma
 			if event.CreatedAt.After(through) {
 				return ErrDeferred
 			}
-			command, err := ParseCommand(event)
-			if err != nil {
-				return err
+			command, parseErr := ParseCommand(event)
+			if event.ID <= 0 || event.CreatedAt.IsZero() {
+				return errors.New("invalid platform command identity")
+			}
+			if parseErr != nil {
+				command = Command{EventID: event.ID, AuthorID: OwnerID, BodyHash: Digest(event.Body), Action: "reject", Values: map[string]string{}}
 			}
 			if !p.HistoryThrough.IsZero() && !event.CreatedAt.After(p.HistoryThrough) {
 				return ErrDeferred
@@ -303,9 +306,13 @@ func (s *Store) CaptureCommands(ctx context.Context, scope Scope, events []Comma
 				current.Version = last.Version
 			}
 
-			next, err := ApplyConfig(current.Config, d.Defaults, command)
-			if err != nil {
-				return err
+			next := current.Config
+			if parseErr == nil {
+				next, parseErr = ApplyConfig(current.Config, d.Defaults, command)
+			}
+			if parseErr != nil {
+				command.Action = "reject"
+				next = current.Config
 			}
 			version := current.Version
 			if command.Action == "configure" || command.Action == "reset" {
@@ -316,6 +323,9 @@ func (s *Store) CaptureCommands(ctx context.Context, scope Scope, events []Comma
 				p.CurrentRequest = 0
 			}
 			body := fmt.Sprintf("SFL %s accepted. Configuration version %d, hash %s. Configuration applies to the next native owner review request after this acknowledgment. No inference was started.", command.Action, version, next.Hash())
+			if parseErr != nil {
+				body = "SFL command rejected: " + parseErr.Error() + ". Configuration is unchanged. No inference was started."
+			}
 			intent := newIntent("ack", scope, p.Generation, 0, Snapshot{}, "", Document{Summary: body, Inline: []InlineComment{}}, event.CreatedAt)
 			d.Writes[intent.ID] = &intent
 			p.Commands = append(p.Commands, CommandRecord{command, event.CreatedAt, next, version, intent.ID})

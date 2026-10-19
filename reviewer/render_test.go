@@ -147,3 +147,19 @@ func TestWithdrawnDuplicateCannotRepresentActiveGroup(t *testing.T) {
 		t.Fatal("withdrawn provenance survived as active", groups)
 	}
 }
+
+func TestEscapedCoverageCannotExceedPublicationLimit(t *testing.T) {
+	e := testEngine(t, func(_ context.Context, s Session) (Report, error) { return protocolReport(s), nil })
+	out, err := e.Run(context.Background(), testJob(), Checkpoint{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.Artifacts[0].Coverage = []Coverage{}
+	for i := 0; i < 256; i++ {
+		out.Artifacts[0].Coverage = append(out.Artifacts[0].Coverage, Coverage{Path: strings.Repeat("'", 512), Reason: strings.Repeat("'", 1024)})
+	}
+	doc, err := Render(out, nil)
+	if err != nil || len(doc.Summary) > 64<<10 || !strings.Contains(doc.Summary, "exceeded publication limits") {
+		t.Fatal("escaped coverage overflow", err)
+	}
+}
