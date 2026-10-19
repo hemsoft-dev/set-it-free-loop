@@ -324,3 +324,31 @@ func TestPhaseDeadlineIsExpiration(t *testing.T) {
 		t.Fatal("deadline misreported as outage")
 	}
 }
+
+func TestRealAdapterFailuresKeepAuthAndInvalidOutputStates(t *testing.T) {
+	for _, kind := range []string{"pre-auth", "post-auth", "malformed-report"} {
+		t.Run(kind, func(t *testing.T) {
+			job := testJob()
+			identity, _ := PinnedIdentity(Codex)
+			driver := &fakeDriver{inspect: identity, actual: identity, data: []byte("invalid structured report")}
+			expected, consumed, invalid := "invalid_output", 1, 1
+			if kind == "pre-auth" {
+				driver.inspect.AuthMode = "api_key"
+				expected = "auth_failed"
+				consumed = 0
+				invalid = 0
+			}
+			if kind == "post-auth" {
+				driver.actual.AuthMode = "api_key"
+				expected = "auth_failed"
+				invalid = 0
+			}
+			adapter := Adapter{Provider: Codex, Driver: driver, AuthDirectory: t.TempDir()}
+			engine := Engine{Reviewers: map[Provider]Reviewer{Codex: adapter}}
+			out, err := engine.Run(context.Background(), job, Checkpoint{})
+			if err == nil || out.State != expected || out.ConsumedSessions != consumed || out.InvalidPhases != invalid || len(out.Ledger) != 0 {
+				t.Fatal("adapter error hidden as outage", out, err)
+			}
+		})
+	}
+}
