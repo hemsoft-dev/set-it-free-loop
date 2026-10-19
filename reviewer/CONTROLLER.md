@@ -99,3 +99,10 @@ A crash after the final phase and before outbox preparation can recover through
 validated reports, supplies no provider workers and repeats immutable source
 validation. Publication compares the proposed ledger with those durable reports;
 a caller cannot replace allegations while retaining genuine phase receipts.
+
+Authentication failure stays `auth_failed` in durable state. After a qualified
+external repair, `ResumeUnavailable` can requeue the same still-current native
+request without changing its snapshot, config, release, artifacts or consumed
+budget. It does no inference, is never called by configuration comments, and
+rejects expired/exhausted, cancelled, superseded or paused jobs. Unknown provider
+work remains charged; this recovery cannot create additional session capacity.

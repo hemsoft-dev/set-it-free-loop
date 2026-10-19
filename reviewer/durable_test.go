@@ -753,3 +753,43 @@ func TestCrashAfterCompletionRecoversWithoutProviderWork(t *testing.T) {
 		t.Fatal("forged ledger accepted")
 	}
 }
+
+func TestAuthRecoveryPreservesCapturedStateAndBudget(t *testing.T) {
+	s, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	engine := testEngine(t, func(_ context.Context, session Session) (Report, error) {
+		if session.Identity.Provider == Claude {
+			return Report{}, PhaseError{State: "auth_failed", BeforeWork: true}
+		}
+		return protocolReport(session), nil
+	})
+	out, err := s.RunStopped(ctx, job.ID, engine, func() time.Time { return now })
+	if err == nil || out.State != "auth_failed" || out.ConsumedSessions != 1 {
+		t.Fatal("auth fixture", out, err)
+	}
+	d, _ := s.Snapshot(ctx)
+	before := d.Jobs[job.ID].Checkpoint
+	if d.Jobs[job.ID].State != "auth_failed" {
+		t.Fatal("durable auth state became outage")
+	}
+	if err = s.ResumeUnavailable(ctx, job.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = s.Snapshot(ctx)
+	if Digest(d.Jobs[job.ID].Checkpoint) != Digest(before) || Digest(d.Jobs[job.ID].Job) != Digest(job) {
+		t.Fatal("recovery changed captured job or reset budget")
+	}
+	calls := 0
+	engine = testEngine(t, func(_ context.Context, session Session) (Report, error) {
+		calls++
+		if session.Round == 1 && session.Identity.Provider == Codex {
+			t.Fatal("repeated persisted R1")
+		}
+		return protocolReport(session), nil
+	})
+	out, err = s.RunStopped(ctx, job.ID, engine, func() time.Time { return now })
+	if err != nil || out.State != "dual_complete" || calls != 3 || out.ConsumedSessions != 4 {
+		t.Fatal("auth recovery failed", out, err, calls)
+	}
+}

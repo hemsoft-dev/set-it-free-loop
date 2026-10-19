@@ -550,7 +550,7 @@ func fenced(d *DurableState, id, token string, now time.Time) (*DurableJob, erro
 }
 func (s *Store) ReleaseStopped(ctx context.Context, id, token string, state string) error {
 	switch state {
-	case "queued", "quota_wait", "cancelled", "provider_unavailable", "dual_complete", "single_complete", "invalid_output", "incomplete_expired":
+	case "queued", "quota_wait", "cancelled", "provider_unavailable", "auth_failed", "blocked", "dual_complete", "single_complete", "invalid_output", "incomplete_expired":
 	default:
 		return errors.New("invalid terminal state")
 	}
@@ -807,9 +807,6 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 	}
 	out, runErr := wrapped.Run(ctx, j.Job, j.Checkpoint)
 	state := out.State
-	if state == "blocked" || state == "auth_failed" {
-		state = "provider_unavailable"
-	}
 	if err = s.ReleaseStopped(context.WithoutCancel(ctx), id, token, state); err != nil {
 		return out, errors.Join(runErr, err)
 	}
@@ -829,4 +826,29 @@ func (s *Store) RecoverCompleted(ctx context.Context, id string, source func(Sna
 		return Outcome{}, ErrDeferred
 	}
 	return (Engine{Reader: source}).Run(ctx, j.Job, j.Checkpoint)
+}
+
+// ResumeUnavailable is an explicit trusted-controller recovery action for the
+// existing native request. It performs no inference and resets no budgets,
+// config, release or artifacts. Call only after the external cause is repaired;
+// configuration comments alone never invoke it or create a review request.
+func (s *Store) ResumeUnavailable(ctx context.Context, id string, now time.Time) error {
+	return s.update(ctx, func(d *DurableState) error {
+		j := d.Jobs[id]
+		if j == nil || j.LeaseToken != "" || j.Outstanding {
+			return ErrDeferred
+		}
+		if j.State != "auth_failed" && j.State != "provider_unavailable" && j.State != "blocked" {
+			return ErrDeferred
+		}
+		pr := d.PRs[j.Scope.key()]
+		if pr.Paused || pr.Generation != j.Job.Generation || pr.CurrentRequest != j.RequestID {
+			return ErrFenced
+		}
+		if now.Sub(j.CreatedAt) > j.Job.Config.QuotaWait || j.Checkpoint.ConsumedSessions >= j.Job.Config.MaxSessions() {
+			return ErrDeferred
+		}
+		j.State = "queued"
+		return nil
+	})
 }
