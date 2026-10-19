@@ -1,0 +1,189 @@
+{
+  "status": "candidate-only-unlabeled",
+  "repository_id": 1169772257,
+  "selected_at": "2026-10-19T05:57:49.029947+00:00",
+  "selection": "20 most recent merged PRs before alpha mission; no provider runs or tuning against these candidates",
+  "required_human_work": "Confirm held-out eligibility, assign evidence-backed material defects and at least 10 clean controls, then freeze an EvaluationCorpus. These candidates are not ground truth.",
+  "candidates": [
+    {
+      "baseRefOid": "fd3a5a2d407aa830f64db0a8fa413f3e293f6152",
+      "headRefOid": "859446e55ceda9ce0157ccb55c6f9137b47ade91",
+      "mergedAt": "2026-10-10T02:28:54Z",
+      "number": 171,
+      "title": "Freeze SFL and remove active repository automation",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/171",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "8cf5f3fb1b31adca5b36ad12c3f9a0ff742ac9cd",
+      "headRefOid": "56af50e168f9b2595e9f782a4bfcd30a82d6939e",
+      "mergedAt": "2026-10-09T23:00:50Z",
+      "number": 170,
+      "title": "Retire source SFL deployment and record central pilot delivery",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/170",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "7a1596417b9efce35fcc485d04b4cd16eb16e71e",
+      "headRefOid": "220e0576fee374ad08b4cf218d2298befbd3852c",
+      "mergedAt": "2026-10-09T22:04:43Z",
+      "number": 169,
+      "title": "Add central organization App reviewer for the hs-buddy pilot",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/169",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "f07ab8ca3d58a7a5a6bbf88ff1bc8e3a359b6e53",
+      "headRefOid": "8f4960525d05cf287b483af3a7526577fdfdd153",
+      "mergedAt": "2026-10-09T10:58:48Z",
+      "number": 168,
+      "title": "fix: use canonical organization GitHub destinations",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/168",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3",
+      "headRefOid": "2401917622af126307f766cc02e0509a7cefc5d8",
+      "mergedAt": "2026-10-08T20:41:02Z",
+      "number": 165,
+      "title": "fix: preserve invalidation across chained retargets",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/165",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "05e71cfb6d433a95764e4bf695db9c09c3779bc3",
+      "headRefOid": "47cb10b5e3d271579ee37217ad8dba81cecab3ed",
+      "mergedAt": "2026-10-08T18:31:48Z",
+      "number": 164,
+      "title": "fix: verify registry-free review request intent",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/164",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "b42d3fdfcdb9a07741630a249757b80aaaa05757",
+      "headRefOid": "cd0b91a4d0f671c4f7d8dca93f47d8a5dbad3cc9",
+      "mergedAt": "2026-10-08T17:39:10Z",
+      "number": 163,
+      "title": "fix: invalidate published gates when verification errors",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/163",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "4447b3eff8a797ba77a9a9f16120829b9af424e6",
+      "headRefOid": "08be54ed0670d6eee1e4ce06e66acce716ad54f9",
+      "mergedAt": "2026-10-08T17:13:43Z",
+      "number": 162,
+      "title": "fix: revalidate required status repairs and reject empty request history",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/162",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "8c53c43a860a0471308f11501352a9f2b43c7efd",
+      "headRefOid": "31482a869638604a8d6bb52e2c9c24e9d9d51589",
+      "mergedAt": "2026-10-08T16:28:42Z",
+      "number": 161,
+      "title": "fix: serialize review requests while their registry materializes",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/161",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "3821a54140b2e1149fac20ca5e247aec8c2efae4",
+      "headRefOid": "a293479a7615e7379e4ccc67d95bcabd43b0d802",
+      "mergedAt": "2026-10-08T15:52:47Z",
+      "number": 160,
+      "title": "fix: bind review invalidations to registered comment lifecycle",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/160",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "73607a1b28beb31e794be6498e0d244866b45ab5",
+      "headRefOid": "e3c8bd94c5ba7375231b617bf4013598e9ebc608",
+      "mergedAt": "2026-10-08T15:16:29Z",
+      "number": 159,
+      "title": "fix: revalidate complete request history before publishing review gates",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/159",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "ef807fc3ac3cb734efa70435a6a3970223680476",
+      "headRefOid": "d20858e5416974992544ad6fe4ed11c36daf3eea",
+      "mergedAt": "2026-10-08T14:27:23Z",
+      "number": 158,
+      "title": "fix: preserve registered review history across edits and cutovers",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/158",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "89425320ace3127a829d86e3b642fe2b31fd979e",
+      "headRefOid": "8fba49c1b67d0d2c80e5bf9d2e5a4c549823d084",
+      "mergedAt": "2026-10-08T13:04:23Z",
+      "number": 157,
+      "title": "fix: keep overlapping Codex review requests from skipping their predecessor",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/157",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "afdf3bca1631b98ad87b9aa96ed87d455917e63b",
+      "headRefOid": "35c2c9258b2fd3cf73f1d64a5f2685dfccdead0a",
+      "mergedAt": "2026-10-08T16:36:22Z",
+      "number": 156,
+      "title": "docs: record executed organization transfers and remaining gates",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/156",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "292336619aaf8a484e45590bb8897902c7ce7fce",
+      "headRefOid": "ef3891a0395e7772f4601da64e39e38366c63d68",
+      "mergedAt": "2026-10-08T09:10:43Z",
+      "number": 155,
+      "title": "fix: reject native reviews with ambiguous base provenance",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/155",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "cec6674eda48526d9564163973ba619cc3cb4273",
+      "headRefOid": "3614b31b5f9f27c2580c024925bb30a5829bdc0a",
+      "mergedAt": "2026-10-08T07:07:12Z",
+      "number": 154,
+      "title": "fix: block overlapping registered review results",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/154",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "2dd6ffd08c7d8a12cb97d5f8247219fe16478b45",
+      "headRefOid": "f46fb2fef9eff3db5b7925f7515e920a4b4450ed",
+      "mergedAt": "2026-10-08T06:44:35Z",
+      "number": 153,
+      "title": "fix: preserve consumer-owned workflows during full sync",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/153",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "ee75f09992d7b54b5f9f89dc4ab59caa055e0f05",
+      "headRefOid": "3af36739bef1368917c349161c6c1f4487e24daa",
+      "mergedAt": "2026-10-08T05:26:36Z",
+      "number": 152,
+      "title": "fix: qualify the existing full deployment as wider pilot",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/152",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "6f631ec574f87f126f8b02030f180055fb4023ed",
+      "headRefOid": "dff831f8154d34b1f348ca11014d3f7beab289c3",
+      "mergedAt": "2026-10-08T05:13:39Z",
+      "number": 151,
+      "title": "feat: verify organization App coverage without exporting credentials",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/151",
+      "human_label": null
+    },
+    {
+      "baseRefOid": "21b4fbc9228cb4e444f6a68fbce66e804bff156d",
+      "headRefOid": "ad56496436cc5cd53fecbd8eb00ad60134b33504",
+      "mergedAt": "2026-10-08T04:29:12Z",
+      "number": 150,
+      "title": "fix: clarify review recovery after base advances",
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/150",
+      "human_label": null
+    }
+  ]
+}
