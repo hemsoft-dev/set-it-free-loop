@@ -47,6 +47,11 @@ those document and request-generation checks.
 
 Each transport refuses a different origin, repository, userinfo, fragment,
 ambiguous path, overridden host or ambient Authorization header before HTTP.
+Authorization and proxy authorization fields are rejected case-insensitively,
+including trailer fields and empty map entries. Caller HTTP traces are rejected
+before attaching credentials, both during acquisition and normal requests, because
+header trace callbacks could otherwise observe bearer values. Every rejected
+request body is closed; admitted bodies belong to the trusted inner transport.
 Reader writes and merge/delete/other publisher write routes are refused.
 Write requests with replayable bodies are refused. Acquisition never follows
 redirects or retries token POSTs. A failed or uncertain acquisition requires a

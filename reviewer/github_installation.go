@@ -8,6 +8,7 @@ import (
 	"io"
 	"maps"
 	"net/http"
+	"net/http/httptrace"
 	"path"
 	"regexp"
 	"strconv"
@@ -90,8 +91,23 @@ func (t *GitHubInstallationTransport) Close() error {
 
 var githubPublisherPath = regexp.MustCompile(`^/repos/hemsoft-dev/set-it-free-loop/(pulls/[1-9][0-9]*/reviews(/[1-9][0-9]*)?|issues/[1-9][0-9]*/comments)$`)
 
+func githubAmbientAuthorization(header http.Header) bool {
+	for name := range header {
+		if strings.EqualFold(name, "Authorization") || strings.EqualFold(name, "Proxy-Authorization") {
+			return true
+		}
+	}
+	return false
+}
+
 func (t *GitHubInstallationTransport) RoundTrip(q *http.Request) (*http.Response, error) {
-	if t == nil || t.state == nil || q == nil || q.URL == nil || q.URL.Scheme != "https" || q.URL.Host != "api.github.com" || q.URL.User != nil || q.URL.Opaque != "" || q.URL.Fragment != "" || (q.Host != "" && q.Host != "api.github.com") || q.Header.Get("Authorization") != "" || q.Header.Get("Proxy-Authorization") != "" {
+	delegated := false
+	defer func() {
+		if !delegated && q != nil && q.Body != nil {
+			q.Body.Close()
+		}
+	}()
+	if t == nil || t.state == nil || q == nil || q.URL == nil || q.URL.Scheme != "https" || q.URL.Host != "api.github.com" || q.URL.User != nil || q.URL.Opaque != "" || q.URL.Fragment != "" || (q.Host != "" && q.Host != "api.github.com") || githubAmbientAuthorization(q.Header) || githubAmbientAuthorization(q.Trailer) || httptrace.ContextClientTrace(q.Context()) != nil {
 		return nil, ErrGitHubInstallation
 	}
 	p := q.URL.Path
@@ -114,6 +130,7 @@ func (t *GitHubInstallationTransport) RoundTrip(q *http.Request) (*http.Response
 	clone := q.Clone(q.Context())
 	clone.Header.Set("Authorization", "Bearer "+string(t.state.token))
 	t.state.mu.Unlock()
+	delegated = true // The trusted inner RoundTripper now owns Body on every path.
 	response, err := t.state.inner.RoundTrip(clone)
 	// The caller's request never gains Authorization, including on errors. Avoid
 	// retaining it in Response.Request or forwarding arbitrary transport errors.
@@ -167,7 +184,7 @@ func (r githubInstallationRepo) valid() bool {
 // Caller cancellation/deadlines are honored; the complete handshake is bounded.
 func AcquireGitHubInstallation(ctx context.Context, o GitHubInstallationOptions) (*GitHubInstallationTransport, error) {
 	want := githubPermissions(o.Role)
-	if o.Enrollment.Validate() != nil || want == nil || !githubCredential(o.AppJWT) || o.Transport == nil {
+	if o.Enrollment.Validate() != nil || want == nil || !githubCredential(o.AppJWT) || o.Transport == nil || httptrace.ContextClientTrace(ctx) != nil {
 		return nil, ErrGitHubInstallation
 	}
 	if o.Now == nil {

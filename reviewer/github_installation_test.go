@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"sync"
@@ -419,5 +420,124 @@ func TestGitHubInstallationInputAndTransportErrorsArePrivate(t *testing.T) {
 	o.Transport = githubResponseTransport(func(*http.Request) (*http.Response, error) { return nil, errors.New("synthetic-app-jwt") })
 	if _, err := AcquireGitHubInstallation(context.Background(), o); err != ErrGitHubInstallation {
 		t.Fatal("transport error leaked", err)
+	}
+}
+
+type installationBodyProbe struct{ closed int }
+
+func (*installationBodyProbe) Read([]byte) (int, error) { return 0, io.EOF }
+func (b *installationBodyProbe) Close() error           { b.closed++; return nil }
+
+func TestGitHubInstallationRejectsAllAuthorizationHeaderSpellings(t *testing.T) {
+	for _, name := range []string{"authorization", "aUtHoRiZaTiOn", "proxy-authorization", "PROXY-AUTHORIZATION", "Authorization"} {
+		for _, trailer := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/trailer=%t", name, trailer), func(t *testing.T) {
+				f, o := installationHTTPFixture(t, GitHubReader)
+				tr, err := AcquireGitHubInstallation(context.Background(), o)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tr.Close()
+				q := installationQuery(t, "GET", githubRepoPath)
+				if trailer {
+					q.Trailer = http.Header{name: []string{"ambient-secret"}}
+				} else {
+					q.Header[name] = []string{"ambient-secret"}
+				}
+				body := &installationBodyProbe{}
+				q.Body = body
+				before := f.calls
+				if response, err := tr.RoundTrip(q); response != nil || err != ErrGitHubInstallation || f.calls != before || body.closed != 1 {
+					if response != nil {
+						response.Body.Close()
+					}
+					t.Fatal("ambient authorization reached HTTP or body remained open", f.calls-before, body.closed, err)
+				}
+			})
+		}
+	}
+}
+
+func TestGitHubInstallationRejectsCallerTracesBeforeCredentialAttachment(t *testing.T) {
+	for _, acquisition := range []bool{true, false} {
+		t.Run(fmt.Sprintf("acquisition=%t", acquisition), func(t *testing.T) {
+			f, o := installationHTTPFixture(t, GitHubPublisher)
+			leaked := false
+			trace := &httptrace.ClientTrace{WroteHeaderField: func(key string, values []string) {
+				if strings.EqualFold(key, "Authorization") {
+					for _, value := range values {
+						if strings.Contains(value, "synthetic-") {
+							leaked = true
+						}
+					}
+				}
+			}}
+			ctx := httptrace.WithClientTrace(context.Background(), trace)
+			if acquisition {
+				tr, err := AcquireGitHubInstallation(ctx, o)
+				if tr != nil {
+					tr.Close()
+				}
+				if tr != nil || err != ErrGitHubInstallation || leaked || f.calls != 0 {
+					t.Fatal("caller trace observed credentials or acquisition HTTP", leaked, f.calls, err)
+				}
+				return
+			}
+			tr, err := AcquireGitHubInstallation(context.Background(), o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tr.Close()
+			before := f.calls
+			q := installationQuery(t, "GET", githubRepoPath).WithContext(ctx)
+			body := &installationBodyProbe{}
+			q.Body = body
+			response, err := tr.RoundTrip(q)
+			if response != nil {
+				response.Body.Close()
+			}
+			if response != nil || err != ErrGitHubInstallation || leaked || f.calls != before || body.closed != 1 {
+				t.Fatal("caller trace observed role credential or rejected body leaked", leaked, f.calls-before, body.closed, err)
+			}
+		})
+	}
+}
+
+func TestGitHubInstallationClosesEveryPreTransportRejectionBody(t *testing.T) {
+	for _, kind := range []string{"destination", "role", "route", "expiry", "closed", "replayable", "host"} {
+		t.Run(kind, func(t *testing.T) {
+			f, o := installationHTTPFixture(t, GitHubReader)
+			now := controlTime
+			o.Now = func() time.Time { return now }
+			tr, err := AcquireGitHubInstallation(context.Background(), o)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tr.Close()
+			q := installationQuery(t, "GET", githubRepoPath)
+			switch kind {
+			case "destination":
+				q.URL.Host = "other.example"
+			case "role":
+				q.Method = "POST"
+			case "route":
+				q.URL.Path = "/app"
+			case "expiry":
+				now = controlTime.Add(time.Hour)
+			case "closed":
+				tr.Close()
+			case "replayable":
+				q.Method = "POST"
+				q.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("body")), nil }
+			case "host":
+				q.Host = "other.example"
+			}
+			body := &installationBodyProbe{}
+			q.Body = body
+			before := f.calls
+			if _, err := tr.RoundTrip(q); err != ErrGitHubInstallation || f.calls != before || body.closed != 1 {
+				t.Fatal("rejected request did not close body exactly once", kind, body.closed, err)
+			}
+		})
 	}
 }
