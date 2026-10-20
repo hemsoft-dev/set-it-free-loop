@@ -119,8 +119,10 @@ func discoveryHTTPFixture(t *testing.T, store *Store) (*GitHubDiscoveryHTTP, *di
 func TestGitHubDiscoveryCapturesActualBaseAndDurableRequest(t *testing.T) {
 	s, path := openFixtureStore(t)
 	g, f := discoveryHTTPFixture(t, s)
+	f.snapshot.HeadRepositoryID = 5555
+	expected := f.snapshot
 	current, err := g.Current(context.Background(), alphaScope())
-	if err != nil || current.Snapshot != testSnapshot() || current.Request.ID != 1 || !current.Access || !current.Open {
+	if err != nil || current.Snapshot != expected || current.Request.ID != 1 || !current.Access || !current.Open {
 		t.Fatal(current, err)
 	}
 	original := current.Request.Snapshot

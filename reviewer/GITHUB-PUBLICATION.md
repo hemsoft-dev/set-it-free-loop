@@ -62,9 +62,10 @@ The intent-specific scan has a 25-minute outer deadline. Its worst case has
 pages for one matching review. Those 141 requests fit the deadline even when
 each takes ten seconds. Empty pages with a next link are invalid. The
 100-page cap retains the 10,000-record ceiling. A caller's shorter deadline
-still cancels the scan and cannot authorize a duplicate POST. Delegated Current/History reads use the native reader's 45-minute discovery
-budget. Other public operations retain thirty-second contexts. The general Scan method may expand
-all owned reviews for diagnostics; Publisher uses ScanIntent for recovery.
+still cancels the scan and cannot authorize a duplicate POST. Delegated
+Current/History reads use the native reader's 45-minute discovery budget. Other
+public operations retain thirty-second contexts. The general Scan method may
+expand all owned reviews for diagnostics; Publisher uses ScanIntent for recovery.
 Writes have no replayable body, idempotency header, redirect or application retry. Errors expose status
 and bounded Retry-After seconds, never submitted content or GitHub error bodies.
 A timeout, lost response, malformed receipt or partial scan retains the durable

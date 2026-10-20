@@ -28,7 +28,10 @@ Ref names must pass a finite unambiguous grammar before URL escaping.
 The merge base comes from a comparison of the two captured immutable commit IDs.
 Page two with `per_page=1` requests comparison metadata without the first-page
 changed-file patches. The returned comparison base must equal the captured base;
-all snapshot object IDs must validate.
+all snapshot object IDs must validate. An existing-owner read-only GitHub check
+also returned this metadata on page two for zero-commit and one-commit comparisons,
+with an empty commit list and no changed-file payload. This is comparison protocol
+evidence, not an App credential or native-review eligibility qualification.
 
 PR/head/fork/base-ref/open/pending state is captured again after event and command
 collection. Any movement defers the entire batch. No incomplete or unstable batch
