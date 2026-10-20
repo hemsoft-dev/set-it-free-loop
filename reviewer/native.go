@@ -96,7 +96,7 @@ func (o *nativeResultObservation) valid(s Session) bool {
 		return false
 	}
 	switch o.ExitClass {
-	case "", "tls", "proxy", "auth", "filesystem", "configuration", "runtime", "other":
+	case "", "tls", "proxy", "auth", "filesystem", "configuration", "runtime", "other", "launch", "cancelled", "signal", "silent-exit", "tls-authority", "tls-intake", "tls-handshake", "tls-host":
 	default:
 		return false
 	}

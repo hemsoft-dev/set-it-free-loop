@@ -4,6 +4,7 @@ package reviewer
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os/exec"
 )
@@ -17,7 +18,7 @@ type nativeGuestClientDiagnostics struct {
 	flags   [7]bool
 }
 
-var nativeGuestDiagnosticWords = [][]string{{"certificate", "x509", "tls"}, {"proxy"}, {"auth", "token"}, {"permission denied", "no such file", "read-only"}, {"invalid", "unknown", "configuration"}, {"panic", "runtime"}}
+var nativeGuestDiagnosticWords = [][]string{{"certificate", "x509", "tls"}, {"proxy"}, {"auth", "token"}, {"permission denied", "operation not permitted", "no such file", "read-only"}, {"invalid", "unknown", "configuration"}, {"panic", "runtime"}}
 
 func (d *nativeGuestClientDiagnostics) Write(input []byte) (int, error) {
 	accepted := len(input)
@@ -44,8 +45,23 @@ func (d *nativeGuestClientDiagnostics) Write(input []byte) (int, error) {
 	return accepted, nil
 }
 
-func (d *nativeGuestClientDiagnostics) exitCode() int {
+func (d *nativeGuestClientDiagnostics) exitCode(failure error) int {
 	defer clear(d.tail)
+	if errors.Is(failure, context.Canceled) || errors.Is(failure, context.DeadlineExceeded) {
+		return 209
+	}
+	if failure != nil {
+		var exited *exec.ExitError
+		if !errors.As(failure, &exited) {
+			return 208
+		}
+		if exited.ExitCode() < 0 {
+			return 210
+		}
+	}
+	if d.scanned == 0 {
+		return 211
+	}
 	for index, seen := range d.flags {
 		if seen {
 			return 201 + index
@@ -67,14 +83,14 @@ func (p *nativeGuestPhase) observeClientExit() {
 	if !errors.As(p.client.waitErr, &exit) {
 		return
 	}
-	classes := []string{"tls", "proxy", "auth", "filesystem", "configuration", "runtime", "other"}
-	index := exit.ExitCode() - 201
-	if index < 0 || index >= len(classes) {
+	classes := map[int]string{201: "tls", 202: "proxy", 203: "auth", 204: "filesystem", 205: "configuration", 206: "runtime", 207: "other", 208: "launch", 209: "cancelled", 210: "signal", 211: "silent-exit", 221: "tls-authority", 222: "tls-intake", 223: "tls-handshake", 224: "tls-host"}
+	class := classes[exit.ExitCode()]
+	if class == "" {
 		return
 	}
 	p.nativeMu.Lock()
 	defer p.nativeMu.Unlock()
 	if p.native != nil {
-		p.native.ExitClass = classes[index]
+		p.native.ExitClass = class
 	}
 }

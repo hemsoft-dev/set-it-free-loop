@@ -44,6 +44,7 @@ type nativeGuestTLSProxy struct {
 	stop        func()
 	mu          sync.Mutex
 	closed      bool
+	failure     int
 	connections map[*nativeGuestTLSConn]bool
 	wg          sync.WaitGroup
 }
@@ -102,19 +103,19 @@ func (p *nativeGuestTLSProxy) ServeHTTP(w http.ResponseWriter, q *http.Request) 
 		}
 	}
 	if authority == "" || q.URL.Host != q.Host || q.URL.Scheme != "" || q.URL.User != nil || q.URL.Path != "" || q.URL.RawPath != "" || q.URL.RawQuery != "" || q.URL.Fragment != "" || q.ContentLength != 0 || len(q.TransferEncoding) != 0 || len(q.Trailer) != 0 || q.Header.Get("Upgrade") != "" {
-		p.stop()
+		p.fail(221)
 		http.Error(w, "refresh authority denied", http.StatusForbidden)
 		return
 	}
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
-		p.stop()
+		p.fail(222)
 		http.Error(w, "private TLS unavailable", 500)
 		return
 	}
 	connection, buffered, err := hijacker.Hijack()
 	if err != nil {
-		p.stop()
+		p.fail(222)
 		return
 	}
 	owned := &nativeGuestTLSConn{Conn: connection, done: make(chan struct{})}
@@ -122,7 +123,7 @@ func (p *nativeGuestTLSProxy) ServeHTTP(w http.ResponseWriter, q *http.Request) 
 	if p.closed || len(p.connections) >= 4 || buffered.Reader.Buffered() != 0 {
 		p.mu.Unlock()
 		owned.Close()
-		p.stop()
+		p.fail(222)
 		return
 	}
 	p.connections[owned] = true
@@ -144,7 +145,7 @@ func (p *nativeGuestTLSProxy) ServeHTTP(w http.ResponseWriter, q *http.Request) 
 	err = secured.HandshakeContext(handshake)
 	cancel()
 	if err != nil {
-		p.stop()
+		p.fail(223)
 		return
 	}
 	if deadline, ok := p.ctx.Deadline(); ok {
@@ -224,3 +225,13 @@ func (l *nativeGuestTLSListener) Accept() (net.Conn, error) {
 }
 func (l *nativeGuestTLSListener) Close() error   { return l.connection.Close() }
 func (l *nativeGuestTLSListener) Addr() net.Addr { return l.connection.LocalAddr() }
+
+func (p *nativeGuestTLSProxy) fail(code int) {
+	p.mu.Lock()
+	if p.failure == 0 {
+		p.failure = code
+	}
+	p.mu.Unlock()
+	p.stop()
+}
+func (p *nativeGuestTLSProxy) failureCode() int { p.mu.Lock(); defer p.mu.Unlock(); return p.failure }

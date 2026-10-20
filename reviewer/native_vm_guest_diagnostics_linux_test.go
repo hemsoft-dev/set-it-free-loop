@@ -20,14 +20,14 @@ func TestNativeGuestDiagnosticRetainsOnlyBoundedEnums(t *testing.T) {
 	d := &nativeGuestClientDiagnostics{}
 	d.Write([]byte("certifi"))
 	d.Write([]byte("cate failed, sensitive synthetic bytes"))
-	if d.exitCode() != 201 || bytes.Contains(d.tail, []byte("sensitive")) {
+	if d.exitCode(nil) != 201 || bytes.Contains(d.tail, []byte("sensitive")) {
 		t.Fatal("TLS class or suffix clearing failed")
 	}
 	large := bytes.Repeat([]byte("opaque diagnostic "), 100000)
 	if n, err := d.Write(large); err != nil || n != len(large) || d.scanned != 64<<10 || len(d.tail) > 128 {
 		t.Fatal("unbounded stderr scan")
 	}
-	d.exitCode()
+	d.exitCode(nil)
 	if !bytes.Equal(d.tail, make([]byte, len(d.tail))) {
 		t.Fatal("raw suffix retained")
 	}

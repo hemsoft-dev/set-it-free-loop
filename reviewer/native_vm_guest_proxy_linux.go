@@ -138,7 +138,7 @@ func nativeGuestInvocation(q nativeVMRequest, base string) (Invocation, error) {
 	}
 	inv.Environment = append([]string{"HOME=/profile", "PATH=/usr/bin:/bin", "GOMAXPROCS=1"}, inv.Environment...)
 	if nativeGuestRefreshEnabled(q.Policy) {
-		inv.Environment = append(inv.Environment, "HTTPS_PROXY="+base, "NO_PROXY=127.0.0.1,localhost,::1", "SSL_CERT_FILE="+nativeGuestCAPath, "NODE_EXTRA_CA_CERTS="+nativeGuestCAPath, "CODEX_CA_CERTIFICATES="+nativeGuestCAPath)
+		inv.Environment = append(inv.Environment, "HTTPS_PROXY="+base, "NO_PROXY=127.0.0.1,localhost,::1", "SSL_CERT_FILE="+nativeGuestCAPath, "NODE_EXTRA_CA_CERTS="+nativeGuestCAPath, "CODEX_CA_CERTIFICATE="+nativeGuestCAPath)
 	}
 	if q.Session.Identity.Provider == Codex {
 		extra := []string{"-c", `cli_auth_credentials_store="file"`, "-c", `openai_base_url="` + base + `/v1"`, "-c", `chatgpt_base_url="` + base + `/backend-api/"`, "-c", `features.enable_request_compression=false`}
@@ -215,6 +215,7 @@ func nativeGuestClientProxyMain() (result int) {
 	defer transport.CloseIdleConnections()
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: q.Session.Limits.Timeout, WriteTimeout: q.Session.Limits.Timeout, IdleTimeout: q.Session.Limits.Timeout, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
 	server.Handler = nativeGuestProviderHandler(q, transport, cancel)
+	var refreshProxy *nativeGuestTLSProxy
 	if nativeGuestRefreshEnabled(q.Policy) {
 		proxy, certificate, err := newNativeGuestTLSProxy(ctx, q.Policy, server.Handler, cancel)
 		if err != nil {
@@ -234,6 +235,7 @@ func nativeGuestClientProxyMain() (result int) {
 		if writeErr != nil || n != len(certificate) || modeErr != nil || syncErr != nil || closeErr != nil {
 			return 2
 		}
+		refreshProxy = proxy
 		server.Handler = proxy
 	}
 	go server.Serve(listener)
@@ -294,8 +296,11 @@ func nativeGuestClientProxyMain() (result int) {
 	client.Stderr = diagnostics
 	client.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: nativeVMIPCGID, Groups: []uint32{}}, Pdeathsig: syscall.SIGKILL}
 	client.WaitDelay = 2 * time.Second
-	if client.Run() != nil {
-		return diagnostics.exitCode()
+	if runErr := client.Run(); runErr != nil {
+		if refreshProxy != nil && refreshProxy.failureCode() != 0 {
+			return refreshProxy.failureCode()
+		}
+		return diagnostics.exitCode(runErr)
 	}
 	return 0
 }
