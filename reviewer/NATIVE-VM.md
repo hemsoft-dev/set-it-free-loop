@@ -150,8 +150,10 @@ shell or Git enters the image. It never opens KVM or runs a client or host unit.
 
 Ordinary tests cover these protocols and hostile inputs using synthetic auth,
 real local Unix transports and fake managers. Full measured resource limits,
-native refresh/restart behavior and broader guest capability qualification
-remain unfinished. Happy-path auth return has passed for both native clients.
+interrupted refresh/crash recovery and broader guest capability qualification
+remain unfinished. Both native clients have refreshed expired synthetic auth,
+returned the changed tokens and reused them after reopening the store in a fresh
+VM. Those bounded cases do not qualify interrupted refresh or production use.
 No source-level test or built image closes the parent issue.
 
 `scripts/native-vm-fake.py --run-fake-only` is the separate opt-in qualification
@@ -171,7 +173,7 @@ prior report hashes, verifies real source read/search exchanges against fake
 TLS, and checks auth recovery. Each private unit must record completion, auth
 return and whole-unit stop. A completed engine checkpoint must resume without
 another VM or a changed ledger. The canned findings and peer judgments test
-transport and protocol, not review quality. Native refresh/restart and hostile
+transport and protocol, not review quality. Interrupted refresh/crash recovery and hostile
 capability qualification remain separate requirements.
 
 The captured host runtime includes the ancillary Linux boot ROM selected by the
@@ -230,8 +232,10 @@ with expired synthetic auth, requires a counted refresh and changed returned
 tokens, reopens the protected store, and starts a fresh native job that must use
 the returned tokens without another refresh. Both jobs must produce source-backed
 fixture reports, return auth, stop their whole units and remove runtime roots.
-This source path still needs the actual pinned-client qualification; hand-built
-OAuth responses and TLS unit tests alone do not establish it.
+The exact pinned clients passed this path against fake TLS. Hand-built OAuth
+responses and TLS unit tests remain supporting evidence; the native runs are
+required to establish that the real clients consumed and persisted those
+responses. This does not establish real account support or provider permission.
 
 The CA signs a separate non-CA leaf certificate, since
 [WebPKI rejects a CA used as an end entity](https://github.com/rustls/webpki/issues/200).
@@ -240,3 +244,25 @@ response contains only synthetic account/subscription metadata. This route has
 an independent metadata allowance and uses the rotated bearer token. CONNECT's
 HTTP Host and selected route must agree; adding metadata cannot redirect a
 request with the same path to another captured authority.
+
+A client may close its own HTTP/TLS connection after refresh. The sidecar removes
+ordinary close/keep-alive Connection headers before the separate private hop,
+while preserving the local WebSocket negotiation contract. Other nominated
+connection tokens are refused. A real Unix-stream regression reproduced the old
+502 on the next metadata request; both pinned clients now complete refresh and
+subsequent source review without retiring that private stream.
+
+An idle reader receives trusted SIGTERM cancellation, emits its failed audit and
+is still checked/killed through its owned cgroup. This avoids spending the whole
+cleanup deadline waiting for a client that never connected. Native failed-client
+runs now return stopped auth without implying a valid source report. A separate
+process fixture verifies cancellation before the deadline and retains the
+physical-stop enforcement.
+
+The client supervisor's private readiness pipe remains available for one bound
+failure classification after Ready. Only fixed enums travel there, with launch
+and request hashes. The pipe is CLOEXEC before any client/version exec. A status
+cannot establish Ready, auth export or successful work. Both EOF and malformed
+status have bounded handling. Stderr scanning retains a small transient suffix
+and publishes no raw messages; failed phases can report a fixed client-error
+stage without losing their auth recovery evidence.
