@@ -4,6 +4,7 @@ package reviewer
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -31,6 +32,18 @@ func TestNativeRuntimeOptInCapturedNamespaceLaunch(t *testing.T) {
 	defer input.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	var dependencies []VMBootAsset
+	if json.Unmarshal([]byte(os.Getenv("SFL_NATIVE_RUNTIME_BOOTSTRAP_LIBRARIES")), &dependencies) != nil {
+		t.Fatal("bootstrap dependency pins missing")
+	}
+	libraryPins, err := nativeBootstrapLibraryPins(dependencies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verifyNativeBootstrapLibraries(ctx, libraryPins) != nil {
+		t.Fatal("bootstrap host libraries differ")
+	}
+
 	qemu, err := sealVMAsset(ctx, VMBootAsset{os.Getenv("SFL_NATIVE_RUNTIME_QEMU_PATH"), pin.SHA256, pin.Bytes}, true)
 	if err != nil {
 		t.Fatal(err)
@@ -80,6 +93,9 @@ func TestNativeRuntimeOptInCapturedNamespaceLaunch(t *testing.T) {
 	output, err := command.CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "QEMU emulator version 10.2.1") {
 		t.Fatalf("captured namespace launch: %v %s", err, output)
+	}
+	if verifyNativeBootstrapLibraries(ctx, libraryPins) != nil {
+		t.Fatal("bootstrap host libraries changed during launch")
 	}
 	// No KVM device or provider descriptors are supplied in this metadata-only run.
 }

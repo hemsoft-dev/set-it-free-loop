@@ -45,11 +45,14 @@ func retainNativeBootstrap(ctx context.Context, asset VMBootAsset) (*os.File, er
 	return file, nil
 }
 func verifyNativeBootstrap(ctx context.Context, file *os.File, pin VMAssetPin) error {
+	return verifyNativeRootOwnedFile(ctx, file, pin, true)
+}
+func verifyNativeRootOwnedFile(ctx context.Context, file *os.File, pin VMAssetPin, executable bool) error {
 	if ctx == nil || file == nil || !validAuthHash(pin.SHA256) || pin.Bytes <= 0 || pin.Bytes > 64<<20 {
 		return ErrNativeRuntime
 	}
 	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Size() != pin.Bytes || info.Mode().Perm()&0022 != 0 || info.Mode().Perm()&0111 == 0 {
+	if err != nil || !info.Mode().IsRegular() || info.Size() != pin.Bytes || info.Mode().Perm()&0022 != 0 || (executable && info.Mode().Perm()&0111 == 0) {
 		return ErrNativeRuntime
 	}
 	st, ok := info.Sys().(*syscall.Stat_t)

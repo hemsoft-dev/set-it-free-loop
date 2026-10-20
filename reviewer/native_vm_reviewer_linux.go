@@ -24,6 +24,7 @@ type NativeVMOptions struct {
 	Provider                       Provider
 	Root, Stub, StubHash           string
 	QEMU, Kernel, Initrd, Firmware VMBootAsset
+	Runtime                        NativeVMRuntimeSpec
 	Auth                           *AuthStore
 	Reader                         *Reader
 	Policy                         EgressPolicy
@@ -44,6 +45,7 @@ func NewNativeVMReviewer(o NativeVMOptions) (*NativeVMReviewer, error) {
 	// Filesystem and account state remain unopened at construction.
 	o.Policy.Routes = append([]EgressRoute{}, o.Policy.Routes...)
 	o.Policy.Headers = append([]string{}, o.Policy.Headers...)
+	o.Runtime.BootstrapLibraries = append([]VMBootAsset{}, o.Runtime.BootstrapLibraries...)
 	return &NativeVMReviewer{o}, nil
 }
 func (r *NativeVMReviewer) Review(ctx context.Context, s Session) (Report, error) {
@@ -60,6 +62,9 @@ type nativeVMExportGate struct {
 
 func (g nativeVMExportGate) ConfirmAuthExport(ctx context.Context, binding AuthBinding) error {
 	if g.supervisor == nil || g.supervisor.supervisor == nil || binding != g.manifest.Binding || !g.ready.valid(g.request) || g.request.Binding != binding {
+		return ErrAuthTransfer
+	}
+	if !g.manifest.valid() || verifyNativeBootstrapLibraries(ctx, g.manifest.BootstrapLibraries) != nil {
 		return ErrAuthTransfer
 	}
 	s := g.supervisor.supervisor
@@ -82,7 +87,7 @@ func (g nativeVMExportGate) ConfirmAuthExport(ctx context.Context, binding AuthB
 	}
 	defer held.close()
 	record, err := gate.read(held)
-	if err != nil || record.Protocol != 3 || record.Phase != "granted" || record.ManifestHash != r.ManifestHash || record.Identity != r.Identity {
+	if err != nil || record.Protocol != nativeVMGrantProtocol || record.Phase != "granted" || record.ManifestHash != r.ManifestHash || record.Identity != r.Identity {
 		return ErrAuthTransfer
 	}
 	return nil
@@ -152,7 +157,7 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 	if !request.valid() {
 		return blocked()
 	}
-	images, err := OpenNativeVMBootImages(ctx, VMBootSpec{Version: 1, Binding: binding, QEMU: r.options.QEMU, Kernel: r.options.Kernel, Initrd: r.options.Initrd}, r.options.Firmware)
+	images, err := OpenNativeVMBootImages(ctx, VMBootSpec{Version: 1, Binding: binding, QEMU: r.options.QEMU, Kernel: r.options.Kernel, Initrd: r.options.Initrd}, r.options.Firmware, r.options.Runtime)
 	if err != nil {
 		return Report{}, nil, nil, workerLauncherError(err, true)
 	}

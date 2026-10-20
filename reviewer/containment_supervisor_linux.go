@@ -314,7 +314,7 @@ func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateMa
 }
 
 func (s *SystemdSupervisor) preparePayload(binding AuthBinding, hash string, protocol int) error {
-	if !binding.valid() || !validAuthHash(hash) || (s.payloadKind == "" && protocol != 0) || (s.payloadKind == "vm-fixture" && protocol != 2) || (s.payloadKind == "native-vm" && protocol != 3) || (s.payloadKind != "" && s.payloadKind != "vm-fixture" && s.payloadKind != "native-vm") {
+	if !binding.valid() || !validAuthHash(hash) || (s.payloadKind == "" && protocol != 0) || (s.payloadKind == "vm-fixture" && protocol != 2) || (s.payloadKind == "native-vm" && protocol != nativeVMGrantProtocol) || (s.payloadKind != "" && s.payloadKind != "vm-fixture" && s.payloadKind != "native-vm") {
 		return ErrAuthRecoveryRequired
 	}
 	s.mu.Lock()

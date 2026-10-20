@@ -23,11 +23,24 @@ func (v *NativeVMSupervisor) Prepare(m NativeVMManifest) error {
 	if v == nil || v.supervisor == nil || !m.valid() {
 		return ErrVMBoot
 	}
-	return v.supervisor.preparePayload(m.Binding, Digest(m), 3)
+	return v.supervisor.preparePayload(m.Binding, Digest(m), nativeVMGrantProtocol)
 }
 func (v *NativeVMSupervisor) Start(ctx context.Context, binding AuthBinding) error {
 	if v == nil || v.supervisor == nil {
 		return ErrVMBoot
+	}
+	if ctx == nil || !binding.valid() {
+		return ErrVMBoot
+	}
+	gate := v.supervisor.gate(binding)
+	held, err := gate.lock(ctx)
+	if err != nil {
+		return err
+	}
+	record, err := gate.read(held)
+	held.close()
+	if err != nil || record.Protocol != nativeVMGrantProtocol {
+		return ErrAuthRecoveryRequired
 	}
 	return v.supervisor.startPayload(ctx, binding)
 }

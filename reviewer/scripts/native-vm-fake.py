@@ -35,6 +35,31 @@ def asset(path, expected=None):
     return {"Path": str(path), "SHA256": value, "Bytes": path.stat().st_size}
 
 
+def runtime_spec(image, manifest):
+    captured = manifest["host_runtime"]
+    if (captured["purpose"] != "native-qemu-runtime" or captured["state"] != "built-only"
+            or captured["source_commit"] != manifest["source_commit"]
+            or captured["manifest"]["Program"] != {key: manifest["qemu"][key] for key in ["SHA256", "Bytes"]}):
+        raise RuntimeError("captured QEMU runtime does not belong to this image")
+    runtime = sibling("native-vm-runtime")
+    helper = captured["namespace_helper"]
+    helper_data = runtime.read_owned(Path(helper["Path"]), helper["SHA256"])
+    if len(helper_data) != helper["Bytes"]:
+        raise RuntimeError("namespace helper length changed")
+    for library in captured["bootstrap_dependencies"]:
+        path = library["Path"]
+        if not path.startswith("/") or not runtime.allowed(path[1:]) or path.startswith("/firmware/"):
+            raise RuntimeError("invalid bootstrap dependency")
+        data = runtime.read_owned(Path(path), library["SHA256"])
+        if len(data) != library["Bytes"]:
+            raise RuntimeError("bootstrap dependency length changed")
+    artifact = asset(image/"host-runtime"/"native-qemu-runtime.bin", captured["artifact"]["SHA256"])
+    if artifact["Bytes"] != captured["artifact"]["Bytes"]:
+        raise RuntimeError("captured runtime length changed")
+    return {"Artifact": artifact, "NamespaceHelper": helper,
+            "BootstrapLibraries": captured["bootstrap_dependencies"]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-fake-only", action="store_true", required=True)
@@ -89,8 +114,9 @@ def main():
               "Root": str(state), "Provider": "" if args.provider == "both" else args.provider,
               "Negative": args.case == "forbidden",
               "ProtocolRounds": args.peer_rounds if args.case == "adversarial" else 0,
-              "QEMU": asset(Path("/usr/bin/qemu-system-x86_64")),
-              "Firmware": asset(Path("/usr/share/seabios/bios-256k.bin")),
+              "QEMU": asset(Path(manifest["qemu"]["Path"]), manifest["qemu"]["SHA256"]),
+              "Firmware": asset(image/"bios.bin", manifest["bios_sha256"]),
+              "Runtime": runtime_spec(image, manifest),
               "Kernel": asset(image/"vmlinuz", manifest["kernel_sha256"]),
               "Initrd": asset(image/"native.cpio.gz", manifest["initrd_sha256"]),
               "Stub": asset(image/"nativevmstub", manifest["programs"]["nativevmstub"])}

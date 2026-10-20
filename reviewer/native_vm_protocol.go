@@ -112,7 +112,7 @@ func nativeVMGuestStage(stage string) bool {
 		return nativeBootStageValid(suffix) || suffix == "oom" || suffix == "panic" || suffix == "vm-error" || suffix == "vm-exit" || suffix == "unpack-other" || suffix == "unpack-write" || suffix == "unpack-read" || suffix == "unpack-compression" || suffix == "unpack-format" || suffix == "unpack-memory"
 	}
 	switch stage {
-	case "boot-control", "boot-objects", "boot-provider", "boot-request":
+	case "runtime-prepared", "boot-control", "boot-objects", "boot-provider", "boot-request":
 		return true
 	case "ports", "jails", "profile", "reader", "source-ready", "source-bind", "codehost", "client-proxy", "client-ready", "auth-seed", "auth-profile", "native-execute", "native-output", "complete":
 		return true

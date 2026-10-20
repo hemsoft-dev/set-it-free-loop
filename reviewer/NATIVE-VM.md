@@ -6,14 +6,38 @@ The source includes a host reviewer and guest runtime, but is not a qualified VM
 release. It has no activation command, live inference, App installation or
 deployment. The separately required owner/provider/account gates stay closed.
 
-`NativeVMManifest` uses purpose `native-review` and containment protocol 3.
-Synthetic fixture purpose and protocol 2 stay separate. The manifest binds the
-captured session, provider, full auth launch identity and sealed QEMU/kernel/initrd
-pins, plus a separately sealed BIOS pin. Manifest version 2 requires all four
-assets. It accepts no executable path, command, environment or host filesystem
-selector. Eight one-use descriptors carry those immutable assets, KVM and three
-distinct connected Unix streams in fixed order. QEMU reads the BIOS from its
-granted descriptor rather than a host package pathname.
+`NativeVMManifest` uses purpose `native-review` and containment protocol 4.
+Synthetic fixture purpose and protocol 2 stay separate. Manifest version 3 binds
+the captured session, provider, full auth launch identity and six asset pins.
+Ten one-use descriptors carry sealed QEMU/kernel/initrd/BIOS/runtime bytes, KVM,
+three distinct private Unix streams and the original root-owned namespace helper.
+Named bootstrap library pins travel in the bounded manifest. Old native protocol
+3 journals remain readable for abort/recovery, but cannot start or grant work.
+
+The runtime artifact contains a canonical manifest and ordered regular file
+bodies. Every body has a path, size and SHA-256 pin. It permits only the fixed
+ELF interpreter, named libraries and three ancillary boot ROM paths, with at most
+128 files and 128 MiB of data. It contains no archive links, ownership records,
+commands or filesystem selectors. Its program pin must match sealed QEMU.
+
+The stub prepares a new private runtime directory, copies QEMU from its sealed
+descriptor, verifies all bytes and mounts the directory read-only through the
+original retained namespace helper. QEMU executes the fixed `/qemu` copy and uses
+`/firmware`; BIOS, kernel, initrd, KVM and private channels use fixed descriptors.
+The helper consumes and closes the host directory descriptor before QEMU exec.
+Its fixed arguments create namespaces, disable nested user namespaces and supply
+only private `/proc`, `/dev` and bounded `/tmp` mounts. Normal cleanup removes
+only the owned runtime inode after the helper exits. A replaced directory is
+preserved and reported as an error. Crash retention still needs qualification.
+
+The namespace helper is an explicit trusted host prerequisite. Its original
+root-owned executable and named host interpreter/libraries are hash-checked
+before launch and before auth export. Those host libraries are not sealed.
+Metadata probes established that the original helper works under
+`NoNewPrivileges`; an identical private copy failed on this host. QEMU memfd exec
+inside that namespace also failed. The fixed verified copy route addresses the
+observed failures without changing host policy. These probes do not establish
+the precise policy cause or production isolation.
 
 The private streams are control/auth/result, immutable source objects and
 provider HTTP. Channel socket inodes must differ. Guest descriptor export is
@@ -24,15 +48,15 @@ unchanged four-descriptor synthetic fixture.
 
 The new `cmd/nativevmstub` is inert outside its owned systemd unit and before its
 authenticated supervisor grant. It verifies the exact sealed assets, KVM API
-and private stream types before executing retained QEMU. QEMU has no NIC, host
+and private stream types before executing the captured QEMU copy. QEMU has no NIC, host
 share, monitor, interactive serial output or TCG fallback. Three fixed virtio
 serial ports connect to the private streams. The guest init is fixed at
 `/native-init` and the kernel command line binds the launch nonce.
 
 The native unit has a proposed fixed 3 GiB host memory cap, no swap, 128 tasks,
 one CPU quota and seven-minute outer runtime cap, with a 2 GiB guest. Short fake
-reviews have sampled these bounds for both clients, with peaks near 1.22 GB and
-eight tasks and no OOM events. These samples do not establish stress limits.
+reviews have sampled these bounds for both clients, with peaks near 1.35 GB and
+nine tasks and no OOM events. These samples do not establish stress limits.
 The synthetic unit retains
 its original 1 GiB/64-task/two-minute profile. `NativeVMSupervisor` reuses durable
 unit identity, start settlement, revoked grants, whole-cgroup stop and fresh
@@ -114,7 +138,9 @@ are checked against seed and returned credential canaries.
 
 `scripts/native-vm-image.py` builds only from a clean committed source archive,
 the exact pinned Codex/Claude/code-host snapshots, and explicit hashed kernel
-and configuration. Its kernel requires built-in virtio-console and isolation
+and configuration. Explicit QEMU, namespace helper and BIOS pins are also
+required. The build captures QEMU libraries/ROMs and records host bootstrap
+dependencies. Its kernel requires built-in virtio-console and isolation
 facilities. It records named ELF dependencies including the interpreter and
 generates a canonical role-specific release. No source checkout, auth profile,
 shell or Git enters the image. It never opens KVM or runs a client or host unit.
@@ -145,12 +171,11 @@ another VM or a changed ledger. The canned findings and peer judgments test
 transport and protocol, not review quality. Native refresh/restart and hostile
 capability qualification remain separate requirements.
 
-The BIOS descriptor fix does not qualify the complete host QEMU runtime. The
-[x86 loader in QEMU 10.2.1](https://raw.githubusercontent.com/qemu/qemu/v10.2.1/hw/i386/x86-common.c)
-also selects an ancillary Linux boot ROM from the QEMU data directory. That ROM
-and host dynamic runtime capture remain source qualification work before live
-use. The separately required trusted `Check` cannot treat these fixtures as a
-production release qualification.
+The captured host runtime includes the ancillary Linux boot ROM selected by the
+[x86 loader in QEMU 10.2.1](https://raw.githubusercontent.com/qemu/qemu/v10.2.1/hw/i386/x86-common.c).
+The separately required trusted `Check` must still establish runtime, policy and
+account eligibility. Building or exercising this fixture cannot authorize live
+use.
 
 Port discovery also waits for connected writability before framed intake. The
 [Linux 7.0 virtio-console implementation](https://raw.githubusercontent.com/torvalds/linux/v7.0/drivers/char/virtio_console.c)

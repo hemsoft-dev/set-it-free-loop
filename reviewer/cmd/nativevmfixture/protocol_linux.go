@@ -91,7 +91,7 @@ func (w protocolReviewer) ReviewAudited(ctx context.Context, s r.Session) (r.Rep
 	if w.provider == r.Claude {
 		hints = r.NativeVMProfileHints{ClaudeAccountUUID: "11111111-1111-4111-8111-111111111111", ClaudeOrganizationUUID: "22222222-2222-4222-8222-222222222222", ClaudeEmail: "fixture@example.invalid"}
 	}
-	worker, err := r.NewNativeVMReviewer(r.NativeVMOptions{Provider: w.provider, Root: filepath.Join(p.config.Root, "launches"), Stub: p.config.Stub.Path, StubHash: p.config.Stub.SHA256, QEMU: p.config.QEMU, Kernel: p.config.Kernel, Initrd: p.config.Initrd, Firmware: p.config.Firmware, Auth: p.auth[w.provider], Reader: reader, Policy: policy, Transport: transport, ProfileHints: hints, Check: func(_ context.Context, got r.Session) error {
+	worker, err := r.NewNativeVMReviewer(r.NativeVMOptions{Provider: w.provider, Root: filepath.Join(p.config.Root, "launches"), Stub: p.config.Stub.Path, StubHash: p.config.Stub.SHA256, QEMU: p.config.QEMU, Kernel: p.config.Kernel, Initrd: p.config.Initrd, Firmware: p.config.Firmware, Runtime: p.config.Runtime, Auth: p.auth[w.provider], Reader: reader, Policy: policy, Transport: transport, ProfileHints: hints, Check: func(_ context.Context, got r.Session) error {
 		if r.Digest(got) != phase.InputHash {
 			return errors.New("foreign fake protocol session")
 		}
