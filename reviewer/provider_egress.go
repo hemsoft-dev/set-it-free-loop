@@ -3,6 +3,7 @@ package reviewer
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"mime"
@@ -25,22 +26,27 @@ type EgressRoute struct {
 	Authority string `json:"authority"`
 	Method    string `json:"method"`
 	Path      string `json:"path"`
-	Kind      string `json:"kind"` // inference, refresh or metadata
+	Kind      string `json:"kind"` // inference, refresh, metadata or local_negotiation
 	RawQuery  string `json:"raw_query,omitempty"`
 }
 
 type EgressLimits struct {
-	Requests          int `json:"requests"`
-	InferenceRequests int `json:"inference_requests"`
-	RefreshRequests   int `json:"refresh_requests"`
-	MetadataRequests  int `json:"metadata_requests"`
-	RequestBytes      int `json:"request_bytes"`
-	ResponseBytes     int `json:"response_bytes"`
-	TotalBytes        int `json:"total_bytes"`
+	Requests            int `json:"requests"`
+	InferenceRequests   int `json:"inference_requests"`
+	RefreshRequests     int `json:"refresh_requests"`
+	MetadataRequests    int `json:"metadata_requests"`
+	NegotiationRequests int `json:"negotiation_requests"`
+	RequestBytes        int `json:"request_bytes"`
+	ResponseBytes       int `json:"response_bytes"`
+	TotalBytes          int `json:"total_bytes"`
 }
 
 func DefaultEgressLimits(s Session) EgressLimits {
-	return EgressLimits{s.Limits.MaxTurns + 6, s.Limits.MaxTurns, 2, 4, 8 << 20, 16 << 20, 32 << 20}
+	metadata, negotiation := 4, 0
+	if s.Identity.Provider == Codex {
+		metadata, negotiation = 5, 1
+	}
+	return EgressLimits{Requests: s.Limits.MaxTurns + 2 + metadata + negotiation, InferenceRequests: s.Limits.MaxTurns, RefreshRequests: 2, MetadataRequests: metadata, NegotiationRequests: negotiation, RequestBytes: 8 << 20, ResponseBytes: 16 << 20, TotalBytes: 32 << 20}
 }
 
 type EgressPolicy struct {
@@ -53,23 +59,26 @@ type EgressPolicy struct {
 // ProviderAccess is a private supervisor receipt, never model-authored usage.
 // Requests counts reservations, including rejected bodies. Forwarded counts
 // RoundTrip calls, and Responses counts complete accepted upstream responses.
+// NegotiationRequests/Responses count local HTTP426 exchanges, never upstream IO.
 // Bytes count observed payload, including at most one overrun byte on failure.
 // This is HTTP request evidence, not a measure of billed tokens or sessions.
 type ProviderAccess struct {
-	Version           int    `json:"version"`
-	SessionHash       string `json:"session_hash"`
-	PolicyHash        string `json:"policy_hash"`
-	Requests          int    `json:"requests"`
-	InferenceRequests int    `json:"inference_requests"`
-	RefreshRequests   int    `json:"refresh_requests"`
-	MetadataRequests  int    `json:"metadata_requests"`
-	Forwarded         int    `json:"forwarded"`
-	Responses         int    `json:"responses"`
-	RequestBytes      int    `json:"request_bytes"`
-	ResponseBytes     int    `json:"response_bytes"`
-	Failed            bool   `json:"failed"`
-	Exhausted         bool   `json:"exhausted"`
-	Stopped           bool   `json:"stopped"`
+	Version              int    `json:"version"`
+	SessionHash          string `json:"session_hash"`
+	PolicyHash           string `json:"policy_hash"`
+	Requests             int    `json:"requests"`
+	InferenceRequests    int    `json:"inference_requests"`
+	RefreshRequests      int    `json:"refresh_requests"`
+	MetadataRequests     int    `json:"metadata_requests"`
+	NegotiationRequests  int    `json:"negotiation_requests"`
+	NegotiationResponses int    `json:"negotiation_responses"`
+	Forwarded            int    `json:"forwarded"`
+	Responses            int    `json:"responses"`
+	RequestBytes         int    `json:"request_bytes"`
+	ResponseBytes        int    `json:"response_bytes"`
+	Failed               bool   `json:"failed"`
+	Exhausted            bool   `json:"exhausted"`
+	Stopped              bool   `json:"stopped"`
 }
 
 // ValidateCompleted is required before accepting a model report. A successful
@@ -80,7 +89,7 @@ func (a *ProviderAccess) ValidateCompleted(s Session, p EgressPolicy) error {
 		return ErrProviderEgressPending
 	}
 	l := p.Limits
-	if s.Validate() != nil || p.Provider != s.Identity.Provider || a.Version != 1 || a.SessionHash != Digest(s) || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests || a.Requests > l.Requests || a.Requests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Requests*l.RequestBytes || a.ResponseBytes > a.Requests*l.ResponseBytes {
+	if s.Validate() != nil || p.Provider != s.Identity.Provider || a.Version != 1 || a.SessionHash != Digest(s) || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes {
 		return ErrProviderEgressFailed
 	}
 	return nil
@@ -157,14 +166,14 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 	}
 	m := DefaultEgressLimits(s)
 	l := p.Limits
-	if l.Requests <= 0 || l.Requests > m.Requests || l.InferenceRequests <= 0 || l.InferenceRequests > m.InferenceRequests || l.RefreshRequests < 0 || l.RefreshRequests > m.RefreshRequests || l.MetadataRequests < 0 || l.MetadataRequests > m.MetadataRequests || l.Requests > l.InferenceRequests+l.RefreshRequests+l.MetadataRequests || l.RequestBytes <= 0 || l.RequestBytes > m.RequestBytes || l.ResponseBytes <= 0 || l.ResponseBytes > m.ResponseBytes || l.TotalBytes <= 0 || l.TotalBytes > m.TotalBytes {
+	if l.Requests <= 0 || l.Requests > m.Requests || l.InferenceRequests <= 0 || l.InferenceRequests > m.InferenceRequests || l.RefreshRequests < 0 || l.RefreshRequests > m.RefreshRequests || l.MetadataRequests < 0 || l.MetadataRequests > m.MetadataRequests || l.NegotiationRequests < 0 || l.NegotiationRequests > m.NegotiationRequests || l.Requests > l.InferenceRequests+l.RefreshRequests+l.MetadataRequests+l.NegotiationRequests || l.RequestBytes <= 0 || l.RequestBytes > m.RequestBytes || l.ResponseBytes <= 0 || l.ResponseBytes > m.ResponseBytes || l.TotalBytes <= 0 || l.TotalBytes > m.TotalBytes {
 		return nil, ErrLiveBlocked
 	}
 	seen := map[string]bool{}
 	hasInference := false
 	for _, route := range p.Routes {
 		key := route.Authority + " " + route.Method + " " + route.Path + "?" + route.RawQuery
-		if !egressAuthority(route.Authority) || !egressPath(route.Path) || !egressQuery(route.RawQuery) || (route.Method != "POST" && route.Method != "GET") || seen[key] || (route.Kind != "inference" && route.Kind != "refresh" && route.Kind != "metadata") || (route.Kind != "metadata" && route.Method != "POST") {
+		if !egressAuthority(route.Authority) || !egressPath(route.Path) || !egressQuery(route.RawQuery) || (route.Method != "POST" && route.Method != "GET") || seen[key] || (route.Kind != "inference" && route.Kind != "refresh" && route.Kind != "metadata" && route.Kind != "local_negotiation") || (route.Kind != "metadata" && route.Kind != "local_negotiation" && route.Method != "POST") || (route.Kind == "local_negotiation" && (s.Identity.Provider != Codex || route.Method != "GET" || l.NegotiationRequests != 1)) {
 			return nil, ErrLiveBlocked
 		}
 		seen[key] = true
@@ -172,6 +181,23 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 	}
 	if !hasInference {
 		return nil, ErrLiveBlocked
+	}
+	// Local negotiation can only precede HTTP inference on the same captured
+	// authority/path/query, never introduce an unrelated provider endpoint.
+	for _, route := range p.Routes {
+		if route.Kind != "local_negotiation" {
+			continue
+		}
+		paired := false
+		for _, inference := range p.Routes {
+			if inference.Kind == "inference" && inference.Authority == route.Authority && inference.Path == route.Path && inference.RawQuery == route.RawQuery {
+				paired = true
+				break
+			}
+		}
+		if !paired {
+			return nil, ErrLiveBlocked
+		}
 	}
 	headers := map[string]bool{}
 	for _, h := range p.Headers {
@@ -205,7 +231,25 @@ func (b *ProviderEgress) route(r *http.Request) (EgressRoute, bool) {
 	if r.URL == nil || r.URL.IsAbs() || r.URL.Host != "" || r.URL.User != nil || r.URL.Fragment != "" || !egressQuery(r.URL.RawQuery) || r.URL.ForceQuery || r.URL.RawPath != "" || !egressPath(r.URL.Path) || len(r.Trailer) != 0 {
 		return EgressRoute{}, false
 	}
+	var matched EgressRoute
+	found := false
+	for _, route := range b.policy.Routes {
+		if r.Host == route.Authority && r.Method == route.Method && r.URL.Path == route.Path && r.URL.RawQuery == route.RawQuery {
+			matched, found = route, true
+			break
+		}
+	}
+	if !found {
+		return EgressRoute{}, false
+	}
+	negotiation := matched.Kind == "local_negotiation"
+	if negotiation && !validLocalNegotiation(r) {
+		return EgressRoute{}, false
+	}
 	for name, values := range r.Header {
+		if negotiation && localNegotiationHeader(name) {
+			continue
+		}
 		if name == "Content-Length" {
 			if len(values) != 1 {
 				return EgressRoute{}, false
@@ -234,12 +278,43 @@ func (b *ProviderEgress) route(r *http.Request) (EgressRoute, bool) {
 			return EgressRoute{}, false
 		}
 	}
-	for _, route := range b.policy.Routes {
-		if r.Host == route.Authority && r.Method == route.Method && r.URL.Path == route.Path && r.URL.RawQuery == route.RawQuery {
-			return route, true
+	return matched, true
+}
+
+// These headers are accepted only to reject one captured WebSocket attempt
+// locally. They never enter a forwarded header policy or an upstream request.
+func localNegotiationHeader(name string) bool {
+	switch name {
+	case "Connection", "Upgrade", "Sec-Websocket-Key", "Sec-Websocket-Version", "Sec-Websocket-Extensions":
+		return true
+	}
+	return false
+}
+func validLocalNegotiation(r *http.Request) bool {
+	if r.ContentLength > 0 || len(r.TransferEncoding) != 0 {
+		return false
+	}
+	expected := map[string]string{"Connection": "upgrade", "Upgrade": "websocket", "Sec-Websocket-Version": "13"}
+	for name, want := range expected {
+		values := r.Header.Values(name)
+		if len(values) != 1 || !strings.EqualFold(values[0], want) {
+			return false
 		}
 	}
-	return EgressRoute{}, false
+	keys := r.Header.Values("Sec-Websocket-Key")
+	if len(keys) != 1 {
+		return false
+	}
+	raw, err := base64.StdEncoding.DecodeString(keys[0])
+	if err != nil || len(raw) != 16 {
+		return false
+	}
+	for name, values := range r.Header {
+		if localNegotiationHeader(name) && (len(values) != 1 || len(values[0]) > 8192 || strings.ContainsAny(values[0], "\r\n\x00")) {
+			return false
+		}
+	}
+	return true
 }
 
 func (b *ProviderEgress) reserve(route EgressRoute) bool {
@@ -263,6 +338,8 @@ func (b *ProviderEgress) reserve(route EgressRoute) bool {
 		n, max = &b.audit.RefreshRequests, l.RefreshRequests
 	case "metadata":
 		n, max = &b.audit.MetadataRequests, l.MetadataRequests
+	case "local_negotiation":
+		n, max = &b.audit.NegotiationRequests, l.NegotiationRequests
 	}
 	if b.audit.Requests >= l.Requests || *n >= max {
 		b.audit.Failed = true
@@ -320,6 +397,20 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil || len(body) > requestCap || len(r.Trailer) != 0 || ctx.Err() != nil {
 		b.fail(len(body) > requestCap)
 		http.Error(w, "provider input incomplete or oversized", http.StatusRequestEntityTooLarge)
+		return
+	}
+	if route.Kind == "local_negotiation" {
+		if len(body) != 0 {
+			b.fail(false)
+			http.Error(w, "negotiation body denied", http.StatusBadRequest)
+			return
+		}
+		// No dial, upgrade or credential forwarding. The pinned client may retry
+		// HTTP using the separately captured inference route and its own budget.
+		w.WriteHeader(http.StatusUpgradeRequired)
+		b.mu.Lock()
+		b.audit.NegotiationResponses++
+		b.mu.Unlock()
 		return
 	}
 	upstream, err := http.NewRequestWithContext(ctx, route.Method, (&url.URL{Scheme: "https", Host: route.Authority, Path: route.Path, RawQuery: route.RawQuery}).String(), bytes.NewReader(body))
