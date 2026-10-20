@@ -39,6 +39,14 @@ fake systemd/kernel observations. They never open KVM, start a host unit or run 
 provider client. Native QEMU/guest execution and resource qualification are still
 missing. A fake manager's stop result is not production isolation evidence.
 
+The private object stream now supplies the reader with captured revisions and
+paths, an independent byte/call budget and canonical finite records. The private
+provider HTTP stream has one connection with no reconnect or outside dial. It
+requires the captured model and strict source-tool response policy, and retains
+a stopped host-side provider receipt. Control request/ready/finished envelopes
+bind the full launch, session and request digest; the host must still validate
+their actual source audit/auth return before accepting a report.
+
 The next implementation work must connect the private channels to a pinned
 guest runtime with separate provider, reader and code-host identities; implement
 native read-only client execution, exclusive bounded provider egress and private
