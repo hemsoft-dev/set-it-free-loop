@@ -50,8 +50,17 @@ ambiguous or failed output cannot use a previous report. Actual kernel resource
 observations and stop confirmation must pass before result.json is written.
 Required cleanup failure fails qualification while preserving an earlier error.
 
-TCG is used only for these trusted, inert fixtures. QEMU does not promise a
-production security boundary for TCG. This command never selects real clients,
+The default accelerator is TCG, used only for these trusted, inert fixtures.
+Pass `--accelerator kvm` to exercise hardware virtualization explicitly. That
+mode requires an accessible `/dev/kvm` reporting API version12 and passes only
+`-accel kvm -cpu host` to QEMU. Failure to open KVM or boot the guest fails the
+fixture without a TCG fallback. The manifest captures the accelerator and QEMU
+version/hash; launch verifies the executable hash again. Prepared and final
+receipts record the selected accelerator and device probe.
+
+QEMU does not promise a production security boundary for TCG. A successful KVM
+fixture boot proves hardware execution of these fake roles, not qualification
+of production client packaging, credential transfer or egress. This command never selects real clients,
 credentials, App identity or live inference, and its result explicitly records
 production_boundary_qualified=false. Production needs a separately qualified
 KVM/host boundary, protected auth/profile packaging, provider request/egress
