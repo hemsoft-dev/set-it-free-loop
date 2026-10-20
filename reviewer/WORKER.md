@@ -1,5 +1,10 @@
 # Bounded worker transport
 
+For direct official-client stdin/stdout framing, [NativeDriver](NATIVE.md) uses
+the same supervisor lifecycle with the native envelope normalizer. The wrapper
+protocol below remains available for trusted wrappers; the two wire formats are
+explicit and never auto-detected from untrusted output.
+
 `WorkerDriver` implements the `Driver` contract over a versioned JSONL channel
 to a trusted worker wrapper. Both adapters include the captured phase limits in
 the invocation. A wrapper may request `read` and literal bounded `search` through

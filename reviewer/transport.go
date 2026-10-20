@@ -46,6 +46,13 @@ type transportUsage struct {
 	OutputTokens int64 `json:"output_tokens"`
 }
 
+// NativeTransportLimit accounts for escaped source-tool results and escaped
+// Report JSON independently. The normalized report retains OutputBytes as its
+// own strict bound. This is not additional source-read or inference capacity.
+func NativeTransportLimit(s Session) int {
+	return 12*s.Limits.ReaderBytes + 6*s.Limits.OutputBytes + s.Limits.ReaderCalls*8192 + (128 << 10)
+}
+
 // NormalizeCLIOutput accepts the pinned clients' documented JSON envelopes,
 // discards progress text, and rejects incomplete/error/forbidden-tool results.
 // It never publishes raw transport output. The actual isolated driver still
@@ -54,7 +61,8 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 	if err := s.Validate(); err != nil {
 		return Report{}, err
 	}
-	if len(raw) > s.Limits.OutputBytes {
+	transportLimit := NativeTransportLimit(s)
+	if len(raw) > transportLimit {
 		return Report{}, errors.New("client transport output exceeds byte bound")
 	}
 	var result []byte
@@ -62,10 +70,14 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 	switch s.Identity.Provider {
 	case Codex:
 		scanner := bufio.NewScanner(bytes.NewReader(raw))
-		scanner.Buffer(make([]byte, 1024), s.Limits.OutputBytes)
+		scanner.Buffer(make([]byte, 1024), transportLimit+1)
 		completed := false
+		failed := false
 		turns := 0
 		for scanner.Scan() {
+			if uniqueJSONKeys(json.NewDecoder(bytes.NewReader(scanner.Bytes())), 0) != nil {
+				return Report{}, errors.New("ambiguous Codex JSONL event")
+			}
 			var event struct {
 				Type string `json:"type"`
 				Item struct {
@@ -114,14 +126,27 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 					usage.InputTokens = event.Usage.InputTokens
 					usage.OutputTokens = event.Usage.OutputTokens
 				}
+			case "turn.failed", "error":
+				// This pin exposes only a free-text message, not an auth/quota
+				// code. Preserve an unknown provider failure without echoing it.
+				completed, failed = true, true
 			default:
 				return Report{}, errors.New("client error or unsupported event")
 			}
 		}
-		if scanner.Err() != nil || !completed || len(result) == 0 {
+		if scanner.Err() != nil || !completed {
 			return Report{}, errors.New("incomplete Codex transport")
 		}
+		if failed {
+			return Report{}, PhaseError{State: "provider_unavailable"}
+		}
+		if len(result) == 0 {
+			return Report{}, errors.New("missing Codex report")
+		}
 	case Claude:
+		if uniqueJSONKeys(json.NewDecoder(bytes.NewReader(raw)), 0) != nil {
+			return Report{}, errors.New("ambiguous Claude result")
+		}
 		var envelope struct {
 			Type       string          `json:"type"`
 			Subtype    string          `json:"subtype"`
@@ -130,14 +155,39 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 			Structured json.RawMessage `json:"structured_output"`
 			Usage      *transportUsage `json:"usage"`
 			Turns      int             `json:"num_turns"`
+			APIStatus  *int            `json:"api_error_status"`
 		}
 		d := json.NewDecoder(bytes.NewReader(raw))
-		if d.Decode(&envelope) != nil || envelope.Type != "result" || envelope.Subtype != "success" || envelope.IsError == nil || *envelope.IsError || envelope.Turns < 1 {
+		if d.Decode(&envelope) != nil || envelope.Type != "result" || envelope.IsError == nil {
 			return Report{}, errors.New("incomplete or failed Claude transport")
 		}
 		var extra any
 		if d.Decode(&extra) != io.EOF {
 			return Report{}, errors.New("trailing Claude transport value")
+		}
+		if *envelope.IsError {
+			state := "provider_unavailable"
+			switch envelope.Subtype {
+			case "success", "error_during_execution":
+				if envelope.APIStatus != nil {
+					switch *envelope.APIStatus {
+					case 401:
+						state = "auth_failed"
+					case 429:
+						state = "quota_wait"
+					}
+				}
+			case "error_max_turns", "error_max_budget_usd":
+				state = "incomplete_expired"
+			case "error_max_structured_output_retries":
+				state = "invalid_output"
+			default:
+				return Report{}, errors.New("unknown Claude failure envelope")
+			}
+			return Report{}, PhaseError{State: state}
+		}
+		if envelope.Subtype != "success" || envelope.Turns < 1 || (envelope.APIStatus != nil && *envelope.APIStatus >= 400) {
+			return Report{}, errors.New("inconsistent Claude completion")
 		}
 		result = envelope.Structured
 		if len(result) == 0 || string(result) == "null" {
