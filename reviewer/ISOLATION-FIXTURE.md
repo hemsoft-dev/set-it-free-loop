@@ -10,7 +10,8 @@ The reader receives a private manifest/audit pipe and a synthetic root-owned
 object store. The worker receives a fresh chroot with a fixed fake executable,
 the source proxy and only the captured readonly job IPC mount. It has no source
 objects, host home, shell, Git, procfs, provider/GitHub environment or network
-interface. Both roles drop supplementary groups/capabilities and set
+interface. Its cwd is explicitly inside the chroot; both absolute and relative
+escape paths are probed. Both roles drop supplementary groups/capabilities and set
 no_new_privs. A third UID in the shared IPC group reaches the socket but must
 receive no source bytes. The real reader records that denial before accepting
 the authorized worker's Read/Search calls.

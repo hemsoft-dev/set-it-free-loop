@@ -345,6 +345,9 @@ func newRole(ctx context.Context, name string, uid int, chroot string, env []str
 	}
 	command := exec.Command(program, args...)
 	command.Env = env
+	// chroot does not change the inherited cwd. Enter the new root before
+	// exec so relative paths cannot retain a directory outside confinement.
+	command.Dir = "/"
 	command.Stdin, command.Stdout, command.Stderr = in, out, os.Stderr
 	command.SysProcAttr = &syscall.SysProcAttr{Chroot: chroot, Credential: &syscall.Credential{Uid: uint32(uid), Gid: ipcGID, Groups: []uint32{}}, Setpgid: true, UseCgroupFD: true, CgroupFD: int(fd.Fd()), Pdeathsig: syscall.SIGKILL}
 	if ctx.Err() != nil {
@@ -430,12 +433,15 @@ func deniedPeer() error {
 }
 
 func worker() error {
+	if cwd, err := os.Getwd(); err != nil || cwd != "/" {
+		return errors.New("worker cwd outside its root")
+	}
 	for _, key := range []string{"GH_TOKEN", "GITHUB_TOKEN", "OPENAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "SSH_AUTH_SOCK", "HOME"} {
 		if os.Getenv(key) != "" {
 			return errors.New("ambient worker environment")
 		}
 	}
-	for _, path := range []string{"/source", "/home/franz", "/proc", "/bin/sh", "/usr/bin/git", "/worker-private-canary"} {
+	for _, path := range []string{"/source", "source", "../../source", "/home/franz", "/proc", "/bin/sh", "/usr/bin/git", "/worker-private-canary", "../../worker-private-canary"} {
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			return errors.New("forbidden worker filesystem")
 		}
