@@ -278,13 +278,12 @@ func TestNativeVMGuestClientCloseDoesNotRetirePrivateRefreshStream(t *testing.T)
 		bridge.close(ctx)
 	}()
 	var stopped atomic.Int32
-	proxy := httptest.NewServer(nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, transport, func() { stopped.Add(1) }))
-	defer proxy.Close()
-	first, _ := http.NewRequest("POST", proxy.URL+"/refresh", strings.NewReader(`{}`))
+	_, client, _, _ := nativeTLSFixture(t, nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, transport, func() { stopped.Add(1) }), policy)
+	first, _ := http.NewRequest("POST", "https://auth.provider.example/refresh", strings.NewReader(`{}`))
 	first.Close = true
 	first.Header.Set("Connection", "close")
 	first.Header.Set("Content-Type", "application/json")
-	response, err := proxy.Client().Do(first)
+	response, err := client.Do(first)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +292,7 @@ func TestNativeVMGuestClientCloseDoesNotRetirePrivateRefreshStream(t *testing.T)
 	if response.StatusCode != 200 || !response.Close {
 		t.Fatal("client connection did not close independently", response.StatusCode)
 	}
-	response, err = proxy.Client().Get(proxy.URL + "/metadata")
+	response, err = client.Get("https://provider.example/metadata")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -222,3 +222,29 @@ func TestNativeGuestTLSBoundsIncompleteHandshakes(t *testing.T) {
 		t.Fatal("incomplete handshake cleanup failed")
 	}
 }
+
+func TestNativeGuestPlaintextRefreshCannotBypassTLSAuthority(t *testing.T) {
+	policy := EgressPolicy{Routes: []EgressRoute{{Authority: "refresh.example", Method: "POST", Path: "/oauth/token", Kind: "refresh"}}, Limits: EgressLimits{ResponseBytes: 128}}
+	var calls, stopped atomic.Int32
+	handler := nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}), func() { stopped.Add(1) })
+	_, _, address, _ := nativeTLSFixture(t, handler, policy)
+	for _, host := range []string{"refresh.example", "outside.example"} {
+		q, _ := http.NewRequest("POST", "http://"+address+"/oauth/token", strings.NewReader(`{"refresh_token":"synthetic"}`))
+		q.Host = host
+		response, err := http.DefaultClient.Do(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if response.StatusCode != 403 || calls.Load() != 0 {
+			t.Fatal("plaintext refresh bypassed TLS authority", response.StatusCode, calls.Load())
+		}
+	}
+	if stopped.Load() != 2 {
+		t.Fatal("plaintext denial did not stop the owned client")
+	}
+}

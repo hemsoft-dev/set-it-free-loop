@@ -36,7 +36,14 @@ func ServeSourceSocket(ctx context.Context, config SourceReaderConfig, verifier 
 	return serveSourceSocket(ctx, config, verifier, ready, sourcePeerUID)
 }
 
-func serveSourceSocket(ctx context.Context, config SourceReaderConfig, verifier *Reader, ready func(SourceEndpoint) error, peerUID func(*net.UnixConn) (uint32, error)) (access *SourceAccess, serveErr error) {
+func serveSourceSocket(ctx context.Context, config SourceReaderConfig, verifier *Reader, ready func(SourceEndpoint) error, peerUID func(*net.UnixConn) (uint32, error)) (*SourceAccess, error) {
+	return serveSourceSocketDraining(ctx, nil, config, verifier, ready, peerUID)
+}
+
+// A trusted graceful stop closes only intake. An already accepted connection
+// retains its original bounded phase context so queued work and clean EOF can
+// produce the stopped audit. Hard cancellation still closes both endpoints.
+func serveSourceSocketDraining(ctx, drain context.Context, config SourceReaderConfig, verifier *Reader, ready func(SourceEndpoint) error, peerUID func(*net.UnixConn) (uint32, error)) (access *SourceAccess, serveErr error) {
 	uid, gid := os.Getuid(), os.Getgid()
 	if config.validate() != nil || uid <= 0 || uid != config.ReaderUID || os.Geteuid() != uid || os.Getegid() != gid || config.WorkerUID == uid || config.WorkerGID != gid || ready == nil {
 		return nil, ErrSourceService
@@ -117,6 +124,10 @@ func serveSourceSocket(ctx context.Context, config SourceReaderConfig, verifier 
 		mu.Unlock()
 	})
 	defer stop()
+	if drain != nil {
+		stopDrain := context.AfterFunc(drain, func() { _ = listener.Close() })
+		defer stopDrain()
+	}
 	if ctx.Err() != nil {
 		return broker.seal(), ctx.Err()
 	}

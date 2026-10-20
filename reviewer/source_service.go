@@ -75,7 +75,11 @@ func SourceReaderMain(ctx context.Context, environment []string, input io.ReadCl
 // The store is supplied by trusted launch code, never its input manifest. The
 // same environment, manifest, identity, socket and audit checks still apply.
 func SourceReaderMainWithStore(ctx context.Context, environment []string, input io.ReadCloser, output io.WriteCloser, store ObjectStore) int {
-	if input == nil || output == nil || store == nil {
+	return sourceReaderMainWithStore(ctx, environment, input, output, store, ServeSourceSocket)
+}
+
+func sourceReaderMainWithStore(ctx context.Context, environment []string, input io.ReadCloser, output io.WriteCloser, store ObjectStore, serve func(context.Context, SourceReaderConfig, *Reader, func(SourceEndpoint) error) (*SourceAccess, error)) int {
+	if input == nil || output == nil || store == nil || serve == nil {
 		return 2
 	}
 	var inputClosed, outputClosed sync.Once
@@ -128,7 +132,7 @@ func SourceReaderMainWithStore(ctx context.Context, environment []string, input 
 		}
 		return nil
 	}
-	access, err := ServeSourceSocket(ctx, config, reader, func(endpoint SourceEndpoint) error {
+	access, err := serve(ctx, config, reader, func(endpoint SourceEndpoint) error {
 		return emit(SourceReaderEvent{Version: 1, Kind: "ready", SessionHash: endpoint.SessionHash, ManifestHash: Digest(config), LaunchID: config.LaunchID, Socket: endpoint.Socket, ReaderUID: endpoint.ReaderUID})
 	})
 	if access == nil || emit(SourceReaderEvent{Version: 1, Kind: "stopped", SessionHash: Digest(config.Session), ManifestHash: Digest(config), LaunchID: config.LaunchID, Failed: err != nil, Access: access}) != nil || err != nil {

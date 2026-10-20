@@ -336,6 +336,11 @@ func nativeGuestProviderHandlerObserved(q nativeVMRequest, transport http.RoundT
 		var authority string
 		kind := ""
 		for _, route := range q.Policy.Routes {
+			// Refresh credentials must traverse CONNECT and its TLS authority/SNI
+			// checks. The loopback plaintext routes exist for client inference/metadata.
+			if route.Kind == "refresh" && in.TLS == nil {
+				continue
+			}
 			if in.TLS != nil && route.Authority != strings.TrimSuffix(in.Host, ":443") {
 				continue
 			}

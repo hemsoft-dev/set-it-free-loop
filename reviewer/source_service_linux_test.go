@@ -312,3 +312,74 @@ func TestSourceReaderMainCancellationUnblocksOwnedIO(t *testing.T) {
 		})
 	}
 }
+
+func TestSourceSocketGracefulSignalStopsIdleIntakeAndPreservesActiveDrain(t *testing.T) {
+	for _, mode := range []string{"idle", "active", "active-hard-stop"} {
+		t.Run(mode, func(t *testing.T) {
+			active := mode != "idle"
+			c := sourceServiceConfig(t, Codex)
+			reader, _ := brokerReader(c.Session.Snapshot)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			drain, signal := context.WithCancel(context.Background())
+			defer signal()
+			ready := make(chan SourceEndpoint, 1)
+			done := make(chan sourceSocketResult, 1)
+			go func() {
+				a, err := serveSourceSocketDraining(ctx, drain, c, reader, func(e SourceEndpoint) error { ready <- e; return nil }, func(*net.UnixConn) (uint32, error) { return uint32(c.WorkerUID), nil })
+				done <- sourceSocketResult{a, err}
+			}()
+			endpoint := sourceSocketReady(t, ready, done)
+			if !active {
+				signal()
+				select {
+				case r := <-done:
+					if r.err == nil {
+						t.Fatal("idle cancellation became a clean source audit")
+					}
+				case <-time.After(time.Second):
+					t.Fatal("idle reader did not stop")
+				}
+				return
+			}
+			connection, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: endpoint.Socket, Net: "unix"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer connection.Close()
+			f := &mcpFixture{client: connection, scan: bufio.NewScanner(connection), session: c.Session}
+			f.initialize(t)
+			signal()
+			select {
+			case r := <-done:
+				t.Fatal("signal cancelled the accepted source connection", r.err)
+			case <-time.After(50 * time.Millisecond):
+			}
+			reply := f.call(t, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{"revision":"`+c.Session.Snapshot.Head+`","path":"worker.go"}}}`)
+			if reply["error"] != nil || !strings.Contains(string(reply["result"]), "worker") {
+				t.Fatal("accepted connection could not finish queued source work", reply)
+			}
+			if mode == "active-hard-stop" {
+				cancel()
+				select {
+				case r := <-done:
+					if r.err == nil {
+						t.Fatal("hard cancellation became a clean source audit")
+					}
+				case <-time.After(time.Second):
+					t.Fatal("hard cancellation left draining work running")
+				}
+				return
+			}
+			connection.Close()
+			select {
+			case r := <-done:
+				if r.err != nil || r.access == nil || r.access.ToolCalls != 1 {
+					t.Fatal("clean EOF lost audit after signal", r.err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("reader did not finish clean EOF")
+			}
+		})
+	}
+}

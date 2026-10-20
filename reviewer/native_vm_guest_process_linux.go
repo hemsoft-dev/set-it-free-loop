@@ -494,8 +494,8 @@ func (p *nativeGuestProcess) Stop(ctx context.Context) error {
 	p.stopOnce.Do(func() {
 		p.in.Close()
 		if strings.HasSuffix(p.group, "reader") {
-			// The finite manifest already consumed stdin. An idle listener needs
-			// a separate trusted cancellation signal to flush its failed audit.
+			// The finite manifest already consumed stdin. SIGTERM closes reader
+			// intake only; accepted source work drains under its phase deadline.
 			if p.command == nil || p.command.Process == nil || p.command.Process.Signal(syscall.SIGTERM) == nil {
 				select {
 				case <-p.done:
@@ -575,7 +575,10 @@ func nativeGuestReaderMain() int {
 		return 2
 	}
 	defer store.Close()
-	return SourceReaderMainWithStore(ctx, []string{"LANG=C.UTF-8"}, io.NopCloser(bytes.NewReader(raw)), os.Stdout, store)
+	return sourceReaderMainWithStore(context.Background(), []string{"LANG=C.UTF-8"}, io.NopCloser(bytes.NewReader(raw)), os.Stdout, store,
+		func(phase context.Context, config SourceReaderConfig, reader *Reader, ready func(SourceEndpoint) error) (*SourceAccess, error) {
+			return serveSourceSocketDraining(phase, ctx, config, reader, ready, sourcePeerUID)
+		})
 }
 
 var _ Worker = (*nativeGuestProcess)(nil)

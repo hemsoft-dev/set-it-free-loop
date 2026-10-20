@@ -281,3 +281,11 @@ no substantive report, whole-unit stop, and runtime-root removal. It launches
 one VM, leaves its private recovery state for inspection, and never reseeds it.
 This bounded response-loss case does not qualify arbitrary host crashes,
 operator recovery or production account behavior.
+
+Reader SIGTERM is a graceful intake stop. It closes an idle listener immediately,
+but an accepted source connection retains its bounded phase context through
+queued work and clean EOF so it can emit a complete audit. The hard phase
+context still closes active work, and guest PID1 still enforces cgroup kill and
+empty-group checks within its cleanup deadline. Plaintext loopback requests can
+reach the intended inference and metadata routes, but a refresh route requires
+the CONNECT/TLS path and its captured authority, SNI and inner Host checks.
