@@ -252,10 +252,18 @@ func (d WorkerDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 	if err != nil {
 		return nil, Identity{}, adapterValidation(err, true)
 	}
+	return executeWorker(ctx, d.Launcher, inv, func(ctx context.Context, worker Worker) ([]byte, error) {
+		return workerExchange(ctx, worker, inv, initial)
+	})
+}
+
+// executeWorker owns the common lifecycle for wrapper and native CLI protocols.
+// Neither protocol can accept output before supervisor-confirmed termination.
+func executeWorker(ctx context.Context, launcher WorkerLauncher, inv Invocation, exchange func(context.Context, Worker) ([]byte, error)) ([]byte, Identity, error) {
 	if ctx.Err() != nil {
 		return nil, Identity{}, errors.Join(ctx.Err(), PhaseError{State: phaseState(ctx.Err()), BeforeWork: true})
 	}
-	worker, startErr := d.Launcher.Start(ctx, inv)
+	worker, startErr := launcher.Start(ctx, inv)
 	if worker == nil {
 		if startErr == nil {
 			startErr = errors.New("launcher returned no worker")
@@ -270,7 +278,7 @@ func (d WorkerDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 	exchangeCtx, exchangeCancel := context.WithCancel(ctx)
 	defer exchangeCancel()
 	if startErr == nil {
-		go func() { data, err := workerExchange(exchangeCtx, worker, inv, initial); done <- result{data, err} }()
+		go func() { data, err := exchange(exchangeCtx, worker); done <- result{data, err} }()
 	} else {
 		done <- result{err: workerLauncherError(startErr, false)}
 	}
@@ -315,7 +323,7 @@ func (d WorkerDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 	if ctx.Err() != nil {
 		return nil, Identity{}, ctx.Err()
 	}
-	identity, err := d.Launcher.Inspect(ctx, inv)
+	identity, err := launcher.Inspect(ctx, inv)
 	if err != nil {
 		return nil, Identity{}, workerLauncherError(err, false)
 	}

@@ -114,6 +114,10 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 					usage.InputTokens = event.Usage.InputTokens
 					usage.OutputTokens = event.Usage.OutputTokens
 				}
+			case "turn.failed", "error":
+				// This pin exposes only a free-text message, not an auth/quota
+				// code. Preserve an unknown provider failure without echoing it.
+				return Report{}, PhaseError{State: "provider_unavailable"}
 			default:
 				return Report{}, errors.New("client error or unsupported event")
 			}
@@ -130,14 +134,39 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 			Structured json.RawMessage `json:"structured_output"`
 			Usage      *transportUsage `json:"usage"`
 			Turns      int             `json:"num_turns"`
+			APIStatus  *int            `json:"api_error_status"`
 		}
 		d := json.NewDecoder(bytes.NewReader(raw))
-		if d.Decode(&envelope) != nil || envelope.Type != "result" || envelope.Subtype != "success" || envelope.IsError == nil || *envelope.IsError || envelope.Turns < 1 {
+		if d.Decode(&envelope) != nil || envelope.Type != "result" || envelope.IsError == nil {
 			return Report{}, errors.New("incomplete or failed Claude transport")
 		}
 		var extra any
 		if d.Decode(&extra) != io.EOF {
 			return Report{}, errors.New("trailing Claude transport value")
+		}
+		if *envelope.IsError {
+			state := "provider_unavailable"
+			switch envelope.Subtype {
+			case "success", "error_during_execution":
+				if envelope.APIStatus != nil {
+					switch *envelope.APIStatus {
+					case 401:
+						state = "auth_failed"
+					case 429:
+						state = "quota_wait"
+					}
+				}
+			case "error_max_turns", "error_max_budget_usd":
+				state = "incomplete_expired"
+			case "error_max_structured_output_retries":
+				state = "invalid_output"
+			default:
+				return Report{}, errors.New("unknown Claude failure envelope")
+			}
+			return Report{}, PhaseError{State: state}
+		}
+		if envelope.Subtype != "success" || envelope.Turns < 1 || (envelope.APIStatus != nil && *envelope.APIStatus >= 400) {
+			return Report{}, errors.New("inconsistent Claude completion")
 		}
 		result = envelope.Structured
 		if len(result) == 0 || string(result) == "null" {
