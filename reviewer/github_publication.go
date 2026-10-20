@@ -55,7 +55,7 @@ func NewGitHubPublicationHTTP(e Enrollment, reader GitHubPublicationReader, tran
 }
 
 func (g *GitHubPublicationHTTP) Current(ctx context.Context, scope Scope) (RemoteState, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, githubDiscoveryTimeout)
 	defer cancel()
 	if !g.enrollment.accepts(scope) {
 		return RemoteState{}, ErrIgnored
@@ -70,7 +70,7 @@ func (g *GitHubPublicationHTTP) Current(ctx context.Context, scope Scope) (Remot
 	return s, nil
 }
 func (g *GitHubPublicationHTTP) History(ctx context.Context, scope Scope) (Discovery, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, githubDiscoveryTimeout)
 	defer cancel()
 	if !g.enrollment.accepts(scope) {
 		return Discovery{}, ErrIgnored
