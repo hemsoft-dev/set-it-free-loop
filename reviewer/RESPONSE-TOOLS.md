@@ -21,10 +21,14 @@ Metadata, refresh and local negotiation keep their separately captured routes.
 The Codex policy admits custom functions.exec calls and assistant/reasoning data
 in its supported response events. Other custom or native function handlers are
 rejected, including hidden apply_patch. The Claude policy admits only the exact
-source read/search MCP names and StructuredOutput. Both policies inspect nested
+source read/search MCP names, StructuredOutput and the permitted EndConversation
+control. The names share the native-output policy to prevent drift. Both policies inspect nested
 output containers, including terminal response objects, and nonstreamed JSON.
 Ordinary text mentioning a tool remains text. Standard HTTP JSON error envelopes
-can still reach the native client's error handling.
+can still reach the native client's error handling. A validated Claude in-stream
+error is also a terminal data event, including before message_start. It reaches
+the client unchanged without latching bridge failure; later tool events and
+malformed or executable error envelopes remain denied.
 
 SSE validation bounds frames, requires the terminal event and rejects unknown
 events, duplicate JSON keys, malformed/unfinished frames, inconsistent event

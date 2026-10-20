@@ -36,7 +36,7 @@ func TestProviderResponseAllowsCapturedToolsAndOrdinaryText(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"mcp__sfl-source__read", "mcp__sfl-source__search", "StructuredOutput"} {
+	for _, name := range []string{"mcp__sfl-source__read", "mcp__sfl-source__search", "StructuredOutput", "EndConversation"} {
 		if err := validateProviderResponse(Claude, ClaudeSourceMessages, "text/event-stream; charset=utf-8", 200, []byte(claudeToolStream(name))); err != nil {
 			t.Fatal(name, err)
 		}
@@ -165,5 +165,49 @@ func TestProviderResponsePolicyProviderAndBounds(t *testing.T) {
 	}
 	if err := validateProviderResponse(Codex, CodexSourceResponses, "text/event-stream", 200, []byte("data: "+strings.Repeat("x", (4<<20)+1)+"\n\n")); err == nil {
 		t.Fatal("oversized frame accepted")
+	}
+}
+
+func TestProviderResponseClaudeTerminalErrorsRemainVisibleToClient(t *testing.T) {
+	failure := responseEvent("error", map[string]any{"error": map[string]any{"type": "overloaded_error", "message": "Overloaded"}}, true)
+	start := responseEvent("message_start", map[string]any{"message": map[string]any{"type": "message", "role": "assistant", "content": []any{}}}, true)
+	for _, prefix := range []string{"", start} {
+		stream := prefix + failure
+		policy := egressTestPolicy(Claude)
+		policy.ResponsePolicy = ClaudeSourceMessages
+		guard, err := NewProviderEgress(context.Background(), testSession(Claude), policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream)), ContentLength: int64(len(stream))}, nil
+		}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		recorder := httptest.NewRecorder()
+		q := httptest.NewRequest("POST", "/infer", strings.NewReader(`{}`))
+		q.Host = "provider.example"
+		guard.ServeHTTP(recorder, q)
+		audit, err := guard.Close(context.Background())
+		if recorder.Code != 200 || recorder.Body.String() != stream || err != nil || audit.Failed || !audit.Stopped || audit.Requests != 1 || audit.Responses != 1 {
+			t.Fatal("provider error replaced or audit poisoned", recorder.Code, audit, err)
+		}
+	}
+	for name, stream := range map[string]string{
+		"missing-error":    responseEvent("error", map[string]any{}, true),
+		"malformed-detail": responseEvent("error", map[string]any{"error": "Overloaded"}, true),
+		"missing-message":  responseEvent("error", map[string]any{"error": map[string]any{"type": "overloaded_error"}}, true),
+		"extra-tool":       responseEvent("error", map[string]any{"error": map[string]any{"type": "overloaded_error", "message": "Overloaded"}, "content_block": map[string]any{"type": "tool_use", "id": "hidden", "name": "Bash", "input": map[string]any{}}}, true),
+		"after-error":      failure + claudeToolStream("EndConversation"),
+		"duplicate-error":  failure + failure,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if validateProviderResponse(Claude, ClaudeSourceMessages, "text/event-stream", 200, []byte(stream)) == nil {
+				t.Fatal("unsafe error envelope accepted")
+			}
+		})
+	}
+}
+func TestProviderResponseClaudeEndConversationJSONMatchesNativeControlPolicy(t *testing.T) {
+	raw := []byte(`{"type":"message","role":"assistant","content":[{"type":"tool_use","id":"finish","name":"EndConversation","input":{}}]}`)
+	if err := validateProviderResponse(Claude, ClaudeSourceMessages, "application/json", 200, raw); err != nil {
+		t.Fatal(err)
 	}
 }

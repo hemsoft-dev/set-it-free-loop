@@ -60,7 +60,7 @@ func (g *responseTools) walk(value any, depth int) error {
 		case "tool_use":
 			name, _ := v["name"].(string)
 			id, _ := v["id"].(string)
-			if g.provider != Claude || (name != "mcp__sfl-source__read" && name != "mcp__sfl-source__search" && name != "StructuredOutput") || id == "" || len(id) > 1024 {
+			if g.provider != Claude || !claudeSourceTool(name) || id == "" || len(id) > 1024 {
 				return ErrProviderToolResponse
 			}
 			if _, ok := v["input"].(map[string]any); !ok {
@@ -244,6 +244,32 @@ func (c *claudeResponseStream) event(kind string, v map[string]any, tools *respo
 		return ErrProviderToolResponse
 	}
 	switch kind {
+	case "error":
+		// A provider can terminate before message_start or midway through a
+		// block. It is data for native error/retry handling, not a tool event.
+		for key, value := range v {
+			switch key {
+			case "type", "error":
+			case "request_id":
+				id, ok := value.(string)
+				if !ok || id == "" || len(id) > 1024 {
+					return ErrProviderToolResponse
+				}
+			default:
+				return ErrProviderToolResponse
+			}
+		}
+		detail, ok := v["error"].(map[string]any)
+		if !ok || len(detail) != 2 {
+			return ErrProviderToolResponse
+		}
+		code, codeOK := detail["type"].(string)
+		message, messageOK := detail["message"].(string)
+		if !codeOK || code == "" || len(code) > 128 || !messageOK || len(message) > 8192 {
+			return ErrProviderToolResponse
+		}
+		c.done = true
+		return nil
 	case "ping":
 		return nil
 	case "message_start":
