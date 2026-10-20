@@ -302,3 +302,46 @@ func TestNativeGuestConsumesActualPinnedImageProducerRelease(t *testing.T) {
 		t.Fatal("producer provenance changed")
 	}
 }
+
+func TestNativeGuestProxyStagesRequireBoundedMatchingReady(t *testing.T) {
+	q := nativeRequestFixture(t, Claude)
+	for _, kind := range []string{"complete", "stage-only", "foreign", "port", "flood"} {
+		var input bytes.Buffer
+		count := 1
+		if kind == "flood" {
+			count = 8
+		}
+		for range count {
+			if err := writeVMRecord(&input, nativeVMProgress{1, "guest-stage", "client-version"}, 4096); err != nil {
+				t.Fatal(err)
+			}
+		}
+		ready := nativeGuestProxyReady{nativeVMReady{1, q.Binding, Digest(q), q.Session.Identity, "native-vm-profile-1"}, 49152}
+		if kind == "foreign" {
+			ready.Ready.RequestHash = Digest("foreign")
+		}
+		if kind == "port" {
+			ready.Port = 0
+		}
+		if kind != "stage-only" {
+			if err := writeVMRecord(&input, ready, 4096); err != nil {
+				t.Fatal(err)
+			}
+		}
+		seen := 0
+		observed, err := readNativeGuestProxyReady(&input, q, func(stage string) error {
+			if stage != "client-version" {
+				t.Fatal("foreign stage retained")
+			}
+			seen++
+			return nil
+		})
+		if kind == "complete" {
+			if err != nil || observed.Port != 49152 || seen != 1 {
+				t.Fatal("proxy ready failed", err)
+			}
+		} else if err != ErrVMBoot {
+			t.Fatal("incomplete proxy accepted", kind, err)
+		}
+	}
+}

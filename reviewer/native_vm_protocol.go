@@ -90,6 +90,8 @@ func nativeVMGuestStage(stage string) bool {
 	switch stage {
 	case "ports", "jails", "profile", "reader", "source-ready", "source-bind", "codehost", "client-proxy", "client-ready", "auth-seed", "auth-profile", "native-execute", "native-output", "complete":
 		return true
+	case "client-config", "client-loopback", "client-proc", "client-listener", "client-version", "client-probe-clean":
+		return true
 	}
 	return false
 }

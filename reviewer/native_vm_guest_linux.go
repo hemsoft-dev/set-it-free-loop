@@ -193,7 +193,7 @@ func NativeVMGuestMain(args []string) int {
 	if phase.progress("client-ready") != nil {
 		return 2
 	}
-	observed, err := readVMRecord[nativeGuestProxyReady](readyRead, 4096)
+	observed, err := readNativeGuestProxyReady(readyRead, q, phase.progress)
 	if err != nil || !observed.Ready.valid(q) || observed.Port <= 0 || observed.Port > 65535 {
 		return 2
 	}

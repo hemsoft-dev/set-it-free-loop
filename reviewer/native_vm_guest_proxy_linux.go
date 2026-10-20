@@ -5,6 +5,7 @@ package reviewer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"net"
@@ -28,6 +29,36 @@ type nativeGuestStart struct {
 type nativeGuestProxyReady struct {
 	Ready nativeVMReady
 	Port  int
+}
+
+func readNativeGuestProxyReady(input io.Reader, q nativeVMRequest, progress func(string) error) (nativeGuestProxyReady, error) {
+	for range 8 {
+		raw, err := readVMRecord[json.RawMessage](input, 4096)
+		if err != nil {
+			return nativeGuestProxyReady{}, ErrVMBoot
+		}
+		var stage nativeVMProgress
+		if json.Unmarshal(raw, &stage) == nil && stage.Version == 1 && stage.Kind == "guest-stage" && strings.HasPrefix(stage.Stage, "client-") && nativeVMGuestStage(stage.Stage) {
+			canonical, _ := json.Marshal(stage)
+			if !bytes.Equal(raw, canonical) {
+				return nativeGuestProxyReady{}, ErrVMBoot
+			}
+			if progress != nil && progress(stage.Stage) != nil {
+				return nativeGuestProxyReady{}, ErrVMBoot
+			}
+			continue
+		}
+		var ready nativeGuestProxyReady
+		if json.Unmarshal(raw, &ready) != nil || !ready.Ready.valid(q) || ready.Port <= 0 || ready.Port > 65535 {
+			return nativeGuestProxyReady{}, ErrVMBoot
+		}
+		canonical, _ := json.Marshal(ready)
+		if !bytes.Equal(raw, canonical) {
+			return nativeGuestProxyReady{}, ErrVMBoot
+		}
+		return ready, nil
+	}
+	return nativeGuestProxyReady{}, ErrVMBoot
 }
 
 type nativeGuestBuffer struct {
@@ -125,14 +156,18 @@ func nativeGuestClientProxyMain() int {
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() { config.Close(); provider.Close(); os.Stdin.Close() })
 	defer stop()
+	progress := func(stage string) error { return writeVMRecord(ready, nativeVMProgress{1, "guest-stage", stage}, 4096) }
+	if progress("client-config") != nil {
+		return 2
+	}
 	q, err := readVMRecord[nativeVMRequest](config, 4<<20)
 	if err != nil || !q.valid() {
 		return 2
 	}
-	if nativeGuestLoopback() != nil {
+	if progress("client-loopback") != nil || nativeGuestLoopback() != nil {
 		return 2
 	}
-	if unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, "") != nil {
+	if progress("client-proc") != nil || unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, "") != nil {
 		return 2
 	}
 	if unix.Mount("proc", "/proc", "proc", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "") != nil {
@@ -148,6 +183,9 @@ func nativeGuestClientProxyMain() int {
 		if err != nil || !ip.IsLoopback() {
 			return 2
 		}
+	}
+	if progress("client-listener") != nil {
+		return 2
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -206,6 +244,9 @@ func nativeGuestClientProxyMain() int {
 		return 2
 	}
 	// The profile is still empty: no auth/status probe or inference is run here.
+	if progress("client-version") != nil {
+		return 2
+	}
 	probeCtx, stopProbe := context.WithTimeout(ctx, 5*time.Second)
 	version := exec.CommandContext(probeCtx, binary, "--version")
 	version.Dir = "/work"
@@ -218,7 +259,10 @@ func nativeGuestClientProxyMain() int {
 	err = version.Run()
 	stopProbe()
 	output := versionOutput.Bytes()
-	if err != nil || len(output) > 4096 || !nativeGuestVersion(q.Session.Identity, string(output)) || !nativeGuestOnlySupervisor() {
+	if err != nil || len(output) > 4096 || !nativeGuestVersion(q.Session.Identity, string(output)) {
+		return 2
+	}
+	if progress("client-probe-clean") != nil || !nativeGuestOnlySupervisor() {
 		return 2
 	}
 	if writeVMRecord(ready, nativeGuestProxyReady{nativeVMReady{1, q.Binding, Digest(q), q.Session.Identity, "native-vm-profile-1"}, listener.Addr().(*net.TCPAddr).Port}, 4096) != nil {

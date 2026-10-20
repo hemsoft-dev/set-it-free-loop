@@ -1,4 +1,5 @@
 import hashlib
+import gzip
 import importlib.util
 from pathlib import Path
 import stat
@@ -11,6 +12,17 @@ spec.loader.exec_module(image)
 
 
 class NativeImageTests(unittest.TestCase):
+    def test_fast_and_default_compression_preserve_same_deterministic_archive(self):
+        archive = image.sibling("isolation-fixture")
+        entries = {"native-init": (stat.S_IFREG | 0o555, b"fixed trusted helper"*4096, 0, 0)}
+        with tempfile.TemporaryDirectory() as directory:
+            fast, default, repeat = [Path(directory)/name for name in ["fast.gz", "default.gz", "repeat.gz"]]
+            archive.archive(entries, fast, compresslevel=1)
+            archive.archive(entries, default)
+            archive.archive(entries, repeat, compresslevel=1)
+            self.assertEqual(gzip.decompress(fast.read_bytes()), gzip.decompress(default.read_bytes()))
+            self.assertEqual(fast.read_bytes(), repeat.read_bytes())
+
     def test_exact_source_inode_bytes_and_symlink_denial(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)/"snapshot"

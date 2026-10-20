@@ -206,7 +206,7 @@ def main():
     release = image.release()
     image.entry("native-release.json", canonical(release))
     initrd = output / "native.cpio.gz"
-    archive.archive(image.entries, initrd)
+    archive.archive(image.entries, initrd, compresslevel=1)
     initrd.chmod(0o444)
     (output / "vmlinuz").write_bytes(kernel)
     (output / "vmlinuz").chmod(0o444)
