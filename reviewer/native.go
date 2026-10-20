@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 )
 
 // NativeDriver speaks the official clients' stdin/stdout protocol directly.
@@ -28,7 +29,25 @@ type nativeResultObservation struct {
 	Trailer    *nativeCodexTrailer
 }
 
-type nativeCodexTrailer struct{ Type, Item, Server, Tool, Status string }
+type nativeCodexTrailer struct{ Type, Item, Server, Tool, Status, ErrorClass, IO string }
+
+func nativeErrorClass(message string) (string, string) {
+	message = strings.ToLower(message)
+	class, kind := "other", "other"
+	for _, entry := range []struct{ word, class string }{{"git", "git"}, {"rollout", "persistence"}, {"persist", "persistence"}, {"sqlite", "state"}, {"database", "state"}, {"shutdown", "shutdown"}, {"mcp", "mcp"}, {"permission", "filesystem"}, {"read-only", "filesystem"}, {"token", "auth"}, {"auth", "auth"}} {
+		if strings.Contains(message, entry.word) {
+			class = entry.class
+			break
+		}
+	}
+	for _, entry := range []struct{ word, kind string }{{"permission denied", "permission"}, {"operation not permitted", "denied"}, {"read-only file system", "read-only"}, {"no such file or directory", "missing"}, {"broken pipe", "pipe"}, {"connection reset", "connection"}, {"not supported", "unsupported"}} {
+		if strings.Contains(message, entry.word) {
+			kind = entry.kind
+			break
+		}
+	}
+	return class, kind
+}
 
 func nativeEventClass(value string) string {
 	switch value {
@@ -44,14 +63,19 @@ func nativeTrailer(raw []byte) *nativeCodexTrailer {
 	completed := false
 	for scan.Scan() {
 		var event struct {
-			Type string                                      `json:"type"`
-			Item struct{ Type, Server, Tool, Status string } `json:"item"`
+			Type    string                                      `json:"type"`
+			Message string                                      `json:"message"`
+			Item    struct{ Type, Server, Tool, Status string } `json:"item"`
 		}
 		if json.Unmarshal(scan.Bytes(), &event) != nil {
 			return nil
 		}
 		if completed {
-			return &nativeCodexTrailer{nativeEventClass(event.Type), nativeEventClass(event.Item.Type), nativeEventClass(event.Item.Server), nativeEventClass(event.Item.Tool), nativeEventClass(event.Item.Status)}
+			class, kind := "", ""
+			if event.Type == "error" {
+				class, kind = nativeErrorClass(event.Message)
+			}
+			return &nativeCodexTrailer{nativeEventClass(event.Type), nativeEventClass(event.Item.Type), nativeEventClass(event.Item.Server), nativeEventClass(event.Item.Tool), nativeEventClass(event.Item.Status), class, kind}
 		}
 		completed = event.Type == "turn.completed" || event.Type == "turn.failed" || event.Type == "error"
 	}
@@ -75,6 +99,16 @@ func (o *nativeResultObservation) valid(s Session) bool {
 			if value != "other" && nativeEventClass(value) != value {
 				return false
 			}
+		}
+		switch o.Trailer.ErrorClass {
+		case "", "other", "git", "persistence", "state", "shutdown", "mcp", "filesystem", "auth":
+		default:
+			return false
+		}
+		switch o.Trailer.IO {
+		case "", "other", "permission", "denied", "read-only", "missing", "pipe", "connection", "unsupported":
+		default:
+			return false
 		}
 	}
 	return true
