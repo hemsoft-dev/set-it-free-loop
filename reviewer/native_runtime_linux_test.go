@@ -7,6 +7,8 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -89,5 +91,37 @@ func TestNativeRuntimeRejectsUnsafeMetadataBeforeFileCallback(t *testing.T) {
 		if err == nil || calls != 0 {
 			t.Fatal("unsafe metadata reached callback", err, calls)
 		}
+	}
+}
+
+func TestNativeRuntimeAcceptsActualPythonProducerGolden(t *testing.T) {
+	file, err := os.Open("testdata/native-qemu-runtime.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	pin := VMAssetPin{authHash([]byte("synthetic QEMU pin")), 18}
+	manifest, err := streamNativeRuntime(file, pin, func(_ nativeRuntimeFile, input io.Reader) error { _, err := io.Copy(io.Discard, input); return err })
+	if err != nil || len(manifest.Files) != 5 {
+		t.Fatal("Python producer frame refused", err)
+	}
+}
+func TestNativeRuntimeAcceptsOptInCapturedProducer(t *testing.T) {
+	path := os.Getenv("SFL_NATIVE_RUNTIME_ARTIFACT")
+	if path == "" {
+		t.Skip("explicit captured producer artifact not selected")
+	}
+	length, err := strconv.ParseInt(os.Getenv("SFL_NATIVE_RUNTIME_QEMU_BYTES"), 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	manifest, err := streamNativeRuntime(file, VMAssetPin{os.Getenv("SFL_NATIVE_RUNTIME_QEMU_SHA256"), length}, func(_ nativeRuntimeFile, input io.Reader) error { _, err := io.Copy(io.Discard, input); return err })
+	if err != nil || len(manifest.Files) < 5 {
+		t.Fatal("captured producer frame refused", err)
 	}
 }
