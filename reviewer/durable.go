@@ -89,6 +89,7 @@ type DurableJob struct {
 	AttemptID        string
 	AttemptInputHash string
 	SourceAttempts   []SourceAttempt
+	ProviderAttempts []ProviderAttempt
 }
 
 type SourceAttempt struct {
@@ -899,7 +900,7 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 		wrapped.Reviewers[provider] = DurableReviewer{Store: s, Job: j.Job, Token: token, Inner: inner, Reader: engine.Reader, Now: now}
 	}
 	out, runErr := wrapped.Run(ctx, j.Job, j.Checkpoint)
-	if errors.Is(runErr, ErrRefundPending) || errors.Is(runErr, ErrSourceAuditPending) || errors.Is(runErr, ErrWorkerStopPending) {
+	if errors.Is(runErr, ErrRefundPending) || errors.Is(runErr, ErrSourceAuditPending) || errors.Is(runErr, ErrProviderAuditPending) || errors.Is(runErr, ErrProviderEgressPending) || errors.Is(runErr, ErrWorkerStopPending) {
 		// Retain the nonce and attempt metadata for physical-worker, audit or
 		// refund recovery. Releasing would discard that recovery path.
 		return out, runErr
