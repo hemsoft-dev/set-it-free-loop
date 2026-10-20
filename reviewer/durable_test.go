@@ -76,7 +76,7 @@ func (f *fakeRemote) Post(_ context.Context, w WriteIntent) (RemoteReceipt, erro
 	if f.post != nil {
 		return f.post(w)
 	}
-	r := RemoteReceipt{int64(f.posts), 9003, w.Marker, w.BodyHash, controlTime.Add(5 * time.Minute)}
+	r := RemoteReceipt{int64(f.posts), 9003, w.Marker, w.BodyHash, controlTime.Add(5 * time.Minute), w.Snapshot.Head}
 	f.receipts = append(f.receipts, r)
 	return r, nil
 }
@@ -120,7 +120,7 @@ func TestUnknownAcknowledgmentSurvivesRestartAndOrdersRequest(t *testing.T) {
 			}
 			remote := liveFake(request)
 			remote.post = func(w WriteIntent) (RemoteReceipt, error) {
-				remote.receipts = append(remote.receipts, RemoteReceipt{1, 9003, w.Marker, w.BodyHash, controlTime.Add(5 * time.Minute)})
+				remote.receipts = append(remote.receipts, RemoteReceipt{1, 9003, w.Marker, w.BodyHash, controlTime.Add(5 * time.Minute), w.Snapshot.Head})
 				return RemoteReceipt{}, errors.New("crash after accepted ACK")
 			}
 			p := Publisher{Store: s, Remote: remote}
@@ -140,7 +140,7 @@ func TestUnknownAcknowledgmentSurvivesRestartAndOrdersRequest(t *testing.T) {
 			}
 			defer reopened.Close()
 			p.Store = reopened
-			remote.receipts = append(remote.receipts, RemoteReceipt{2, 666, ack.Marker, ack.BodyHash, controlTime.Add(5 * time.Minute)})
+			remote.receipts = append(remote.receipts, RemoteReceipt{2, 666, ack.Marker, ack.BodyHash, controlTime.Add(5 * time.Minute), ack.Snapshot.Head})
 			remote.complete = false
 			if err = p.Reconcile(ctx, ack.ID); !errors.Is(err, ErrDeferred) {
 				t.Fatal("partial scan trusted", err)
@@ -235,7 +235,7 @@ func TestOutboxUnknownPublicationAndDelayedVisibility(t *testing.T) {
 		t.Fatal(err)
 	}
 	remote.post = func(w WriteIntent) (RemoteReceipt, error) {
-		remote.receipts = append(remote.receipts, RemoteReceipt{30, 9003, w.Marker, w.BodyHash, controlTime.Add(6 * time.Minute)})
+		remote.receipts = append(remote.receipts, RemoteReceipt{30, 9003, w.Marker, w.BodyHash, controlTime.Add(6 * time.Minute), w.Snapshot.Head})
 		return RemoteReceipt{}, errors.New("lost response")
 	}
 	if err = p.Dispatch(ctx, intent.ID); !errors.Is(err, ErrDeferred) {
@@ -272,7 +272,7 @@ func TestPublicationARetainsRequestBWhenGitHubClearsB(t *testing.T) {
 			t.Fatal(err)
 		}
 		remote.state.Request = NativeRequest{} // GitHub A completion clears newly requested B
-		return RemoteReceipt{33, 9003, w.Marker, w.BodyHash, controlTime.Add(7 * time.Minute)}, nil
+		return RemoteReceipt{33, 9003, w.Marker, w.BodyHash, controlTime.Add(7 * time.Minute), w.Snapshot.Head}, nil
 	}
 	if err = p.Dispatch(ctx, intent.ID); !errors.Is(err, ErrDeferred) {
 		t.Fatal(err)
@@ -413,7 +413,7 @@ func TestFIFOConfigAcknowledgmentsAndResetDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	remote.post = func(w WriteIntent) (RemoteReceipt, error) {
-		return RemoteReceipt{2, 9003, w.Marker, w.BodyHash, controlTime.Add(6 * time.Minute)}, nil
+		return RemoteReceipt{2, 9003, w.Marker, w.BodyHash, controlTime.Add(6 * time.Minute), w.Snapshot.Head}, nil
 	}
 	if err := p.Dispatch(ctx, commands[1].WriteID); err != nil {
 		t.Fatal(err)
@@ -562,7 +562,7 @@ func TestPostPublicationChecksAndAnnotationRemainRetryable(t *testing.T) {
 				} else {
 					remote.currentErr = errors.New("transient postcheck read")
 				}
-				return RemoteReceipt{55, 9003, w.Marker, w.BodyHash, controlTime.Add(6 * time.Minute)}, nil
+				return RemoteReceipt{55, 9003, w.Marker, w.BodyHash, controlTime.Add(6 * time.Minute), w.Snapshot.Head}, nil
 			}
 			if err = p.Dispatch(ctx, intent.ID); err == nil {
 				t.Fatal("injected recovery failure ignored")
@@ -609,7 +609,7 @@ func TestPostHistoryFindsBThatWasNeverLocallyObserved(t *testing.T) {
 		b.Removed = true
 		remote.history = []NativeRequest{native(1, controlTime.Add(time.Minute)), b}
 		remote.state.Request = NativeRequest{}
-		return RemoteReceipt{56, 9003, w.Marker, w.BodyHash, controlTime.Add(7 * time.Minute)}, nil
+		return RemoteReceipt{56, 9003, w.Marker, w.BodyHash, controlTime.Add(7 * time.Minute), w.Snapshot.Head}, nil
 	}
 	if err = p.Dispatch(ctx, intent.ID); !errors.Is(err, ErrDeferred) {
 		t.Fatal("unobserved B disappeared silently", err)

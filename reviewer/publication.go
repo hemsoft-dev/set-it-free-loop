@@ -10,8 +10,9 @@ import (
 	"time"
 )
 
-// Remote is a trusted, separately qualified GitHub transport. No HTTP/App
-// implementation or credential acquisition is supplied in this offline module.
+// Remote is a trusted GitHub transport. The explicit HTTP publisher adapter
+// supplies writes/reconciliation; native history and credential acquisition
+// require separately qualified composition.
 // Scan must exhaust pagination; hashes cover the entire normalized document,
 // including inline comments. Caller-provided markers alone are never receipts.
 // History is complete post-POST native event history, not merely pending users.
@@ -40,6 +41,23 @@ func (p Publisher) now() time.Time {
 		return p.Now()
 	}
 	return time.Now()
+}
+
+// Canonical comment order makes the durable document independent of GitHub's
+// pagination/creation order while retaining every body, anchor and duplicate.
+func canonicalPublicationDocument(doc Document) Document {
+	doc.Inline = append([]InlineComment{}, doc.Inline...)
+	sort.Slice(doc.Inline, func(i, j int) bool {
+		a, b := doc.Inline[i], doc.Inline[j]
+		if a.Path != b.Path {
+			return a.Path < b.Path
+		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		return a.Body < b.Body
+	})
+	return doc
 }
 func redactDocument(doc Document, secrets []string) Document {
 	doc.Inline = append([]InlineComment{}, doc.Inline...)
@@ -114,7 +132,7 @@ func (p Publisher) Prepare(ctx context.Context, out Outcome, diff map[string]map
 	return intent, err
 }
 func validateReceipt(w WriteIntent, receipt RemoteReceipt, bot int64) bool {
-	return receipt.ID > 0 && receipt.AuthorID == bot && receipt.Marker == w.Marker && receipt.BodyHash == w.BodyHash && !receipt.CreatedAt.IsZero()
+	return receipt.ID > 0 && receipt.AuthorID == bot && receipt.Marker == w.Marker && receipt.BodyHash == w.BodyHash && !receipt.CreatedAt.IsZero() && (w.Kind != "review" || receipt.CommitID == w.Snapshot.Head)
 }
 func (p Publisher) confirm(ctx context.Context, id string, receipt RemoteReceipt) error {
 	return p.Store.update(ctx, func(d *DurableState) error {

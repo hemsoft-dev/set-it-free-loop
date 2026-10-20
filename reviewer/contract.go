@@ -1,5 +1,5 @@
 // Package reviewer contains the offline adversarial alpha contracts. It has no
-// credential-bearing launcher, deployment entry point, or GitHub write client.
+// credential-bearing launcher, deployment entry point or credential acquisition.
 package reviewer
 
 import (

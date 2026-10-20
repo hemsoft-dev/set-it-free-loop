@@ -115,6 +115,7 @@ type RemoteReceipt struct {
 	ID, AuthorID     int64
 	Marker, BodyHash string
 	CreatedAt        time.Time
+	CommitID         string
 }
 type DurableState struct {
 	Enrollment Enrollment
@@ -264,6 +265,7 @@ func newIntent(kind string, scope Scope, gen, request int64, snapshot Snapshot, 
 	id := randomToken()
 	marker := "<!-- sfl-alpha:" + id + " -->"
 	doc.Summary += "\n\n" + marker
+	doc = canonicalPublicationDocument(doc)
 	return WriteIntent{ID: id, Kind: kind, Scope: scope, RequestID: request, Generation: gen, Snapshot: snapshot, JobHash: jobHash, Document: doc, BodyHash: Digest(doc), Marker: marker, State: "prepared", CreatedAt: now}
 }
 

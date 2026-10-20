@@ -2,8 +2,10 @@
 
 This module supplies SQLite state, configuration and request admission, durable
 phase reservations, and a COMMENT review outbox through fake transport seams.
-It does not contain an App HTTP transport, polling daemon, production launcher,
-credentials, installation flow or activation command. The retired SFL runtime
+The explicit [GitHub publication HTTP adapter](GITHUB-PUBLICATION.md) supplies
+COMMENT/ACK writes and whole-document reconciliation. Native request discovery
+remains a separately qualified read interface. There is no polling daemon,
+production launcher, credential acquisition, installation flow or activation command. The retired SFL runtime
 remains frozen. Live acceptance is tracked in [#173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173),
 [#174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174) and
 [#176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176).
