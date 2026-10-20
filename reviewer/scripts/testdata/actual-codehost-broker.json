@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "passed": true,
+  "input": {
+    "bytes": 3162,
+    "sha256": "65fda4658aed0b27d1e4d9d64526a34b151bf1c5a853d1d30c64a29ae009470a",
+    "synthetic_secret_seen": false,
+    "capped": false
+  },
+  "output": {
+    "bytes": 2222,
+    "sha256": "e28072d7f90bc647ed3edb80937f194d0c3728cca29cd2b16a261930ab635d32",
+    "synthetic_secret_seen": false,
+    "capped": false
+  },
+  "probe_passed": true,
+  "fake_only": true,
+  "relay_failure": false,
+  "bwrap_sha256": "523da3e7399044be5163aee6f57a77a6bef7454376e28f0a0627920bae1b76b6",
+  "production_boundary_qualified": false
+}

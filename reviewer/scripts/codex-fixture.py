@@ -10,9 +10,10 @@ import importlib.util
 import json
 import os
 import pathlib
-import shutil
 import signal
 import subprocess
+import tempfile
+import time
 
 CLIENT_SHA256 = "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215"
 HOST_SHA256 = "8724d73ec190536233ab4628d24a071bfbcf27e5124f08fe35129f26fe48b916"
@@ -61,6 +62,49 @@ def observation_passed(receipt, result, source, case):
     return passed
 
 
+def bwrap_binary():
+    return "/usr/bin/bwrap"
+
+def broker_shutdown_budget(output, started, now):
+    # The broker records CLOCK_MONOTONIC after opening its bounded exchange.
+    # Without that record it is still in the 45-second accept/setup window.
+    deadline_path = output / "codehost-deadline.ns"
+    try:
+        with deadline_path.open("rb") as stream:
+            raw = stream.read(32)
+    except FileNotFoundError:
+        deadline = started + 45
+    else:
+        if not raw.endswith(b"\n") or not raw[:-1].isdigit() or len(raw) > 21:
+            raise RuntimeError("invalid private broker deadline")
+        deadline = int(raw[:-1]) / 1_000_000_000
+        if not started <= deadline <= started + 90:
+            raise RuntimeError("private broker deadline exceeds lifetime bound")
+    return max(0, deadline - now) + 3
+
+
+def code_host_observation_passed(value, expected_bwrap):
+    if not isinstance(value, dict):
+        return False
+    if (type(value.get("version")) is not int or value.get("version") != 2 or value.get("passed") is not True or value.get("probe_passed") is not True
+            or value.get("relay_failure") is not False
+            or not isinstance(value.get("bwrap_sha256"), str) or len(value["bwrap_sha256"]) != 64
+            or any(c not in "0123456789abcdef" for c in value["bwrap_sha256"])
+            or value["bwrap_sha256"] != expected_bwrap
+            or value.get("fake_only") is not True or value.get("production_boundary_qualified") is not False):
+        return False
+    for name in ["input", "output"]:
+        stream = value.get(name, {})
+        if not isinstance(stream, dict):
+            return False
+        if (type(stream.get("bytes")) is not int or not 0 < stream["bytes"] <= 8 << 20
+                or stream.get("synthetic_secret_seen") is not False or stream.get("capped") is not False
+                or not isinstance(stream.get("sha256"), str) or len(stream["sha256"]) != 64
+                or any(c not in "0123456789abcdef" for c in stream["sha256"])):
+            return False
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", type=pathlib.Path, required=True)
@@ -68,14 +112,17 @@ def main():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--case", choices=["source", "undeclared-patch", "guarded-undeclared-patch"], required=True)
     parser.add_argument("--go", default="go")
+    parser.add_argument("--isolate-code-host", action="store_true", help="Synthetic-only sibling broker and code-host stdio observation")
     parser.add_argument("--module-cache", type=pathlib.Path)
     args = parser.parse_args()
+    if args.isolate_code_host and args.case != "source":
+        parser.error("code-host transport qualification supports the source case only")
     client = args.client.resolve(strict=True)
     code_host = args.code_host.resolve(strict=True)
     if _common.digest(client) != CLIENT_SHA256 or _common.digest(code_host) != HOST_SHA256:
         parser.error("Codex 0.163.0 client/code-mode host hashes must match")
-    bwrap = shutil.which("bwrap")
-    if bwrap is None or not pathlib.Path("/proc/self/ns/net").exists():
+    bwrap = bwrap_binary()
+    if not pathlib.Path(bwrap).is_file() or not pathlib.Path("/proc/self/ns/net").exists():
         parser.error("Linux and Bubblewrap required")
     module = pathlib.Path(__file__).resolve().parent.parent
     manifest = _common.source_manifest(module)
@@ -89,33 +136,82 @@ def main():
     _common.build_offline(module, args.go, helper, "./cmd/codexfixture", manifest, args.module_cache)
     if _common.source_manifest(module) != manifest:
         raise RuntimeError("source changed during helper build")
+    relay = None
+    host_mount = "/codex-code-mode-host"
+    relay_mounts = []
+    runtime = set(_common.runtime_files(pathlib.Path("/usr/bin/env")))
+    isolation_manifest = None
+    ipc = None
+    broker_command = None
+    if args.isolate_code_host:
+        relay = out / "code-host-relay"
+        _common.build_offline(module, args.go, relay, "./cmd/codehostfixture", manifest, args.module_cache)
+        marker = out / "synthetic-codehost-marker"
+        marker.write_text("sfl-codehost-synthetic-only-1\n")
+        marker.chmod(0o400)
+        ipc = tempfile.TemporaryDirectory(prefix="sfl-codehost-")
+        broker_command = [str(relay), "--broker", str(pathlib.Path(ipc.name) / "stdio.sock"), str(code_host), str(relay), str(out / "codehost-broker.json")]
+        relay_mounts = ["--ro-bind", str(relay), "/codex-code-mode-host", "--ro-bind", ipc.name, "/codehost", "--ro-bind", str(marker), "/run/sfl-codehost-fixture"]
+        host_mount = None
+        isolation_manifest = {"relay_sha256": _common.digest(relay), "bwrap_sha256": _common.digest(pathlib.Path(bwrap)),
+                              "broker_mode": "sibling-namespace-stdio-1",
+                              "runtime": [{"path": name, "sha256": _common.digest(pathlib.Path(name))} for name in sorted(runtime)],
+                              "separate_guest_uid_qualified": False, "vm_worker_qualified": False}
     command = [bwrap, "--unshare-all", "--die-with-parent", "--new-session", "--clearenv",
-               "--ro-bind", str(client), "/client", "--ro-bind", str(code_host), "/codex-code-mode-host",
+               "--ro-bind", str(client), "/client",
                "--ro-bind", str(helper), "/helper", "--ro-bind", "/usr/bin/env", "/usr/bin/env",
                "--ro-bind", "/lib64/ld-linux-x86-64.so.2", "/lib64/ld-linux-x86-64.so.2",
                "--symlink", "usr/lib", "/lib"]
-    for library in sorted(_common.runtime_files(pathlib.Path("/usr/bin/env"))):
+    if host_mount is not None:
+        command += ["--ro-bind", str(code_host), host_mount]
+    for library in sorted(runtime):
         command += ["--ro-bind", library, library]
+    command += relay_mounts
     command += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
                 "--dir", "/profile", "--dir", "/work", "--dir", "/run/sfl",
                 "--bind", str(artifacts), "/artifacts", "--setenv", "LANG", "C.UTF-8",
                 "--setenv", "GOMAXPROCS", "1", "--setenv", "SFL_FAKE_CLIENT_FIXTURE", "1",
                 "--chdir", "/work", "--", "/helper", "--fixture", "--case", args.case]
     timed_out = False
-    with (out / "host-stdout.txt").open("wb") as stdout, (out / "host-stderr.txt").open("wb") as stderr:
-        process = subprocess.Popen(command, stdout=stdout, stderr=stderr, start_new_session=True,
-                                   env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
-        try:
-            process.wait(timeout=50)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=5)
+    broker = None
+    broker_started = None
+    broker_stopped = True
+    try:
+        if broker_command is not None:
+            with (out / "broker-stdout.txt").open("wb") as broker_out, (out / "broker-stderr.txt").open("wb") as broker_err:
+                broker_started = time.monotonic()
+                broker = subprocess.Popen(broker_command, stdout=broker_out, stderr=broker_err, start_new_session=True,
+                                          env={"LANG": "C.UTF-8", "SFL_FAKE_CODEHOST_BROKER": "1"})
+            deadline = time.monotonic() + 5
+            while not (pathlib.Path(ipc.name) / "stdio.sock").exists():
+                if broker.poll() is not None or time.monotonic() >= deadline:
+                    raise RuntimeError("code-host broker did not become ready")
+                time.sleep(0.02)
+        with (out / "host-stdout.txt").open("wb") as stdout, (out / "host-stderr.txt").open("wb") as stderr:
+            process = subprocess.Popen(command, stdout=stdout, stderr=stderr, start_new_session=True,
+                                       env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+            try:
+                process.wait(timeout=50)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
+    finally:
+        if broker is not None:
+            try:
+                broker.wait(timeout=broker_shutdown_budget(out, broker_started, time.monotonic()))
+            except (subprocess.TimeoutExpired, RuntimeError):
+                broker_stopped = False
+                os.killpg(broker.pid, signal.SIGKILL)
+                broker.wait(timeout=5)
+        if ipc is not None:
+            ipc.cleanup()
     receipt = {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "case": args.case,
                "client_version": "0.163.0", "client_sha256": CLIENT_SHA256, "code_host_sha256": HOST_SHA256,
                "helper_sha256": _common.digest(helper), "command": command,
                **manifest,
                "exit_code": process.returncode, "timed_out": timed_out,
+               "code_host_isolation": isolation_manifest, "broker_stopped_cleanly": broker_stopped,
                "fake_only": True, "actual_account_qualified": False,
                "capability_allowlist_qualified": False, "production_boundary_qualified": False}
     try:
@@ -126,6 +222,12 @@ def main():
     result = json.loads((artifacts / "result.json").read_text()) if (artifacts / "result.json").exists() else {}
     source = [json.loads(line) for line in (artifacts / "source.jsonl").read_text().splitlines()] if (artifacts / "source.jsonl").exists() else []
     passed = observation_passed(receipt, result, source, args.case)
+    if args.isolate_code_host:
+        broker_path = out / "codehost-broker.json"
+        broker_result = json.loads(broker_path.read_text()) if broker_path.exists() else {}
+        passed = (passed and broker_stopped and broker.returncode == 0
+                  and code_host_observation_passed(broker_result, isolation_manifest["bwrap_sha256"])
+                  and _common.digest(pathlib.Path(bwrap)) == isolation_manifest["bwrap_sha256"])
     print(json.dumps({"observation_passed": passed, "case": args.case, "output": str(out),
                       "capability_allowlist_qualified": False, "production_boundary_qualified": False}))
     return 0 if passed else 1
