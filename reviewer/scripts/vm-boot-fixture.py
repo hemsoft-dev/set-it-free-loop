@@ -46,7 +46,10 @@ def main():
                  "GOCACHE": str(output / "guest" / "go-cache"),
                  "GOMODCACHE": _shared.execute([args.go, "env", "GOMODCACHE"], cwd=module, env=base_env).decode().strip()}
     program = output / "vmbootfixture"
-    _shared.execute([args.go, "build", "-trimpath", "-buildvcs=true", "-o", str(program), "./cmd/vmbootfixture"],
+    tree = _shared.execute(["git", "rev-parse", "HEAD^{tree}"], cwd=module).decode().strip()
+    flags = ("-X=github.com/hemsoft-dev/set-it-free-loop/reviewer.vmFixtureBuildRevision="+manifest["source_head"]
+             +" -X=github.com/hemsoft-dev/set-it-free-loop/reviewer.vmFixtureBuildTree="+tree)
+    _shared.execute([args.go, "build", "-trimpath", "-buildvcs=true", "-ldflags", flags, "-o", str(program), "./cmd/vmbootfixture"],
                     cwd=module, env=build_env, timeout=180)
     program.chmod(0o500)
     if (_shared.execute(["git", "rev-parse", "HEAD"], cwd=module).decode().strip() != manifest["source_head"]
@@ -61,10 +64,10 @@ def main():
     boot = {"Version": 1, "Binding": binding, "QEMU": asset(qemu, manifest["qemu_sha256"]),
             "Kernel": asset(kernel, manifest["kernel_sha256"]), "Initrd": asset(image, manifest["image_sha256"])}
     config = output / "fixture-config.json"
-    _shared.write_json(config, {"Version": 1, "Purpose": "synthetic-role-fixture", "SourceHead": manifest["source_head"], "Boot": boot})
+    _shared.write_json(config, {"Version": 1, "Purpose": "synthetic-role-fixture", "SourceHead": manifest["source_head"], "SourceTree": tree, "Boot": boot})
     config.chmod(0o600)
     sealed = {"program": str(program), "program_sha256": _shared.digest(program.read_bytes()),
-              "configuration": str(config), "SourceHead": manifest["source_head"],
+              "configuration": str(config), "SourceHead": manifest["source_head"], "SourceTree": tree,
               "BindingHash": contract_hash(binding), "BootSpecHash": contract_hash(boot)}
     manifest["sealed_boot"] = sealed
     _shared.write_json(output / "manifest.json", manifest)

@@ -120,13 +120,13 @@ def parse_sealed_boot_receipt(raw, expected):
             result[key] = value
         return result
     value = json.loads(raw, object_pairs_hook=unique)
-    keys = {"Version", "SourceHead", "BindingHash", "BootSpecHash", "VerifiedExecutable",
+    keys = {"Version", "SourceHead", "SourceTree", "BindingHash", "BootSpecHash", "VerifiedExecutable",
             "QEMUExited", "FakeOnly", "ProductionBoundaryQualified", "Error"}
     if (not isinstance(value, dict) or set(value) != keys or type(value["Version"]) is not int
             or value["Version"] != 1 or value["VerifiedExecutable"] is not True
             or value["QEMUExited"] is not True or value["FakeOnly"] is not True
             or value["ProductionBoundaryQualified"] is not False or value["Error"] != ""
-            or any(value.get(key) != expected[key] for key in ["SourceHead", "BindingHash", "BootSpecHash"])):
+            or any(value.get(key) != expected[key] for key in ["SourceHead", "SourceTree", "BindingHash", "BootSpecHash"])):
         raise RuntimeError("sealed boot executable/custody receipt differs")
     return value
 

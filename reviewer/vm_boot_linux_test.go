@@ -232,3 +232,43 @@ func TestVMBootFixtureRequiresContainingUnit(t *testing.T) {
 		t.Fatal("serial bound bypassed")
 	}
 }
+
+func TestVMBootFixtureRequiresLinkedRevisionAndTree(t *testing.T) {
+	originalHead, originalTree := vmFixtureBuildRevision, vmFixtureBuildTree
+	defer func() { vmFixtureBuildRevision, vmFixtureBuildTree = originalHead, originalTree }()
+	config := VMBootFixtureConfig{Version: 1, Purpose: "synthetic-role-fixture", SourceHead: strings.Repeat("a", 40), SourceTree: strings.Repeat("b", 40), Boot: vmSpec(t)}
+	directory := filepath.Join(t.TempDir(), "private")
+	if err := os.Mkdir(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "fixture.json")
+	write := func() {
+		raw, err := json.Marshal(config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(path, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write()
+	vmFixtureBuildRevision, vmFixtureBuildTree = "", ""
+	if _, err := readVMBootFixture(path); !errors.Is(err, ErrVMBoot) {
+		t.Fatal("generic build accepted release identity", err)
+	}
+	vmFixtureBuildRevision, vmFixtureBuildTree = config.SourceHead, config.SourceTree
+	if _, err := readVMBootFixture(path); err != nil {
+		t.Fatal("correct linked build rejected", err)
+	}
+	config.SourceTree = strings.Repeat("c", 40)
+	write()
+	if _, err := readVMBootFixture(path); !errors.Is(err, ErrVMBoot) {
+		t.Fatal("different source tree accepted", err)
+	}
+	config.SourceTree = vmFixtureBuildTree
+	config.SourceHead = strings.Repeat("c", 40)
+	write()
+	if _, err := readVMBootFixture(path); !errors.Is(err, ErrVMBoot) {
+		t.Fatal("different revision accepted", err)
+	}
+}

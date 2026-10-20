@@ -26,7 +26,8 @@ cannot supply new launches.
 
 `cmd/vmbootfixture` is an opt-in credential-free test executable, not a
 WorkerLauncher, AuthStopVerifier or activation command. It requires a private,
-owned 0600 configuration from a clean compiled source revision. Configuration
+owned 0600 configuration matching its explicitly linked clean source revision
+and tree. Generic builds with missing identities refuse execution. Configuration
 selects only pinned assets and a valid binding, with purpose
 `synthetic-role-fixture`. No argv, environment, device, network, host mount or
 provider selector is accepted.

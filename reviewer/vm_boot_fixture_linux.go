@@ -9,44 +9,32 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime/debug"
 	"syscall"
 	"time"
 )
 
 type VMBootFixtureConfig struct {
-	Version             int
-	Purpose, SourceHead string
-	Boot                VMBootSpec
+	Version                         int
+	Purpose, SourceHead, SourceTree string
+	Boot                            VMBootSpec
 }
 type VMBootFixtureReceipt struct {
-	Version                               int
-	SourceHead, BindingHash, BootSpecHash string
-	VerifiedExecutable, QEMUExited        bool
-	FakeOnly, ProductionBoundaryQualified bool
-	Error                                 string
+	Version                                           int
+	SourceHead, SourceTree, BindingHash, BootSpecHash string
+	VerifiedExecutable, QEMUExited                    bool
+	FakeOnly, ProductionBoundaryQualified             bool
+	Error                                             string
 }
 
-func fixtureBuildHead() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return ""
-	}
-	head := ""
-	dirty := true
-	for _, setting := range info.Settings {
-		if setting.Key == "vcs.revision" {
-			head = setting.Value
-		}
-		if setting.Key == "vcs.modified" {
-			dirty = setting.Value != "false"
-		}
-	}
-	if dirty {
-		return ""
-	}
-	return head
+// The explicit clean builder links both identities. Empty defaults keep a
+// generic go build ineligible for fixture execution. Go's automatic VCS fields
+// can be absent for this nested worktree module, even with -buildvcs=true.
+var vmFixtureBuildRevision, vmFixtureBuildTree string
+
+func validVMFixtureBuild(head, tree string) bool {
+	return objectID.MatchString(head) && objectID.MatchString(tree) && head == vmFixtureBuildRevision && tree == vmFixtureBuildTree
 }
+
 func readVMBootFixture(path string) (VMBootFixtureConfig, error) {
 	var config VMBootFixtureConfig
 	if !sourcePath(path) {
@@ -75,7 +63,7 @@ func readVMBootFixture(path string) (VMBootFixtureConfig, error) {
 		return config, ErrVMBoot
 	}
 	config, err = DecodeStrict[VMBootFixtureConfig](raw, 65536)
-	if err != nil || config.Version != 1 || config.Purpose != "synthetic-role-fixture" || config.SourceHead != fixtureBuildHead() || !objectID.MatchString(config.SourceHead) || config.Boot.validate() != nil {
+	if err != nil || config.Version != 1 || config.Purpose != "synthetic-role-fixture" || !validVMFixtureBuild(config.SourceHead, config.SourceTree) || config.Boot.validate() != nil {
 		return VMBootFixtureConfig{}, ErrVMBoot
 	}
 	return config, nil
@@ -92,7 +80,7 @@ func VMBootFixtureMain(ctx context.Context, args []string, output io.Writer) int
 	if err != nil {
 		return 2
 	}
-	receipt := VMBootFixtureReceipt{Version: 1, SourceHead: config.SourceHead, BindingHash: Digest(config.Boot.Binding), BootSpecHash: Digest(config.Boot), FakeOnly: true}
+	receipt := VMBootFixtureReceipt{Version: 1, SourceHead: config.SourceHead, SourceTree: config.SourceTree, BindingHash: Digest(config.Boot.Binding), BootSpecHash: Digest(config.Boot), FakeOnly: true}
 	run := func() error {
 		if _, err := vmFixtureUnit(config.Boot.Binding.LaunchID); err != nil {
 			return err
