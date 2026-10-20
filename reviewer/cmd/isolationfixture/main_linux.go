@@ -65,6 +65,7 @@ func main() {
 		guestInit()
 	case "--reader":
 		if !unprivilegedRole(readerUID) {
+			fmt.Fprintln(os.Stderr, "fixture reader identity/capability check failed")
 			os.Exit(2)
 		}
 		if _, err := os.ReadFile("/worker-private-canary"); !os.IsPermission(err) {
@@ -73,9 +74,18 @@ func main() {
 		if os.WriteFile("/source/must-not-write", []byte("inert"), 0600) == nil {
 			os.Exit(2)
 		}
-		os.Exit(r.SourceReaderMain(context.Background(), os.Environ(), os.Stdin, os.Stdout))
+		code := r.SourceReaderMain(context.Background(), os.Environ(), os.Stdin, os.Stdout)
+		if code != 0 {
+			fmt.Fprintln(os.Stderr, "fixture reader service failed", code)
+		}
+		os.Exit(code)
 	case "--worker":
-		if !unprivilegedRole(workerUID) || worker() != nil {
+		if !unprivilegedRole(workerUID) {
+			fmt.Fprintln(os.Stderr, "fixture worker identity/capability check failed")
+			os.Exit(2)
+		}
+		if err := worker(); err != nil {
+			fmt.Fprintln(os.Stderr, "fixture worker failed:", err)
 			os.Exit(2)
 		}
 	case "--denied":
@@ -195,7 +205,11 @@ func runGuest(manifest fixtureManifest) (*r.SourceAccess, []roleReceipt, error) 
 	adapter := r.Adapter{Provider: r.Codex, Driver: r.NativeDriver{Launcher: launch}, Reader: reader, AuthDirectory: "/profile", SourceBridge: &r.SourceBridge{Program: "/sourceproxy", Directory: "/run/sfl", ReaderUID: readerUID}}
 	managed := r.ManagedSourceReviewer{Adapter: adapter, Readers: launch, WorkerUID: workerUID, WorkerGID: ipcGID}
 	_, access, err := managed.ReviewSource(context.Background(), session)
-	if err != nil || access == nil || access.ToolCalls != 2 || access.ReaderCalls != 3 || len(access.Reads) != 3 || len(access.Coverage) != 1 {
+	if err != nil {
+		return nil, nil, fmt.Errorf("managed phase failed: %w", err)
+	}
+	if access == nil || access.ToolCalls != 2 || access.ReaderCalls != 3 || len(access.Reads) != 3 || len(access.Coverage) != 1 {
+		fmt.Fprintln(os.Stderr, "fixture source receipt differs:", access)
 		return fail()
 	}
 	var receipts []roleReceipt
@@ -326,7 +340,7 @@ func newRole(ctx context.Context, name string, uid int, chroot string, env []str
 	}
 	command := exec.Command(program, args...)
 	command.Env = env
-	command.Stdin, command.Stdout, command.Stderr = in, out, io.Discard
+	command.Stdin, command.Stdout, command.Stderr = in, out, os.Stderr
 	command.SysProcAttr = &syscall.SysProcAttr{Chroot: chroot, Credential: &syscall.Credential{Uid: uint32(uid), Gid: ipcGID, Groups: []uint32{}}, Setpgid: true, UseCgroupFD: true, CgroupFD: int(fd.Fd()), Pdeathsig: syscall.SIGKILL}
 	if ctx.Err() != nil {
 		err = ctx.Err()
@@ -336,6 +350,7 @@ func newRole(ctx context.Context, name string, uid int, chroot string, env []str
 	in.Close()
 	out.Close()
 	if err != nil {
+		fmt.Fprintln(os.Stderr, "fixture role start failed:", name, err)
 		fd.Close()
 		write.Close()
 		read.Close()
