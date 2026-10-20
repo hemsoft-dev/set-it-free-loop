@@ -59,7 +59,7 @@ def run_fixture(output, manifest, kernel, image):
             "-machine", "q35,dump-guest-core=off", "-accel", "tcg,thread=single", "-cpu", "max",
             "-m", "512M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none",
             "-no-reboot", "-kernel", str(kernel), "-initrd", str(image),
-            "-append", "console=ttyS0 rdinit=/init panic=1 sfl-fixture="+nonce,
+            "-append", "console=ttyS0 rdinit=/init panic=1 sfl-fixture="+nonce+" -- --guest-init",
             "-serial", "file:"+str(boot),
             "-sandbox", "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny"]
     command = ["/usr/bin/systemd-run", "--user", "--unit="+unit, "--description="+description,
