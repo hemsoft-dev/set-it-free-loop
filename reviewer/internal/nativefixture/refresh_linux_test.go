@@ -25,6 +25,19 @@ func TestSyntheticRefreshPolicyFitsTheCapturedPhaseBudget(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		proxyMetadata := 0
+		for _, route := range policy.Routes {
+			if route.Kind == "metadata" && route.TLSOnly {
+				proxyMetadata++
+			}
+		}
+		expected := 0
+		if provider == r.Claude {
+			expected = 1
+		}
+		if proxyMetadata != expected {
+			t.Fatal("pinned metadata transport policy changed", provider, proxyMetadata)
+		}
 		guard, err := r.NewProviderEgress(context.Background(), s, policy, &http.Transport{})
 		if err != nil {
 			t.Fatal("producer policy cannot be admitted before VM work", provider, err)

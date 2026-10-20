@@ -52,7 +52,7 @@ func NewRefresh(s r.Session, reused bool) (*Backend, r.EgressPolicy, error) {
 	p.Routes = append(p.Routes, r.EgressRoute{Authority: RefreshAuthority(s.Identity.Provider), Method: "POST", Path: refreshPath(s.Identity.Provider), Kind: "refresh"})
 	p.Limits.RefreshRequests = 1
 	if s.Identity.Provider == r.Claude {
-		p.Routes = append(p.Routes, r.EgressRoute{Authority: "api.anthropic.com", Method: "GET", Path: "/api/oauth/profile", Kind: "metadata"})
+		p.Routes = append(p.Routes, r.EgressRoute{Authority: "api.anthropic.com", Method: "GET", Path: "/api/oauth/profile", Kind: "metadata", TLSOnly: true})
 		p.Headers = append(p.Headers, "Cache-Control")
 		p.Limits.MetadataRequests = 1
 	}

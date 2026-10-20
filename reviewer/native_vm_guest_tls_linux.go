@@ -23,9 +23,9 @@ import (
 
 const nativeGuestCAPath = "/sfl-provider-ca.pem"
 
-func nativeGuestRefreshEnabled(policy EgressPolicy) bool {
+func nativeGuestTLSEnabled(policy EgressPolicy) bool {
 	for _, route := range policy.Routes {
-		if route.Kind == "refresh" {
+		if route.Kind == "refresh" || route.TLSOnly {
 			return true
 		}
 	}

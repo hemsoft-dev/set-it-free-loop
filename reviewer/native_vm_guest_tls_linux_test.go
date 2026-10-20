@@ -248,3 +248,71 @@ func TestNativeGuestPlaintextRefreshCannotBypassTLSAuthority(t *testing.T) {
 		t.Fatal("plaintext denial did not stop the owned client")
 	}
 }
+
+func TestNativeGuestTLSOnlyMetadataRejectsPlaintextButAllowsTLS(t *testing.T) {
+	policy := EgressPolicy{Routes: []EgressRoute{{Authority: "profile.example", Method: "GET", Path: "/profile", Kind: "metadata", TLSOnly: true}}, Limits: EgressLimits{ResponseBytes: 128}}
+	var calls, stopped atomic.Int32
+	handler := nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, egressRoundTrip(func(q *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		if q.Host != "profile.example" {
+			t.Error("metadata authority changed")
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}), func() { stopped.Add(1) })
+	_, client, address, _ := nativeTLSFixture(t, handler, policy)
+	for _, host := range []string{"profile.example", "outside.example"} {
+		q, _ := http.NewRequest("GET", "http://"+address+"/profile", nil)
+		q.Host = host
+		response, err := http.DefaultClient.Do(q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if response.StatusCode != 403 || calls.Load() != 0 {
+			t.Fatal("TLS-only metadata bypassed authority", response.StatusCode, calls.Load())
+		}
+	}
+	response, err := client.Get("https://profile.example/profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != 200 || calls.Load() != 1 || stopped.Load() != 2 {
+		t.Fatal("TLS metadata failed or denial lost", response.StatusCode, calls.Load(), stopped.Load())
+	}
+}
+
+func TestNativeGuestTLSOnlyMetadataEnablesProxyExplicitly(t *testing.T) {
+	policy := EgressPolicy{Routes: []EgressRoute{{Authority: "profile.example", Method: "GET", Path: "/profile", Kind: "metadata", TLSOnly: true}}}
+	if !nativeGuestTLSEnabled(policy) {
+		t.Fatal("explicit TLS-only metadata has no TLS path")
+	}
+	policy.Routes[0].TLSOnly = false
+	if nativeGuestTLSEnabled(policy) {
+		t.Fatal("ordinary metadata unexpectedly enabled TLS")
+	}
+}
+
+func TestNativeGuestOrdinaryMetadataRemainsAvailableWithoutTLS(t *testing.T) {
+	policy := EgressPolicy{Routes: []EgressRoute{{Authority: "metadata.example", Method: "GET", Path: "/v1/models", Kind: "metadata"}}, Limits: EgressLimits{ResponseBytes: 128}}
+	var calls atomic.Int32
+	server := httptest.NewServer(nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, egressRoundTrip(func(q *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		if q.Host != "metadata.example" {
+			t.Error("metadata authority changed")
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}), func() { t.Error("intended local metadata stopped client") }))
+	defer server.Close()
+	response, err := server.Client().Get(server.URL + "/v1/models")
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != 200 || calls.Load() != 1 || nativeGuestTLSEnabled(policy) {
+		t.Fatal("ordinary metadata route lost its local transport", response.StatusCode, calls.Load())
+	}
+}

@@ -212,7 +212,7 @@ and [defaults ordinary tmpfs mounts to half of total RAM](https://raw.githubuser
 The prior implicit boot-time capacity was insufficient in failed runs.
 
 
-When the captured policy declares refresh routes, the root client supervisor
+When the captured policy declares refresh or explicitly TLS-only metadata routes, the root client supervisor
 creates a session-only CA and a distinct server certificate and retains its private key in memory.
 The official CLI receives a fixed public CA file and an HTTPS proxy on its
 existing private loopback listener. CONNECT permits only declared refresh and metadata
@@ -225,7 +225,7 @@ Four incomplete TLS handshakes are the maximum. Header/handshake deadlines and
 cancellation bound intake; shutdown closes and joins the owned connections and
 requests. The CA file is root-owned and read-only; its key never enters a file,
 CLI, source reader or host report. No system trust or interactive profile is
-modified. No refresh route means no TLS proxy or new trust environment.
+modified. Without either kind of route, no TLS proxy or new trust environment is enabled.
 
 The opt-in fake fixture adds `--case refresh` for each single provider. It starts
 with expired synthetic auth, requires a counted refresh and changed returned
@@ -289,3 +289,11 @@ context still closes active work, and guest PID1 still enforces cgroup kill and
 empty-group checks within its cleanup deadline. Plaintext loopback requests can
 reach the intended inference and metadata routes, but a refresh route requires
 the CONNECT/TLS path and its captured authority, SNI and inner Host checks.
+
+Captured `EgressRoute.TLSOnly` marks proxy-only metadata, including Claude's
+hardcoded OAuth profile lookup. The guest rejects a direct plaintext request
+for that route before forwarding. Ordinary Codex model/account metadata routes
+keep their explicit local HTTP behavior. Refresh routes always require TLS.
+The flag is allowed only for refresh/metadata, remains part of the policy hash,
+and also enables the private TLS proxy for a metadata-only policy that requests
+it. The host egress guard continues to use HTTPS for every admitted upstream.

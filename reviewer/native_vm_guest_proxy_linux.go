@@ -137,7 +137,7 @@ func nativeGuestInvocation(q nativeVMRequest, base string) (Invocation, error) {
 		return Invocation{}, ErrVMBoot
 	}
 	inv.Environment = append([]string{"HOME=/profile", "PATH=/usr/bin:/bin", "GOMAXPROCS=1"}, inv.Environment...)
-	if nativeGuestRefreshEnabled(q.Policy) {
+	if nativeGuestTLSEnabled(q.Policy) {
 		inv.Environment = append(inv.Environment, "HTTPS_PROXY="+base, "NO_PROXY=127.0.0.1,localhost,::1", "SSL_CERT_FILE="+nativeGuestCAPath, "NODE_EXTRA_CA_CERTS="+nativeGuestCAPath, "CODEX_CA_CERTIFICATE="+nativeGuestCAPath)
 	}
 	if q.Session.Identity.Provider == Codex {
@@ -222,7 +222,7 @@ func nativeGuestClientProxyMain() (result int) {
 	}
 	server.Handler = nativeGuestProviderHandlerObserved(q, transport, func(class string) { publishStatus(class); cancel() })
 	var refreshProxy *nativeGuestTLSProxy
-	if nativeGuestRefreshEnabled(q.Policy) {
+	if nativeGuestTLSEnabled(q.Policy) {
 		proxy, certificate, err := newNativeGuestTLSProxy(ctx, q.Policy, server.Handler, func() {
 			if refreshProxy != nil {
 				publishStatus(nativeGuestClientClass(refreshProxy.failureCode()))
@@ -336,9 +336,10 @@ func nativeGuestProviderHandlerObserved(q nativeVMRequest, transport http.RoundT
 		var authority string
 		kind := ""
 		for _, route := range q.Policy.Routes {
-			// Refresh credentials must traverse CONNECT and its TLS authority/SNI
-			// checks. The loopback plaintext routes exist for client inference/metadata.
-			if route.Kind == "refresh" && in.TLS == nil {
+			// Refresh and explicitly TLS-only metadata must traverse CONNECT
+			// and its authority/SNI checks. Other captured routes support the
+			// official client's intentional loopback inference/metadata base URL.
+			if (route.Kind == "refresh" || route.TLSOnly) && in.TLS == nil {
 				continue
 			}
 			if in.TLS != nil && route.Authority != strings.TrimSuffix(in.Host, ":443") {
