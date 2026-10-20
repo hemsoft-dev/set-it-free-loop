@@ -93,3 +93,12 @@ real local Unix transports and fake managers. Exact-client fake-backend KVM
 execution, measured native resource limits, refresh/return behavior and actual
 guest UID/namespace/forbidden-capability qualification remain unfinished.
 No source-level test or built image closes the parent issue.
+
+`scripts/native-vm-fake.py --run-fake-only` is the separate opt-in qualification
+path. It compiles its driver from a committed archive and records driver and
+image revisions separately. Each run requires a new private state root, generates
+only synthetic auth, and fixes the upstream to a loopback TLS server. Source and
+forbidden-tool cases exist for both providers. Existing profile directories are
+never adopted. Driver timeout retains the exact state path and launch journals
+for recovery; a missing stopped/auth receipt cannot pass. The driver does not
+qualify live eligibility, even if all fake checks pass.

@@ -98,6 +98,8 @@ type nativeVMHostPhase struct {
 	started, exported bool
 	profile           *AuthProfile
 	finished          *nativeVMFinished
+	stage             string
+	authReturned      bool
 }
 
 func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report Report, access *SourceAccess, evidence *ProviderEvidence, result error) {
@@ -164,7 +166,7 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 		return blocked()
 	}
 	defer channels.Close()
-	phase := &nativeVMHostPhase{request: request, manifest: manifest, reader: reader, supervisor: supervisor, channels: channels}
+	phase := &nativeVMHostPhase{request: request, manifest: manifest, reader: reader, supervisor: supervisor, channels: channels, stage: "provider-bridge"}
 	// Every later return drains the concrete containment and private transports.
 	defer func() { report, access, evidence, result = phase.finish(ctx, report, result) }()
 	phase.bridge, err = startNativeProviderBridge(ctx, s, request.Policy, r.options.Transport, channels.host[2])
@@ -173,27 +175,33 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 	}
 	phase.objectsDone = make(chan error, 1)
 	go func() { phase.objectsDone <- ServeVMObjects(ctx, channels.host[1], s, paths, store) }()
+	phase.stage = "prepare"
 	if err = supervisor.Prepare(manifest); err != nil {
 		return Report{}, nil, nil, workerLauncherError(err, true)
 	}
 	phase.started = true // Start may be uncertain even when it returns an error.
+	phase.stage = "start"
 	if err = supervisor.Start(ctx, binding); err != nil {
 		return Report{}, nil, nil, workerLauncherError(err, true)
 	}
+	phase.stage = "grant"
 	if err = supervisor.grant(ctx, manifest, images, channels); err != nil {
 		return Report{}, nil, nil, workerLauncherError(err, true)
 	}
 	if deadline, ok := ctx.Deadline(); ok {
 		channels.host[0].SetDeadline(deadline)
 	}
+	phase.stage = "request"
 	if writeVMRecord(channels.host[0], request, 4<<20) != nil {
 		return Report{}, nil, nil, workerLauncherError(ErrVMBoot, true)
 	}
+	phase.stage = "ready"
 	ready, err := readVMRecord[nativeVMReady](channels.host[0], 4096)
 	if err != nil || !ready.valid(request) {
 		return Report{}, nil, nil, workerLauncherError(ErrVMBoot, true)
 	}
 	// No auth store is leased or read until the exact private guest is ready.
+	phase.stage = "auth-lease"
 	phase.profile, err = r.options.Auth.LeaseProfile(ctx, binding)
 	if err != nil {
 		return Report{}, nil, nil, PhaseError{State: "auth_failed", BeforeWork: true}
@@ -201,6 +209,7 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 	if nativeCheckLeasedAuth(ctx, phase.profile, nativeVMExportGate{supervisor, manifest, request, ready}) != nil {
 		return Report{}, nil, nil, PhaseError{State: "auth_failed", BeforeWork: true}
 	}
+	phase.stage = "auth-export"
 	seed, err := phase.profile.ExportAuth(ctx, nativeVMExportGate{supervisor, manifest, request, ready})
 	if err != nil {
 		return Report{}, nil, nil, PhaseError{State: "auth_failed", BeforeWork: true}
@@ -212,14 +221,17 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 		return Report{}, nil, nil, PhaseError{State: "auth_failed"}
 	}
 	defer clear(wire)
+	phase.stage = "seed-send"
 	if writeVMRecord(channels.host[0], wire, 100<<10) != nil {
 		return Report{}, nil, nil, workerLauncherError(ErrVMBoot, false)
 	}
+	phase.stage = "result"
 	finished, err := readVMRecord[nativeVMFinished](channels.host[0], 4<<20)
 	if err != nil {
 		return Report{}, nil, nil, workerLauncherError(ErrVMBoot, false)
 	}
 	phase.finished = &finished
+	phase.stage = "result-validation"
 	if !finished.valid(request) {
 		return Report{}, nil, nil, adapterValidation(ErrVMBoot, false)
 	}
@@ -285,6 +297,8 @@ func (p *nativeVMHostPhase) finish(ctx context.Context, report Report, primary e
 				}
 				if err != nil {
 					primary = errors.Join(primary, ErrAuthRecoveryRequired)
+				} else {
+					p.authReturned = true
 				}
 			}
 		} else if p.profile.Complete(cleanup, p.supervisor) != nil {
@@ -385,7 +399,9 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report Report, acc
 		Provider                                          *ProviderEvidence
 		CodeHost                                          *nativeVMCodeHostAccess
 		Complete                                          bool
-	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, complete}
+		Stage                                             string
+		AuthExported, AuthReturned                        bool
+	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, complete, p.stage, p.exported, p.authReturned}
 	raw, err := json.Marshal(receipt)
 	if err != nil || len(raw) > 65536 {
 		return ErrProviderAuditPending

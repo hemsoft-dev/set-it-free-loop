@@ -1,0 +1,13 @@
+{
+  "source_commit": "21d1bc85b8b588032e6becbe5b89cc7fb333f6c4",
+  "source_tree": "79400bb1feecb728aec194e691eb4d70a2c0077f",
+  "initrd_sha256": "71b039c6af53a5830f67c69f12bc70fc49f478b4b3b8a8901dc42565d828f9b0",
+  "initrd_bytes": 288322165,
+  "state": "built-only",
+  "runtime_qualified": false,
+  "programs": {
+    "native-init": "1a43ca5bbf26ce8caf4ad300b1c39906f66224096448b955da59feb7ead990ad",
+    "sourceproxy": "88831bf950779a4eff092f596967f8cac6a40a0d5cb1e71c6026849b7e65c025",
+    "nativevmstub": "71ee43c1d430df22e21dbb51c58c9d36c4876d1e96f983c5ae8aeff28c943284"
+  }
+}

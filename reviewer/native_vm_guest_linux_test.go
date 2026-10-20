@@ -284,3 +284,21 @@ func TestNativeGuestLauncherDoesNotStartForeignInvocation(t *testing.T) {
 		t.Fatal("missing prestarted worker accepted")
 	}
 }
+
+func TestNativeGuestConsumesActualPinnedImageProducerRelease(t *testing.T) {
+	raw, err := os.ReadFile("testdata/native-vm-release.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var release nativeGuestRelease
+	if json.Unmarshal(raw, &release) != nil || !release.valid() {
+		t.Fatal("actual image producer release rejected")
+	}
+	canonical, err := json.Marshal(release)
+	if err != nil || !bytes.Equal(raw, canonical) {
+		t.Fatal("Python producer and Go guest canonical encoding differ")
+	}
+	if release.SourceHead != "21d1bc85b8b588032e6becbe5b89cc7fb333f6c4" || len(release.Files) != 16 {
+		t.Fatal("producer provenance changed")
+	}
+}
