@@ -91,7 +91,7 @@ var nativeBootStages = []string{"entry", "release", "proc", "mounts", "cgroup", 
 func init() {
 	for _, mount := range []string{"mount-dev", "mount-sys", "mount-run"} {
 		nativeBootStages = append(nativeBootStages, mount)
-		for _, failure := range []string{"interrupted", "busy", "denied", "missing", "invalid", "memory", "device", "other"} {
+		for _, failure := range []string{"interrupted", "busy", "denied", "missing", "invalid", "memory", "device", "other", "missing-present", "missing-absent", "missing-notdir", "missing-staterror"} {
 			nativeBootStages = append(nativeBootStages, mount+"-"+failure)
 		}
 	}

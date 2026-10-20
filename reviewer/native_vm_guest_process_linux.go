@@ -169,7 +169,21 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 	}{{"mount-dev", "devtmpfs", "/dev", "devtmpfs", "mode=0755", unix.MS_NOSUID}, {"mount-sys", "sysfs", "/sys", "sysfs", "", unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC}, {"mount-run", "tmpfs", "/run", "tmpfs", "mode=0755,size=192m", unix.MS_NOSUID | unix.MS_NODEV}} {
 		nativeGuestBootStage(mount.stage)
 		if err := unix.Mount(mount.source, mount.target, mount.kind, mount.flags, mount.options); err != nil {
-			nativeGuestBootStage(mount.stage + "-" + nativeBootMountError(err))
+			failure := nativeBootMountError(err)
+			if err == unix.ENOENT {
+				info, statErr := os.Lstat(mount.target)
+				switch {
+				case os.IsNotExist(statErr):
+					failure += "-absent"
+				case statErr != nil:
+					failure += "-staterror"
+				case !info.IsDir():
+					failure += "-notdir"
+				default:
+					failure += "-present"
+				}
+			}
+			nativeGuestBootStage(mount.stage + "-" + failure)
 			return release, ErrVMBoot
 		}
 	}
