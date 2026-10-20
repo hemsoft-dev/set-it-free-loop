@@ -50,7 +50,8 @@ worker MCP. It emits a ready event and a stopped event containing actual
 `SourceAccess`, bounded together to 2 MiB. A failure before readiness can emit
 only a failed zero-tool stopped receipt. `DecodeSourceReaderAudit` requires exact
 launch/session/manifest identities, endpoint and reader UID, canonical event
-encoding, legal lifecycle, in-scope reads and captured limits. Duplicate,
+encoding, a newline after every frame including the last, legal lifecycle,
+in-scope reads and captured limits. Duplicate,
 truncated, stale or additional data fails. Events contain no raw source payload,
 provider output, credential or backend diagnostic.
 

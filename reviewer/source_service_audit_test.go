@@ -79,3 +79,19 @@ func TestSourceReaderAuditRejectsOutOfScopeReadsAndAmbiguity(t *testing.T) {
 		}
 	}
 }
+
+func TestSourceReaderAuditRejectsTruncatedFinalFrame(t *testing.T) {
+	c, ready, stopped := readerAuditFixture(t)
+	complete := encodeReaderAudit(ready, stopped)
+	// Scanner accepts a final JSON object at EOF without its delimiter. The
+	// writer treats that short write as failure, so no prefix may qualify.
+	for length := len(encodeReaderAudit(ready)); length < len(complete); length++ {
+		got, err := DecodeSourceReaderAudit(c, complete[:length])
+		if err == nil || got.Access != nil || got.Ready {
+			t.Fatalf("truncated audit accepted at %d of %d bytes: %+v, %v", length, len(complete), got, err)
+		}
+	}
+	if got, err := DecodeSourceReaderAudit(c, complete); err != nil || got.Access == nil || got.Failed || !got.Ready {
+		t.Fatal("complete framed audit rejected", got, err)
+	}
+}

@@ -18,7 +18,7 @@ type SourceReaderAudit struct {
 
 func DecodeSourceReaderAudit(config SourceReaderConfig, raw []byte) (SourceReaderAudit, error) {
 	fail := func() (SourceReaderAudit, error) { return SourceReaderAudit{}, ErrSourceService }
-	if config.validate() != nil || len(raw) == 0 || len(raw) > 2<<20 {
+	if config.validate() != nil || len(raw) == 0 || len(raw) > 2<<20 || raw[len(raw)-1] != '\n' {
 		return fail()
 	}
 	scan := bufio.NewScanner(bytes.NewReader(raw))
