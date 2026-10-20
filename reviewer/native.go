@@ -3,6 +3,8 @@ package reviewer
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,7 +13,30 @@ import (
 // NativeDriver speaks the official clients' stdin/stdout protocol directly.
 // Its launcher must supply qualified identity, isolation, source IPC and full
 // process-tree termination. No host executable or live launcher is selected here.
-type NativeDriver struct{ Launcher WorkerLauncher }
+type NativeDriver struct {
+	Launcher WorkerLauncher
+	observe  func(nativeResultObservation)
+}
+
+// Private diagnostics carry only bounded classes and digests, never a native
+// transcript or an arbitrary client/validator error message.
+type nativeResultObservation struct {
+	Bytes      int
+	Hash, Kind string
+	ExitFailed bool
+}
+
+func nativeResultKind(kind string) bool {
+	switch kind {
+	case "complete", "exit", "report-bound", "invalid-report", "unsupported-item", "unapproved-mcp", "unsupported-event", "after-completion", "incomplete", "missing-report", "provider_unavailable", "auth_failed", "quota_wait", "incomplete_expired", "invalid_output":
+		return true
+	}
+	return false
+}
+
+func (o *nativeResultObservation) valid(s Session) bool {
+	return o != nil && nativeResultKind(o.Kind) && len(o.Hash) == 64 && objectID.MatchString(o.Hash) && o.Bytes >= 0 && o.Bytes <= NativeTransportLimit(s)+1
+}
 
 // Match concrete execution implementations. A marker method can be promoted
 // through embedding while an outer type overrides Execute and skips the guard.
@@ -80,27 +105,56 @@ func (d NativeDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 			return nil, workerInvalid()
 		}
 		waitErr := worker.Wait()
-		return normalizeNativeResult(s, raw, waitErr)
+		data, err, observed := normalizeNativeObservedResult(s, raw, waitErr)
+		if d.observe != nil {
+			d.observe(observed)
+		}
+		return data, err
 	})
 }
 
 func normalizeNativeResult(s Session, raw []byte, waitErr error) ([]byte, error) {
+	data, err, _ := normalizeNativeObservedResult(s, raw, waitErr)
+	return data, err
+}
+
+func normalizeNativeObservedResult(s Session, raw []byte, waitErr error) ([]byte, error, nativeResultObservation) {
+	sum := sha256.Sum256(raw)
+	observed := nativeResultObservation{Bytes: len(raw), Hash: hex.EncodeToString(sum[:]), Kind: "invalid-report", ExitFailed: waitErr != nil}
 	r, err := NormalizeCLIOutput(s, raw)
 	if err != nil {
+		switch err.Error() {
+		case "forbidden or unknown client tool/item":
+			observed.Kind = "unsupported-item"
+		case "unapproved MCP tool in client output":
+			observed.Kind = "unapproved-mcp"
+		case "client error or unsupported event":
+			observed.Kind = "unsupported-event"
+		case "unexpected client data after completion":
+			observed.Kind = "after-completion"
+		case "incomplete Codex transport":
+			observed.Kind = "incomplete"
+		case "missing Codex report":
+			observed.Kind = "missing-report"
+		}
 		var failure PhaseError
 		if errors.As(err, &failure) {
 			// Native failure is after possible work and cannot refund a
 			// reservation, even if a failed client exits with status zero.
-			return nil, PhaseError{State: failure.State}
+			observed.Kind = phaseState(failure)
+			return nil, PhaseError{State: failure.State}, observed
 		}
-		return nil, adapterValidation(errors.New("invalid or incomplete native client output"), false)
+		return nil, adapterValidation(errors.New("invalid or incomplete native client output"), false), observed
 	}
 	if waitErr != nil {
-		return nil, workerInvalid()
+		observed.Kind = "exit"
+		return nil, workerInvalid(), observed
 	}
 	data, err := json.Marshal(r)
 	if err != nil || len(data) > s.Limits.OutputBytes {
-		return nil, workerInvalid()
+		observed.Kind = "report-bound"
+		return nil, workerInvalid(), observed
 	}
-	return data, nil
+	observed.Kind = "complete"
+	return data, nil, observed
 }

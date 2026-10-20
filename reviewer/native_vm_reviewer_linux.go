@@ -402,9 +402,13 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report Report, acc
 		Stage                                             string
 		AuthExported, AuthReturned                        bool
 		GuestStage                                        string
-	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, complete, p.stage, p.exported, p.authReturned, ""}
+		Native                                            *nativeResultObservation
+	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, complete, p.stage, p.exported, p.authReturned, "", nil}
 	if p.finished != nil && nativeVMGuestStage(p.finished.GuestStage) {
 		receipt.GuestStage = p.finished.GuestStage
+	}
+	if p.finished != nil && p.finished.Native.valid(p.request.Session) {
+		receipt.Native = p.finished.Native
 	}
 	raw, err := json.Marshal(receipt)
 	if err != nil || len(raw) > 65536 {

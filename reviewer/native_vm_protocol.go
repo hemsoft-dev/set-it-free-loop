@@ -143,6 +143,7 @@ type nativeVMFinished struct {
 	AuthReturn  []byte
 	CodeHost    *nativeVMCodeHostAccess
 	GuestStage  string
+	Native      *nativeResultObservation
 }
 type nativeVMCodeHostAccess struct {
 	Version                 int
@@ -181,6 +182,12 @@ func (f nativeVMFinished) valid(q nativeVMRequest) bool {
 		return false
 	}
 	if f.CodeHost != nil && !nativeVMCodeStage(f.CodeHost.Stage) {
+		return false
+	}
+	if f.Native != nil && !f.Native.valid(q.Session) {
+		return false
+	}
+	if f.State == "complete" && f.Native != nil && (f.Native.Kind != "complete" || f.Native.ExitFailed) {
 		return false
 	}
 	if f.State == "complete" && (q.Session.Identity.Provider == Codex && !f.CodeHost.valid(q.Session) || len(f.Report) == 0 || len(f.AuthReturn) == 0 || len(f.SourceAudit) == 0) {

@@ -247,7 +247,7 @@ func NativeVMGuestMain(args []string) int {
 	}
 	launcher := &nativeGuestLauncher{request: q, ready: observed.Ready, invocation: inv, process: phase.client, control: configWrite}
 	phase.stage = "native-execute"
-	data, _, err := (NativeDriver{Launcher: launcher}).Execute(ctx, inv)
+	data, _, err := (NativeDriver{Launcher: launcher, observe: phase.observeNative}).Execute(ctx, inv)
 	if err != nil {
 		phase.state = phaseState(err)
 		return 1
@@ -333,6 +333,26 @@ type nativeGuestPhase struct {
 	report         []byte
 	state          string
 	stage          string
+	nativeMu       sync.Mutex
+	native         *nativeResultObservation
+}
+
+func (p *nativeGuestPhase) observeNative(value nativeResultObservation) {
+	p.nativeMu.Lock()
+	defer p.nativeMu.Unlock()
+	if value.valid(p.request.Session) {
+		p.native = &value
+	}
+}
+
+func (p *nativeGuestPhase) nativeSnapshot() *nativeResultObservation {
+	p.nativeMu.Lock()
+	defer p.nativeMu.Unlock()
+	if p.native == nil {
+		return nil
+	}
+	copy := *p.native
+	return &copy
 }
 
 func (p *nativeGuestPhase) progress(stage string) error {
@@ -420,6 +440,7 @@ func (p *nativeGuestPhase) finish(parent context.Context) {
 		}
 	}
 	defer clear(finished.AuthReturn)
+	finished.Native = p.nativeSnapshot()
 	if finished.State == "complete" {
 		finished.Report = p.report
 		if !stopped || nativeCredentialCanarySeen(p.report, p.canaries) || !finished.valid(p.request) {
