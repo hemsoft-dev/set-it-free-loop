@@ -109,7 +109,7 @@ func nativeBootStageValid(stage string) bool {
 func nativeVMGuestStage(stage string) bool {
 	if strings.HasPrefix(stage, "diag-") {
 		suffix := strings.TrimPrefix(stage, "diag-")
-		return nativeBootStageValid(suffix) || suffix == "oom" || suffix == "panic" || suffix == "vm-error" || suffix == "vm-exit" || suffix == "unpack-failed"
+		return nativeBootStageValid(suffix) || suffix == "oom" || suffix == "panic" || suffix == "vm-error" || suffix == "vm-exit" || suffix == "unpack-other" || suffix == "unpack-write" || suffix == "unpack-read" || suffix == "unpack-compression" || suffix == "unpack-format" || suffix == "unpack-memory"
 	}
 	switch stage {
 	case "boot-control", "boot-objects", "boot-provider", "boot-request":

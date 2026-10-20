@@ -24,7 +24,7 @@ func TestNativeBootDiagnosticsBoundedFixedStages(t *testing.T) {
 	}
 	d = &nativeBootDiagnostics{}
 	d.Write([]byte("Initramfs unpacking failed: omitted private message\n"))
-	if got := d.stages(false); !reflect.DeepEqual(got, []string{"diag-unpack-failed"}) || !nativeVMGuestStage(got[0]) {
+	if got := d.stages(false); !reflect.DeepEqual(got, []string{"diag-unpack-other"}) || !nativeVMGuestStage(got[0]) {
 		t.Fatal(got)
 	}
 	d = &nativeBootDiagnostics{}

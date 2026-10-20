@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -99,6 +100,7 @@ type nativeVMHostPhase struct {
 	profile           *AuthProfile
 	finished          *nativeVMFinished
 	stage             string
+	bootDiagnostics   []string
 	authReturned      bool
 }
 
@@ -199,7 +201,12 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 		return Report{}, nil, nil, workerLauncherError(ErrVMBoot, true)
 	}
 	phase.stage = "ready"
-	ready, err := readNativeVMReady(channels.host[0], request, func(stage string) { phase.stage = "guest/" + stage })
+	ready, err := readNativeVMReady(channels.host[0], request, func(stage string) {
+		phase.stage = "guest/" + stage
+		if strings.HasPrefix(stage, "diag-") && len(phase.bootDiagnostics) < 8 {
+			phase.bootDiagnostics = append(phase.bootDiagnostics, stage)
+		}
+	})
 	if err != nil || !ready.valid(request) {
 		return Report{}, nil, nil, workerLauncherError(ErrVMBoot, true)
 	}
@@ -425,7 +432,8 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report Report, acc
 		GuestStage                                        string
 		Native                                            *nativeResultObservation
 		Failure                                           string
-	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, failure == nil, p.stage, p.exported, p.authReturned, "", nil, nativeVMFailureKind(failure)}
+		BootDiagnostics                                   []string
+	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, failure == nil, p.stage, p.exported, p.authReturned, "", nil, nativeVMFailureKind(failure), p.bootDiagnostics}
 	if p.finished != nil && nativeVMGuestStage(p.finished.GuestStage) {
 		receipt.GuestStage = p.finished.GuestStage
 	}

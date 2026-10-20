@@ -22,11 +22,12 @@ func nativeGuestBootStage(stage string) {
 // Kernel/QEMU bytes never become retained logs. The bounded streaming parser
 // retains only a short transient matching tail and fixed diagnostic enums.
 type nativeBootDiagnostics struct {
-	mu                 sync.Mutex
-	tail               []byte
-	stage              string
-	panic, oom, unpack bool
-	scanned            int
+	mu          sync.Mutex
+	tail        []byte
+	stage       string
+	panic, oom  bool
+	unpackClass string
+	scanned     int
 }
 
 func (d *nativeBootDiagnostics) Write(data []byte) (int, error) {
@@ -46,7 +47,18 @@ func (d *nativeBootDiagnostics) Write(data []byte) (int, error) {
 		}
 	}
 	d.panic = d.panic || strings.Contains(text, "Kernel panic")
-	d.unpack = d.unpack || strings.Contains(text, "Initramfs unpacking failed")
+	if start := strings.LastIndex(text, "Initramfs unpacking failed:"); start >= 0 {
+		if end := strings.IndexByte(text[start:], '\n'); end >= 0 {
+			line := text[start : start+end]
+			d.unpackClass = "other"
+			for _, item := range []struct{ token, class string }{{"write error", "write"}, {"read error", "read"}, {"uncompression error", "compression"}, {"junk within compressed archive", "format"}, {"Out of memory", "memory"}} {
+				if strings.Contains(line, item.token) {
+					d.unpackClass = item.class
+					break
+				}
+			}
+		}
+	}
 	d.oom = d.oom || strings.Contains(text, "Out of memory") || strings.Contains(text, "out of memory")
 	clear(d.tail)
 	d.tail = append([]byte{}, joined[max(0, len(joined)-128):]...)
@@ -68,8 +80,8 @@ func (d *nativeBootDiagnostics) stages(failed bool) []string {
 	if d.panic {
 		result = append(result, "diag-panic")
 	}
-	if d.unpack {
-		result = append(result, "diag-unpack-failed")
+	if d.unpackClass != "" {
+		result = append(result, "diag-unpack-"+d.unpackClass)
 	}
 	if len(result) == 0 {
 		if failed {
