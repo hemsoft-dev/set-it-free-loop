@@ -20,9 +20,13 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type cgroupHierarchy struct {
+	Device, Inode, MountNamespace, CgroupNamespace uint64
+}
 type cgroupBinding struct {
-	Path  string
-	Inode uint64
+	Path      string
+	Inode     uint64
+	Hierarchy cgroupHierarchy
 }
 type containmentKernel interface {
 	BootID() (string, error)
@@ -40,16 +44,47 @@ func (linuxContainmentKernel) BootID() (string, error) { return currentBootID() 
 func validUnitCgroup(group, unit string) bool {
 	return validContainmentUnit(unit) && strings.HasPrefix(group, "/user.slice/") && filepath.Clean(group) == group && strings.HasSuffix(group, "/"+unit)
 }
-func openContainmentCgroup(group string) (*os.Root, error) {
+
+// Only a missing child beneath the verified, captured hierarchy can prove
+// removal. An absent mount, ordinary directory or changed namespace cannot.
+func openContainmentCgroupAt(anchor, group string, expected cgroupHierarchy) (*os.Root, cgroupHierarchy, error) {
 	if !strings.HasPrefix(group, "/user.slice/") || filepath.Clean(group) != group {
-		return nil, ErrAuthRecoveryRequired
+		return nil, cgroupHierarchy{}, ErrAuthRecoveryRequired
 	}
-	root, err := os.OpenRoot("/sys/fs/cgroup")
+	root, err := os.OpenRoot(anchor)
 	if err != nil {
-		return nil, err
+		return nil, cgroupHierarchy{}, ErrAuthRecoveryRequired
 	}
 	defer root.Close()
-	return root.OpenRoot(strings.TrimPrefix(group, "/"))
+	inode, err := cgroupInode(root)
+	if err != nil {
+		return nil, cgroupHierarchy{}, ErrAuthRecoveryRequired
+	}
+	info, err := root.Stat(".")
+	if err != nil {
+		return nil, cgroupHierarchy{}, ErrAuthRecoveryRequired
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return nil, cgroupHierarchy{}, ErrAuthRecoveryRequired
+	}
+	hierarchy := cgroupHierarchy{Device: uint64(st.Dev), Inode: inode}
+	for name, target := range map[string]*uint64{"mnt": &hierarchy.MountNamespace, "cgroup": &hierarchy.CgroupNamespace} {
+		info, err := os.Stat("/proc/self/ns/" + name)
+		if err != nil {
+			return nil, cgroupHierarchy{}, ErrAuthRecoveryRequired
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return nil, cgroupHierarchy{}, ErrAuthRecoveryRequired
+		}
+		*target = st.Ino
+	}
+	if expected != (cgroupHierarchy{}) && hierarchy != expected {
+		return nil, cgroupHierarchy{}, ErrAuthRecoveryRequired
+	}
+	child, err := root.OpenRoot(strings.TrimPrefix(group, "/"))
+	return child, hierarchy, err
 }
 func cgroupFile(root *os.Root, name string) (string, error) {
 	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
@@ -87,7 +122,7 @@ func (linuxContainmentKernel) Capture(group, unit string) (cgroupBinding, error)
 	if !validUnitCgroup(group, unit) {
 		return cgroupBinding{}, ErrAuthRecoveryRequired
 	}
-	root, err := openContainmentCgroup(group)
+	root, hierarchy, err := openContainmentCgroupAt("/sys/fs/cgroup", group, cgroupHierarchy{})
 	if err != nil {
 		return cgroupBinding{}, err
 	}
@@ -112,13 +147,13 @@ func (linuxContainmentKernel) Capture(group, unit string) (cgroupBinding, error)
 	if e1 != nil || e2 != nil || quota == 0 || quota != period {
 		return cgroupBinding{}, ErrAuthRecoveryRequired
 	}
-	return cgroupBinding{group, inode}, nil
+	return cgroupBinding{Path: group, Inode: inode, Hierarchy: hierarchy}, nil
 }
 func (linuxContainmentKernel) Empty(binding cgroupBinding) error {
-	if binding.Inode == 0 || !strings.HasPrefix(binding.Path, "/user.slice/") || filepath.Clean(binding.Path) != binding.Path {
+	if binding.Inode == 0 || binding.Hierarchy == (cgroupHierarchy{}) || !strings.HasPrefix(binding.Path, "/user.slice/") || filepath.Clean(binding.Path) != binding.Path {
 		return ErrAuthRecoveryRequired
 	}
-	root, err := openContainmentCgroup(binding.Path)
+	root, _, err := openContainmentCgroupAt("/sys/fs/cgroup", binding.Path, binding.Hierarchy)
 	// A cgroup cannot be removed while it contains processes or subgroups. The
 	// supervisor must already have settled its only start and revoked the gate.
 	if os.IsNotExist(err) {
@@ -249,6 +284,18 @@ func (s *SystemdSupervisor) snapshotUnit(ctx context.Context, binding AuthBindin
 	return r, err
 }
 func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateManifest) error {
+	if !binding.valid() {
+		return ErrAuthRecoveryRequired
+	}
+	s.mu.Lock()
+	if s.closed || s.image == nil || s.starts[binding] != nil || s.gates[binding] != nil {
+		s.mu.Unlock()
+		return ErrAuthRecoveryRequired
+	}
+	done := make(chan struct{})
+	s.starts[binding] = done
+	s.mu.Unlock()
+	defer func() { s.mu.Lock(); delete(s.starts, binding); close(done); s.mu.Unlock() }()
 	if s.image.verify() != nil {
 		return ErrAuthRecoveryRequired
 	}
@@ -277,6 +324,10 @@ func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateMa
 		return ErrAuthRecoveryRequired
 	}
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return ErrAuthRecoveryRequired
+	}
 	s.gates[binding] = gate
 	s.mu.Unlock()
 	success = true

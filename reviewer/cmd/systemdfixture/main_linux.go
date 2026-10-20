@@ -38,6 +38,26 @@ type result struct {
 	FallbackCleanup                                     bool            `json:"fallback_cleanup"`
 }
 
+func (receipt *result) cleanupFailed(stage string) {
+	receipt.Passed = false
+	if receipt.Error == "" {
+		receipt.Error = stage
+	}
+}
+
+// Keep finalization testable without starting a host service. Cleanup is part
+// of qualification, including after the exercise has tentatively passed.
+func finish(receipt *result, stop, fallback, closeSupervisor func() error) {
+	if err := stop(); err != nil {
+		receipt.FallbackCleanup = true
+		receipt.cleanupFailed("deferred supervisor stop failed")
+		_ = fallback()
+	}
+	if err := closeSupervisor(); err != nil {
+		receipt.cleanupFailed("deferred supervisor close failed")
+	}
+}
+
 func exercise(root, stub, hash string) (receipt result) {
 	receipt = result{Version: 1, FakeOnly: true, StubSHA256: hash}
 	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
@@ -82,13 +102,12 @@ func exercise(root, stub, hash string) (receipt result) {
 	defer func() {
 		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := supervisor.AbortAndWait(cleanup, receipt.Binding); err != nil {
-			// Fixture-only exact-owned-unit cleanup. It cannot turn a failed supervisor
-			// proof into a successful qualification or a release of the auth lease.
-			receipt.FallbackCleanup = true
-			_ = exec.CommandContext(cleanup, "/usr/bin/systemctl", "--user", "stop", receipt.Unit).Run()
-		}
-		supervisor.Close()
+		finish(&receipt,
+			func() error { return supervisor.AbortAndWait(cleanup, receipt.Binding) },
+			func() error {
+				return exec.CommandContext(cleanup, "/usr/bin/systemctl", "--user", "stop", receipt.Unit).Run()
+			},
+			supervisor.Close)
 		receipt.Journal, _ = os.ReadFile(filepath.Join(gates, receipt.Binding.LaunchID, "unit.json"))
 	}()
 	// Race regression: replace the supplied pathname after verification. Both

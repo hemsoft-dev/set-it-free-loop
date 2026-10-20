@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -187,7 +188,7 @@ func systemdSupervisorFixture(t *testing.T) (*SystemdSupervisor, *fakeContainmen
 	binding := authTestBinding()
 	unit := "sfl-alpha-" + binding.LaunchID + ".service"
 	boot, _ := currentBootID()
-	kernel := &fakeContainmentKernel{boot: boot, group: cgroupBinding{"/user.slice/user-1000.slice/" + unit, 17}, populated: true}
+	kernel := &fakeContainmentKernel{boot: boot, group: cgroupBinding{Path: "/user.slice/user-1000.slice/" + unit, Inode: 17}, populated: true}
 	manager := &fakeContainmentManager{owner: "fake-bus/:1.2", kernel: kernel, observation: unitObservation{Unit: unit, Path: dbus.ObjectPath("/org/freedesktop/systemd1/unit/fake"), InvocationID: strings.Repeat("d", 32), MainPID: uint32(os.Getpid()), ControlGroup: kernel.group.Path, ActiveState: "active", Job: unitJob{0, "/"}, MemoryMax: 1 << 30, MemorySwapMax: 0, TasksMax: 64, CPUQuotaPerSecUSec: 1000000, KillMode: "control-group", Restart: "no", CollectMode: "inactive", RemainAfterExit: true, NoNewPrivileges: true, Transient: true, Description: "SFL fake containment " + Digest(binding)}}
 	supervisor := newSystemdSupervisor(root, stub, hex.EncodeToString(hash[:]), manager, kernel)
 	t.Cleanup(func() {
@@ -387,5 +388,119 @@ func TestSystemdWaitsForPinnedImageAfterTrustedBootstrap(t *testing.T) {
 	}
 	if m.kernel.imageChecks != 3 {
 		t.Fatal("sealed image transition not checked", m.kernel.imageChecks)
+	}
+}
+
+type pausedPrepareKernel struct {
+	containmentKernel
+	entered, release chan struct{}
+}
+
+func (k *pausedPrepareKernel) BootID() (string, error) {
+	close(k.entered)
+	<-k.release
+	return k.containmentKernel.BootID()
+}
+func TestSystemdCloseDrainsPreparationAndAbortsLateGate(t *testing.T) {
+	s, _, manifest := systemdSupervisorFixture(t)
+	paused := &pausedPrepareKernel{containmentKernel: s.kernel, entered: make(chan struct{}), release: make(chan struct{})}
+	s.kernel = paused
+	binding := authTestBinding()
+	binding.LaunchID = strings.Repeat("e", 32)
+	prepared := make(chan error, 1)
+	go func() { prepared <- s.PrepareFake(binding, manifest) }()
+	<-paused.entered
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	deadline := time.Now().Add(time.Second)
+	for {
+		s.mu.Lock()
+		closing := s.closed
+		s.mu.Unlock()
+		if closing {
+			break
+		}
+		if time.Now().After(deadline) {
+			close(paused.release)
+			t.Fatal("close did not fence supervisor")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case err := <-closed:
+		close(paused.release)
+		<-prepared
+		t.Fatal("Close returned before preparation drained", err)
+	default:
+	}
+	close(paused.release)
+	if err := <-prepared; !errors.Is(err, ErrAuthRecoveryRequired) {
+		t.Fatal("late preparation succeeded", err)
+	}
+	if err := <-closed; err != nil {
+		t.Fatal(err)
+	}
+	gate := s.gate(binding)
+	conn, err := net.DialTimeout("unix", gate.Endpoint(), time.Second)
+	if err == nil {
+		conn.Close()
+		t.Fatal("late gate listener survived Close")
+	}
+	held, err := gate.lock(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.close()
+	record, err := gate.read(held)
+	if err != nil || record.Phase != "aborted" {
+		t.Fatal("late gate not durably revoked", record, err)
+	}
+	if s.PrepareFake(binding, manifest) == nil {
+		t.Fatal("closed supervisor accepted preparation")
+	}
+}
+func TestContainmentMissingChildRequiresOriginalCgroupHierarchy(t *testing.T) {
+	group := "/user.slice/sfl-test-missing-hierarchy.service"
+	for _, anchor := range []string{t.TempDir(), filepath.Join(t.TempDir(), "missing")} {
+		root, _, err := openContainmentCgroupAt(anchor, group, cgroupHierarchy{})
+		if root != nil {
+			root.Close()
+		}
+		if !errors.Is(err, ErrAuthRecoveryRequired) || os.IsNotExist(err) {
+			t.Fatal("unavailable hierarchy accepted as removed child", anchor, err)
+		}
+	}
+	root, hierarchy, err := openContainmentCgroupAt("/sys/fs/cgroup", group, cgroupHierarchy{})
+	if root != nil {
+		root.Close()
+		t.Fatal("unexpected fixture cgroup")
+	}
+	if hierarchy == (cgroupHierarchy{}) {
+		t.Skip("host does not expose cgroup v2")
+	}
+	if !os.IsNotExist(err) {
+		t.Fatal("verified missing child not distinguished", err)
+	}
+	if err := (linuxContainmentKernel{}).Empty(cgroupBinding{Path: group, Inode: 1, Hierarchy: hierarchy}); err != nil {
+		t.Fatal("removed child on verified hierarchy rejected", err)
+	}
+	for _, field := range []string{"device", "inode", "mount", "cgroup"} {
+		changed := hierarchy
+		switch field {
+		case "device":
+			changed.Device++
+		case "inode":
+			changed.Inode++
+		case "mount":
+			changed.MountNamespace++
+		case "cgroup":
+			changed.CgroupNamespace++
+		}
+		if err := (linuxContainmentKernel{}).Empty(cgroupBinding{Path: group, Inode: 1, Hierarchy: changed}); !errors.Is(err, ErrAuthRecoveryRequired) {
+			t.Fatal("changed hierarchy accepted missing child", field, err)
+		}
+	}
+	if err := (linuxContainmentKernel{}).Empty(cgroupBinding{Path: group, Inode: 1}); !errors.Is(err, ErrAuthRecoveryRequired) {
+		t.Fatal("unbound legacy hierarchy accepted", err)
 	}
 }

@@ -47,7 +47,9 @@ trust boundary, along with systemd; its path and ancestors must be root-owned
 and not writable by other users. No shell or user Python configuration is used.
 The supervisor waits for the sealed image to replace that bootstrap before
 capturing the launch. Closing fences new starts and drains senders before the
-image descriptor is released.
+image descriptor is released. Preparation is registered under the same shutdown fence.
+A preparation that finishes after Close begins revokes its new listener before
+the drain completes and returns an error.
 
 Before grant, the supervisor verifies the completed start, unit description,
 invocation, actual main PID and typed resource properties. It passes a live
@@ -72,7 +74,11 @@ supervisor waits for the exact stop job, independently checks that the captured
 cgroup inode has no populated subtree, and checks the unit's final identity,
 job, main PID and inactive/failed state before recording stop. It never kills
 a numeric PID or a reused cgroup path. A changed host boot can prove the old
-kernel processes dead after permanent grant revocation.
+kernel processes dead after permanent grant revocation. The journal also binds
+the cgroup-v2 hierarchy root device/inode and mount/cgroup namespace identities.
+A missing child counts as removed only after reopening that same verified
+hierarchy. An absent mount, ordinary directory, changed hierarchy or namespace
+keeps recovery required.
 
 `ConfirmAuthStopped` reopens the exact durable binding and repeats the necessary
 stop checks. A controller restart cannot regrant an old launch. It implements
@@ -101,7 +107,9 @@ fresh private gate/auth directories and synthetic bytes. It checks actual
 atomic replacement of the original executable path, start/grant through the
 retained image, kernel limits, a live escaped child, physical stop, restart recovery
 and synthetic auth completion. Any fixture-only fallback cleanup keeps the
-qualification failed. Normal tests never start a host unit.
+qualification failed, even after the main exercise tentatively passed. Deferred
+close failure also fails the receipt, while an earlier exercise error is preserved.
+Normal tests never start a host unit.
 
 The first host fixture exposed a ControlGroup interface mismatch. The corrected
 adapter reads that property from Service; the private fake-bus regression uses
