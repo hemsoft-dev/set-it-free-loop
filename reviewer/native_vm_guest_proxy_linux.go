@@ -195,39 +195,7 @@ func nativeGuestClientProxyMain() int {
 	transport := nativeProviderTransport(nativeGuestConn{provider})
 	defer transport.CloseIdleConnections()
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: q.Session.Limits.Timeout, WriteTimeout: q.Session.Limits.Timeout, IdleTimeout: q.Session.Limits.Timeout, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
-	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, in *http.Request) {
-		var authority string
-		for _, route := range q.Policy.Routes {
-			if route.Method == in.Method && route.Path == in.URL.Path && route.RawQuery == in.URL.RawQuery {
-				if authority != "" && authority != route.Authority {
-					http.Error(w, "ambiguous provider route", 403)
-					return
-				}
-				authority = route.Authority
-			}
-		}
-		if authority == "" || in.URL.IsAbs() || in.URL.User != nil || in.URL.RawPath != "" || len(in.Trailer) != 0 {
-			http.Error(w, "provider route denied", 403)
-			return
-		}
-		request := in.Clone(in.Context())
-		request.URL = &url.URL{Scheme: "http", Host: "sfl-private.invalid", Path: in.URL.Path, RawQuery: in.URL.RawQuery}
-		request.Host = authority
-		request.RequestURI = ""
-		request.GetBody = nil
-		request.Close = false
-		response, err := transport.RoundTrip(request)
-		if err != nil {
-			http.Error(w, "provider unavailable", 502)
-			return
-		}
-		defer response.Body.Close()
-		if content := response.Header.Get("Content-Type"); content != "" {
-			w.Header().Set("Content-Type", content)
-		}
-		w.WriteHeader(response.StatusCode)
-		io.Copy(w, io.LimitReader(response.Body, int64(q.Policy.Limits.ResponseBytes)+1))
-	})
+	server.Handler = nativeGuestProviderHandler(q, transport, cancel)
 	go server.Serve(listener)
 	defer server.Close()
 	inv, err := nativeGuestInvocation(q, "http://"+listener.Addr().String())
@@ -289,6 +257,55 @@ func nativeGuestClientProxyMain() int {
 		return 1
 	}
 	return 0
+}
+
+func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, stop func()) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, in *http.Request) {
+		failed := true
+		defer func() {
+			if failed {
+				// A denied response cannot become a review. Stop this owned CLI
+				// now so guest PID1 can reap it and return refreshed auth, rather
+				// than waiting for an opaque client's retry loop to time out.
+				stop()
+			}
+		}()
+		var authority string
+		for _, route := range q.Policy.Routes {
+			if route.Method == in.Method && route.Path == in.URL.Path && route.RawQuery == in.URL.RawQuery {
+				if authority != "" && authority != route.Authority {
+					http.Error(w, "ambiguous provider route", 403)
+					return
+				}
+				authority = route.Authority
+			}
+		}
+		if authority == "" || in.URL.IsAbs() || in.URL.User != nil || in.URL.RawPath != "" || len(in.Trailer) != 0 {
+			http.Error(w, "provider route denied", 403)
+			return
+		}
+		request := in.Clone(in.Context())
+		request.URL = &url.URL{Scheme: "http", Host: "sfl-private.invalid", Path: in.URL.Path, RawQuery: in.URL.RawQuery}
+		request.Host = authority
+		request.RequestURI = ""
+		request.GetBody = nil
+		request.Close = false
+		response, err := transport.RoundTrip(request)
+		if err != nil {
+			http.Error(w, "provider unavailable", 502)
+			return
+		}
+		defer response.Body.Close()
+		if content := response.Header.Get("Content-Type"); content != "" {
+			w.Header().Set("Content-Type", content)
+		}
+		w.WriteHeader(response.StatusCode)
+		n, err := io.Copy(w, io.LimitReader(response.Body, int64(q.Policy.Limits.ResponseBytes)+1))
+		// Only a latched host guard failure is fatal. Ordinary upstream auth or
+		// quota responses still reach the CLI's refresh/error handling, and the
+		// local WebSocket refusal still permits the pinned HTTP fallback.
+		failed = response.Header.Get(nativeProviderFatalHeader) == "1" || err != nil || n > int64(q.Policy.Limits.ResponseBytes)
+	})
 }
 
 func nativeGuestVersion(identity Identity, output string) bool {

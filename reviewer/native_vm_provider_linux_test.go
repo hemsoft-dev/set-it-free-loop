@@ -146,6 +146,9 @@ func TestNativeVMProviderActualPrivateHTTPAndStoppedReceipt(t *testing.T) {
 
 func TestNativeVMProviderAllowsGuestStartupBeforeFirstHeader(t *testing.T) {
 	bridge, client, calls, s := nativeProviderFixture(t, codexToolStream("exec"))
+	if bridge.server.ReadHeaderTimeout != 5*time.Second {
+		t.Fatal("guest startup widened the per-request header budget")
+	}
 	// The bridge starts before QEMU boots and before the client's version probe.
 	// No HTTP header exists yet, so this is not a slow-header request.
 	time.Sleep(5200 * time.Millisecond)
@@ -159,6 +162,98 @@ func TestNativeVMProviderAllowsGuestStartupBeforeFirstHeader(t *testing.T) {
 	e, err := bridge.close(ctx)
 	if err != nil || e.Access.ValidateCompleted(s, e.Policy) != nil {
 		t.Fatal("delayed guest lost completed receipt", e, err)
+	}
+}
+
+func TestNativeVMProviderIdleStartupStopsWithoutTraffic(t *testing.T) {
+	bridge, _, calls, _ := nativeProviderFixture(t, codexToolStream("exec"))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	e, err := bridge.close(ctx)
+	if err != nil || calls.Load() != 0 || !e.Access.Stopped || e.Access.Requests != 0 {
+		t.Fatal("pending startup retained private intake", e, err)
+	}
+}
+
+func TestNativeVMGuestProviderDenialStopsClient(t *testing.T) {
+	bridge, client, calls, s := nativeProviderFixture(t, codexToolStream("apply_patch"))
+	var stopped atomic.Int32
+	proxy := httptest.NewServer(nativeGuestProviderHandler(nativeVMRequest{Policy: bridge.policy}, client.Transport, func() { stopped.Add(1) }))
+	defer proxy.Close()
+	raw, _ := json.Marshal(map[string]any{"model": s.Identity.Model})
+	q, _ := http.NewRequest("POST", proxy.URL+"/infer", strings.NewReader(string(raw)))
+	q.Header.Set("Authorization", "Bearer synthetic-native-access")
+	q.Header.Set("Content-Type", "application/json")
+	r, err := proxy.Client().Do(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, r.Body)
+	r.Body.Close()
+	if r.StatusCode != 400 || calls.Load() != 1 || stopped.Load() != 1 {
+		t.Fatal("fatal host tool denial did not stop owned client", r.StatusCode, calls.Load(), stopped.Load())
+	}
+}
+
+func TestNativeVMGuestProviderNegotiationPreservesClient(t *testing.T) {
+	bridge, client, calls, _ := nativeProviderFixture(t, codexToolStream("exec"), func(p *EgressPolicy) {
+		p.Routes = append(p.Routes, EgressRoute{Authority: "provider.example", Method: "GET", Path: "/infer", Kind: "local_negotiation"})
+	})
+	var stopped atomic.Int32
+	proxy := httptest.NewServer(nativeGuestProviderHandler(nativeVMRequest{Policy: bridge.policy}, client.Transport, func() { stopped.Add(1) }))
+	defer proxy.Close()
+	q, _ := http.NewRequest("GET", proxy.URL+"/infer", nil)
+	q.Header.Set("Authorization", "Bearer synthetic-native-access")
+	q.Header.Set("Connection", "Upgrade")
+	q.Header.Set("Upgrade", "websocket")
+	q.Header.Set("Sec-WebSocket-Version", "13")
+	q.Header.Set("Sec-WebSocket-Key", "MDEyMzQ1Njc4OWFiY2RlZg==")
+	r, err := proxy.Client().Do(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, r.Body)
+	r.Body.Close()
+	if r.StatusCode != 426 || calls.Load() != 0 || stopped.Load() != 0 || bridge.guard.Snapshot().NegotiationResponses != 1 {
+		t.Fatal("local HTTP fallback stopped client or reached upstream", r.StatusCode, calls.Load(), stopped.Load())
+	}
+}
+
+func TestNativeVMGuestProviderPreservesUpstreamAuthHandling(t *testing.T) {
+	guest, host := vmSocketPair(t)
+	s := testSession(Codex)
+	policy := egressTestPolicy(Codex)
+	policy.ResponsePolicy = CodexSourceResponses
+	upstream := egressRoundTrip(func(*http.Request) (*http.Response, error) {
+		// An upstream server cannot forge the private host's fatal marker.
+		return &http.Response{StatusCode: 401, Header: http.Header{"Content-Type": {"application/json"}, nativeProviderFatalHeader: {"1"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"synthetic expired auth"}}`))}, nil
+	})
+	bridge, err := startNativeProviderBridge(context.Background(), s, policy, upstream, host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := nativeProviderTransport(guest)
+	defer func() {
+		transport.CloseIdleConnections()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		bridge.close(ctx)
+	}()
+	var stopped atomic.Int32
+	proxy := httptest.NewServer(nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, transport, func() { stopped.Add(1) }))
+	defer proxy.Close()
+	raw, _ := json.Marshal(map[string]any{"model": s.Identity.Model})
+	q, _ := http.NewRequest("POST", proxy.URL+"/infer", strings.NewReader(string(raw)))
+	q.Header.Set("Authorization", "Bearer synthetic-native-access")
+	q.Header.Set("Content-Type", "application/json")
+	r, err := proxy.Client().Do(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, r.Body)
+	r.Body.Close()
+	if r.StatusCode != 401 || r.Header.Get(nativeProviderFatalHeader) != "" || stopped.Load() != 0 || bridge.guard.Snapshot().Failed {
+		t.Fatal("upstream auth response stopped refresh or forged host marker", r.StatusCode, stopped.Load())
 	}
 }
 

@@ -83,6 +83,22 @@ type nativeProviderBridge struct {
 	done   chan struct{}
 }
 
+const nativeProviderFatalHeader = "X-Sfl-Native-Fatal"
+
+// This header exists only on the private host/guest stream. ProviderEgress
+// rebuilds response headers and cannot forward an upstream copy of it.
+type nativeProviderGuardWriter struct {
+	http.ResponseWriter
+	guard *ProviderEgress
+}
+
+func (w nativeProviderGuardWriter) WriteHeader(status int) {
+	if w.guard.Snapshot().Failed {
+		w.Header().Set(nativeProviderFatalHeader, "1")
+	}
+	w.ResponseWriter.WriteHeader(status)
+}
+
 func startNativeProviderBridge(ctx context.Context, s Session, policy EgressPolicy, transport http.RoundTripper, channel net.Conn) (*nativeProviderBridge, error) {
 	if channel == nil {
 		return nil, ErrLiveBlocked
@@ -100,6 +116,7 @@ func startNativeProviderBridge(ctx context.Context, s Session, policy EgressPoli
 	// The native request must carry the captured model, not an implicit default
 	// or fallback. This check happens before any inference body reaches upstream.
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		w = nativeProviderGuardWriter{w, guard}
 		route, ok := guard.route(q)
 		if ok && route.Kind == "inference" {
 			raw, err := io.ReadAll(io.LimitReader(q.Body, int64(policy.Limits.RequestBytes)+1))

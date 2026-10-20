@@ -36,8 +36,10 @@ recovery. Its stop proof applies only to the distinct native payload.
 
 Ordinary tests use inert sealed assets, real local Unix descriptor transfers and
 fake systemd/kernel observations. They never open KVM, start a host unit or run a
-provider client. Native QEMU/guest execution and resource qualification are still
-missing. A fake manager's stop result is not production isolation evidence.
+provider client. The separate opt-in fixture has completed native QEMU reviews
+with both pinned clients against fake TLS, including accepted source-backed
+reports, returned synthetic auth and whole-unit stop. This is a bounded fixture
+result, not production isolation or full resource qualification.
 
 The private object stream now supplies the reader with captured revisions and
 paths, an independent byte/call budget and canonical finite records. The private
@@ -50,6 +52,14 @@ requires the captured model and strict source-tool response policy, and retains
 a stopped host-side provider receipt. Control request/ready/finished envelopes
 bind the full launch, session and request digest; the host must still validate
 their actual source audit/auth return before accepting a report.
+
+The host waits for the first private byte within the job's timeout before
+starting its five-second HTTP header timer. VM boot and client initialization
+cannot consume that header budget. A latched host guard failure adds a private
+fatal marker, causing the guest to stop its owned CLI and return auth promptly.
+The marker never reaches the CLI and cannot be forged by upstream response
+headers. Normal upstream auth/quota responses and the local WebSocket refusal
+remain available to the client's refresh and error handling.
 
 `NativeVMReviewer` implements `AuditedReviewer`. Its explicit trusted `Check`
 must establish all activation/eligibility gates; construction chooses no default
@@ -93,9 +103,9 @@ generates a canonical role-specific release. No source checkout, auth profile,
 shell or Git enters the image. It never opens KVM or runs a client or host unit.
 
 Ordinary tests cover these protocols and hostile inputs using synthetic auth,
-real local Unix transports and fake managers. Exact-client fake-backend KVM
-execution, measured native resource limits, refresh/return behavior and actual
-guest UID/namespace/forbidden-capability qualification remain unfinished.
+real local Unix transports and fake managers. Full measured resource limits,
+native refresh/restart behavior and broader guest capability qualification
+remain unfinished. Happy-path auth return has passed for both native clients.
 No source-level test or built image closes the parent issue.
 
 `scripts/native-vm-fake.py --run-fake-only` is the separate opt-in qualification
