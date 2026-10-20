@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -302,15 +303,18 @@ func (s *SystemdSupervisor) captureUnit(ctx context.Context, r unitJournal) (uni
 		return r, errors.Join(ErrAuthRecoveryRequired, errors.New("systemd restriction mismatch"))
 	}
 	identity, err := unitProcessIdentity(ctx, s.manager, o)
-	if err == nil {
-		err = s.kernel.Executable(int(o.MainPID), r.StubHash)
+	if err != nil {
+		return r, fmt.Errorf("%w: pidfd unit mapping", ErrAuthRecoveryRequired)
 	}
-	if err != nil || identity.BootID != boot {
-		return r, ErrAuthRecoveryRequired
+	if err = s.kernel.Executable(int(o.MainPID), r.StubHash); err != nil {
+		return r, fmt.Errorf("%w: executable image", err)
+	}
+	if identity.BootID != boot {
+		return r, fmt.Errorf("%w: boot identity", ErrAuthRecoveryRequired)
 	}
 	group, err := s.kernel.Capture(o.ControlGroup, r.Unit)
 	if err != nil {
-		return r, ErrAuthRecoveryRequired
+		return r, fmt.Errorf("%w: kernel cgroup capture", ErrAuthRecoveryRequired)
 	}
 	if r.Captured && (identity != r.Identity || group != r.Cgroup) {
 		return r, ErrAuthRecoveryRequired

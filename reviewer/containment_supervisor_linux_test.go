@@ -22,13 +22,23 @@ import (
 )
 
 type fakeContainmentKernel struct {
-	mu                 sync.Mutex
-	boot               string
-	group              cgroupBinding
-	populated, changed bool
+	mu                        sync.Mutex
+	boot                      string
+	group                     cgroupBinding
+	populated, changed        bool
+	pendingImage, imageChecks int
 }
 
-func (k *fakeContainmentKernel) Executable(int, string) error { return nil }
+func (k *fakeContainmentKernel) Executable(int, string) error {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.imageChecks++
+	if k.pendingImage > 0 {
+		k.pendingImage--
+		return errors.Join(ErrAuthRecoveryRequired, errStubImagePending)
+	}
+	return nil
+}
 func (k *fakeContainmentKernel) BootID() (string, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -366,5 +376,16 @@ func TestSystemdPostStartJournalWritesKeepRecoveryDeadline(t *testing.T) {
 				t.Fatal("uncertain launched attempt lost", record, err)
 			}
 		})
+	}
+}
+
+func TestSystemdWaitsForPinnedImageAfterTrustedBootstrap(t *testing.T) {
+	s, m, _ := systemdSupervisorFixture(t)
+	m.kernel.pendingImage = 2
+	if err := s.StartFake(context.Background(), authTestBinding()); err != nil {
+		t.Fatal("trusted bootstrap transition lost pending classification", err)
+	}
+	if m.kernel.imageChecks != 3 {
+		t.Fatal("sealed image transition not checked", m.kernel.imageChecks)
 	}
 }
