@@ -68,8 +68,31 @@ func TestClaudeSourceExecutable(t *testing.T) {
 				if mode == "source-wrong-version" {
 					version = "other-client"
 				}
+				if mode == "source-rate-before-init" {
+					_, _ = os.Stdout.Write(capturedClaudeRateLimit)
+				}
 				if mode != "source-missing-init" {
 					_ = enc.Encode(map[string]any{"type": "system", "subtype": "init", "model": model, "claude_code_version": version, "tools": tools, "mcp_servers": []any{map[string]string{"name": "sfl-source", "status": "connected"}}})
+				}
+				if strings.HasPrefix(mode, "source-rate-") && mode != "source-rate-before-init" {
+					var rate map[string]any
+					if json.Unmarshal(capturedClaudeRateLimit, &rate) != nil {
+						return 35
+					}
+					info := rate["rate_limit_info"].(map[string]any)
+					switch mode {
+					case "source-rate-overage":
+						info["isUsingOverage"] = true
+					case "source-rate-missing-overage":
+						delete(info, "isUsingOverage")
+					case "source-rate-wrong-type":
+						info["isUsingOverage"] = "false"
+					case "source-rate-rejected":
+						info["status"] = "rejected"
+					case "source-rate-missing-info":
+						delete(rate, "rate_limit_info")
+					}
+					_ = enc.Encode(rate)
 				}
 				if mode == "source-forbidden-tool" {
 					_ = enc.Encode(map[string]any{"type": "assistant", "message": map[string]any{"content": []any{map[string]string{"type": "tool_use", "name": "Bash"}}}})

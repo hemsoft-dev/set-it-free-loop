@@ -136,3 +136,67 @@ through its read-only `mcp get` parser in a disposable Bubblewrap guest with an
 empty auth/home filesystem and no network. That measured parser check supplies
 syntax/config metadata only. It starts no server or model session and establishes
 no subscription permission, tool inventory or inference-time isolation.
+
+## Native Claude fake-backend fixture
+
+On Linux with Bubblewrap and the pinned Claude 2.1.303 executable available,
+run the [offline fixture](scripts/claude-fixture.py):
+
+```sh
+python3 -B reviewer/scripts/claude-fixture.py \
+  --client /absolute/path/to/claude-2.1.303 \
+  --output /absolute/path/to/new-private-artifacts
+```
+
+The script verifies executable SHA256
+`375988f457756524234695cf2d8f64ace99c5f68682e47ea24862a843c191450`, builds
+`cmd/claudefixture` with Go, and creates a private mount/PID/network namespace.
+It mounts no host home, profile or credential file. The helper creates literal
+synthetic account bytes in the new namespace and accepts only a loopback fake
+Messages endpoint. It requires the synthetic bearer token, exact model and
+three-tool inventory, then supplies Read, Search and StructuredOutput responses.
+Each subsequent request must contain the preceding actual MCP tool result.
+The real NativeDriver checks source readiness before the prompt and again after
+completion; its report normalizer processes the actual client result.
+
+Claude emits `rate_limit_event` metadata after tool requests. The source driver
+accepts only an initialized stream with explicit `status: allowed` and
+`isUsingOverage: false`. Missing, malformed, unknown and overage states fail the
+phase. This observation does not prove paid overflow disabled; the production
+external egress/billing gate remains required. Tests retain a sanitized event
+from this exact client, with only random event/session IDs replaced, plus hostile
+mutations. Raw client and MCP transcripts remain in the private local artifact
+directory and must not be uploaded.
+
+The fixture checks both actual source operations, three backend requests,
+provenance and final report validation. Host receipts record source commit/tree,
+dirty state and helper/client hashes. The compiler cache is disposable; artifact
+output must be a new directory. Only the fixture artifact subdirectory is exposed writable from the host.
+The host receipt and helper executable stay outside that writable mount. Deadlines are 35 seconds
+for the phase and 50 seconds for the outer process. This fixture supplies no CPU
+or memory qualification. Launcher identity/stop inputs are deliberate protocol
+fakes. Separate reader UIDs, production auth, whole-containment stop attestation,
+exclusive provider egress, account eligibility and live inference remain
+unqualified. Every result explicitly keeps both actual-account and production-
+boundary qualification false. Passing this fixture cannot activate a provider.
+
+The qualification command requires a clean committed checkout before creating
+artifacts. It builds an immutable `git archive` of that commit with local
+Go tooling, `GOPROXY=off`, `GOSUMDB=off`, VCS resolution disabled and automatic
+toolchain downloads disabled. Ambient Go flags, workspace configuration and
+external cache programs are discarded. Required dependencies must already be
+in the local module cache, or supplied with `--module-cache`; an incomplete
+cache fails closed. This is not a dependency installation command.
+
+The selected client is copied and hashed through one opened inode into a private
+snapshot outside the worker's writable artifact directory. Bubblewrap executes
+that snapshot, so replacement of the original path cannot change the measured
+client. Source identity is rechecked around the build and execution. A dirty or
+changed checkout cannot emit a passing qualification. Read and Search outputs
+are checked separately for one matching, non-error tool result; Read must equal
+the complete synthetic source, while Search must decode to the exact captured
+revision/path/line/quote anchor. Shared text cannot stand in for the other result.
+
+Before compiling, the same offline environment runs `go mod verify` against the
+cached module zips and extracted sources. Modified dependency caches are rejected;
+`-mod=readonly` alone does not prove dependency-source integrity.
