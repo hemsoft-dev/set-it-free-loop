@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 )
 
@@ -20,8 +21,18 @@ func ProxySourceMCP(ctx context.Context, socket string, readerUID int, limits Li
 	if input == nil || output == nil {
 		return ErrSourceProxyUnavailable
 	}
-	defer input.Close()
-	defer output.Close()
+	var connection *net.UnixConn
+	var closed sync.Once
+	closeAll := func() {
+		closed.Do(func() {
+			if connection != nil {
+				_ = connection.Close()
+			}
+			_ = input.Close()
+			_ = output.Close()
+		})
+	}
+	defer closeAll()
 	if limits.Validate() != nil || !sourcePath(socket) || len(socket) > 107 || readerUID <= 0 || uint64(readerUID) > uint64(^uint32(0)) {
 		return ErrSourceProxyUnavailable
 	}
@@ -42,12 +53,12 @@ func ProxySourceMCP(ctx context.Context, socket string, readerUID int, limits Li
 		}
 		return ErrSourceProxyUnavailable
 	}
-	connection, ok := raw.(*net.UnixConn)
+	var ok bool
+	connection, ok = raw.(*net.UnixConn)
 	if !ok {
 		raw.Close()
 		return ErrSourceProxyUnavailable
 	}
-	defer connection.Close()
 	control, err := connection.SyscallConn()
 	if err != nil {
 		return ErrSourceProxyUnavailable
@@ -60,7 +71,6 @@ func ProxySourceMCP(ctx context.Context, socket string, readerUID int, limits Li
 	if err != nil || peerErr != nil || peer == nil || uint64(peer.Uid) != uint64(readerUID) {
 		return ErrSourceProxyUnavailable
 	}
-	closeAll := func() { _ = connection.Close(); _ = input.Close(); _ = output.Close() }
 	stop := context.AfterFunc(ctx, closeAll)
 	defer stop()
 	type result struct {
