@@ -52,6 +52,12 @@ func rpcObject(data []byte, target any) error {
 			return ErrSourceMCPProtocol
 		}
 	}
+	if meta, present := fields["_meta"]; present {
+		var object map[string]json.RawMessage
+		if json.Unmarshal(meta, &object) != nil || object == nil {
+			return ErrSourceMCPProtocol
+		}
+	}
 	decode := json.NewDecoder(bytes.NewReader(data))
 	decode.DisallowUnknownFields()
 	if decode.Decode(target) != nil || decode.Decode(new(any)) != io.EOF {
@@ -78,7 +84,13 @@ func rpcIDKey(id json.RawMessage) string {
 }
 func rpcID(id json.RawMessage) bool { return rpcIDKey(id) != "" }
 func emptyRPCParams(raw json.RawMessage) bool {
-	return len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("{}"))
+	if len(raw) == 0 {
+		return true
+	}
+	var params struct {
+		Meta json.RawMessage `json:"_meta,omitempty"`
+	}
+	return rpcObject(raw, &params) == nil
 }
 
 // ServeSourceMCP serves only Read/Search on an already-established private stdio
@@ -170,6 +182,7 @@ func ServeSourceMCP(ctx context.Context, inv Invocation, connection io.ReadWrite
 				var p struct {
 					RequestID json.RawMessage `json:"requestId"`
 					Reason    string          `json:"reason,omitempty"`
+					Meta      json.RawMessage `json:"_meta,omitempty"`
 				}
 				if rpcObject(request.Params, &p) != nil || !rpcID(p.RequestID) {
 					return ErrSourceMCPProtocol
@@ -202,6 +215,7 @@ func ServeSourceMCP(ctx context.Context, inv Invocation, connection io.ReadWrite
 				ProtocolVersion string                     `json:"protocolVersion"`
 				Capabilities    map[string]json.RawMessage `json:"capabilities"`
 				ClientInfo      map[string]json.RawMessage `json:"clientInfo"`
+				Meta            json.RawMessage            `json:"_meta,omitempty"`
 			}
 			if rpcObject(request.Params, &p) != nil || p.ProtocolVersion == "" || p.Capabilities == nil || p.ClientInfo == nil {
 				_ = respond(request.ID, nil, -32602, "Invalid params")

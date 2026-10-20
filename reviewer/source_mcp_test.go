@@ -339,3 +339,42 @@ func TestSourceMCPRejectsReusedNumericZeroIDs(t *testing.T) {
 		t.Fatal("zero alias not rejected", err)
 	}
 }
+
+func TestSourceMCPLifecycleAcceptsWhitespaceAndStandardMetadata(t *testing.T) {
+	f := newMCPFixture(t, Codex, DefaultLimits(), nil)
+	r := f.call(t, `{"jsonrpc":"2.0","id":1,"method":"ping","params":{ }}`)
+	if r["error"] != nil {
+		t.Fatal("whitespace in empty ping params rejected", r)
+	}
+	r = f.call(t, `{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"fake-client","version":"1"},"_meta":{"progressToken":"init","example.org/extension":{"instructions":"inert untrusted text"}}}}`)
+	if r["error"] != nil {
+		t.Fatal("standard initialize metadata rejected", r)
+	}
+	f.send(t, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{ \t }}")
+	r = f.call(t, `{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{ }}`)
+	if r["error"] != nil {
+		t.Fatal("whitespace in empty tool-list params rejected", r)
+	}
+	r = f.call(t, `{"jsonrpc":"2.0","id":4,"method":"ping","params":{"_meta":{"progressToken":5}}}`)
+	if r["error"] != nil {
+		t.Fatal("standard ping metadata rejected", r)
+	}
+	r = f.call(t, `{"jsonrpc":"2.0","id":5,"method":"tools/list","params":{"_meta":{"example.org/extra":true}}}`)
+	if r["error"] != nil || f.broker.seal().ToolCalls != 0 {
+		t.Fatal("metadata invoked source or prevented discovery", r)
+	}
+}
+func TestSourceMCPMetadataRemainsBoundedAndTyped(t *testing.T) {
+	for _, meta := range []string{`null`, `[]`, `"not-an-object"`, `7`} {
+		t.Run(meta, func(t *testing.T) {
+			f := newMCPFixture(t, Claude, DefaultLimits(), nil)
+			request := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"fake","version":"1"},"_meta":` + meta + `}}`
+			if errorCode(t, f.call(t, request)) != -32602 {
+				t.Fatal("non-object initialize metadata accepted")
+			}
+			if errorCode(t, f.call(t, `{"jsonrpc":"2.0","id":2,"method":"ping","params":{"unexpected":true}}`)) != -32602 {
+				t.Fatal("operational control params accepted")
+			}
+		})
+	}
+}
