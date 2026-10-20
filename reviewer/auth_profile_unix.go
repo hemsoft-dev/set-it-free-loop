@@ -53,12 +53,14 @@ type AuthStopVerifier interface {
 }
 
 type authJournal struct {
-	Version  int         `json:"version"`
-	Provider Provider    `json:"provider"`
-	Binding  AuthBinding `json:"binding"`
-	Stage    string      `json:"stage"`
-	SeedHash string      `json:"seed_hash"`
-	NextHash string      `json:"next_hash,omitempty"`
+	Version       int         `json:"version"`
+	Provider      Provider    `json:"provider"`
+	Binding       AuthBinding `json:"binding"`
+	Stage         string      `json:"stage"`
+	SeedHash      string      `json:"seed_hash"`
+	NextHash      string      `json:"next_hash,omitempty"`
+	TransferStage string      `json:"transfer_stage,omitempty"`
+	TransferHash  string      `json:"transfer_hash,omitempty"`
 }
 
 type authLock struct {
@@ -256,6 +258,18 @@ func readAuthJournal(r *os.Root) (authJournal, error) {
 		(j.Stage == "retiring" && j.NextHash != "" && !validAuthHash(j.NextHash)) {
 		return authJournal{}, ErrAuthRecoveryRequired
 	}
+	if j.TransferStage == "" {
+		if j.TransferHash != "" {
+			return authJournal{}, ErrAuthRecoveryRequired
+		}
+	} else {
+		if !validAuthHash(j.TransferHash) || (j.TransferStage != "exported" && j.TransferStage != "receiving" && j.TransferStage != "returned") ||
+			(j.TransferStage == "exported" && j.TransferHash != j.SeedHash) ||
+			(j.TransferStage != "returned" && j.Stage != "active" && j.Stage != "retiring") ||
+			(j.TransferStage == "returned" && j.NextHash != "" && j.NextHash != j.TransferHash) {
+			return authJournal{}, ErrAuthRecoveryRequired
+		}
+	}
 	canonical, _ := json.Marshal(j)
 	if !bytes.Equal(canonical, b) {
 		return authJournal{}, ErrAuthRecoveryRequired
@@ -406,7 +420,7 @@ func (p *AuthProfile) Complete(ctx context.Context, v AuthStopVerifier) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	j, err := p.stopped(ctx, v)
-	if err != nil || j.Stage == "retiring" {
+	if err != nil || j.Stage == "retiring" || (j.TransferStage != "" && j.TransferStage != "returned") {
 		return ErrAuthRecoveryRequired
 	}
 	r := p.held.root
@@ -419,7 +433,7 @@ func (p *AuthProfile) Complete(ctx context.Context, v AuthStopVerifier) error {
 			return ErrAuthRecoveryRequired
 		}
 		next, err := readAuth(r, p.store.authRelative(), false)
-		if err != nil {
+		if err != nil || (j.TransferStage == "returned" && authHash(next) != j.TransferHash) {
 			return ErrAuthRecoveryRequired
 		}
 		if err := writeAuth(r, "pending.json", next); err != nil {

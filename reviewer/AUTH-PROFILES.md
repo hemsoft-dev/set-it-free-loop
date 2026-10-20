@@ -35,7 +35,9 @@ that file to staging. It must not transfer arbitrary worker profile contents.
 The supervisor calls `Complete` only with an `AuthStopVerifier` that checks the
 exact durable containment binding, confirms all descendants stopped and confirms
 all profile mounts detached. A client exit code alone cannot supply this proof.
-No concrete production verifier or credential transport is supplied here.
+The [path-free auth transfer](AUTH-TRANSFER.md) supplies a bounded one-file
+record and journaled return path. No concrete production launch/channel verifier
+is supplied, and the VM worker must still provide the actual private transport.
 
 After shutdown, `Complete` reads the returned file without following its final
 symlink, rejects non-regular files, hard links, other owners, public modes, empty
