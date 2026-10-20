@@ -43,12 +43,15 @@ def main():
     base_env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "GOENV": "off", "GOTOOLCHAIN": "local",
                 "GOPATH": os.environ.get("GOPATH", str(Path.home() / "go"))}
     build_env = {**base_env, "CGO_ENABLED": "0", "GOPROXY": "off", "GOSUMDB": "off", "GOFLAGS": "-mod=readonly",
-                 "GOCACHE": str(output / "go-cache"),
+                 "GOCACHE": str(output / "guest" / "go-cache"),
                  "GOMODCACHE": _shared.execute([args.go, "env", "GOMODCACHE"], cwd=module, env=base_env).decode().strip()}
     program = output / "vmbootfixture"
     _shared.execute([args.go, "build", "-trimpath", "-buildvcs=true", "-o", str(program), "./cmd/vmbootfixture"],
                     cwd=module, env=build_env, timeout=180)
     program.chmod(0o500)
+    if (_shared.execute(["git", "rev-parse", "HEAD"], cwd=module).decode().strip() != manifest["source_head"]
+            or _shared.execute(["git", "status", "--porcelain"], cwd=module)):
+        raise RuntimeError("source changed during sealed fixture build")
     binding = {"session_hash": _shared.digest(("synthetic-vm:"+manifest["source_head"]).encode()),
                "launch_id": manifest["nonce"], "containment_id": _shared.digest(("synthetic-unit:"+manifest["nonce"]).encode())}
     def asset(path, digest):
