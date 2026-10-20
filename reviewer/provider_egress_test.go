@@ -463,3 +463,24 @@ func TestProviderEgressMetadataAllowsOnlyCapturedLiteralQuery(t *testing.T) {
 		t.Fatal(a)
 	}
 }
+
+func TestProviderEgressRejectsPoliciesThatCannotCompleteInference(t *testing.T) {
+	for _, kind := range []string{"zero-inference", "missing-inference-route"} {
+		t.Run(kind, func(t *testing.T) {
+			p := egressTestPolicy(Codex)
+			if kind == "zero-inference" {
+				p.Limits.InferenceRequests = 0
+				p.Limits.Requests = 2
+			} else {
+				p.Routes = p.Routes[1:]
+			}
+			bridge, err := NewProviderEgress(context.Background(), testSession(Codex), p, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+				t.Fatal("unusable policy reached transport")
+				return nil, nil
+			}))
+			if !errors.Is(err, ErrLiveBlocked) || bridge != nil {
+				t.Fatal("policy without possible inference accepted", bridge, err)
+			}
+		})
+	}
+}

@@ -157,16 +157,21 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 	}
 	m := DefaultEgressLimits(s)
 	l := p.Limits
-	if l.Requests <= 0 || l.Requests > m.Requests || l.InferenceRequests < 0 || l.InferenceRequests > m.InferenceRequests || l.RefreshRequests < 0 || l.RefreshRequests > m.RefreshRequests || l.MetadataRequests < 0 || l.MetadataRequests > m.MetadataRequests || l.Requests > l.InferenceRequests+l.RefreshRequests+l.MetadataRequests || l.RequestBytes <= 0 || l.RequestBytes > m.RequestBytes || l.ResponseBytes <= 0 || l.ResponseBytes > m.ResponseBytes || l.TotalBytes <= 0 || l.TotalBytes > m.TotalBytes {
+	if l.Requests <= 0 || l.Requests > m.Requests || l.InferenceRequests <= 0 || l.InferenceRequests > m.InferenceRequests || l.RefreshRequests < 0 || l.RefreshRequests > m.RefreshRequests || l.MetadataRequests < 0 || l.MetadataRequests > m.MetadataRequests || l.Requests > l.InferenceRequests+l.RefreshRequests+l.MetadataRequests || l.RequestBytes <= 0 || l.RequestBytes > m.RequestBytes || l.ResponseBytes <= 0 || l.ResponseBytes > m.ResponseBytes || l.TotalBytes <= 0 || l.TotalBytes > m.TotalBytes {
 		return nil, ErrLiveBlocked
 	}
 	seen := map[string]bool{}
+	hasInference := false
 	for _, route := range p.Routes {
 		key := route.Authority + " " + route.Method + " " + route.Path + "?" + route.RawQuery
 		if !egressAuthority(route.Authority) || !egressPath(route.Path) || !egressQuery(route.RawQuery) || (route.Method != "POST" && route.Method != "GET") || seen[key] || (route.Kind != "inference" && route.Kind != "refresh" && route.Kind != "metadata") || (route.Kind != "metadata" && route.Method != "POST") {
 			return nil, ErrLiveBlocked
 		}
 		seen[key] = true
+		hasInference = hasInference || route.Kind == "inference"
+	}
+	if !hasInference {
+		return nil, ErrLiveBlocked
 	}
 	headers := map[string]bool{}
 	for _, h := range p.Headers {
