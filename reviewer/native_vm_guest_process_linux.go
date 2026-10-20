@@ -215,6 +215,21 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 	nativeGuestBootStage("runtime")
 	for _, file := range release.Files {
 		if nativeGuestVerifiedFile(file) != nil {
+			stage := "runtime-invalid"
+			info, statErr := os.Lstat(file.Source)
+			switch {
+			case os.IsNotExist(statErr):
+				stage = "runtime-missing"
+			case statErr != nil || !info.Mode().IsRegular():
+				stage = "runtime-metadata"
+			case info.Size() != file.Bytes:
+				stage = "runtime-short"
+			}
+			var rootfs unix.Statfs_t
+			if unix.Statfs("/", &rootfs) == nil && rootfs.Bavail == 0 {
+				stage = "runtime-full"
+			}
+			nativeGuestBootStage(stage)
 			return release, ErrVMBoot
 		}
 	}

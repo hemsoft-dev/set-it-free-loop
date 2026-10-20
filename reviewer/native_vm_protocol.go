@@ -86,7 +86,7 @@ type nativeVMProgress struct {
 	Kind, Stage string
 }
 
-var nativeBootStages = []string{"entry", "release", "proc", "mounts", "cgroup", "runtime", "modules", "ports", "intake", "binding", "ready"}
+var nativeBootStages = []string{"entry", "release", "proc", "mounts", "cgroup", "runtime", "modules", "ports", "intake", "binding", "ready", "runtime-missing", "runtime-short", "runtime-metadata", "runtime-invalid", "runtime-full"}
 
 func init() {
 	for _, mount := range []string{"mount-dev", "mount-sys", "mount-run"} {
@@ -109,7 +109,7 @@ func nativeBootStageValid(stage string) bool {
 func nativeVMGuestStage(stage string) bool {
 	if strings.HasPrefix(stage, "diag-") {
 		suffix := strings.TrimPrefix(stage, "diag-")
-		return nativeBootStageValid(suffix) || suffix == "oom" || suffix == "panic" || suffix == "vm-error" || suffix == "vm-exit"
+		return nativeBootStageValid(suffix) || suffix == "oom" || suffix == "panic" || suffix == "vm-error" || suffix == "vm-exit" || suffix == "unpack-failed"
 	}
 	switch stage {
 	case "boot-control", "boot-objects", "boot-provider", "boot-request":

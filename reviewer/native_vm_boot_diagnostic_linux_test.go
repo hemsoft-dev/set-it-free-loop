@@ -23,6 +23,11 @@ func TestNativeBootDiagnosticsBoundedFixedStages(t *testing.T) {
 		t.Fatal("transient input retained after finalization")
 	}
 	d = &nativeBootDiagnostics{}
+	d.Write([]byte("Initramfs unpacking failed: omitted private message\n"))
+	if got := d.stages(false); !reflect.DeepEqual(got, []string{"diag-unpack-failed"}) || !nativeVMGuestStage(got[0]) {
+		t.Fatal(got)
+	}
+	d = &nativeBootDiagnostics{}
 	d.Write([]byte(strings.Repeat("x", (1<<20)+100)))
 	d.Write([]byte("SFL_BOOT_STAGE=ready\n"))
 	if d.scanned != 1<<20 || len(d.tail) > 128 || d.stage != "" {
