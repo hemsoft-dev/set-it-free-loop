@@ -84,6 +84,8 @@ def build_offline(module, go, target, package, manifest, module_cache=None):
         root = pathlib.Path(directory)
         with tarfile.open(fileobj=io.BytesIO(archive), mode="r:") as tar:
             tar.extractall(root, filter="data")
+        subprocess.run([go, "-C", str(root / "reviewer"), "mod", "verify"],
+                       env=offline_environment(root / "cache", module_cache), check=True, timeout=120)
         subprocess.run([go, "-C", str(root / "reviewer"), "build", "-mod=readonly", "-trimpath", "-buildvcs=false",
                         "-o", str(target), package], env=offline_environment(root / "cache", module_cache),
                        check=True, timeout=120)

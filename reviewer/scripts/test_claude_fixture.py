@@ -51,3 +51,25 @@ class QualificationTests(unittest.TestCase):
             (module / "source.go").write_text("package modified\n")
             with self.assertRaisesRegex(RuntimeError, "clean committed source"):
                 fixture.source_manifest(module)
+
+    def test_cache_verification_failure_prevents_helper_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            root.mkdir()
+            module = root / "reviewer"
+            module.mkdir()
+            (module / "go.mod").write_text("module fixture.local/main\n")
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(root), "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"], check=True)
+            target = root / "helper"
+            import sys
+            tool = Path(directory) / "go-fixture"
+            tool.write_text("#!" + sys.executable + "\nimport pathlib,sys\n"
+                            "if sys.argv[-2:]==['mod','verify']:raise SystemExit(86)\n"
+                            "pathlib.Path(" + repr(str(target)) + ").write_text('unsafe build')\n")
+            tool.chmod(0o700)
+            with self.assertRaises(subprocess.CalledProcessError) as caught:
+                fixture.build_offline(module, str(tool), target, "./cmd/fixture", fixture.source_manifest(module))
+            self.assertEqual(caught.exception.returncode, 86)
+            self.assertFalse(target.exists())

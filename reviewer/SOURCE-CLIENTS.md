@@ -196,3 +196,7 @@ changed checkout cannot emit a passing qualification. Read and Search outputs
 are checked separately for one matching, non-error tool result; Read must equal
 the complete synthetic source, while Search must decode to the exact captured
 revision/path/line/quote anchor. Shared text cannot stand in for the other result.
+
+Before compiling, the same offline environment runs `go mod verify` against the
+cached module zips and extracted sources. Modified dependency caches are rejected;
+`-mod=readonly` alone does not prove dependency-source integrity.
