@@ -47,15 +47,39 @@ func (receipt *result) cleanupFailed(stage string) {
 
 // Keep finalization testable without starting a host service. Cleanup is part
 // of qualification, including after the exercise has tentatively passed.
-func finish(receipt *result, stop, fallback, closeSupervisor func() error) {
-	if err := stop(); err != nil {
+func boundedCleanup(action func(context.Context) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return action(ctx)
+}
+func checkedCleanup(receipt *result, stage string, action func() error) {
+	if action() != nil {
+		receipt.cleanupFailed(stage)
+	}
+}
+func retainJournal(receipt *result, path string) {
+	raw, err := os.ReadFile(path)
+	var evidence struct {
+		Binding                    r.AuthBinding
+		Unit, StubHash             string
+		Captured, Aborted, Stopped bool
+	}
+	if err != nil || len(raw) > 65536 || !json.Valid(raw) || json.Unmarshal(raw, &evidence) != nil || evidence.Binding != receipt.Binding || evidence.Unit != receipt.Unit || evidence.StubHash != receipt.StubSHA256 {
+		receipt.cleanupFailed("final durable journal unavailable or invalid")
+		return
+	}
+	receipt.Journal = raw
+	if receipt.Passed && (!evidence.Captured || !evidence.Aborted || !evidence.Stopped) {
+		receipt.cleanupFailed("final durable stop evidence incomplete")
+	}
+}
+func finish(receipt *result, stop, fallback func(context.Context) error, closeSupervisor func() error) {
+	if err := boundedCleanup(stop); err != nil {
 		receipt.FallbackCleanup = true
 		receipt.cleanupFailed("deferred supervisor stop failed")
-		_ = fallback()
+		_ = boundedCleanup(fallback)
 	}
-	if err := closeSupervisor(); err != nil {
-		receipt.cleanupFailed("deferred supervisor close failed")
-	}
+	checkedCleanup(receipt, "deferred supervisor close failed", closeSupervisor)
 }
 
 func exercise(root, stub, hash string) (receipt result) {
@@ -100,15 +124,12 @@ func exercise(root, stub, hash string) (receipt result) {
 		return
 	}
 	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
 		finish(&receipt,
-			func() error { return supervisor.AbortAndWait(cleanup, receipt.Binding) },
-			func() error {
-				return exec.CommandContext(cleanup, "/usr/bin/systemctl", "--user", "stop", receipt.Unit).Run()
-			},
-			supervisor.Close)
-		receipt.Journal, _ = os.ReadFile(filepath.Join(gates, receipt.Binding.LaunchID, "unit.json"))
+			func(cleanup context.Context) error { return supervisor.AbortAndWait(cleanup, receipt.Binding) },
+			func(fallback context.Context) error {
+				return exec.CommandContext(fallback, "/usr/bin/systemctl", "--user", "stop", receipt.Unit).Run()
+			}, supervisor.Close)
+		retainJournal(&receipt, filepath.Join(gates, receipt.Binding.LaunchID, "unit.json"))
 	}()
 	// Race regression: replace the supplied pathname after verification. Both
 	// the main process and its self-exec child must still use the sealed image.
@@ -136,7 +157,7 @@ func exercise(root, stub, hash string) (receipt result) {
 		receipt.Error = "synthetic lease: " + err.Error()
 		return
 	}
-	defer profile.Close()
+	defer checkedCleanup(&receipt, "synthetic profile close failed", profile.Close)
 	if err = supervisor.StartFake(ctx, receipt.Binding); err != nil {
 		receipt.Error = "start: " + err.Error()
 		return
@@ -169,7 +190,7 @@ func exercise(root, stub, hash string) (receipt result) {
 		receipt.Error = "escaped child already absent"
 		return
 	}
-	defer unix.Close(childFD)
+	defer checkedCleanup(&receipt, "child pidfd close failed", func() error { return unix.Close(childFD) })
 	if unix.PidfdSendSignal(childFD, 0, nil, 0) != nil {
 		receipt.Error = "escaped child not live before stop"
 		return
@@ -195,7 +216,12 @@ func exercise(root, stub, hash string) (receipt result) {
 		receipt.Error = "reopen: " + err.Error()
 		return
 	}
-	defer recovered.Close()
+	recoveredClosed := false
+	defer func() {
+		if !recoveredClosed {
+			checkedCleanup(&receipt, "recovered supervisor close failed", recovered.Close)
+		}
+	}()
 	if err = recovered.ConfirmAuthStopped(ctx, receipt.Binding); err != nil {
 		receipt.Error = "recovered stop: " + err.Error()
 		return
@@ -206,6 +232,11 @@ func exercise(root, stub, hash string) (receipt result) {
 		return
 	}
 	receipt.AuthCompleted = true
+	recoveredClosed = true
+	if err = recovered.Close(); err != nil {
+		receipt.Error = "recovered supervisor close failed"
+		return
+	}
 	receipt.Passed = true
 	return
 }
@@ -220,9 +251,14 @@ func main() {
 		os.Exit(2)
 	}
 	if receipt.Binding.LaunchID != "" {
-		_ = os.WriteFile(filepath.Join(*root, "result.json"), append(raw, '\n'), 0600)
+		if os.WriteFile(filepath.Join(*root, "result.json"), append(raw, '\n'), 0600) != nil {
+			receipt.cleanupFailed("fixture receipt could not be retained")
+			raw, _ = json.MarshalIndent(receipt, "", "  ")
+		}
 	}
-	fmt.Println(string(raw))
+	if _, err := fmt.Println(string(raw)); err != nil {
+		os.Exit(2)
+	}
 	if !receipt.Passed {
 		os.Exit(1)
 	}

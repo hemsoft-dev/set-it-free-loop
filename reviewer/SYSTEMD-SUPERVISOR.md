@@ -108,7 +108,12 @@ atomic replacement of the original executable path, start/grant through the
 retained image, kernel limits, a live escaped child, physical stop, restart recovery
 and synthetic auth completion. Any fixture-only fallback cleanup keeps the
 qualification failed, even after the main exercise tentatively passed. Deferred
-close failure also fails the receipt, while an earlier exercise error is preserved.
+close failure also fails the receipt, including the reopened supervisor. The
+reopened handle is closed before the tentative pass. Fallback stop gets a fresh
+ten-second deadline after the supervisor stop context ends. The final journal
+must be retained with its exact binding and captured/aborted/stopped evidence.
+A missing, malformed or mismatched journal fails qualification. Receipt-write
+failure also fails the command. An earlier exercise error is preserved.
 Normal tests never start a host unit.
 
 The first host fixture exposed a ControlGroup interface mismatch. The corrected
