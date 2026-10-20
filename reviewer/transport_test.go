@@ -1,11 +1,50 @@
 package reviewer
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 )
+
+func TestNativeObservationPreservesResultGateWithoutRawDiagnostics(t *testing.T) {
+	s := testSession(Codex)
+	report, _ := json.Marshal(fakeReport(s))
+	message, _ := json.Marshal(map[string]any{"type": "item.completed", "item": map[string]string{"type": "agent_message", "text": string(report)}})
+	raw := append([]byte("{\"type\":\"turn.started\"}\n"), message...)
+	raw = append(raw, []byte("\n{\"type\":\"turn.completed\"}\n")...)
+	data, err, observation := normalizeNativeObservedResult(s, raw, nil)
+	if err != nil || len(data) == 0 || !observation.valid(s) || observation.Kind != "complete" || observation.ExitFailed {
+		t.Fatal("valid native result rejected", err, observation)
+	}
+	data, err, observation = normalizeNativeObservedResult(s, raw, errors.New("secret-native-wait-diagnostic"))
+	if err == nil || len(data) != 0 || observation.Kind != "exit" || !observation.ExitFailed {
+		t.Fatal("failed native exit accepted")
+	}
+	encoded, _ := json.Marshal(observation)
+	if bytes.Contains(encoded, []byte("secret-native-wait-diagnostic")) || bytes.Contains(encoded, report) {
+		t.Fatal("private metadata contains raw report/error")
+	}
+	failed := []byte("{\"type\":\"error\",\"message\":\"secret-native-error\"}\n")
+	_, _, observation = normalizeNativeObservedResult(s, failed, nil)
+	encoded, _ = json.Marshal(observation)
+	if observation.Kind != "provider_unavailable" || bytes.Contains(encoded, []byte("secret-native-error")) {
+		t.Fatal("native failure leaked or changed category")
+	}
+	late := append(append([]byte{}, raw...), []byte("{\"type\":\"error\",\"message\":\"private-late-diagnostic\"}\n")...)
+	_, _, observation = normalizeNativeObservedResult(s, late, nil)
+	encoded, _ = json.Marshal(observation)
+	if observation.Kind != "after-completion" || observation.Trailer == nil || observation.Trailer.Type != "error" || bytes.Contains(encoded, []byte("private-late-diagnostic")) {
+		t.Fatal("trailing native event lost or leaked")
+	}
+	late = append(append([]byte{}, raw...), []byte("{\"type\":\"private-arbitrary-event-name\"}\n")...)
+	_, _, observation = normalizeNativeObservedResult(s, late, nil)
+	encoded, _ = json.Marshal(observation)
+	if observation.Trailer == nil || observation.Trailer.Type != "other" || bytes.Contains(encoded, []byte("private-arbitrary-event-name")) {
+		t.Fatal("arbitrary event name retained")
+	}
+}
 
 func TestNativeFailureMetadataNeverPromotesOrRefunds(t *testing.T) {
 	for _, c := range []struct {

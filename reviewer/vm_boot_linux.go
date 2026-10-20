@@ -35,10 +35,51 @@ type VMBootSpec struct {
 // pathname or a worker/auth lease. It does not create a process, unit or guest.
 // Pins and paths must come from trusted release configuration, never PR content.
 type VMBootImages struct {
-	mu     sync.Mutex
-	files  [3]*os.File
-	spec   VMBootSpec
-	closed bool
+	mu            sync.Mutex
+	files         [3]*os.File
+	spec          VMBootSpec
+	firmware      *os.File
+	firmwareAsset VMBootAsset
+	closed        bool
+}
+
+// Native execution additionally pins the BIOS. Legacy synthetic fixture
+// manifests retain their three-asset contract and cannot acquire this authority.
+func OpenNativeVMBootImages(ctx context.Context, spec VMBootSpec, firmware VMBootAsset) (*VMBootImages, error) {
+	if !sourcePath(firmware.Path) || !validAuthHash(firmware.SHA256) || firmware.Bytes <= 0 || firmware.Bytes > vmAssetLimit(3) {
+		return nil, ErrVMBoot
+	}
+	images, err := OpenVMBootImages(ctx, spec)
+	if err != nil {
+		return nil, err
+	}
+	images.firmware, err = sealVMAsset(ctx, firmware, false)
+	if err != nil {
+		images.Close()
+		return nil, err
+	}
+	images.firmwareAsset = firmware
+	return images, nil
+}
+
+func (i *VMBootImages) duplicateFirmware() (*os.File, error) {
+	if i == nil {
+		return nil, ErrVMBoot
+	}
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	if i.closed || i.firmware == nil {
+		return nil, ErrVMBoot
+	}
+	seals, err := unix.FcntlInt(i.firmware.Fd(), unix.F_GET_SEALS, 0)
+	if err != nil || seals&requiredStubSeals != requiredStubSeals {
+		return nil, ErrVMBoot
+	}
+	fd, err := unix.FcntlInt(i.firmware.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return nil, ErrVMBoot
+	}
+	return os.NewFile(uintptr(fd), "sfl-native-bios"), nil
 }
 
 func vmAssetLimit(index int) int64 {
@@ -159,6 +200,9 @@ func (i *VMBootImages) Close() error {
 		if file != nil {
 			err = errors.Join(err, file.Close())
 		}
+	}
+	if i.firmware != nil {
+		err = errors.Join(err, i.firmware.Close())
 	}
 	return err
 }

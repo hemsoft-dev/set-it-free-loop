@@ -69,9 +69,9 @@ def parse_guest_result(raw, nonce, commit):
     return result
 
 
-def archive(entries, target):
+def archive(entries, target, *, compresslevel=9):
     """Deterministic newc image, explicit data/modes/owners, no host traversal."""
-    with target.open("xb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, filename="") as output:
+    with target.open("xb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, filename="", compresslevel=compresslevel) as output:
         def item(index, name, mode, data, major=0, minor=0):
             encoded = name.encode() + b"\0"
             numbers = [index, mode, 0, 0, 1, 0, len(data), 0, 0, major, minor, len(encoded), 0]

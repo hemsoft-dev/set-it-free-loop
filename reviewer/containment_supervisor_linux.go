@@ -119,6 +119,16 @@ func cgroupInode(root *os.Root) (uint64, error) {
 	return st.Ino, nil
 }
 func (linuxContainmentKernel) Capture(group, unit string) (cgroupBinding, error) {
+	return captureContainmentGroup(group, unit, "1073741824", "64")
+}
+
+type nativeContainmentKernel struct{ linuxContainmentKernel }
+
+func (nativeContainmentKernel) Capture(group, unit string) (cgroupBinding, error) {
+	return captureContainmentGroup(group, unit, "3221225472", "128")
+}
+
+func captureContainmentGroup(group, unit, memory, tasks string) (cgroupBinding, error) {
 	if !validUnitCgroup(group, unit) {
 		return cgroupBinding{}, ErrAuthRecoveryRequired
 	}
@@ -131,23 +141,30 @@ func (linuxContainmentKernel) Capture(group, unit string) (cgroupBinding, error)
 	if err != nil {
 		return cgroupBinding{}, err
 	}
-	for name, want := range map[string]string{"memory.max": "1073741824", "memory.swap.max": "0", "pids.max": "64"} {
+	if err := verifyContainmentLimits(root, memory, tasks); err != nil {
+		return cgroupBinding{}, err
+	}
+	return cgroupBinding{Path: group, Inode: inode, Hierarchy: hierarchy}, nil
+}
+
+func verifyContainmentLimits(root *os.Root, memory, tasks string) error {
+	for name, want := range map[string]string{"memory.max": memory, "memory.swap.max": "0", "pids.max": tasks} {
 		v, err := cgroupFile(root, name)
 		if err != nil || v != want {
-			return cgroupBinding{}, ErrAuthRecoveryRequired
+			return ErrAuthRecoveryRequired
 		}
 	}
 	cpu, err := cgroupFile(root, "cpu.max")
 	fields := strings.Fields(cpu)
 	if err != nil || len(fields) != 2 {
-		return cgroupBinding{}, ErrAuthRecoveryRequired
+		return ErrAuthRecoveryRequired
 	}
 	quota, e1 := strconv.ParseUint(fields[0], 10, 64)
 	period, e2 := strconv.ParseUint(fields[1], 10, 64)
 	if e1 != nil || e2 != nil || quota == 0 || quota != period {
-		return cgroupBinding{}, ErrAuthRecoveryRequired
+		return ErrAuthRecoveryRequired
 	}
-	return cgroupBinding{Path: group, Inode: inode, Hierarchy: hierarchy}, nil
+	return nil
 }
 func (linuxContainmentKernel) Empty(binding cgroupBinding) error {
 	if binding.Inode == 0 || binding.Hierarchy == (cgroupHierarchy{}) || !strings.HasPrefix(binding.Path, "/user.slice/") || filepath.Clean(binding.Path) != binding.Path {
@@ -297,7 +314,7 @@ func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateMa
 }
 
 func (s *SystemdSupervisor) preparePayload(binding AuthBinding, hash string, protocol int) error {
-	if !binding.valid() || !validAuthHash(hash) || (s.payloadKind == "" && protocol != 0) || (s.payloadKind == "vm-fixture" && protocol != 2) || (s.payloadKind != "" && s.payloadKind != "vm-fixture") {
+	if !binding.valid() || !validAuthHash(hash) || (s.payloadKind == "" && protocol != 0) || (s.payloadKind == "vm-fixture" && protocol != 2) || (s.payloadKind == "native-vm" && protocol != 3) || (s.payloadKind != "" && s.payloadKind != "vm-fixture" && s.payloadKind != "native-vm") {
 		return ErrAuthRecoveryRequired
 	}
 	s.mu.Lock()
@@ -350,14 +367,21 @@ func expectedFakeObservation(r unitJournal, o unitObservation) bool {
 	return r.PayloadKind == "" && expectedPayloadObservation(r, o)
 }
 func payloadDescription(kind string, binding AuthBinding) string {
+	if kind == "native-vm" {
+		return "SFL native VM containment " + Digest(binding)
+	}
 	if kind == "vm-fixture" {
 		return "SFL sealed VM containment " + Digest(binding)
 	}
 	return "SFL fake containment " + Digest(binding)
 }
 func expectedPayloadObservation(r unitJournal, o unitObservation) bool {
-	return (r.PayloadKind == "" || r.PayloadKind == "vm-fixture") && o.Unit == r.Unit && o.Path.IsValid() && o.InvocationID != "" && o.Description == payloadDescription(r.PayloadKind, r.Binding) &&
-		o.Transient && o.Job.ID == 0 && o.MemoryMax == 1<<30 && o.MemorySwapMax == 0 && o.TasksMax == 64 && o.CPUQuotaPerSecUSec == 1000000 &&
+	memory, tasks := uint64(1<<30), uint64(64)
+	if r.PayloadKind == "native-vm" {
+		memory, tasks = 3<<30, 128
+	}
+	return (r.PayloadKind == "" || r.PayloadKind == "vm-fixture" || r.PayloadKind == "native-vm") && o.Unit == r.Unit && o.Path.IsValid() && o.InvocationID != "" && o.Description == payloadDescription(r.PayloadKind, r.Binding) &&
+		o.Transient && o.Job.ID == 0 && o.MemoryMax == memory && o.MemorySwapMax == 0 && o.TasksMax == tasks && o.CPUQuotaPerSecUSec == 1000000 &&
 		o.KillMode == "control-group" && o.Restart == "no" && o.CollectMode == "inactive" && o.RemainAfterExit && o.NoNewPrivileges
 }
 func (s *SystemdSupervisor) captureUnit(ctx context.Context, r unitJournal) (unitJournal, error) {

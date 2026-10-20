@@ -125,15 +125,15 @@ func recvVMMessage(conn *net.UnixConn, data, oob []byte) (n, on, flags int, resu
 	return n, on, flags, errors.Join(err, result)
 }
 
-func receiveVMGrant(conn *net.UnixConn) (grant vmGateGrant, files []*os.File, result error) {
+func receiveVMDescriptorFrame(conn *net.UnixConn, expected int) (data []byte, files []*os.File, result error) {
 	defer func() {
 		if result != nil {
 			closeVMFiles(files)
 			files = nil
 		}
 	}()
-	data := make([]byte, 4097)
-	oob := make([]byte, unix.CmsgSpace(5*4))
+	data = make([]byte, 4097)
+	oob := make([]byte, unix.CmsgSpace((expected+1)*4))
 	used := 0
 	for {
 		n, on, flags, err := recvVMMessage(conn, data[used:], oob)
@@ -154,21 +154,35 @@ func receiveVMGrant(conn *net.UnixConn) (grant vmGateGrant, files []*os.File, re
 				files = append(files, os.NewFile(uintptr(fd), "sfl-vm-grant"))
 			}
 		}
-		if err != nil || parseErr != nil || flags&(unix.MSG_CTRUNC|unix.MSG_TRUNC) != 0 || len(files) > 4 {
-			return grant, files, ErrContainmentGate
+		if err != nil || parseErr != nil || flags&(unix.MSG_CTRUNC|unix.MSG_TRUNC) != 0 || len(files) > expected {
+			return nil, files, ErrContainmentGate
 		}
 		used += n
 		if used > 4096 {
-			return grant, files, ErrContainmentGate
+			return nil, files, ErrContainmentGate
 		}
 		if n == 0 {
 			break
 		}
 	}
-	if len(files) != 4 {
-		return grant, files, ErrContainmentGate
+	if len(files) != expected {
+		return nil, files, ErrContainmentGate
 	}
-	grant, result = DecodeStrict[vmGateGrant](data[:used], 4096)
+	return data[:used], files, nil
+}
+
+func receiveVMGrant(conn *net.UnixConn) (grant vmGateGrant, files []*os.File, result error) {
+	raw, files, result := receiveVMDescriptorFrame(conn, 4)
+	if result != nil {
+		return grant, nil, result
+	}
+	defer func() {
+		if result != nil {
+			closeVMFiles(files)
+			files = nil
+		}
+	}()
+	grant, result = DecodeStrict[vmGateGrant](raw, 4096)
 	if result != nil || grant.Version != 2 || !grant.Manifest.valid() || grant.Binding != grant.Manifest.Binding {
 		return grant, files, ErrContainmentGate
 	}
@@ -299,6 +313,10 @@ func receiveVMFixture(ctx context.Context, endpoint string, binding AuthBinding,
 }
 
 func vmGrantedUnit(binding AuthBinding, invocation string) error {
+	return vmGrantedUnitWithKernel(binding, invocation, linuxContainmentKernel{})
+}
+
+func vmGrantedUnitWithKernel(binding AuthBinding, invocation string, kernel containmentKernel) error {
 	if invocation != os.Getenv("INVOCATION_ID") {
 		return ErrVMBoot
 	}
@@ -311,7 +329,7 @@ func vmGrantedUnit(binding AuthBinding, invocation string) error {
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "0::") {
 		return ErrVMBoot
 	}
-	if _, err := (linuxContainmentKernel{}).Capture(strings.TrimPrefix(lines[0], "0::"), unit); err != nil {
+	if _, err := kernel.Capture(strings.TrimPrefix(lines[0], "0::"), unit); err != nil {
 		return ErrVMBoot
 	}
 	status, err := os.ReadFile("/proc/self/status")

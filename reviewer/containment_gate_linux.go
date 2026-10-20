@@ -97,7 +97,7 @@ func PrepareContainmentGate(root string, binding AuthBinding, manifest FakeGateM
 }
 
 func prepareContainmentGateHash(root string, binding AuthBinding, hash string, protocol int) (*ContainmentGate, error) {
-	if !binding.valid() || !validAuthHash(hash) || (protocol != 0 && protocol != 2) || !filepath.IsAbs(root) || filepath.Clean(root) != root || privateDirectory(root) != nil {
+	if !binding.valid() || !validAuthHash(hash) || (protocol != 0 && protocol != 2 && protocol != 3) || !filepath.IsAbs(root) || filepath.Clean(root) != root || privateDirectory(root) != nil {
 		return nil, ErrContainmentGate
 	}
 	directory := filepath.Join(root, binding.LaunchID)
@@ -161,7 +161,7 @@ func (g *ContainmentGate) read(held *authLock) (gateRecord, error) {
 		return gateRecord{}, ErrContainmentGate
 	}
 	r, err := DecodeStrict[gateRecord](raw, 65536)
-	if err != nil || r.Version != 1 || r.Binding != g.binding || !validAuthHash(r.ManifestHash) || (r.Protocol != 0 && r.Protocol != 2) {
+	if err != nil || r.Version != 1 || r.Binding != g.binding || !validAuthHash(r.ManifestHash) || (r.Protocol != 0 && r.Protocol != 2 && r.Protocol != 3) {
 		return r, ErrContainmentGate
 	}
 	switch r.Phase {
@@ -348,7 +348,7 @@ func (g *ContainmentGate) GrantFake(ctx context.Context, identity GateIdentity, 
 }
 
 func (g *ContainmentGate) grant(ctx context.Context, identity GateIdentity, manifestHash string, protocol int, raw []byte, files []*os.File) error {
-	if ctx.Err() != nil || !validAuthHash(manifestHash) || len(raw) == 0 || len(raw) > 4096 || (protocol != 0 && protocol != 2) || (protocol == 0 && len(files) != 0) || (protocol == 2 && len(files) != 4) {
+	if ctx.Err() != nil || !validAuthHash(manifestHash) || len(raw) == 0 || len(raw) > 4096 || (protocol != 0 && protocol != 2 && protocol != 3) || (protocol == 0 && len(files) != 0) || (protocol == 2 && len(files) != 4) || (protocol == 3 && len(files) != 8) {
 		return ErrContainmentGate
 	}
 	g.mu.Lock()
@@ -391,6 +391,8 @@ func (g *ContainmentGate) grant(ctx context.Context, identity GateIdentity, mani
 	helloVersion := 1
 	if protocol == 2 {
 		helloVersion = 2
+	} else if protocol == 3 {
+		helloVersion = 3
 	}
 	if err != nil || actual != identity || hello.Version != helloVersion || hello.Binding != g.binding || hello.InvocationID != identity.InvocationID || hello.ManifestHash != manifestHash {
 		return ErrContainmentGate
