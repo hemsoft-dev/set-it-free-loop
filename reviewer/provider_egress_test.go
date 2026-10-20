@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -552,5 +553,68 @@ func TestProviderEgressQueuesOverlappingRequestsWithoutParallelUpstream(t *testi
 	a, err := b.Close(context.Background())
 	if err != nil || a.ValidateCompleted(s, p) != nil || a.Forwarded != maxEgressIntake || calls.Load() != maxEgressIntake || peak.Load() != 1 {
 		t.Fatal(a, err, calls.Load(), peak.Load())
+	}
+}
+
+type egressHeldWriter struct {
+	header  http.Header
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (w *egressHeldWriter) Header() http.Header         { return w.header }
+func (w *egressHeldWriter) WriteHeader(int)             { close(w.entered); <-w.release }
+func (w *egressHeldWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+type egressUnreadBody struct{ reads, closes atomic.Int32 }
+
+func (b *egressUnreadBody) Read([]byte) (int, error) { b.reads.Add(1); return 0, io.EOF }
+func (b *egressUnreadBody) Close() error             { b.closes.Add(1); return nil }
+
+func TestProviderEgressCloseWaitsForQueuedHandlersAndUnreadBodies(t *testing.T) {
+	entered := make(chan struct{})
+	p := egressTestPolicy(Codex)
+	b, err := NewProviderEgress(context.Background(), testSession(Codex), p, egressRoundTrip(func(q *http.Request) (*http.Response, error) {
+		close(entered)
+		<-q.Context().Done()
+		return nil, q.Context().Err()
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func() *http.Request {
+		q := httptest.NewRequest("POST", "/infer", strings.NewReader(`{}`))
+		q.Host = "provider.example"
+		return q
+	}
+	activeDone := make(chan struct{})
+	go func() { defer close(activeDone); b.ServeHTTP(httptest.NewRecorder(), request()) }()
+	<-entered
+	queued := &egressHeldWriter{http.Header{}, make(chan struct{}), make(chan struct{})}
+	unblock := sync.OnceFunc(func() { close(queued.release) })
+	defer unblock()
+	body := &egressUnreadBody{}
+	q := request()
+	q.Body = body
+	queuedDone := make(chan struct{})
+	go func() { defer close(queuedDone); b.ServeHTTP(queued, q) }()
+	waitForEgressIntake(t, b, 2)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	a, err := b.Close(ctx)
+	if !errors.Is(err, ErrProviderEgressPending) || a.Stopped || !a.Failed {
+		t.Fatal("shutdown attested stop while queued writer was held", a, err)
+	}
+	select {
+	case <-queued.entered:
+	case <-time.After(time.Second):
+		t.Fatal("queued writer did not unwind after cancellation")
+	}
+	unblock()
+	<-activeDone
+	<-queuedDone
+	a, err = b.Close(context.Background())
+	if err != nil || !a.Stopped || !a.Failed || body.reads.Load() != 0 || body.closes.Load() != 1 {
+		t.Fatal("queued body was read/leaked or final stop failed", a, err, body.reads.Load(), body.closes.Load())
 	}
 }

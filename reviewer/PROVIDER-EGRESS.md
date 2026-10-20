@@ -84,8 +84,12 @@ configuration. Choosing a custom transport transfers its network and retry
 guarantees to trusted supervisor code; the production transport above is tested
 separately from the fake transport used by most bridge tests.
 
-`Close` cancels in-flight local IO and waits for it to return. An uncooperative
-transport returns `ErrProviderEgressPending` and an unstopped receipt; this cannot
+`Close` closes admission, cancels in-flight local IO and waits for every admitted
+handler, including queued response writers and unread-body closure. Admission
+and shutdown share one lifetime barrier; an active request finishing cannot hide
+a queued handler. Bodies close exactly once, and waiting handlers never read
+them. An uncooperative
+transport, queued response writer or body close returns `ErrProviderEgressPending` and an unstopped receipt; this cannot
 release a possibly live worker lease. A stopped receipt can still record failed
 or exhausted work. Before accepting a model report, the supervisor must call
 `ValidateCompleted` with the original session and policy. It requires at least

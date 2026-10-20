@@ -104,18 +104,19 @@ func (a *ProviderAccess) ValidateCompleted(s Session, p EgressPolicy) error {
 const maxEgressIntake = 4 // One active request and at most three waiting headers.
 
 type ProviderEgress struct {
-	intake    chan struct{}
-	serial    chan struct{}
-	mu        sync.Mutex
-	policy    EgressPolicy
-	headers   map[string]bool
-	transport http.RoundTripper
-	ctx       context.Context
-	cancel    context.CancelFunc
-	closing   bool
-	active    bool
-	done      chan struct{}
-	audit     ProviderAccess
+	intake     chan struct{}
+	serial     chan struct{}
+	handlers   int
+	intakeDone chan struct{}
+	mu         sync.Mutex
+	policy     EgressPolicy
+	headers    map[string]bool
+	transport  http.RoundTripper
+	ctx        context.Context
+	cancel     context.CancelFunc
+	closing    bool
+	active     bool
+	audit      ProviderAccess
 }
 
 func egressAuthority(authority string) bool {
@@ -215,7 +216,7 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
 	done := make(chan struct{})
 	close(done)
-	return &ProviderEgress{intake: make(chan struct{}, maxEgressIntake), serial: make(chan struct{}, 1), policy: p, headers: headers, transport: transport, ctx: ctx, cancel: cancel, done: done, audit: ProviderAccess{Version: 1, SessionHash: Digest(s), PolicyHash: Digest(p)}}, nil
+	return &ProviderEgress{intake: make(chan struct{}, maxEgressIntake), serial: make(chan struct{}, 1), policy: p, headers: headers, transport: transport, ctx: ctx, cancel: cancel, intakeDone: done, audit: ProviderAccess{Version: 1, SessionHash: Digest(s), PolicyHash: Digest(p)}}, nil
 }
 
 func (b *ProviderEgress) Snapshot() ProviderAccess { b.mu.Lock(); defer b.mu.Unlock(); return b.audit }
@@ -354,16 +355,45 @@ func (b *ProviderEgress) reserve(route EgressRoute) bool {
 	b.audit.Requests++
 	*n++
 	b.active = true
-	b.done = make(chan struct{})
 	return true
 }
 
-func (b *ProviderEgress) release() { b.mu.Lock(); defer b.mu.Unlock(); b.active = false; close(b.done) }
+func (b *ProviderEgress) release() { b.mu.Lock(); defer b.mu.Unlock(); b.active = false }
 
 func (b *ProviderEgress) remaining() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.policy.Limits.TotalBytes - b.audit.RequestBytes - b.audit.ResponseBytes
+}
+
+// Admission and Close share the mutex, so shutdown cannot miss a queued
+// handler between claiming an intake slot and registering its lifetime.
+func (b *ProviderEgress) admit() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closing || b.audit.Stopped || b.ctx.Err() != nil {
+		return false
+	}
+	if b.handlers == maxEgressIntake {
+		b.audit.Failed, b.audit.Exhausted = true, true
+		b.cancel()
+		return false
+	}
+	if b.handlers == 0 {
+		b.intakeDone = make(chan struct{})
+	}
+	b.handlers++
+	b.intake <- struct{}{}
+	return true
+}
+func (b *ProviderEgress) finishIntake() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	<-b.intake
+	b.handlers--
+	if b.handlers == 0 {
+		close(b.intakeDone)
+	}
 }
 
 func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -375,14 +405,18 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// Bound waiting headers without reading their bodies or dialing upstream.
 	// Actual pinned clients overlap startup metadata; forwarding stays serial.
-	select {
-	case b.intake <- struct{}{}:
-	default:
-		b.fail(true)
-		http.Error(w, "provider intake exhausted", http.StatusTooManyRequests)
+	if !b.admit() {
+		http.Error(w, "provider intake stopped or exhausted", http.StatusTooManyRequests)
 		return
 	}
-	defer func() { <-b.intake }()
+	defer b.finishIntake()
+	closeBody := sync.OnceFunc(func() {
+		if r.Body != nil {
+			_ = r.Body.Close()
+		}
+	})
+	defer closeBody()
+
 	select {
 	case b.serial <- struct{}{}:
 	case <-b.ctx.Done():
@@ -406,7 +440,7 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Body == nil {
 		r.Body = http.NoBody
 	}
-	stopInput := context.AfterFunc(ctx, func() { _ = r.Body.Close() })
+	stopInput := context.AfterFunc(ctx, closeBody)
 	defer stopInput()
 	requestCap := min(b.policy.Limits.RequestBytes, b.remaining())
 	if requestCap < 0 || r.ContentLength > int64(requestCap) {
@@ -415,7 +449,7 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, int64(requestCap)+1))
-	_ = r.Body.Close()
+	closeBody()
 	b.mu.Lock()
 	b.audit.RequestBytes += len(body)
 	b.mu.Unlock()
@@ -511,7 +545,8 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Close cancels in-flight IO and waits for its completion before attesting stop.
+// Close cancels in-flight IO and waits for every admitted handler, including
+// queued response writers and unread body closure, before attesting stop.
 // A timeout returns the incomplete receipt and cannot release a worker lease.
 func (b *ProviderEgress) Close(ctx context.Context) (ProviderAccess, error) {
 	b.mu.Lock()
@@ -521,11 +556,11 @@ func (b *ProviderEgress) Close(ctx context.Context) (ProviderAccess, error) {
 		return a, nil
 	}
 	b.closing = true
-	if b.active || b.ctx.Err() != nil {
+	if b.handlers > 0 || b.ctx.Err() != nil {
 		b.audit.Failed = true
 	}
 	b.cancel()
-	done := b.done
+	done := b.intakeDone
 	b.mu.Unlock()
 	select {
 	case <-done:
