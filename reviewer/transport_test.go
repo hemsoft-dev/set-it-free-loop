@@ -30,6 +30,66 @@ func TestNativeFailureMetadataNeverPromotesOrRefunds(t *testing.T) {
 	}
 }
 
+func TestCodexFailureRequiresValidEOF(t *testing.T) {
+	s := testSession(Codex)
+	for _, terminal := range []string{`{"type":"turn.failed","error":{"message":"quota"}}`, `{"type":"error","message":"authentication"}`} {
+		_, err := NormalizeCLIOutput(s, []byte(terminal+"\n"))
+		var failure PhaseError
+		if !errors.As(err, &failure) || failure.State != "provider_unavailable" {
+			t.Fatal("lost terminal failure", err)
+		}
+		for _, extra := range []string{"malformed", `{"type":"thread.started"}`, `{"type":"turn.completed"}`, terminal} {
+			_, err := NormalizeCLIOutput(s, []byte(terminal+"\n"+extra+"\n"))
+			if err == nil || errors.As(err, &failure) {
+				t.Fatal("misframed failure accepted as provider state", err)
+			}
+		}
+	}
+}
+
+func TestClaudeEnvelopeRejectsDuplicateDiscriminators(t *testing.T) {
+	s := testSession(Claude)
+	report, _ := json.Marshal(fakeReport(s))
+	for _, prefix := range []string{
+		`"subtype":"error_during_execution","subtype":"success","is_error":false`,
+		`"subtype":"success","is_error":true,"is_error":false`,
+		`"subtype":"success","is_error":true,"api_error_status":401,"api_error_status":429`,
+	} {
+		raw := []byte(`{"type":"result",` + prefix + `,"num_turns":1,"structured_output":` + string(report) + `}`)
+		_, err := NormalizeCLIOutput(s, raw)
+		var failure PhaseError
+		if err == nil || errors.As(err, &failure) {
+			t.Fatal("duplicate native discriminators selected a result/state", err)
+		}
+	}
+}
+
+func TestCodexSourceTrafficHasSeparateTransportBudget(t *testing.T) {
+	s := testSession(Codex)
+	report, _ := json.Marshal(fakeReport(s))
+	tool, _ := json.Marshal(map[string]any{"type": "item.completed", "item": map[string]any{"type": "mcp_tool_call", "server": "sfl-source", "tool": "read", "result": map[string]any{"content": []any{map[string]string{"type": "text", "text": strings.Repeat("s", s.Limits.OutputBytes+1)}}}}})
+	message, _ := json.Marshal(map[string]any{"type": "item.completed", "item": map[string]string{"type": "agent_message", "text": string(report)}})
+	raw := []byte("{\"type\":\"turn.started\"}\n" + string(tool) + "\n" + string(message) + "\n{\"type\":\"turn.completed\"}\n")
+	if len(raw) <= s.Limits.OutputBytes {
+		t.Fatal("fixture did not exceed report-only cap")
+	}
+	if _, err := NormalizeCLIOutput(s, raw); err != nil {
+		t.Fatal("authorized source traffic exhausted report cap", err)
+	}
+	s.Limits.ReaderBytes, s.Limits.ReaderCalls, s.Limits.OutputBytes = 64, 1, 1024
+	if _, err := NormalizeCLIOutput(s, []byte(strings.Repeat("x", NativeTransportLimit(s)+1))); err == nil {
+		t.Fatal("native transport bound not enforced")
+	}
+	r := fakeReport(s)
+	r.Coverage = []Coverage{{Reason: strings.Repeat("x", s.Limits.OutputBytes)}}
+	data, _ := json.Marshal(r)
+	message, _ = json.Marshal(map[string]any{"type": "item.completed", "item": map[string]string{"type": "agent_message", "text": string(data)}})
+	raw = []byte("{\"type\":\"turn.started\"}\n" + string(message) + "\n{\"type\":\"turn.completed\"}\n")
+	if _, err := NormalizeCLIOutput(s, raw); err == nil {
+		t.Fatal("transport allowance expanded normalized report cap")
+	}
+}
+
 func TestNormalizeOfficialClientEnvelopes(t *testing.T) {
 	for _, p := range []Provider{Codex, Claude} {
 		t.Run(string(p), func(t *testing.T) {

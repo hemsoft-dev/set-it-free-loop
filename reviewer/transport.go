@@ -46,6 +46,13 @@ type transportUsage struct {
 	OutputTokens int64 `json:"output_tokens"`
 }
 
+// NativeTransportLimit accounts for escaped source-tool results and escaped
+// Report JSON independently. The normalized report retains OutputBytes as its
+// own strict bound. This is not additional source-read or inference capacity.
+func NativeTransportLimit(s Session) int {
+	return 12*s.Limits.ReaderBytes + 6*s.Limits.OutputBytes + s.Limits.ReaderCalls*8192 + (128 << 10)
+}
+
 // NormalizeCLIOutput accepts the pinned clients' documented JSON envelopes,
 // discards progress text, and rejects incomplete/error/forbidden-tool results.
 // It never publishes raw transport output. The actual isolated driver still
@@ -54,7 +61,8 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 	if err := s.Validate(); err != nil {
 		return Report{}, err
 	}
-	if len(raw) > s.Limits.OutputBytes {
+	transportLimit := NativeTransportLimit(s)
+	if len(raw) > transportLimit {
 		return Report{}, errors.New("client transport output exceeds byte bound")
 	}
 	var result []byte
@@ -62,10 +70,14 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 	switch s.Identity.Provider {
 	case Codex:
 		scanner := bufio.NewScanner(bytes.NewReader(raw))
-		scanner.Buffer(make([]byte, 1024), s.Limits.OutputBytes)
+		scanner.Buffer(make([]byte, 1024), transportLimit+1)
 		completed := false
+		failed := false
 		turns := 0
 		for scanner.Scan() {
+			if uniqueJSONKeys(json.NewDecoder(bytes.NewReader(scanner.Bytes())), 0) != nil {
+				return Report{}, errors.New("ambiguous Codex JSONL event")
+			}
 			var event struct {
 				Type string `json:"type"`
 				Item struct {
@@ -117,15 +129,24 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 			case "turn.failed", "error":
 				// This pin exposes only a free-text message, not an auth/quota
 				// code. Preserve an unknown provider failure without echoing it.
-				return Report{}, PhaseError{State: "provider_unavailable"}
+				completed, failed = true, true
 			default:
 				return Report{}, errors.New("client error or unsupported event")
 			}
 		}
-		if scanner.Err() != nil || !completed || len(result) == 0 {
+		if scanner.Err() != nil || !completed {
 			return Report{}, errors.New("incomplete Codex transport")
 		}
+		if failed {
+			return Report{}, PhaseError{State: "provider_unavailable"}
+		}
+		if len(result) == 0 {
+			return Report{}, errors.New("missing Codex report")
+		}
 	case Claude:
+		if uniqueJSONKeys(json.NewDecoder(bytes.NewReader(raw)), 0) != nil {
+			return Report{}, errors.New("ambiguous Claude result")
+		}
 		var envelope struct {
 			Type       string          `json:"type"`
 			Subtype    string          `json:"subtype"`

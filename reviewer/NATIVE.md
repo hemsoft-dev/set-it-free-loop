@@ -3,7 +3,11 @@
 `NativeDriver` connects a captured adapter invocation to an official client's
 stdin/stdout protocol through `WorkerLauncher`. It sends the fixed task and
 canonical Session JSON, closes stdin to finish the prompt, and bounds collected
-stdout by the captured output limit. It requires EOF and successful process wait,
+stdout by a separate captured transport allowance. The allowance is
+`12*ReaderBytes + 6*OutputBytes + ReaderCalls*8192 + 128 KiB`, accounting for
+escaped source-tool results, escaped Report JSON and framing. It does not enlarge
+source access or the normalized Report's strict `OutputBytes` cap.
+The driver requires EOF and successful process wait,
 then calls `NormalizeCLIOutput` to validate a completed Codex JSONL turn or Claude
 JSON result. Only the normalized Report returns to the adapter. Model-reported
 usage is replaced by available native transport metadata.
@@ -28,6 +32,9 @@ exhaustion uses the existing budget-exhaustion state `incomplete_expired`, and e
 `invalid_output`. Unknown/malformed envelopes fail closed. No classification
 matches arbitrary message text or authorizes a retry/refund. Trusted launcher
 prechecks can still report their typed before-work failure state.
+Failure classification waits for valid EOF. Duplicate JSON keys, contradictory
+terminal events or data after a Codex failure remain invalid output. A later
+duplicate Claude discriminator cannot turn an error into a successful report.
 
 `NativeDriver` selects no host executable, credentials, endpoint or launcher. A
 nil launcher blocks execution. A future qualified launcher must supply exact

@@ -47,6 +47,9 @@ func TestNativeCLIExecutable(t *testing.T) {
 		case "oversized":
 			fmt.Print(strings.Repeat("x", s.Limits.OutputBytes+1))
 			return 0
+		case "transport-oversized":
+			fmt.Print(strings.Repeat("x", NativeTransportLimit(s)+1))
+			return 0
 		case "malformed":
 			fmt.Print("native-private-payload-canary")
 			return 0
@@ -74,6 +77,9 @@ func TestNativeCLIExecutable(t *testing.T) {
 				return 0
 			}
 			fmt.Println("{\"type\":\"thread.started\"}\n{\"type\":\"turn.started\"}")
+			if mode == "large-source" {
+				_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "item.completed", "item": map[string]any{"type": "mcp_tool_call", "server": "sfl-source", "tool": "read", "result": map[string]any{"content": []any{map[string]string{"type": "text", "text": strings.Repeat("s", s.Limits.OutputBytes+1)}}}}})
+			}
 			report, _ := json.Marshal(r)
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "item.completed", "item": map[string]string{"type": "agent_message", "text": string(report)}})
 			fmt.Println(`{"type":"turn.completed","usage":{"input_tokens":3,"output_tokens":4}}`)
@@ -303,4 +309,20 @@ func TestNativeFailureDurabilityPreservesConsumedWork(t *testing.T) {
 			assertFixtureStopped(t, &al.fixtureLauncher)
 		})
 	}
+}
+
+func TestNativeDriverTransportAndReportLimitsRemainSeparate(t *testing.T) {
+	a, l := nativeFixtureAdapter(t, Codex, "large-source")
+	_, access, err := a.ReviewSource(context.Background(), testSession(Codex))
+	if err != nil || access == nil || access.ToolCalls != 0 {
+		t.Fatal("transport cap rejected source traffic or fabricated reads", err, access)
+	}
+	assertFixtureStopped(t, &l.fixtureLauncher)
+	a, l = nativeFixtureAdapter(t, Codex, "transport-oversized")
+	s := testSession(Codex)
+	s.Limits.ReaderBytes, s.Limits.ReaderCalls, s.Limits.OutputBytes = 64, 1, 4096
+	if _, err := a.Review(context.Background(), s); err == nil {
+		t.Fatal("native process exceeded captured transport bound")
+	}
+	assertFixtureStopped(t, &l.fixtureLauncher)
 }

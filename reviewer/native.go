@@ -58,8 +58,9 @@ func (d NativeDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 		if worker.Input().Close() != nil {
 			return nil, workerInvalid()
 		}
-		raw, err := io.ReadAll(io.LimitReader(worker.Output(), int64(inv.OutputLimit)+1))
-		if err != nil || len(raw) > inv.OutputLimit {
+		transportLimit := NativeTransportLimit(s)
+		raw, err := io.ReadAll(io.LimitReader(worker.Output(), int64(transportLimit)+1))
+		if err != nil || len(raw) > transportLimit {
 			return nil, workerInvalid()
 		}
 		waitErr := worker.Wait()
