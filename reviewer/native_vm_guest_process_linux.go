@@ -164,10 +164,12 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 	}
 	nativeGuestBootStage("mounts")
 	for _, mount := range []struct {
-		source, target, kind, options string
-		flags                         uintptr
-	}{{"devtmpfs", "/dev", "devtmpfs", "mode=0755", unix.MS_NOSUID}, {"sysfs", "/sys", "sysfs", "", unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC}, {"tmpfs", "/run", "tmpfs", "mode=0755,size=192m", unix.MS_NOSUID | unix.MS_NODEV}} {
-		if unix.Mount(mount.source, mount.target, mount.kind, mount.flags, mount.options) != nil {
+		stage, source, target, kind, options string
+		flags                                uintptr
+	}{{"mount-dev", "devtmpfs", "/dev", "devtmpfs", "mode=0755", unix.MS_NOSUID}, {"mount-sys", "sysfs", "/sys", "sysfs", "", unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC}, {"mount-run", "tmpfs", "/run", "tmpfs", "mode=0755,size=192m", unix.MS_NOSUID | unix.MS_NODEV}} {
+		nativeGuestBootStage(mount.stage)
+		if err := unix.Mount(mount.source, mount.target, mount.kind, mount.flags, mount.options); err != nil {
+			nativeGuestBootStage(mount.stage + "-" + nativeBootMountError(err))
 			return release, ErrVMBoot
 		}
 	}

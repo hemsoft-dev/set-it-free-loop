@@ -107,3 +107,24 @@ func readNativeBootDiagnostics(input io.Reader, diagnostics *nativeBootDiagnosti
 		}
 	}
 }
+
+func nativeBootMountError(err error) string {
+	switch err {
+	case unix.EINTR:
+		return "interrupted"
+	case unix.EBUSY:
+		return "busy"
+	case unix.EPERM, unix.EACCES:
+		return "denied"
+	case unix.ENOENT:
+		return "missing"
+	case unix.EINVAL:
+		return "invalid"
+	case unix.ENOMEM:
+		return "memory"
+	case unix.ENODEV:
+		return "device"
+	default:
+		return "other"
+	}
+}

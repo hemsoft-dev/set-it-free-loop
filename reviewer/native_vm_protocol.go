@@ -88,6 +88,15 @@ type nativeVMProgress struct {
 
 var nativeBootStages = []string{"entry", "release", "proc", "mounts", "cgroup", "runtime", "modules", "ports", "intake", "binding", "ready"}
 
+func init() {
+	for _, mount := range []string{"mount-dev", "mount-sys", "mount-run"} {
+		nativeBootStages = append(nativeBootStages, mount)
+		for _, failure := range []string{"interrupted", "busy", "denied", "missing", "invalid", "memory", "device", "other"} {
+			nativeBootStages = append(nativeBootStages, mount+"-"+failure)
+		}
+	}
+}
+
 func nativeBootStageValid(stage string) bool {
 	for _, known := range nativeBootStages {
 		if known == stage {
