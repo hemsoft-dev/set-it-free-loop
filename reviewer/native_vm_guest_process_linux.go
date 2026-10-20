@@ -399,7 +399,6 @@ func (p *nativeGuestProcess) Stop(ctx context.Context) error {
 		if strings.HasSuffix(p.group, "reader") {
 			select {
 			case <-p.done:
-			case <-time.After(250 * time.Millisecond):
 			case <-ctx.Done():
 			}
 		}

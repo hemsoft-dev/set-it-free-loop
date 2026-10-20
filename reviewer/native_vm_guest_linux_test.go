@@ -10,12 +10,89 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+func TestNativePrivateDescriptorExecChild(t *testing.T) {
+	if os.Getenv("SFL_NATIVE_FD_TEST") != "1" {
+		return
+	}
+	fd, _ := strconv.Atoi(os.Getenv("SFL_NATIVE_FD"))
+	var st unix.Stat_t
+	err := unix.Fstat(fd, &st)
+	inherited := err == nil && strconv.FormatUint(st.Ino, 10) == os.Getenv("SFL_NATIVE_FD_INODE")
+	if inherited != (os.Getenv("SFL_NATIVE_FD_LEAK") == "1") {
+		t.Fatal("private descriptor inheritance differs", inherited)
+	}
+}
+
+func TestNativePrivateDescriptorCannotReachAnExecChild(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+	fd, err := unix.FcntlInt(read.Fd(), unix.F_DUPFD, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st unix.Stat_t
+	if unix.Fstat(fd, &st) != nil {
+		t.Fatal("descriptor stat failed")
+	}
+	child := func(leak string) {
+		command := exec.Command(os.Args[0], "-test.run=^TestNativePrivateDescriptorExecChild$")
+		command.Env = []string{"SFL_NATIVE_FD_TEST=1", "SFL_NATIVE_FD=" + strconv.Itoa(fd), "SFL_NATIVE_FD_INODE=" + strconv.FormatUint(st.Ino, 10), "SFL_NATIVE_FD_LEAK=" + leak}
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("exec descriptor probe: %s %v", output, err)
+		}
+	}
+	child("1") // Positive control reproduces ExtraFiles' unsealed descriptor.
+	file := nativeGuestPrivateFile(uintptr(fd), "private-test-channel")
+	if file == nil {
+		unix.Close(fd)
+		t.Fatal("private descriptor adoption failed")
+	}
+	defer file.Close()
+	child("0")
+}
+
+func TestNativeReaderDrainPrecedesCgroupKill(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "reader")
+	if os.Mkdir(root, 0700) != nil || os.WriteFile(filepath.Join(root, "cgroup.events"), []byte("populated 0\n"), 0600) != nil {
+		t.Fatal("fake reader group setup failed")
+	}
+	group, err := os.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+	p := &nativeGuestProcess{in: write, group: root, groupFD: group, done: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- p.Stop(ctx) }()
+	// A bounded reader audit can need more than the former 250 ms grace.
+	time.Sleep(350 * time.Millisecond)
+	_, premature := os.Stat(filepath.Join(root, "cgroup.kill"))
+	close(p.done)
+	if err := <-stopped; err != nil || !os.IsNotExist(premature) {
+		t.Fatal("reader killed before drain or cleanup failed", premature, err)
+	}
+}
 
 func nativeAuthFixture(provider Provider) []byte {
 	// The schema mirrors the pinned fixtures. Values are fresh synthetic text;
@@ -115,7 +192,7 @@ func TestNativeCodeStreamRejectsSplitCanaryAndOverflowBeforeForward(t *testing.T
 	if result.err != nil || result.hash != authHash(output.Bytes()) || result.bytes != int64(output.Len()) {
 		t.Fatal("ordinary stream failed", result)
 	}
-	if nativeCodeControlResult(bytes.NewReader(nil)) != nil || nativeCodeControlResult(bytes.NewReader([]byte{1})) == nil || nativeCodeControlResult(bytes.NewReader([]byte{0})) == nil {
+	if nativeCodeControlResult(bytes.NewReader(nil)) == nil || nativeCodeControlResult(bytes.NewReader([]byte{1})) == nil || nativeCodeControlResult(bytes.NewReader([]byte{0})) != nil || nativeCodeControlResult(bytes.NewReader([]byte{0, 0})) == nil {
 		t.Fatal("failure control converted to success")
 	}
 }

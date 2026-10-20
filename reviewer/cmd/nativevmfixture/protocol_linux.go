@@ -228,16 +228,16 @@ func runNativeProtocol(c config) error {
 	}}
 	start := time.Now()
 	outcome, runErr := engine.Run(ctx, job, r.Checkpoint{})
-	passed := runErr == nil && outcome.State == "complete" && outcome.ExecutedSessions == configuration.MaxSessions() && outcome.ConsumedSessions == configuration.MaxSessions() && len(outcome.Artifacts) == configuration.MaxSessions() && len(outcome.Ledger) == 2 && len(p.phases) == configuration.MaxSessions()
+	passed := runErr == nil && outcome.State == "dual_complete" && outcome.ExecutedSessions == configuration.MaxSessions() && outcome.ConsumedSessions == configuration.MaxSessions() && len(outcome.Artifacts) == configuration.MaxSessions() && len(outcome.Ledger) == 2 && len(p.phases) == configuration.MaxSessions()
 	for _, phase := range p.phases {
 		passed = passed && phase.Passed
 	}
 	// A fully retained checkpoint must validate without launching another VM.
 	before := len(p.phases)
 	resumedWithoutWork := false
-	if runErr == nil && outcome.State == "complete" {
+	if runErr == nil && outcome.State == "dual_complete" {
 		resumed, resumeErr := engine.Run(ctx, job, outcome.Checkpoint())
-		resumedWithoutWork = resumeErr == nil && resumed.State == "complete" && resumed.ExecutedSessions == 0 && resumed.ConsumedSessions == configuration.MaxSessions() && len(p.phases) == before && r.Digest(resumed.Ledger) == r.Digest(outcome.Ledger)
+		resumedWithoutWork = resumeErr == nil && resumed.State == "dual_complete" && resumed.ExecutedSessions == 0 && resumed.ConsumedSessions == configuration.MaxSessions() && len(p.phases) == before && r.Digest(resumed.Ledger) == r.Digest(outcome.Ledger)
 	}
 	units, stopped := p.units()
 	passed = passed && resumedWithoutWork && stopped

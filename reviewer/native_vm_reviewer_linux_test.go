@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func nativeHostPhaseFixture(t *testing.T) (*nativeVMHostPhase, *fakeContainmentManager) {
@@ -216,6 +217,14 @@ func TestNativeVMReviewerChecksAuthorityBeforeAnyFilesystemOrTransport(t *testin
 	if _, _, _, err = r.ReviewAudited(ctx, s); !errors.Is(err, ErrLiveBlocked) || checks != 1 || calls != 0 {
 		t.Fatal("caller trace reached qualification or credentials", checks, calls, err)
 	}
+	r.options.Check = func(ctx context.Context, _ Session) error {
+		deadline, ok := ctx.Deadline()
+		if !ok || time.Until(deadline) > s.Limits.Timeout {
+			t.Error("activation gate did not receive the captured phase deadline")
+		}
+		return ErrLiveBlocked
+	}
+	_, _, _, _ = r.ReviewAudited(context.Background(), s)
 	o.Check = nil
 	if _, err = NewNativeVMReviewer(o); err != ErrLiveBlocked {
 		t.Fatal("missing gate defaulted to live")

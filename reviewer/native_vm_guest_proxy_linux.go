@@ -86,6 +86,22 @@ func (b *nativeGuestBuffer) Bytes() []byte {
 type nativeGuestConn struct{ *os.File }
 type nativeGuestAddr struct{}
 
+func nativeGuestPrivateFile(fd uintptr, name string) *os.File {
+	file := os.NewFile(fd, name)
+	if file == nil {
+		return nil
+	}
+	flags, err := unix.FcntlInt(fd, unix.F_GETFD, 0)
+	if err == nil {
+		_, err = unix.FcntlInt(fd, unix.F_SETFD, flags|unix.FD_CLOEXEC)
+	}
+	if err != nil {
+		file.Close()
+		return nil
+	}
+	return file
+}
+
 func (nativeGuestAddr) Network() string      { return "private-virtio" }
 func (nativeGuestAddr) String() string       { return "private-provider" }
 func (nativeGuestConn) LocalAddr() net.Addr  { return nativeGuestAddr{} }
@@ -143,9 +159,9 @@ func nativeGuestClientProxyMain() int {
 	if os.Getpid() != 1 || os.Getuid() != 0 {
 		return 2
 	}
-	config := os.NewFile(3, "private-client-control")
-	provider := os.NewFile(4, "private-provider")
-	ready := os.NewFile(5, "private-client-ready")
+	config := nativeGuestPrivateFile(3, "private-client-control")
+	provider := nativeGuestPrivateFile(4, "private-provider")
+	ready := nativeGuestPrivateFile(5, "private-client-ready")
 	if config == nil || provider == nil || ready == nil {
 		return 2
 	}

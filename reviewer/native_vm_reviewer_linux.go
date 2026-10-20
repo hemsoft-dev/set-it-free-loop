@@ -112,11 +112,14 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 	if ctx.Err() != nil {
 		return Report{}, nil, nil, workerLauncherError(ctx.Err(), true)
 	}
-	if r.options.Check(ctx, s) != nil {
-		return blocked()
-	}
 	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
 	defer cancel()
+	if r.options.Check(ctx, s) != nil {
+		if ctx.Err() != nil {
+			return Report{}, nil, nil, workerLauncherError(ctx.Err(), true)
+		}
+		return blocked()
+	}
 	var nonce [16]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return blocked()

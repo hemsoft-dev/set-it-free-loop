@@ -110,11 +110,11 @@ func nativeCodePeer(c *net.UnixConn) (*unix.Ucred, error) {
 }
 
 func nativeCodeControlResult(r io.Reader) error {
-	var value [1]byte
-	n, err := r.Read(value[:])
-	// Normal client teardown can kill its relay. An explicit failure must be
-	// sent before data EOF; a missing success marker never attests completion.
-	if n == 0 && err == io.EOF {
+	var value [2]byte
+	n, err := io.ReadFull(r, value[:])
+	// Only one explicit success byte followed by EOF attests that the relay
+	// finished both forwarding paths. A crash, kill or trailing data fails.
+	if n == 1 && err == io.ErrUnexpectedEOF && value[0] == 0 {
 		return nil
 	}
 	return ErrVMBoot
@@ -182,6 +182,9 @@ func nativeGuestCodeRelay() int {
 		return 1
 	}
 	if out.err != nil {
+		return 1
+	}
+	if _, err = control.Write([]byte{0}); err != nil {
 		return 1
 	}
 	return 0
