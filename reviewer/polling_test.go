@@ -570,3 +570,58 @@ func TestPollingControllerRunStopsItsLoopAndReleasesOwnership(t *testing.T) {
 	}
 	reopened.Close(context.Background())
 }
+
+func TestPollingControllerShutdownBeforeFactoryWorkPreservesQueuedRequest(t *testing.T) {
+	c, f, calls := pollControllerFixture(t, nil)
+	entered := make(chan struct{})
+	c.options.Runtime = func(ctx context.Context, _ Job, _ *JobEvidence) (Engine, error) {
+		close(entered)
+		<-ctx.Done()
+		return Engine{}, ctx.Err()
+	}
+	if _, err := pollOnce(t, c); err != nil {
+		t.Fatal(err)
+	}
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := c.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	d, _ := f.store.Snapshot(context.Background())
+	for _, j := range d.Jobs {
+		if j.State != "queued" || j.LeaseToken != "" || j.Checkpoint.ConsumedSessions != 0 {
+			t.Fatal("pre-work shutdown stranded/charged request", j.State, j.Checkpoint.ConsumedSessions)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatal("factory cancellation invoked provider")
+	}
+}
+
+func TestPollingControllerDoesNotAutomaticallyRepairBlockedRuntime(t *testing.T) {
+	c, f, calls := pollControllerFixture(t, nil)
+	factories := 0
+	c.options.Runtime = func(context.Context, Job, *JobEvidence) (Engine, error) { factories++; return Engine{}, ErrLiveBlocked }
+	if _, err := pollOnce(t, c); err != nil {
+		t.Fatal(err)
+	}
+	awaitPollWorker(t, c)
+	f.clock.Advance(time.Second)
+	if _, err := pollOnce(t, c); !errors.Is(err, ErrLiveBlocked) {
+		t.Fatal(err)
+	}
+	f.clock.Advance(time.Minute)
+	if _, err := pollOnce(t, c); err != nil {
+		t.Fatal(err)
+	}
+	if factories != 1 || calls.Load() != 0 {
+		t.Fatal("blocked factory retried", factories, calls.Load())
+	}
+	d, _ := f.store.Snapshot(context.Background())
+	for _, j := range d.Jobs {
+		if j.State != "blocked" || j.Checkpoint.ConsumedSessions != 0 {
+			t.Fatal(j.State)
+		}
+	}
+}

@@ -428,12 +428,23 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 					}
 					if err != nil {
 						state := phaseState(err)
+						c.mu.Lock()
+						shuttingDown := c.closed
+						c.mu.Unlock()
 						saveErr := c.options.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
 							j := d.Jobs[job.ID]
 							if j == nil || j.LeaseToken != "" || Digest(j.Job) != Digest(job) {
 								return ErrFenced
 							}
+							pr := d.PRs[j.Scope.key()]
+							if pr == nil {
+								return ErrFenced
+							}
+							if shuttingDown && state == "cancelled" && !pr.Paused && pr.Generation == j.Job.Generation && pr.CurrentRequest == j.RequestID {
+								state = "queued"
+							}
 							j.State = state
+							retireFencedJobs(d, pr)
 							return nil
 						})
 						err = errors.Join(err, saveErr)
@@ -504,6 +515,15 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 	c.cancelFenced(d)
 	workErr := c.drainWork()
 	if workErr != nil {
+		if latest, readErr := c.options.Store.Snapshot(ctx); readErr == nil {
+			for _, j := range latest.Jobs {
+				if j.LeaseToken != "" {
+					result.RecoveryRequired = true
+				}
+			}
+		} else {
+			workErr = errors.Join(workErr, readErr)
+		}
 		result.Next, err = c.schedule(ctx, now, workErr)
 		return result, errors.Join(workErr, err)
 	}
@@ -516,6 +536,13 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 			c.mu.Lock()
 			result.Active = c.active != nil
 			c.mu.Unlock()
+			if !result.Active {
+				for _, j := range d.Jobs {
+					if j.LeaseToken != "" {
+						result.RecoveryRequired = true
+					}
+				}
+			}
 			return result, nil
 		}
 	}
