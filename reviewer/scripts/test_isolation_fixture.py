@@ -99,11 +99,11 @@ class SealedBootReceiptTests(unittest.TestCase):
     def test_exact_execution_receipt_and_rejections(self):
         expected = {"SourceHead": "a"*40, "SourceTree": "e"*40, "BindingHash": "b"*64, "BootSpecHash": "c"*64}
         good = {"Version": 1, **expected, "VerifiedExecutable": True, "QEMUExited": True,
-                "FakeOnly": True, "ProductionBoundaryQualified": False, "Error": ""}
+                "FakeOnly": True, "ProductionBoundaryQualified": False, "Stage": "complete", "Error": ""}
         parse = fixture["parse_sealed_boot_receipt"]
         self.assertEqual(parse(json.dumps(good), expected), good)
         for key, value in [("Version", True), ("VerifiedExecutable", 1), ("QEMUExited", False),
-                           ("FakeOnly", 1), ("ProductionBoundaryQualified", 0), ("Error", "failed"),
+                           ("FakeOnly", 1), ("ProductionBoundaryQualified", 0), ("Stage", "assets"), ("Error", "failed"),
                            ("BindingHash", "d"*64), ("SourceHead", "d"*40), ("SourceTree", "d"*40), ("BootSpecHash", "d"*64)]:
             bad = {**good, key: value}
             with self.subTest(key=key), self.assertRaises(RuntimeError):

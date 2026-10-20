@@ -199,7 +199,7 @@ func vmFixtureArgs(nonce string) []string {
 	return []string{"-no-user-config", "-nodefaults", "-machine", "q35,dump-guest-core=off,mem-merge=off",
 		"-add-fd", "fd=6,set=1,opaque=sfl-kvm", "-accel", "kvm,device=/dev/fdset/1", "-cpu", "host",
 		"-m", "512M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none", "-no-reboot",
-		"-L", "/usr/share/qemu", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5",
+		"-L", "/usr/share/qemu", "-bios", "/usr/share/seabios/bios-256k.bin", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5",
 		"-append", "console=ttyS0 rdinit=/init panic=1 sfl-fixture=" + nonce + " -- --guest-init",
 		"-serial", "stdio", "-sandbox", "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny"}
 }

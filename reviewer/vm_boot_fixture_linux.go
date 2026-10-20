@@ -23,6 +23,7 @@ type VMBootFixtureReceipt struct {
 	SourceHead, SourceTree, BindingHash, BootSpecHash string
 	VerifiedExecutable, QEMUExited                    bool
 	FakeOnly, ProductionBoundaryQualified             bool
+	Stage                                             string
 	Error                                             string
 }
 
@@ -82,9 +83,11 @@ func VMBootFixtureMain(ctx context.Context, args []string, output io.Writer) int
 	}
 	receipt := VMBootFixtureReceipt{Version: 1, SourceHead: config.SourceHead, SourceTree: config.SourceTree, BindingHash: Digest(config.Boot.Binding), BootSpecHash: Digest(config.Boot), FakeOnly: true}
 	run := func() error {
+		receipt.Stage = "unit"
 		if _, err := vmFixtureUnit(config.Boot.Binding.LaunchID); err != nil {
 			return err
 		}
+		receipt.Stage = "serial"
 		root, err := os.OpenRoot(filepath.Dir(args[0]))
 		if err != nil {
 			return ErrVMBoot
@@ -94,16 +97,23 @@ func VMBootFixtureMain(ctx context.Context, args []string, output io.Writer) int
 		if err != nil {
 			return ErrVMBoot
 		}
+		receipt.Stage = "assets"
 		images, err := OpenVMBootImages(ctx, config.Boot)
 		if err != nil {
 			return errors.Join(err, serial.Close())
 		}
+		receipt.Stage = "execute"
 		verified, runErr := images.RunVMBootFixture(ctx, serial)
 		receipt.VerifiedExecutable = verified
 		receipt.QEMUExited = runErr == nil
 		// Finalize every required local resource before writing a success-shaped
 		// execution receipt. The caller still owns external systemd/cgroup cleanup.
-		return errors.Join(runErr, images.Close(), serial.Sync(), serial.Close())
+		receipt.Stage = "cleanup"
+		closeErr := errors.Join(runErr, images.Close(), serial.Sync(), serial.Close())
+		if closeErr == nil {
+			receipt.Stage = "complete"
+		}
+		return closeErr
 	}
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Second)
 	defer cancel()

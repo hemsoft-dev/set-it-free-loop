@@ -45,7 +45,8 @@ through fd6 and a QEMU fdset. It selects only KVM and host CPU, never TCG fallba
 The guest has 512 MiB and one CPU, no NIC, display, monitor, disks or host filesystem
 sharing. Guest-core dumping and cross-VM memory merging are disabled. QEMU's
 sandbox denies obsolete operations, privilege elevation, spawning and resource
-control. Firmware is resolved only from the fixed OS QEMU directory. The dynamic
+control. Firmware uses the fixed OS QEMU directory and the explicit root-owned SeaBIOS
+image at `/usr/share/seabios/bios-256k.bin`. The dynamic
 loader, OS libraries/firmware and QEMU remain part of the trusted host boundary;
 sealing the executable alone does not qualify that boundary.
 
