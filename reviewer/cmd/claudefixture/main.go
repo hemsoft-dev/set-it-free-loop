@@ -103,7 +103,7 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) != 2 || os.Args[1] != "--fixture" || os.Getenv("SFL_FAKE_CLIENT_FIXTURE") != "1" {
+	if (len(os.Args) != 2 && len(os.Args) != 4) || os.Args[1] != "--fixture" || (len(os.Args) == 4 && (os.Args[2] != "--case" || os.Args[3] != "guarded-bash")) || os.Getenv("SFL_FAKE_CLIENT_FIXTURE") != "1" {
 		fmt.Fprintln(os.Stderr, "run only through scripts/claude-fixture.py")
 		os.Exit(2)
 	}
@@ -120,5 +120,9 @@ func main() {
 	if len(addresses) == 0 {
 		panic("missing fixture loopback")
 	}
-	claudeMain()
+	mode := "source"
+	if len(os.Args) == 4 {
+		mode = os.Args[3]
+	}
+	claudeMain(mode)
 }

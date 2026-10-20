@@ -92,8 +92,15 @@ def build_offline(module, go, target, package, manifest, module_cache=None):
     return digest(target)
 
 
-def observation_passed(receipt, result, source):
-    passed = (receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"] and result.get("run_error") == ""
+def observation_passed(receipt, result, source, case="source"):
+    if case == "guarded-bash":
+        return (receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"]
+                and result.get("provider_response_guarded") is True and result.get("forbidden_tool_pre_dispatch_denied") is True
+                and bool(result.get("run_error")) and bool(result.get("report_error")) and bool(result.get("provider_access_error"))
+                and result.get("provider_stop_error") == "" and result.get("backend_stop_error") == ""
+                and result.get("backend_calls") == 1 and result.get("backend_requests") == 1 and result.get("backend_failures") == 0
+                and result.get("canary_exists") is False and not source)
+    passed = (result.get("provider_response_guarded") is True and receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"] and result.get("run_error") == ""
               and result.get("backend_stop_error") == "" and result.get("provider_stop_error") == "" and result.get("provider_access_error") == ""
               and result.get("report_error") == "" and result.get("backend_calls") == 3 and result.get("backend_requests") == 3 and result.get("backend_failures") == 0
               and len(source) == 2 and [item.get("tool") for item in source] == ["read", "search"]
@@ -108,6 +115,7 @@ def main():
     parser.add_argument("--client", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True,
                         help="new private artifact directory; must not exist")
+    parser.add_argument("--case", choices=["source", "guarded-bash"], default="source")
     parser.add_argument("--go", default="go")
     parser.add_argument("--module-cache", type=pathlib.Path, help="optional prefilled module cache; missing modules fail offline")
     args = parser.parse_args()
@@ -143,6 +151,8 @@ def main():
                 "--bind", str(artifacts), "/artifacts", "--setenv", "LANG", "C.UTF-8",
                 "--setenv", "GOMAXPROCS", "1", "--setenv", "SFL_FAKE_CLIENT_FIXTURE", "1",
                 "--chdir", "/work", "--", "/helper", "--fixture"]
+    if args.case == "guarded-bash":
+        command += ["--case", "guarded-bash"]
     timed_out = False
     with (out / "host-stdout.txt").open("wb") as stdout, (out / "host-stderr.txt").open("wb") as stderr:
         process = subprocess.Popen(command, stdout=stdout, stderr=stderr,
@@ -168,7 +178,7 @@ def main():
     (out / "host-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     result = json.loads((artifacts / "result.json").read_text()) if (artifacts / "result.json").exists() else {}
     source = [json.loads(line) for line in (artifacts / "source.jsonl").read_text().splitlines()] if (artifacts / "source.jsonl").exists() else []
-    passed = observation_passed(receipt, result, source)
+    passed = observation_passed(receipt, result, source, args.case)
     print(json.dumps({"protocol_passed": passed, "output": str(out),
                       "actual_account_qualified": False, "production_boundary_qualified": False}))
     return 0 if passed else 1

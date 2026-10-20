@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Exercise pinned Codex against a synthetic backend inside private namespaces.
 
-Both cases are offline observations. A passing result never qualifies provider
+All cases are offline observations. A passing result never qualifies provider
 eligibility, a complete capability allowlist, or production isolation.
 """
 import argparse
@@ -33,13 +33,24 @@ def metadata_observed(result):
 
 
 def observation_passed(receipt, result, source, case):
+    if case == "guarded-undeclared-patch":
+        return (receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"]
+                and result.get("provider_response_guarded") is True
+                and result.get("forbidden_tool_pre_dispatch_denied") is True
+                and bool(result.get("run_error")) and bool(result.get("normalize_error")) and bool(result.get("shape_error"))
+                and bool(result.get("provider_access_error")) and result.get("provider_stop_error") == ""
+                and result.get("backend_failures") == 0 and result.get("backend_stop_error") == ""
+                and result.get("telemetry_requests") == 0 and result.get("negotiations") == 1
+                and result.get("metadata_requests") in (4, 5) and metadata_observed(result)
+                and result.get("backend_calls") == 1 and result.get("canary_exists") is False
+                and result.get("undeclared_patch_output") == "" and not source)
     passed = (receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"] and result.get("run_error") == ""
               and result.get("normalize_error") == "" and result.get("shape_error") == ""
               and result.get("telemetry_requests") == 0 and result.get("metadata_requests") in (4, 5) and metadata_observed(result)
               and result.get("provider_access_error") == "" and result.get("provider_stop_error") == ""
               and result.get("backend_failures") == 0 and result.get("backend_stop_error") == "" and result.get("negotiations") == 1)
     if case == "source":
-        passed = (passed and result.get("backend_calls") == 3
+        passed = (passed and result.get("provider_response_guarded") is True and result.get("backend_calls") == 3
                   and result.get("runtime_inventory") == ["mcp__sfl_source__read", "mcp__sfl_source__search"]
                   and len(source) == 2 and [item.get("tool") for item in source] == ["read", "search"]
                   and all(item.get("success") is True for item in source)
@@ -55,7 +66,7 @@ def main():
     parser.add_argument("--client", type=pathlib.Path, required=True)
     parser.add_argument("--code-host", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
-    parser.add_argument("--case", choices=["source", "undeclared-patch"], required=True)
+    parser.add_argument("--case", choices=["source", "undeclared-patch", "guarded-undeclared-patch"], required=True)
     parser.add_argument("--go", default="go")
     parser.add_argument("--module-cache", type=pathlib.Path)
     args = parser.parse_args()

@@ -12,7 +12,7 @@ class ClaudeObservationTest(unittest.TestCase):
         receipt = {"exit_code": 0, "timed_out": False, "source_changed": False}
         result = {"run_error": "", "report_error": "", "backend_stop_error": "",
                   "provider_stop_error": "", "provider_access_error": "", "backend_calls": 3,
-                  "backend_requests": 3, "backend_failures": 0}
+                  "backend_requests": 3, "backend_failures": 0, "provider_response_guarded": True}
         source = [{"tool": "read", "revision": "a" * 40, "path": "source.go", "success": True},
                   {"tool": "search", "revision": "a" * 40, "needle": "immutable", "max_results": 5, "success": True}]
         self.assertTrue(fixture.observation_passed(receipt, result, source))
@@ -26,3 +26,14 @@ class ClaudeObservationTest(unittest.TestCase):
             changed = [dict(item) for item in source]
             changed[index][field] = value
             self.assertFalse(fixture.observation_passed(receipt, result, changed))
+
+    def test_guarded_bash_requires_failure_before_dispatch(self):
+        receipt = {"exit_code": 0, "timed_out": False, "source_changed": False}
+        result = {"provider_response_guarded": True, "forbidden_tool_pre_dispatch_denied": True,
+                  "run_error": "denied", "report_error": "no report", "provider_access_error": "denied",
+                  "provider_stop_error": "", "backend_stop_error": "", "backend_calls": 1,
+                  "backend_requests": 1, "backend_failures": 0, "canary_exists": False}
+        self.assertTrue(fixture.observation_passed(receipt, result, [], "guarded-bash"))
+        for key, value in [("run_error", ""), ("report_error", ""), ("provider_access_error", ""),
+                           ("forbidden_tool_pre_dispatch_denied", False), ("canary_exists", True), ("backend_calls", 2)]:
+            self.assertFalse(fixture.observation_passed(receipt, {**result, key: value}, [], "guarded-bash"))

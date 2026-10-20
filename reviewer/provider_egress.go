@@ -54,10 +54,11 @@ func egressLimits(provider Provider, maxTurns int) EgressLimits {
 }
 
 type EgressPolicy struct {
-	Provider Provider      `json:"provider"`
-	Routes   []EgressRoute `json:"routes"`
-	Headers  []string      `json:"headers"`
-	Limits   EgressLimits  `json:"limits"`
+	Provider       Provider      `json:"provider"`
+	Routes         []EgressRoute `json:"routes"`
+	Headers        []string      `json:"headers"`
+	Limits         EgressLimits  `json:"limits"`
+	ResponsePolicy string        `json:"response_policy,omitempty"`
 }
 
 // ProviderAccess is a private supervisor receipt, never model-authored usage.
@@ -201,7 +202,7 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 // validateEgressPolicy is shared by launch construction and stopped-attempt
 // recovery. Validation neither opens a transport nor creates a live bridge.
 func validateEgressPolicy(provider Provider, limits Limits, p EgressPolicy) (map[string]bool, error) {
-	if !provider.Valid() || limits.Validate() != nil || p.Provider != provider || len(p.Routes) == 0 || len(p.Routes) > 16 || len(p.Headers) > 24 {
+	if !validResponsePolicy(provider, p.ResponsePolicy) || !provider.Valid() || limits.Validate() != nil || p.Provider != provider || len(p.Routes) == 0 || len(p.Routes) > 16 || len(p.Headers) > 24 {
 		return nil, ErrLiveBlocked
 	}
 	m := egressLimits(provider, limits.MaxTurns)
@@ -562,6 +563,13 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "provider response format denied", http.StatusBadGateway)
 			return
 		}
+	}
+	if route.Kind == "inference" && validateProviderResponse(b.policy.Provider, b.policy.ResponsePolicy, typeHeader, response.StatusCode, output) != nil {
+		b.fail(false)
+		// Deny the entire buffered response before exposing headers or tool
+		// bytes. Nonretryable status plus latched failure stops upstream replay.
+		http.Error(w, "provider tool response denied", http.StatusBadRequest)
+		return
 	}
 	b.mu.Lock()
 	b.audit.Responses++

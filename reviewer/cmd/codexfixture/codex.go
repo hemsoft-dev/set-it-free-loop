@@ -266,7 +266,7 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	previousID := "fixture_read"
-	if b.mode == "undeclared-patch" {
+	if b.mode == "undeclared-patch" || b.mode == "guarded-undeclared-patch" {
 		previousID = "fixture_patch"
 	} else if b.calls == 3 {
 		previousID = "fixture_search"
@@ -278,7 +278,7 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 			return
 		}
 		data, _ := json.Marshal(value)
-		if b.mode == "undeclared-patch" {
+		if b.mode == "undeclared-patch" || b.mode == "guarded-undeclared-patch" {
 			b.negativeOutput = string(data)
 		} else {
 			if !verifiedSourceOutput(value, previousID) {
@@ -296,7 +296,7 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		}
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
-	if b.calls == 1 && b.mode == "undeclared-patch" {
+	if b.calls == 1 && (b.mode == "undeclared-patch" || b.mode == "guarded-undeclared-patch") {
 		patch := "*** Begin Patch\n*** Add File: /work/undeclared-canary.txt\n+synthetic forbidden write\n*** End Patch\n"
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "custom_tool_call", "call_id": "fixture_patch", "namespace": "functions", "name": "apply_patch", "input": patch}})
 	} else if b.mode == "source" && b.calls <= 2 {
@@ -338,7 +338,11 @@ func codexMain(mode string) {
 		panic(err)
 	}
 	b := &codexBackend{session: s, mode: mode}
-	guard, policy, intake, closeUpstream, err := fixtureEgress(s, b)
+	responsePolicy := r.CodexSourceResponses
+	if mode == "undeclared-patch" {
+		responsePolicy = ""
+	} // Retained unguarded baseline, not a live fallback.
+	guard, policy, intake, closeUpstream, err := fixtureEgressPolicy(s, b, responsePolicy)
 	if err != nil {
 		panic(err)
 	}
@@ -395,14 +399,22 @@ func codexMain(mode string) {
 	names := append([]string{}, b.runtimeInventory...)
 	b.mu.Unlock()
 	denied := mode == "undeclared-patch" && os.IsNotExist(canaryErr) && strings.Contains(negative, "patch rejected: writing is blocked by read-only sandbox")
+	preDispatchDenied := mode == "guarded-undeclared-patch" && runErr != nil && normErr != nil && shapeErr != nil && os.IsNotExist(canaryErr) && negative == "" && calls == 1 && access.Failed && access.Stopped && access.InferenceRequests == 1 && guardErr != nil
+
 	text := func(e error) string {
 		if e == nil {
 			return ""
 		}
 		return e.Error()
 	}
-	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "provider_access_error": text(guardErr), "provider_stop_error": text(guardStopErr), "negotiations": negotiations, "metadata_requests": metadata, "metadata_routes": metadataRoutes, "telemetry_requests": telemetry, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
+	write("result.json", map[string]any{"provider": "codex", "case": mode, "provider_response_guarded": policy.ResponsePolicy == r.CodexSourceResponses, "forbidden_tool_pre_dispatch_denied": preDispatchDenied, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "provider_access_error": text(guardErr), "provider_stop_error": text(guardStopErr), "negotiations": negotiations, "metadata_requests": metadata, "metadata_routes": metadataRoutes, "telemetry_requests": telemetry, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
 	fmt.Printf("case=%s calls=%d run=%v normalize=%v shape=%v negative_denied=%t\n", mode, calls, runErr, normErr, shapeErr, denied)
+	if mode == "guarded-undeclared-patch" {
+		if !preDispatchDenied || stopErr != nil || guardStopErr != nil || failed != 0 || telemetry != 0 || metadata < 4 || metadata > 5 || !validMetadataRoutes(metadataRoutes) || negotiations != 1 {
+			os.Exit(1)
+		}
+		return
+	}
 	expected := 3
 	if mode == "undeclared-patch" {
 		expected = 2
