@@ -7,9 +7,45 @@ import (
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestNativeBackendAcceptsCapturedPeerRound(t *testing.T) {
+	limits := r.DefaultLimits()
+	snap := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: head, Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("c", 40)}
+	var peers []r.Report
+	for _, provider := range []r.Provider{r.Codex, r.Claude} {
+		s, err := r.NewSession("native-peer-test", snap, r.Digest("config"), provider, 1, source, nil, nil, limits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		peers = append(peers, r.Report{JobID: s.JobID, PolicyVersion: s.PolicyVersion, PacketHash: s.PacketHash, Provider: provider, Round: 1, SnapshotHash: s.SnapshotHash, ConfigHash: s.ConfigHash, Findings: []r.Finding{{ID: string(provider) + ":fixture", Title: "Synthetic finding", Body: "Protocol fixture only.", Severity: 2, Anchor: r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}}}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}})
+	}
+	var second []r.Report
+	for _, provider := range []r.Provider{r.Codex, r.Claude} {
+		s, err := r.NewSession("native-peer-test", snap, r.Digest("config"), provider, 2, source, peers, nil, limits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err = New(s, false); err != nil {
+			t.Fatal("native producer refuses the captured adversarial peer round", provider, err)
+		}
+		report := sourceReport(s)
+		if r.ValidateReport(report, s) != nil || len(report.Findings) != 0 || len(report.Judgments) != 1 || strings.HasPrefix(report.Judgments[0].FindingID, string(provider)+":") {
+			t.Fatal("peer round lost provenance or judged its own finding", provider, report)
+		}
+		second = append(second, report)
+	}
+	peers = append(peers, second...)
+	for _, provider := range []r.Provider{r.Codex, r.Claude} {
+		s, err := r.NewSession("native-peer-test", snap, r.Digest("config"), provider, 3, source, peers, []string{"claude:fixture", "codex:fixture"}, limits)
+		if err != nil || r.ValidateReport(sourceReport(s), s) != nil || len(sourceReport(s).Judgments) != 2 {
+			t.Fatal("focused final round lost required peer/own dispositions", provider, err)
+		}
+	}
+}
 
 func TestNativeSyntheticSeedDoesNotTriggerAgeBasedRefreshAtStartup(t *testing.T) {
 	before := time.Now().UTC().Add(-time.Second)

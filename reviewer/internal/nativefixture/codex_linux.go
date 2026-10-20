@@ -283,10 +283,7 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		}
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "custom_tool_call", "call_id": id, "namespace": "functions", "name": "exec", "input": program}})
 	} else {
-		report := r.Report{JobID: b.session.JobID, PolicyVersion: b.session.PolicyVersion, PacketHash: b.session.PacketHash, Provider: r.Codex, Round: 1, SnapshotHash: b.session.SnapshotHash, ConfigHash: b.session.ConfigHash, Findings: []r.Finding{}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}}
-		if b.mode == "source" {
-			report.Findings = append(report.Findings, r.Finding{ID: "codex:fixture", Title: "Synthetic finding", Body: "Protocol fixture only.", Severity: 2, Anchor: r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}})
-		}
+		report := sourceReport(b.session)
 		data, _ := json.Marshal(report)
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "message", "role": "assistant", "id": "msg_fixture", "content": []map[string]string{{"type": "output_text", "text": string(data)}}}})
 	}

@@ -98,7 +98,7 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	if b.calls > 2 {
 		name = "StructuredOutput"
 		toolID = "sfl_fixture_report_1"
-		input = r.Report{JobID: b.s.JobID, PolicyVersion: b.s.PolicyVersion, PacketHash: b.s.PacketHash, Provider: r.Claude, Round: 1, SnapshotHash: b.s.SnapshotHash, ConfigHash: b.s.ConfigHash, Findings: []r.Finding{{ID: "claude:fixture", Title: "Synthetic finding", Body: "Protocol fixture only.", Severity: 2, Anchor: r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}}}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}}
+		input = sourceReport(b.s)
 	}
 	if b.mode == "guarded-bash" {
 		name = "Bash"

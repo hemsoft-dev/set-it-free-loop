@@ -28,8 +28,10 @@ serial ports connect to the private streams. The guest init is fixed at
 `/native-init` and the kernel command line binds the launch nonce.
 
 The native unit has a proposed fixed 3 GiB host memory cap, no swap, 128 tasks,
-one CPU quota and seven-minute outer runtime cap, with a 2 GiB guest. These bounds
-have not yet been measured with both native clients. The synthetic unit retains
+one CPU quota and seven-minute outer runtime cap, with a 2 GiB guest. Short fake
+reviews have sampled these bounds for both clients, with peaks near 1.22 GB and
+eight tasks and no OOM events. These samples do not establish stress limits.
+The synthetic unit retains
 its original 1 GiB/64-task/two-minute profile. `NativeVMSupervisor` reuses durable
 unit identity, start settlement, revoked grants, whole-cgroup stop and fresh
 recovery. Its stop proof applies only to the distinct native payload.
@@ -116,3 +118,14 @@ forbidden-tool cases exist for both providers. Existing profile directories are
 never adopted. Driver timeout retains the exact state path and launch journals
 for recovery; a missing stopped/auth receipt cannot pass. The driver does not
 qualify live eligibility, even if all fake checks pass.
+
+The same script accepts `--provider both --case adversarial` to exercise the
+actual `Engine` with four sequential native sessions. `--peer-rounds 2` selects
+the configured six-session protocol. Both providers retain their separate auth
+stores across fresh VM launches. Every phase binds its captured packet and
+prior report hashes, verifies real source read/search exchanges against fake
+TLS, and checks auth recovery. Each private unit must record completion, auth
+return and whole-unit stop. A completed engine checkpoint must resume without
+another VM or a changed ledger. The canned findings and peer judgments test
+transport and protocol, not review quality. Native refresh/restart and hostile
+capability qualification remain separate requirements.

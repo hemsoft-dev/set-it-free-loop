@@ -29,6 +29,7 @@ type config struct {
 	Purpose, ImageSourceHead, Root string
 	Provider                       r.Provider
 	Negative                       bool
+	ProtocolRounds                 int
 	QEMU, Kernel, Initrd, Stub     r.VMBootAsset
 }
 type localOnly struct {
@@ -56,7 +57,7 @@ func main() {
 		os.Exit(2)
 	}
 	c, err := r.DecodeStrict[config](raw, 16384)
-	if err != nil || c.Version != 1 || c.Purpose != "native-fake-only" || !c.Provider.Valid() || !filepath.IsAbs(c.Root) || len(c.ImageSourceHead) != 40 {
+	if err != nil || c.Version != 1 || c.Purpose != "native-fake-only" || !c.validCase() || !filepath.IsAbs(c.Root) || len(c.ImageSourceHead) != 40 {
 		os.Exit(2)
 	}
 	if err = run(c); err != nil {
@@ -70,6 +71,9 @@ func run(c config) error {
 	// cannot become a seed. All subsequent state lives in this new private root.
 	if os.Mkdir(c.Root, 0700) != nil {
 		return errors.New("fresh fake root required")
+	}
+	if c.ProtocolRounds != 0 {
+		return runNativeProtocol(c)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()

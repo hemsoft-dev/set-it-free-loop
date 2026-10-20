@@ -40,11 +40,16 @@ def main():
     parser.add_argument("--run-fake-only", action="store_true", required=True)
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--provider", choices=["codex", "claude"], required=True)
-    parser.add_argument("--case", choices=["source", "forbidden"], required=True)
+    parser.add_argument("--provider", choices=["codex", "claude", "both"], required=True)
+    parser.add_argument("--case", choices=["source", "forbidden", "adversarial"], required=True)
+    parser.add_argument("--peer-rounds", type=int, choices=[1, 2], default=1)
     parser.add_argument("--go", required=True)
     parser.add_argument("--module-cache", type=Path, required=True)
     args = parser.parse_args()
+    if (args.provider == "both") != (args.case == "adversarial"):
+        parser.error("adversarial requires both providers; source/forbidden require one")
+    if args.case != "adversarial" and args.peer_rounds != 1:
+        parser.error("extra peer rounds require the adversarial case")
     common = sibling("claude-fixture")
     module = Path(__file__).resolve().parent.parent
     source = common.source_manifest(module)
@@ -81,7 +86,9 @@ def main():
     # refused by the runner. Retain journals if stop/auth recovery is uncertain.
     state = Path("/tmp")/("sfl-nvm-"+secrets.token_hex(8))
     config = {"Version": 1, "Purpose": "native-fake-only", "ImageSourceHead": manifest["source_commit"],
-              "Root": str(state), "Provider": args.provider, "Negative": args.case == "forbidden",
+              "Root": str(state), "Provider": "" if args.provider == "both" else args.provider,
+              "Negative": args.case == "forbidden",
+              "ProtocolRounds": args.peer_rounds if args.case == "adversarial" else 0,
               "QEMU": asset(Path("/usr/bin/qemu-system-x86_64")),
               "Kernel": asset(image/"vmlinuz", manifest["kernel_sha256"]),
               "Initrd": asset(image/"native.cpio.gz", manifest["initrd_sha256"]),
@@ -98,7 +105,8 @@ def main():
     with (output/"runner.log").open("xb") as log:
         try:
             result = subprocess.run([str(program), "--run-fake-only", str(configuration)],
-                                    env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=125)
+                                    env=environment, stdout=log, stderr=subprocess.STDOUT,
+                                    timeout=125 if args.case != "adversarial" else 2*(1+args.peer_rounds)*100+25)
             exit_code = result.returncode
         except subprocess.TimeoutExpired:
             timed_out = True

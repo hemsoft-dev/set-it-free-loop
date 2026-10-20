@@ -36,7 +36,7 @@ type Backend struct {
 }
 
 func New(s r.Session, negative bool) (*Backend, r.EgressPolicy, error) {
-	if s.Validate() != nil || s.Round != 1 || s.Snapshot.Head != head {
+	if s.Validate() != nil || s.Snapshot.Head != head {
 		return nil, r.EgressPolicy{}, errors.New("invalid fixed fake session")
 	}
 	b := &Backend{Session: s}
@@ -54,6 +54,37 @@ func New(s r.Session, negative bool) (*Backend, r.EgressPolicy, error) {
 	}
 	b.Claude = &claudeBackend{s: s, mode: mode}
 	return b, claudePolicy(s), nil
+}
+
+// The backend proposes fixture findings only in R1. Later native sessions must
+// copy their captured provenance and explicitly examine the frozen peer IDs.
+// These canned judgments qualify protocol transport, never review quality.
+func sourceReport(s r.Session) r.Report {
+	report := r.Report{JobID: s.JobID, PolicyVersion: s.PolicyVersion, PacketHash: s.PacketHash, Provider: s.Identity.Provider, Round: s.Round, SnapshotHash: s.SnapshotHash, ConfigHash: s.ConfigHash, Findings: []r.Finding{}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}}
+	if s.Round == 1 {
+		report.Findings = append(report.Findings, r.Finding{ID: string(s.Identity.Provider) + ":fixture", Title: "Synthetic finding", Body: "Protocol fixture only.", Severity: 2, Anchor: r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}})
+		return report
+	}
+	focus := map[string]bool{}
+	for _, id := range s.FocusIDs {
+		focus[id] = true
+	}
+	for _, peer := range s.PeerReports {
+		for _, finding := range peer.Findings {
+			if s.Round == 3 && !focus[finding.ID] {
+				continue
+			}
+			verdict := "confirm"
+			if peer.Provider == s.Identity.Provider {
+				if s.Round != 3 {
+					continue
+				}
+				verdict = "respond"
+			}
+			report.Judgments = append(report.Judgments, r.Judgment{FindingID: finding.ID, Verdict: verdict, Reason: "Synthetic source-backed protocol disposition.", Evidence: []r.Anchor{finding.Anchor}})
+		}
+	}
+	return report
 }
 func (b *Backend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	if b.Codex != nil {
