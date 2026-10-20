@@ -36,7 +36,7 @@ func fixtureEgress(s r.Session, backend http.Handler) (*r.ProviderEgress, r.Egre
 			{Authority: authority, Method: "GET", Path: "/backend-api/wham/accounts/check", Kind: "metadata"},
 			{Authority: authority, Method: "GET", Path: "/backend-api/wham/settings/user", Kind: "metadata"},
 		},
-		Headers: []string{"Accept", "Accept-Encoding", "Authorization", "Chatgpt-Account-Id", "Content-Type", "Originator", "Openai-Beta", "User-Agent", "Version", "Session-Id", "Thread-Id", "X-Codex-Beta-Features", "X-Codex-Turn-Metadata", "X-Codex-Routing-Hint", "X-Codex-Window-Id", "X-Client-Request-Id"},
+		Headers: []string{"Accept", "Accept-Encoding", "Authorization", "Chatgpt-Account-Id", "Content-Type", "Originator", "Openai-Beta", "User-Agent", "Version", "Session-Id", "Thread-Id", "X-Codex-Beta-Features", "X-Codex-Turn-Metadata", "X-Codex-Routing-Hint", "X-Codex-Window-Id", "X-Client-Request-Id", "Cache-Control", "X-Openai-Internal-Codex-Responses-Lite"},
 	}
 	upstream := httptest.NewTLSServer(backend)
 	target, _ := url.Parse(upstream.URL)
