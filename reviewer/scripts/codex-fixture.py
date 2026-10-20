@@ -10,7 +10,6 @@ import importlib.util
 import json
 import os
 import pathlib
-import shutil
 import signal
 import subprocess
 import tempfile
@@ -63,10 +62,17 @@ def observation_passed(receipt, result, source, case):
     return passed
 
 
-def code_host_observation_passed(value):
+def bwrap_binary():
+    return "/usr/bin/bwrap"
+
+def code_host_observation_passed(value, expected_bwrap):
     if not isinstance(value, dict):
         return False
-    if (type(value.get("version")) is not int or value.get("version") != 1 or value.get("passed") is not True or value.get("probe_passed") is not True
+    if (type(value.get("version")) is not int or value.get("version") != 2 or value.get("passed") is not True or value.get("probe_passed") is not True
+            or value.get("relay_failure") is not False
+            or not isinstance(value.get("bwrap_sha256"), str) or len(value["bwrap_sha256"]) != 64
+            or any(c not in "0123456789abcdef" for c in value["bwrap_sha256"])
+            or value["bwrap_sha256"] != expected_bwrap
             or value.get("fake_only") is not True or value.get("production_boundary_qualified") is not False):
         return False
     for name in ["input", "output"]:
@@ -97,8 +103,8 @@ def main():
     code_host = args.code_host.resolve(strict=True)
     if _common.digest(client) != CLIENT_SHA256 or _common.digest(code_host) != HOST_SHA256:
         parser.error("Codex 0.163.0 client/code-mode host hashes must match")
-    bwrap = shutil.which("bwrap")
-    if bwrap is None or not pathlib.Path("/proc/self/ns/net").exists():
+    bwrap = bwrap_binary()
+    if not pathlib.Path(bwrap).is_file() or not pathlib.Path("/proc/self/ns/net").exists():
         parser.error("Linux and Bubblewrap required")
     module = pathlib.Path(__file__).resolve().parent.parent
     manifest = _common.source_manifest(module)
@@ -200,7 +206,8 @@ def main():
         broker_path = out / "codehost-broker.json"
         broker_result = json.loads(broker_path.read_text()) if broker_path.exists() else {}
         passed = (passed and broker_stopped and broker.returncode == 0
-                  and code_host_observation_passed(broker_result))
+                  and code_host_observation_passed(broker_result, isolation_manifest["bwrap_sha256"])
+                  and _common.digest(pathlib.Path(bwrap)) == isolation_manifest["bwrap_sha256"])
     print(json.dumps({"observation_passed": passed, "case": args.case, "output": str(out),
                       "capability_allowlist_qualified": False, "production_boundary_qualified": False}))
     return 0 if passed else 1

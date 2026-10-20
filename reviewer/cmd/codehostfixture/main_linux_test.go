@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -128,5 +129,135 @@ func TestBrokerPreludeAndRealPeerCredentials(t *testing.T) {
 				t.Fatal("broker prelude did not terminate")
 			}
 		})
+	}
+}
+
+type discardCloser struct{}
+
+func (discardCloser) Write(p []byte) (int, error) { return len(p), nil }
+func (discardCloser) Close() error                { return nil }
+func unixPair(t *testing.T) (*net.UnixConn, *net.UnixConn) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "s.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	listener.SetDeadline(time.Now().Add(time.Second))
+	client, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := listener.AcceptUnix()
+	if err != nil {
+		client.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { client.Close(); server.Close() })
+	client.SetDeadline(time.Now().Add(3 * time.Second))
+	server.SetDeadline(time.Now().Add(3 * time.Second))
+	return client, server
+}
+
+func TestRelayFailureReachesBrokerBeforeTruncatedInputEOF(t *testing.T) {
+	for _, kind := range []string{"canary", "overflow"} {
+		t.Run(kind, func(t *testing.T) {
+			data, serverData := unixPair(t)
+			control, serverControl := unixPair(t)
+			raw := forbidden[0]
+			if kind == "overflow" {
+				raw = strings.Repeat("x", streamLimit+1)
+			}
+			copied := make(chan error, 1)
+			controlled := make(chan error, 1)
+			go func() { _, err := io.Copy(io.Discard, serverData); copied <- err }()
+			go func() { err := relayControl(serverControl); controlled <- err; serverData.CloseWrite() }()
+			result := relayStreams(data, control, io.NopCloser(strings.NewReader(raw)), discardCloser{})
+			if result.Passed {
+				t.Fatal("relay failure passed", result)
+			}
+			select {
+			case err := <-controlled:
+				if err == nil {
+					t.Fatal("broker saw clean truncated input instead of relay failure")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("failure was not reported")
+			}
+			select {
+			case err := <-copied:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("input EOF did not arrive")
+			}
+		})
+	}
+}
+
+func TestControlPreludeBindsTheSameActualUnixPeer(t *testing.T) {
+	for _, valid := range []bool{true, false} {
+		t.Run(fmt.Sprint(valid), func(t *testing.T) {
+			data, serverData := unixPair(t)
+			control, serverControl := unixPair(t)
+			defer data.Close()
+			prelude := controlHello
+			if !valid {
+				prelude = "wrong-control-version\n"
+			}
+			control.Write([]byte(prelude))
+			control.CloseWrite()
+			err := acceptBrokerControl(serverData, serverControl)
+			if (err == nil) != valid {
+				t.Fatal(valid, err)
+			}
+		})
+	}
+	if err := relayControl(strings.NewReader("")); err != nil {
+		t.Fatal("normal relay teardown was treated as failure", err)
+	}
+	if err := relayControl(bytes.NewReader([]byte{255})); err == nil {
+		t.Fatal("malformed control event passed")
+	}
+}
+
+func TestControlRejectsAnotherProcessEvenWithTheSameUID(t *testing.T) {
+	if path := os.Getenv("SFL_TEST_FOREIGN_CONTROL"); path != "" {
+		conn, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: path, Net: "unix"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		conn.Write([]byte(controlHello))
+		return
+	}
+	data, serverData := unixPair(t)
+	defer data.Close()
+	path := filepath.Join(t.TempDir(), "control.sock")
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	listener.SetDeadline(time.Now().Add(2 * time.Second))
+	command := exec.Command(os.Args[0], "-test.run=^TestControlRejectsAnotherProcessEvenWithTheSameUID$")
+	command.Env = []string{"SFL_TEST_FOREIGN_CONTROL=" + path}
+	if err = command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer command.Process.Kill()
+	control, err := listener.AcceptUnix()
+	if err != nil {
+		command.Wait()
+		t.Fatal(err)
+	}
+	defer control.Close()
+	if err = acceptBrokerControl(serverData, control); err == nil {
+		t.Error("different process supplied relay control")
+	}
+	if err = command.Wait(); err != nil {
+		t.Fatal(err)
 	}
 }

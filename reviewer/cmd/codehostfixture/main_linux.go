@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -45,6 +46,8 @@ type observation struct {
 	Output                      streamObservation `json:"output"`
 	ProbePassed                 bool              `json:"probe_passed"`
 	FakeOnly                    bool              `json:"fake_only"`
+	RelayFailure                bool              `json:"relay_failure"`
+	BwrapSHA256                 string            `json:"bwrap_sha256"`
 	ProductionBoundaryQualified bool              `json:"production_boundary_qualified"`
 }
 
@@ -121,8 +124,10 @@ func pinned(path string) bool {
 	return err == nil && n > 0 && hex.EncodeToString(h.Sum(nil)) == hostHash
 }
 
-const hello = "SFL_CODEHOST_STDIO_1\n"
-const ready = "SFL_CODEHOST_READY_1\n"
+const hello = "SFL_CODEHOST_STDIO_2\n"
+const ready = "SFL_CODEHOST_READY_2\n"
+const controlHello = "SFL_CODEHOST_CONTROL_2\n"
+const bwrapProgram = "/usr/bin/bwrap"
 
 func main() {
 	if len(os.Args) == 6 && os.Args[1] == "--broker" {
@@ -148,12 +153,21 @@ func main() {
 	}
 }
 func relay() observation {
-	result := observation{Version: 1, FakeOnly: true}
+	result := observation{Version: 2, FakeOnly: true}
 	conn, err := net.DialTimeout("unix", "/codehost/stdio.sock", 5*time.Second)
 	if err != nil {
 		return result
 	}
 	defer conn.Close()
+	control, err := net.DialTimeout("unix", "/codehost/control.sock", 5*time.Second)
+	if err != nil {
+		return result
+	}
+	defer control.Close()
+	control.SetDeadline(time.Now().Add(40 * time.Second))
+	if _, err = io.WriteString(control, controlHello); err != nil {
+		return result
+	}
 	conn.SetDeadline(time.Now().Add(40 * time.Second))
 	if _, err = io.WriteString(conn, hello); err != nil {
 		return result
@@ -162,27 +176,43 @@ func relay() observation {
 	if _, err = io.ReadFull(conn, response); err != nil || string(response) != ready {
 		return result
 	}
-	result.ProbePassed = true
+	streamed := relayStreams(conn.(*net.UnixConn), control.(*net.UnixConn), os.Stdin, os.Stdout)
+	streamed.ProbePassed = true
+	return streamed
+}
+
+func relayStreams(data, control *net.UnixConn, inputSource io.ReadCloser, outputSink io.WriteCloser) observation {
+	result := observation{Version: 2, FakeOnly: true}
+	var failOnce sync.Once
+	fail := func() {
+		failOnce.Do(func() { control.SetWriteDeadline(time.Now().Add(time.Second)); control.Write([]byte{1}) })
+	}
 	type copied struct {
 		value streamObservation
 		err   error
 	}
 	input := make(chan copied, 1)
 	go func() {
-		v, e := copyStream(conn, os.Stdin)
-		if socket, ok := conn.(*net.UnixConn); ok {
-			socket.CloseWrite()
+		v, e := copyStream(data, inputSource)
+		if e != nil && !errors.Is(e, os.ErrClosed) {
+			fail()
 		}
+		data.CloseWrite()
 		input <- copied{v, e}
 	}()
-	result.Output, err = copyStream(os.Stdout, conn)
-	os.Stdout.Close()
-	os.Stdin.Close()
+	var err error
+	result.Output, err = copyStream(outputSink, data)
+	if err != nil {
+		fail()
+	}
+	outputSink.Close()
+	inputSource.Close()
 	var in copied
 	select {
 	case in = <-input:
 	case <-time.After(time.Second):
 		in.err = errors.New("input did not stop")
+		fail()
 	}
 	result.Input = in.value
 	result.Passed = err == nil && (in.err == nil || errors.Is(in.err, os.ErrClosed)) && !in.value.SecretSeen && !result.Output.SecretSeen
@@ -190,7 +220,7 @@ func relay() observation {
 }
 
 func runBroker(socket, host, probe, receipt string) {
-	result := observation{Version: 1, FakeOnly: true}
+	result := observation{Version: 2, FakeOnly: true}
 	code := 1
 	defer func() {
 		raw, _ := json.MarshalIndent(result, "", "  ")
@@ -210,6 +240,15 @@ func runBroker(socket, host, probe, receipt string) {
 	if err != nil || !parent.IsDir() || parent.Mode().Perm() != 0700 {
 		return
 	}
+	controlListener, err := net.ListenUnix("unix", &net.UnixAddr{Name: filepath.Join(filepath.Dir(socket), "control.sock"), Net: "unix"})
+	if err != nil {
+		return
+	}
+	defer controlListener.Close()
+	if os.Chmod(controlListener.Addr().String(), 0600) != nil {
+		return
+	}
+	controlListener.SetDeadline(time.Now().Add(45 * time.Second))
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
 	if err != nil {
 		return
@@ -227,7 +266,15 @@ func runBroker(socket, host, probe, receipt string) {
 	if acceptBrokerPeer(conn, uint32(os.Getuid())) != nil {
 		return
 	}
-	result = brokerExchange(conn, host, probe, filepath.Join(filepath.Dir(receipt), "codehost-stderr.txt"))
+	control, err := controlListener.AcceptUnix()
+	if err != nil {
+		return
+	}
+	defer control.Close()
+	if acceptBrokerControl(conn, control) != nil {
+		return
+	}
+	result = brokerExchange(conn, control, host, probe, filepath.Join(filepath.Dir(receipt), "codehost-stderr.txt"))
 	if result.Passed {
 		code = 0
 	}
@@ -253,8 +300,67 @@ func acceptBrokerPeer(conn *net.UnixConn, uid uint32) error {
 	return nil
 }
 
-func brokerExchange(conn *net.UnixConn, host, probe, stderrPath string) observation {
-	result := observation{Version: 1, FakeOnly: true}
+func socketPeer(conn *net.UnixConn) (*unix.Ucred, error) {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return nil, err
+	}
+	var peer *unix.Ucred
+	var lookup error
+	err = raw.Control(func(fd uintptr) { peer, lookup = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED) })
+	if err != nil {
+		return nil, err
+	}
+	return peer, lookup
+}
+func acceptBrokerControl(data, control *net.UnixConn) error {
+	a, err := socketPeer(data)
+	if err != nil {
+		return err
+	}
+	b, err := socketPeer(control)
+	if err != nil || a.Pid != b.Pid || a.Uid != b.Uid || a.Gid != b.Gid {
+		return errors.New("fixture control peer denied")
+	}
+	control.SetDeadline(time.Now().Add(40 * time.Second))
+	prelude := make([]byte, len(controlHello))
+	if _, err = io.ReadFull(control, prelude); err != nil || string(prelude) != controlHello {
+		return errors.New("fixture control prelude denied")
+	}
+	return nil
+}
+
+// EOF is neutral because the CLI may kill its relay during normal teardown.
+// Any explicit failure or malformed control byte prevents a passing receipt.
+func relayControl(control io.Reader) error {
+	var event [1]byte
+	n, err := control.Read(event[:])
+	if n == 0 && err == io.EOF {
+		return nil
+	}
+	return errors.New("relay reported failure or control channel was incomplete")
+}
+func executableHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, io.LimitReader(f, (80<<20)+1))
+	if err != nil || n == 0 || n > 80<<20 {
+		return "", errors.New("invalid executable hash input")
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func brokerExchange(conn, control *net.UnixConn, host, probe, stderrPath string) (result observation) {
+	result = observation{Version: 2, FakeOnly: true}
+	var hashErr error
+	result.BwrapSHA256, hashErr = executableHash(bwrapProgram)
+	if hashErr != nil {
+		return result
+	}
 	parentNet, err := os.Readlink("/proc/self/ns/net")
 	if err != nil {
 		return result
@@ -265,13 +371,26 @@ func brokerExchange(conn *net.UnixConn, host, probe, stderrPath string) observat
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
+	var controlFailed atomic.Bool
+	defer func() { result.RelayFailure = result.RelayFailure || controlFailed.Load() }()
+	controlDone := make(chan error, 1)
+	go func() {
+		err := relayControl(control)
+		if err != nil {
+			controlFailed.Store(true)
+		}
+		controlDone <- err
+		if err != nil {
+			cancel()
+		}
+	}()
 	// Use the installed, policy-authorized Bubblewrap executable. No host policy
 	// is modified and no namespace is created by a child inside the client root.
 	args := []string{"--unshare-all", "--die-with-parent", "--new-session", "--clearenv", "--cap-drop", "ALL",
 		"--ro-bind", host, "/code-host", "--ro-bind", probe, "/probe",
 		"--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/work", "--chdir", "/work", "--remount-ro", "/",
 		"--", "/probe", "--child", parentNet, parentPID}
-	command := exec.CommandContext(ctx, "/usr/bin/bwrap", args...)
+	command := exec.CommandContext(ctx, bwrapProgram, args...)
 	command.Env = []string{"LANG=C.UTF-8"}
 	command.WaitDelay = time.Second
 	in, err := command.StdinPipe()
@@ -369,8 +488,19 @@ func brokerExchange(conn *net.UnixConn, host, probe, stderrPath string) observat
 		stderrErr = errors.New("stderr did not stop")
 	}
 	result.Input, result.Output = i.value, o.value
+	var controlErr error
+	select {
+	case controlErr = <-controlDone:
+	case <-time.After(time.Second):
+		controlErr = errors.New("relay control did not drain")
+	}
+	result.RelayFailure = controlErr != nil
+	actualHash, hashErr := executableHash(bwrapProgram)
+	if hashErr != nil || actualHash != result.BwrapSHA256 {
+		return result
+	}
 	saved := os.WriteFile(stderrPath, []byte(diagnostics.String()), 0600) == nil
-	result.Passed = waitErr == nil && o.err == nil && (i.err == nil || errors.Is(i.err, os.ErrClosed)) && stderrErr == nil && saved && !i.value.SecretSeen && !o.value.SecretSeen && ctx.Err() == nil
+	result.Passed = controlErr == nil && waitErr == nil && o.err == nil && (i.err == nil || errors.Is(i.err, os.ErrClosed)) && stderrErr == nil && saved && !i.value.SecretSeen && !o.value.SecretSeen && ctx.Err() == nil
 	return result
 }
 
