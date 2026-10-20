@@ -90,7 +90,9 @@ Known-stopped work interrupted only by service shutdown may return to `queued`
 with its exact artifacts and consumed budget. Owner cancellation, generation
 changes and uncertain stop cannot use that path. Factory errors become durable
 unavailable/blocked states. A failed qualification check cancels active work;
-once its stop is proven, an otherwise current cancelled job becomes `blocked`.
+all admitted paths, including discovery/restoration and pre-work qualification,
+share one finalization step. An otherwise current queued or cancelled job
+becomes `blocked` only when no outstanding worker/lease remains.
 Repairing the qualification alone does not restart it. The trusted caller must
 explicitly use `ResumeUnavailable`, preserving its packet, artifacts and consumed
 budget. Owner cancellation or snapshot fencing remains terminal.
@@ -112,7 +114,8 @@ cleared by A's publication, lost POST responses, persisted/cold-store backoff,
 legacy state rewrites, startup/enrollment refusal, expired lease retention,
 snapshot movement, shutdown timeouts/owner retention and cached-completion
 recovery without inference, recoverable qualification interruption in both
-factory and provider work, joined server delays, and packet restoration after
+factory, provider and evidence-restoration work, early admitted-job qualification
+failure, owner fencing during restoration, joined server delays, and packet restoration after
 an omitted real Git blob becomes available. The loop itself is exercised with bounded cancellation.
 
 This supplies the polling lifecycle source for #176. A packaged activation

@@ -435,7 +435,7 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (*JobEv
 	}
 	if err == nil && job.Release != c.options.Release {
 		if qualification := c.options.Check(ctx, c.options.Enrollment, job.Release); qualification != nil {
-			return nil, Job{}, errors.Join(ErrLiveBlocked, qualification)
+			return nil, job, errors.Join(ErrLiveBlocked, qualification)
 		}
 	}
 	return bound, job, err
@@ -470,7 +470,6 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 						state := phaseState(err)
 						c.mu.Lock()
 						shuttingDown := c.closed
-						qualificationInterrupted := w.qualificationInterrupted
 						c.mu.Unlock()
 						saveErr := c.options.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
 							j := d.Jobs[job.ID]
@@ -482,9 +481,7 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 								return ErrFenced
 							}
 							if state == "cancelled" && !pr.Paused && pr.Generation == j.Job.Generation && pr.CurrentRequest == j.RequestID {
-								if qualificationInterrupted {
-									state = "blocked"
-								} else if shuttingDown {
+								if shuttingDown {
 									state = "queued"
 								}
 							}
@@ -503,9 +500,8 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 						// uncertain physical stop can never take this path.
 						c.mu.Lock()
 						shuttingDown := c.closed
-						qualificationInterrupted := w.qualificationInterrupted
 						c.mu.Unlock()
-						if (shuttingDown || qualificationInterrupted) && errors.Is(err, context.Canceled) {
+						if shuttingDown && errors.Is(err, context.Canceled) {
 							saveErr := c.options.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
 								j := d.Jobs[job.ID]
 								if j == nil {
@@ -514,9 +510,6 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 								pr := d.PRs[j.Scope.key()]
 								if j.LeaseToken == "" && !j.Outstanding && j.State == "cancelled" && pr != nil && !pr.Paused && pr.Generation == j.Job.Generation && pr.CurrentRequest == j.RequestID {
 									j.State = "queued"
-									if qualificationInterrupted {
-										j.State = "blocked"
-									}
 								}
 								return nil
 							})
@@ -530,6 +523,37 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 			}
 		}
 	}
+	// Qualification can interrupt capture, discovery, restoration or pre-work
+	// checking as well as runtime execution. Finalize all admitted paths here.
+	c.mu.Lock()
+	interrupted := w.qualificationInterrupted
+	c.mu.Unlock()
+	if err != nil && (interrupted || errors.Is(err, ErrLiveBlocked)) {
+		id := job.ID
+		if id == "" {
+			id = w.job
+		}
+		if id != "" {
+			saveErr := c.options.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
+				j := d.Jobs[id]
+				if j == nil || j.Scope != w.scope || j.RequestID != w.request || j.Job.Generation != w.generation {
+					return ErrFenced
+				}
+				pr := d.PRs[j.Scope.key()]
+				if pr == nil || pr.Paused || pr.CurrentRequest != j.RequestID || pr.Generation != j.Job.Generation {
+					return nil
+				}
+				// An outstanding/uncertain worker must first complete supervisor recovery.
+				// Completed artifacts and terminal owner/provider failures keep their state.
+				if j.LeaseToken == "" && !j.Outstanding && (j.State == "queued" || j.State == "quota_wait" || j.State == "cancelled") {
+					j.State = "blocked"
+				}
+				return nil
+			})
+			err = errors.Join(err, saveErr)
+		}
+	}
+
 	c.mu.Lock()
 	w.err = err
 	c.mu.Unlock()

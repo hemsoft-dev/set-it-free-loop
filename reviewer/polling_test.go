@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -730,5 +731,143 @@ func TestPollingJoinedErrorsHonorLongestRetryAfter(t *testing.T) {
 			t.Fatal("backoff invoked provider")
 		}
 		c.Close(context.Background())
+	}
+}
+
+func TestPollingQualificationCancellationDuringRestorationRequiresExplicitResume(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		for _, fenced := range []bool{false, true} {
+			name := fmt.Sprintf("existing=%t/fenced=%t", existing, fenced)
+			t.Run(name, func(t *testing.T) {
+				c, f, calls := pollControllerFixture(t, nil)
+				if existing {
+					_, batch, _ := f.capture()
+					if err := f.store.Discover(context.Background(), batch); err != nil {
+						t.Fatal(err)
+					}
+					e, err := c.options.Capture(context.Background(), f.remote.Snapshot)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if _, err = f.store.Admit(context.Background(), alphaScope(), 1, c.options.Release, e.Packet(), f.clock.Now()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				entered, release := make(chan struct{}), make(chan struct{})
+				c.options.Restore = func(ctx context.Context, _ Job) (*JobEvidence, error) {
+					close(entered)
+					<-ctx.Done()
+					<-release
+					return nil, ctx.Err()
+				}
+				var failed atomic.Bool
+				c.options.Check = func(context.Context, Enrollment, string) error {
+					if failed.Load() {
+						return ErrLiveBlocked
+					}
+					return nil
+				}
+				result, err := pollOnce(t, c)
+				if err != nil || !result.Active {
+					t.Fatal(result, err)
+				}
+				select {
+				case <-entered:
+				case <-time.After(3 * time.Second):
+					t.Fatal("restoration not entered")
+				}
+				failed.Store(true)
+				f.clock.Advance(time.Second)
+				if _, err = pollOnce(t, c); !errors.Is(err, ErrLiveBlocked) {
+					t.Fatal(err)
+				}
+				if fenced {
+					_, batch, _ := f.capture()
+					batch.Commands = []CommandEvent{commandEvent(55, "/sfl cancel", f.clock.Now())}
+					if err = f.store.Discover(context.Background(), batch); err != nil {
+						t.Fatal(err)
+					}
+				}
+				close(release)
+				awaitPollWorker(t, c)
+				d, err := f.store.Snapshot(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				var id, hash string
+				for _, j := range d.Jobs {
+					id, hash = j.Job.ID, Digest(j.Job)
+					want := "blocked"
+					if fenced {
+						want = "cancelled"
+					}
+					if j.State != want || j.LeaseToken != "" || j.Outstanding || j.Checkpoint.ConsumedSessions != 0 {
+						t.Fatal("restoration interruption state/accounting", j.State, j.Checkpoint.ConsumedSessions)
+					}
+				}
+				if id == "" {
+					t.Fatal("admitted job missing")
+				}
+				c.drainWork()
+				failed.Store(false)
+				f.clock.Advance(time.Minute)
+				result, err = pollOnce(t, c)
+				if err != nil || result.Active || calls.Load() != 0 {
+					t.Fatal("qualification repair restarted job", result, err, calls.Load())
+				}
+				err = f.store.ResumeUnavailable(context.Background(), id, f.clock.Now())
+				if fenced {
+					if err == nil {
+						t.Fatal("owner cancellation resumed")
+					}
+					return
+				}
+				if err != nil {
+					t.Fatal("admitted request cannot explicitly resume", err)
+				}
+				d, _ = f.store.Snapshot(context.Background())
+				if d.Jobs[id].State != "queued" || Digest(d.Jobs[id].Job) != hash {
+					t.Fatal("resume changed original job")
+				}
+			})
+		}
+	}
+}
+
+func TestPollingExistingJobQualificationFailureBeforeRestoreBlocks(t *testing.T) {
+	c, f, calls := pollControllerFixture(t, nil)
+	_, batch, _ := f.capture()
+	if err := f.store.Discover(context.Background(), batch); err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := c.options.Capture(context.Background(), f.remote.Snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := f.store.Admit(context.Background(), alphaScope(), 1, c.options.Release, evidence.Packet(), f.clock.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var checks atomic.Int32
+	c.options.Check = func(context.Context, Enrollment, string) error {
+		if checks.Add(1) > 1 {
+			return ErrLiveBlocked
+		}
+		return nil
+	}
+	c.options.Restore = func(context.Context, Job) (*JobEvidence, error) {
+		t.Error("blocked work reached restore")
+		return nil, ErrFenced
+	}
+	if _, err = pollOnce(t, c); err != nil {
+		t.Fatal(err)
+	}
+	awaitPollWorker(t, c)
+	d, err := f.store.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Jobs[job.ID].State != "blocked" || d.Jobs[job.ID].Checkpoint.ConsumedSessions != 0 || calls.Load() != 0 {
+		t.Fatal("early qualification did not block admitted job", d.Jobs[job.ID].State)
 	}
 }
