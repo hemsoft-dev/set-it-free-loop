@@ -21,7 +21,7 @@ const rotatedRefresh = "sfl-fake-rotated-refresh"
 type refreshBackend struct {
 	mu                        sync.Mutex
 	provider                  r.Provider
-	reused                    bool
+	reused, loseResponse      bool
 	calls, failures, profiles int
 }
 
@@ -58,6 +58,16 @@ func NewRefresh(s r.Session, reused bool) (*Backend, r.EgressPolicy, error) {
 	}
 	p.Limits.Requests = p.Limits.InferenceRequests + p.Limits.RefreshRequests + p.Limits.MetadataRequests + p.Limits.NegotiationRequests
 	return b, p, nil
+}
+
+// NewUncertainRefresh simulates remote rotation followed by a lost HTTP reply.
+// It never emits the rotated credential to the client.
+func NewUncertainRefresh(s r.Session) (*Backend, r.EgressPolicy, error) {
+	b, p, err := NewRefresh(s, false)
+	if err == nil {
+		b.Refresh.loseResponse = true
+	}
+	return b, p, err
 }
 
 func ExpiredSeed(provider r.Provider) []byte {
@@ -136,6 +146,18 @@ func (b *refreshBackend) serve(w http.ResponseWriter, q *http.Request) bool {
 			deny()
 			return true
 		}
+	}
+	if b.loseResponse {
+		// The accepted synthetic request counts as rotation. Close the loopback TLS
+		// connection before any response bytes so the caller cannot know its result.
+		if hijacker, ok := w.(http.Hijacker); ok {
+			conn, _, err := hijacker.Hijack()
+			if err == nil {
+				conn.Close()
+				return true
+			}
+		}
+		panic(http.ErrAbortHandler)
 	}
 	response := map[string]any{"access_token": rotatedAccess, "refresh_token": rotatedRefresh, "token_type": "Bearer", "expires_in": 3600, "scope": "user:profile user:inference user:sessions:claude_code"}
 	if b.provider == r.Codex {

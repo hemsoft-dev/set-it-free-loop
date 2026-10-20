@@ -24,9 +24,15 @@ import (
 
 func (c config) validCase() bool {
 	if c.ProtocolRounds == 0 {
-		return c.Provider.Valid() && !(c.Refresh && c.Negative)
+		modes := 0
+		for _, enabled := range []bool{c.Refresh, c.Negative, c.UncertainRefresh} {
+			if enabled {
+				modes++
+			}
+		}
+		return c.Provider.Valid() && modes <= 1
 	}
-	return c.Provider == "" && !c.Negative && !c.Refresh && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
+	return c.Provider == "" && !c.Negative && !c.Refresh && !c.UncertainRefresh && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
 }
 
 type protocolPhase struct {
@@ -161,6 +167,10 @@ func readProtocolJSON(path string, target any) error {
 }
 
 func (p *nativeProtocolFixture) units() ([]protocolUnit, bool) {
+	return p.unitsWithAuthReturn(true)
+}
+
+func (p *nativeProtocolFixture) unitsWithAuthReturn(expected bool) ([]protocolUnit, bool) {
 	paths, err := filepath.Glob(filepath.Join(p.config.Root, "launches", "*", "unit.json"))
 	units := []protocolUnit{}
 	seen := map[string]bool{}
@@ -185,7 +195,7 @@ func (p *nativeProtocolFixture) units() ([]protocolUnit, bool) {
 		}
 	}
 	for _, unit := range units {
-		if !unit.Captured || !unit.Stopped || !unit.Complete || !unit.AuthReturned {
+		if !unit.Captured || !unit.Stopped || !unit.Complete || unit.AuthReturned != expected {
 			return units, false
 		}
 	}

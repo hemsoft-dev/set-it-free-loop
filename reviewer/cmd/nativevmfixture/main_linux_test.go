@@ -15,12 +15,12 @@ import (
 )
 
 func TestNativeProtocolCaseCannotMixSingleProviderOrDenialModes(t *testing.T) {
-	for _, c := range []config{{Provider: r.Codex}, {Provider: r.Claude, Negative: true}, {Provider: r.Codex, Refresh: true}, {Provider: r.Claude, Refresh: true}, {ProtocolRounds: 1}, {ProtocolRounds: 2}} {
+	for _, c := range []config{{Provider: r.Codex}, {Provider: r.Claude, Negative: true}, {Provider: r.Codex, Refresh: true}, {Provider: r.Claude, Refresh: true}, {Provider: r.Codex, UncertainRefresh: true}, {Provider: r.Claude, UncertainRefresh: true}, {ProtocolRounds: 1}, {ProtocolRounds: 2}} {
 		if !c.validCase() {
 			t.Fatal("supported fake case rejected", c)
 		}
 	}
-	for _, c := range []config{{}, {Provider: "both"}, {Provider: r.Codex, ProtocolRounds: 1}, {Negative: true, ProtocolRounds: 1}, {Refresh: true, ProtocolRounds: 1}, {Provider: r.Codex, Refresh: true, Negative: true}, {ProtocolRounds: 3}, {ProtocolRounds: -1}} {
+	for _, c := range []config{{}, {Provider: "both"}, {Provider: r.Codex, ProtocolRounds: 1}, {Negative: true, ProtocolRounds: 1}, {Refresh: true, ProtocolRounds: 1}, {Provider: r.Codex, Refresh: true, Negative: true}, {Provider: r.Codex, Refresh: true, UncertainRefresh: true}, {Provider: r.Claude, Negative: true, UncertainRefresh: true}, {ProtocolRounds: 1, UncertainRefresh: true}, {ProtocolRounds: 3}, {ProtocolRounds: -1}} {
 		if c.validCase() {
 			t.Fatal("hybrid or unbounded fake case accepted", c)
 		}

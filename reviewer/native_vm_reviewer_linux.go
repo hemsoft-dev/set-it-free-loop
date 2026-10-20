@@ -300,6 +300,13 @@ func (p *nativeVMHostPhase) finish(ctx context.Context, report Report, primary e
 				primary = errors.Join(primary, ErrAuthRecoveryRequired)
 			} else {
 				returned, err := ReadAuthTransfer(bytes.NewReader(p.finished.AuthReturn))
+				if err == nil && p.bridge != nil {
+					info, infoErr := returned.Info()
+					if infoErr != nil || evidence == nil || nativeRefreshReturnUncertain(evidence, info) {
+						returned.Close()
+						err = ErrAuthRecoveryRequired
+					}
+				}
 				if err == nil {
 					err = p.profile.ImportAuthReturn(cleanup, returned, p.supervisor)
 				}
@@ -373,6 +380,22 @@ func (p *nativeVMHostPhase) finish(ctx context.Context, report Report, primary e
 		return Report{}, access, evidence, errors.Join(PhaseError{State: phaseState(primary), BeforeWork: before}, nativeVMCauses(primary))
 	}
 	return report, access, evidence, nil
+}
+
+// A stopped CLI can return its old file after the provider already rotated it.
+// Keep the exported lease pending if any refresh lacks a complete, nonfailed
+// provider receipt, or if a refresh did not produce changed local auth. A valid
+// changed return after fully captured HTTP may still commit when model output
+// is invalid. This is deliberately conservative until explicit recovery.
+func nativeRefreshReturnUncertain(evidence *ProviderEvidence, returned AuthTransferInfo) bool {
+	if evidence == nil {
+		return true
+	}
+	a := evidence.Access
+	if a.RefreshRequests == 0 {
+		return false
+	}
+	return !a.Stopped || a.Failed || a.Exhausted || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || returned.PayloadHash == returned.SeedHash
 }
 
 func (p *nativeVMHostPhase) drainObjects(ctx context.Context, graceful bool) error {

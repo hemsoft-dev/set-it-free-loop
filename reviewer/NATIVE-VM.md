@@ -266,3 +266,18 @@ cannot establish Ready, auth export or successful work. Both EOF and malformed
 status have bounded handling. Stderr scanning retains a small transient suffix
 and publishes no raw messages; failed phases can report a fixed client-error
 stage without losing their auth recovery evidence.
+
+After any attempted refresh, the host commits returned auth only when its
+stopped provider receipt is complete, has no failure or exhausted budget, and
+the returned file differs from the exported seed. A lost reply or unchanged
+file retains the exported recovery journal. Model output failure alone does
+not discard a changed return after fully captured successful HTTP. This rule
+is conservative: an unrelated later transport failure also retains recovery.
+
+The fake-only `--case refresh-uncertain` accepts one synthetic refresh then
+closes the loopback TLS connection before returning response bytes. It requires
+both the current store and a reopened store to refuse further auth mutation,
+no substantive report, whole-unit stop, and runtime-root removal. It launches
+one VM, leaves its private recovery state for inspection, and never reseeds it.
+This bounded response-loss case does not qualify arbitrary host crashes,
+operator recovery or production account behavior.

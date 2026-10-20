@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptrace"
 	"os"
@@ -167,6 +168,104 @@ func TestNativeVMInvalidModelOutputStillCommitsStoppedAuthReturn(t *testing.T) {
 	audit, err := os.ReadFile(filepath.Join(p.supervisor.supervisor.root, p.request.Binding.LaunchID, "native-audit.json"))
 	if err != nil || bytes.Contains(audit, []byte("synthetic-refreshed-invalid-output")) {
 		t.Fatal("native receipt missing or contains credentials", err)
+	}
+}
+
+func TestNativeVMUncertainRefreshCannotReleaseReturnedOldAuth(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		lost, changed bool
+	}{
+		{"lost-response-old-file", true, false}, {"lost-response-changed-file", true, true},
+		{"complete-response-old-file", false, false}, {"complete-response-changed-file", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			lost, changed := tc.lost, tc.changed
+			expectedResponses := 1
+			if lost {
+				expectedResponses = 0
+			}
+
+			p, _ := nativeHostPhaseFixture(t)
+			store := authTestStore(t, Codex)
+			original, err := os.ReadFile(filepath.Join(store.directory, "state.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			profile, err := store.LeaseProfile(context.Background(), p.request.Binding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.profile = profile
+			defer profile.Close()
+			seed, err := profile.ExportAuth(context.Background(), authExportCheck(func(context.Context, AuthBinding) error { return nil }))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer seed.Close()
+			p.exported = true
+			info, _ := seed.Info()
+			payload := original
+			if changed {
+				payload = []byte("synthetic-refreshed-file")
+			}
+			returned, err := NewAuthReturn(info, payload)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.finished = &nativeVMFinished{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), State: "invalid_output", AuthReturn: authWire(t, returned), SourceAudit: nativeHostAuditFixture(t, p.request)}
+			guest, host := vmSocketPair(t)
+			policy := egressTestPolicy(Codex)
+			policy.ResponsePolicy = CodexSourceResponses
+			committed := make(chan struct{}, 1)
+			p.bridge, err = startNativeProviderBridge(context.Background(), p.request.Session, policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+				committed <- struct{}{}
+				if lost {
+					return nil, errors.New("synthetic response lost after possible rotation")
+				}
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{"access_token":"synthetic-rotated"}`))}, nil
+			}), host)
+			if err != nil {
+				t.Fatal(err)
+			}
+			transport := nativeProviderTransport(guest)
+			defer transport.CloseIdleConnections()
+			q, _ := http.NewRequest("POST", "http://sfl-private.invalid/refresh", strings.NewReader(`{"refresh_token":"synthetic"}`))
+			q.Host = "auth.provider.example"
+			q.Header.Set("Content-Type", "application/json")
+			response, err := transport.RoundTrip(q)
+			if err != nil {
+				t.Fatal(err)
+			}
+			io.Copy(io.Discard, response.Body)
+			response.Body.Close()
+			select {
+			case <-committed:
+			default:
+				t.Fatal("fault did not reach trusted upstream transport")
+			}
+			_, _, evidence, err := p.finish(context.Background(), Report{}, PhaseError{State: "provider_unavailable"})
+			if evidence == nil || evidence.Access.RefreshRequests != 1 || evidence.Access.Forwarded != 1 || evidence.Access.Responses != expectedResponses {
+				t.Fatal("uncertain refresh receipt lost", evidence)
+			}
+			quarantined := lost || !changed
+			if errors.Is(err, ErrAuthRecoveryRequired) != quarantined || p.authReturned == quarantined {
+				t.Fatal("refresh return recovery decision incorrect", err)
+			}
+			profile.Close()
+			called := false
+			recovery := store.Refresh(context.Background(), func(value []byte) ([]byte, error) {
+				called = true
+				if !bytes.Equal(value, payload) {
+					t.Fatal("returned bytes not persisted")
+				}
+				return value, nil
+			})
+			if errors.Is(recovery, ErrAuthRecoveryRequired) != quarantined || called == quarantined {
+				t.Fatal("new work reused uncertain seed or lost safe return", recovery)
+			}
+
+		})
 	}
 }
 

@@ -29,7 +29,7 @@ type config struct {
 	Purpose, ImageSourceHead, Root       string
 	Provider                             r.Provider
 	Negative                             bool
-	Refresh                              bool
+	Refresh, UncertainRefresh            bool
 	ProtocolRounds                       int
 	QEMU, Kernel, Initrd, Stub, Firmware r.VMBootAsset
 	Runtime                              r.NativeVMRuntimeSpec
@@ -86,7 +86,7 @@ func run(c config) error {
 	if os.Mkdir(c.Root, 0700) != nil {
 		return errors.New("fresh fake root required")
 	}
-	if c.Refresh {
+	if c.Refresh || c.UncertainRefresh {
 		return runNativeRefresh(c)
 	}
 	if c.ProtocolRounds != 0 {

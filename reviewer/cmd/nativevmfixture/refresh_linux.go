@@ -16,11 +16,11 @@ import (
 )
 
 type refreshPhase struct {
-	InputHash                   string
-	Passed, RotatedAuthReturned bool
-	Counts                      f.Counts
-	SourceCalls                 int
-	Evidence                    *r.ProviderEvidence
+	InputHash                                     string
+	Passed, RotatedAuthReturned, RecoveryRequired bool
+	Counts                                        f.Counts
+	SourceCalls                                   int
+	Evidence                                      *r.ProviderEvidence
 }
 
 func runNativeRefresh(c config) error {
@@ -58,7 +58,11 @@ func runNativeRefresh(c config) error {
 	phases := []refreshPhase{}
 	unitsFixture := &nativeProtocolFixture{config: c}
 	passed := true
-	for index := range 2 {
+	phaseCount := 2
+	if c.UncertainRefresh {
+		phaseCount = 1
+	}
+	for index := range phaseCount {
 		// Reopen the protected store and construct a new session, reviewer and VM.
 		// The second job receives only the returned file, never another seed.
 		store, err = r.NewAuthStore(c.Provider, authRoot)
@@ -75,6 +79,9 @@ func runNativeRefresh(c config) error {
 			return err
 		}
 		backend, policy, err := f.NewRefresh(s, index == 1)
+		if c.UncertainRefresh {
+			backend, policy, err = f.NewUncertainRefresh(s)
+		}
 		if err != nil {
 			return err
 		}
@@ -101,7 +108,20 @@ func runNativeRefresh(c config) error {
 		})
 		expectedRefresh := 1 - index
 		phase.Passed = reviewErr == nil && recovery == nil && phase.RotatedAuthReturned && len(report.Findings) == 1 && phase.SourceCalls == 2 && phase.Counts.Inference == 3 && phase.Counts.Failures == 0 && phase.Counts.Telemetry == 0 && phase.Counts.Refreshes == expectedRefresh && phase.Counts.RefreshFailures == 0 && evidence != nil && evidence.Access.RefreshRequests == expectedRefresh
-		if c.Provider == r.Codex {
+		if c.UncertainRefresh {
+			phase.RecoveryRequired = errors.Is(recovery, r.ErrAuthRecoveryRequired)
+			reopened, openErr := r.NewAuthStore(c.Provider, authRoot)
+			if openErr == nil {
+				retry := reopened.Refresh(context.WithoutCancel(ctx), func(current []byte) ([]byte, error) {
+					return current, errors.New("quarantined credentials reached mutation callback")
+				})
+				phase.RecoveryRequired = phase.RecoveryRequired && errors.Is(retry, r.ErrAuthRecoveryRequired)
+			} else {
+				phase.RecoveryRequired = false
+			}
+			phase.Passed = errors.Is(reviewErr, r.ErrAuthRecoveryRequired) && phase.RecoveryRequired && len(report.Findings) == 0 && phase.Counts.Inference == 0 && phase.Counts.Refreshes == 1 && phase.Counts.RefreshFailures == 0 && evidence != nil && evidence.Access.RefreshRequests == 1 && evidence.Access.Forwarded > evidence.Access.Responses && evidence.Access.Failed && evidence.Access.Stopped
+		}
+		if c.Provider == r.Codex && !c.UncertainRefresh {
 			phase.Passed = phase.Passed && phase.Counts.MetadataCaptured && phase.Counts.Negotiation == 0
 		}
 		phases = append(phases, phase)
@@ -111,9 +131,9 @@ func runNativeRefresh(c config) error {
 			break
 		}
 	}
-	units, unitPass := unitsFixture.units()
+	units, unitPass := unitsFixture.unitsWithAuthReturn(!c.UncertainRefresh)
 	roots, globErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "qemu-runtime"))
-	passed = passed && len(phases) == 2 && unitPass && globErr == nil && len(roots) == 0
+	passed = passed && len(phases) == phaseCount && unitPass && globErr == nil && len(roots) == 0
 	result := struct {
 		Version                                                                               int
 		Purpose, RunnerSourceHead, RunnerSourceTree, ImageSourceHead                          string
