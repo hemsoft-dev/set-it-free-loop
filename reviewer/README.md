@@ -100,3 +100,9 @@ protocol does not yet attest whole-unit shutdown or release auth leases.
 The [systemd supervisor](SYSTEMD-SUPERVISOR.md) binds the fake-only gate to the
 user manager, physical cgroup limits and durable stopped-auth recovery. Its
 explicit host fixture uses an inert escaped child and synthetic auth bytes.
+
+[Sealed VM boot assets](VM-BOOT.md) retain pinned QEMU/kernel/initramfs bytes in
+sealed descriptors. The explicit fake-only KVM boot fixture checks the live
+executable and independent guest/host receipts. Native VM payload/grant, client,
+code-host, auth and egress composition remain source work; this is not a worker
+activation path or production isolation qualification.
