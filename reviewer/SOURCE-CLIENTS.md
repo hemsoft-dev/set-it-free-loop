@@ -179,3 +179,20 @@ fakes. Separate reader UIDs, production auth, whole-containment stop attestation
 exclusive provider egress, account eligibility and live inference remain
 unqualified. Every result explicitly keeps both actual-account and production-
 boundary qualification false. Passing this fixture cannot activate a provider.
+
+The qualification command requires a clean committed checkout before creating
+artifacts. It builds an immutable `git archive` of that commit with local
+Go tooling, `GOPROXY=off`, `GOSUMDB=off`, VCS resolution disabled and automatic
+toolchain downloads disabled. Ambient Go flags, workspace configuration and
+external cache programs are discarded. Required dependencies must already be
+in the local module cache, or supplied with `--module-cache`; an incomplete
+cache fails closed. This is not a dependency installation command.
+
+The selected client is copied and hashed through one opened inode into a private
+snapshot outside the worker's writable artifact directory. Bubblewrap executes
+that snapshot, so replacement of the original path cannot change the measured
+client. Source identity is rechecked around the build and execution. A dirty or
+changed checkout cannot emit a passing qualification. Read and Search outputs
+are checked separately for one matching, non-error tool result; Read must equal
+the complete synthetic source, while Search must decode to the exact captured
+revision/path/line/quote anchor. Shared text cannot stand in for the other result.

@@ -3,7 +3,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -131,26 +130,62 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	send("message_delta", map[string]any{"delta": map[string]any{"stop_reason": "tool_use", "stop_sequence": nil}, "usage": map[string]int{"output_tokens": 1}})
 	send("message_stop", map[string]any{})
 }
-func claudeResult(v any, id string) bool {
-	switch x := v.(type) {
-	case []any:
-		for _, v := range x {
-			if claudeResult(v, id) {
-				return true
+func claudeResult(value any, id string) bool {
+	body, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	messages, ok := body["messages"].([]any)
+	if !ok {
+		return false
+	}
+	count := 0
+	for _, value := range messages {
+		message, ok := value.(map[string]any)
+		if !ok || message["role"] != "user" {
+			continue
+		}
+		content, ok := message["content"].([]any)
+		if !ok {
+			continue
+		}
+		for _, value := range content {
+			result, ok := value.(map[string]any)
+			if !ok || result["type"] != "tool_result" || result["tool_use_id"] != id {
+				continue
 			}
-		}
-	case map[string]any:
-		if x["type"] == "tool_result" && x["tool_use_id"] == id {
-			data, _ := json.Marshal(x)
-			return bytes.Contains(data, []byte("immutable source evidence"))
-		}
-		for _, v := range x {
-			if claudeResult(v, id) {
-				return true
+			count++
+			if failed, present := result["is_error"]; present && failed != false {
+				return false
+			}
+			blocks, ok := result["content"].([]any)
+			if !ok || len(blocks) != 1 {
+				return false
+			}
+			text, ok := blocks[0].(map[string]any)
+			if !ok || text["type"] != "text" {
+				return false
+			}
+			data, ok := text["text"].(string)
+			if !ok {
+				return false
+			}
+			switch id {
+			case "sfl_fixture_read_1":
+				if data != source {
+					return false
+				}
+			case "sfl_fixture_search_1":
+				matches, err := r.DecodeStrict[[]r.Anchor]([]byte(data), 1<<16)
+				if err != nil || len(matches) != 1 || matches[0] != (r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}) {
+					return false
+				}
+			default:
+				return false
 			}
 		}
 	}
-	return false
+	return count == 1
 }
 
 // This is a protocol fixture launcher. Its identity and stop checks are fake

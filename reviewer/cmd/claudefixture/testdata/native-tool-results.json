@@ -1,0 +1,22 @@
+[
+  {
+    "tool_use_id": "sfl_fixture_read_1",
+    "type": "tool_result",
+    "content": [
+      {
+        "type": "text",
+        "text": "immutable source evidence\n"
+      }
+    ]
+  },
+  {
+    "tool_use_id": "sfl_fixture_search_1",
+    "type": "tool_result",
+    "content": [
+      {
+        "type": "text",
+        "text": "[{\"path\":\"source.go\",\"line\":1,\"quote\":\"immutable source evidence\",\"revision\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}]"
+      }
+    ]
+  }
+]
