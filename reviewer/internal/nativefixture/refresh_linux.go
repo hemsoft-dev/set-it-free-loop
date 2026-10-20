@@ -51,7 +51,7 @@ func NewRefresh(s r.Session, reused bool) (*Backend, r.EgressPolicy, error) {
 	}
 	p.Routes = append(p.Routes, r.EgressRoute{Authority: RefreshAuthority(s.Identity.Provider), Method: "POST", Path: refreshPath(s.Identity.Provider), Kind: "refresh"})
 	p.Limits.RefreshRequests = 1
-	p.Limits.Requests++
+	p.Limits.Requests = p.Limits.InferenceRequests + p.Limits.RefreshRequests + p.Limits.MetadataRequests + p.Limits.NegotiationRequests
 	return b, p, nil
 }
 

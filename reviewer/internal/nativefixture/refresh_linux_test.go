@@ -3,7 +3,9 @@
 package nativefixture
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -11,6 +13,27 @@ import (
 
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
 )
+
+func TestSyntheticRefreshPolicyFitsTheCapturedPhaseBudget(t *testing.T) {
+	for _, provider := range []r.Provider{r.Codex, r.Claude} {
+		snapshot := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: head, Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("c", 40)}
+		s, err := r.NewSession("synthetic-refresh-policy", snapshot, r.Digest("config"), provider, 1, source, nil, nil, r.DefaultLimits())
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, policy, err := NewRefresh(s, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		guard, err := r.NewProviderEgress(context.Background(), s, policy, &http.Transport{})
+		if err != nil {
+			t.Fatal("producer policy cannot be admitted before VM work", provider, err)
+		}
+		if _, err := guard.Close(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
 
 func TestSyntheticRefreshProducesRotatedAuthAndRejectsReplay(t *testing.T) {
 	for _, provider := range []r.Provider{r.Codex, r.Claude} {
