@@ -131,22 +131,7 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
-	for _, id := range []string{snapshot.Base, snapshot.Head, snapshot.MergeBase} {
-		kind, err := git.command(ctx, 32, "cat-file", "-t", id)
-		if err != nil || string(kind) != "commit\n" {
-			return nil, errors.New("snapshot commit history unavailable")
-		}
-	}
-	ancestor, err := git.command(ctx, 256, "merge-base", "--all", snapshot.Base, snapshot.Head)
-	if err != nil || string(ancestor) != snapshot.MergeBase+"\n" {
-		return nil, errors.New("snapshot merge-base history unavailable or ambiguous")
-	}
-	args := []string{"diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--ignore-submodules=none", "--no-ext-diff", "--no-textconv", "--no-color", snapshot.MergeBase, snapshot.Head, "--"}
-	raw, err := git.command(ctx, snapshotObjectBytes, args...)
-	if err != nil {
-		return nil, errors.New("complete changed-path inventory unavailable")
-	}
-	files, err := parseSnapshotChanges(raw, len(snapshot.Head))
+	files, err := snapshotInventory(ctx, git, snapshot)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +191,113 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 	e.packet = string(encoded)
 	e.coverage = append([]Coverage(nil), p.Coverage...)
 	return e, nil
+}
+
+func snapshotInventory(ctx context.Context, git GitStore, snapshot Snapshot) ([]snapshotFile, error) {
+	for _, id := range []string{snapshot.Base, snapshot.Head, snapshot.MergeBase} {
+		kind, err := git.command(ctx, 32, "cat-file", "-t", id)
+		if err != nil || string(kind) != "commit\n" {
+			return nil, errors.New("snapshot commit history unavailable")
+		}
+	}
+	ancestor, err := git.command(ctx, 256, "merge-base", "--all", snapshot.Base, snapshot.Head)
+	if err != nil || string(ancestor) != snapshot.MergeBase+"\n" {
+		return nil, errors.New("snapshot merge-base history unavailable or ambiguous")
+	}
+	args := []string{"diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--ignore-submodules=none", "--no-ext-diff", "--no-textconv", "--no-color", snapshot.MergeBase, snapshot.Head, "--"}
+	raw, err := git.command(ctx, snapshotObjectBytes, args...)
+	if err != nil {
+		return nil, errors.New("complete changed-path inventory unavailable")
+	}
+	files, err := parseSnapshotChanges(raw, len(snapshot.Head))
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+// RestoreSnapshotEvidence reconstructs the admitted packet against its immutable
+// Git inventory. Originally omitted patches stay omitted even if their objects
+// become available later. Included patches must still reproduce their blobs;
+// unavailable included evidence defers recovery rather than changing the job.
+func RestoreSnapshotEvidence(ctx context.Context, git GitStore, job Job) (*JobEvidence, error) {
+	if job.Validate() != nil || len(job.Packet) > snapshotPacketBytes {
+		return nil, ErrFenced
+	}
+	var p snapshotPacket
+	if json.Unmarshal([]byte(job.Packet), &p) != nil {
+		return nil, ErrFenced
+	}
+	canonical, err := json.Marshal(p)
+	if err != nil || string(canonical) != job.Packet || p.Version != "sfl-snapshot-evidence-1" || p.Snapshot != job.Snapshot {
+		return nil, ErrFenced
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	inventory, err := snapshotInventory(ctx, git, job.Snapshot)
+	if err != nil {
+		return nil, err
+	}
+	if len(p.Files) != len(inventory) {
+		return nil, ErrFenced
+	}
+	omissions := map[string]string{}
+	for _, c := range p.Coverage {
+		if _, duplicate := omissions[c.Path]; duplicate {
+			return nil, ErrFenced
+		}
+		switch c.Reason {
+		case "symlink, submodule or non-file diff omitted", "old source unavailable or source byte limit exhausted", "new source unavailable or source byte limit exhausted", "binary or non-UTF-8 diff omitted", "patch unavailable or patch byte limit exhausted", "patch omitted by evidence packet byte limit":
+		default:
+			return nil, ErrFenced
+		}
+		omissions[c.Path] = c.Reason
+	}
+	e := &SnapshotEvidence{git: git, snapshot: job.Snapshot, packet: job.Packet, coverage: append([]Coverage(nil), p.Coverage...), lines: map[string]map[int]bool{}}
+	remaining := snapshotObjectBytes
+	for i, file := range p.Files {
+		identity := file
+		identity.Patch = ""
+		if identity != inventory[i] {
+			return nil, ErrFenced
+		}
+		e.paths = append(e.paths, file.Path)
+		_, omitted := omissions[file.Path]
+		if file.Patch == "" {
+			if !omitted {
+				return nil, ErrFenced
+			}
+			delete(omissions, file.Path)
+			continue
+		}
+		regular := func(mode string) bool { return mode == "000000" || mode == "100644" || mode == "100755" }
+		if omitted || !regular(file.OldMode) || !regular(file.NewMode) {
+			return nil, ErrFenced
+		}
+		old, err := snapshotBlob(ctx, git, file.OldObject, &remaining)
+		if err != nil {
+			return nil, err
+		}
+		new, err := snapshotBlob(ctx, git, file.NewObject, &remaining)
+		if err != nil {
+			return nil, err
+		}
+		if bytes.IndexByte(old, 0) >= 0 || bytes.IndexByte(new, 0) >= 0 || !utf8.Valid(old) || !utf8.Valid(new) {
+			return nil, ErrFenced
+		}
+		lines, err := snapshotHunkLines(file.Patch, string(old), string(new))
+		if err != nil {
+			return nil, ErrFenced
+		}
+		e.lines[file.Path] = lines
+	}
+	if len(omissions) != 0 {
+		return nil, ErrFenced
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return e.Bind(job)
 }
 
 func snapshotBlob(ctx context.Context, git GitStore, id string, remaining *int) ([]byte, error) {

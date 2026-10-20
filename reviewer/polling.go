@@ -30,6 +30,7 @@ type PollOptions struct {
 	Discovery  PollDiscovery
 	Publisher  Publisher
 	Capture    func(context.Context, Snapshot) (*SnapshotEvidence, error)
+	Restore    func(context.Context, Job) (*JobEvidence, error)
 	Runtime    func(context.Context, Job, *JobEvidence) (Engine, error)
 	// Check is a trusted startup/phase gate, not self-attestation by a model.
 	// Production composition must supply separately qualified installation,
@@ -47,14 +48,15 @@ type PollResult struct {
 }
 
 type pollWork struct {
-	scope      Scope
-	request    int64
-	generation int64
-	job        string
-	snapshot   Snapshot
-	cancel     context.CancelFunc
-	done       chan struct{}
-	err        error
+	scope                    Scope
+	request                  int64
+	generation               int64
+	job                      string
+	snapshot                 Snapshot
+	cancel                   context.CancelFunc
+	done                     chan struct{}
+	err                      error
+	qualificationInterrupted bool
 }
 
 // PollingController holds one OS owner lock for this SQLite service directory.
@@ -71,7 +73,7 @@ type PollingController struct {
 }
 
 func OpenPollingController(ctx context.Context, o PollOptions) (*PollingController, error) {
-	if o.Store == nil || o.Store.db == nil || !filepath.IsAbs(o.Store.path) || o.Enrollment.Validate() != nil || !objectID.MatchString(o.Release) || o.Discovery == nil || o.Publisher.Store != o.Store || o.Publisher.Remote == nil || o.Capture == nil || o.Runtime == nil || o.Check == nil {
+	if o.Store == nil || o.Store.db == nil || !filepath.IsAbs(o.Store.path) || o.Enrollment.Validate() != nil || !objectID.MatchString(o.Release) || o.Discovery == nil || o.Publisher.Store != o.Store || o.Publisher.Remote == nil || o.Capture == nil || o.Restore == nil || o.Runtime == nil || o.Check == nil {
 		return nil, ErrLiveBlocked
 	}
 	if o.Interval < time.Second || o.Interval > 5*time.Minute || o.MaxBackoff < o.Interval || o.MaxBackoff > time.Hour || o.TickTimeout < time.Second || o.TickTimeout > 5*time.Minute {
@@ -135,16 +137,45 @@ func (c *PollingController) schedule(ctx context.Context, now time.Time, cause e
 			if errors.Is(cause, ErrLiveBlocked) {
 				p.Reason = "qualification_required"
 			}
-			var status *GitHubHTTPError
-			if errors.As(cause, &status) && status.RetryAfter > delay && status.RetryAfter <= time.Hour {
-				delay = status.RetryAfter
-			}
+			delay = max(delay, githubRetryDelay(cause))
 		}
 		next = now.Add(delay)
 		p.Next = next
 		return nil
 	})
 	return next, err
+}
+
+// githubRetryDelay honors every joined response. If an error graph exceeds the
+// bounded traversal, defer for the maximum accepted server delay rather than
+// retrying early or following a cyclic error forever.
+func githubRetryDelay(cause error) time.Duration {
+	pending := []error{cause}
+	var delay time.Duration
+	for visited := 0; len(pending) > 0; visited++ {
+		if visited >= 256 {
+			return time.Hour
+		}
+		err := pending[len(pending)-1]
+		pending = pending[:len(pending)-1]
+		if err == nil {
+			continue
+		}
+		if status, ok := err.(*GitHubHTTPError); ok && status != nil && status.RetryAfter > delay && status.RetryAfter <= time.Hour {
+			delay = status.RetryAfter
+		}
+		switch e := err.(type) {
+		case interface{ Unwrap() []error }:
+			children := e.Unwrap()
+			if len(children) > 256-len(pending) {
+				return time.Hour
+			}
+			pending = append(pending, children...)
+		case interface{ Unwrap() error }:
+			pending = append(pending, e.Unwrap())
+		}
+	}
+	return delay
 }
 
 // fenceRemote never infers removal from an empty pending list. Snapshot/access
@@ -358,12 +389,16 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (*JobEv
 	if err := c.options.Check(ctx, c.options.Enrollment, c.options.Release); err != nil {
 		return nil, Job{}, errors.Join(ErrLiveBlocked, err)
 	}
-	evidence, err := c.options.Capture(ctx, w.snapshot)
-	if err != nil {
-		return nil, Job{}, err
-	}
-	if evidence == nil {
-		return nil, Job{}, ErrDeferred
+	var evidence *SnapshotEvidence
+	if w.job == "" {
+		var captureErr error
+		evidence, captureErr = c.options.Capture(ctx, w.snapshot)
+		if captureErr != nil {
+			return nil, Job{}, captureErr
+		}
+		if evidence == nil {
+			return nil, Job{}, ErrDeferred
+		}
 	}
 	remote, err := c.observe(ctx, w.scope)
 	if err != nil {
@@ -392,7 +427,12 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (*JobEv
 			return nil, Job{}, err
 		}
 	}
-	bound, err := evidence.Bind(job)
+	// Admit may also return an existing immutable job. Always restore its exact
+	// persisted packet instead of substituting a new capture with different omissions.
+	bound, err := c.options.Restore(ctx, job)
+	if err == nil {
+		err = bound.validateJob(job)
+	}
 	if err == nil && job.Release != c.options.Release {
 		if qualification := c.options.Check(ctx, c.options.Enrollment, job.Release); qualification != nil {
 			return nil, Job{}, errors.Join(ErrLiveBlocked, qualification)
@@ -430,6 +470,7 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 						state := phaseState(err)
 						c.mu.Lock()
 						shuttingDown := c.closed
+						qualificationInterrupted := w.qualificationInterrupted
 						c.mu.Unlock()
 						saveErr := c.options.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
 							j := d.Jobs[job.ID]
@@ -440,8 +481,12 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 							if pr == nil {
 								return ErrFenced
 							}
-							if shuttingDown && state == "cancelled" && !pr.Paused && pr.Generation == j.Job.Generation && pr.CurrentRequest == j.RequestID {
-								state = "queued"
+							if state == "cancelled" && !pr.Paused && pr.Generation == j.Job.Generation && pr.CurrentRequest == j.RequestID {
+								if qualificationInterrupted {
+									state = "blocked"
+								} else if shuttingDown {
+									state = "queued"
+								}
 							}
 							j.State = state
 							retireFencedJobs(d, pr)
@@ -453,20 +498,25 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 						engine.Reader = bound.Reader
 						out, err = c.options.Store.RunStopped(ctx, job.ID, engine, c.now)
 						// Service shutdown may requeue known-stopped work, preserving
-						// its artifacts and consumed budget. Owner cancellation or
+						// its artifacts and consumed budget. Qualification interruption
+						// instead blocks for explicit recovery. Owner cancellation or
 						// uncertain physical stop can never take this path.
 						c.mu.Lock()
 						shuttingDown := c.closed
+						qualificationInterrupted := w.qualificationInterrupted
 						c.mu.Unlock()
-						if shuttingDown && errors.Is(err, context.Canceled) {
+						if (shuttingDown || qualificationInterrupted) && errors.Is(err, context.Canceled) {
 							saveErr := c.options.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
 								j := d.Jobs[job.ID]
 								if j == nil {
 									return ErrFenced
 								}
 								pr := d.PRs[j.Scope.key()]
-								if j.LeaseToken == "" && !j.Outstanding && j.State == "cancelled" && !pr.Paused && pr.Generation == j.Job.Generation && pr.CurrentRequest == j.RequestID {
+								if j.LeaseToken == "" && !j.Outstanding && j.State == "cancelled" && pr != nil && !pr.Paused && pr.Generation == j.Job.Generation && pr.CurrentRequest == j.RequestID {
 									j.State = "queued"
+									if qualificationInterrupted {
+										j.State = "blocked"
+									}
 								}
 								return nil
 							})
@@ -556,6 +606,7 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 	if err = c.options.Check(ctx, c.options.Enrollment, c.options.Release); err != nil {
 		c.mu.Lock()
 		if c.active != nil {
+			c.active.qualificationInterrupted = true
 			c.active.cancel()
 		}
 		c.mu.Unlock()

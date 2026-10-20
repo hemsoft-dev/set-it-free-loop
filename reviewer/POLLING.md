@@ -3,7 +3,7 @@
 `OpenPollingController` composes discovery, SQLite admission, immutable evidence,
 the stopped-worker engine and the publication outbox. It creates no GitHub App,
 acquires no credentials and installs no service. Construction takes an explicit
-store, exact enrollment/release, discovery/publisher transports, source capture,
+store, exact enrollment/release, discovery/publisher transports, source capture and persisted-packet restoration,
 runtime factory and qualification callback. Missing dependencies refuse startup.
 The frozen SFL controller and workflows remain retired.
 
@@ -28,7 +28,8 @@ completion or cancellation and repeats. The configured interval is one second
 through five minutes, exponential backoff is bounded by the supplied interval
 through one hour, and one cycle has an explicit one-second through five-minute
 deadline. Recognized GitHub Retry-After/reset delays up to one hour take priority
-over a shorter exponential delay. Partial, timed-out or malformed collections
+over a shorter exponential delay. Joined failures use the longest valid server
+delay, including nested failures from different scopes or writes. Partial, timed-out or malformed collections
 never authorize work. Larger histories may require further qualified collection
 and scheduling work; a timeout is not evidence of a clean or complete history.
 
@@ -56,9 +57,13 @@ failure counts defer. Enrollment/default changes still require explicit migratio
    command acknowledgments are limited to one new ACK per cycle; remaining ACKs
    defer admission. Prune only records already eligible under retention policy.
 5. If no physical invocation or unresolved durable lease exists, select the
-   oldest runnable job or native owner request. Capture source, reobserve before
-   admission, bind the exact SQLite-returned packet and invoke the qualified
-   runtime factory. Providers run sequentially under the captured configuration.
+   oldest runnable job or native owner request. For a new request, capture source
+   and reobserve before admission. Restore the exact SQLite-returned packet
+   against its immutable Git inventory before invoking the qualified runtime
+   factory. Existing queued/completed jobs use restoration without recapture.
+   Originally omitted patches retain their coverage and cannot gain inline
+   anchors when a missing blob later becomes available. Included patches must
+   still reproduce their retained blobs; unavailable evidence defers recovery. Providers run sequentially under the captured configuration.
 6. A background invocation stores completion and prepares its typed publication
    intent. The polling thread remains free to discover cancellation/replacement.
    Publication runs only through a later outbox cycle, with fresh remote/local
@@ -84,7 +89,12 @@ lease stealing; a separately qualified supervisor must prove stopped recovery.
 Known-stopped work interrupted only by service shutdown may return to `queued`
 with its exact artifacts and consumed budget. Owner cancellation, generation
 changes and uncertain stop cannot use that path. Factory errors become durable
-unavailable/blocked states. Authentication/provider failures are never resumed
+unavailable/blocked states. A failed qualification check cancels active work;
+once its stop is proven, an otherwise current cancelled job becomes `blocked`.
+Repairing the qualification alone does not restart it. The trusted caller must
+explicitly use `ResumeUnavailable`, preserving its packet, artifacts and consumed
+budget. Owner cancellation or snapshot fencing remains terminal.
+Authentication/provider failures are never resumed
 by configuration commands or automatically repaired by this loop.
 
 Close the controller before closing its caller-owned store. The source capture
@@ -101,7 +111,9 @@ cancel during a blocked worker, pending ACK ordering/rate limits, a late B reque
 cleared by A's publication, lost POST responses, persisted/cold-store backoff,
 legacy state rewrites, startup/enrollment refusal, expired lease retention,
 snapshot movement, shutdown timeouts/owner retention and cached-completion
-recovery without inference. The loop itself is exercised with bounded cancellation.
+recovery without inference, recoverable qualification interruption in both
+factory and provider work, joined server delays, and packet restoration after
+an omitted real Git blob becomes available. The loop itself is exercised with bounded cancellation.
 
 This supplies the polling lifecycle source for #176. A packaged activation
 entrypoint, actual installation-token attestation/acquisition, qualified object

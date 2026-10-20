@@ -107,6 +107,8 @@ func pollControllerFixture(t *testing.T, review reviewFunc) (*PollingController,
 	})
 	o := PollOptions{Store: store, Enrollment: alphaEnrollment(), Release: testJob().Release, Discovery: f, Publisher: Publisher{Store: store, Remote: f}, Capture: func(ctx context.Context, s Snapshot) (*SnapshotEvidence, error) {
 		return CaptureSnapshotEvidence(ctx, git.store(), s)
+	}, Restore: func(ctx context.Context, job Job) (*JobEvidence, error) {
+		return RestoreSnapshotEvidence(ctx, git.store(), job)
 	}, Runtime: func(context.Context, Job, *JobEvidence) (Engine, error) {
 		return Engine{Reviewers: map[Provider]Reviewer{Codex: fake, Claude: fake}}, nil
 	}, Check: func(context.Context, Enrollment, string) error { return nil }, Now: clock.Now, Interval: time.Second, MaxBackoff: time.Minute, TickTimeout: time.Second}
@@ -623,5 +625,110 @@ func TestPollingControllerDoesNotAutomaticallyRepairBlockedRuntime(t *testing.T)
 		if j.State != "blocked" || j.Checkpoint.ConsumedSessions != 0 {
 			t.Fatal(j.State)
 		}
+	}
+}
+
+func TestPollingQualificationInterruptionIsExplicitlyRecoverable(t *testing.T) {
+	for _, factory := range []bool{false, true} {
+		t.Run(map[bool]string{false: "provider", true: "factory"}[factory], func(t *testing.T) {
+			entered := make(chan struct{})
+			c, f, calls := pollControllerFixture(t, func(ctx context.Context, _ Session) (Report, error) {
+				close(entered)
+				<-ctx.Done()
+				return Report{}, ctx.Err()
+			})
+			if factory {
+				c.options.Runtime = func(ctx context.Context, _ Job, _ *JobEvidence) (Engine, error) {
+					close(entered)
+					<-ctx.Done()
+					return Engine{}, ctx.Err()
+				}
+			}
+			var failed atomic.Bool
+			c.options.Check = func(context.Context, Enrollment, string) error {
+				if failed.Load() {
+					return ErrLiveBlocked
+				}
+				return nil
+			}
+			if _, err := pollOnce(t, c); err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case <-entered:
+			case <-time.After(3 * time.Second):
+				t.Fatal("work never entered")
+			}
+			failed.Store(true)
+			f.clock.Advance(time.Second)
+			if _, err := pollOnce(t, c); !errors.Is(err, ErrLiveBlocked) {
+				t.Fatal(err)
+			}
+			awaitPollWorker(t, c)
+			d, err := f.store.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var original Job
+			wantConsumed := 1
+			if factory {
+				wantConsumed = 0
+			}
+			for _, j := range d.Jobs {
+				original = j.Job
+				if j.State != "blocked" || j.LeaseToken != "" || j.Outstanding || j.Checkpoint.ConsumedSessions != wantConsumed {
+					t.Fatal("lost recoverable interruption", j.State, j.LeaseToken, j.Checkpoint.ConsumedSessions)
+				}
+			}
+			if original.ID == "" {
+				t.Fatal("job missing")
+			}
+			if err := c.Close(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			failed.Store(false)
+			reopened, err := OpenPollingController(context.Background(), c.options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close(context.Background())
+			f.clock.Advance(time.Minute)
+			result, err := pollOnce(t, reopened)
+			if err != nil || result.Active {
+				t.Fatal("automatically repaired qualification interruption", result, err)
+			}
+			if err := f.store.ResumeUnavailable(context.Background(), original.ID, f.clock.Now()); err != nil {
+				t.Fatal("original request cannot resume", err)
+			}
+			d, _ = f.store.Snapshot(context.Background())
+			j := d.Jobs[original.ID]
+			if j.State != "queued" || Digest(j.Job) != Digest(original) || j.Checkpoint.ConsumedSessions != wantConsumed {
+				t.Fatal("recovery changed packet or accounting", j.State)
+			}
+			if calls.Load() != int32(wantConsumed) {
+				t.Fatal("recovery invoked provider", calls.Load())
+			}
+		})
+	}
+}
+
+func TestPollingJoinedErrorsHonorLongestRetryAfter(t *testing.T) {
+	for _, delays := range [][]time.Duration{{0, time.Hour}, {10 * time.Second, time.Hour}, {time.Hour, 10 * time.Second}, {2 * time.Hour, 37 * time.Second}, {-time.Second, 37 * time.Second}} {
+		c, f, calls := pollControllerFixture(t, nil)
+		f.failure = errors.Join(&GitHubHTTPError{Status: 429, RetryAfter: delays[0]}, errors.Join(ErrDeferred, &GitHubHTTPError{Status: 403, RetryAfter: delays[1]}))
+		result, err := pollOnce(t, c)
+		want := time.Second
+		for _, delay := range delays {
+			if delay <= time.Hour {
+				want = max(want, delay)
+			}
+		}
+		if err == nil || result.Next != f.clock.Now().Add(want) {
+			t.Fatal(delays, result, err)
+		}
+		if calls.Load() != 0 {
+			t.Fatal("backoff invoked provider")
+		}
+		c.Close(context.Background())
 	}
 }

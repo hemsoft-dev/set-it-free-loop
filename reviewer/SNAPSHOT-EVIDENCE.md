@@ -48,8 +48,8 @@ Use the job returned by `Admit`, including on an idempotent retry:
 capture, err := CaptureSnapshotEvidence(ctx, trustedGit, snapshot)
 // Handle err before admission.
 job, err := store.Admit(ctx, scope, requestID, release, capture.Packet(), now)
-// Handle err before binding.
-bound, err := capture.Bind(job)
+// Handle err before restoration.
+bound, err := RestoreSnapshotEvidence(ctx, trustedGit, job)
 // Handle err before providing a reader or publication anchors.
 engine.Reader = bound.Reader
 // After stopped-worker execution:
@@ -58,8 +58,12 @@ intent, err := publisher.PrepareEvidence(ctx, outcome, bound)
 
 `Bind` requires the exact admitted snapshot and packet plus a valid job. If a
 retry returns a previously stored packet and a fresh capture differs, binding
-fails. Recovery must reproduce the original captured packet or retain explicit
-uncertainty; it cannot silently replace its omissions or source input. A bound
+fails. `RestoreSnapshotEvidence` reconstructs the exact stored packet, validates
+its canonical version and complete inventory against the immutable Git diff,
+and rechecks each included patch against its blobs. Original omissions and
+inline eligibility stay fixed even when a missing blob later becomes available.
+An included blob becoming unavailable defers recovery. It cannot silently
+replace the admitted omissions or source input. A bound
 reader uses the job's configured limits and rejects a different snapshot.
 Paths and coverage accessors return copies. Inline maps stay private; use `bound.Render` or `Publisher.PrepareEvidence` so publication revalidates the complete admitted job hash. The low-level map-taking renderer/publisher remain transport test seams and reject captured snapshot packets.
 
@@ -86,8 +90,12 @@ missing newline markers, duplicate paths and partial inventories. The durable
 integration test admits this actual Git packet into SQLite, runs four fake
 provider phases, recovers completed work without another provider call and
 renders authoritative omissions despite empty model coverage declarations.
+Restore tests capture a real packet while a blob is absent, put that same blob
+back, prove a fresh capture differs, then recover queued and completed polling
+jobs without recapture. Modified inventories, patch text, coverage, versions and
+unavailable included blobs are refused.
 
-This is a library prerequisite for #176. Private polling/backoff, qualified
-object acquisition, token attestation, runtime composition and packaging remain
-required. It does not install an App, enable Actions, activate the retired
+This is a library prerequisite for #176. The private polling library uses
+restoration for admitted jobs. Qualified object acquisition, token attestation,
+native runtime composition and packaging remain required. It does not install an App, enable Actions, activate the retired
 controller or qualify live subscription use.
