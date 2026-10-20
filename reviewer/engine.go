@@ -57,12 +57,14 @@ func protocolLimits(j Job) (Limits, error) {
 }
 
 type Artifact struct {
-	JobHash         string        `json:"job_hash"`
-	InputHash       string        `json:"input_hash"`
-	Report          Report        `json:"report"`
-	ValidationReads []ReadRecord  `json:"validation_reads"`
-	Coverage        []Coverage    `json:"coverage"`
-	SourceAccess    *SourceAccess `json:"source_access,omitempty"`
+	JobHash                  string            `json:"job_hash"`
+	InputHash                string            `json:"input_hash"`
+	Report                   Report            `json:"report"`
+	ValidationReads          []ReadRecord      `json:"validation_reads"`
+	Coverage                 []Coverage        `json:"coverage"`
+	SourceAccess             *SourceAccess     `json:"source_access,omitempty"`
+	ProviderEvidence         *ProviderEvidence `json:"provider_evidence,omitempty"`
+	ProviderEvidenceRequired bool              `json:"provider_evidence_required,omitempty"`
 }
 
 type Assessment struct {
@@ -84,14 +86,15 @@ type Entry struct {
 }
 
 type Outcome struct {
-	Job                Job           `json:"job"`
-	State              string        `json:"state"`
-	Artifacts          []Artifact    `json:"artifacts"`
-	Ledger             []Entry       `json:"ledger"`
-	ExecutedSessions   int           `json:"executed_sessions"`
-	ConsumedSessions   int           `json:"consumed_sessions"`
-	InvalidPhases      int           `json:"invalid_phases"`
-	FailedSourceAccess *SourceAccess `json:"failed_source_access,omitempty"`
+	Job                    Job               `json:"job"`
+	State                  string            `json:"state"`
+	Artifacts              []Artifact        `json:"artifacts"`
+	Ledger                 []Entry           `json:"ledger"`
+	ExecutedSessions       int               `json:"executed_sessions"`
+	ConsumedSessions       int               `json:"consumed_sessions"`
+	InvalidPhases          int               `json:"invalid_phases"`
+	FailedSourceAccess     *SourceAccess     `json:"failed_source_access,omitempty"`
+	FailedProviderEvidence *ProviderEvidence `json:"failed_provider_evidence,omitempty"`
 }
 
 type Checkpoint struct {
@@ -114,6 +117,7 @@ func (o Outcome) Checkpoint() Checkpoint {
 		copies[i].ValidationReads = append([]ReadRecord{}, a.ValidationReads...)
 		copies[i].Coverage = append([]Coverage{}, a.Coverage...)
 		copies[i].SourceAccess = cloneSourceAccess(a.SourceAccess)
+		copies[i].ProviderEvidence = cloneProviderEvidence(a.ProviderEvidence)
 	}
 	return Checkpoint{Digest(o.Job), copies, o.ConsumedSessions}
 }
@@ -244,10 +248,11 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 				}
 				out.ExecutedSessions++
 				out.ConsumedSessions++
-				report, access, callErr := reviewSource(phase, reviewer, session)
+				report, access, providerEvidence, providerRequired, callErr := reviewPhase(phase, reviewer, session)
 				deadlineErr := phase.Err()
 				if callErr != nil {
 					out.FailedSourceAccess = cloneSourceAccess(access)
+					out.FailedProviderEvidence = cloneProviderEvidence(providerEvidence)
 					if phaseState(callErr) == "invalid_output" {
 						out.InvalidPhases++
 					}
@@ -258,9 +263,21 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 					return fail(phaseState(callErr), callErr)
 				}
 				if deadlineErr != nil {
+					out.FailedSourceAccess = cloneSourceAccess(access)
+					out.FailedProviderEvidence = cloneProviderEvidence(providerEvidence)
 					return fail(phaseState(deadlineErr), deadlineErr)
 				}
-				artifact = Artifact{JobHash: Digest(job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}, SourceAccess: access}
+				artifact = Artifact{JobHash: Digest(job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}, SourceAccess: access, ProviderEvidence: cloneProviderEvidence(providerEvidence), ProviderEvidenceRequired: providerRequired}
+			}
+			if _, required := e.Reviewers[provider].(AuditedReviewer); required && artifact.ProviderEvidence == nil {
+				out.InvalidPhases++
+				return fail("invalid_output", ErrProviderAuditPending)
+			}
+			if artifact.ProviderEvidenceRequired || artifact.ProviderEvidence != nil {
+				if err := artifact.ProviderEvidence.validateCompletedCaptured(provider, session.Limits, Digest(session)); err != nil {
+					out.InvalidPhases++
+					return fail("invalid_output", err)
+				}
 			}
 			if err := artifact.SourceAccess.validate(session); err != nil {
 				out.InvalidPhases++

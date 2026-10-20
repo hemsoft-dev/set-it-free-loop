@@ -42,11 +42,15 @@ type EgressLimits struct {
 }
 
 func DefaultEgressLimits(s Session) EgressLimits {
+	return egressLimits(s.Identity.Provider, s.Limits.MaxTurns)
+}
+
+func egressLimits(provider Provider, maxTurns int) EgressLimits {
 	metadata, negotiation := 4, 0
-	if s.Identity.Provider == Codex {
+	if provider == Codex {
 		metadata, negotiation = 5, 1
 	}
-	return EgressLimits{Requests: s.Limits.MaxTurns + 2 + metadata + negotiation, InferenceRequests: s.Limits.MaxTurns, RefreshRequests: 2, MetadataRequests: metadata, NegotiationRequests: negotiation, RequestBytes: 8 << 20, ResponseBytes: 16 << 20, TotalBytes: 32 << 20}
+	return EgressLimits{Requests: maxTurns + 2 + metadata + negotiation, InferenceRequests: maxTurns, RefreshRequests: 2, MetadataRequests: metadata, NegotiationRequests: negotiation, RequestBytes: 8 << 20, ResponseBytes: 16 << 20, TotalBytes: 32 << 20}
 }
 
 type EgressPolicy struct {
@@ -88,8 +92,21 @@ func (a *ProviderAccess) ValidateCompleted(s Session, p EgressPolicy) error {
 	if a == nil || !a.Stopped {
 		return ErrProviderEgressPending
 	}
+	if s.Validate() != nil {
+		return ErrProviderEgressFailed
+	}
+	return a.validateCompletedCaptured(s.Identity.Provider, s.Limits, Digest(s), p)
+}
+
+func (a *ProviderAccess) validateCompletedCaptured(provider Provider, limits Limits, inputHash string, p EgressPolicy) error {
+	if a == nil || !a.Stopped {
+		return ErrProviderEgressPending
+	}
+	if _, err := validateEgressPolicy(provider, limits, p); err != nil {
+		return ErrProviderEgressFailed
+	}
 	l := p.Limits
-	if s.Validate() != nil || p.Provider != s.Identity.Provider || a.Version != 1 || a.SessionHash != Digest(s) || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes {
+	if len(inputHash) != 64 || !objectID.MatchString(inputHash) || a.Version != 1 || a.SessionHash != inputHash || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes {
 		return ErrProviderEgressFailed
 	}
 	return nil
@@ -169,7 +186,25 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 	if s.Validate() != nil || ctx == nil || ctx.Err() != nil || transport == nil || p.Provider != s.Identity.Provider || len(p.Routes) == 0 || len(p.Routes) > 16 || len(p.Headers) > 24 {
 		return nil, ErrLiveBlocked
 	}
-	m := DefaultEgressLimits(s)
+	headers, err := validateEgressPolicy(s.Identity.Provider, s.Limits, p)
+	if err != nil {
+		return nil, err
+	}
+	p.Routes = append([]EgressRoute(nil), p.Routes...)
+	p.Headers = append([]string(nil), p.Headers...)
+	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
+	done := make(chan struct{})
+	close(done)
+	return &ProviderEgress{intake: make(chan struct{}, maxEgressIntake), serial: make(chan struct{}, 1), policy: p, headers: headers, transport: transport, ctx: ctx, cancel: cancel, intakeDone: done, audit: ProviderAccess{Version: 1, SessionHash: Digest(s), PolicyHash: Digest(p)}}, nil
+}
+
+// validateEgressPolicy is shared by launch construction and stopped-attempt
+// recovery. Validation neither opens a transport nor creates a live bridge.
+func validateEgressPolicy(provider Provider, limits Limits, p EgressPolicy) (map[string]bool, error) {
+	if !provider.Valid() || limits.Validate() != nil || p.Provider != provider || len(p.Routes) == 0 || len(p.Routes) > 16 || len(p.Headers) > 24 {
+		return nil, ErrLiveBlocked
+	}
+	m := egressLimits(provider, limits.MaxTurns)
 	l := p.Limits
 	if l.Requests <= 0 || l.Requests > m.Requests || l.InferenceRequests <= 0 || l.InferenceRequests > m.InferenceRequests || l.RefreshRequests < 0 || l.RefreshRequests > m.RefreshRequests || l.MetadataRequests < 0 || l.MetadataRequests > m.MetadataRequests || l.NegotiationRequests < 0 || l.NegotiationRequests > m.NegotiationRequests || l.Requests > l.InferenceRequests+l.RefreshRequests+l.MetadataRequests+l.NegotiationRequests || l.RequestBytes <= 0 || l.RequestBytes > m.RequestBytes || l.ResponseBytes <= 0 || l.ResponseBytes > m.ResponseBytes || l.TotalBytes <= 0 || l.TotalBytes > m.TotalBytes {
 		return nil, ErrLiveBlocked
@@ -178,7 +213,7 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 	hasInference := false
 	for _, route := range p.Routes {
 		key := route.Authority + " " + route.Method + " " + route.Path + "?" + route.RawQuery
-		if !egressAuthority(route.Authority) || !egressPath(route.Path) || !egressQuery(route.RawQuery) || (route.Method != "POST" && route.Method != "GET") || seen[key] || (route.Kind != "inference" && route.Kind != "refresh" && route.Kind != "metadata" && route.Kind != "local_negotiation") || (route.Kind != "metadata" && route.Kind != "local_negotiation" && route.Method != "POST") || (route.Kind == "local_negotiation" && (s.Identity.Provider != Codex || route.Method != "GET" || l.NegotiationRequests != 1)) {
+		if !egressAuthority(route.Authority) || !egressPath(route.Path) || !egressQuery(route.RawQuery) || (route.Method != "POST" && route.Method != "GET") || seen[key] || (route.Kind != "inference" && route.Kind != "refresh" && route.Kind != "metadata" && route.Kind != "local_negotiation") || (route.Kind != "metadata" && route.Kind != "local_negotiation" && route.Method != "POST") || (route.Kind == "local_negotiation" && (provider != Codex || route.Method != "GET" || l.NegotiationRequests != 1)) {
 			return nil, ErrLiveBlocked
 		}
 		seen[key] = true
@@ -211,12 +246,7 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 		}
 		headers[h] = true
 	}
-	p.Routes = append([]EgressRoute(nil), p.Routes...)
-	p.Headers = append([]string(nil), p.Headers...)
-	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
-	done := make(chan struct{})
-	close(done)
-	return &ProviderEgress{intake: make(chan struct{}, maxEgressIntake), serial: make(chan struct{}, 1), policy: p, headers: headers, transport: transport, ctx: ctx, cancel: cancel, intakeDone: done, audit: ProviderAccess{Version: 1, SessionHash: Digest(s), PolicyHash: Digest(p)}}, nil
+	return headers, nil
 }
 
 func (b *ProviderEgress) Snapshot() ProviderAccess { b.mu.Lock(); defer b.mu.Unlock(); return b.audit }
