@@ -151,10 +151,19 @@ type nativeVMCodeHostAccess struct {
 	InputBytes, OutputBytes int64
 	InputHash, OutputHash   string
 	Failed, Stopped         bool
+	Stage                   string
+}
+
+func nativeVMCodeStage(stage string) bool {
+	switch stage {
+	case "", "accept-data", "accept-control", "peer", "prelude", "spawn", "probe", "ready", "exchange", "wait", "complete":
+		return true
+	}
+	return false
 }
 
 func (a *nativeVMCodeHostAccess) valid(s Session) bool {
-	return a != nil && a.Version == 1 && a.SessionHash == Digest(s) && a.UID == nativeVMCodeHostUID && a.InputBytes >= 0 && a.InputBytes <= 8<<20 && a.OutputBytes >= 0 && a.OutputBytes <= 8<<20 && validAuthHash(a.InputHash) && validAuthHash(a.OutputHash) && !a.Failed && a.Stopped
+	return a != nil && a.Version == 1 && a.SessionHash == Digest(s) && a.UID == nativeVMCodeHostUID && a.InputBytes >= 0 && a.InputBytes <= 8<<20 && a.OutputBytes >= 0 && a.OutputBytes <= 8<<20 && validAuthHash(a.InputHash) && validAuthHash(a.OutputHash) && !a.Failed && a.Stopped && (a.Stage == "" || a.Stage == "complete")
 }
 func (f nativeVMFinished) valid(q nativeVMRequest) bool {
 	if !q.valid() || f.Version != 1 || f.Binding != q.Binding || f.RequestHash != Digest(q) || (f.GuestStage != "" && !nativeVMGuestStage(f.GuestStage)) || len(f.Report) > q.Session.Limits.OutputBytes || len(f.SourceAudit) > 2<<20 || len(f.AuthReturn) > authTransferLimit+authTransferHeaderLimit+len(authTransferMagic)+4 {
@@ -169,6 +178,9 @@ func (f nativeVMFinished) valid(q nativeVMRequest) bool {
 		return false
 	}
 	if q.Session.Identity.Provider == Claude && f.CodeHost != nil {
+		return false
+	}
+	if f.CodeHost != nil && !nativeVMCodeStage(f.CodeHost.Stage) {
 		return false
 	}
 	if f.State == "complete" && (q.Session.Identity.Provider == Codex && !f.CodeHost.valid(q.Session) || len(f.Report) == 0 || len(f.AuthReturn) == 0 || len(f.SourceAudit) == 0) {

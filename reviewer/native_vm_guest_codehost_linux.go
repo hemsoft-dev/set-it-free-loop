@@ -173,7 +173,7 @@ func nativeGuestCodeRelay() int {
 	os.Stdin.Close()
 	select {
 	case in := <-input:
-		if in.err != nil {
+		if in.err != nil && !errors.Is(in.err, os.ErrClosed) {
 			fail()
 			return 1
 		}
@@ -239,11 +239,13 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 	stop := context.AfterFunc(ctx, b.close)
 	defer stop()
 	defer b.close()
+	result.Stage = "accept-data"
 	data, err := b.data.AcceptUnix()
 	if err != nil {
 		return result
 	}
 	defer data.Close()
+	result.Stage = "accept-control"
 	control, err := b.control.AcceptUnix()
 	if err != nil {
 		return result
@@ -251,6 +253,7 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 	defer control.Close()
 	stopConnections := context.AfterFunc(ctx, func() { data.Close(); control.Close() })
 	defer stopConnections()
+	result.Stage = "peer"
 	a, err := nativeCodePeer(data)
 	if err != nil || a.Uid != nativeVMCodexUID || a.Gid != nativeVMIPCGID || a.Pid <= 0 {
 		return result
@@ -263,6 +266,7 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 	if err != nil || string(group) != "0::/native-client\n" {
 		return result
 	}
+	result.Stage = "prelude"
 	for _, prelude := range []struct {
 		connection *net.UnixConn
 		value      string
@@ -281,6 +285,7 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 			cancel()
 		}
 	}()
+	result.Stage = "spawn"
 	readyRead, readyWrite, err := os.Pipe()
 	if err != nil {
 		return result
@@ -304,12 +309,15 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 	stopReady := context.AfterFunc(ctx, func() { readyRead.Close() })
 	defer stopReady()
 	var observed [1]byte
+	result.Stage = "probe"
 	if _, err = io.ReadFull(readyRead, observed[:]); err != nil || observed[0] != 1 {
 		return result
 	}
+	result.Stage = "ready"
 	if _, err = io.WriteString(data, nativeCodeReady); err != nil {
 		return result
 	}
+	result.Stage = "exchange"
 	input, output := make(chan nativeCodeStream, 1), make(chan nativeCodeStream, 1)
 	go func() {
 		copied := nativeCodeCopy(process.in, data, values)
@@ -340,6 +348,7 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 	}
 	result.InputBytes, result.InputHash = in.bytes, in.hash
 	result.OutputBytes, result.OutputHash = out.bytes, out.hash
+	result.Stage = "wait"
 	select {
 	case err = <-controlDone:
 	case <-ctx.Done():
@@ -350,6 +359,9 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 	select {
 	case <-process.done:
 		result.Failed = err != nil || process.waitErr != nil || in.err != nil || out.err != nil || ctx.Err() != nil
+		if !result.Failed {
+			result.Stage = "complete"
+		}
 	case <-ctx.Done():
 	}
 	return result

@@ -118,7 +118,7 @@ func TestNativeVMFinishedRequiresPrivateAuditsAndAuthReturn(t *testing.T) {
 	if !f.valid(q) {
 		t.Fatal("structural envelope unexpectedly rejected")
 	}
-	for _, kind := range []string{"source", "return", "codehost", "wrong-uid", "failed-host", "oversized", "state"} {
+	for _, kind := range []string{"source", "return", "codehost", "wrong-uid", "failed-host", "codehost-stage", "oversized", "state"} {
 		bad := f
 		copy := *f.CodeHost
 		bad.CodeHost = &copy
@@ -133,6 +133,8 @@ func TestNativeVMFinishedRequiresPrivateAuditsAndAuthReturn(t *testing.T) {
 			bad.CodeHost.UID = nativeVMCodexUID
 		case "failed-host":
 			bad.CodeHost.Failed = true
+		case "codehost-stage":
+			bad.CodeHost.Stage = "candidate-controlled-diagnostic"
 		case "oversized":
 			bad.Report = make([]byte, q.Session.Limits.OutputBytes+1)
 		case "state":
