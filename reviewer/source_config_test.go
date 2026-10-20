@@ -35,12 +35,13 @@ func sourceProxyCommand(t *testing.T, inv Invocation) (string, []string) {
 		}
 		var config struct {
 			Servers map[string]struct {
-				Type    string   `json:"type"`
-				Command string   `json:"command"`
-				Args    []string `json:"args"`
+				Type       string   `json:"type"`
+				Command    string   `json:"command"`
+				Args       []string `json:"args"`
+				AlwaysLoad bool     `json:"alwaysLoad"`
 			} `json:"mcpServers"`
 		}
-		if i+1 == len(inv.Args) || json.Unmarshal([]byte(inv.Args[i+1]), &config) != nil || len(config.Servers) != 1 || config.Servers["sfl-source"].Type != "stdio" {
+		if i+1 == len(inv.Args) || json.Unmarshal([]byte(inv.Args[i+1]), &config) != nil || len(config.Servers) != 1 || config.Servers["sfl-source"].Type != "stdio" || !config.Servers["sfl-source"].AlwaysLoad {
 			t.Fatal("invalid Claude stdio server config")
 		}
 		server := config.Servers["sfl-source"]
@@ -84,6 +85,15 @@ func TestSourceClientManifestsBindExactlyOneSession(t *testing.T) {
 				t.Fatal("source options consumed stdin marker")
 			}
 			if provider == Claude {
+				found := false
+				for _, value := range inv.Environment {
+					if value == "ENABLE_TOOL_SEARCH=false" {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatal("deferred tool search not disabled")
+				}
 				for _, arg := range inv.Args {
 					if arg == "--safe-mode" || arg == "--bare" {
 						t.Fatal("source path has incompatible mode", arg)

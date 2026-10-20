@@ -210,3 +210,39 @@ func TestClaudeSourceRejectsDriverWithoutInitializationGate(t *testing.T) {
 		t.Fatal("ungated driver started source-enabled Claude", err)
 	}
 }
+
+type overriddenSourceDriver struct {
+	NativeDriver
+	inspected bool
+	executed  bool
+}
+
+func (d *overriddenSourceDriver) Inspect(context.Context, Invocation) (Identity, error) {
+	d.inspected = true
+	return PinnedIdentity(Claude)
+}
+
+func (d *overriddenSourceDriver) Execute(context.Context, Invocation) ([]byte, Identity, error) {
+	d.executed = true
+	return nil, Identity{}, nil
+}
+
+func TestClaudeSourceRejectsPromotedNativeMarkerAndNilDriver(t *testing.T) {
+	a, l, _ := claudeSourceFixture(t, "source-success")
+	wrapped := &overriddenSourceDriver{NativeDriver: NativeDriver{Launcher: l}}
+	a.Driver = wrapped
+	if _, err := a.Review(context.Background(), testSession(Claude)); err == nil || wrapped.inspected || wrapped.executed || len(l.workers) != 0 {
+		t.Fatal("embedding bypassed concrete source execution guard", err)
+	}
+	var missing *NativeDriver
+	a.Driver = missing
+	if _, err := a.Review(context.Background(), testSession(Claude)); err == nil {
+		t.Fatal("typed nil native driver accepted")
+	}
+	// The concrete pointer form runs the same guarded protocol as a value.
+	a.Driver = &NativeDriver{Launcher: l}
+	if _, err := a.Review(context.Background(), testSession(Claude)); err != nil {
+		t.Fatal("concrete native pointer rejected", err)
+	}
+	assertFixtureStopped(t, &l.fixtureLauncher)
+}

@@ -155,7 +155,7 @@ func (a Adapter) review(ctx context.Context, s Session, source SourceTools) (Rep
 		return Report{}, errors.Join(PhaseError{State: "blocked", BeforeWork: true}, ErrLiveBlocked)
 	}
 	if inv.Provider == Claude && inv.SourceEndpoint != nil {
-		if _, ok := a.Driver.(sourceInitializedDriver); !ok {
+		if !sourceInitializedNative(a.Driver) {
 			return Report{}, errors.Join(PhaseError{State: "blocked", BeforeWork: true}, ErrLiveBlocked)
 		}
 	}

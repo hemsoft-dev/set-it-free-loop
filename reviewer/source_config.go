@@ -75,7 +75,8 @@ func (a Adapter) sourceInvocation(s Session, inv Invocation) (Invocation, error)
 				i++
 			}
 		}
-		config, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"sfl-source": map[string]any{"type": "stdio", "command": "/usr/bin/env", "args": arguments}}})
+		config, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"sfl-source": map[string]any{"type": "stdio", "command": "/usr/bin/env", "args": arguments, "alwaysLoad": true}}})
+		inv.Environment = append(inv.Environment, "ENABLE_TOOL_SEARCH=false")
 		args = append(args, "--input-format", "stream-json", "--verbose", "--setting-sources", "", "--settings", `{"disableAllHooks":true}`, "--mcp-config", string(config), "--allowedTools", "mcp__sfl-source__read,mcp__sfl-source__search", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--max-turns", strconv.Itoa(s.Limits.MaxTurns))
 		inv.Args = args
 	default:

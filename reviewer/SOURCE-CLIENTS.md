@@ -13,6 +13,9 @@ model/client/subscription contract remain intact. No ambient credential variable
 is forwarded to the helper. Claude receives one explicit stdio server, strict
 MCP configuration, no built-in source tools, a source-tool permission allowlist,
 noninteractive denial, and the captured maximum agentic-turn count.
+Its stdio configuration sets `alwaysLoad: true`, and its trusted environment
+sets `ENABLE_TOOL_SEARCH=false`. The pinned client therefore exposes both source
+schemas directly without requiring a ToolSearch call before Read/Search.
 
 Claude's wait/strict flags do not require successful source initialization.
 The source-enabled path therefore uses stream-json input/output and NativeDriver's
@@ -32,8 +35,10 @@ availability or actual reads. Broker receipts remain authoritative for actual
 source activity. Status omits environment variables, so the pristine filesystem,
 allowlisted environment and OS boundary still need separate qualification.
 
-The adapter rejects a source-enabled Claude driver without the built-in
-initialization guard before inspection or launch. The JSONL wrapper driver is
+The adapter accepts source-enabled Claude only through a concrete `NativeDriver`
+value or non-nil pointer. An embedding wrapper could inherit a marker method
+while overriding execution, so it is rejected before inspection or launch.
+The JSONL wrapper driver is
 not an implicit fallback. The native control path's fake-process tests prove
 zero user frames for failed/missing/partial tools, wrong helper/config/scope,
 uncorrelated responses and pending timeout. They also cover successful startup,

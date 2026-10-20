@@ -13,11 +13,18 @@ import (
 // process-tree termination. No host executable or live launcher is selected here.
 type NativeDriver struct{ Launcher WorkerLauncher }
 
-// Only implementations in this package that enforce the actual current-client
-// preprompt handshake may opt into Claude's source-enabled adapter path.
-type sourceInitializedDriver interface{ sourceInitializationEnforced() }
-
-func (NativeDriver) sourceInitializationEnforced() {}
+// Match concrete execution implementations. A marker method can be promoted
+// through embedding while an outer type overrides Execute and skips the guard.
+func sourceInitializedNative(driver Driver) bool {
+	switch value := driver.(type) {
+	case NativeDriver:
+		return true
+	case *NativeDriver:
+		return value != nil
+	default:
+		return false
+	}
+}
 
 func (d NativeDriver) Inspect(ctx context.Context, inv Invocation) (Identity, error) {
 	return (WorkerDriver{Launcher: d.Launcher}).Inspect(ctx, inv)
