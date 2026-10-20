@@ -47,9 +47,13 @@ are persisted under the reserved attempt ID before output is accepted. Audit
 storage failure keeps the lease for explicit stopped-worker recovery; see
 [SOURCE.md](SOURCE.md). A fake in-process transport does not qualify the official
 worker's separate identity or filesystem/network boundary.
-The library cannot prove process termination or external OS isolation. Those
-remain live qualification gates. Generation/lease checks fence old workers from
-saving evidence after cancellation or replacement.
+The [worker transport](WORKER.md) now requires explicit supervisor confirmation
+after waiting or cancelling a wrapper process. `ErrWorkerStopPending` retains
+the lease and exact attempt for recovery, and prevents audit writes/refunds that
+require a stopped worker. The library cannot independently prove the supervisor's
+OS containment or termination attestation. Source implementation can continue
+with fakes before actual official-worker qualification. Generation/lease checks
+fence old workers from saving evidence after cancellation or replacement.
 
 `Publisher.Prepare` accepts a persisted complete outcome and renders its bounded
 document. Known controller secrets are redacted across summary and inline bodies

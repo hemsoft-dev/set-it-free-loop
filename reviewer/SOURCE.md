@@ -54,10 +54,10 @@ these tools without exposing its private controller/reader objects, and prove
 client/tool/filesystem/egress confinement under [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
 The retired runtime remains frozen.
 
-A test-only JSONL bridge runs real fake-worker executables for both provider
-identities. Those processes request source through the broker and reject inherited
-GitHub/provider/SSH/home environment canaries. That bridge is not shipped as an
-official-client transport and proves no filesystem or network sandbox.
+The reusable [worker transport](WORKER.md) maps a bounded JSONL wrapper protocol
+to this capability. Its tests run real fake-worker executables for both provider
+identities, with source requests and host-environment canaries. This does not
+supply an official-client wrapper or qualify its filesystem/network sandbox.
 
 Run the offline qualification from the repository root:
 
