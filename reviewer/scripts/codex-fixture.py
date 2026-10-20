@@ -87,6 +87,8 @@ def main():
     parser.add_argument("--isolate-code-host", action="store_true", help="Synthetic-only nested code-host namespace/stdio observation")
     parser.add_argument("--module-cache", type=pathlib.Path)
     args = parser.parse_args()
+    if args.isolate_code_host and args.case != "source":
+        parser.error("code-host transport qualification supports the source case only")
     client = args.client.resolve(strict=True)
     code_host = args.code_host.resolve(strict=True)
     if _common.digest(client) != CLIENT_SHA256 or _common.digest(code_host) != HOST_SHA256:
@@ -191,13 +193,10 @@ def main():
     source = [json.loads(line) for line in (artifacts / "source.jsonl").read_text().splitlines()] if (artifacts / "source.jsonl").exists() else []
     passed = observation_passed(receipt, result, source, args.case)
     if args.isolate_code_host:
-        relay_path = artifacts / "codehost-relay.json"
-        isolated = json.loads(relay_path.read_text()) if relay_path.exists() else {}
         broker_path = out / "codehost-broker.json"
         broker_result = json.loads(broker_path.read_text()) if broker_path.exists() else {}
         passed = (passed and broker_stopped and broker.returncode == 0
-                  and code_host_observation_passed(isolated) and code_host_observation_passed(broker_result)
-                  and isolated.get("input") == broker_result.get("input") and isolated.get("output") == broker_result.get("output"))
+                  and code_host_observation_passed(broker_result))
     print(json.dumps({"observation_passed": passed, "case": args.case, "output": str(out),
                       "capability_allowlist_qualified": False, "production_boundary_qualified": False}))
     return 0 if passed else 1

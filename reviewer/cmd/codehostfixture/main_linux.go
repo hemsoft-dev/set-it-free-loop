@@ -141,9 +141,10 @@ func main() {
 	if err != nil || string(raw) != marker {
 		os.Exit(2)
 	}
+	// The CLI may kill its relay during normal teardown. Completion evidence
+	// belongs to the separately supervised broker, outside the client mount.
 	result := relay()
-	raw, _ = json.MarshalIndent(result, "", "  ")
-	if os.WriteFile("/artifacts/codehost-relay.json", append(raw, '\n'), 0600) != nil || !result.Passed {
+	if !result.Passed {
 		os.Exit(1)
 	}
 }
@@ -224,26 +225,33 @@ func runBroker(socket, host, probe, receipt string) {
 		return
 	}
 	defer conn.Close()
-	rawConn, err := conn.SyscallConn()
-	if err != nil {
-		return
-	}
-	peerOK := false
-	if rawConn.Control(func(fd uintptr) {
-		peer, e := unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
-		peerOK = e == nil && peer.Uid == uint32(os.Getuid()) && peer.Pid > 0
-	}) != nil || !peerOK {
-		return
-	}
-	conn.SetDeadline(time.Now().Add(40 * time.Second))
-	request := make([]byte, len(hello))
-	if _, err = io.ReadFull(conn, request); err != nil || string(request) != hello {
+	if acceptBrokerPeer(conn, uint32(os.Getuid())) != nil {
 		return
 	}
 	result = brokerExchange(conn, host, probe, filepath.Join(filepath.Dir(receipt), "codehost-stderr.txt"))
 	if result.Passed {
 		code = 0
 	}
+}
+
+func acceptBrokerPeer(conn *net.UnixConn, uid uint32) error {
+	rawConn, err := conn.SyscallConn()
+	if err != nil {
+		return err
+	}
+	peerOK := false
+	if rawConn.Control(func(fd uintptr) {
+		peer, e := unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+		peerOK = e == nil && peer.Uid == uid && peer.Pid > 0
+	}) != nil || !peerOK {
+		return errors.New("fixture broker peer denied")
+	}
+	conn.SetDeadline(time.Now().Add(40 * time.Second))
+	request := make([]byte, len(hello))
+	if _, err = io.ReadFull(conn, request); err != nil || string(request) != hello {
+		return errors.New("fixture broker prelude denied")
+	}
+	return nil
 }
 
 func brokerExchange(conn *net.UnixConn, host, probe, stderrPath string) observation {
