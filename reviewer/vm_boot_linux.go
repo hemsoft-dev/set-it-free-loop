@@ -298,6 +298,10 @@ func (i *VMBootImages) RunVMBootFixture(ctx context.Context, serial io.Writer) (
 		return false, err
 	}
 	defer func() { result = errors.Join(result, kvm.Close()) }()
+	return i.runVMFixtureWithKVM(ctx, kvm, serial)
+}
+
+func (i *VMBootImages) runVMFixtureWithKVM(ctx context.Context, kvm *os.File, serial io.Writer) (verified bool, result error) {
 	cmd, files, err := i.command(ctx, kvm)
 	if err != nil {
 		return false, err

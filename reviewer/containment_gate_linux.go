@@ -3,6 +3,7 @@
 package reviewer
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
@@ -45,6 +46,7 @@ type gateRecord struct {
 	Phase        string       `json:"phase"`
 	ManifestHash string       `json:"manifest_hash"`
 	Identity     GateIdentity `json:"identity"`
+	Protocol     int          `json:"protocol"`
 }
 
 type gateHello struct {
@@ -88,7 +90,14 @@ func validFakeGateManifest(m FakeGateManifest) bool {
 // PrepareContainmentGate creates a never-reused launch directory and fsyncs its
 // prepared record before opening the endpoint. Call this before manager start.
 func PrepareContainmentGate(root string, binding AuthBinding, manifest FakeGateManifest) (*ContainmentGate, error) {
-	if !binding.valid() || !validFakeGateManifest(manifest) || !filepath.IsAbs(root) || filepath.Clean(root) != root || privateDirectory(root) != nil {
+	if !validFakeGateManifest(manifest) {
+		return nil, ErrContainmentGate
+	}
+	return prepareContainmentGateHash(root, binding, Digest(manifest), 0)
+}
+
+func prepareContainmentGateHash(root string, binding AuthBinding, hash string, protocol int) (*ContainmentGate, error) {
+	if !binding.valid() || !validAuthHash(hash) || (protocol != 0 && protocol != 2) || !filepath.IsAbs(root) || filepath.Clean(root) != root || privateDirectory(root) != nil {
 		return nil, ErrContainmentGate
 	}
 	directory := filepath.Join(root, binding.LaunchID)
@@ -115,7 +124,7 @@ func PrepareContainmentGate(root string, binding AuthBinding, manifest FakeGateM
 		return nil, ErrContainmentGate
 	}
 	defer held.close()
-	record := gateRecord{Version: 1, Binding: binding, Phase: "prepared", ManifestHash: Digest(manifest)}
+	record := gateRecord{Version: 1, Binding: binding, Phase: "prepared", ManifestHash: hash, Protocol: protocol}
 	if err = g.write(held, record); err != nil {
 		return nil, ErrContainmentGate
 	}
@@ -147,8 +156,12 @@ func (g *ContainmentGate) read(held *authLock) (gateRecord, error) {
 	if err != nil {
 		return gateRecord{}, ErrContainmentGate
 	}
+	raw, err = legacyContainmentField(raw, "protocol", json.RawMessage("0"))
+	if err != nil {
+		return gateRecord{}, ErrContainmentGate
+	}
 	r, err := DecodeStrict[gateRecord](raw, 65536)
-	if err != nil || r.Version != 1 || r.Binding != g.binding || !validAuthHash(r.ManifestHash) {
+	if err != nil || r.Version != 1 || r.Binding != g.binding || !validAuthHash(r.ManifestHash) || (r.Protocol != 0 && r.Protocol != 2) {
 		return r, ErrContainmentGate
 	}
 	switch r.Phase {
@@ -165,6 +178,24 @@ func (g *ContainmentGate) read(held *authLock) (gateRecord, error) {
 		return r, ErrContainmentGate
 	}
 	return r, nil
+}
+
+// Only the named new controller-journal fields have legacy zero defaults.
+// Duplicate keys/nulls/unknown fields remain errors. The old fake protocol stays
+// version 1; a missing VM discriminator cannot become a VM grant on recovery.
+func legacyContainmentField(raw []byte, field string, zero json.RawMessage) ([]byte, error) {
+	if len(raw) > 65536 || uniqueJSONKeys(json.NewDecoder(bytes.NewReader(raw)), 0) != nil {
+		return nil, ErrContainmentGate
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil || fields == nil {
+		return nil, ErrContainmentGate
+	}
+	if _, ok := fields[field]; ok {
+		return raw, nil
+	}
+	fields[field] = zero
+	return json.Marshal(fields)
 }
 
 // OpenAbortedContainmentGate is recovery, never resume. It permanently revokes
@@ -309,6 +340,17 @@ func (g *ContainmentGate) GrantFake(ctx context.Context, identity GateIdentity, 
 	if !validFakeGateManifest(manifest) || ctx.Err() != nil {
 		return ErrContainmentGate
 	}
+	raw, err := json.Marshal(gateGrant{Version: 1, Binding: g.binding, Identity: identity, Manifest: manifest})
+	if err != nil {
+		return ErrContainmentGate
+	}
+	return g.grant(ctx, identity, Digest(manifest), 0, raw, nil)
+}
+
+func (g *ContainmentGate) grant(ctx context.Context, identity GateIdentity, manifestHash string, protocol int, raw []byte, files []*os.File) error {
+	if ctx.Err() != nil || !validAuthHash(manifestHash) || len(raw) == 0 || len(raw) > 4096 || (protocol != 0 && protocol != 2) || (protocol == 0 && len(files) != 0) || (protocol == 2 && len(files) != 4) {
+		return ErrContainmentGate
+	}
 	g.mu.Lock()
 	listener := g.listener
 	g.mu.Unlock()
@@ -346,7 +388,11 @@ func (g *ContainmentGate) GrantFake(ctx context.Context, identity GateIdentity, 
 		return ErrContainmentGate
 	}
 	actual, err := processGateIdentity(pid, identity.InvocationID)
-	if err != nil || actual != identity || hello.Version != 1 || hello.Binding != g.binding || hello.InvocationID != identity.InvocationID || hello.ManifestHash != Digest(manifest) {
+	helloVersion := 1
+	if protocol == 2 {
+		helloVersion = 2
+	}
+	if err != nil || actual != identity || hello.Version != helloVersion || hello.Binding != g.binding || hello.InvocationID != identity.InvocationID || hello.ManifestHash != manifestHash {
 		return ErrContainmentGate
 	}
 	held, err := g.lock(ctx)
@@ -355,7 +401,7 @@ func (g *ContainmentGate) GrantFake(ctx context.Context, identity GateIdentity, 
 	}
 	defer held.close()
 	r, err := g.read(held)
-	if err != nil || r.Phase != "prepared" || r.ManifestHash != Digest(manifest) || ctx.Err() != nil || unix.PidfdSendSignal(peerFD, 0, nil, 0) != nil {
+	if err != nil || r.Phase != "prepared" || r.Protocol != protocol || r.ManifestHash != manifestHash || ctx.Err() != nil || unix.PidfdSendSignal(peerFD, 0, nil, 0) != nil {
 		return ErrContainmentGate
 	}
 	r.Phase = "granted"
@@ -363,14 +409,24 @@ func (g *ContainmentGate) GrantFake(ctx context.Context, identity GateIdentity, 
 	if err = g.write(held, r); err != nil {
 		return ErrContainmentGate
 	}
-	raw, err := json.Marshal(gateGrant{Version: 1, Binding: g.binding, Identity: identity, Manifest: manifest})
-	if err != nil {
-		return ErrContainmentGate
-	}
 	// The bound is reset after waiting for the journal lock. Never block Abort
 	// indefinitely on an unread payload. No goroutine owns a deferred grant write.
 	_ = conn.SetWriteDeadline(gateDeadline(ctx))
-	n, err := conn.Write(raw)
+	var n int
+	if len(files) == 0 {
+		n, err = conn.Write(raw)
+	} else {
+		fds := make([]int, len(files))
+		for i, file := range files {
+			fds[i] = int(file.Fd())
+		}
+		var oob int
+		rights := unix.UnixRights(fds...)
+		n, oob, err = conn.WriteMsgUnix(raw, rights, nil)
+		if oob != len(rights) {
+			return ErrContainmentGate
+		}
+	}
 	if err != nil || n != len(raw) {
 		return ErrContainmentGate
 	}
