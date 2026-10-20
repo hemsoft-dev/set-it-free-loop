@@ -33,6 +33,7 @@ type Backend struct {
 	Session r.Session
 	Codex   *codexBackend
 	Claude  *claudeBackend
+	Refresh *refreshBackend
 }
 
 func New(s r.Session, negative bool) (*Backend, r.EgressPolicy, error) {
@@ -87,6 +88,9 @@ func sourceReport(s r.Session) r.Report {
 	return report
 }
 func (b *Backend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
+	if b.Refresh != nil && b.Refresh.serve(w, q) {
+		return
+	}
 	if b.Codex != nil {
 		b.Codex.ServeHTTP(w, q)
 	} else {
@@ -96,10 +100,19 @@ func (b *Backend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 
 type Counts struct {
 	Inference, Metadata, Negotiation, Failures, Telemetry int
+	Refreshes, RefreshFailures                            int
 	MetadataCaptured                                      bool
 }
 
-func (b *Backend) Counts() Counts {
+func (b *Backend) Counts() (result Counts) {
+	defer func() {
+		if b.Refresh != nil {
+			b.Refresh.mu.Lock()
+			result.Refreshes = b.Refresh.calls
+			result.RefreshFailures = b.Refresh.failures
+			b.Refresh.mu.Unlock()
+		}
+	}()
 	if b.Codex != nil {
 		c := b.Codex
 		c.mu.Lock()

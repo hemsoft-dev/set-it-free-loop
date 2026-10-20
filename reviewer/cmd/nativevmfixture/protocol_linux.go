@@ -24,9 +24,9 @@ import (
 
 func (c config) validCase() bool {
 	if c.ProtocolRounds == 0 {
-		return c.Provider.Valid()
+		return c.Provider.Valid() && !(c.Refresh && c.Negative)
 	}
-	return c.Provider == "" && !c.Negative && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
+	return c.Provider == "" && !c.Negative && !c.Refresh && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
 }
 
 type protocolPhase struct {
@@ -122,7 +122,7 @@ func (w protocolReviewer) ReviewAudited(ctx context.Context, s r.Session) (r.Rep
 	return report, access, evidence, reviewErr
 }
 
-func protocolUpstream(backend http.Handler) (localOnly, func()) {
+func protocolUpstream(backend http.Handler, refresh ...r.Provider) (localOnly, func()) {
 	server := httptest.NewTLSServer(backend)
 	target, _ := url.Parse(server.URL)
 	base := server.Client().Transport.(*http.Transport).Clone()
@@ -134,7 +134,11 @@ func protocolUpstream(backend http.Handler) (localOnly, func()) {
 		}
 		return dialer.DialContext(ctx, network, address)
 	}
-	return localOnly{target, base}, func() { base.CloseIdleConnections(); server.Close() }
+	provider := r.Provider("")
+	if len(refresh) == 1 {
+		provider = refresh[0]
+	}
+	return localOnly{target: target, base: base, refresh: provider}, func() { base.CloseIdleConnections(); server.Close() }
 }
 
 type protocolUnit struct {

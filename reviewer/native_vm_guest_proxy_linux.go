@@ -137,6 +137,9 @@ func nativeGuestInvocation(q nativeVMRequest, base string) (Invocation, error) {
 		return Invocation{}, ErrVMBoot
 	}
 	inv.Environment = append([]string{"HOME=/profile", "PATH=/usr/bin:/bin", "GOMAXPROCS=1"}, inv.Environment...)
+	if nativeGuestRefreshEnabled(q.Policy) {
+		inv.Environment = append(inv.Environment, "HTTPS_PROXY="+base, "NO_PROXY=127.0.0.1,localhost,::1", "SSL_CERT_FILE="+nativeGuestCAPath, "NODE_EXTRA_CA_CERTS="+nativeGuestCAPath, "CODEX_CA_CERTIFICATES="+nativeGuestCAPath)
+	}
 	if q.Session.Identity.Provider == Codex {
 		extra := []string{"-c", `cli_auth_credentials_store="file"`, "-c", `openai_base_url="` + base + `/v1"`, "-c", `chatgpt_base_url="` + base + `/backend-api/"`, "-c", `features.enable_request_compression=false`}
 		inv.Args = append(append(inv.Args[:len(inv.Args)-1:len(inv.Args)-1], extra...), "-")
@@ -155,7 +158,7 @@ func (nativeGuestNoObjects) Read(context.Context, string, string, int) (Object, 
 // This mode runs as the trusted root sidecar inside the client PID/net/mount
 // namespace. The actual CLI has the unprivileged provider UID. Only this root
 // sidecar receives the private provider device and readiness/start descriptors.
-func nativeGuestClientProxyMain() int {
+func nativeGuestClientProxyMain() (result int) {
 	if os.Getpid() != 1 || os.Getuid() != 0 {
 		return 2
 	}
@@ -212,6 +215,27 @@ func nativeGuestClientProxyMain() int {
 	defer transport.CloseIdleConnections()
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: q.Session.Limits.Timeout, WriteTimeout: q.Session.Limits.Timeout, IdleTimeout: q.Session.Limits.Timeout, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
 	server.Handler = nativeGuestProviderHandler(q, transport, cancel)
+	if nativeGuestRefreshEnabled(q.Policy) {
+		proxy, certificate, err := newNativeGuestTLSProxy(ctx, q.Policy, server.Handler, cancel)
+		if err != nil {
+			return 2
+		}
+		defer func() {
+			if proxy.Close() != nil {
+				result = 2
+			}
+		}()
+		file, err := os.OpenFile(nativeGuestCAPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0444)
+		if err != nil {
+			return 2
+		}
+		n, writeErr := file.Write(certificate)
+		modeErr, syncErr, closeErr := file.Chmod(0444), file.Sync(), file.Close()
+		if writeErr != nil || n != len(certificate) || modeErr != nil || syncErr != nil || closeErr != nil {
+			return 2
+		}
+		server.Handler = proxy
+	}
 	go server.Serve(listener)
 	defer server.Close()
 	inv, err := nativeGuestInvocation(q, "http://"+listener.Addr().String())

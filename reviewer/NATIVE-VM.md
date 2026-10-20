@@ -208,3 +208,27 @@ roughly 700 MB runtime while preserving explicit bounds inside the 2 GiB guest.
 Linux 7.0 [accepts early rootfs options](https://raw.githubusercontent.com/torvalds/linux/v7.0/fs/namespace.c)
 and [defaults ordinary tmpfs mounts to half of total RAM](https://raw.githubusercontent.com/torvalds/linux/v7.0/mm/shmem.c).
 The prior implicit boot-time capacity was insufficient in failed runs.
+
+
+When the captured policy declares refresh routes, the root client supervisor
+creates a session-only TLS certificate and retains its private key in memory.
+The official CLI receives a fixed public CA file and an HTTPS proxy on its
+existing private loopback listener. CONNECT permits only declared refresh
+names on port 443, requires matching SNI and HTTP Host, and terminates TLS
+inside the disposable namespace. The decoded request still passes the same
+method/path/body budgets and private host egress guard. This is not an opaque
+TCP tunnel. Other authorities, IP literals, ports and host overrides fail closed.
+
+Four incomplete TLS handshakes are the maximum. Header/handshake deadlines and
+cancellation bound intake; shutdown closes and joins the owned connections and
+requests. The CA file is root-owned and read-only; its key never enters a file,
+CLI, source reader or host report. No system trust or interactive profile is
+modified. No refresh route means no TLS proxy or new trust environment.
+
+The opt-in fake fixture adds `--case refresh` for each single provider. It starts
+with expired synthetic auth, requires a counted refresh and changed returned
+tokens, reopens the protected store, and starts a fresh native job that must use
+the returned tokens without another refresh. Both jobs must produce source-backed
+fixture reports, return auth, stop their whole units and remove runtime roots.
+This source path still needs the actual pinned-client qualification; hand-built
+OAuth responses and TLS unit tests alone do not establish it.

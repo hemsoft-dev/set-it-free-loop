@@ -21,6 +21,7 @@ type codexBackend struct {
 	mode                                             string
 	calls, failed, negotiations, metadata, telemetry int
 	negativeOutput                                   string
+	accessToken                                      string
 	runtimeInventory                                 []string
 }
 
@@ -227,7 +228,11 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		}
 		return
 	}
-	if q.Method != "POST" || q.URL.Path != "/v1/responses" || q.URL.RawQuery != "" || q.Header.Get("Authorization") != "Bearer sfl-fake-access" || q.Header.Get("X-Api-Key") != "" {
+	accessToken := b.accessToken
+	if accessToken == "" {
+		accessToken = "sfl-fake-access"
+	}
+	if q.Method != "POST" || q.URL.Path != "/v1/responses" || q.URL.RawQuery != "" || q.Header.Get("Authorization") != "Bearer "+accessToken || q.Header.Get("X-Api-Key") != "" {
 		deny("unexpected inference route or auth")
 		return
 	}
