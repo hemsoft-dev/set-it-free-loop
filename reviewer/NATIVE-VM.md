@@ -165,3 +165,9 @@ parser. It retains fixed setup-stage, panic and OOM enums, discards raw bytes,
 and never publishes transcripts. Guest client and reader jails have no UART
 device. This channel cannot establish Ready or authorize auth export. It
 exists to distinguish setup failure from private virtio-stream intake failure.
+
+Guest PID1 explicitly creates and validates its fixed bootstrap mountpoints
+before the kernel mount calls. It rejects symlinks, non-directories, writable
+mountpoints and wrong ownership. Repeated native runs caught a missing `/sys`
+mountpoint before any auth export; bootstrap no longer assumes its presence.
+Runtime files still require their full pinned-byte checks before Ready.

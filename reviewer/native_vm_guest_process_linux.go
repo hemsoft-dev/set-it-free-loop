@@ -124,6 +124,24 @@ func nativeGuestVerifiedFile(pin nativeGuestFile) error {
 	return nil
 }
 
+// nativeGuestMount prepares a fixed bootstrap mount selected by guest PID1.
+// The mount operation is passed explicitly so filesystem preconditions can be
+// tested without mounting anything in the host test process.
+func nativeGuestMount(source, target, kind string, flags uintptr, options string, mount func(string, string, string, uintptr, string) error) error {
+	if err := os.Mkdir(target, 0755); err != nil && !os.IsExist(err) {
+		return ErrVMBoot
+	}
+	info, err := os.Lstat(target)
+	if err != nil || !info.IsDir() || info.Mode().Perm()&0022 != 0 {
+		return ErrVMBoot
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || st.Uid != uint32(os.Geteuid()) {
+		return ErrVMBoot
+	}
+	return mount(source, target, kind, flags, options)
+}
+
 func nativeGuestSetup() (nativeGuestRelease, error) {
 	var release nativeGuestRelease
 	// Refuse host execution before a mount, cgroup, device or account operation.
@@ -143,7 +161,7 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 		return release, ErrVMBoot
 	}
 	nativeGuestBootStage("proc")
-	if unix.Mount("proc", "/proc", "proc", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "") != nil {
+	if nativeGuestMount("proc", "/proc", "proc", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", unix.Mount) != nil {
 		return release, ErrVMBoot
 	}
 	cmdline, err := os.ReadFile("/proc/cmdline")
@@ -168,7 +186,7 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 		flags                                uintptr
 	}{{"mount-dev", "devtmpfs", "/dev", "devtmpfs", "mode=0755", unix.MS_NOSUID}, {"mount-sys", "sysfs", "/sys", "sysfs", "", unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC}, {"mount-run", "tmpfs", "/run", "tmpfs", "mode=0755,size=192m", unix.MS_NOSUID | unix.MS_NODEV}} {
 		nativeGuestBootStage(mount.stage)
-		if err := unix.Mount(mount.source, mount.target, mount.kind, mount.flags, mount.options); err != nil {
+		if err := nativeGuestMount(mount.source, mount.target, mount.kind, mount.flags, mount.options, unix.Mount); err != nil {
 			failure := nativeBootMountError(err)
 			if err == unix.ENOENT {
 				info, statErr := os.Lstat(mount.target)
