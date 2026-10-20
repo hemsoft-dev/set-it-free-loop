@@ -53,6 +53,21 @@ preceding request. A later request supersedes the earlier one, including when a
 non-owner requests the same bot. Non-owner requests cannot admit jobs or generate
 ACKs, and cannot leave an older owner request eligible.
 
+SQLite retains every relevant request and removal event's ID, kind, bot,
+actor/requester IDs and creation time. Later complete reads must reproduce all
+of those immutable records, including removals, across restart. A boolean
+removed flag cannot stand in for missing remote history. The current scan must
+also independently reconstruct each already-removed request.
+
+A previously unseen event at or before the durable history cutoff contradicts
+that cutoff and defers both Current and History without advancing local state.
+It cannot become admissible merely because a later scan returns it. Known
+request creation records from the legacy normalized seam can acquire matching
+creation metadata, but this does not authorize importing an unknown old removal.
+After event records exist, a batch omitting the native event collection is
+rejected. Adoption of untracked live state would require explicit migration or
+requalification; this frozen alpha has no live state migration path.
+
 The snapshot on a new native request is its first qualified discovery capture,
 not a claim about revisions at the historical event's creation time. After the
 controller persists that request, later reads reuse its original snapshot.
@@ -84,6 +99,14 @@ it performs no GitHub write or inference. `History` returns a complete batch for
 the caller's existing discovery transaction. Unknown ACKs continue to defer
 configuration-dependent admission.
 
+HTTP 403 remains a structured deferred read error, including both throttling
+and unclassified permission failures. It cannot mark an accepted review
+superseded or skip its pending postcheck. Retry timing preserves bounded
+Retry-After seconds, or the primary rate-limit reset relative to the response's
+Date when remaining requests are zero. Only a missing repository or PR lookup
+with HTTP 404 establishes inaccessible scope. A missing base ref or other
+metadata is a failed snapshot read, not proof of lost repository access.
+
 The first repository response's platform `Date` is the batch cutoff. Relevant
 events/commands beyond that cutoff defer. Pagination is bounded to 100 pages of
 100 records per collection. Relevant native events and owner commands also obey
@@ -113,9 +136,12 @@ request captures across movement/restart, short event/comment pages with the
 repository-ID Link alias, removal/re-request idempotence, owner ACK timing,
 non-owner replacement, newly discovered cancellation before POST and disappearance
 of B during A's accepted write. Hostile cases include incomplete/foreign pages,
-duplicate/ambiguous/future events, missing requester attribution, lost previously
-retained history and revision changes during collection. Failed batches leave
-SQLite untouched.
+duplicate/ambiguous/future events, missing requester attribution, events arriving
+behind the durable cutoff, lost or changed removal identities after restart,
+rate-limited postcheck recovery, lost previously retained history and revision
+changes during collection. Failed batches leave SQLite untouched. Throttling
+leaves postcheck_pending intact and subsequent recovery confirms the original
+review without a duplicate POST or supersession annotation.
 
 Polling/backoff, source packet/diff collection, credential attestation, native
 App consistency qualification and runtime packaging remain [issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176)

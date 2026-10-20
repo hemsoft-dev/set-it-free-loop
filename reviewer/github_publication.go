@@ -127,6 +127,16 @@ func (g *GitHubPublicationHTTP) requestBounded(ctx context.Context, method, path
 		if seconds, err := strconv.Atoi(r.Header.Get("Retry-After")); err == nil && seconds > 0 && seconds <= 3600 {
 			delay = time.Duration(seconds) * time.Second
 		}
+		if delay == 0 && r.Header.Get("X-Ratelimit-Remaining") == "0" {
+			reset, resetErr := strconv.ParseInt(r.Header.Get("X-Ratelimit-Reset"), 10, 64)
+			serverTime, dateErr := http.ParseTime(r.Header.Get("Date"))
+			if resetErr == nil && dateErr == nil {
+				until := time.Unix(reset, 0).Sub(serverTime)
+				if until > 0 && until <= time.Hour {
+					delay = until
+				}
+			}
+		}
 		return nil, &GitHubHTTPError{r.StatusCode, delay}
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, limit+1))

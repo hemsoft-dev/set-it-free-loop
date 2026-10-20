@@ -90,9 +90,20 @@ func githubBranch(ref string) bool {
 	}
 	return true
 }
+
+// Only a missing repository or PR lookup can establish inaccessible scope.
+// A missing base ref is a failed snapshot read, not repository access loss.
+type githubPullMissing struct{ cause error }
+
+func (e *githubPullMissing) Error() string { return e.cause.Error() }
+func (e *githubPullMissing) Unwrap() error { return e.cause }
+
 func (g *GitHubDiscoveryHTTP) capture(ctx context.Context, scope Scope, closedOK bool) (githubReadSnapshot, error) {
 	var p githubPull
 	if _, err := g.http.request(ctx, "GET", githubPR(scope), nil, 200, &p); err != nil {
+		if githubAccessLost(err) {
+			return githubReadSnapshot{}, &githubPullMissing{err}
+		}
 		return githubReadSnapshot{}, err
 	}
 	if p.Number != scope.PR || p.Base.Repo.ID != g.enrollment.RepositoryID || (p.State != "open" && p.State != "closed") {
@@ -160,7 +171,7 @@ func (g *GitHubDiscoveryHTTP) mergeBase(ctx context.Context, s Snapshot) (Snapsh
 	}
 	return s, nil
 }
-func (g *GitHubDiscoveryHTTP) nativeRequests(ctx context.Context, scope Scope, snapshot Snapshot, through time.Time, saved *PRRecord) ([]NativeRequest, error) {
+func (g *GitHubDiscoveryHTTP) nativeRequests(ctx context.Context, scope Scope, snapshot Snapshot, through time.Time, saved *PRRecord) ([]NativeRequest, []NativeHistoryEvent, error) {
 	events := []githubNativeEvent{}
 	seen := map[int64]bool{}
 	err := visitGitHubPages(ctx, g.http, githubIssue(scope)+"/events", func(e githubNativeEvent) error {
@@ -193,7 +204,7 @@ func (g *GitHubDiscoveryHTTP) nativeRequests(ctx context.Context, scope Scope, s
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	sort.Slice(events, func(i, j int) bool { return events[i].CreatedAt.Before(events[j].CreatedAt) })
 	requests := []NativeRequest{}
@@ -209,12 +220,12 @@ func (g *GitHubDiscoveryHTTP) nativeRequests(ctx context.Context, scope Scope, s
 		// Platform timestamps have finite resolution. Numeric IDs do not supply a
 		// documented causal tie-break between request and removal events.
 		if e.CreatedAt.Equal(last) {
-			return nil, ErrDeferred
+			return nil, nil, ErrDeferred
 		}
 		last = e.CreatedAt
 		if e.Event == "review_request_removed" {
 			if len(requests) == 0 || !active {
-				return nil, ErrDeferred
+				return nil, nil, ErrDeferred
 			}
 			requests[len(requests)-1].Removed = true
 			active = false
@@ -226,10 +237,9 @@ func (g *GitHubDiscoveryHTTP) nativeRequests(ctx context.Context, scope Scope, s
 		r := NativeRequest{ID: e.ID, RequesterID: e.Requester.ID, BotID: e.RequestedReviewer.ID, CreatedAt: e.CreatedAt, Snapshot: snapshot}
 		if old, ok := known[r.ID]; ok {
 			if old.RequesterID != r.RequesterID || old.BotID != r.BotID || !old.CreatedAt.Equal(r.CreatedAt) || old.Snapshot.Validate() != nil || old.Snapshot.PR != scope.PR || old.Snapshot.RepositoryID != scope.RepositoryID {
-				return nil, ErrDeferred
+				return nil, nil, ErrDeferred
 			}
 			r.Snapshot = old.Snapshot
-			r.Removed = old.Removed
 			delete(known, r.ID)
 		}
 		requests = append(requests, r)
@@ -238,9 +248,34 @@ func (g *GitHubDiscoveryHTTP) nativeRequests(ctx context.Context, scope Scope, s
 	// A complete remote read cannot silently discard previously persisted native
 	// provenance. Lost visibility/retention must remain explicit uncertainty.
 	if len(known) != 0 {
-		return nil, ErrDeferred
+		return nil, nil, ErrDeferred
 	}
-	return requests, nil
+	if saved != nil {
+		for _, old := range saved.Requests {
+			if !old.Removed {
+				continue
+			}
+			reproduced := false
+			for _, r := range requests {
+				if r.ID == old.ID && r.Removed {
+					reproduced = true
+					break
+				}
+			}
+			if !reproduced {
+				return nil, nil, ErrDeferred
+			}
+		}
+	}
+	normalized := make([]NativeHistoryEvent, 0, len(events))
+	for _, event := range events {
+		requester := int64(0)
+		if event.Requester != nil {
+			requester = event.Requester.ID
+		}
+		normalized = append(normalized, NativeHistoryEvent{ID: event.ID, ActorID: event.Actor.ID, RequesterID: requester, BotID: event.RequestedReviewer.ID, Kind: event.Event, CreatedAt: event.CreatedAt})
+	}
+	return requests, normalized, nil
 }
 func (g *GitHubDiscoveryHTTP) commands(ctx context.Context, scope Scope, through time.Time) ([]CommandEvent, error) {
 	commands := []CommandEvent{}
@@ -266,7 +301,7 @@ func (g *GitHubDiscoveryHTTP) commands(ctx context.Context, scope Scope, through
 }
 func githubAccessLost(err error) bool {
 	var status *GitHubHTTPError
-	return errors.As(err, &status) && (status.Status == 403 || status.Status == 404)
+	return errors.As(err, &status) && status.Status == 404
 }
 func (g *GitHubDiscoveryHTTP) read(ctx context.Context, scope Scope, history bool) (RemoteState, Discovery, error) {
 	if !g.enrollment.accepts(scope) {
@@ -301,7 +336,8 @@ func (g *GitHubDiscoveryHTTP) read(ctx context.Context, scope Scope, history boo
 	}
 	before, err := g.capture(ctx, scope, history)
 	if err != nil {
-		if !history && githubAccessLost(err) {
+		var missing *githubPullMissing
+		if !history && errors.As(err, &missing) {
 			return RemoteState{}, Discovery{}, nil
 		}
 		return RemoteState{}, Discovery{}, err
@@ -313,8 +349,15 @@ func (g *GitHubDiscoveryHTTP) read(ctx context.Context, scope Scope, history boo
 	if err != nil {
 		return RemoteState{}, Discovery{}, err
 	}
-	requests, err := g.nativeRequests(ctx, scope, snapshot, through, local.PRs[scope.key()])
+	requests, nativeEvents, err := g.nativeRequests(ctx, scope, snapshot, through, local.PRs[scope.key()])
 	if err != nil {
+		return RemoteState{}, Discovery{}, err
+	}
+	saved := local.PRs[scope.key()]
+	if saved == nil {
+		saved = &PRRecord{}
+	}
+	if err = retainNativeHistory(g.enrollment, saved, nativeEvents, through); err != nil {
 		return RemoteState{}, Discovery{}, err
 	}
 	commands, err := g.commands(ctx, scope, through)
@@ -332,7 +375,7 @@ func (g *GitHubDiscoveryHTTP) read(ctx context.Context, scope Scope, history boo
 		}
 		state.Request = requests[len(requests)-1]
 	}
-	return state, Discovery{Scope: scope, Commands: commands, Requests: requests, Through: through, Complete: true}, nil
+	return state, Discovery{Scope: scope, Commands: commands, Requests: requests, NativeEvents: nativeEvents, Through: through, Complete: true}, nil
 }
 func (g *GitHubDiscoveryHTTP) Current(ctx context.Context, scope Scope) (RemoteState, error) {
 	state, batch, err := g.read(ctx, scope, false)

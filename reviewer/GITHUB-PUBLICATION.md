@@ -67,7 +67,10 @@ Current/History reads use the native reader's 45-minute discovery budget. Other
 public operations retain thirty-second contexts. The general Scan method may
 expand all owned reviews for diagnostics; Publisher uses ScanIntent for recovery.
 Writes have no replayable body, idempotency header, redirect or application retry. Errors expose status
-and bounded Retry-After seconds, never submitted content or GitHub error bodies.
+and bounded retry timing, never submitted content or GitHub error bodies.
+Timing uses Retry-After, or a primary rate-limit reset relative to response Date
+when remaining requests are zero. Native reads propagate HTTP 403 as deferred
+errors; a rate-limited postcheck never becomes an access-loss supersession.
 A timeout, lost response, malformed receipt or partial scan retains the durable
 publication_unknown boundary. It does not prove that the remote write failed.
 A direct POST response with GitHub's documented HTTP 422 validation rejection

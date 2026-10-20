@@ -16,6 +16,8 @@ import (
 )
 
 type discoveryFixture struct {
+	failurePath, limitKind           string
+	failureStatus                    int
 	mu                               sync.Mutex
 	snapshot                         Snapshot
 	through                          time.Time
@@ -47,6 +49,18 @@ func discoveryHTTPFixture(t *testing.T, store *Store) (*GitHubDiscoveryHTTP, *di
 		}
 		w.Header().Set("Date", f.through.UTC().Format(http.TimeFormat))
 		w.Header().Set("Content-Type", "application/json")
+		if f.failureStatus != 0 && (f.failurePath == "" || q.URL.Path == f.failurePath) {
+			if f.limitKind == "secondary" {
+				w.Header().Set("Retry-After", "37")
+			}
+			if f.limitKind == "primary" {
+				w.Header().Set("X-Ratelimit-Remaining", "0")
+				w.Header().Set("X-Ratelimit-Reset", strconv.FormatInt(f.through.Add(37*time.Second).Unix(), 10))
+			}
+			w.WriteHeader(f.failureStatus)
+			json.NewEncoder(w).Encode(map[string]any{"message": "private upstream detail"})
+			return
+		}
 		var value any
 		switch q.URL.Path {
 		case githubRepoPath:
@@ -221,7 +235,8 @@ func TestGitHubDiscoveryOwnerCommandsUseOriginalACKOrdering(t *testing.T) {
 		t.Fatal("earlier request used later ACK", job, err)
 	}
 	f.mu.Lock()
-	f.events = append(f.events, nativeEvent(4, "review_requested", OwnerID, controlTime.Add(6*time.Minute)))
+	f.events = append(f.events, nativeEvent(4, "review_requested", OwnerID, controlTime.Add(21*time.Minute)))
+	f.through = controlTime.Add(22 * time.Minute)
 	f.mu.Unlock()
 	if _, err = g.Current(context.Background(), alphaScope()); err != nil {
 		t.Fatal(err)
@@ -254,10 +269,12 @@ func TestGitHubDiscoveryAWriteCannotFulfillDisappearingB(t *testing.T) {
 	s, out, _ := completeFixture(t)
 	g, f := discoveryHTTPFixture(t, s)
 	publisher, pub := githubHTTPFixture(t, g)
-	pub.mutate = func(*githubFixture) {
+	pub.mutate = func(pub *githubFixture) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		f.events = append(f.events, nativeEvent(2, "review_requested", OwnerID, controlTime.Add(5*time.Minute)))
+		f.events = append(f.events, nativeEvent(2, "review_requested", OwnerID, controlTime.Add(21*time.Minute)))
+		pub.review["submitted_at"] = controlTime.Add(22 * time.Minute)
+		f.through = controlTime.Add(23 * time.Minute)
 		f.pending = false
 	}
 	p := Publisher{Store: s, Remote: publisher}
@@ -369,5 +386,152 @@ func TestGitHubDiscoveryReadTransportRejectsWrites(t *testing.T) {
 		if githubBranch(ref) {
 			t.Fatal("ambiguous ref accepted", ref)
 		}
+	}
+}
+
+func TestGitHubDiscoveryThrottledPostcheckRetainsPendingReview(t *testing.T) {
+	for _, kind := range []string{"primary", "secondary"} {
+		t.Run(kind, func(t *testing.T) {
+			s, out, _ := completeFixture(t)
+			g, f := discoveryHTTPFixture(t, s)
+			publisher, pub := githubHTTPFixture(t, g)
+			pub.mutate = func(*githubFixture) {
+				f.mu.Lock()
+				defer f.mu.Unlock()
+				f.failureStatus = 403
+				f.failurePath = githubRepoPath
+				f.limitKind = kind
+			}
+			p := Publisher{Store: s, Remote: publisher}
+			w, err := p.Prepare(context.Background(), out, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = p.Dispatch(context.Background(), w.ID)
+			var status *GitHubHTTPError
+			if !errors.As(err, &status) || status.Status != 403 || status.RetryAfter != 37*time.Second || strings.Contains(err.Error(), "private") {
+				t.Fatal("throttle was misclassified or lost retry timing", err)
+			}
+			d, _ := s.Snapshot(context.Background())
+			pr := d.PRs[w.Scope.key()]
+			if d.Writes[w.ID].State != "postcheck_pending" || pr.Paused {
+				t.Fatal("transient throttle superseded review", d.Writes[w.ID].State, pr.Paused)
+			}
+			f.mu.Lock()
+			f.failureStatus = 0
+			f.mu.Unlock()
+			if err = p.Reconcile(context.Background(), w.ID); err != nil {
+				t.Fatal("throttle recovery failed", err)
+			}
+			d, _ = s.Snapshot(context.Background())
+			if d.Writes[w.ID].State != "confirmed" {
+				t.Fatal("review did not recover")
+			}
+			pub.mu.Lock()
+			defer pub.mu.Unlock()
+			if pub.posts != 1 || pub.puts != 0 {
+				t.Fatal("recovery duplicated or annotated review", pub.posts, pub.puts)
+			}
+		})
+	}
+}
+func TestGitHubDiscoveryOnlyScope404EstablishesAccessLoss(t *testing.T) {
+	for _, path := range []string{githubRepoPath, githubPR(alphaScope()), githubRepoPath + "/git/ref/heads/main", githubPR(alphaScope()) + "/requested_reviewers"} {
+		for _, status := range []int{403, 404} {
+			t.Run(path+strconv.Itoa(status), func(t *testing.T) {
+				s, _ := openFixtureStore(t)
+				g, f := discoveryHTTPFixture(t, s)
+				f.failurePath = path
+				f.failureStatus = status
+				state, err := g.Current(context.Background(), alphaScope())
+				unavailable := status == 404 && (path == githubRepoPath || path == githubPR(alphaScope()))
+				if unavailable {
+					if err != nil || state.Access {
+						t.Fatal("missing scope not conservative access loss", state, err)
+					}
+				} else {
+					var httpErr *GitHubHTTPError
+					if !errors.As(err, &httpErr) || httpErr.Status != status {
+						t.Fatal("metadata/throttle failure became access loss", state, err)
+					}
+				}
+			})
+		}
+	}
+}
+func TestGitHubDiscoveryLateRequestBehindCutoffCannotAdmit(t *testing.T) {
+	for _, minutes := range []int{2, 20} {
+		t.Run(strconv.Itoa(minutes), func(t *testing.T) {
+			s, _ := openFixtureStore(t)
+			g, f := discoveryHTTPFixture(t, s)
+			if _, err := g.Current(context.Background(), alphaScope()); err != nil {
+				t.Fatal(err)
+			}
+			before, _ := s.Snapshot(context.Background())
+			f.mu.Lock()
+			f.events = append(f.events, nativeEvent(2, "review_requested", OwnerID, controlTime.Add(time.Duration(minutes)*time.Minute)))
+			f.through = controlTime.Add(21 * time.Minute)
+			f.mu.Unlock()
+			if _, err := g.Current(context.Background(), alphaScope()); !errors.Is(err, ErrDeferred) {
+				t.Fatal("late request became current", err)
+			}
+			if batch, err := g.History(context.Background(), alphaScope()); !errors.Is(err, ErrDeferred) || batch.Complete {
+				t.Fatal("contradicted cutoff claimed complete", batch, err)
+			}
+			after, _ := s.Snapshot(context.Background())
+			if Digest(before) != Digest(after) {
+				t.Fatal("late request changed durable state")
+			}
+			if _, err := s.Admit(context.Background(), alphaScope(), 2, strings.Repeat("d", 40), "packet", controlTime.Add(22*time.Minute)); !errors.Is(err, ErrDeferred) {
+				t.Fatal("late request admitted work", err)
+			}
+		})
+	}
+}
+func TestGitHubDiscoveryRetainsRemovalIdentityAcrossRestart(t *testing.T) {
+	for _, mutation := range []string{"missing", "id", "time", "actor"} {
+		t.Run(mutation, func(t *testing.T) {
+			s, path := openFixtureStore(t)
+			g, f := discoveryHTTPFixture(t, s)
+			f.events = append(f.events, nativeEvent(2, "review_request_removed", OwnerID, controlTime.Add(2*time.Minute)))
+			f.pending = false
+			if _, err := g.Current(context.Background(), alphaScope()); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.Close(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := OpenStore(path, alphaEnrollment(), DefaultConfig())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			g.store = reopened
+			before, _ := reopened.Snapshot(context.Background())
+			f.mu.Lock()
+			f.through = controlTime.Add(21 * time.Minute)
+			switch mutation {
+			case "missing":
+				f.events = f.events[:1]
+			case "id":
+				f.events[1]["id"] = int64(3)
+				f.events[1]["url"] = githubOrigin + githubRepoPath + "/issues/events/3"
+			case "time":
+				f.events[1]["created_at"] = controlTime.Add(3 * time.Minute)
+			case "actor":
+				f.events[1]["actor"] = map[string]any{"id": 700}
+			}
+			f.mu.Unlock()
+			if batch, err := g.History(context.Background(), alphaScope()); !errors.Is(err, ErrDeferred) || batch.Complete {
+				t.Fatal("lost/mutated removal history trusted", batch, err)
+			}
+			if _, err := g.Current(context.Background(), alphaScope()); !errors.Is(err, ErrDeferred) {
+				t.Fatal("lost/mutated removal advanced cutoff", err)
+			}
+			after, _ := reopened.Snapshot(context.Background())
+			if Digest(before) != Digest(after) {
+				t.Fatal("removal contradiction changed durable state")
+			}
+		})
 	}
 }
