@@ -290,11 +290,12 @@ func nativeGuestClientProxyMain() (result int) {
 	client.Env = inv.Environment
 	client.Stdin = os.Stdin
 	client.Stdout = os.Stdout
-	client.Stderr = io.Discard
+	diagnostics := &nativeGuestClientDiagnostics{}
+	client.Stderr = diagnostics
 	client.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: nativeVMIPCGID, Groups: []uint32{}}, Pdeathsig: syscall.SIGKILL}
 	client.WaitDelay = 2 * time.Second
 	if client.Run() != nil {
-		return 1
+		return diagnostics.exitCode()
 	}
 	return 0
 }

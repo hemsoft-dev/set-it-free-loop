@@ -26,6 +26,7 @@ type nativeResultObservation struct {
 	Bytes      int
 	Hash, Kind string
 	ExitFailed bool
+	ExitClass  string
 	Trailer    *nativeCodexTrailer
 }
 
@@ -92,6 +93,11 @@ func nativeResultKind(kind string) bool {
 
 func (o *nativeResultObservation) valid(s Session) bool {
 	if o == nil || !nativeResultKind(o.Kind) || len(o.Hash) != 64 || !objectID.MatchString(o.Hash) || o.Bytes < 0 || o.Bytes > NativeTransportLimit(s)+1 {
+		return false
+	}
+	switch o.ExitClass {
+	case "", "tls", "proxy", "auth", "filesystem", "configuration", "runtime", "other":
+	default:
 		return false
 	}
 	if o.Trailer != nil {

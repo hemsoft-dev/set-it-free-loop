@@ -267,6 +267,7 @@ func NativeVMGuestMain(args []string) int {
 	launcher := &nativeGuestLauncher{request: q, ready: observed.Ready, invocation: inv, process: phase.client, control: configWrite}
 	phase.stage = "native-execute"
 	data, _, err := (NativeDriver{Launcher: launcher, observe: phase.observeNative}).Execute(ctx, inv)
+	phase.observeClientExit()
 	if err != nil {
 		phase.state = phaseState(err)
 		return 1
