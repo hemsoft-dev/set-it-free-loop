@@ -27,6 +27,9 @@ func sourceProxyCommand(t *testing.T, inv Invocation) (string, []string) {
 		if values["mcp_servers.sfl-source.required"] != "true" || values["mcp_servers.sfl-source.enabled_tools"] != `["read","search"]` || values["mcp_servers.sfl-source.env_vars"] != "[]" || values["mcp_servers.sfl-source.default_tools_approval_mode"] != `"auto"` {
 			t.Fatal("unbounded/optional source configuration", values)
 		}
+		if values["mcp_servers.sfl-source.omit_tools_from"] != `["deferred"]` || values["features.code_mode_only_strict_3p_tools"] != "false" || values["features.code_mode.excluded_tool_namespaces"] != `["functions","clock","image_gen","collaboration"]` || values["tools.experimental_request_user_input.enabled"] != "false" || values["features.multi_agent_v2.disable_native_tools"] != "true" {
+			t.Fatal("source schemas deferred or unrelated runtime handles enabled", values)
+		}
 		return command, arguments
 	}
 	for i, arg := range inv.Args {

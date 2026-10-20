@@ -56,8 +56,24 @@ func (a Adapter) sourceInvocation(s Session, inv Invocation) (Invocation, error)
 			"-c", "mcp_servers.sfl-source.args=" + quote(arguments),
 			"-c", "mcp_servers.sfl-source.env_vars=[]",
 			"-c", "mcp_servers.sfl-source.enabled_tools=[\"read\",\"search\"]",
+			"-c", "mcp_servers.sfl-source.omit_tools_from=[\"deferred\"]",
 			"-c", "mcp_servers.sfl-source.required=true",
 			"-c", "mcp_servers.sfl-source.default_tools_approval_mode=\"auto\"",
+			// The pinned model selects code-mode-only independently of the
+			// feature boolean. Restrict nested handles, questions and native
+			// V2 agents explicitly; these controls do not qualify direct-call
+			// enforcement or replace the required external isolation profile.
+			"-c", "features.code_mode_only_strict_3p_tools=false",
+			"-c", "features.code_mode.excluded_tool_namespaces=[\"functions\",\"clock\",\"image_gen\",\"collaboration\"]",
+			"-c", "tools.experimental_request_user_input.enabled=false",
+			"-c", "features.multi_agent_v2.disable_native_tools=true",
+			"-c", "features.view_image=false",
+			"-c", "features.image_generation=false",
+			"-c", "features.goals=false",
+			"-c", "features.sleep_tool=false",
+			"-c", "analytics.enabled=false",
+			"-c", "feedback.enabled=false",
+			"-c", "otel.metrics_exporter=\"none\"",
 		}
 		// Preserve the positional stdin prompt marker after all added options.
 		inv.Args = append(append(inv.Args[:len(inv.Args)-1:len(inv.Args)-1], extra...), "-")
