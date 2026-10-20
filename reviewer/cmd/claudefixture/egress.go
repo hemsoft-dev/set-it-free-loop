@@ -28,7 +28,7 @@ func fixtureEgress(s r.Session, backend http.Handler) (*r.ProviderEgress, r.Egre
 	const authority = "fixture.provider.example"
 	limits := r.DefaultEgressLimits(s)
 	limits.Requests, limits.InferenceRequests, limits.RefreshRequests, limits.MetadataRequests = 3, 3, 0, 0
-	policy := r.EgressPolicy{Provider: r.Claude, Limits: limits,
+	policy := r.EgressPolicy{Provider: r.Claude, Limits: limits, ResponsePolicy: r.ClaudeSourceMessages,
 		Routes:  []r.EgressRoute{{Authority: authority, Method: "POST", Path: "/v1/messages", RawQuery: "beta=true", Kind: "inference"}},
 		Headers: []string{"Accept", "Accept-Encoding", "Anthropic-Beta", "Anthropic-Dangerous-Direct-Browser-Access", "Anthropic-Version", "Authorization", "Content-Type", "User-Agent", "X-App", "X-Claude-Code-Session-Id", "X-Stainless-Arch", "X-Stainless-Lang", "X-Stainless-Os", "X-Stainless-Package-Version", "X-Stainless-Retry-Count", "X-Stainless-Runtime", "X-Stainless-Runtime-Version", "X-Stainless-Timeout"},
 	}

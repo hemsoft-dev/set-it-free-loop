@@ -31,6 +31,7 @@ func seedClaude() {
 }
 
 type claudeBackend struct {
+	mode     string
 	mu       sync.Mutex
 	s        r.Session
 	calls    int
@@ -115,6 +116,11 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		name = "StructuredOutput"
 		toolID = "sfl_fixture_report_1"
 		input = r.Report{JobID: b.s.JobID, PolicyVersion: b.s.PolicyVersion, PacketHash: b.s.PacketHash, Provider: r.Claude, Round: 1, SnapshotHash: b.s.SnapshotHash, ConfigHash: b.s.ConfigHash, Findings: []r.Finding{{ID: "claude:fixture", Title: "Synthetic finding", Body: "Protocol fixture only.", Severity: 2, Anchor: r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}}}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}}
+	}
+	if b.mode == "guarded-bash" {
+		name = "Bash"
+		toolID = "sfl_fixture_forbidden_1"
+		input = map[string]string{"command": "printf forbidden > /work/undeclared-canary.txt"}
 	}
 	encoded, _ := json.Marshal(input)
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -273,7 +279,7 @@ func (w *protocolWorker) Stop(ctx context.Context) error {
 	_ = os.WriteFile("/artifacts/client-stderr.txt", w.stderr.buf.Bytes(), 0600)
 	return nil
 }
-func claudeMain() {
+func claudeMain(mode string) {
 	seedClaude()
 	limits := r.DefaultLimits()
 	limits.Timeout = 35 * time.Second
@@ -294,7 +300,7 @@ func claudeMain() {
 	if e != nil {
 		panic(e)
 	}
-	b := &claudeBackend{s: s}
+	b := &claudeBackend{s: s, mode: mode}
 	guard, policy, intake, closeUpstream, e := fixtureEgress(s, b)
 	if e != nil {
 		panic(e)
@@ -340,8 +346,16 @@ func claudeMain() {
 		}
 		return e.Error()
 	}
-	write("result.json", map[string]any{"provider": "claude", "run_error": str(err), "report_error": str(validation), "report": report, "backend_stop_error": str(stopErr), "provider_stop_error": str(guardStopErr), "provider_access_error": str(guardErr), "backend_calls": calls, "backend_failures": failures, "backend_requests": requests, "fake_only": true, "identity_and_stop_inputs": "protocol fixture fakes; outer PID namespace only", "actual_account_qualified": false, "production_boundary_qualified": false})
+	_, canaryErr := os.Stat("/work/undeclared-canary.txt")
+	preDispatchDenied := mode == "guarded-bash" && err != nil && validation != nil && calls == 1 && requests == 1 && access.Failed && access.Stopped && access.InferenceRequests == 1 && guardErr != nil && os.IsNotExist(canaryErr)
+	write("result.json", map[string]any{"provider": "claude", "case": mode, "provider_response_guarded": policy.ResponsePolicy == r.ClaudeSourceMessages, "forbidden_tool_pre_dispatch_denied": preDispatchDenied, "canary_exists": canaryErr == nil, "run_error": str(err), "report_error": str(validation), "report": report, "backend_stop_error": str(stopErr), "provider_stop_error": str(guardStopErr), "provider_access_error": str(guardErr), "backend_calls": calls, "backend_failures": failures, "backend_requests": requests, "fake_only": true, "identity_and_stop_inputs": "protocol fixture fakes; outer PID namespace only", "actual_account_qualified": false, "production_boundary_qualified": false})
 	fmt.Printf("calls=%d run=%v report=%v\n", calls, err, validation)
+	if mode == "guarded-bash" {
+		if !preDispatchDenied || stopErr != nil || guardStopErr != nil || failures != 0 {
+			os.Exit(1)
+		}
+		return
+	}
 	if err != nil || validation != nil || stopErr != nil || guardStopErr != nil || guardErr != nil || failures != 0 || requests != 3 {
 		os.Exit(1)
 	}

@@ -27,8 +27,11 @@ func (t fixtureTransport) RoundTrip(q *http.Request) (*http.Response, error) {
 }
 
 func fixtureEgress(s r.Session, backend http.Handler) (*r.ProviderEgress, r.EgressPolicy, http.Handler, func(), error) {
+	return fixtureEgressPolicy(s, backend, r.CodexSourceResponses)
+}
+func fixtureEgressPolicy(s r.Session, backend http.Handler, responsePolicy string) (*r.ProviderEgress, r.EgressPolicy, http.Handler, func(), error) {
 	const authority = "fixture.provider.example"
-	policy := r.EgressPolicy{Provider: r.Codex, Limits: r.DefaultEgressLimits(s),
+	policy := r.EgressPolicy{Provider: r.Codex, Limits: r.DefaultEgressLimits(s), ResponsePolicy: responsePolicy,
 		Routes: []r.EgressRoute{
 			{Authority: authority, Method: "POST", Path: "/v1/responses", Kind: "inference"},
 			{Authority: authority, Method: "GET", Path: "/v1/responses", Kind: "local_negotiation"},

@@ -103,7 +103,7 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) != 4 || os.Args[1] != "--fixture" || os.Args[2] != "--case" || (os.Args[3] != "source" && os.Args[3] != "undeclared-patch") || os.Getenv("SFL_FAKE_CLIENT_FIXTURE") != "1" {
+	if len(os.Args) != 4 || os.Args[1] != "--fixture" || os.Args[2] != "--case" || (os.Args[3] != "source" && os.Args[3] != "undeclared-patch" && os.Args[3] != "guarded-undeclared-patch") || os.Getenv("SFL_FAKE_CLIENT_FIXTURE") != "1" {
 		fmt.Fprintln(os.Stderr, "run only through scripts/codex-fixture.py")
 		os.Exit(2)
 	}
