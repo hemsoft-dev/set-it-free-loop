@@ -62,11 +62,15 @@ The intent-specific scan has a 25-minute outer deadline. Its worst case has
 pages for one matching review. Those 141 requests fit the deadline even when
 each takes ten seconds. Empty pages with a next link are invalid. The
 100-page cap retains the 10,000-record ceiling. A caller's shorter deadline
-still cancels the scan and cannot authorize a duplicate POST. Other public
-operations retain thirty-second contexts. The general Scan method may expand
-all owned reviews for diagnostics; Publisher uses ScanIntent for recovery.
+still cancels the scan and cannot authorize a duplicate POST. Delegated
+Current/History reads use the native reader's 45-minute discovery budget. Other
+public operations retain thirty-second contexts. The general Scan method may
+expand all owned reviews for diagnostics; Publisher uses ScanIntent for recovery.
 Writes have no replayable body, idempotency header, redirect or application retry. Errors expose status
-and bounded Retry-After seconds, never submitted content or GitHub error bodies.
+and bounded retry timing, never submitted content or GitHub error bodies.
+Timing uses Retry-After, or a primary rate-limit reset relative to response Date
+when remaining requests are zero. Native reads propagate HTTP 403 as deferred
+errors; a rate-limited postcheck never becomes an access-loss supersession.
 A timeout, lost response, malformed receipt or partial scan retains the durable
 publication_unknown boundary. It does not prove that the remote write failed.
 A direct POST response with GitHub's documented HTTP 422 validation rejection
@@ -95,8 +99,9 @@ SQLite, Publisher and HTTP: a server accepts a review then returns 503, delayed
 visibility keeps publication unknown, a second Dispatch makes no POST, and a
 later complete scan confirms exactly the original write.
 
-Native request/history HTTP collection, selected-installation credential
-attestation and private polling/runtime packaging remain [issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176) work. The
+[Native request/history HTTP collection](GITHUB-DISCOVERY.md) is now supplied as
+an explicitly constructed reader, with actual App consistency still unqualified.
+Selected-installation credential attestation and private polling/runtime packaging remain [issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176) work. The
 injected read interface does not infer an owner request from a pending username.
 Actual App picker, token scope, GitHub rendering and non-atomic publication race
 qualification remain separate live gates. Owner-disabled Actions and all

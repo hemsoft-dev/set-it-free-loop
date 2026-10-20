@@ -3,9 +3,12 @@
 This module supplies SQLite state, configuration and request admission, durable
 phase reservations, and a COMMENT review outbox through fake transport seams.
 The explicit [GitHub publication HTTP adapter](GITHUB-PUBLICATION.md) supplies
-COMMENT/ACK writes and whole-document reconciliation. Native request discovery
-remains a separately qualified read interface. There is no polling daemon,
-production launcher, credential acquisition, installation flow or activation command. The retired SFL runtime
+COMMENT/ACK writes and whole-document reconciliation. The [native discovery
+reader](GITHUB-DISCOVERY.md) collects request/removal provenance, owner commands
+and live base revisions with an explicitly supplied read transport. It commits
+complete discovery before returning Current so cancellation reaches the local
+dispatch fence. Actual App consistency remains unqualified. There is no polling
+daemon, production launcher, credential acquisition, installation flow or activation command. The retired SFL runtime
 remains frozen. Live acceptance is tracked in [#173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173),
 [#174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174) and
 [#176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176).

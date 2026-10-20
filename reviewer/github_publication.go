@@ -55,7 +55,7 @@ func NewGitHubPublicationHTTP(e Enrollment, reader GitHubPublicationReader, tran
 }
 
 func (g *GitHubPublicationHTTP) Current(ctx context.Context, scope Scope) (RemoteState, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, githubDiscoveryTimeout)
 	defer cancel()
 	if !g.enrollment.accepts(scope) {
 		return RemoteState{}, ErrIgnored
@@ -70,7 +70,7 @@ func (g *GitHubPublicationHTTP) Current(ctx context.Context, scope Scope) (Remot
 	return s, nil
 }
 func (g *GitHubPublicationHTTP) History(ctx context.Context, scope Scope) (Discovery, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, githubDiscoveryTimeout)
 	defer cancel()
 	if !g.enrollment.accepts(scope) {
 		return Discovery{}, ErrIgnored
@@ -126,6 +126,16 @@ func (g *GitHubPublicationHTTP) requestBounded(ctx context.Context, method, path
 		delay := time.Duration(0)
 		if seconds, err := strconv.Atoi(r.Header.Get("Retry-After")); err == nil && seconds > 0 && seconds <= 3600 {
 			delay = time.Duration(seconds) * time.Second
+		}
+		if delay == 0 && r.Header.Get("X-Ratelimit-Remaining") == "0" {
+			reset, resetErr := strconv.ParseInt(r.Header.Get("X-Ratelimit-Reset"), 10, 64)
+			serverTime, dateErr := http.ParseTime(r.Header.Get("Date"))
+			if resetErr == nil && dateErr == nil {
+				until := time.Unix(reset, 0).Sub(serverTime)
+				if until > 0 && until <= time.Hour {
+					delay = until
+				}
+			}
 		}
 		return nil, &GitHubHTTPError{r.StatusCode, delay}
 	}

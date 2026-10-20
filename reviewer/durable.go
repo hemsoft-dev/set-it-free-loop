@@ -48,6 +48,15 @@ type NativeRequest struct {
 	Removed                bool
 	Admitted               bool
 }
+
+// NativeHistoryEvent persists both request and removal provenance. A removed
+// boolean alone cannot detect disappearance or mutation of a removal event.
+type NativeHistoryEvent struct {
+	ID, ActorID, RequesterID, BotID int64
+	Kind                            string
+	CreatedAt                       time.Time
+}
+
 type ConfigRecord struct {
 	Version     int64
 	Config      Config
@@ -70,6 +79,7 @@ type PRRecord struct {
 	Configs          []ConfigRecord
 	Commands         []CommandRecord
 	Requests         []NativeRequest
+	NativeEvents     []NativeHistoryEvent `json:",omitempty"`
 	CurrentRequest   int64
 }
 type DurableJob struct {
@@ -891,11 +901,69 @@ func chargedOn(j *DurableJob, day string) bool {
 // Discovery is normalized complete pagination from the qualified transport,
 // including removal/re-request history. Partial pages cannot advance a cutoff.
 type Discovery struct {
-	Scope    Scope
-	Commands []CommandEvent
-	Requests []NativeRequest
-	Through  time.Time
-	Complete bool
+	Scope        Scope
+	Commands     []CommandEvent
+	Requests     []NativeRequest
+	NativeEvents []NativeHistoryEvent
+	Through      time.Time
+	Complete     bool
+}
+
+// Native history must reproduce every persisted event's immutable fields.
+// New events behind a trusted cutoff contradict that cutoff and cannot admit
+// work. A request already persisted by the legacy normalized seam can bootstrap
+// its exact creation event; that provides no authority to infer old removals.
+func retainNativeHistory(e Enrollment, pr *PRRecord, events []NativeHistoryEvent, through time.Time) error {
+	if events == nil {
+		if len(pr.NativeEvents) != 0 {
+			return ErrDeferred
+		}
+		return nil
+	}
+	if len(events) > 128 || through.IsZero() || through.Before(pr.HistoryThrough) {
+		return ErrDeferred
+	}
+	known := map[int64]NativeHistoryEvent{}
+	for _, event := range pr.NativeEvents {
+		known[event.ID] = event
+	}
+	seen := map[int64]bool{}
+	for _, event := range events {
+		if event.ID <= 0 || seen[event.ID] || event.BotID != e.BotID || event.ActorID <= 0 || event.CreatedAt.IsZero() || event.CreatedAt.After(through) ||
+			(event.Kind != "review_requested" && event.Kind != "review_request_removed") ||
+			(event.Kind == "review_requested" && (event.RequesterID <= 0 || event.RequesterID != event.ActorID)) {
+			return ErrDeferred
+		}
+		seen[event.ID] = true
+		if old, ok := known[event.ID]; ok {
+			a, b := old, event
+			a.CreatedAt, b.CreatedAt = time.Time{}, time.Time{}
+			if a != b || !old.CreatedAt.Equal(event.CreatedAt) {
+				return ErrDeferred
+			}
+			delete(known, event.ID)
+			continue
+		}
+		if !pr.HistoryThrough.IsZero() && !event.CreatedAt.After(pr.HistoryThrough) {
+			bootstrap := false
+			if len(pr.NativeEvents) == 0 && event.Kind == "review_requested" {
+				for _, r := range pr.Requests {
+					if r.ID == event.ID && r.BotID == event.BotID && r.RequesterID == event.RequesterID && r.CreatedAt.Equal(event.CreatedAt) {
+						bootstrap = true
+						break
+					}
+				}
+			}
+			if !bootstrap {
+				return ErrDeferred
+			}
+		}
+	}
+	if len(known) != 0 {
+		return ErrDeferred
+	}
+	pr.NativeEvents = append([]NativeHistoryEvent{}, events...)
+	return nil
 }
 
 func (s *Store) Discover(ctx context.Context, batch Discovery) error {
@@ -907,6 +975,9 @@ func (s *Store) Discover(ctx context.Context, batch Discovery) error {
 	return s.update(ctx, func(d *DurableState) error {
 		pr, err := prRecord(d, batch.Scope)
 		if err != nil {
+			return err
+		}
+		if err = retainNativeHistory(d.Enrollment, pr, batch.NativeEvents, batch.Through); err != nil {
 			return err
 		}
 		wasPaused := pr.Paused
