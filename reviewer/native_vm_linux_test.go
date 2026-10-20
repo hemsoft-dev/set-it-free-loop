@@ -9,12 +9,40 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+func TestNativeVMConcreteKernelLimitsCannotUseLegacyOrMixedProfile(t *testing.T) {
+	for _, profile := range []struct {
+		memory, tasks  string
+		native, legacy bool
+	}{
+		{"3221225472", "128", true, false},
+		{"1073741824", "64", false, true},
+		{"3221225472", "64", false, false},
+		{"1073741824", "128", false, false},
+	} {
+		dir := t.TempDir()
+		for name, value := range map[string]string{"memory.max": profile.memory, "memory.swap.max": "0", "pids.max": profile.tasks, "cpu.max": "100000 100000"} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(value+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		root, err := os.OpenRoot(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if (verifyContainmentLimits(root, "3221225472", "128") == nil) != profile.native || (verifyContainmentLimits(root, "1073741824", "64") == nil) != profile.legacy {
+			t.Fatal("concrete payload limit profiles confused", profile)
+		}
+		root.Close()
+	}
+}
 
 func TestNativeVMManifestRejectsFixtureAndForeignSession(t *testing.T) {
 	s := testSession(Codex)

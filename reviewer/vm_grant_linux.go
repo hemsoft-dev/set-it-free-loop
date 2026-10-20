@@ -313,6 +313,10 @@ func receiveVMFixture(ctx context.Context, endpoint string, binding AuthBinding,
 }
 
 func vmGrantedUnit(binding AuthBinding, invocation string) error {
+	return vmGrantedUnitWithKernel(binding, invocation, linuxContainmentKernel{})
+}
+
+func vmGrantedUnitWithKernel(binding AuthBinding, invocation string, kernel containmentKernel) error {
 	if invocation != os.Getenv("INVOCATION_ID") {
 		return ErrVMBoot
 	}
@@ -325,7 +329,7 @@ func vmGrantedUnit(binding AuthBinding, invocation string) error {
 	if len(lines) != 1 || !strings.HasPrefix(lines[0], "0::") {
 		return ErrVMBoot
 	}
-	if _, err := (linuxContainmentKernel{}).Capture(strings.TrimPrefix(lines[0], "0::"), unit); err != nil {
+	if _, err := kernel.Capture(strings.TrimPrefix(lines[0], "0::"), unit); err != nil {
 		return ErrVMBoot
 	}
 	status, err := os.ReadFile("/proc/self/status")

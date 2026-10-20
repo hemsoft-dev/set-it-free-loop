@@ -119,6 +119,16 @@ func cgroupInode(root *os.Root) (uint64, error) {
 	return st.Ino, nil
 }
 func (linuxContainmentKernel) Capture(group, unit string) (cgroupBinding, error) {
+	return captureContainmentGroup(group, unit, "1073741824", "64")
+}
+
+type nativeContainmentKernel struct{ linuxContainmentKernel }
+
+func (nativeContainmentKernel) Capture(group, unit string) (cgroupBinding, error) {
+	return captureContainmentGroup(group, unit, "3221225472", "128")
+}
+
+func captureContainmentGroup(group, unit, memory, tasks string) (cgroupBinding, error) {
 	if !validUnitCgroup(group, unit) {
 		return cgroupBinding{}, ErrAuthRecoveryRequired
 	}
@@ -131,23 +141,30 @@ func (linuxContainmentKernel) Capture(group, unit string) (cgroupBinding, error)
 	if err != nil {
 		return cgroupBinding{}, err
 	}
-	for name, want := range map[string]string{"memory.max": "1073741824", "memory.swap.max": "0", "pids.max": "64"} {
+	if err := verifyContainmentLimits(root, memory, tasks); err != nil {
+		return cgroupBinding{}, err
+	}
+	return cgroupBinding{Path: group, Inode: inode, Hierarchy: hierarchy}, nil
+}
+
+func verifyContainmentLimits(root *os.Root, memory, tasks string) error {
+	for name, want := range map[string]string{"memory.max": memory, "memory.swap.max": "0", "pids.max": tasks} {
 		v, err := cgroupFile(root, name)
 		if err != nil || v != want {
-			return cgroupBinding{}, ErrAuthRecoveryRequired
+			return ErrAuthRecoveryRequired
 		}
 	}
 	cpu, err := cgroupFile(root, "cpu.max")
 	fields := strings.Fields(cpu)
 	if err != nil || len(fields) != 2 {
-		return cgroupBinding{}, ErrAuthRecoveryRequired
+		return ErrAuthRecoveryRequired
 	}
 	quota, e1 := strconv.ParseUint(fields[0], 10, 64)
 	period, e2 := strconv.ParseUint(fields[1], 10, 64)
 	if e1 != nil || e2 != nil || quota == 0 || quota != period {
-		return cgroupBinding{}, ErrAuthRecoveryRequired
+		return ErrAuthRecoveryRequired
 	}
-	return cgroupBinding{Path: group, Inode: inode, Hierarchy: hierarchy}, nil
+	return nil
 }
 func (linuxContainmentKernel) Empty(binding cgroupBinding) error {
 	if binding.Inode == 0 || binding.Hierarchy == (cgroupHierarchy{}) || !strings.HasPrefix(binding.Path, "/user.slice/") || filepath.Clean(binding.Path) != binding.Path {

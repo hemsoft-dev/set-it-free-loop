@@ -334,7 +334,7 @@ func receiveNativeVM(ctx context.Context, endpoint string, binding AuthBinding, 
 // owned-unit and authenticated version-3 descriptor checks succeed. This is not
 // a provider configuration, activation command or an auth stop attestation.
 func NativeVMStub(ctx context.Context, endpoint string, binding AuthBinding, invocation, hash string, supervisorPID int) error {
-	if vmGrantedUnit(binding, invocation) != nil {
+	if vmGrantedUnitWithKernel(binding, invocation, nativeContainmentKernel{}) != nil {
 		return ErrVMBoot
 	}
 	ctx, cancel := context.WithTimeout(ctx, 7*time.Minute)

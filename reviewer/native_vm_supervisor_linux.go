@@ -16,6 +16,7 @@ func OpenNativeVMSupervisor(ctx context.Context, root, stub, hash string) (*Nati
 		return nil, err
 	}
 	s.payloadKind = "native-vm"
+	s.kernel = nativeContainmentKernel{}
 	return &NativeVMSupervisor{s}, nil
 }
 func (v *NativeVMSupervisor) Prepare(m NativeVMManifest) error {
