@@ -68,7 +68,14 @@ func (c SourceReaderConfig) validate() error {
 // supervisor must already have set its UID/GID, mounts and private environment.
 // It creates no accounts, namespaces, credentials, App or persistent daemon.
 func SourceReaderMain(ctx context.Context, environment []string, input io.ReadCloser, output io.WriteCloser) int {
-	if input == nil || output == nil {
+	return SourceReaderMainWithStore(ctx, environment, input, output, GitStore{Git: "/usr/bin/git", GitDir: "/source"})
+}
+
+// SourceReaderMainWithStore supports the native guest's private object channel.
+// The store is supplied by trusted launch code, never its input manifest. The
+// same environment, manifest, identity, socket and audit checks still apply.
+func SourceReaderMainWithStore(ctx context.Context, environment []string, input io.ReadCloser, output io.WriteCloser, store ObjectStore) int {
+	if input == nil || output == nil || store == nil {
 		return 2
 	}
 	var inputClosed, outputClosed sync.Once
@@ -104,7 +111,7 @@ func SourceReaderMain(ctx context.Context, environment []string, input io.ReadCl
 	defer cancel()
 	stopOutput := context.AfterFunc(ctx, closeOutput)
 	defer stopOutput()
-	reader, err := NewReader(GitStore{Git: "/usr/bin/git", GitDir: "/source"}, config.Session.Snapshot, config.Paths, config.Session.Limits)
+	reader, err := NewReader(store, config.Session.Snapshot, config.Paths, config.Session.Limits)
 	if err != nil {
 		return 2
 	}
