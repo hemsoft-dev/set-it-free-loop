@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"unicode/utf8"
 )
@@ -32,6 +34,23 @@ func rpcObject(data []byte, target any) error {
 	keys := json.NewDecoder(bytes.NewReader(data))
 	if uniqueJSONKeys(keys, 0) != nil || keys.Decode(new(any)) != io.EOF {
 		return ErrSourceMCPProtocol
+	}
+	// encoding/json matches struct fields case-insensitively. Require the
+	// exact protocol/schema keys so aliases cannot override a canonical field.
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(data, &fields) != nil {
+		return ErrSourceMCPProtocol
+	}
+	allowed := map[string]bool{}
+	shape := reflect.TypeOf(target).Elem()
+	for i := 0; i < shape.NumField(); i++ {
+		name := strings.Split(shape.Field(i).Tag.Get("json"), ",")[0]
+		allowed[name] = true
+	}
+	for name := range fields {
+		if !allowed[name] {
+			return ErrSourceMCPProtocol
+		}
 	}
 	decode := json.NewDecoder(bytes.NewReader(data))
 	decode.DisallowUnknownFields()

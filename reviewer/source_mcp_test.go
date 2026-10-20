@@ -316,3 +316,12 @@ func TestSourceMCPRedactsBackendErrorsAndEnforcesOutputCap(t *testing.T) {
 		}
 	})
 }
+
+func TestSourceMCPRejectsCaseAliasesBeforeSourceAccess(t *testing.T) {
+	f := newMCPFixture(t, Codex, DefaultLimits(), nil)
+	f.initialize(t)
+	r := f.call(t, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{"revision":"`+f.session.Snapshot.Head+`","path":"worker.go","Path":"source.go"}}}`)
+	if errorCode(t, r) != -32602 || f.broker.seal().ToolCalls != 0 {
+		t.Fatal("case alias bypassed argument schema", r)
+	}
+}
