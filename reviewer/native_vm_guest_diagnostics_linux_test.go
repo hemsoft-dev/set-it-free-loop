@@ -33,6 +33,58 @@ func TestNativeGuestDiagnosticRetainsOnlyBoundedEnums(t *testing.T) {
 	}
 }
 
+func TestNativeGuestClientStatusIsOptionalBoundAndFinite(t *testing.T) {
+	q := nativeRequestFixture(t, Codex)
+	good := nativeGuestClientStatus{1, q.Binding, Digest(q), "provider-url"}
+	for _, kind := range []string{"valid", "empty", "binding", "request", "class", "version", "extra", "truncated"} {
+		t.Run(kind, func(t *testing.T) {
+			status := good
+			switch kind {
+			case "binding":
+				status.Binding.LaunchID = "different"
+			case "request":
+				status.RequestHash = Digest("other")
+			case "class":
+				status.Class = "untrusted diagnostic bytes"
+			case "version":
+				status.Version = 2
+			}
+			var frame bytes.Buffer
+			if kind != "empty" {
+				if writeVMRecord(&frame, status, 4096) != nil {
+					t.Fatal("status fixture")
+				}
+			}
+			if kind == "extra" {
+				frame.WriteByte(1)
+			}
+			raw := frame.Bytes()
+			if kind == "truncated" {
+				raw = raw[:len(raw)-1]
+			}
+			read, write, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer read.Close()
+			done := make(chan struct{})
+			go func() { write.Write(raw); write.Close(); close(done) }()
+			got := readNativeGuestClientStatus(read, q)
+			<-done
+			want := "diagnostic-invalid"
+			if kind == "valid" {
+				want = good.Class
+			}
+			if kind == "empty" {
+				want = ""
+			}
+			if got != want {
+				t.Fatal("private status accepted wrong authority/framing", kind, got)
+			}
+		})
+	}
+}
+
 func TestNativeGuestReaderSignalChild(t *testing.T) {
 	if os.Getenv("SFL_TEST_READER_SIGNAL") != "1" {
 		return

@@ -214,10 +214,21 @@ func nativeGuestClientProxyMain() (result int) {
 	transport := nativeProviderTransport(nativeGuestConn{provider})
 	defer transport.CloseIdleConnections()
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: q.Session.Limits.Timeout, WriteTimeout: q.Session.Limits.Timeout, IdleTimeout: q.Session.Limits.Timeout, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
-	server.Handler = nativeGuestProviderHandler(q, transport, cancel)
+	var statusOnce sync.Once
+	publishStatus := func(class string) {
+		if class != "" && nativeDiagnosticClass(class) {
+			statusOnce.Do(func() { _ = writeVMRecord(ready, nativeGuestClientStatus{1, q.Binding, Digest(q), class}, 4096) })
+		}
+	}
+	server.Handler = nativeGuestProviderHandlerObserved(q, transport, func(class string) { publishStatus(class); cancel() })
 	var refreshProxy *nativeGuestTLSProxy
 	if nativeGuestRefreshEnabled(q.Policy) {
-		proxy, certificate, err := newNativeGuestTLSProxy(ctx, q.Policy, server.Handler, cancel)
+		proxy, certificate, err := newNativeGuestTLSProxy(ctx, q.Policy, server.Handler, func() {
+			if refreshProxy != nil {
+				publishStatus(nativeGuestClientClass(refreshProxy.failureCode()))
+			}
+			cancel()
+		})
 		if err != nil {
 			return 2
 		}
@@ -278,7 +289,6 @@ func nativeGuestClientProxyMain() (result int) {
 	if writeVMRecord(ready, nativeGuestProxyReady{nativeVMReady{1, q.Binding, Digest(q), q.Session.Identity, "native-vm-profile-1"}, listener.Addr().(*net.TCPAddr).Port}, 4096) != nil {
 		return 2
 	}
-	ready.Close()
 	start, err := readVMRecord[nativeGuestStart](config, 256)
 	if err != nil || start.Version != 1 || start.Kind != "start" {
 		return 2
@@ -298,22 +308,29 @@ func nativeGuestClientProxyMain() (result int) {
 	client.WaitDelay = 2 * time.Second
 	if runErr := client.Run(); runErr != nil {
 		if refreshProxy != nil && refreshProxy.failureCode() != 0 {
+			publishStatus(nativeGuestClientClass(refreshProxy.failureCode()))
 			return refreshProxy.failureCode()
 		}
-		return diagnostics.exitCode(runErr)
+		code := diagnostics.exitCode(runErr)
+		publishStatus(nativeGuestClientClass(code))
+		return code
 	}
 	return 0
 }
 
 func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, stop func()) http.Handler {
+	return nativeGuestProviderHandlerObserved(q, transport, func(string) { stop() })
+}
+func nativeGuestProviderHandlerObserved(q nativeVMRequest, transport http.RoundTripper, stop func(string)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, in *http.Request) {
 		failed := true
+		class := "provider-route"
 		defer func() {
 			if failed {
 				// A denied response cannot become a review. Stop this owned CLI
 				// now so guest PID1 can reap it and return refreshed auth, rather
 				// than waiting for an opaque client's retry loop to time out.
-				stop()
+				stop(class)
 			}
 		}()
 		var authority string
@@ -323,6 +340,7 @@ func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, 
 			}
 			if route.Method == in.Method && route.Path == in.URL.Path && route.RawQuery == in.URL.RawQuery {
 				if authority != "" && authority != route.Authority {
+					class = "provider-ambiguous"
 					http.Error(w, "ambiguous provider route", 403)
 					return
 				}
@@ -330,6 +348,9 @@ func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, 
 			}
 		}
 		if authority == "" || in.URL.IsAbs() || in.URL.User != nil || in.URL.RawPath != "" || len(in.Trailer) != 0 {
+			if authority != "" {
+				class = "provider-url"
+			}
 			http.Error(w, "provider route denied", 403)
 			return
 		}
@@ -341,6 +362,7 @@ func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, 
 		request.Close = false
 		response, err := transport.RoundTrip(request)
 		if err != nil {
+			class = "provider-transport"
 			http.Error(w, "provider unavailable", 502)
 			return
 		}
@@ -354,6 +376,7 @@ func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, 
 		// quota responses still reach the CLI's refresh/error handling, and the
 		// local WebSocket refusal still permits the pinned HTTP fallback.
 		failed = response.Header.Get(nativeProviderFatalHeader) == "1" || err != nil || n > int64(q.Policy.Limits.ResponseBytes)
+		class = "provider-response"
 	})
 }
 

@@ -194,7 +194,11 @@ func NativeVMGuestMain(args []string) int {
 	if err != nil {
 		return 2
 	}
-	defer readyRead.Close()
+	defer func() {
+		if phase.clientStatusInput == nil {
+			readyRead.Close()
+		}
+	}()
 	defer readyWrite.Close()
 	phase.client, err = startNativeGuestRole(ctx, "client", clientRoot, 0, []*os.File{configRead, provider, readyWrite}, "--client-proxy")
 	configRead.Close()
@@ -215,6 +219,9 @@ func NativeVMGuestMain(args []string) int {
 	if err != nil || !observed.Ready.valid(q) || observed.Port <= 0 || observed.Port > 65535 {
 		return 2
 	}
+	phase.clientStatusInput = readyRead
+	phase.clientStatus = make(chan string, 1)
+	go func() { phase.clientStatus <- readNativeGuestClientStatus(readyRead, q) }()
 	inv, err := nativeGuestInvocation(q, "http://127.0.0.1:"+strconv.Itoa(observed.Port))
 	if err != nil {
 		return 2
@@ -339,22 +346,24 @@ func (l *nativeGuestLauncher) Start(ctx context.Context, inv Invocation) (Worker
 }
 
 type nativeGuestPhase struct {
-	request        nativeVMRequest
-	control        *os.File
-	clientRoot     string
-	client, reader *nativeGuestProcess
-	clientControl  *os.File
-	readerAudit    chan readerAuditResult
-	broker         *nativeGuestCodeBroker
-	brokerDone     chan nativeVMCodeHostAccess
-	cancelBroker   context.CancelFunc
-	seed           *AuthTransferInfo
-	canaries       [][]byte
-	report         []byte
-	state          string
-	stage          string
-	nativeMu       sync.Mutex
-	native         *nativeResultObservation
+	request           nativeVMRequest
+	control           *os.File
+	clientRoot        string
+	client, reader    *nativeGuestProcess
+	clientControl     *os.File
+	clientStatusInput *os.File
+	clientStatus      chan string
+	readerAudit       chan readerAuditResult
+	broker            *nativeGuestCodeBroker
+	brokerDone        chan nativeVMCodeHostAccess
+	cancelBroker      context.CancelFunc
+	seed              *AuthTransferInfo
+	canaries          [][]byte
+	report            []byte
+	state             string
+	stage             string
+	nativeMu          sync.Mutex
+	native            *nativeResultObservation
 }
 
 func (p *nativeGuestPhase) observeNative(value nativeResultObservation) {
@@ -403,6 +412,16 @@ func (p *nativeGuestPhase) finish(parent context.Context) {
 	if p.client != nil {
 		stopped = p.client.Stop(ctx) == nil
 		p.client.out.Close()
+	}
+	if p.clientStatusInput != nil {
+		select {
+		case class := <-p.clientStatus:
+			if class != "" && finished.State != "complete" {
+				finished.GuestStage = "client-error-" + class
+			}
+		case <-ctx.Done():
+		}
+		p.clientStatusInput.Close()
 	}
 	if p.reader != nil {
 		stopped = p.reader.Stop(ctx) == nil && stopped

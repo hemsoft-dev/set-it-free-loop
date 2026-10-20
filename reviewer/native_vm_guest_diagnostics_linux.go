@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os/exec"
 )
 
@@ -83,8 +84,7 @@ func (p *nativeGuestPhase) observeClientExit() {
 	if !errors.As(p.client.waitErr, &exit) {
 		return
 	}
-	classes := map[int]string{201: "tls", 202: "proxy", 203: "auth", 204: "filesystem", 205: "configuration", 206: "runtime", 207: "other", 208: "launch", 209: "cancelled", 210: "signal", 211: "silent-exit", 221: "tls-authority", 222: "tls-intake", 223: "tls-handshake", 224: "tls-host"}
-	class := classes[exit.ExitCode()]
+	class := nativeGuestClientClass(exit.ExitCode())
 	if class == "" {
 		return
 	}
@@ -93,4 +93,30 @@ func (p *nativeGuestPhase) observeClientExit() {
 	if p.native != nil {
 		p.native.ExitClass = class
 	}
+}
+
+func nativeGuestClientClass(code int) string {
+	classes := map[int]string{201: "tls", 202: "proxy", 203: "auth", 204: "filesystem", 205: "configuration", 206: "runtime", 207: "other", 208: "launch", 209: "cancelled", 210: "signal", 211: "silent-exit", 221: "tls-authority", 222: "tls-intake", 223: "tls-handshake", 224: "tls-host"}
+	return classes[code]
+}
+
+type nativeGuestClientStatus struct {
+	Version            int
+	Binding            AuthBinding
+	RequestHash, Class string
+}
+
+func readNativeGuestClientStatus(input io.Reader, q nativeVMRequest) string {
+	status, err := readVMRecord[nativeGuestClientStatus](input, 4096)
+	if err == io.EOF {
+		return ""
+	}
+	if err != nil || status.Version != 1 || status.Binding != q.Binding || status.RequestHash != Digest(q) || status.Class == "" || !nativeDiagnosticClass(status.Class) {
+		return "diagnostic-invalid"
+	}
+	var trailing [1]byte
+	if n, err := input.Read(trailing[:]); n != 0 || err != io.EOF {
+		return "diagnostic-invalid"
+	}
+	return status.Class
 }
