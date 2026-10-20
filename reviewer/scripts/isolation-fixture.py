@@ -54,7 +54,7 @@ def parse_guest_result(raw, nonce, commit):
     for read, path in zip(access["reads"], ["worker.go", "source.go", "worker.go"]):
         data = FIXTURE_FILES[path]
         expected_hash = digest(json.dumps(base64.b64encode(data).decode()).encode())
-        if not isinstance(read, dict) or read.get("revision") != commit or read.get("path") != path or read.get("hash") != expected_hash or read.get("bytes") != len(data):
+        if not isinstance(read, dict) or read.get("Revision") != commit or read.get("Path") != path or read.get("Hash") != expected_hash or read.get("Bytes") != len(data):
             raise RuntimeError("actual immutable source content/revision differs")
     if access.get("bytes") != sum(len(FIXTURE_FILES[path]) for path in ["worker.go", "source.go", "worker.go"]):
         raise RuntimeError("actual source byte count differs")

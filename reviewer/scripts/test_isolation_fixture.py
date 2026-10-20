@@ -14,8 +14,8 @@ parse = fixture["parse_guest_result"]
 def receipt():
     contents = [b"worker-only evidence\n", b"original source\n", b"worker-only evidence\n"]
     paths = ["worker.go", "source.go", "worker.go"]
-    reads = [{"revision": "a"*40, "path": path, "bytes": len(data),
-              "hash": hashlib.sha256(json.dumps(base64.b64encode(data).decode()).encode()).hexdigest()}
+    reads = [{"Revision": "a"*40, "Path": path, "Bytes": len(data),
+              "Hash": hashlib.sha256(json.dumps(base64.b64encode(data).decode()).encode()).hexdigest()}
              for path, data in zip(paths, contents)]
     return {"version": 1, "nonce": "b"*32, "passed": True, "fake_clients": True,
             "production_boundary_qualified": False,
@@ -39,8 +39,8 @@ class ReceiptTests(unittest.TestCase):
                      lambda value: value["roles"][1].update(descendants_killed=0),
                      lambda value: value["roles"][0].update(stopped="true"),
                      lambda value: value["roles"][1].update(memory_max="max"),
-                     lambda value: value["source_access"]["reads"][0].update(revision="c"*40),
-                     lambda value: value["source_access"]["reads"][0].update(hash="0"*64),
+                     lambda value: value["source_access"]["reads"][0].update(Revision="c"*40),
+                     lambda value: value["source_access"]["reads"][0].update(Hash="0"*64),
                      lambda value: value["source_access"].update(bytes=0)]
         for mutate in mutations:
             bad = copy.deepcopy(good)
@@ -54,6 +54,13 @@ class ReceiptTests(unittest.TestCase):
         for value in bad_values:
             with self.subTest(value=value), self.assertRaises(RuntimeError):
                 parse(value, "b"*32, "a"*40)
+
+    def test_captured_actual_kernel_receipt(self):
+        # This is actual guest output from the pinned executable, not a
+        # second spelling of the verifier's expected field layout.
+        captured = json.loads(Path(__file__).with_name("testdata").joinpath("actual-uid-guest.json").read_text())
+        value = captured["guest"]
+        self.assertEqual(parse(json.dumps(value), value["nonce"], captured["synthetic_commit"]), value)
 
 
 if __name__ == "__main__":

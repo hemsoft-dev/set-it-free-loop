@@ -1,0 +1,69 @@
+{
+  "provenance": "Actual fake-only Linux guest output. Overall original harness rejected it due incorrect read-record field names; this is parser regression evidence, not a new whole-run qualification.",
+  "source_head": "efe9d7306041f8393228d516fef2d10b458ca4c5",
+  "kernel_sha256": "9f55ef7253055a9cf68f8a04323c93dead2fca617386d842fbde9ca7b178b27e",
+  "init_sha256": "989ef05f4a099be134eb61897036b29494447f5bb6a31622578eb3a811a0228a",
+  "synthetic_commit": "b70dd7a954940cbcdd960a99a39234519e0cfa84",
+  "guest": {
+    "version": 1,
+    "nonce": "64a1f548607688961bce718197e47419",
+    "passed": true,
+    "fake_clients": true,
+    "production_boundary_qualified": false,
+    "source_access": {
+      "version": 1,
+      "session_hash": "ff25e6f3cc5408c52e26e95de382f8e8625e1ec02c8a0f24e6676c286e6420c9",
+      "tool_calls": 2,
+      "reader_calls": 3,
+      "bytes": 58,
+      "exhausted": false,
+      "reads": [
+        {
+          "Revision": "b70dd7a954940cbcdd960a99a39234519e0cfa84",
+          "Path": "worker.go",
+          "Hash": "89004c0a1db607c4fd71d55243dd02495381108f4561bae6b5c207577a086447",
+          "Bytes": 21
+        },
+        {
+          "Revision": "b70dd7a954940cbcdd960a99a39234519e0cfa84",
+          "Path": "source.go",
+          "Hash": "5fd52b9f317f4e4833c033cfd3b7fbb793c63a1cb6c6c9c835b6ad99ccf93f4a",
+          "Bytes": 16
+        },
+        {
+          "Revision": "b70dd7a954940cbcdd960a99a39234519e0cfa84",
+          "Path": "worker.go",
+          "Hash": "89004c0a1db607c4fd71d55243dd02495381108f4561bae6b5c207577a086447",
+          "Bytes": 21
+        }
+      ],
+      "coverage": [
+        {
+          "path": "",
+          "reason": "unauthorized source peer omitted"
+        }
+      ]
+    },
+    "roles": [
+      {
+        "role": "reader",
+        "uid": 1201,
+        "memory_max": "100663296",
+        "pids_max": "32",
+        "cpu_max": "100000 100000",
+        "stopped": true,
+        "descendants_killed": 0
+      },
+      {
+        "role": "worker",
+        "uid": 1202,
+        "memory_max": "100663296",
+        "pids_max": "32",
+        "cpu_max": "100000 100000",
+        "stopped": true,
+        "descendants_killed": 1
+      }
+    ],
+    "reaped_orphans": 1
+  }
+}
