@@ -4,8 +4,6 @@ package reviewer
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -16,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -28,10 +27,14 @@ type containmentKernel interface {
 	BootID() (string, error)
 	Capture(string, string) (cgroupBinding, error)
 	Empty(cgroupBinding) error
+	Executable(int, string) error
 }
 
 type linuxContainmentKernel struct{}
 
+func (linuxContainmentKernel) Executable(pid int, hash string) error {
+	return verifyRunningStub(pid, hash)
+}
 func (linuxContainmentKernel) BootID() (string, error) { return currentBootID() }
 func validUnitCgroup(group, unit string) bool {
 	return validContainmentUnit(unit) && strings.HasPrefix(group, "/user.slice/") && filepath.Clean(group) == group && strings.HasSuffix(group, "/"+unit)
@@ -172,12 +175,14 @@ type SystemdSupervisor struct {
 	mu                   sync.Mutex
 	gates                map[AuthBinding]*ContainmentGate
 	starts               map[AuthBinding]chan struct{}
+	image                *retainedStubImage
+	closed               bool
 }
 
 // OpenSystemdSupervisor is explicit construction, never an Engine fallback.
 // root must already be private. stub is the pinned cmd/unitstub executable.
 func OpenSystemdSupervisor(ctx context.Context, root, stub, stubHash string) (*SystemdSupervisor, error) {
-	if privateDirectory(root) != nil || !filepath.IsAbs(root) || filepath.Clean(root) != root || verifyContainmentStub(stub, stubHash) != nil {
+	if privateDirectory(root) != nil || !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return nil, ErrAuthRecoveryRequired
 	}
 	ctx, cancel := boundedManagerContext(ctx)
@@ -186,34 +191,16 @@ func OpenSystemdSupervisor(ctx context.Context, root, stub, stubHash string) (*S
 	if err != nil {
 		return nil, err
 	}
-	return newSystemdSupervisor(root, stub, stubHash, manager, linuxContainmentKernel{}), nil
+	supervisor := newSystemdSupervisor(root, stub, stubHash, manager, linuxContainmentKernel{})
+	if supervisor.image == nil {
+		manager.Close()
+		return nil, ErrAuthRecoveryRequired
+	}
+	return supervisor, nil
 }
 func newSystemdSupervisor(root, stub, hash string, m containmentManager, k containmentKernel) *SystemdSupervisor {
-	return &SystemdSupervisor{root: root, stub: stub, stubHash: hash, manager: m, kernel: k, gates: map[AuthBinding]*ContainmentGate{}, starts: map[AuthBinding]chan struct{}{}}
-}
-func verifyContainmentStub(path, hash string) error {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path || !validAuthHash(hash) {
-		return ErrAuthRecoveryRequired
-	}
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return ErrAuthRecoveryRequired
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return ErrAuthRecoveryRequired
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || !info.Mode().IsRegular() || st.Uid != uint32(os.Geteuid()) || st.Nlink != 1 || info.Mode().Perm()&0022 != 0 || info.Mode().Perm()&0100 == 0 || info.Size() > 64<<20 {
-		return ErrAuthRecoveryRequired
-	}
-	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(file, (64<<20)+1))
-	if err != nil || n != info.Size() || hex.EncodeToString(h.Sum(nil)) != hash {
-		return ErrAuthRecoveryRequired
-	}
-	return nil
+	image, _ := retainStubImage(root, stub, hash)
+	return &SystemdSupervisor{root: root, stub: stub, stubHash: hash, manager: m, kernel: k, gates: map[AuthBinding]*ContainmentGate{}, starts: map[AuthBinding]chan struct{}{}, image: image}
 }
 func (s *SystemdSupervisor) gate(binding AuthBinding) *ContainmentGate {
 	return &ContainmentGate{directory: filepath.Join(s.root, binding.LaunchID), binding: binding, peers: map[*net.UnixConn]bool{}}
@@ -261,7 +248,7 @@ func (s *SystemdSupervisor) snapshotUnit(ctx context.Context, binding AuthBindin
 	return r, err
 }
 func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateManifest) error {
-	if verifyContainmentStub(s.stub, s.stubHash) != nil {
+	if s.image.verify() != nil {
 		return ErrAuthRecoveryRequired
 	}
 	boot, err := s.kernel.BootID()
@@ -315,6 +302,9 @@ func (s *SystemdSupervisor) captureUnit(ctx context.Context, r unitJournal) (uni
 		return r, errors.Join(ErrAuthRecoveryRequired, errors.New("systemd restriction mismatch"))
 	}
 	identity, err := unitProcessIdentity(ctx, s.manager, o)
+	if err == nil {
+		err = s.kernel.Executable(int(o.MainPID), r.StubHash)
+	}
 	if err != nil || identity.BootID != boot {
 		return r, ErrAuthRecoveryRequired
 	}
@@ -336,7 +326,7 @@ func (s *SystemdSupervisor) StartFake(ctx context.Context, binding AuthBinding) 
 		return ErrAuthRecoveryRequired
 	}
 	s.mu.Lock()
-	if _, ok := s.starts[binding]; ok {
+	if _, ok := s.starts[binding]; ok || s.closed || s.image == nil {
 		s.mu.Unlock()
 		return ErrAuthRecoveryRequired
 	}
@@ -362,7 +352,7 @@ func (s *SystemdSupervisor) StartFake(ctx context.Context, binding AuthBinding) 
 		if err != nil || gateRecord.Phase != "prepared" {
 			return ErrAuthRecoveryRequired
 		}
-		if verifyContainmentStub(s.stub, s.stubHash) != nil {
+		if s.image.verify() != nil {
 			return ErrAuthRecoveryRequired
 		}
 		current.Started = true
@@ -373,25 +363,25 @@ func (s *SystemdSupervisor) StartFake(ctx context.Context, binding AuthBinding) 
 		return err
 	}
 	raw, _ := json.Marshal(binding)
-	args := []string{s.stub, s.gate(binding).Endpoint(), string(raw), r.ManifestHash, strconv.Itoa(os.Getpid())}
-	job, err := s.manager.Start(ctx, r.Unit, s.stub, args, "SFL fake containment "+Digest(binding))
+	args := []string{retainedStubExec, s.gate(binding).Endpoint(), string(raw), r.ManifestHash, strconv.Itoa(os.Getpid())}
+	job, err := s.manager.Start(ctx, r.Unit, retainedStubExec, args, "SFL fake containment "+Digest(binding), int(s.image.file.Fd()))
 	if err != nil {
 		return errors.Join(ErrAuthRecoveryRequired, err)
 	}
-	if err = s.updateUnit(context.WithoutCancel(ctx), binding, func(current *unitJournal) error { current.StartJob = job; return nil }); err != nil {
+	if err = s.postStartUpdate(ctx, binding, func(current *unitJournal) error { current.StartJob = job; return nil }); err != nil {
 		return err
 	}
 	if err = s.manager.WaitJob(ctx, job, r.Unit); err != nil {
 		return err
 	}
-	if err = s.updateUnit(context.WithoutCancel(ctx), binding, func(current *unitJournal) error { current.StartSettled = true; return nil }); err != nil {
+	if err = s.postStartUpdate(ctx, binding, func(current *unitJournal) error { current.StartSettled = true; return nil }); err != nil {
 		return err
 	}
 	r, err = s.snapshotUnit(ctx, binding)
 	if err != nil || r.Aborted {
 		return ErrAuthRecoveryRequired
 	}
-	captured, err := s.captureUnit(ctx, r)
+	captured, err := s.captureStartedUnit(ctx, r)
 	if err != nil {
 		return err
 	}
@@ -406,6 +396,12 @@ func (s *SystemdSupervisor) StartFake(ctx context.Context, binding AuthBinding) 
 		return nil
 	})
 }
+func (s *SystemdSupervisor) postStartUpdate(ctx context.Context, binding AuthBinding, change func(*unitJournal) error) error {
+	recovery, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	defer cancel()
+	return s.updateUnit(recovery, binding, change)
+}
+
 func (s *SystemdSupervisor) GrantFake(ctx context.Context, binding AuthBinding, manifest FakeGateManifest) error {
 	r, err := s.snapshotUnit(ctx, binding)
 	if err != nil || r.Aborted || !r.StartSettled || !r.Captured || r.Stopped || r.ManifestHash != Digest(manifest) {
@@ -413,7 +409,7 @@ func (s *SystemdSupervisor) GrantFake(ctx context.Context, binding AuthBinding, 
 	}
 	ctx, cancel := boundedManagerContext(ctx)
 	defer cancel()
-	if verifyContainmentStub(s.stub, s.stubHash) != nil {
+	if s.image.verify() != nil {
 		return ErrAuthRecoveryRequired
 	}
 	if _, err = s.captureUnit(ctx, r); err != nil {
@@ -529,14 +525,30 @@ func (s *SystemdSupervisor) ConfirmAuthStopped(ctx context.Context, binding Auth
 }
 func (s *SystemdSupervisor) Close() error {
 	s.mu.Lock()
+	s.closed = true
 	gates := make([]*ContainmentGate, 0, len(s.gates))
 	for _, g := range s.gates {
 		gates = append(gates, g)
 	}
+	waits := make([]chan struct{}, 0, len(s.starts))
+	for _, done := range s.starts {
+		waits = append(waits, done)
+	}
 	s.mu.Unlock()
+	ctx, cancel := boundedManagerContext(context.Background())
+	defer cancel()
 	var result error
 	for _, g := range gates {
-		result = errors.Join(result, g.Abort(context.Background()))
+		result = errors.Join(result, g.Abort(ctx))
 	}
-	return errors.Join(result, s.manager.Close())
+	for _, done := range waits {
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return errors.Join(result, s.manager.Close(), ErrAuthRecoveryRequired)
+		}
+	}
+	// Close the transport before releasing the image descriptor. No new start
+	// can register after closed, and every in-flight sender has drained.
+	return errors.Join(result, s.manager.Close(), s.image.Close())
 }

@@ -31,6 +31,7 @@ type result struct {
 	StubSHA256                                          string        `json:"stub_sha256"`
 	Started, Granted, Stopped, AuthCompleted, Recovered bool
 	EscapedChildPID                                     int             `json:"escaped_child_pid"`
+	OriginalPathReplaced                                bool            `json:"original_path_replaced"`
 	EscapedChildStopped                                 bool            `json:"escaped_child_stopped"`
 	Journal                                             json.RawMessage `json:"private_unit_journal,omitempty"`
 	Error                                               string          `json:"error,omitempty"`
@@ -63,7 +64,17 @@ func exercise(root, stub, hash string) (receipt result) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	supervisor, err := r.OpenSystemdSupervisor(ctx, gates, stub, hash)
+	rawStub, err := os.ReadFile(stub)
+	if err != nil {
+		receipt.Error = "fixture image unavailable"
+		return
+	}
+	mutableStub := filepath.Join(root, "mutable-unitstub")
+	if os.WriteFile(mutableStub, rawStub, 0500) != nil {
+		receipt.Error = "fixture image copy unavailable"
+		return
+	}
+	supervisor, err := r.OpenSystemdSupervisor(ctx, gates, mutableStub, hash)
 	if err != nil {
 		receipt.Error = "open supervisor: " + err.Error()
 		return
@@ -80,6 +91,14 @@ func exercise(root, stub, hash string) (receipt result) {
 		supervisor.Close()
 		receipt.Journal, _ = os.ReadFile(filepath.Join(gates, receipt.Binding.LaunchID, "unit.json"))
 	}()
+	// Race regression: replace the supplied pathname after verification. Both
+	// the main process and its self-exec child must still use the sealed image.
+	replacement := filepath.Join(root, "unpinned-replacement")
+	if os.WriteFile(replacement, []byte("unpinned replacement must never execute"), 0500) != nil || os.Rename(replacement, mutableStub) != nil {
+		receipt.Error = "path replacement unavailable"
+		return
+	}
+	receipt.OriginalPathReplaced = true
 	if err = supervisor.PrepareFake(receipt.Binding, manifest); err != nil {
 		receipt.Error = "prepare: " + err.Error()
 		return
@@ -152,7 +171,7 @@ func exercise(root, stub, hash string) (receipt result) {
 		receipt.Error = "close stopped transport: " + err.Error()
 		return
 	}
-	recovered, err := r.OpenSystemdSupervisor(ctx, gates, stub, hash)
+	recovered, err := r.OpenSystemdSupervisor(ctx, gates, mutableStub, hash)
 	if err != nil {
 		receipt.Error = "reopen: " + err.Error()
 		return

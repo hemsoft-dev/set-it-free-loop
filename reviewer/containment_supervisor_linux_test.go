@@ -28,6 +28,7 @@ type fakeContainmentKernel struct {
 	populated, changed bool
 }
 
+func (k *fakeContainmentKernel) Executable(int, string) error { return nil }
 func (k *fakeContainmentKernel) BootID() (string, error) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -64,11 +65,13 @@ type fakeContainmentManager struct {
 	output                           bytes.Buffer
 	holdPopulated, changedInvocation bool
 	spawn                            bool
+	afterStart                       func()
+	afterWait                        func()
 }
 
 func (m *fakeContainmentManager) Owner() string { return m.owner }
 func (m *fakeContainmentManager) Close() error  { return nil }
-func (m *fakeContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string) (string, error) {
+func (m *fakeContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string, imageFD int) (string, error) {
 	m.mu.Lock()
 	m.starts++
 	entered, hold := m.entered, m.holdStart
@@ -104,9 +107,17 @@ func (m *fakeContainmentManager) Start(ctx context.Context, unit, stub string, a
 		m.childDone = make(chan struct{})
 		go func() { cmd.Wait(); close(m.childDone) }()
 	}
+	if m.afterStart != nil {
+		m.afterStart()
+	}
 	return "/org/freedesktop/systemd1/job/1", nil
 }
-func (m *fakeContainmentManager) WaitJob(context.Context, string, string) error { return m.waitErr }
+func (m *fakeContainmentManager) WaitJob(context.Context, string, string) error {
+	if m.afterWait != nil {
+		m.afterWait()
+	}
+	return m.waitErr
+}
 func (m *fakeContainmentManager) Observe(context.Context, string) (unitObservation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -264,7 +275,7 @@ func TestSystemdSupervisorAbortDrainsStartAndNeverGrantsLater(t *testing.T) {
 	}
 }
 func TestSystemdSupervisorRejectsChangedOrPopulatedContainment(t *testing.T) {
-	for _, kind := range []string{"populated", "invocation", "manager", "inode", "resource", "pin"} {
+	for _, kind := range []string{"populated", "invocation", "manager", "inode", "resource"} {
 		t.Run(kind, func(t *testing.T) {
 			s, m, manifest := systemdSupervisorFixture(t)
 			binding := authTestBinding()
@@ -282,10 +293,8 @@ func TestSystemdSupervisorRejectsChangedOrPopulatedContainment(t *testing.T) {
 				m.kernel.changed = true
 			case "resource":
 				m.observation.TasksMax = 65
-			case "pin":
-				os.WriteFile(s.stub, []byte("changed executable"), 0700)
 			}
-			if kind == "resource" || kind == "pin" {
+			if kind == "resource" {
 				if err := s.GrantFake(context.Background(), binding, manifest); err == nil {
 					t.Fatal("changed launch granted", kind)
 				}
@@ -311,6 +320,50 @@ func TestSystemdSupervisorPreparedWithoutStartAndChangedBoot(t *testing.T) {
 			}
 			if m.stops != 0 {
 				t.Fatal("new boot or unstarted launch stopped unrelated unit")
+			}
+		})
+	}
+}
+
+func TestSystemdPostStartJournalWritesKeepRecoveryDeadline(t *testing.T) {
+	for _, stage := range []string{"job", "settled"} {
+		t.Run(stage, func(t *testing.T) {
+			s, m, _ := systemdSupervisorFixture(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			release := make(chan struct{})
+			released := make(chan struct{})
+			hook := func() {
+				held, err := s.gate(authTestBinding()).lock(context.Background())
+				if err != nil {
+					t.Fatal(err)
+				}
+				cancel()
+				go func() {
+					select {
+					case <-release:
+					case <-time.After(3 * time.Second):
+					}
+					held.close()
+					close(released)
+				}()
+			}
+			if stage == "job" {
+				m.afterStart = hook
+			} else {
+				m.afterWait = hook
+			}
+			started := time.Now()
+			err := s.StartFake(ctx, authTestBinding())
+			elapsed := time.Since(started)
+			close(release)
+			<-released
+			if !errors.Is(err, ErrAuthRecoveryRequired) || elapsed > 2*time.Second {
+				t.Fatal("post-start journal write lost deadline", stage, elapsed, err)
+			}
+			record, err := s.snapshotUnit(context.Background(), authTestBinding())
+			if err != nil || !record.Started || record.StartSettled || record.Captured {
+				t.Fatal("uncertain launched attempt lost", record, err)
 			}
 		})
 	}

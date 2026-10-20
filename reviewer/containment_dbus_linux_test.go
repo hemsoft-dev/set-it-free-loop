@@ -53,9 +53,19 @@ func (m *fakeWireManager) StartTransientUnit(unit, mode string, properties []uni
 	}
 	found := false
 	for _, p := range properties {
+		if p.Name == "ExtraFileDescriptors" {
+			var descriptors []namedUnitFD
+			if dbus.Store([]any{p.Value.Value()}, &descriptors) != nil || len(descriptors) != 1 {
+				return "", dbus.MakeFailedError(fmt.Errorf("bad image descriptor"))
+			}
+			for _, descriptor := range descriptors {
+				unix.Close(int(descriptor.FD))
+			}
+		}
 		if p.Name == "ExecStart" {
 			var calls []unitExec
-			if dbus.Store([]any{p.Value.Value()}, &calls) != nil || len(calls) != 1 || calls[0].Path != "/fake/pinned-unitstub" || len(calls[0].Arguments) != 5 || calls[0].IgnoreFailure {
+			bootstrap, _ := trustedStubBootstrap()
+			if dbus.Store([]any{p.Value.Value()}, &calls) != nil || len(calls) != 1 || calls[0].Path != bootstrap || len(calls[0].Arguments) != 9 || calls[0].Arguments[4] != stubBootstrapCode || calls[0].IgnoreFailure {
 				return "", dbus.MakeFailedError(fmt.Errorf("bad argv"))
 			}
 			found = true
@@ -174,8 +184,13 @@ func TestSystemdActualDBusTransportAgainstPrivateFakeManager(t *testing.T) {
 	defer manager.Close()
 	// The real adapter sends real D-Bus variants/argv and receives an early
 	// JobRemoved signal from an isolated fake manager, never the host manager.
-	args := []string{"/fake/pinned-unitstub", "/fake/gate.sock", "binding", Digest("manifest"), "123"}
-	job, err := manager.Start(ctx, fake.unit, args[0], args, "SFL fake containment "+Digest(authTestBinding()))
+	args := []string{retainedStubExec, "/fake/gate.sock", "binding", Digest("manifest"), "123"}
+	fdimage, err := unix.MemfdCreate("fake-dbus-image", unix.MFD_CLOEXEC|unix.MFD_ALLOW_SEALING)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fdimage)
+	job, err := manager.Start(ctx, fake.unit, args[0], args, "SFL fake containment "+Digest(authTestBinding()), fdimage)
 	if err != nil {
 		t.Fatal(err)
 	}

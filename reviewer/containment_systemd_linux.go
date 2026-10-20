@@ -55,7 +55,7 @@ type unitObservation struct {
 
 type containmentManager interface {
 	Owner() string
-	Start(context.Context, string, string, []string, string) (string, error)
+	Start(context.Context, string, string, []string, string, int) (string, error)
 	WaitJob(context.Context, string, string) error
 	Observe(context.Context, string) (unitObservation, error)
 	UnitForPIDFD(context.Context, int) (string, string, error)
@@ -82,36 +82,119 @@ type systemdJobs struct {
 	owner     string
 	completed map[string]jobResult
 	changed   chan struct{}
-	invalid   bool
+	pending   map[string]bool
+	waiting   map[string]string
+	invalid   map[string]bool
 }
 type jobResult struct{ Unit, Result string }
 
+func (j *systemdJobs) begin(unit string) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if !validContainmentUnit(unit) || j.pending[unit] {
+		return ErrAuthRecoveryRequired
+	}
+	if j.pending == nil {
+		j.pending = map[string]bool{}
+	}
+	if j.invalid == nil {
+		j.invalid = map[string]bool{}
+	}
+	if j.waiting == nil {
+		j.waiting = map[string]string{}
+	}
+	// A later operation for this owned unit supersedes an abandoned result.
+	// In particular, a failed journal write must not prevent recovery StopUnit.
+	for p, owner := range j.waiting {
+		if owner == unit {
+			delete(j.waiting, p)
+			delete(j.completed, p)
+		}
+	}
+	if len(j.pending)+len(j.waiting) >= 128 {
+		return ErrAuthRecoveryRequired
+	}
+	delete(j.invalid, unit)
+	j.pending[unit] = true
+	j.notify()
+	return nil
+}
+func (j *systemdJobs) bind(unit, p string) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if !j.pending[unit] || j.invalid[unit] {
+		return ErrAuthRecoveryRequired
+	}
+	delete(j.pending, unit)
+	j.waiting[p] = unit
+	for old, result := range j.completed {
+		if result.Unit == unit && old != p {
+			delete(j.completed, old)
+		}
+	}
+	return nil
+}
+func (j *systemdJobs) end(unit string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	delete(j.pending, unit)
+	delete(j.invalid, unit)
+	for p, owner := range j.waiting {
+		if owner == unit {
+			delete(j.waiting, p)
+		}
+	}
+	for p, result := range j.completed {
+		if result.Unit == unit {
+			delete(j.completed, p)
+		}
+	}
+	j.notify()
+}
+func (j *systemdJobs) endJob(unit, p string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.waiting[p] == unit {
+		delete(j.waiting, p)
+		delete(j.completed, p)
+		other := j.pending[unit]
+		for _, owner := range j.waiting {
+			other = other || owner == unit
+		}
+		if !other {
+			delete(j.invalid, unit)
+		}
+	}
+}
 func (j *systemdJobs) DeliverSignal(iface, name string, s *dbus.Signal) {
-	if iface != systemdManagerInterface || name != "JobRemoved" {
+	if iface != systemdManagerInterface || name != "JobRemoved" || s == nil {
 		return
 	}
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	if s == nil || s.Sender != j.owner || s.Path != systemdManagerPath || len(s.Body) != 4 {
-		j.invalid = true
-		j.notify()
+	// The subscription is manager-wide. Ignore traffic outside our currently
+	// pending operation before allocating anything or affecting tracker health.
+	if s.Sender != j.owner || s.Path != systemdManagerPath || len(s.Body) != 4 {
+		return
+	}
+	unit, ok := s.Body[2].(string)
+	path, validPath := s.Body[1].(dbus.ObjectPath)
+	if !ok || !validPath || (!j.pending[unit] && j.waiting[string(path)] != unit) {
 		return
 	}
 	var id uint32
 	var p dbus.ObjectPath
-	var unit, result string
-	if dbus.Store(s.Body, &id, &p, &unit, &result) != nil || id == 0 || !p.IsValid() {
-		j.invalid = true
+	var decoded, result string
+	if dbus.Store(s.Body, &id, &p, &decoded, &result) != nil || id == 0 || !p.IsValid() {
+		j.invalid[unit] = true
 		j.notify()
 		return
 	}
-	// Bounded storage, no deferred goroutines or unbounded signal queue. On
-	// overflow the caller retains recovery state instead of inventing job success.
 	if old, ok := j.completed[string(p)]; ok && old != (jobResult{unit, result}) {
-		j.invalid = true
+		j.invalid[unit] = true
 	}
 	if len(j.completed) >= 128 {
-		j.invalid = true
+		j.invalid[unit] = true
 	} else {
 		j.completed[string(p)] = jobResult{unit, result}
 	}
@@ -119,12 +202,13 @@ func (j *systemdJobs) DeliverSignal(iface, name string, s *dbus.Signal) {
 }
 func (j *systemdJobs) notify() { close(j.changed); j.changed = make(chan struct{}) }
 func (j *systemdJobs) wait(ctx context.Context, p, unit string) error {
+	defer j.endJob(unit, p)
 	if !dbus.ObjectPath(p).IsValid() || !strings.HasPrefix(p, "/org/freedesktop/systemd1/job/") {
 		return ErrAuthRecoveryRequired
 	}
 	for {
 		j.mu.Lock()
-		if j.invalid {
+		if j.invalid[unit] || j.waiting[p] != unit {
 			j.mu.Unlock()
 			return ErrAuthRecoveryRequired
 		}
@@ -234,32 +318,48 @@ func validContainmentUnit(unit string) bool {
 	return err == nil && len(raw) == 16 && hex.EncodeToString(raw) == nonce
 }
 func prop(name string, value any) unitProperty { return unitProperty{name, dbus.MakeVariant(value)} }
-func fixedFakeUnitProperties(unit, stub string, args []string, description string) ([]unitProperty, error) {
-	if !validContainmentUnit(unit) || !path.IsAbs(stub) || path.Clean(stub) != stub || len(args) != 5 || args[0] != stub || len(description) != len("SFL fake containment ")+64 || !strings.HasPrefix(description, "SFL fake containment ") {
+func fixedFakeUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
+	if imageFD < 0 || stub != retainedStubExec || !validContainmentUnit(unit) || !path.IsAbs(stub) || path.Clean(stub) != stub || len(args) != 5 || args[0] != stub || len(description) != len("SFL fake containment ")+64 || !strings.HasPrefix(description, "SFL fake containment ") {
 		return nil, ErrAuthRecoveryRequired
 	}
+	bootstrap, err := trustedStubBootstrap()
+	if err != nil {
+		return nil, err
+	}
+	bootstrapArgs := append([]string{bootstrap, "-I", "-S", "-c", stubBootstrapCode}, args[1:]...)
 	return []unitProperty{
-		prop("Description", description), prop("Type", "exec"), prop("ExecStart", []unitExec{{stub, args, false}}),
+		prop("Description", description), prop("ExtraFileDescriptors", []namedUnitFD{{dbus.UnixFD(imageFD), "sfl-unitstub"}}), prop("Type", "exec"), prop("ExecStart", []unitExec{{bootstrap, bootstrapArgs, false}}),
 		prop("Restart", "no"), prop("RemainAfterExit", true), prop("CollectMode", "inactive"), prop("AddRef", true),
 		prop("KillMode", "control-group"), prop("SendSIGKILL", true), prop("NoNewPrivileges", true),
 		prop("MemoryAccounting", true), prop("MemoryMax", uint64(1<<30)), prop("MemorySwapMax", uint64(0)),
 		prop("TasksAccounting", true), prop("TasksMax", uint64(64)), prop("CPUAccounting", true), prop("CPUQuotaPerSecUSec", uint64(1000000)),
 		prop("TimeoutStartUSec", uint64(5000000)), prop("TimeoutStopUSec", uint64(5000000)), prop("RuntimeMaxUSec", uint64(120000000)),
+		prop("Environment", []string{"LANG=C.UTF-8", "PATH=/usr/bin:/bin"}),
+		prop("UnsetEnvironment", []string{"LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "LD_DEBUG", "LD_DEBUG_OUTPUT", "LD_PROFILE", "LD_TRACE_LOADED_OBJECTS", "LD_ORIGIN_PATH", "GCONV_PATH", "LOCPATH", "MALLOC_TRACE", "GLIBC_TUNABLES"}),
 		prop("StandardInput", "null"), prop("StandardOutput", "null"), prop("StandardError", "null"),
 	}, nil
 }
-func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string) (string, error) {
-	properties, err := fixedFakeUnitProperties(unit, stub, args, description)
+func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string, imageFD int) (string, error) {
+	properties, err := fixedFakeUnitProperties(unit, stub, args, description, imageFD)
 	if err != nil {
 		return "", err
 	}
+	if m.jobs == nil || m.jobs.begin(unit) != nil {
+		return "", ErrAuthRecoveryRequired
+	}
 	body, err := m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".StartTransientUnit", unit, "fail", properties, []auxiliaryUnit{})
 	if err != nil {
+		m.jobs.end(unit)
 		return "", errors.Join(ErrAuthRecoveryRequired, err)
 	}
 	var job dbus.ObjectPath
 	if dbus.Store(body, &job) != nil || !job.IsValid() || !strings.HasPrefix(string(job), "/org/freedesktop/systemd1/job/") {
+		m.jobs.end(unit)
 		return "", ErrAuthRecoveryRequired
+	}
+	if err = m.jobs.bind(unit, string(job)); err != nil {
+		m.jobs.end(unit)
+		return "", err
 	}
 	return string(job), nil
 }
@@ -270,13 +370,22 @@ func (m *dbusContainmentManager) Stop(ctx context.Context, unit string) (string,
 	if !validContainmentUnit(unit) {
 		return "", ErrAuthRecoveryRequired
 	}
+	if m.jobs == nil || m.jobs.begin(unit) != nil {
+		return "", ErrAuthRecoveryRequired
+	}
 	body, err := m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".StopUnit", unit, "replace")
 	if err != nil {
+		m.jobs.end(unit)
 		return "", errors.Join(ErrAuthRecoveryRequired, err)
 	}
 	var job dbus.ObjectPath
 	if dbus.Store(body, &job) != nil || !job.IsValid() || !strings.HasPrefix(string(job), "/org/freedesktop/systemd1/job/") {
+		m.jobs.end(unit)
 		return "", ErrAuthRecoveryRequired
+	}
+	if err = m.jobs.bind(unit, string(job)); err != nil {
+		m.jobs.end(unit)
+		return "", err
 	}
 	return string(job), nil
 }

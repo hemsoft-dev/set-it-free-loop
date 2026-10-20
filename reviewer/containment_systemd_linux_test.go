@@ -5,6 +5,7 @@ package reviewer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -19,10 +20,10 @@ func (f systemdCallFunc) Call(c context.Context, p dbus.ObjectPath, m string, a 
 }
 func TestSystemdFixedStartWireAndNoShell(t *testing.T) {
 	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
-	stub := "/private/unitstub"
+	stub := retainedStubExec
 	args := []string{stub, "/private/gate.sock", "binding-json", Digest("manifest"), "123"}
 	calls := 0
-	m := &dbusContainmentManager{calls: systemdCallFunc(func(_ context.Context, p dbus.ObjectPath, method string, a ...any) ([]any, error) {
+	m := &dbusContainmentManager{jobs: &systemdJobs{completed: map[string]jobResult{}, changed: make(chan struct{})}, calls: systemdCallFunc(func(_ context.Context, p dbus.ObjectPath, method string, a ...any) ([]any, error) {
 		calls++
 		if p != systemdManagerPath || method != systemdManagerInterface+".StartTransientUnit" || a[0] != unit || a[1] != "fail" {
 			t.Fatal("wrong manager target", p, method, a)
@@ -44,16 +45,17 @@ func TestSystemdFixedStartWireAndNoShell(t *testing.T) {
 			}
 		}
 		execs := values["ExecStart"].([]unitExec)
-		if len(execs) != 1 || execs[0].Path != stub || len(execs[0].Arguments) != 5 || execs[0].IgnoreFailure {
+		bootstrap, _ := trustedStubBootstrap()
+		if len(execs) != 1 || execs[0].Path != bootstrap || len(execs[0].Arguments) != 9 || execs[0].Arguments[1] != "-I" || execs[0].Arguments[2] != "-S" || execs[0].Arguments[4] != stubBootstrapCode || execs[0].IgnoreFailure {
 			t.Fatal("arbitrary or ignored command")
 		}
 		return []any{dbus.ObjectPath("/org/freedesktop/systemd1/job/1")}, nil
 	})}
-	if _, err := m.Start(context.Background(), unit, stub, args, "SFL fake containment "+Digest(authTestBinding())); err != nil || calls != 1 {
+	if _, err := m.Start(context.Background(), unit, stub, args, "SFL fake containment "+Digest(authTestBinding()), 17); err != nil || calls != 1 {
 		t.Fatal(err, calls)
 	}
 	for _, bad := range []string{"sshd.service", "sfl-alpha-../other.service", "sfl-alpha-" + strings.Repeat("b", 32) + ".service;true"} {
-		if _, err := m.Start(context.Background(), bad, stub, args, "bad"); err == nil {
+		if _, err := m.Start(context.Background(), bad, stub, args, "bad", 17); err == nil {
 			t.Fatal("unsafe unit")
 		}
 	}
@@ -70,6 +72,9 @@ func TestSystemdJobResultBeforeReplyAndUnknownFailures(t *testing.T) {
 			j := &systemdJobs{owner: ":1.2", completed: map[string]jobResult{}, changed: make(chan struct{})}
 			unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
 			p := "/org/freedesktop/systemd1/job/1"
+			if err := j.begin(unit); err != nil {
+				t.Fatal(err)
+			}
 			if kind != "timeout" {
 				s := jobSignal(":1.2", p, unit, "done")
 				switch kind {
@@ -85,6 +90,9 @@ func TestSystemdJobResultBeforeReplyAndUnknownFailures(t *testing.T) {
 					}
 				}
 				j.DeliverSignal(systemdManagerInterface, "JobRemoved", s)
+			}
+			if err := j.bind(unit, p); err != nil && kind == "done" {
+				t.Fatal(err)
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 			defer cancel()
@@ -128,5 +136,64 @@ func TestSystemdObserveRequiresTypedIdentityAndPIDFDWire(t *testing.T) {
 	delete(props, "Job")
 	if _, err := m.Observe(context.Background(), unit); err == nil {
 		t.Fatal("missing field silently defaulted")
+	}
+}
+
+func TestSystemdUnrelatedJobsDoNotPoisonFutureStartOrStop(t *testing.T) {
+	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
+	jobs := &systemdJobs{owner: ":1.2", completed: map[string]jobResult{}, changed: make(chan struct{})}
+	flood := func() {
+		for i := 0; i < 1000; i++ {
+			jobs.DeliverSignal(systemdManagerInterface, "JobRemoved", jobSignal(":1.2", fmt.Sprintf("/org/freedesktop/systemd1/job/%d", i+100), "unrelated.service", "done"))
+		}
+	}
+	flood()
+	calls := 0
+	manager := &dbusContainmentManager{jobs: jobs, calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, method string, a ...any) ([]any, error) {
+		calls++
+		flood()
+		job := fmt.Sprintf("/org/freedesktop/systemd1/job/%d", calls)
+		jobs.DeliverSignal(systemdManagerInterface, "JobRemoved", jobSignal(":1.2", job, unit, "done"))
+		return []any{dbus.ObjectPath(job)}, nil
+	})}
+	args := []string{retainedStubExec, "endpoint", "binding", "manifest", "123"}
+	job, err := manager.Start(context.Background(), unit, retainedStubExec, args, "SFL fake containment "+Digest(authTestBinding()), 17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = manager.WaitJob(context.Background(), job, unit); err != nil {
+		t.Fatal("unrelated traffic poisoned start", err)
+	}
+	flood()
+	job, err = manager.Stop(context.Background(), unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = manager.WaitJob(context.Background(), job, unit); err != nil || len(jobs.completed) != 0 || len(jobs.pending) != 0 || len(jobs.waiting) != 0 {
+		t.Fatal("unrelated traffic poisoned stop or leaked tracker", err)
+	}
+}
+
+func TestSystemdAbandonedStartResultDoesNotPreventRecoveryStop(t *testing.T) {
+	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
+	jobs := &systemdJobs{owner: ":1.2", completed: map[string]jobResult{}, changed: make(chan struct{})}
+	n := 0
+	manager := &dbusContainmentManager{jobs: jobs, calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, _ string, _ ...any) ([]any, error) {
+		n++
+		p := fmt.Sprintf("/org/freedesktop/systemd1/job/%d", n)
+		jobs.DeliverSignal(systemdManagerInterface, "JobRemoved", jobSignal(":1.2", p, unit, "done"))
+		return []any{dbus.ObjectPath(p)}, nil
+	})}
+	args := []string{retainedStubExec, "endpoint", "binding", "manifest", "123"}
+	if _, err := manager.Start(context.Background(), unit, retainedStubExec, args, "SFL fake containment "+Digest(authTestBinding()), 17); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate cancellation/storage failure before the caller waits on its start.
+	p, err := manager.Stop(context.Background(), unit)
+	if err != nil {
+		t.Fatal("abandoned start prevented stop", err)
+	}
+	if err = manager.WaitJob(context.Background(), p, unit); err != nil || len(jobs.completed) != 0 || len(jobs.waiting) != 0 {
+		t.Fatal("recovery stop or tracker retirement failed", err)
 	}
 }

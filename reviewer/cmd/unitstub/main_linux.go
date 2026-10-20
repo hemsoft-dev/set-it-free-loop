@@ -55,13 +55,9 @@ func main() {
 	if r.ContainmentStubFake(ctx, os.Args[1], binding, os.Getenv("INVOCATION_ID"), os.Args[3], supervisor, os.Stdout) != nil {
 		os.Exit(1)
 	}
-	self, err := os.Executable()
-	if err != nil {
-		os.Exit(1)
-	}
 	// No model-selected command or path. Only this pinned executable's fixed
 	// fake-child mode is launched, after the authenticated manifest grant.
-	child := exec.Command(self, "--fake-escaped-child", filepath.Join(filepath.Dir(os.Args[1]), "fake-child.json"))
+	child := exec.Command("/proc/self/exe", "--fake-escaped-child", filepath.Join(filepath.Dir(os.Args[1]), "fake-child.json"))
 	child.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if child.Start() != nil {
 		os.Exit(1)
