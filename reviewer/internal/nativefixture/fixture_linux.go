@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
 )
@@ -90,6 +91,6 @@ func Seed(provider r.Provider) []byte {
 		return base64.RawURLEncoding.EncodeToString(raw)
 	}
 	jwt := encode(map[string]string{"alg": "none", "typ": "JWT"}) + "." + encode(map[string]any{"email": "fixture@example.invalid", "https://api.openai.com/auth": map[string]string{"chatgpt_plan_type": "plus", "chatgpt_user_id": "sfl-fake-user", "chatgpt_account_id": "sfl-fake-account"}}) + "." + encode("fake-signature")
-	raw, _ := json.Marshal(map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]string{"id_token": jwt, "access_token": "sfl-fake-access", "refresh_token": "sfl-fake-refresh", "account_id": "sfl-fake-account"}, "last_refresh": "2026-10-20T00:00:00Z"})
+	raw, _ := json.Marshal(map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]string{"id_token": jwt, "access_token": "sfl-fake-access", "refresh_token": "sfl-fake-refresh", "account_id": "sfl-fake-account"}, "last_refresh": time.Now().UTC().Format(time.RFC3339)})
 	return raw
 }

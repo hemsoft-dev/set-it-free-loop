@@ -4,10 +4,28 @@ package nativefixture
 
 import (
 	"encoding/json"
+	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 )
+
+func TestNativeSyntheticSeedDoesNotTriggerAgeBasedRefreshAtStartup(t *testing.T) {
+	before := time.Now().UTC().Add(-time.Second)
+	raw := Seed(r.Codex)
+	defer clear(raw)
+	var seed struct {
+		LastRefresh string `json:"last_refresh"`
+	}
+	if json.Unmarshal(raw, &seed) != nil {
+		t.Fatal("synthetic seed malformed")
+	}
+	refreshed, err := time.Parse(time.RFC3339, seed.LastRefresh)
+	if err != nil || refreshed.Before(before) || refreshed.After(time.Now().UTC().Add(time.Second)) {
+		t.Fatal("source fixture would start with an aged synthetic seed")
+	}
+}
 
 func TestNativeMetadataReceiptRequiresEveryCapturedRoute(t *testing.T) {
 	for _, routes := range []map[string]int{
