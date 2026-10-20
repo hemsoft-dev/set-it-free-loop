@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"path"
 	"strconv"
@@ -184,7 +185,7 @@ func egressHeaderAllowed(name string) bool {
 }
 
 func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport http.RoundTripper) (*ProviderEgress, error) {
-	if s.Validate() != nil || ctx == nil || ctx.Err() != nil || transport == nil || p.Provider != s.Identity.Provider || len(p.Routes) == 0 || len(p.Routes) > 16 || len(p.Headers) > 24 {
+	if s.Validate() != nil || ctx == nil || ctx.Err() != nil || httptrace.ContextClientTrace(ctx) != nil || transport == nil || p.Provider != s.Identity.Provider || len(p.Routes) == 0 || len(p.Routes) > 16 || len(p.Headers) > 24 {
 		return nil, ErrLiveBlocked
 	}
 	headers, err := validateEgressPolicy(s.Identity.Provider, s.Limits, p)

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
 	"sync"
@@ -617,4 +618,59 @@ func TestProviderEgressCloseWaitsForQueuedHandlersAndUnreadBodies(t *testing.T) 
 	if err != nil || !a.Stopped || !a.Failed || body.reads.Load() != 0 || body.closes.Load() != 1 {
 		t.Fatal("queued body was read/leaked or final stop failed", a, err, body.reads.Load(), body.closes.Load())
 	}
+}
+
+func TestProviderEgressRejectsInheritedCredentialTrace(t *testing.T) {
+	leaked := false
+	var calls atomic.Int32
+	ctx := httptrace.WithClientTrace(context.Background(), &httptrace.ClientTrace{WroteHeaderField: func(name string, values []string) {
+		if strings.EqualFold(name, "Authorization") {
+			for _, v := range values {
+				if strings.Contains(v, "synthetic-native-access") {
+					leaked = true
+				}
+			}
+		}
+	}})
+	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"ok":true}`)
+	}))
+	defer backend.Close()
+	target, _ := url.Parse(backend.URL)
+	transport := egressRoundTrip(func(q *http.Request) (*http.Response, error) {
+		clone := q.Clone(q.Context())
+		u := *q.URL
+		u.Host = target.Host
+		clone.URL = &u
+		return backend.Client().Transport.RoundTrip(clone)
+	})
+	guard, err := NewProviderEgress(ctx, testSession(Codex), egressTestPolicy(Codex), transport)
+	if err == ErrLiveBlocked {
+		if calls.Load() != 0 || leaked {
+			t.Fatal("rejected trace performed HTTP")
+		}
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	// On the old constructor the real TLS write invokes the inherited trace.
+	// Preserve that observation as a regression rather than a hypothetical leak.
+	server := httptest.NewServer(guard)
+	defer server.Close()
+	request, _ := http.NewRequest("POST", server.URL+"/infer", strings.NewReader("synthetic"))
+	request.Host = "provider.example"
+	request.Header.Set("Authorization", "Bearer synthetic-native-access")
+	request.Header.Set("Content-Type", "application/json")
+	r, err := server.Client().Do(request)
+	if err == nil {
+		io.Copy(io.Discard, r.Body)
+		r.Body.Close()
+	}
+	closeCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	guard.Close(closeCtx)
+	t.Fatal("credential trace was accepted", leaked, calls.Load(), err)
 }

@@ -6,6 +6,11 @@ It opens no listener or network connection on construction. It has no default
 transport, provider endpoint roster, credentials or activation authority. Tests
 use local TLS backends, synthetic auth and explicit test transports.
 
+Construction rejects caller HTTP tracing contexts before any upstream work.
+Otherwise inherited `WroteHeaderField` callbacks could observe provider bearer
+values when the guard builds its credentialed HTTPS request. Cancellation and
+deadlines remain supported; callbacks that observe headers are not inherited.
+
 The trusted supervisor captures an `EgressPolicy` for one validated `Session`.
 The policy contains exact lowercase authorities, GET/POST paths, optional literal
 canonical query strings, header names and request/byte limits. Request kinds are
