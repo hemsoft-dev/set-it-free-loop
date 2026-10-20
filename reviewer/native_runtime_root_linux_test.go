@@ -4,11 +4,12 @@ package reviewer
 
 import (
 	"bytes"
-	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func nativeRuntimePrivateParent(t *testing.T) string {

@@ -316,6 +316,9 @@ func (p *nativeVMHostPhase) finish(ctx context.Context, report Report, primary e
 			primary = errors.Join(primary, ErrAuthRecoveryRequired)
 		}
 	}
+	if p.started {
+		primary = errors.Join(primary, p.supervisor.CleanupRuntime(cleanup, p.request.Binding))
+	}
 	var access *SourceAccess
 	if p.finished != nil && p.finished.Binding == p.request.Binding && p.finished.RequestHash == Digest(p.request) {
 		audit, err := DecodeSourceReaderAudit(p.request.readerConfig(), p.finished.SourceAudit)

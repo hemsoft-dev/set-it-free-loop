@@ -26,9 +26,12 @@ original retained namespace helper. QEMU executes the fixed `/qemu` copy and use
 `/firmware`; BIOS, kernel, initrd, KVM and private channels use fixed descriptors.
 The helper consumes and closes the host directory descriptor before QEMU exec.
 Its fixed arguments create namespaces, disable nested user namespaces and supply
-only private `/proc`, `/dev` and bounded `/tmp` mounts. Normal cleanup removes
-only the owned runtime inode after the helper exits. A replaced directory is
-preserved and reported as an error. Crash retention still needs qualification.
+only private `/proc`, `/dev` and bounded `/tmp` mounts. The stub records directory ownership before file intake. After physical
+whole-unit stop and valid auth persistence, host cleanup removes only the
+recorded runtime inode. Recovery may retry cleanup through the same supervisor
+gate. A missing ownership record or replaced directory is preserved and reported
+as an error. A process-loss fixture covers reopening the recorded tree; full
+crash/restart qualification remains separate.
 
 The namespace helper is an explicit trusted host prerequisite. Its original
 root-owned executable and named host interpreter/libraries are hash-checked

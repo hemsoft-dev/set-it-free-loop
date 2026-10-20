@@ -387,7 +387,9 @@ func NativeVMStub(ctx context.Context, endpoint string, binding AuthBinding, inv
 		return ErrVMBoot
 	}
 	defer control.Close()
-	prepared, err := prepareNativeRuntime(filepath.Dir(endpoint), io.NewSectionReader(files[8], 0, grant.Manifest.Assets[4].Bytes), grant.Manifest.Assets[0], io.NewSectionReader(files[0], 0, grant.Manifest.Assets[0].Bytes+1))
+	prepared, err := prepareNativeRuntimeOwned(filepath.Dir(endpoint), io.NewSectionReader(files[8], 0, grant.Manifest.Assets[4].Bytes), grant.Manifest.Assets[0], io.NewSectionReader(files[0], 0, grant.Manifest.Assets[0].Bytes+1), func(root *nativeRuntimeRoot) error {
+		return root.recordOwnership(binding, hash)
+	})
 	if err != nil {
 		return err
 	}

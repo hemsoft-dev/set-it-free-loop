@@ -31,6 +31,10 @@ type nativeRuntimeRoot struct {
 const nativeRuntimeDirectory = "qemu-runtime"
 
 func prepareNativeRuntime(parentPath string, input io.Reader, program VMAssetPin, programData io.Reader) (_ *nativeRuntimeRoot, result error) {
+	return prepareNativeRuntimeOwned(parentPath, input, program, programData, nil)
+}
+
+func prepareNativeRuntimeOwned(parentPath string, input io.Reader, program VMAssetPin, programData io.Reader, created func(*nativeRuntimeRoot) error) (_ *nativeRuntimeRoot, result error) {
 	if programData == nil || !filepath.IsAbs(parentPath) || filepath.Clean(parentPath) != parentPath || privateDirectory(parentPath) != nil {
 		return nil, fmt.Errorf("%w: parent qualification", ErrNativeRuntime)
 	}
@@ -58,6 +62,11 @@ func prepareNativeRuntime(parentPath string, input io.Reader, program VMAssetPin
 			result = errors.Join(result, prepared.Close())
 		}
 	}()
+	if created != nil {
+		if err := created(prepared); err != nil {
+			return nil, err
+		}
+	}
 	for _, dir := range []string{"proc", "dev", "tmp"} {
 		prepared.directories[dir] = true
 		if root.Mkdir(dir, 0700) != nil {
