@@ -133,12 +133,16 @@ type DurableState struct {
 	PRs        map[string]*PRRecord
 	Jobs       map[string]*DurableJob
 	Writes     map[string]*WriteIntent
+	Polling    *PollSchedule `json:"-"`
 }
 
 // Store keeps one bounded state record in SQLite. An IMMEDIATE transaction
 // serializes every mutation across handles/processes. Remote calls never hold it.
 // A dedicated private service directory is required, not the interactive home.
-type Store struct{ db *sql.DB }
+type Store struct {
+	db   *sql.DB
+	path string
+}
 
 func OpenStore(path string, e Enrollment, defaults Config) (*Store, error) {
 	if err := e.Validate(); err != nil {
@@ -183,8 +187,11 @@ func OpenStore(path string, e Enrollment, defaults Config) (*Store, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &Store{db}
+	s := &Store{db: db, path: path}
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), data BLOB NOT NULL)`)
+	if err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS polling_state (id INTEGER PRIMARY KEY CHECK(id=1), data BLOB NOT NULL)`)
+	}
 	if err == nil {
 		err = s.update(context.Background(), func(d *DurableState) error {
 			if d.PRs == nil {
@@ -225,6 +232,17 @@ func (s *Store) update(ctx context.Context, fn func(*DurableState) error) error 
 			return err
 		}
 	}
+	var polling []byte
+	if err := tx.QueryRowContext(ctx, "SELECT data FROM polling_state WHERE id=1").Scan(&polling); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if len(polling) > 0 {
+		value, err := DecodeStrict[PollSchedule](polling, 2048)
+		if err != nil {
+			return err
+		}
+		d.Polling = &value
+	}
 	if err = fn(&d); err != nil {
 		return err
 	}
@@ -242,14 +260,28 @@ func (s *Store) update(ctx context.Context, fn func(*DurableState) error) error 
 	if err != nil {
 		return err
 	}
+	if d.Polling != nil {
+		data, err := json.Marshal(d.Polling)
+		if err != nil || len(data) > 2048 {
+			return ErrDeferred
+		}
+		if _, err := tx.ExecContext(ctx, "INSERT INTO polling_state(id,data) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data", data); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }
 func (s *Store) Snapshot(ctx context.Context) (DurableState, error) {
-	var raw []byte
-	err := s.db.QueryRowContext(ctx, "SELECT data FROM state WHERE id=1").Scan(&raw)
+	var raw, polling []byte
+	err := s.db.QueryRowContext(ctx, "SELECT data,(SELECT data FROM polling_state WHERE id=1) FROM state WHERE id=1").Scan(&raw, &polling)
 	var d DurableState
 	if err == nil {
 		err = json.Unmarshal(raw, &d)
+	}
+	if err == nil && len(polling) > 0 {
+		value, parseErr := DecodeStrict[PollSchedule](polling, 2048)
+		err = parseErr
+		d.Polling = &value
 	}
 	return d, err
 }

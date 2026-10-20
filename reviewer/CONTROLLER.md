@@ -10,8 +10,10 @@ complete discovery before returning Current so cancellation reaches the local
 dispatch fence. [Snapshot evidence](SNAPSHOT-EVIDENCE.md) collects a bounded
 merge-base diff from trusted immutable Git objects, verifies inline anchors
 against their blobs and retains authoritative omissions through review/recovery.
-Actual App consistency remains unqualified. There is no polling
-daemon, production launcher, credential acquisition, installation flow or activation command. The retired SFL runtime
+The [private polling lifecycle](POLLING.md) composes these libraries while a
+stopped-worker invocation runs independently. Actual App consistency remains
+unqualified. There is no installed daemon, production launcher, credential
+acquisition, installation flow or activation command. The retired SFL runtime
 remains frozen. Live acceptance is tracked in [#173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173),
 [#174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174) and
 [#176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176).
@@ -21,7 +23,9 @@ repository, installation, App, bot and owner IDs. SQLite WAL, FULL synchronous
 writes and IMMEDIATE transactions serialize mutations across handles. State has
 finite record and byte limits. Reaching a cap stops admission; accepted commands,
 unknown writes and unresolved native history are never discarded to hide it.
-This deliberately small alpha stores one versioned JSON record transactionally.
+This deliberately small alpha stores one job-state JSON record transactionally,
+with a separately versioned polling schedule row so older state writers cannot
+erase backoff.
 A schema migration is required to change enrollment or trusted defaults.
 
 A qualified transport normalizes complete paginated original commands and native
