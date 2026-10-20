@@ -94,7 +94,7 @@ def main():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--case", choices=["source", "undeclared-patch", "guarded-undeclared-patch"], required=True)
     parser.add_argument("--go", default="go")
-    parser.add_argument("--isolate-code-host", action="store_true", help="Synthetic-only nested code-host namespace/stdio observation")
+    parser.add_argument("--isolate-code-host", action="store_true", help="Synthetic-only sibling broker and code-host stdio observation")
     parser.add_argument("--module-cache", type=pathlib.Path)
     args = parser.parse_args()
     if args.isolate_code_host and args.case != "source":

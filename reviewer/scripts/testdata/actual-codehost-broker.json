@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "passed": true,
   "input": {
     "bytes": 3162,
@@ -9,11 +9,13 @@
   },
   "output": {
     "bytes": 2222,
-    "sha256": "12913e6c37ba952e8e5eabc92dab6cf60d63b8165db143fb96583acb4dea5a7a",
+    "sha256": "e28072d7f90bc647ed3edb80937f194d0c3728cca29cd2b16a261930ab635d32",
     "synthetic_secret_seen": false,
     "capped": false
   },
   "probe_passed": true,
   "fake_only": true,
+  "relay_failure": false,
+  "bwrap_sha256": "523da3e7399044be5163aee6f57a77a6bef7454376e28f0a0627920bae1b76b6",
   "production_boundary_qualified": false
 }

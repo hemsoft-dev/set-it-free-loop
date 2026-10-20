@@ -15,8 +15,12 @@ sibling design needs no host policy change and has no same-profile fallback.
 The client sees one job-local Unix socket and the relay. Its fixed prelude has
 no executable, arguments, source paths, model, profile or credential selectors.
 The broker accepts one connection, checks real Unix peer credentials against
-the fixture owner, and checks the exact versioned prelude before launching its
-fixed payload. A private temporary directory protects the socket. This is an
+the fixture owner, and checks exact version-2 preludes before launching its fixed payload. A separate
+control socket must have the same kernel-observed PID, UID and GID as the data
+peer. Relay-side scan, byte-limit and transport failures are reported there
+before data EOF. The broker drains that channel before it can record success;
+an explicit failure, malformed event or incomplete control stream fails the run.
+A normal relay teardown EOF is neutral and supplies no completion attestation. A private temporary directory protects the socket. This is an
 offline transport experiment, not a production launcher or an identity boundary
 against other processes owned by the same host user.
 
@@ -55,7 +59,10 @@ python3 reviewer/scripts/codex-fixture.py \
 The outer fixture has its own network namespace and only a local fake backend.
 All auth state is freshly synthesized. No real profile or account is read.
 The host receipt records source/tree, official executable hashes, relay,
-Bubblewrap and runtime library hashes. Success requires the existing source
+the fixed `/usr/bin/bwrap` executable and runtime library hashes. The broker
+independently hashes `/usr/bin/bwrap` before/after its exchange, and the fixture
+requires agreement with its recorded hash and a final unchanged executable.
+A PATH override cannot select a different isolation executable. Success requires the existing source
 Read/Search, provider guard, usage, metadata and report assertions, plus a clean
 broker exit and receipt with nonempty bounded traffic in both directions.
 Unsupported isolation/case combinations refuse before execution.
@@ -65,10 +72,14 @@ and code host, with client SHA256
 `399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215`
 and host SHA256
 `8724d73ec190536233ab4628d24a071bfbcf27e5124f08fe35129f26fe48b916`,
-from committed source `2142b5fa89a582a032eb4f7364a9842d3a4b4544`, during a successful local source experiment.
+from committed source `4d88a9ea88c140eca3293f5744cd4fcb609733d2`, during a successful local source experiment.
 The Python tests mutate its version, probe, bounds, canary and hash fields.
-Go tests exercise real Unix peer credentials/preludes, opaque bytes, split
-canaries, exact/overflow limits, write failures and host-execution refusal.
+Go tests exercise real Unix peer credentials/preludes, cross-process control
+rejection, opaque bytes, split canaries, exact/overflow limits, write failures
+and host-execution refusal. Real-socket regressions reproduce relay-side canary
+and overflow rejection while the broker sees only clean truncated data; the
+control event still makes that attempt fail. Python mutations also reject
+reported relay failures and a hash that differs from the expected executable.
 
 This does not supply the native VM `WorkerLauncher`, separate guest role UIDs,
 protected profile transfer/refresh/return, full process-tree stop recovery, or
