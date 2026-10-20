@@ -24,16 +24,25 @@ _common = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_common)
 
 
+def metadata_observed(result):
+    counts = result.get("metadata_routes", {})
+    return (isinstance(counts, dict) and len(counts) == 3 and counts.get("/v1/models") in (1, 2)
+            and counts.get("/backend-api/wham/accounts/check") == 2
+            and counts.get("/backend-api/wham/settings/user") == 1
+            and sum(counts.values()) == result.get("metadata_requests"))
+
+
 def observation_passed(receipt, result, source, case):
     passed = (receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"] and result.get("run_error") == ""
               and result.get("normalize_error") == "" and result.get("shape_error") == ""
-              and result.get("telemetry_requests") == 0 and result.get("metadata_requests") in (4, 5)
+              and result.get("telemetry_requests") == 0 and result.get("metadata_requests") in (4, 5) and metadata_observed(result)
               and result.get("backend_failures") == 0 and result.get("backend_stop_error") == "" and result.get("negotiations") == 1)
     if case == "source":
         passed = (passed and result.get("backend_calls") == 3
                   and result.get("runtime_inventory") == ["mcp__sfl_source__read", "mcp__sfl_source__search"]
                   and len(source) == 2 and [item.get("tool") for item in source] == ["read", "search"]
-                  and all(item.get("success") is True for item in source))
+                  and all(item.get("success") is True for item in source)
+                  and source[1].get("needle") == "immutable" and source[1].get("max_results") == 5)
     else:
         passed = (passed and result.get("backend_calls") == 2 and not source
                   and result.get("undeclared_patch_denied") is True and result.get("canary_exists") is False)

@@ -38,6 +38,7 @@ func seedCodex() {
 }
 
 type codexBackend struct {
+	metadataRoutes                                   map[string]int
 	logHTTP                                          func(any)
 	mu                                               sync.Mutex
 	session                                          r.Session
@@ -220,6 +221,18 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	if q.Method == "GET" && q.URL.Path != "/v1/responses" {
+		expectedQuery := ""
+		if q.URL.Path == "/v1/models" {
+			expectedQuery = "client_version=0.163.0"
+		}
+		if q.URL.RawQuery != expectedQuery {
+			deny("metadata query differs")
+			return
+		}
+		if b.metadataRoutes == nil {
+			b.metadataRoutes = map[string]int{}
+		}
+		b.metadataRoutes[q.URL.Path]++
 		b.metadata++
 		if b.metadata > 5 {
 			deny("metadata cap")
@@ -231,8 +244,6 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 			_, _ = io.WriteString(w, `{"models":[]}`)
 		case "/backend-api/wham/accounts/check":
 			_, _ = io.WriteString(w, `{"accounts":{},"account_ordering":[]}`)
-		case "/backend-api/wham/config/bundle":
-			_, _ = io.WriteString(w, `{}`)
 		case "/backend-api/wham/settings/user":
 			_, _ = io.WriteString(w, `{}`)
 		default:
@@ -365,6 +376,10 @@ func codexMain(mode string) {
 	_, canaryErr := os.Stat("/work/undeclared-canary.txt")
 	b.mu.Lock()
 	calls, failed, negotiations, metadata, telemetry := b.calls, b.failed, b.negotiations, b.metadata, b.telemetry
+	metadataRoutes := map[string]int{}
+	for path, count := range b.metadataRoutes {
+		metadataRoutes[path] = count
+	}
 	negative := b.negativeOutput
 	names := append([]string{}, b.runtimeInventory...)
 	b.mu.Unlock()
@@ -375,13 +390,17 @@ func codexMain(mode string) {
 		}
 		return e.Error()
 	}
-	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "negotiations": negotiations, "metadata_requests": metadata, "telemetry_requests": telemetry, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
+	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "negotiations": negotiations, "metadata_requests": metadata, "metadata_routes": metadataRoutes, "telemetry_requests": telemetry, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
 	fmt.Printf("case=%s calls=%d run=%v normalize=%v shape=%v negative_denied=%t\n", mode, calls, runErr, normErr, shapeErr, denied)
 	expected := 3
 	if mode == "undeclared-patch" {
 		expected = 2
 	}
-	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || failed != 0 || telemetry != 0 || metadata < 4 || metadata > 5 || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
+	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || failed != 0 || telemetry != 0 || metadata < 4 || metadata > 5 || !validMetadataRoutes(metadataRoutes) || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
 		os.Exit(1)
 	}
+}
+
+func validMetadataRoutes(counts map[string]int) bool {
+	return len(counts) == 3 && (counts["/v1/models"] == 1 || counts["/v1/models"] == 2) && counts["/backend-api/wham/accounts/check"] == 2 && counts["/backend-api/wham/settings/user"] == 1
 }

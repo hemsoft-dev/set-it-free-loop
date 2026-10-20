@@ -48,7 +48,10 @@ does not qualify that bridge or increase its budgets.
 
 The fixture requires four or five startup metadata requests and zero telemetry
 requests. The client can omit a second model-list request on a short run. Five
-remains the strict ceiling. Analytics traffic is counted separately and rejected, even if the
+remains the strict ceiling. Per-route observations require one or two model-list
+requests with the pinned client-version query, two account checks and one user
+settings request. Repeated requests cannot substitute for a missing route.
+Analytics traffic is counted separately and rejected, even if the
 client ignores that failure and still returns a valid report.
 
 The source case checks the exact model and advertised `functions.exec`/`wait`
@@ -57,7 +60,9 @@ exactly `mcp__sfl_source__read` and `mcp__sfl_source__search`. It executes Read 
 Search against the real immutable Reader over a synthetic ObjectStore. Distinct exact non-error Read and Search
 results must appear in the subsequent native requests before the backend sends
 its final report. Production CLI output normalization and report validation
-process the actual native envelopes. Source operations use the fixture helper,
+process the actual native envelopes. The source log must record the exact Search needle `immutable` and limit `5`,
+so a different matching query cannot pass on this one-line fixture.
+Source operations use the fixture helper,
 not a separately qualified reader OS identity.
 
 The negative case emits an undeclared direct `functions.apply_patch` call for a

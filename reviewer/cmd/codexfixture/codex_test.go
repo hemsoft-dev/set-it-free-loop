@@ -20,6 +20,34 @@ func TestTelemetryCannotCountAsAllowedMetadata(t *testing.T) {
 	}
 }
 
+func TestMetadataRequiresCapturedRoutesAndQuery(t *testing.T) {
+	valid := map[string]int{"/v1/models": 1, "/backend-api/wham/accounts/check": 2, "/backend-api/wham/settings/user": 1}
+	if !validMetadataRoutes(valid) {
+		t.Fatal("captured metadata rejected")
+	}
+	valid["/v1/models"] = 2
+	if !validMetadataRoutes(valid) {
+		t.Fatal("optional model-list request rejected")
+	}
+	for _, counts := range []map[string]int{
+		{"/v1/models": 5},
+		{"/v1/models": 2, "/backend-api/wham/accounts/check": 3},
+		{"/v1/models": 1, "/backend-api/wham/accounts/check": 1, "/backend-api/wham/settings/user": 2},
+	} {
+		if validMetadataRoutes(counts) {
+			t.Fatal("repeated GET replaced mandatory route", counts)
+		}
+	}
+	for _, endpoint := range []string{"/v1/models?client_version=other", "/backend-api/wham/settings/user?ignored=1", "/backend-api/wham/config/bundle"} {
+		b := &codexBackend{logHTTP: func(any) {}}
+		w := httptest.NewRecorder()
+		b.ServeHTTP(w, httptest.NewRequest("GET", endpoint, nil))
+		if w.Code != 400 || b.failed != 1 {
+			t.Fatal("uncaptured metadata accepted", endpoint, w.Code)
+		}
+	}
+}
+
 // Sanitized output fragments produced by pinned Codex against the fake backend.
 func TestCapturedNativeCodeModeSourceResults(t *testing.T) {
 	data, err := os.ReadFile("testdata/native-source-results.json")
