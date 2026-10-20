@@ -219,6 +219,18 @@ func claudeSourceExchange(ctx context.Context, worker Worker, inv Invocation, s 
 			if !claudeSourceTool(event.ToolName) {
 				return nil, workerInvalid()
 			}
+		case "rate_limit_event":
+			// The pinned client emits this between an assistant tool request
+			// and its result. It is metadata, not completion or billing proof.
+			var rate struct {
+				Info struct {
+					Status       string `json:"status"`
+					UsingOverage *bool  `json:"isUsingOverage"`
+				} `json:"rate_limit_info"`
+			}
+			if !initialized || json.Unmarshal(line, &rate) != nil || rate.Info.Status != "allowed" || rate.Info.UsingOverage == nil || *rate.Info.UsingOverage {
+				return nil, workerInvalid()
+			}
 		case "result":
 			if !initialized {
 				return nil, workerInvalid()
