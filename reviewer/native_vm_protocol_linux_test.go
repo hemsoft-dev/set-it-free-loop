@@ -112,7 +112,7 @@ func TestNativeVMControlRejectsScopeIdentityAndResponseFallbacks(t *testing.T) {
 func TestNativeVMFinishedRequiresPrivateAuditsAndAuthReturn(t *testing.T) {
 	q := nativeRequestFixture(t, Codex)
 	report, _ := json.Marshal(fakeReport(q.Session))
-	f := nativeVMFinished{Version: 1, Binding: q.Binding, RequestHash: Digest(q), State: "complete", Report: report, SourceAudit: []byte("private-audit-placeholder"), AuthReturn: []byte("private-return-placeholder"), CodeHost: &nativeVMCodeHostAccess{Version: 1, SessionHash: Digest(q.Session), UID: nativeVMCodeHostUID, InputHash: Digest("input"), OutputHash: Digest("output"), Stopped: true}}
+	f := nativeVMFinished{Version: 1, Binding: q.Binding, RequestHash: Digest(q), State: "complete", Report: report, SourceAudit: []byte("private-audit-placeholder"), AuthReturn: []byte("private-return-placeholder"), CodeHost: &nativeVMCodeHostAccess{Version: 2, SessionHash: Digest(q.Session), UID: nativeVMCodeHostUID, InputHash: Digest("input"), OutputHash: Digest("output"), Stopped: true, RelayComplete: true}}
 	// Structural validation does not parse/attest these placeholder artifacts.
 	// The native host reviewer must validate their actual producer records later.
 	if !f.valid(q) {

@@ -3,6 +3,7 @@
 package reviewer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,19 +14,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
 
-// These are the v2 data/failure-control preludes qualified by codehostfixture.
-// This path has a different purpose and actually requires the guest identities;
-// the synthetic fixture marker cannot enable it.
-const nativeCodeHello = "SFL_CODEHOST_STDIO_2\n"
-const nativeCodeReady = "SFL_CODEHOST_READY_2\n"
-const nativeCodeControl = "SFL_CODEHOST_CONTROL_2\n"
+// Protocol 3 donates anonymous stdio pipes. The trusted broker owns all
+// forwarding and completion checks; launcher death cannot erase its evidence.
+const nativeCodeHandoff = "SFL_CODEHOST_PIPES_3\n"
 const nativeCodeLimit = 8 << 20
 
 type nativeCodeStream struct {
@@ -96,6 +93,41 @@ func nativeCodeCopy(to io.Writer, from io.Reader, values [][]byte) nativeCodeStr
 	return result
 }
 
+// Every endpoint belongs to this trusted task. Cancellation closes its owned
+// pipes and both copy goroutines finish before private canaries can be cleared.
+func nativeCodeForward(parent context.Context, source io.ReadCloser, sink io.WriteCloser, childInput io.WriteCloser, childOutput io.ReadCloser, values [][]byte) (nativeCodeStream, nativeCodeStream) {
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() {
+		source.Close()
+		sink.Close()
+		childInput.Close()
+		childOutput.Close()
+	})
+	defer stop()
+	input, output := make(chan nativeCodeStream, 1), make(chan nativeCodeStream, 1)
+	go func() {
+		copied := nativeCodeCopy(childInput, source, values)
+		childInput.Close()
+		input <- copied
+		if copied.err != nil {
+			cancel()
+		}
+	}()
+	go func() {
+		copied := nativeCodeCopy(sink, childOutput, values)
+		output <- copied
+		if copied.err != nil {
+			cancel()
+		}
+	}()
+	in, out := <-input, <-output
+	if parent.Err() != nil && out.err == nil {
+		out.err = ErrVMBoot
+	}
+	return in, out
+}
+
 func nativeCodePeer(c *net.UnixConn) (*unix.Ucred, error) {
 	raw, err := c.SyscallConn()
 	if err != nil {
@@ -109,90 +141,88 @@ func nativeCodePeer(c *net.UnixConn) (*unix.Ucred, error) {
 	return peer, nil
 }
 
-func nativeCodeControlResult(r io.Reader) error {
-	var value [2]byte
-	n, err := io.ReadFull(r, value[:])
-	// Only one explicit success byte followed by EOF attests that the relay
-	// finished both forwarding paths. A crash, kill or trailing data fails.
-	if n == 1 && err == io.ErrUnexpectedEOF && value[0] == 0 {
-		return nil
+func nativeCodePipes(files []*os.File) error {
+	if len(files) != 2 {
+		return ErrVMBoot
 	}
-	return ErrVMBoot
+	seen := map[[2]uint64]bool{}
+	for i, file := range files {
+		var st unix.Stat_t
+		if file == nil || unix.Fstat(int(file.Fd()), &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFIFO {
+			return ErrVMBoot
+		}
+		flags, err := unix.FcntlInt(file.Fd(), unix.F_GETFL, 0)
+		want := unix.O_RDONLY
+		if i == 1 {
+			want = unix.O_WRONLY
+		}
+		link, linkErr := os.Readlink("/proc/self/fd/" + strconv.Itoa(int(file.Fd())))
+		key := [2]uint64{uint64(st.Dev), st.Ino}
+		if err != nil || flags&unix.O_ACCMODE != want || linkErr != nil || link != "pipe:["+strconv.FormatUint(st.Ino, 10)+"]" || seen[key] {
+			return ErrVMBoot
+		}
+		seen[key] = true
+	}
+	return nil
+}
+
+func receiveNativeCodePipes(conn *net.UnixConn) ([]*os.File, error) {
+	raw, files, err := receiveVMDescriptorFrame(conn, 2)
+	if err != nil || !bytes.Equal(raw, []byte(nativeCodeHandoff)) || nativeCodePipes(files) != nil {
+		closeVMFiles(files)
+		return nil, ErrVMBoot
+	}
+	// Rust's donated pipe descriptions may be blocking. Adopt them as Go
+	// pollable files so cancellation can interrupt a blocked copy by closing
+	// its owned endpoint. Only the launcher and broker share these pipe ends.
+	for index, file := range files {
+		fd, err := unix.FcntlInt(file.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+		if err != nil {
+			closeVMFiles(files)
+			return nil, ErrVMBoot
+		}
+		if unix.SetNonblock(fd, true) != nil {
+			unix.Close(fd)
+			closeVMFiles(files)
+			return nil, ErrVMBoot
+		}
+		files[index] = os.NewFile(uintptr(fd), "owned-codehost-pipe")
+		file.Close()
+	}
+	return files, nil
 }
 
 func nativeGuestCodeRelay() int {
-	if !nativeGuestUnprivileged(nativeVMCodexUID) {
+	if !nativeGuestUnprivileged(nativeVMCodexUID) || nativeCodePipes([]*os.File{os.Stdin, os.Stdout}) != nil {
 		return 2
 	}
-	data, err := net.DialTimeout("unix", "/codehost/stdio.sock", 5*time.Second)
+	connection, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: "/codehost/stdio.sock", Net: "unix"})
 	if err != nil {
 		return 2
 	}
-	defer data.Close()
-	control, err := net.DialTimeout("unix", "/codehost/control.sock", 5*time.Second)
-	if err != nil {
+	defer connection.Close()
+	peer, err := nativeCodePeer(connection)
+	if err != nil || peer.Uid != 0 {
 		return 2
 	}
-	defer control.Close()
-	// The peer is guest PID1 outside this PID namespace, so its PID may be 0.
-	// Fixed root-owned socket mounts and UID0 establish this endpoint.
-	for _, connection := range []net.Conn{data, control} {
-		peer, err := nativeCodePeer(connection.(*net.UnixConn))
-		if err != nil || peer.Uid != 0 {
-			return 2
-		}
-		connection.SetDeadline(time.Now().Add(40 * time.Second))
-	}
-	if _, err = io.WriteString(control, nativeCodeControl); err != nil {
+	connection.SetDeadline(time.Now().Add(DefaultLimits().Timeout))
+	rights := unix.UnixRights(0, 1)
+	n, on, err := connection.WriteMsgUnix([]byte(nativeCodeHandoff), rights, nil)
+	if err != nil || n != len(nativeCodeHandoff) || on != len(rights) || connection.CloseWrite() != nil {
 		return 2
 	}
-	if _, err = io.WriteString(data, nativeCodeHello); err != nil {
-		return 2
-	}
-	prelude := make([]byte, len(nativeCodeReady))
-	if _, err = io.ReadFull(data, prelude); err != nil || string(prelude) != nativeCodeReady {
-		return 2
-	}
-	var failure sync.Once
-	fail := func() {
-		failure.Do(func() { control.SetWriteDeadline(time.Now().Add(time.Second)); control.Write([]byte{1}) })
-	}
-	input := make(chan nativeCodeStream, 1)
-	go func() {
-		copied := nativeCodeCopy(data, os.Stdin, nil)
-		if copied.err != nil && !errors.Is(copied.err, os.ErrClosed) {
-			fail()
-		}
-		data.(*net.UnixConn).CloseWrite()
-		input <- copied
-	}()
-	out := nativeCodeCopy(os.Stdout, data, nil)
-	if out.err != nil {
-		fail()
-	}
-	os.Stdin.Close()
-	select {
-	case in := <-input:
-		if in.err != nil && !errors.Is(in.err, os.ErrClosed) {
-			fail()
-			return 1
-		}
-	case <-time.After(time.Second):
-		fail()
-		return 1
-	}
-	if out.err != nil {
-		return 1
-	}
-	if _, err = control.Write([]byte{0}); err != nil {
+	// This process performs no forwarding. The broker retains the pipes even
+	// if the CLI kills its launcher during normal teardown.
+	var result [1]byte
+	if _, err = io.ReadFull(connection, result[:]); err != nil || result[0] != 0 {
 		return 1
 	}
 	return 0
 }
 
 type nativeGuestCodeBroker struct {
-	data, control *net.UnixListener
-	root          string
+	data *net.UnixListener
+	root string
 }
 
 func newNativeGuestCodeBroker(root string) (*nativeGuestCodeBroker, error) {
@@ -209,17 +239,10 @@ func newNativeGuestCodeBroker(root string) (*nativeGuestCodeBroker, error) {
 	if err != nil {
 		return nil, ErrVMBoot
 	}
-	b.control, err = net.ListenUnix("unix", &net.UnixAddr{Name: filepath.Join(dir, "control.sock"), Net: "unix"})
-	if err != nil {
+	path := filepath.Join(dir, "stdio.sock")
+	if os.Chown(path, 0, nativeVMIPCGID) != nil || os.Chmod(path, 0660) != nil {
 		b.close()
 		return nil, ErrVMBoot
-	}
-	for _, name := range []string{"stdio.sock", "control.sock"} {
-		path := filepath.Join(dir, name)
-		if os.Chown(path, 0, nativeVMIPCGID) != nil || os.Chmod(path, 0660) != nil {
-			b.close()
-			return nil, ErrVMBoot
-		}
 	}
 	return b, nil
 }
@@ -229,15 +252,12 @@ func (b *nativeGuestCodeBroker) close() {
 		if b.data != nil {
 			b.data.Close()
 		}
-		if b.control != nil {
-			b.control.Close()
-		}
 	}
 }
 
 func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][]byte) (result nativeVMCodeHostAccess) {
-	result = nativeVMCodeHostAccess{Version: 1, SessionHash: Digest(s), UID: nativeVMCodeHostUID, InputHash: authHash(nil), OutputHash: authHash(nil), Failed: true, Stopped: true}
-	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	result = nativeVMCodeHostAccess{Version: 2, SessionHash: Digest(s), UID: nativeVMCodeHostUID, InputHash: authHash(nil), OutputHash: authHash(nil), Failed: true, Stopped: true}
+	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
 	defer cancel()
 	stop := context.AfterFunc(ctx, b.close)
 	defer stop()
@@ -248,21 +268,12 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 		return result
 	}
 	defer data.Close()
-	result.Stage = "accept-control"
-	control, err := b.control.AcceptUnix()
-	if err != nil {
-		return result
-	}
-	defer control.Close()
-	stopConnections := context.AfterFunc(ctx, func() { data.Close(); control.Close() })
-	defer stopConnections()
+	stopConnection := context.AfterFunc(ctx, func() { data.Close() })
+	defer stopConnection()
+	data.SetDeadline(time.Now().Add(s.Limits.Timeout))
 	result.Stage = "peer"
 	a, err := nativeCodePeer(data)
 	if err != nil || a.Uid != nativeVMCodexUID || a.Gid != nativeVMIPCGID || a.Pid <= 0 {
-		return result
-	}
-	c, err := nativeCodePeer(control)
-	if err != nil || *a != *c {
 		return result
 	}
 	group, err := os.ReadFile(filepath.Join("/proc", strconvNativePID(a.Pid), "cgroup"))
@@ -270,24 +281,13 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 		return result
 	}
 	result.Stage = "prelude"
-	for _, prelude := range []struct {
-		connection *net.UnixConn
-		value      string
-	}{{data, nativeCodeHello}, {control, nativeCodeControl}} {
-		prelude.connection.SetDeadline(time.Now().Add(40 * time.Second))
-		raw := make([]byte, len(prelude.value))
-		if _, err = io.ReadFull(prelude.connection, raw); err != nil || string(raw) != prelude.value {
-			return result
-		}
+	pipes, err := receiveNativeCodePipes(data)
+	if err != nil {
+		return result
 	}
-	controlDone := make(chan error, 1)
-	go func() {
-		err := nativeCodeControlResult(control)
-		controlDone <- err
-		if err != nil {
-			cancel()
-		}
-	}()
+	defer closeVMFiles(pipes)
+	stopPipes := context.AfterFunc(ctx, func() { closeVMFiles(pipes) })
+	defer stopPipes()
 	result.Stage = "spawn"
 	readyRead, readyWrite, err := os.Pipe()
 	if err != nil {
@@ -316,54 +316,22 @@ func (b *nativeGuestCodeBroker) serve(ctx context.Context, s Session, values [][
 	if _, err = io.ReadFull(readyRead, observed[:]); err != nil || observed[0] != 1 {
 		return result
 	}
-	result.Stage = "ready"
-	if _, err = io.WriteString(data, nativeCodeReady); err != nil {
-		return result
-	}
 	result.Stage = "exchange"
-	input, output := make(chan nativeCodeStream, 1), make(chan nativeCodeStream, 1)
-	go func() {
-		copied := nativeCodeCopy(process.in, data, values)
-		process.in.Close()
-		input <- copied
-		if copied.err != nil {
-			cancel()
-		}
-	}()
-	go func() {
-		copied := nativeCodeCopy(data, process.out, values)
-		output <- copied
-		if copied.err != nil {
-			cancel()
-		}
-	}()
-	var in, out nativeCodeStream
-	select {
-	case out = <-output:
-	case <-ctx.Done():
-		return result
-	}
-	data.CloseWrite()
-	select {
-	case in = <-input:
-	case <-ctx.Done():
-		return result
-	}
+	in, out := nativeCodeForward(ctx, pipes[0], pipes[1], process.in, process.out, values)
 	result.InputBytes, result.InputHash = in.bytes, in.hash
 	result.OutputBytes, result.OutputHash = out.bytes, out.hash
 	result.Stage = "wait"
-	select {
-	case err = <-controlDone:
-	case <-ctx.Done():
-		return result
-	}
 	// stderr is directed to /dev/null by the trusted wrapper. No undrained
 	// StderrPipe can race Wait or masquerade as a complete code-host exchange.
 	select {
 	case <-process.done:
-		result.Failed = err != nil || process.waitErr != nil || in.err != nil || out.err != nil || ctx.Err() != nil
+		result.RelayComplete = process.waitErr == nil && in.err == nil && out.err == nil && ctx.Err() == nil
+		result.Failed = !result.RelayComplete
 		if !result.Failed {
 			result.Stage = "complete"
+			// Acknowledgment is advisory; only these owned forwarding tasks and
+			// the pinned child exit establish completion in the private audit.
+			data.Write([]byte{0})
 		}
 	case <-ctx.Done():
 	}

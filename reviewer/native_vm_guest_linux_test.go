@@ -192,9 +192,7 @@ func TestNativeCodeStreamRejectsSplitCanaryAndOverflowBeforeForward(t *testing.T
 	if result.err != nil || result.hash != authHash(output.Bytes()) || result.bytes != int64(output.Len()) {
 		t.Fatal("ordinary stream failed", result)
 	}
-	if nativeCodeControlResult(bytes.NewReader(nil)) == nil || nativeCodeControlResult(bytes.NewReader([]byte{1})) == nil || nativeCodeControlResult(bytes.NewReader([]byte{0})) != nil || nativeCodeControlResult(bytes.NewReader([]byte{0, 0})) == nil {
-		t.Fatal("failure control converted to success")
-	}
+
 }
 
 func nativeReleaseFixture() nativeGuestRelease {

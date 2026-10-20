@@ -91,15 +91,23 @@ PID1 checks owner, permissions, link count, size and confinement of the returned
 file, then emits a bound `AuthTransfer` return. API-key and opposite-provider
 formats are refused. This parsing does not establish entitlement.
 
-Codex's code-mode executable is a relay to a trusted guest PID1 broker. Separate
-data and failure-control sockets require the same UID1202 peer in the exact
-client cgroup. The actual pinned code host runs in its own UID1203/PID/network/
-mount/cgroup confinement, without a profile, source socket or provider route.
-The root broker scans bounded streams for seed canaries and records byte/hash,
-failure and physical-stop evidence. Neither relay nor code host gets canaries.
-The relay must send an explicit success byte after both forwarding paths finish;
-bare EOF cannot prove completion. Private proxy descriptors regain CLOEXEC
-immediately after intake, before any version probe or client exec. Final reports
+Codex's code-mode executable hands its anonymous stdin/stdout pipes to a trusted
+guest PID1 broker through a version-3 descriptor protocol. The broker requires
+the UID1202 peer in the exact client cgroup, validates distinct anonymous pipes
+and their access directions, and adopts pollable CLOEXEC duplicates. Files,
+sockets, aliases, old frames and incomplete handoffs are rejected. The launcher
+performs no forwarding and its EOF cannot attest completion.
+
+The trusted broker owns both bounded, canary-checked copies and joins them on
+completion or cancellation. A private version-2 code-host receipt requires local
+relay completion, clean pinned-child exit and physical stop. The actual code
+host runs under UID1203 in separate PID/network/mount/cgroup confinement without
+a profile, source socket or provider route. Launcher teardown does not discard
+the broker's pipe ownership. Intake closes after client shutdown while adopted
+exchanges can drain within the cleanup deadline.
+
+Private proxy descriptors regain CLOEXEC immediately after intake, before any
+version probe or client exec. Canary copies remain in guest PID1. Final reports
 are checked against seed and returned credential canaries.
 
 `scripts/native-vm-image.py` builds only from a clean committed source archive,

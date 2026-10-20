@@ -401,18 +401,18 @@ func (p *nativeGuestPhase) finish(parent context.Context) {
 		}
 		p.reader.out.Close()
 	}
+	if p.broker != nil {
+		// The client is stopped. Revoke new intake without cancelling an
+		// already adopted pipe exchange that still needs to drain.
+		p.broker.close()
+	}
 	if p.brokerDone != nil {
 		select {
 		case code := <-p.brokerDone:
 			finished.CodeHost = &code
-		case <-time.After(time.Second):
+		case <-ctx.Done():
 			p.cancelBroker()
-			select {
-			case code := <-p.brokerDone:
-				finished.CodeHost = &code
-			case <-ctx.Done():
-				stopped = false
-			}
+			stopped = false
 		}
 	}
 	if p.cancelBroker != nil {
