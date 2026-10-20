@@ -38,13 +38,22 @@ the receipt's actual commit independently of the summary/document hash.
 Reconciliation exhausts review or acknowledgment pages, then each candidate
 review's inline pages. Collection IDs cannot repeat. A next link must remain on
 the fixed origin and exact collection, with the next numeric page and fixed page
-size. Malformed, looping, foreign and duplicate-query links fail the scan. Only
+size. GitHub's documented repository-ID alias is accepted only for the enrolled
+immutable repository ID and identical collection suffix. Malformed, looping, foreign and duplicate-query links fail the scan. Only
 complete scans return complete=true; an empty complete scan still does not
 authorize a duplicate POST in the durable publisher.
 
+Every accepted document, including maximum JSON escaping, fits the eight-MiB
+write cap. Forty bounded inline bodies, summary, paths and fixed metadata stay
+below 750 KiB before encoding, and JSON expands each input byte at most sixfold.
+A valid prepared document cannot hit the former one-MiB wire rejection after
+dispatch becomes uncertain.
+
 Each HTTP request has a ten-second timeout, a two-MiB response cap and strict
 JSON duplicate-key/trailing-data rejection. Public operations have a thirty-second
-context; pagination has a finite one-hundred-page cap. Writes have no replayable
+context; pages request four records so large raw bodies fit the read cap before
+candidate filtering. The 2,500-page cap preserves the original 10,000-record
+ceiling. Writes have no replayable
 body, idempotency header, redirect or application retry. Errors expose status
 and bounded Retry-After seconds, never submitted content or GitHub error bodies.
 A timeout, lost response, malformed receipt or partial scan retains the durable
@@ -76,6 +85,9 @@ injected read interface does not infer an owner request from a pending username.
 Actual App picker, token scope, GitHub rendering and non-atomic publication race
 qualification remain separate live gates. Owner-disabled Actions and all
 activation restrictions remain unchanged.
+
+GitHub's [pagination guide](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api#using-link-headers)
+provides the repository-ID Link form and preserves explicit per_page values.
 
 Protocol sources checked October 20, 2026: GitHub's [review API](https://docs.github.com/en/rest/pulls/reviews)
 defines COMMENT, commit_id, inline review comments and PUT summary updates.

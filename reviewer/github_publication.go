@@ -19,6 +19,16 @@ import (
 const githubOrigin = "https://api.github.com"
 const githubRepoPath = "/repos/hemsoft-dev/set-it-free-loop"
 
+// Four maximum-sized raw comment bodies, even with six-byte JSON escaping,
+// leave room for ordinary API metadata under the two-MiB read cap. Keep the
+// original ten-thousand-item scan ceiling while requesting smaller pages.
+const githubPageSize = 4
+const githubMaxPages = 2500
+
+// Every accepted document is below 750 KiB before encoding. JSON can expand
+// each input byte to at most six bytes; eight MiB covers all accepted writes.
+const githubWriteBytes = 8 << 20
+
 // GitHubPublicationReader supplies separately qualified native-request history.
 // This adapter does not infer requester attribution from pending reviewer names.
 type GitHubPublicationReader interface {
@@ -87,7 +97,7 @@ func (g *GitHubPublicationHTTP) request(ctx context.Context, method, path string
 	var body io.ReadCloser
 	if payload != nil {
 		raw, err := json.Marshal(payload)
-		if err != nil || len(raw) > 1<<20 {
+		if err != nil || len(raw) > githubWriteBytes {
 			return nil, ErrDeferred
 		}
 		// No GetBody, idempotency key or automatic application retry for writes.
@@ -162,16 +172,16 @@ func nextGitHubPage(header http.Header, collection string, page int) (bool, erro
 			default:
 				return false, ErrDeferred
 			}
-			if found || page >= 100 {
+			if found || page >= githubMaxPages {
 				return false, ErrDeferred
 			}
 			found = true
 			u, err := url.Parse(strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(fields[0]), "<"), ">"))
-			if err != nil || u.Scheme != "https" || u.Host != "api.github.com" || u.User != nil || u.Path != collection || u.Fragment != "" {
+			if err != nil || u.Scheme != "https" || u.Host != "api.github.com" || u.User != nil || (u.Path != collection && u.Path != "/repositories/"+strconv.FormatInt(RepositoryID, 10)+strings.TrimPrefix(collection, githubRepoPath)) || u.Fragment != "" {
 				return false, ErrDeferred
 			}
 			q, queryErr := url.ParseQuery(u.RawQuery)
-			if queryErr != nil || len(q) != 2 || len(q["page"]) != 1 || q.Get("page") != strconv.Itoa(page+1) || len(q["per_page"]) != 1 || q.Get("per_page") != "100" {
+			if queryErr != nil || len(q) != 2 || len(q["page"]) != 1 || q.Get("page") != strconv.Itoa(page+1) || len(q["per_page"]) != 1 || q.Get("per_page") != strconv.Itoa(githubPageSize) {
 				return false, ErrDeferred
 			}
 		}
@@ -180,10 +190,10 @@ func nextGitHubPage(header http.Header, collection string, page int) (bool, erro
 }
 func githubPages[T any](ctx context.Context, g *GitHubPublicationHTTP, path string) ([]T, error) {
 	all := []T{}
-	for page := 1; page <= 100; page++ {
+	for page := 1; page <= githubMaxPages; page++ {
 		var items []T
-		h, err := g.request(ctx, "GET", path+"?per_page=100&page="+strconv.Itoa(page), nil, 200, &items)
-		if err != nil || items == nil || len(items) > 100 {
+		h, err := g.request(ctx, "GET", path+"?per_page="+strconv.Itoa(githubPageSize)+"&page="+strconv.Itoa(page), nil, 200, &items)
+		if err != nil || items == nil || len(items) > githubPageSize {
 			return nil, errors.Join(ErrDeferred, err)
 		}
 		all = append(all, items...)
