@@ -131,7 +131,7 @@ func runNativeRefresh(c config) error {
 			break
 		}
 	}
-	units, unitPass := unitsFixture.unitsWithAuthReturn(!c.UncertainRefresh)
+	units, unitPass := unitsFixture.unitsExpectingCompletion(!c.UncertainRefresh)
 	roots, globErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "qemu-runtime"))
 	passed = passed && len(phases) == phaseCount && unitPass && globErr == nil && len(roots) == 0
 	result := struct {

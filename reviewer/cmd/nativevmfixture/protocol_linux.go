@@ -167,10 +167,10 @@ func readProtocolJSON(path string, target any) error {
 }
 
 func (p *nativeProtocolFixture) units() ([]protocolUnit, bool) {
-	return p.unitsWithAuthReturn(true)
+	return p.unitsExpectingCompletion(true)
 }
 
-func (p *nativeProtocolFixture) unitsWithAuthReturn(expected bool) ([]protocolUnit, bool) {
+func (p *nativeProtocolFixture) unitsExpectingCompletion(expected bool) ([]protocolUnit, bool) {
 	paths, err := filepath.Glob(filepath.Join(p.config.Root, "launches", "*", "unit.json"))
 	units := []protocolUnit{}
 	seen := map[string]bool{}
@@ -195,7 +195,7 @@ func (p *nativeProtocolFixture) unitsWithAuthReturn(expected bool) ([]protocolUn
 		}
 	}
 	for _, unit := range units {
-		if !unit.Captured || !unit.Stopped || !unit.Complete || unit.AuthReturned != expected {
+		if !unit.Captured || !unit.Stopped || unit.Complete != expected || unit.AuthReturned != expected {
 			return units, false
 		}
 	}
