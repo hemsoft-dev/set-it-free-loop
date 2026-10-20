@@ -324,6 +324,9 @@ func fixedFakeUnitProperties(unit, stub string, args []string, description strin
 func fixedVMUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
 	return fixedPayloadUnitProperties(unit, stub, args, description, imageFD, "SFL sealed VM containment ")
 }
+func fixedNativeVMUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
+	return fixedPayloadUnitProperties(unit, stub, args, description, imageFD, "SFL native VM containment ")
+}
 func fixedPayloadUnitProperties(unit, stub string, args []string, description string, imageFD int, prefix string) ([]unitProperty, error) {
 	if imageFD < 0 || stub != retainedStubExec || !validContainmentUnit(unit) || !path.IsAbs(stub) || path.Clean(stub) != stub || len(args) != 5 || args[0] != stub || len(description) != len(prefix)+64 || !strings.HasPrefix(description, prefix) || !validAuthHash(strings.TrimPrefix(description, prefix)) {
 		return nil, ErrAuthRecoveryRequired
@@ -333,13 +336,17 @@ func fixedPayloadUnitProperties(unit, stub string, args []string, description st
 		return nil, err
 	}
 	bootstrapArgs := append([]string{bootstrap, "-I", "-S", "-c", stubBootstrapCode}, args[1:]...)
+	memory, tasks, runtime := uint64(1<<30), uint64(64), uint64(120000000)
+	if prefix == "SFL native VM containment " {
+		memory, tasks, runtime = 3<<30, 128, 420000000
+	}
 	return []unitProperty{
 		prop("Description", description), prop("ExtraFileDescriptors", []namedUnitFD{{dbus.UnixFD(imageFD), "sfl-unitstub"}}), prop("Type", "exec"), prop("ExecStart", []unitExec{{bootstrap, bootstrapArgs, false}}),
 		prop("Restart", "no"), prop("RemainAfterExit", true), prop("CollectMode", "inactive"), prop("AddRef", true),
 		prop("KillMode", "control-group"), prop("SendSIGKILL", true), prop("NoNewPrivileges", true),
-		prop("MemoryAccounting", true), prop("MemoryMax", uint64(1<<30)), prop("MemorySwapMax", uint64(0)),
-		prop("TasksAccounting", true), prop("TasksMax", uint64(64)), prop("CPUAccounting", true), prop("CPUQuotaPerSecUSec", uint64(1000000)),
-		prop("TimeoutStartUSec", uint64(5000000)), prop("TimeoutStopUSec", uint64(5000000)), prop("RuntimeMaxUSec", uint64(120000000)),
+		prop("MemoryAccounting", true), prop("MemoryMax", memory), prop("MemorySwapMax", uint64(0)),
+		prop("TasksAccounting", true), prop("TasksMax", tasks), prop("CPUAccounting", true), prop("CPUQuotaPerSecUSec", uint64(1000000)),
+		prop("TimeoutStartUSec", uint64(5000000)), prop("TimeoutStopUSec", uint64(5000000)), prop("RuntimeMaxUSec", runtime),
 		prop("Environment", []string{"LANG=C.UTF-8", "PATH=/usr/bin:/bin"}),
 		prop("UnsetEnvironment", []string{"LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT", "LD_DEBUG", "LD_DEBUG_OUTPUT", "LD_PROFILE", "LD_TRACE_LOADED_OBJECTS", "LD_ORIGIN_PATH", "GCONV_PATH", "LOCPATH", "MALLOC_TRACE", "GLIBC_TUNABLES"}),
 		prop("StandardInput", "null"), prop("StandardOutput", "null"), prop("StandardError", "null"),
@@ -348,7 +355,9 @@ func fixedPayloadUnitProperties(unit, stub string, args []string, description st
 func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string, imageFD int) (string, error) {
 	var properties []unitProperty
 	var err error
-	if strings.HasPrefix(description, "SFL sealed VM containment ") {
+	if strings.HasPrefix(description, "SFL native VM containment ") {
+		properties, err = fixedNativeVMUnitProperties(unit, stub, args, description, imageFD)
+	} else if strings.HasPrefix(description, "SFL sealed VM containment ") {
 		properties, err = fixedVMUnitProperties(unit, stub, args, description, imageFD)
 	} else {
 		properties, err = fixedFakeUnitProperties(unit, stub, args, description, imageFD)

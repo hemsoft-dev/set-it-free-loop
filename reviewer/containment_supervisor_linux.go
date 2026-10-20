@@ -297,7 +297,7 @@ func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateMa
 }
 
 func (s *SystemdSupervisor) preparePayload(binding AuthBinding, hash string, protocol int) error {
-	if !binding.valid() || !validAuthHash(hash) || (s.payloadKind == "" && protocol != 0) || (s.payloadKind == "vm-fixture" && protocol != 2) || (s.payloadKind != "" && s.payloadKind != "vm-fixture") {
+	if !binding.valid() || !validAuthHash(hash) || (s.payloadKind == "" && protocol != 0) || (s.payloadKind == "vm-fixture" && protocol != 2) || (s.payloadKind == "native-vm" && protocol != 3) || (s.payloadKind != "" && s.payloadKind != "vm-fixture" && s.payloadKind != "native-vm") {
 		return ErrAuthRecoveryRequired
 	}
 	s.mu.Lock()
@@ -350,14 +350,21 @@ func expectedFakeObservation(r unitJournal, o unitObservation) bool {
 	return r.PayloadKind == "" && expectedPayloadObservation(r, o)
 }
 func payloadDescription(kind string, binding AuthBinding) string {
+	if kind == "native-vm" {
+		return "SFL native VM containment " + Digest(binding)
+	}
 	if kind == "vm-fixture" {
 		return "SFL sealed VM containment " + Digest(binding)
 	}
 	return "SFL fake containment " + Digest(binding)
 }
 func expectedPayloadObservation(r unitJournal, o unitObservation) bool {
-	return (r.PayloadKind == "" || r.PayloadKind == "vm-fixture") && o.Unit == r.Unit && o.Path.IsValid() && o.InvocationID != "" && o.Description == payloadDescription(r.PayloadKind, r.Binding) &&
-		o.Transient && o.Job.ID == 0 && o.MemoryMax == 1<<30 && o.MemorySwapMax == 0 && o.TasksMax == 64 && o.CPUQuotaPerSecUSec == 1000000 &&
+	memory, tasks := uint64(1<<30), uint64(64)
+	if r.PayloadKind == "native-vm" {
+		memory, tasks = 3<<30, 128
+	}
+	return (r.PayloadKind == "" || r.PayloadKind == "vm-fixture" || r.PayloadKind == "native-vm") && o.Unit == r.Unit && o.Path.IsValid() && o.InvocationID != "" && o.Description == payloadDescription(r.PayloadKind, r.Binding) &&
+		o.Transient && o.Job.ID == 0 && o.MemoryMax == memory && o.MemorySwapMax == 0 && o.TasksMax == tasks && o.CPUQuotaPerSecUSec == 1000000 &&
 		o.KillMode == "control-group" && o.Restart == "no" && o.CollectMode == "inactive" && o.RemainAfterExit && o.NoNewPrivileges
 }
 func (s *SystemdSupervisor) captureUnit(ctx context.Context, r unitJournal) (unitJournal, error) {
