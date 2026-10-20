@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
 )
 
@@ -28,6 +30,8 @@ type result struct {
 	Unit                                                string        `json:"unit"`
 	StubSHA256                                          string        `json:"stub_sha256"`
 	Started, Granted, Stopped, AuthCompleted, Recovered bool
+	EscapedChildPID                                     int             `json:"escaped_child_pid"`
+	EscapedChildStopped                                 bool            `json:"escaped_child_stopped"`
 	Journal                                             json.RawMessage `json:"private_unit_journal,omitempty"`
 	Error                                               string          `json:"error,omitempty"`
 	FallbackCleanup                                     bool            `json:"fallback_cleanup"`
@@ -105,11 +109,45 @@ func exercise(root, stub, hash string) (receipt result) {
 		return
 	}
 	receipt.Granted = true
+	var child struct{ Version, PID, Session int }
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		raw, readErr := os.ReadFile(filepath.Join(gates, receipt.Binding.LaunchID, "fake-child.json"))
+		if readErr == nil && json.Unmarshal(raw, &child) == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			receipt.Error = "escaped fake child was not observed"
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if child.Version != 1 || child.PID <= 0 || child.Session != child.PID {
+		receipt.Error = "invalid escaped-child identity"
+		return
+	}
+	childFD, err := unix.PidfdOpen(child.PID, 0)
+	if err != nil {
+		receipt.Error = "escaped child already absent"
+		return
+	}
+	defer unix.Close(childFD)
+	if unix.PidfdSendSignal(childFD, 0, nil, 0) != nil {
+		receipt.Error = "escaped child not live before stop"
+		return
+	}
+	receipt.EscapedChildPID = child.PID
 	if err = supervisor.AbortAndWait(ctx, receipt.Binding); err != nil {
 		receipt.Error = "stop: " + err.Error()
 		return
 	}
 	receipt.Stopped = true
+	ready := []unix.PollFd{{Fd: int32(childFD), Events: unix.POLLIN}}
+	if count, pollErr := unix.Poll(ready, 1000); pollErr != nil || count != 1 || ready[0].Revents&unix.POLLIN == 0 {
+		receipt.Error = "escaped child survived whole-unit stop"
+		return
+	}
+	receipt.EscapedChildStopped = true
 	if err = supervisor.Close(); err != nil {
 		receipt.Error = "close stopped transport: " + err.Error()
 		return

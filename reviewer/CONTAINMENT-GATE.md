@@ -58,3 +58,7 @@ protected auth transfer and refresh/disposal, private provider bridge binding
 and whole-containment recovery still require implementation and qualification.
 The fake-only gate does not enable reviewer activation or change any account,
 capability or production qualification flag.
+
+The [fake-only systemd supervisor](SYSTEMD-SUPERVISOR.md) now implements the
+manager/physical-stop component for its pinned inert payload. Native/VM payload
+and protected auth transfer remain separate work.

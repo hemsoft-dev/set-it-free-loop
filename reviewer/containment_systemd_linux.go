@@ -351,7 +351,7 @@ func (m *dbusContainmentManager) Observe(ctx context.Context, unit string) (unit
 }
 
 func boundedManagerContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, 5*time.Second)
+	return context.WithTimeout(ctx, 10*time.Second)
 }
 func currentBootID() (string, error) {
 	raw, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
