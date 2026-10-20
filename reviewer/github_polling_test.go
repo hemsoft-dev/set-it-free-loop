@@ -3,6 +3,7 @@ package reviewer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -101,5 +102,46 @@ func TestGitHubPollingScopeLeavesAtomicDiscoveryToController(t *testing.T) {
 	after, _ := store.Snapshot(context.Background())
 	if after.PRs[alphaScope().key()].CurrentRequest != 1 {
 		t.Fatal("complete batch did not commit")
+	}
+}
+
+func TestGitHubPollingOnlyRepositoryLookup404MarksAccessLost(t *testing.T) {
+	for _, kind := range []string{"repository404", "repository403", "repository503", "collection404"} {
+		t.Run(kind, func(t *testing.T) {
+			store, _ := openFixtureStore(t)
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+				if q.Method != "GET" {
+					t.Error("unexpected write")
+					w.WriteHeader(400)
+					return
+				}
+				if q.URL.Path == githubRepoPath {
+					switch kind {
+					case "repository404":
+						w.WriteHeader(404)
+						return
+					case "repository403":
+						w.WriteHeader(403)
+						return
+					case "repository503":
+						w.WriteHeader(503)
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]any{"id": RepositoryID, "full_name": "hemsoft-dev/set-it-free-loop"})
+					return
+				}
+				w.WriteHeader(404)
+			}))
+			defer server.Close()
+			base, _ := url.Parse(server.URL)
+			g, err := NewGitHubDiscoveryHTTP(alphaEnrollment(), store, githubFixtureRoute{base, server.Client().Transport, t})
+			if err != nil {
+				t.Fatal(err)
+			}
+			scopes, err := g.OpenScopes(context.Background())
+			if err == nil || scopes != nil || errors.Is(err, ErrRepositoryAccessLost) != (kind == "repository404") {
+				t.Fatal(kind, scopes, err)
+			}
+		})
 	}
 }

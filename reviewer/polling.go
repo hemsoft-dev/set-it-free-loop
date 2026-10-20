@@ -468,6 +468,11 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 					}
 					if err != nil {
 						state := phaseState(err)
+						// No execution has been claimed. A factory startup deadline is a
+						// recoverable availability failure, not an expired provider session.
+						if state == "incomplete_expired" {
+							state = "provider_unavailable"
+						}
 						c.mu.Lock()
 						shuttingDown := c.closed
 						c.mu.Unlock()
@@ -638,6 +643,36 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 	}
 	scopes, listErr := c.options.Discovery.OpenScopes(ctx)
 	if listErr != nil {
+		if errors.Is(listErr, ErrRepositoryAccessLost) {
+			// Stop immediately, including when the persistence transaction fails.
+			c.mu.Lock()
+			if c.active != nil {
+				c.active.cancel()
+			}
+			c.mu.Unlock()
+			save, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			defer cancel()
+			// Fence every retained request atomically. Candidate enumeration can lose
+			// repository access before any per-PR observation gets a chance to fence.
+			fenceErr := c.options.Store.update(save, func(d *DurableState) error {
+				if d.Enrollment != c.options.Enrollment {
+					return ErrIgnored
+				}
+				for _, pr := range d.PRs {
+					if !d.Enrollment.accepts(pr.Scope) {
+						return ErrIgnored
+					}
+					if !pr.Paused || pr.PauseRequestID != pr.CurrentRequest {
+						pr.Paused = true
+						pr.PauseRequestID = pr.CurrentRequest
+						pr.Generation++
+						retireFencedJobs(d, pr)
+					}
+				}
+				return nil
+			})
+			listErr = errors.Join(listErr, fenceErr)
+		}
 		return result, listErr
 	}
 	all := map[string]Scope{}

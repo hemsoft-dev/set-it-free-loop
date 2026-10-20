@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -869,5 +872,200 @@ func TestPollingExistingJobQualificationFailureBeforeRestoreBlocks(t *testing.T)
 	}
 	if d.Jobs[job.ID].State != "blocked" || d.Jobs[job.ID].Checkpoint.ConsumedSessions != 0 || calls.Load() != 0 {
 		t.Fatal("early qualification did not block admitted job", d.Jobs[job.ID].State)
+	}
+}
+
+// Candidate enumeration uses actual TLS HTTP. Per-PR provenance/publication
+// stays on the deterministic fake, so no GitHub account or App is involved.
+type repositoryPollingDiscovery struct {
+	PollDiscovery
+	candidates *GitHubDiscoveryHTTP
+}
+
+func (d repositoryPollingDiscovery) OpenScopes(ctx context.Context) ([]Scope, error) {
+	return d.candidates.OpenScopes(ctx)
+}
+
+func TestPollingRepositoryLookupAccessLossFencesActiveAndPreparedWork(t *testing.T) {
+	for _, active := range []bool{true, false} {
+		t.Run(fmt.Sprintf("active=%t", active), func(t *testing.T) {
+			entered := make(chan struct{})
+			c, f, calls := pollControllerFixture(t, func(ctx context.Context, s Session) (Report, error) {
+				if active {
+					close(entered)
+					<-ctx.Done()
+					return Report{}, ctx.Err()
+				}
+				return fakeReport(s), nil
+			})
+			var status atomic.Int32
+			status.Store(200)
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+				if q.Method != "GET" {
+					t.Error("unexpected write")
+					w.WriteHeader(400)
+					return
+				}
+				if q.URL.Path == githubRepoPath {
+					if code := int(status.Load()); code != 200 {
+						w.WriteHeader(code)
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]any{"id": RepositoryID, "full_name": "hemsoft-dev/set-it-free-loop"})
+					return
+				}
+				if q.URL.Path == githubRepoPath+"/pulls" {
+					json.NewEncoder(w).Encode([]any{map[string]any{"number": 1, "state": "open", "base": map[string]any{"repo": map[string]any{"id": RepositoryID}}}})
+					return
+				}
+				w.WriteHeader(404)
+			}))
+			defer server.Close()
+			base, _ := url.Parse(server.URL)
+			httpDiscovery, err := NewGitHubDiscoveryHTTP(alphaEnrollment(), f.store, githubFixtureRoute{base, server.Client().Transport, t})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.options.Discovery = repositoryPollingDiscovery{f, httpDiscovery}
+			if _, err = pollOnce(t, c); err != nil {
+				t.Fatal(err)
+			}
+			if active {
+				select {
+				case <-entered:
+				case <-time.After(3 * time.Second):
+					t.Fatal("provider never started")
+				}
+			} else {
+				awaitPollWorker(t, c)
+			}
+			status.Store(404)
+			f.clock.Advance(time.Second)
+			if _, err = pollOnce(t, c); !errors.Is(err, ErrRepositoryAccessLost) {
+				t.Fatal("repository loss not reported", err)
+			}
+			if active {
+				awaitPollWorker(t, c)
+				c.drainWork()
+			}
+			d, err := f.store.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			pr := d.PRs[alphaScope().key()]
+			if !pr.Paused || pr.PauseRequestID != 1 || pr.CurrentRequest != 1 {
+				t.Fatal("retained native request not fenced", pr)
+			}
+			for _, j := range d.Jobs {
+				if j.LeaseToken != "" || j.Outstanding || j.Job.Generation == pr.Generation {
+					t.Fatal("active job not stopped/fenced", j.State, j.LeaseToken)
+				}
+			}
+			before := calls.Load()
+			if f.posts != 0 {
+				t.Fatal("published during access loss")
+			}
+			status.Store(200)
+			for i := 0; i < 2; i++ {
+				f.clock.Advance(time.Minute)
+				result, err := pollOnce(t, c)
+				if err != nil && !errors.Is(err, ErrFenced) {
+					t.Fatal(err)
+				}
+				if result.Active || calls.Load() != before || f.posts != 0 {
+					t.Fatal("old request continued after access returned", result, calls.Load(), f.posts)
+				}
+			}
+			d, _ = f.store.Snapshot(context.Background())
+			if !d.PRs[alphaScope().key()].Paused {
+				t.Fatal("access repair unpaused old request")
+			}
+		})
+	}
+}
+
+func TestPollingRepositoryLossPausesEveryRetainedScope(t *testing.T) {
+	c, f, calls := pollControllerFixture(t, nil)
+	_, batch, _ := f.capture()
+	if err := f.store.Discover(context.Background(), batch); err != nil {
+		t.Fatal(err)
+	}
+	other := batch
+	other.Scope.PR = 2
+	other.Requests = append([]NativeRequest{}, batch.Requests...)
+	other.Requests[0].ID = 2
+	other.Requests[0].Snapshot.PR = 2
+	if err := f.store.Discover(context.Background(), other); err != nil {
+		t.Fatal(err)
+	}
+	f.failure = ErrRepositoryAccessLost
+	if _, err := pollOnce(t, c); !errors.Is(err, ErrRepositoryAccessLost) {
+		t.Fatal(err)
+	}
+	d, err := f.store.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.PRs) != 2 {
+		t.Fatal(len(d.PRs))
+	}
+	for _, pr := range d.PRs {
+		if !pr.Paused || pr.PauseRequestID != pr.CurrentRequest {
+			t.Fatal("retained scope not paused", pr.Scope)
+		}
+	}
+	if calls.Load() != 0 || f.posts != 0 {
+		t.Fatal("repository loss started work")
+	}
+}
+
+func TestPollingFactoryDeadlineRequiresExplicitRecoveryWithoutCharging(t *testing.T) {
+	for _, failure := range []error{context.DeadlineExceeded, fmt.Errorf("startup: %w", context.DeadlineExceeded), PhaseError{State: "incomplete_expired", BeforeWork: true}} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			c, f, calls := pollControllerFixture(t, nil)
+			runtime := c.options.Runtime
+			c.options.Runtime = func(context.Context, Job, *JobEvidence) (Engine, error) { return Engine{}, failure }
+			if _, err := pollOnce(t, c); err != nil {
+				t.Fatal(err)
+			}
+			awaitPollWorker(t, c)
+			c.drainWork()
+			d, err := f.store.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			var job Job
+			for _, j := range d.Jobs {
+				job = j.Job
+				if j.State != "provider_unavailable" || j.LeaseToken != "" || j.Outstanding || j.Checkpoint.ConsumedSessions != 0 {
+					t.Fatal("pre-work timeout discarded/charged job", j.State, j.Checkpoint.ConsumedSessions)
+				}
+			}
+			if job.ID == "" || calls.Load() != 0 {
+				t.Fatal("job missing or provider invoked")
+			}
+			c.options.Runtime = runtime
+			f.clock.Advance(time.Minute)
+			result, err := pollOnce(t, c)
+			if err != nil || result.Active || calls.Load() != 0 {
+				t.Fatal("factory repair automatically resumed", result, err)
+			}
+			if err = f.store.ResumeUnavailable(context.Background(), job.ID, f.clock.Now()); err != nil {
+				t.Fatal("startup timeout cannot resume", err)
+			}
+			f.clock.Advance(time.Minute)
+			if _, err = pollOnce(t, c); err != nil {
+				t.Fatal(err)
+			}
+			awaitPollWorker(t, c)
+			d, err = f.store.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			j := d.Jobs[job.ID]
+			if Digest(j.Job) != Digest(job) || j.State != "dual_complete" || j.Checkpoint.ConsumedSessions != 4 || calls.Load() != 4 {
+				t.Fatal("recovery lost original job/accounting", j.State, j.Checkpoint.ConsumedSessions, calls.Load())
+			}
+		})
 	}
 }

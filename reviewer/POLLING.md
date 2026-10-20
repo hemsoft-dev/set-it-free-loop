@@ -30,7 +30,13 @@ through one hour, and one cycle has an explicit one-second through five-minute
 deadline. Recognized GitHub Retry-After/reset delays up to one hour take priority
 over a shorter exponential delay. Joined failures use the longest valid server
 delay, including nested failures from different scopes or writes. Partial, timed-out or malformed collections
-never authorize work. Larger histories may require further qualified collection
+never authorize work. A definitive 404 from the enrolled repository lookup
+returns `ErrRepositoryAccessLost`. The controller immediately cancels active
+work and atomically pauses every retained request, advancing its generation.
+Restored access does not unpause those old requests or authorize their prepared
+reviews; a fresh native request is required. Rate limits, transient errors and
+failed collection pages do not carry that repository-wide access-loss signal.
+Larger histories may require further qualified collection
 and scheduling work; a timeout is not evidence of a clean or complete history.
 
 The bounded schedule stores only version, next time, failure count and a fixed
@@ -96,6 +102,9 @@ becomes `blocked` only when no outstanding worker/lease remains.
 Repairing the qualification alone does not restart it. The trusted caller must
 explicitly use `ResumeUnavailable`, preserving its packet, artifacts and consumed
 budget. Owner cancellation or snapshot fencing remains terminal.
+A runtime-factory deadline before `RunStopped` becomes `provider_unavailable`,
+with no provider session charged. It can resume only through the same explicit
+recovery action; claimed execution retains its existing expiration semantics.
 Authentication/provider failures are never resumed
 by configuration commands or automatically repaired by this loop.
 
@@ -115,7 +124,9 @@ legacy state rewrites, startup/enrollment refusal, expired lease retention,
 snapshot movement, shutdown timeouts/owner retention and cached-completion
 recovery without inference, recoverable qualification interruption in both
 factory, provider and evidence-restoration work, early admitted-job qualification
-failure, owner fencing during restoration, joined server delays, and packet restoration after
+failure, owner fencing during restoration, repository lookup access loss with active and
+prepared work, all-scope repository fences, recoverable pre-work factory deadlines,
+joined server delays, and packet restoration after
 an omitted real Git blob becomes available. The loop itself is exercised with bounded cancellation.
 
 This supplies the polling lifecycle source for #176. A packaged activation

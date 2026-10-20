@@ -2,8 +2,13 @@ package reviewer
 
 import (
 	"context"
+	"errors"
 	"sort"
 )
+
+// ErrRepositoryAccessLost is emitted only for a definitive loss observed at the
+// enrolled repository lookup, never a failed/partial PR collection or rate limit.
+var ErrRepositoryAccessLost = errors.New("enrolled repository access lost")
 
 // OpenScopes lists every open PR so owner configuration can be acknowledged
 // before its first native request. Current/History still establish provenance;
@@ -20,6 +25,9 @@ func (g *GitHubDiscoveryHTTP) OpenScopes(ctx context.Context) ([]Scope, error) {
 	defer cancel()
 	scope := Scope{RepositoryID: g.enrollment.RepositoryID, InstallationID: g.enrollment.InstallationID, PR: 1}
 	if err := g.http.repository(ctx, scope); err != nil {
+		if githubAccessLost(err) {
+			return nil, errors.Join(ErrRepositoryAccessLost, err)
+		}
 		return nil, err
 	}
 	scopes := []Scope{}
