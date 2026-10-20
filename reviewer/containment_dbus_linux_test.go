@@ -102,10 +102,10 @@ func (p fakeWireProperties) GetAll(iface string) (map[string]dbus.Variant, *dbus
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if iface == "org.freedesktop.systemd1.Unit" {
-		return map[string]dbus.Variant{"InvocationID": dbus.MakeVariant(m.invocation), "ControlGroup": dbus.MakeVariant("/user.slice/" + m.unit), "ActiveState": dbus.MakeVariant("active"), "Job": dbus.MakeVariant(unitJob{0, "/"}), "Description": dbus.MakeVariant("SFL fake containment " + Digest(authTestBinding())), "Transient": dbus.MakeVariant(true), "CollectMode": dbus.MakeVariant("inactive")}, nil
+		return map[string]dbus.Variant{"InvocationID": dbus.MakeVariant(m.invocation), "ActiveState": dbus.MakeVariant("active"), "Job": dbus.MakeVariant(unitJob{0, "/"}), "Description": dbus.MakeVariant("SFL fake containment " + Digest(authTestBinding())), "Transient": dbus.MakeVariant(true), "CollectMode": dbus.MakeVariant("inactive")}, nil
 	}
 	if iface == "org.freedesktop.systemd1.Service" {
-		return map[string]dbus.Variant{"MainPID": dbus.MakeVariant(uint32(os.Getpid())), "MemoryMax": dbus.MakeVariant(uint64(1 << 30)), "MemorySwapMax": dbus.MakeVariant(uint64(0)), "TasksMax": dbus.MakeVariant(uint64(64)), "CPUQuotaPerSecUSec": dbus.MakeVariant(uint64(1000000)), "KillMode": dbus.MakeVariant("control-group"), "Restart": dbus.MakeVariant("no"), "RemainAfterExit": dbus.MakeVariant(true), "NoNewPrivileges": dbus.MakeVariant(true)}, nil
+		return map[string]dbus.Variant{"ControlGroup": dbus.MakeVariant("/user.slice/" + m.unit), "MainPID": dbus.MakeVariant(uint32(os.Getpid())), "MemoryMax": dbus.MakeVariant(uint64(1 << 30)), "MemorySwapMax": dbus.MakeVariant(uint64(0)), "TasksMax": dbus.MakeVariant(uint64(64)), "CPUQuotaPerSecUSec": dbus.MakeVariant(uint64(1000000)), "KillMode": dbus.MakeVariant("control-group"), "Restart": dbus.MakeVariant("no"), "RemainAfterExit": dbus.MakeVariant(true), "NoNewPrivileges": dbus.MakeVariant(true)}, nil
 	}
 	return nil, dbus.MakeFailedError(fmt.Errorf("unknown interface"))
 }

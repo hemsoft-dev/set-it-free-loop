@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"strconv"
@@ -332,14 +333,14 @@ func (m *dbusContainmentManager) Observe(ctx context.Context, unit string) (unit
 		key string
 		dst any
 	}{
-		{u, "InvocationID", &invocation}, {u, "ControlGroup", &o.ControlGroup}, {u, "ActiveState", &o.ActiveState}, {u, "Job", &o.Job}, {u, "Description", &o.Description}, {u, "Transient", &o.Transient}, {u, "CollectMode", &o.CollectMode},
+		{u, "InvocationID", &invocation}, {s, "ControlGroup", &o.ControlGroup}, {u, "ActiveState", &o.ActiveState}, {u, "Job", &o.Job}, {u, "Description", &o.Description}, {u, "Transient", &o.Transient}, {u, "CollectMode", &o.CollectMode},
 		{s, "MainPID", &o.MainPID}, {s, "MemoryMax", &o.MemoryMax}, {s, "MemorySwapMax", &o.MemorySwapMax}, {s, "TasksMax", &o.TasksMax}, {s, "CPUQuotaPerSecUSec", &o.CPUQuotaPerSecUSec},
 		{s, "KillMode", &o.KillMode}, {s, "Restart", &o.Restart}, {s, "RemainAfterExit", &o.RemainAfterExit}, {s, "NoNewPrivileges", &o.NoNewPrivileges},
 	}
 	for _, r := range reads {
 		v, ok := r.m[r.key]
 		if !ok || dbus.Store([]any{v.Value()}, r.dst) != nil {
-			return o, ErrAuthRecoveryRequired
+			return o, fmt.Errorf("%w: missing or incorrectly typed systemd property %s", ErrAuthRecoveryRequired, r.key)
 		}
 	}
 	if len(invocation) != 16 {

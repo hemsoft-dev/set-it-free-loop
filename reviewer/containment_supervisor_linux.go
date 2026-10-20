@@ -308,8 +308,11 @@ func (s *SystemdSupervisor) captureUnit(ctx context.Context, r unitJournal) (uni
 		return r, ErrAuthRecoveryRequired
 	}
 	o, err := s.manager.Observe(ctx, r.Unit)
-	if err != nil || !expectedFakeObservation(r, o) {
-		return r, ErrAuthRecoveryRequired
+	if err != nil {
+		return r, err
+	}
+	if !expectedFakeObservation(r, o) {
+		return r, errors.Join(ErrAuthRecoveryRequired, errors.New("systemd restriction mismatch"))
 	}
 	identity, err := unitProcessIdentity(ctx, s.manager, o)
 	if err != nil || identity.BootID != boot {
