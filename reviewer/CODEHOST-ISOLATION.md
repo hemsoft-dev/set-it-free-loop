@@ -42,7 +42,12 @@ only that those tested plaintext values were absent, not that arbitrary secrets
 are filtered. Receipts retain byte counts and SHA256, not raw IPC. The broker
 retains its probe result and bounded stderr outside the client namespace.
 The client may kill its relay during normal teardown, so that ephemeral process
-cannot supply completion evidence. Only the separate broker's stopped, private
+cannot supply completion evidence. The broker drains stderr before `Cmd.Wait`
+can close its pipe, identifies its executable by device/inode rather than a
+lexical path, and records a private monotonic exchange deadline. The parent
+waits for that remaining budget plus bounded cleanup, rather than killing a
+valid exchange after a shorter fixed grace period. Symlinked output ancestors
+are supported without weakening executable identity checks. Only the separate broker's stopped, private
 receipt is used with the existing client/provider/source assertions.
 
 From clean committed source, use previously verified official binary snapshots:
