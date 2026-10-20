@@ -71,6 +71,13 @@ remain local; provider-side refresh runs in the leased client profile. Tests
 use fake bytes only. This code does not import interactive auth, provision
 credentials or qualify production credential transfer and OS containment.
 
+[Provider HTTP egress](PROVIDER-EGRESS.md) supplies exact route guards, separate
+inference/refresh request budgets, bounded payloads and private completion audits.
+Its concrete transport rejects private destinations and hidden connection retries.
+No listener, provider policy or network route is activated. The isolated launcher
+must still enforce exclusive egress, qualify the pinned clients and persist the
+private receipt before accepting a review.
+
 ## Remaining live gates
 
 Applicable public-target subscription support, account-specific entitlements and
