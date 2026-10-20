@@ -247,7 +247,7 @@ func (p *AuthProfile) ImportAuthReturn(ctx context.Context, t AuthTransfer, veri
 		return ErrAuthTransfer
 	}
 	j, err := p.stopped(ctx, verifier)
-	if err != nil || j.Stage != "active" || j.TransferStage != "exported" || info.Provider != j.Provider || info.Binding != j.Binding || info.SeedHash != j.SeedHash {
+	if err != nil || j.Stage != "active" || (j.TransferStage != "exported" && (j.TransferStage != "receiving" || info.PayloadHash != j.TransferHash)) || info.Provider != j.Provider || info.Binding != j.Binding || info.SeedHash != j.SeedHash {
 		return ErrAuthRecoveryRequired
 	}
 	returnErr := t.Consume(func(payload []byte) error {

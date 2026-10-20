@@ -471,3 +471,66 @@ func TestAuthTransferRejectsStaleCanonicalSeedAndChangedReturnedFile(t *testing.
 		t.Fatal("stale seed exported", err)
 	}
 }
+
+func TestAuthTransferReceivingRetryRequiresExactReturnAndFreshStop(t *testing.T) {
+	for _, provider := range []Provider{Codex, Claude} {
+		t.Run(string(provider), func(t *testing.T) {
+			store, profile, seed := authTransferFixture(t, provider)
+			info := transferInfo(t, seed)
+			payload := []byte("synthetic-refreshed-return")
+			frame := func(data []byte) AuthTransfer {
+				t.Helper()
+				returned, err := NewAuthReturn(info, data)
+				if err != nil {
+					t.Fatal(err)
+				}
+				decoded, err := ReadAuthTransfer(bytes.NewReader(authWire(t, returned)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return decoded
+			}
+			// A directory at the pending-file target reproduces a real filesystem
+			// failure after the receiving journal has become durable.
+			pending := filepath.Join(store.directory, "pending.json")
+			if err := os.Mkdir(pending, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := profile.ImportAuthReturn(context.Background(), frame(payload), authStopped(t)); !errors.Is(err, ErrAuthRecoveryRequired) {
+				t.Fatal("missing expected pending-write failure", err)
+			}
+			journal, err := readAuthJournal(profile.held.root)
+			if err != nil || journal.TransferStage != "receiving" || journal.TransferHash != authHash(payload) {
+				t.Fatal("return hash was not journaled before failed write", err)
+			}
+			if err = os.Remove(pending); err != nil {
+				t.Fatal(err)
+			}
+			profile.Close()
+			recovered, err := store.RecoverProfile(context.Background(), authTestBinding())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer recovered.Close()
+			if err = recovered.ImportAuthReturn(context.Background(), frame([]byte("different-return")), authStopped(t)); !errors.Is(err, ErrAuthRecoveryRequired) {
+				t.Fatal("receiving retry replaced journal-bound hash", err)
+			}
+			if err = recovered.ImportAuthReturn(context.Background(), frame(payload), authStopCheck(func(context.Context, AuthBinding) error { return errors.New("not stopped") })); !errors.Is(err, ErrAuthRecoveryRequired) {
+				t.Fatal("retry bypassed fresh stop", err)
+			}
+			if _, err = os.Stat(pending); !os.IsNotExist(err) {
+				t.Fatal("rejected retry persisted bytes", err)
+			}
+			if err = recovered.ImportAuthReturn(context.Background(), frame(payload), authStopped(t)); err != nil {
+				t.Fatal("exact stopped return could not recover failed receive", err)
+			}
+			if err = recovered.Complete(context.Background(), authStopped(t)); err != nil {
+				t.Fatal(err)
+			}
+			state, err := os.ReadFile(filepath.Join(store.directory, "state.json"))
+			if err != nil || !bytes.Equal(state, payload) {
+				t.Fatal("retried return was not committed exactly", err)
+			}
+		})
+	}
+}

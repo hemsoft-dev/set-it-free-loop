@@ -66,6 +66,9 @@ canonical state after stopped recovery; it never restores the old seed. Known
 pending returns survive the receiving/staged/returned and canonical commit
 boundaries. Losing bytes before a durable pending return is recoverable only by
 obtaining the same trusted final return or explicitly retiring the credentials.
+While `receiving`, `ImportAuthReturn` accepts a newly transferred copy only if
+its payload hash matches the journal's already bound return hash and a fresh
+whole-containment stop proof succeeds. It cannot select a different return.
 
 The new journal fields are omitted for legacy leases. Existing leases retain
 their original local-profile workflow, while an older binary rejects new
