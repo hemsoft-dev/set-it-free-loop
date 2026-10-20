@@ -110,6 +110,33 @@ func TestNativeOwnedForwardingCancellationStopsBlockedCopies(t *testing.T) {
 	}
 }
 
+func TestNativeOwnedForwardingPropagatesChildEOFBeforeClientInputCloses(t *testing.T) {
+	source, clientInput := nativePipe(t)
+	clientOutput, sink := nativePipe(t)
+	_, childSink := nativePipe(t)
+	childSource, childOutput := nativePipe(t)
+	files := donatedCodePipes(t, source, sink)
+	source.Close()
+	sink.Close()
+	childOutput.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		nativeCodeForward(ctx, files[0], files[1], childSink, childSource, nil)
+		closeVMFiles(files)
+		close(done)
+	}()
+	clientOutput.SetReadDeadline(time.Now().Add(time.Second))
+	var data [1]byte
+	_, err := clientOutput.Read(data[:])
+	clientInput.Close()
+	<-done
+	if err != io.EOF {
+		t.Fatal("client never observed the pinned child's EOF", err)
+	}
+}
+
 func TestNativeCodePipeHandoffRejectsFilesSocketsAliasesAndWrongDirection(t *testing.T) {
 	source, sourceWrite := nativePipe(t)
 	_, sink := nativePipe(t)

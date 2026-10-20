@@ -70,7 +70,9 @@ must establish all activation/eligibility gates; construction chooses no default
 gate or credential path. It checks peers on the host, starts and grants the
 concrete native containment, then waits for a matching private guest ready
 record before leasing auth. Export verifies the still-captured granted unit.
-Every return stops the whole unit, drains object/provider channels, validates
+After successful whole-unit stop, the object server consumes peer EOF before
+the host closes its local channels. Failed or uncertain shutdown revokes intake
+immediately. Every return drains object/provider channels, validates
 private source/provider evidence and persists a nonsecret audit. A valid auth
 return is committed after physical stop even when model output is invalid.
 A missing return preserves recovery and cannot recommit a possibly stale seed.

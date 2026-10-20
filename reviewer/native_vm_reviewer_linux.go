@@ -264,21 +264,17 @@ func (p *nativeVMHostPhase) finish(ctx context.Context, report Report, primary e
 	if p.started {
 		stopErr = p.supervisor.AbortAndWait(cleanup, p.request.Binding)
 	}
-	p.channels.Close()
 	var evidence *ProviderEvidence
 	if p.bridge != nil {
 		var err error
 		evidence, err = p.bridge.close(cleanup)
 		primary = errors.Join(primary, err)
 	}
-	if p.objectsDone != nil {
-		select {
-		case err := <-p.objectsDone:
-			if primary == nil && err != nil {
-				primary = ErrSourceService
-			}
-		case <-cleanup.Done():
-			primary = errors.Join(primary, ErrSourceAuditPending)
+	if err := p.drainObjects(cleanup, primary == nil && stopErr == nil); err != nil {
+		if errors.Is(err, ErrSourceAuditPending) {
+			primary = errors.Join(primary, err)
+		} else if primary == nil {
+			primary = err
 		}
 	}
 	if stopErr != nil {
@@ -362,6 +358,28 @@ func (p *nativeVMHostPhase) finish(ctx context.Context, report Report, primary e
 		return Report{}, access, evidence, errors.Join(PhaseError{State: phaseState(primary), BeforeWork: before}, nativeVMCauses(primary))
 	}
 	return report, access, evidence, nil
+}
+
+func (p *nativeVMHostPhase) drainObjects(ctx context.Context, graceful bool) error {
+	// Once the whole VM is stopped, peer EOF is already inevitable. Let the
+	// server consume it before local close can replace it with net.ErrClosed.
+	// Failed or uncertain shutdown revokes intake immediately instead.
+	if !graceful {
+		p.channels.Close()
+	}
+	defer p.channels.Close()
+	if p.objectsDone == nil {
+		return nil
+	}
+	select {
+	case err := <-p.objectsDone:
+		if err != nil {
+			return ErrSourceService
+		}
+		return nil
+	case <-ctx.Done():
+		return ErrSourceAuditPending
+	}
 }
 
 func nativeVMCauses(err error) error {

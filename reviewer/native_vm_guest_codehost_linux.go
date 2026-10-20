@@ -108,7 +108,10 @@ func nativeCodeForward(parent context.Context, source io.ReadCloser, sink io.Wri
 	input, output := make(chan nativeCodeStream, 1), make(chan nativeCodeStream, 1)
 	go func() {
 		copied := nativeCodeCopy(childInput, source, values)
-		childInput.Close()
+		if err := childInput.Close(); err != nil && copied.err == nil {
+			copied.err = ErrVMBoot
+		}
+		source.Close()
 		input <- copied
 		if copied.err != nil {
 			cancel()
@@ -116,6 +119,12 @@ func nativeCodeForward(parent context.Context, source io.ReadCloser, sink io.Wri
 	}()
 	go func() {
 		copied := nativeCodeCopy(sink, childOutput, values)
+		// Propagate child EOF even while the client still holds its input open.
+		// Otherwise both sides can wait for the other during worker shutdown.
+		if err := sink.Close(); err != nil && copied.err == nil {
+			copied.err = ErrVMBoot
+		}
+		childOutput.Close()
 		output <- copied
 		if copied.err != nil {
 			cancel()
