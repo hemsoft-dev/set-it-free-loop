@@ -352,6 +352,10 @@ func TestSnapshotEvidenceOmissionsSurviveDurableFakeReviewAndRecovery(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
+	intent, err := (Publisher{Store: store}).PrepareEvidence(context.Background(), recovered, bound)
+	if err != nil || intent.JobHash != Digest(job) || intent.Kind != "review" {
+		t.Fatal("bound evidence did not prepare durable publication", intent, err)
+	}
 	for _, path := range []string{"binary", "link", "submodule"} {
 		if !strings.Contains(doc.Summary, path) {
 			t.Fatal("omission absent from publication", path)

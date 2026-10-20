@@ -202,6 +202,9 @@ func (b *sourceBroker) seal() *SourceAccess {
 // the same path and crowd out the one-time exhaustion fact. Unknown/unsafe
 // attempted paths are sanitized to the global path by Reader.Read.
 func compactSourceCoverage(records []Coverage) []Coverage {
+	if len(records) <= 256 {
+		return records
+	}
 	out := []Coverage{}
 	indices := map[string]int{}
 	seen := map[Coverage]bool{}
