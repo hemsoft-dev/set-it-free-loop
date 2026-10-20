@@ -116,6 +116,9 @@ inference, account entitlement, official-client tool inventory or OS isolation.
 Continue private reader service binding, official-client wrapper execution and
 OS supervisor packaging under
 [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
+The [bounded reader program](READER-SERVICE.md) now implements protected socket
+binding and a separate launch-bound audit channel. Supervisor integration and
+actual isolation qualification remain separate work.
 The freeze still forbids credential acquisition, App installation, live inference
 or deployment without their separate gates and explicit owner authority.
 
