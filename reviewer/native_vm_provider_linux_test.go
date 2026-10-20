@@ -5,6 +5,7 @@ package reviewer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,12 +16,15 @@ import (
 	"time"
 )
 
-func nativeProviderFixture(t *testing.T, output string) (*nativeProviderBridge, *http.Client, *atomic.Int32, Session) {
+func nativeProviderFixture(t *testing.T, output string, configure ...func(*EgressPolicy)) (*nativeProviderBridge, *http.Client, *atomic.Int32, Session) {
 	t.Helper()
 	client, server := vmSocketPair(t)
 	s := testSession(Codex)
 	policy := egressTestPolicy(Codex)
 	policy.ResponsePolicy = CodexSourceResponses
+	for _, edit := range configure {
+		edit(&policy)
+	}
 	var calls atomic.Int32
 	backend := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
 		calls.Add(1)
@@ -58,6 +62,48 @@ func nativeProviderFixture(t *testing.T, output string) (*nativeProviderBridge, 
 	return bridge, httpClient, &calls, s
 }
 
+func TestNativeVMProviderNegotiationSharesTheMetadataAndInferenceStream(t *testing.T) {
+	bridge, client, calls, s := nativeProviderFixture(t, codexToolStream("exec"), func(p *EgressPolicy) {
+		p.Routes = append(p.Routes, EgressRoute{Authority: "provider.example", Method: "GET", Path: "/infer", Kind: "local_negotiation"})
+	})
+	request := func(path string, upgrade bool) int {
+		q, _ := http.NewRequest("GET", "http://sfl-private.invalid"+path, nil)
+		q.Host = "provider.example"
+		q.Header.Set("Authorization", "Bearer synthetic-native-access")
+		if upgrade {
+			q.Header.Set("Connection", "Upgrade")
+			q.Header.Set("Upgrade", "websocket")
+			q.Header.Set("Sec-WebSocket-Version", "13")
+			q.Header.Set("Sec-WebSocket-Key", "MDEyMzQ1Njc4OWFiY2RlZg==")
+		}
+		response, err := client.Do(q)
+		if err != nil {
+			t.Fatal("private stream cannot mix WebSocket negotiation with ordinary HTTP", err)
+		}
+		if _, err = io.Copy(io.Discard, response.Body); err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		return response.StatusCode
+	}
+	if request("/metadata", false) != 200 {
+		t.Fatal("metadata failed")
+	}
+	if request("/infer", true) != 426 {
+		t.Fatal("local-only WebSocket negotiation failed")
+	}
+	if status, _ := nativeProviderCall(t, client, s.Identity.Model); status != 200 {
+		t.Fatal("inference failed after negotiation")
+	}
+	client.Transport.(interface{ CloseIdleConnections() }).CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	e, err := bridge.close(ctx)
+	if err != nil || e.Access.ValidateCompleted(s, e.Policy) != nil || calls.Load() != 2 || e.Access.NegotiationRequests != 1 || e.Access.MetadataRequests != 1 || e.Access.InferenceRequests != 1 {
+		t.Fatal("mixed protocol receipt differs", e, err, calls.Load())
+	}
+}
+
 func nativeProviderCall(t *testing.T, client *http.Client, model string) (int, string) {
 	t.Helper()
 	raw, _ := json.Marshal(map[string]any{"model": model, "input": "synthetic immutable evidence"})
@@ -89,7 +135,7 @@ func TestNativeVMProviderActualPrivateHTTPAndStoppedReceipt(t *testing.T) {
 			t.Fatal("private provider stream changed response", status, body)
 		}
 	}
-	client.Transport.(*http.Transport).CloseIdleConnections()
+	client.Transport.(interface{ CloseIdleConnections() }).CloseIdleConnections()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	e, err := bridge.close(ctx)
@@ -149,5 +195,77 @@ func TestNativeVMProviderNeverDialsOutsideItsSingleChannel(t *testing.T) {
 		return nil, nil
 	}), client); err != ErrLiveBlocked {
 		t.Fatal("native phase accepted unguarded response policy", err)
+	}
+}
+
+func TestNativeVMProviderCancelledWaitDoesNotCloseTheActiveResponse(t *testing.T) {
+	_, client, calls, s := nativeProviderFixture(t, codexToolStream("exec"))
+	makeRequest := func(ctx context.Context) *http.Request {
+		raw, _ := json.Marshal(map[string]any{"model": s.Identity.Model, "input": "immutable"})
+		q, _ := http.NewRequestWithContext(ctx, "POST", "http://sfl-private.invalid/infer", io.NopCloser(strings.NewReader(string(raw))))
+		q.Host = "provider.example"
+		q.Header.Set("Authorization", "Bearer synthetic-native-access")
+		q.Header.Set("Content-Type", "application/json")
+		return q
+	}
+	first, err := client.Do(makeRequest(context.Background()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Body.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		r, err := client.Do(makeRequest(ctx))
+		if r != nil {
+			r.Body.Close()
+		}
+		done <- err
+	}()
+	cancel()
+	select {
+	case err = <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatal("queued cancellation lost", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("queued request did not cancel")
+	}
+	if calls.Load() != 1 {
+		t.Fatal("another request reached the occupied private stream")
+	}
+	if _, err = io.Copy(io.Discard, first.Body); err != nil {
+		t.Fatal("queued cancellation damaged the active response", err)
+	}
+	first.Body.Close()
+	if status, _ := nativeProviderCall(t, client, s.Identity.Model); status != 200 || calls.Load() != 2 {
+		t.Fatal("private stream did not survive queued cancellation")
+	}
+}
+
+func TestNativeVMProviderPartialResponseCloseRetiresTheStream(t *testing.T) {
+	_, client, calls, s := nativeProviderFixture(t, codexToolStream("exec"))
+	raw, _ := json.Marshal(map[string]any{"model": s.Identity.Model, "input": "immutable"})
+	q, _ := http.NewRequest("POST", "http://sfl-private.invalid/infer", io.NopCloser(strings.NewReader(string(raw))))
+	q.Host = "provider.example"
+	q.Header.Set("Authorization", "Bearer synthetic-native-access")
+	q.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first [1]byte
+	if _, err = io.ReadFull(response.Body, first[:]); err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	q, _ = http.NewRequest("GET", "http://sfl-private.invalid/metadata", nil)
+	q.Host = "provider.example"
+	if r, err := client.Do(q); err == nil {
+		r.Body.Close()
+		t.Fatal("partly consumed response allowed another request")
+	}
+	if calls.Load() != 1 {
+		t.Fatal("retired stream replayed or reconnected")
 	}
 }

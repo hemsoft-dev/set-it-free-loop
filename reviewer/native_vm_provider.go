@@ -1,13 +1,16 @@
 package reviewer
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"sync"
 	"time"
 )
@@ -112,18 +115,131 @@ func (b *nativeProviderBridge) close(ctx context.Context) (*ProviderEvidence, er
 // The guest proxy uses one fixed plaintext HTTP connection inside its private
 // VM channel. Only the host guard can turn a captured route into public HTTPS.
 // A dropped stream cannot trigger another dial, inherited proxy or network IO.
-func nativeProviderTransport(channel net.Conn) *http.Transport {
-	var mu sync.Mutex
-	spent := false
-	return &http.Transport{Proxy: nil, DisableCompression: true, ForceAttemptHTTP2: false, MaxConnsPerHost: 1, MaxIdleConns: 1, MaxIdleConnsPerHost: 1, IdleConnTimeout: 5 * time.Minute, ResponseHeaderTimeout: 5 * time.Minute,
-		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			if spent || ctx.Err() != nil || network != "tcp" || address != "sfl-private.invalid:80" {
-				return nil, ErrProviderEgressFailed
-			}
-			spent = true
-			return channel, nil
-		},
+// http.Transport splits Upgrade and ordinary requests into different connection
+// pools. This private HTTP/1 stream instead serializes requests through body EOF.
+type nativeProviderHTTPTransport struct {
+	channel   net.Conn
+	reader    *bufio.Reader
+	available chan struct{}
+	closed    chan struct{}
+	closeOnce sync.Once
+}
+
+func nativeProviderTransport(channel net.Conn) *nativeProviderHTTPTransport {
+	t := &nativeProviderHTTPTransport{channel: channel, available: make(chan struct{}, 1), closed: make(chan struct{})}
+	if channel != nil {
+		t.reader = bufio.NewReaderSize(channel, 16<<10)
 	}
+	t.available <- struct{}{}
+	return t
+}
+
+func (t *nativeProviderHTTPTransport) CloseIdleConnections() {
+	t.closeOnce.Do(func() {
+		close(t.closed)
+		if t.channel != nil {
+			t.channel.Close()
+		}
+	})
+}
+
+func (t *nativeProviderHTTPTransport) RoundTrip(q *http.Request) (*http.Response, error) {
+	reject := func() (*http.Response, error) {
+		if q != nil && q.Body != nil {
+			q.Body.Close()
+		}
+		if q != nil {
+			return nil, errors.Join(ErrProviderEgressFailed, q.Context().Err())
+		}
+		return nil, ErrProviderEgressFailed
+	}
+	if q == nil || q.URL == nil || t.channel == nil || q.URL.Scheme != "http" || (q.URL.Host != "sfl-private.invalid" && q.URL.Host != "sfl-private.invalid:80") || q.URL.User != nil || q.RequestURI != "" || httptrace.ContextClientTrace(q.Context()) != nil {
+		return reject()
+	}
+	select {
+	case <-q.Context().Done():
+		return reject()
+	case <-t.closed:
+		return reject()
+	case <-t.available:
+	}
+	select {
+	case <-t.closed:
+		t.available <- struct{}{}
+		return reject()
+	default:
+	}
+	ctx, cancel := context.WithTimeout(q.Context(), 5*time.Minute)
+	stop := context.AfterFunc(ctx, func() {
+		t.CloseIdleConnections()
+		if q.Body != nil {
+			q.Body.Close()
+		}
+	})
+	var once sync.Once
+	finish := func(reusable bool) {
+		once.Do(func() {
+			stop()
+			cancel()
+			if !reusable {
+				t.CloseIdleConnections()
+			}
+			t.available <- struct{}{}
+		})
+	}
+	deadline, _ := ctx.Deadline()
+	// Some guest character devices cannot install a descriptor deadline. The
+	// context hook still closes the descriptor and interrupts blocked I/O.
+	_ = t.channel.SetDeadline(deadline)
+	copy := q.Clone(ctx)
+	copy.GetBody = nil
+	copy.Close = false
+	err := copy.Write(t.channel)
+	if copy.Body != nil {
+		copy.Body.Close()
+	}
+	if err != nil {
+		finish(false)
+		return nil, ErrProviderEgressFailed
+	}
+	// Bound header parsing independently. Once parsed, the same reader carries
+	// the body; the host guard separately enforces the captured response bound.
+	limit := &io.LimitedReader{R: t.reader, N: 32 << 10}
+	reader := bufio.NewReaderSize(limit, 4096)
+	response, err := http.ReadResponse(reader, copy)
+	if err != nil || response.StatusCode < 200 {
+		if response != nil && response.Body != nil {
+			response.Body.Close()
+		}
+		finish(false)
+		return nil, ErrProviderEgressFailed
+	}
+	limit.N = 1<<63 - 1
+	if response.Body == http.NoBody {
+		finish(!response.Close)
+		return response, nil
+	}
+	response.Body = &nativeProviderResponseBody{body: response.Body, finish: func(complete bool) { finish(complete && !response.Close && reader.Buffered() == 0) }}
+	return response, nil
+}
+
+type nativeProviderResponseBody struct {
+	body   io.ReadCloser
+	finish func(bool)
+	once   sync.Once
+}
+
+func (b *nativeProviderResponseBody) done(complete bool) { b.once.Do(func() { b.finish(complete) }) }
+func (b *nativeProviderResponseBody) Read(data []byte) (int, error) {
+	n, err := b.body.Read(data)
+	if err != nil {
+		b.done(err == io.EOF)
+	}
+	return n, err
+}
+func (b *nativeProviderResponseBody) Close() error {
+	// An unread or partially read body cannot be replayed or reused as another
+	// response. Close the private stream instead of silently draining/retrying.
+	b.done(false)
+	return b.body.Close()
 }
