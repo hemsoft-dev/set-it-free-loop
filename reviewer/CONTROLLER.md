@@ -1,5 +1,10 @@
 # Offline durable controller
 
+The explicit [selected-installation credential boundary](GITHUB-INSTALLATION.md)
+qualifies separate repository reader and publisher transports using an injected
+App JWT and transport. Its tests use fake TLS only. It does not supply key
+storage, runtime activation or live installation evidence.
+
 This module supplies SQLite state, configuration and request admission, durable
 phase reservations, and a COMMENT review outbox through fake transport seams.
 The explicit [GitHub publication HTTP adapter](GITHUB-PUBLICATION.md) supplies
