@@ -270,7 +270,7 @@ func (g *guestLauncher) Start(ctx context.Context, inv r.Invocation) (r.Worker, 
 	if os.Chmod(filepath.Join(root, "profile"), 0700) != nil || os.Chown(filepath.Join(root, "profile"), workerUID, ipcGID) != nil {
 		return nil, errors.New("fixture profile setup failed")
 	}
-	if unix.Mknod(filepath.Join(root, "dev/null"), unix.S_IFCHR|0666, int(unix.Mkdev(1, 3))) != nil {
+	if unix.Mknod(filepath.Join(root, "dev/null"), unix.S_IFCHR|0666, int(unix.Mkdev(1, 3))) != nil || os.Chmod(filepath.Join(root, "dev/null"), 0666) != nil {
 		return nil, errors.New("fixture null device failed")
 	}
 	target := filepath.Join(root, filepath.Dir(inv.SourceEndpoint.Socket))

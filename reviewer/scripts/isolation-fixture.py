@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build/run a marked, credential-free Linux role fixture. Never a live launcher."""
 import argparse
+import base64
 import gzip
 import hashlib
 import json
@@ -11,6 +12,8 @@ import secrets
 import stat
 import subprocess
 import time
+
+FIXTURE_FILES = {"source.go": b"original source\n", "worker.go": b"worker-only evidence\n"}
 
 
 def execute(args, *, cwd=None, data=None, timeout=120, env=None):
@@ -32,6 +35,37 @@ def write_json(path, value):
         output.write("\n")
         output.flush()
         os.fsync(output.fileno())
+
+
+def parse_guest_result(raw, nonce, commit):
+    def unique_object(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise RuntimeError("ambiguous guest result keys")
+            result[key] = value
+        return result
+    result = json.loads(raw, object_pairs_hook=unique_object)
+    if not isinstance(result, dict) or type(result.get("version")) is not int or result["version"] != 1 or result.get("nonce") != nonce or result.get("passed") is not True or result.get("production_boundary_qualified") is not False or result.get("fake_clients") is not True:
+        raise RuntimeError("guest role qualification failed")
+    access = result.get("source_access", {})
+    if not isinstance(access, dict) or access.get("tool_calls") != 2 or access.get("reader_calls") != 3 or not isinstance(access.get("reads"), list) or len(access["reads"]) != 3 or not isinstance(result.get("roles"), list) or len(result["roles"]) != 2:
+        raise RuntimeError("actual source receipt or role count differs")
+    for read, path in zip(access["reads"], ["worker.go", "source.go", "worker.go"]):
+        data = FIXTURE_FILES[path]
+        expected_hash = digest(json.dumps(base64.b64encode(data).decode()).encode())
+        if not isinstance(read, dict) or read.get("revision") != commit or read.get("path") != path or read.get("hash") != expected_hash or read.get("bytes") != len(data):
+            raise RuntimeError("actual immutable source content/revision differs")
+    if access.get("bytes") != sum(len(FIXTURE_FILES[path]) for path in ["worker.go", "source.go", "worker.go"]):
+        raise RuntimeError("actual source byte count differs")
+    for role, uid in zip(result["roles"], [1201, 1202]):
+        if not isinstance(role, dict) or role.get("uid") != uid or role.get("stopped") is not True or role.get("memory_max") != "100663296" or role.get("pids_max") != "32" or role.get("cpu_max") != "100000 100000":
+            raise RuntimeError("guest kernel role/resource observation differs")
+    killed = result["roles"][1].get("descendants_killed")
+    reaped = result.get("reaped_orphans")
+    if type(killed) is not int or killed < 1 or type(reaped) is not int or reaped < 1:
+        raise RuntimeError("escaped child containment/reaping not established")
+    return result
 
 
 def archive(entries, target):
@@ -97,29 +131,25 @@ def run_fixture(output, manifest, kernel, image):
                         env=manager_env, capture_output=True, timeout=3)
                     fields = dict(line.split("=", 1) for line in observed.stdout.decode().splitlines() if "=" in line)
                     if fields.get("Description") == description and fields.get("ActiveState") == "active":
+                        cgroup = fields.get("ControlGroup", "")
+                        if not cgroup.startswith("/user.slice/") or not cgroup.endswith("/"+unit) or ".." in Path(cgroup).parts:
+                            raise RuntimeError("unexpected fixture cgroup ownership")
+                        for key in ["memory.max", "memory.swap.max", "pids.max", "cpu.max"]:
+                            fields["kernel_"+key] = (Path("/sys/fs/cgroup") / cgroup.lstrip("/") / key).read_text().strip()
                         properties = fields
                         write_json(output / "launch-observed.json", fields)
                 time.sleep(.2)
         if process.returncode != 0:
             raise RuntimeError("fake VM unit failed; inspect private unit/boot logs")
-        if not properties or properties.get("MemoryMax") != str(1<<30) or properties.get("MemorySwapMax") != "0" or properties.get("TasksMax") != "64" or properties.get("KillMode") != "control-group":
+        cpu = properties.get("kernel_cpu.max", "").split()
+        if not properties or properties.get("MemoryMax") != str(1<<30) or properties.get("MemorySwapMax") != "0" or properties.get("TasksMax") != "64" or properties.get("KillMode") != "control-group" or properties.get("kernel_memory.max") != str(1<<30) or properties.get("kernel_memory.swap.max") != "0" or properties.get("kernel_pids.max") != "64" or len(cpu) != 2 or not cpu[0].isdigit() or not cpu[1].isdigit() or int(cpu[0]) != int(cpu[1]) or int(cpu[0]) <= 0:
             raise RuntimeError("actual host resource/ownership observations missing")
         raw = boot.read_bytes()
         marker = ("SFL_FIXTURE_RESULT_"+nonce+" ").encode()
         matches = [line[len(marker):] for line in raw.splitlines() if line.startswith(marker)]
         if len(matches) != 1:
             raise RuntimeError("missing or ambiguous current-invocation guest receipt")
-        result = json.loads(matches[0])
-        if result.get("nonce") != nonce or not result.get("passed") or result.get("production_boundary_qualified") is not False or result.get("fake_clients") is not True:
-            raise RuntimeError("guest role qualification failed: "+str(result.get("error")))
-        access = result.get("source_access", {})
-        if access.get("tool_calls") != 2 or access.get("reader_calls") != 3 or len(access.get("reads", [])) != 3 or len(result.get("roles", [])) != 2:
-            raise RuntimeError("actual source receipt or role count differs")
-        for role, uid in zip(result["roles"], [1201, 1202]):
-            if role.get("uid") != uid or role.get("stopped") is not True or role.get("memory_max") != "100663296" or role.get("pids_max") != "32" or role.get("cpu_max") != "100000 100000":
-                raise RuntimeError("guest kernel role/resource observation differs")
-        if result["roles"][1].get("descendants_killed", 0) < 1 or result.get("reaped_orphans", 0) < 1:
-            raise RuntimeError("escaped child containment/reaping not established")
+        result = parse_guest_result(matches[0], nonce, manifest["synthetic_commit"])
         final = {"state": "passed", "nonce": nonce, "manifest_sha256": digest((output / "manifest.json").read_bytes()),
                  "guest": result, "host_unit": properties, "host_exit": process.returncode,
                  "scope": "Trusted fake guest identity/filesystem/source/cgroup fixture only; TCG is not a production security boundary."}
@@ -192,7 +222,7 @@ def main():
                "GIT_AUTHOR_DATE": "2000-01-01T00:00:00Z", "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z"}
     execute(["git", "init", "--bare", str(gitdir)], env=git_env)
     rows = []
-    for name, data in [("source.go", b"original source\n"), ("worker.go", b"worker-only evidence\n")]:
+    for name, data in FIXTURE_FILES.items():
         oid = execute(["git", "--git-dir="+str(gitdir), "hash-object", "-w", "--stdin"], data=data, env=git_env).decode().strip()
         rows.append(f"100644 blob {oid}\t{name}\n")
     tree = execute(["git", "--git-dir="+str(gitdir), "mktree"], data="".join(rows).encode(), env=git_env).decode().strip()
