@@ -65,15 +65,15 @@ func reviewPhase(ctx context.Context, reviewer Reviewer, s Session) (Report, *So
 		}
 		return Report{}, source, nil, true, errors.Join(err, ErrProviderAuditPending)
 	}
-	if auditErr := evidence.validateStoppedCaptured(s.Identity.Provider, s.Limits, Digest(s)); auditErr != nil {
-		return Report{}, source, evidence, true, errors.Join(err, ErrProviderAuditPending, auditErr)
-	}
 	if before && evidence.Access.Requests > 0 {
 		stopPending := errors.Is(err, ErrWorkerStopPending)
 		err = errors.Join(workerLauncherError(err, false), ErrProviderEgressFailed)
 		if stopPending {
 			err = errors.Join(err, ErrWorkerStopPending)
 		}
+	}
+	if auditErr := evidence.validateStoppedCaptured(s.Identity.Provider, s.Limits, Digest(s)); auditErr != nil {
+		return Report{}, source, evidence, true, errors.Join(err, ErrProviderAuditPending, auditErr)
 	}
 	if err == nil {
 		if auditErr := evidence.Access.ValidateCompleted(s, evidence.Policy); auditErr != nil {

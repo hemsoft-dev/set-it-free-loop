@@ -178,7 +178,7 @@ func TestPrivateProviderEvidenceCheckpointAndPublisherCannotDropProof(t *testing
 }
 
 func TestRequiredProviderEvidenceFailureRetainsChargeAndRecoveryIdentity(t *testing.T) {
-	for _, kind := range []string{"missing", "unstopped", "stale", "failed", "before-work-after-request"} {
+	for _, kind := range []string{"missing", "unstopped", "stale", "failed", "before-work-after-request", "before-work-unstopped", "before-work-stale", "before-work-malformed"} {
 		t.Run(kind, func(t *testing.T) {
 			store, job, _ := admittedFixture(t)
 			engine := testEngine(t, nil)
@@ -191,7 +191,15 @@ func TestRequiredProviderEvidenceFailureRetainsChargeAndRecoveryIdentity(t *test
 					e.Access.Stopped = false
 				case "stale":
 					e.Access.SessionHash = Digest("other")
-				case "before-work-after-request":
+				case "before-work-after-request", "before-work-unstopped", "before-work-stale", "before-work-malformed":
+					switch kind {
+					case "before-work-unstopped":
+						e.Access.Stopped = false
+					case "before-work-stale":
+						e.Access.SessionHash = Digest("other")
+					case "before-work-malformed":
+						e.Access.PolicyHash = Digest("other")
+					}
 					return Report{}, nil, e, PhaseError{State: "quota_wait", BeforeWork: true}
 				}
 				return protocolReport(s), nil, e, nil
@@ -209,7 +217,7 @@ func TestRequiredProviderEvidenceFailureRetainsChargeAndRecoveryIdentity(t *test
 			if j.Checkpoint.ConsumedSessions != 1 || len(j.Checkpoint.Artifacts) != 0 {
 				t.Fatal("attempt charge or report checkpoint incorrect", j)
 			}
-			pending := kind == "missing" || kind == "unstopped" || kind == "stale"
+			pending := kind == "missing" || kind == "unstopped" || kind == "stale" || kind == "before-work-unstopped" || kind == "before-work-stale" || kind == "before-work-malformed"
 			if pending {
 				if !errors.Is(err, ErrProviderAuditPending) || j.LeaseToken == "" || !j.Outstanding {
 					t.Fatal("unknown audit released lease", j, err)
@@ -380,5 +388,74 @@ func TestKnownAuditedReviewerRejectsStrippedCacheWithoutReplay(t *testing.T) {
 	failed, err := engine.Run(context.Background(), out.Job, checkpoint)
 	if err == nil || failed.State != "invalid_output" || failed.ExecutedSessions != 0 || physical.Load() != 8 {
 		t.Fatal("audited cache silently downgraded", failed.State, err, physical.Load())
+	}
+}
+
+func TestAuditedSelectionSurvivesDailyQuotaRollback(t *testing.T) {
+	store, job, _ := admittedFixture(t)
+	ctx := context.Background()
+	firstDay := controlTime.Add(4 * time.Minute)
+	partial := testEngine(t, func(_ context.Context, s Session) (Report, error) {
+		if s.Identity.Provider == Claude {
+			return Report{}, PhaseError{State: "quota_wait", BeforeWork: true}
+		}
+		return protocolReport(s), nil
+	})
+	if out, err := store.RunStopped(ctx, job.ID, partial, func() time.Time { return firstDay }); err == nil || out.ConsumedSessions != 1 {
+		t.Fatal("partial fixture", out.State, err)
+	}
+	nextDay := controlTime.Add(24*time.Hour + 2*time.Minute)
+	for i := 2; i <= 5; i++ {
+		scope := alphaScope()
+		scope.PR = i
+		request := native(int64(i), controlTime.Add(24*time.Hour))
+		request.Snapshot.PR = i
+		if err := store.Discover(ctx, Discovery{Scope: scope, Requests: []NativeRequest{request}, Through: nextDay, Complete: true}); err != nil {
+			t.Fatal(err)
+		}
+		other, err := store.Admit(ctx, scope, request.ID, job.Release, "evidence", nextDay)
+		if err != nil {
+			t.Fatal(err)
+		}
+		successful := testEngine(t, func(_ context.Context, s Session) (Report, error) { return protocolReport(s), nil })
+		if _, err = store.RunStopped(ctx, other.ID, successful, func() time.Time { return nextDay }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	auditedCalls := 0
+	audited := auditedReviewFunc(func(context.Context, Session) (Report, *SourceAccess, *ProviderEvidence, error) {
+		auditedCalls++
+		return Report{}, nil, nil, errors.New("quota should prevent work")
+	})
+	engine := testEngine(t, nil)
+	engine.Reviewers = map[Provider]Reviewer{Codex: partial.Reviewers[Codex], Claude: audited}
+	out, err := store.RunStopped(ctx, job.ID, engine, func() time.Time { return nextDay })
+	if err == nil || out.State != "quota_wait" || out.ConsumedSessions != 1 || auditedCalls != 0 {
+		t.Fatal("quota charged or launched work", out.State, err, auditedCalls)
+	}
+	d, err := store.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := d.Jobs[job.ID]
+	if len(j.AuditedProviders) != 1 || j.AuditedProviders[0] != Claude || j.Outstanding || j.LeaseToken != "" {
+		t.Fatal("quota rollback erased audited selection", j)
+	}
+	// Make quota available without changing the captured provider selection.
+	if err = store.update(ctx, func(d *DurableState) error {
+		for id, other := range d.Jobs {
+			if id != job.ID {
+				other.ChargeDays = nil
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	legacyCalls := 0
+	legacy := testEngine(t, func(_ context.Context, s Session) (Report, error) { legacyCalls++; return protocolReport(s), nil })
+	out, err = store.RunStopped(ctx, job.ID, legacy, func() time.Time { return nextDay.Add(time.Minute) })
+	if !errors.Is(err, ErrProviderAuditPending) || legacyCalls != 0 || out.State == "dual_complete" {
+		t.Fatal("quota retry downgraded audited provider", out.State, err, legacyCalls)
 	}
 }

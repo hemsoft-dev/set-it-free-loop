@@ -715,6 +715,29 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 	if session.Limits != expectedLimits || session.JobID != r.Job.ID || session.Snapshot != r.Job.Snapshot || session.ConfigHash != r.Job.Config.Hash() || session.PacketHash != Digest(r.Job.Packet) {
 		return Report{}, ErrFenced
 	}
+	_, requiresAudit := r.Inner.(AuditedReviewer)
+	if requiresAudit {
+		// Selection survives quota rollback and crashes before reservation.
+		// Otherwise a retry could replace this provider with a legacy driver.
+		if err = r.Store.update(ctx, func(d *DurableState) error {
+			j, err := fenced(d, r.Job.ID, r.Token, now())
+			if err != nil {
+				return err
+			}
+			if Digest(j.Job) != Digest(r.Job) || j.Outstanding || j.Checkpoint.ConsumedSessions >= j.Job.Config.MaxSessions() {
+				return ErrFenced
+			}
+			for _, provider := range j.AuditedProviders {
+				if provider == session.Identity.Provider {
+					return nil
+				}
+			}
+			j.AuditedProviders = append(j.AuditedProviders, session.Identity.Provider)
+			return nil
+		}); err != nil {
+			return Report{}, err
+		}
+	}
 	attemptID := randomToken()
 	err = r.Store.update(ctx, func(d *DurableState) error {
 		j, err := fenced(d, r.Job.ID, r.Token, now())
@@ -724,7 +747,6 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 		if Digest(j.Job) != Digest(r.Job) || j.Outstanding || j.Checkpoint.ConsumedSessions >= j.Job.Config.MaxSessions() {
 			return ErrFenced
 		}
-		_, requiresAudit := r.Inner.(AuditedReviewer)
 		knownAudit := false
 		for _, provider := range j.AuditedProviders {
 			if provider == session.Identity.Provider {
@@ -734,9 +756,6 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 		}
 		if knownAudit && !requiresAudit {
 			return ErrProviderAuditPending
-		}
-		if requiresAudit && !knownAudit {
-			j.AuditedProviders = append(j.AuditedProviders, session.Identity.Provider)
 		}
 		day := now().UTC().Format("2006-01-02")
 		j.AttemptChargeDay = ""
