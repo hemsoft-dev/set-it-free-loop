@@ -103,6 +103,7 @@ type WriteIntent struct {
 	Scope                   Scope
 	RequestID, Generation   int64
 	JobHash                 string
+	CheckpointHash          string `json:",omitempty"`
 	Snapshot                Snapshot
 	Document                Document
 	BodyHash, Marker, State string
@@ -572,6 +573,10 @@ func fenced(d *DurableState, id, token string, now time.Time) (*DurableJob, erro
 	return j, nil
 }
 func (s *Store) ReleaseStopped(ctx context.Context, id, token string, state string) error {
+	return s.releaseStopped(ctx, id, token, state, false)
+}
+
+func (s *Store) releaseStopped(ctx context.Context, id, token, state string, retainOutstanding bool) error {
 	switch state {
 	case "queued", "quota_wait", "cancelled", "provider_unavailable", "auth_failed", "blocked", "dual_complete", "single_complete", "invalid_output", "incomplete_expired":
 	default:
@@ -581,6 +586,9 @@ func (s *Store) ReleaseStopped(ctx context.Context, id, token string, state stri
 		j := d.Jobs[id]
 		if j == nil || token == "" || j.LeaseToken != token {
 			return ErrFenced
+		}
+		if retainOutstanding && j.Outstanding {
+			return ErrDeferred
 		}
 		if j.Outstanding && j.AttemptProviderEvidenceRequired {
 			recorded := false
@@ -967,13 +975,11 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 		}
 	}
 	out, runErr := wrapped.Run(ctx, j.Job, j.Checkpoint)
-	if errors.Is(runErr, ErrRefundPending) || errors.Is(runErr, ErrSourceAuditPending) || errors.Is(runErr, ErrProviderAuditPending) || errors.Is(runErr, ErrProviderEgressPending) || errors.Is(runErr, ErrWorkerStopPending) {
-		// Retain the nonce and attempt metadata for physical-worker, audit or
-		// refund recovery. Releasing would discard that recovery path.
-		return out, runErr
-	}
+	retainOutstanding := errors.Is(runErr, ErrRefundPending) || errors.Is(runErr, ErrSourceAuditPending) || errors.Is(runErr, ErrProviderAuditPending) || errors.Is(runErr, ErrProviderEgressPending) || errors.Is(runErr, ErrWorkerStopPending)
+	// A pre-reservation rejection has no physical attempt to recover. Check
+	// outstanding state atomically with release, preserving real recovery leases.
 	state := out.State
-	if err = s.ReleaseStopped(context.WithoutCancel(ctx), id, token, state); err != nil {
+	if err = s.releaseStopped(context.WithoutCancel(ctx), id, token, state, retainOutstanding); err != nil {
 		return out, errors.Join(runErr, err)
 	}
 	return out, runErr

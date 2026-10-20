@@ -107,6 +107,7 @@ func (p Publisher) Prepare(ctx context.Context, out Outcome, diff map[string]map
 			}
 		}
 		intent = newIntent("review", j.Scope, out.Job.Generation, j.RequestID, out.Job.Snapshot, Digest(out.Job), doc, p.now())
+		intent.CheckpointHash = Digest(j.Checkpoint)
 		d.Writes[intent.ID] = &intent
 		return nil
 	})
@@ -262,7 +263,11 @@ func (p Publisher) Dispatch(ctx context.Context, id string) error {
 					break
 				}
 			}
-			if completed == nil || completed.Outstanding || completed.LeaseToken != "" {
+			if completed == nil || completed.Outstanding || completed.LeaseToken != "" ||
+				(completed.State != "dual_complete" && completed.State != "single_complete") ||
+				len(completed.Checkpoint.Artifacts) != completed.Job.Config.MaxSessions() ||
+				completed.Checkpoint.ConsumedSessions != completed.Job.Config.MaxSessions() ||
+				target.CheckpointHash != Digest(completed.Checkpoint) {
 				return ErrDeferred
 			}
 			for _, artifact := range completed.Checkpoint.Artifacts {

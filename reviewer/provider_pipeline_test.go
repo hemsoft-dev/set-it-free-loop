@@ -378,6 +378,26 @@ func TestAuditedProviderCannotResumeThroughLegacyReviewer(t *testing.T) {
 	if !errors.Is(err, ErrProviderAuditPending) || legacyCalls != 0 || out.State == "dual_complete" {
 		t.Fatal("audited provider downgraded to legacy execution", out.State, err, legacyCalls)
 	}
+	d, readErr := store.Snapshot(context.Background())
+	if readErr != nil || d.Jobs[job.ID].LeaseToken != "" || d.Jobs[job.ID].Outstanding {
+		t.Fatal("pre-reservation rejection stranded lease", readErr)
+	}
+	// A separate PR must still be claimable: leases gate the entire queue.
+	scope := alphaScope()
+	scope.PR = 2
+	request := native(2, controlTime.Add(6*time.Minute))
+	request.Snapshot.PR = 2
+	now := controlTime.Add(7 * time.Minute)
+	if err = store.Discover(context.Background(), Discovery{Scope: scope, Requests: []NativeRequest{request}, Through: now, Complete: true}); err != nil {
+		t.Fatal(err)
+	}
+	other, err := store.Admit(context.Background(), scope, request.ID, job.Release, "evidence", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.Claim(context.Background(), other.ID, now); err != nil {
+		t.Fatal("downgrade blocked other PR", err)
+	}
 }
 
 func TestKnownAuditedReviewerRejectsStrippedCacheWithoutReplay(t *testing.T) {
@@ -457,5 +477,59 @@ func TestAuditedSelectionSurvivesDailyQuotaRollback(t *testing.T) {
 	out, err = store.RunStopped(ctx, job.ID, legacy, func() time.Time { return nextDay.Add(time.Minute) })
 	if !errors.Is(err, ErrProviderAuditPending) || legacyCalls != 0 || out.State == "dual_complete" {
 		t.Fatal("quota retry downgraded audited provider", out.State, err, legacyCalls)
+	}
+}
+
+func TestPreparedReviewRequiresExactCompletedCheckpointAtDispatch(t *testing.T) {
+	for _, kind := range []string{"empty", "truncated", "duplicated", "state", "consumed"} {
+		t.Run(kind, func(t *testing.T) {
+			store, out, remote, _, physical := auditedFixture(t)
+			publisher := Publisher{Store: store, Remote: remote}
+			intent, err := publisher.Prepare(context.Background(), out, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			saved, err := store.Snapshot(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			checkpoint := saved.Jobs[out.Job.ID].Checkpoint
+			if err = store.update(context.Background(), func(d *DurableState) error {
+				j := d.Jobs[out.Job.ID]
+				switch kind {
+				case "empty":
+					j.Checkpoint.Artifacts = nil
+				case "truncated":
+					j.Checkpoint.Artifacts = j.Checkpoint.Artifacts[:3]
+				case "duplicated":
+					j.Checkpoint.Artifacts[3] = j.Checkpoint.Artifacts[2]
+				case "state":
+					j.State = "invalid_output"
+				case "consumed":
+					j.Checkpoint.ConsumedSessions--
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err = publisher.Dispatch(context.Background(), intent.ID); err == nil || remote.posts != 0 {
+				t.Fatal("altered checkpoint published", kind, err)
+			}
+			current, err := store.Snapshot(context.Background())
+			if err != nil || current.Writes[intent.ID].State != "prepared" {
+				t.Fatal("blocked intent lost", err)
+			}
+			if err = store.update(context.Background(), func(d *DurableState) error {
+				j := d.Jobs[out.Job.ID]
+				j.Checkpoint = checkpoint
+				j.State = out.State
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err = publisher.Dispatch(context.Background(), intent.ID); err != nil || remote.posts != 1 || physical.Load() != 8 {
+				t.Fatal("restored completion failed or replayed", err, remote.posts, physical.Load())
+			}
+		})
 	}
 }
