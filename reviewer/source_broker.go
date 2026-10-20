@@ -125,6 +125,8 @@ func newSourceBroker(ctx context.Context, s Session, verifier *Reader) (*sourceB
 	if err != nil {
 		return nil, err
 	}
+	r.initialCoverage = append([]Coverage(nil), verifier.initialCoverage...)
+	r.coverage = append([]Coverage(nil), verifier.initialCoverage...)
 	return &sourceBroker{ctx: ctx, reader: r, session: s}, nil
 }
 

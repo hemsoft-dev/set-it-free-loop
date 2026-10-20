@@ -7,7 +7,10 @@ COMMENT/ACK writes and whole-document reconciliation. The [native discovery
 reader](GITHUB-DISCOVERY.md) collects request/removal provenance, owner commands
 and live base revisions with an explicitly supplied read transport. It commits
 complete discovery before returning Current so cancellation reaches the local
-dispatch fence. Actual App consistency remains unqualified. There is no polling
+dispatch fence. [Snapshot evidence](SNAPSHOT-EVIDENCE.md) collects a bounded
+merge-base diff from trusted immutable Git objects, verifies inline anchors
+against their blobs and retains authoritative omissions through review/recovery.
+Actual App consistency remains unqualified. There is no polling
 daemon, production launcher, credential acquisition, installation flow or activation command. The retired SFL runtime
 remains frozen. Live acceptance is tracked in [#173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173),
 [#174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174) and

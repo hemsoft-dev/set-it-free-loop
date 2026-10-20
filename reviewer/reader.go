@@ -30,14 +30,15 @@ type ReadRecord struct {
 }
 
 type Reader struct {
-	mu          sync.Mutex
-	store       ObjectStore
-	snapshot    Snapshot
-	paths       map[string]bool
-	limits      Limits
-	calls, used int
-	reads       []ReadRecord
-	coverage    []Coverage
+	mu              sync.Mutex
+	store           ObjectStore
+	snapshot        Snapshot
+	paths           map[string]bool
+	limits          Limits
+	calls, used     int
+	reads           []ReadRecord
+	coverage        []Coverage
+	initialCoverage []Coverage
 }
 
 func validPath(p string) bool {
