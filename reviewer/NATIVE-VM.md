@@ -9,9 +9,11 @@ deployment. The separately required owner/provider/account gates stay closed.
 `NativeVMManifest` uses purpose `native-review` and containment protocol 3.
 Synthetic fixture purpose and protocol 2 stay separate. The manifest binds the
 captured session, provider, full auth launch identity and sealed QEMU/kernel/initrd
-pins. It accepts no executable path, command, environment or host filesystem
-selector. Seven one-use descriptors carry those three immutable assets, KVM and
-three distinct connected Unix streams in fixed order.
+pins, plus a separately sealed BIOS pin. Manifest version 2 requires all four
+assets. It accepts no executable path, command, environment or host filesystem
+selector. Eight one-use descriptors carry those immutable assets, KVM and three
+distinct connected Unix streams in fixed order. QEMU reads the BIOS from its
+granted descriptor rather than a host package pathname.
 
 The private streams are control/auth/result, immutable source objects and
 provider HTTP. Channel socket inodes must differ. Guest descriptor export is
@@ -95,7 +97,10 @@ client cgroup. The actual pinned code host runs in its own UID1203/PID/network/
 mount/cgroup confinement, without a profile, source socket or provider route.
 The root broker scans bounded streams for seed canaries and records byte/hash,
 failure and physical-stop evidence. Neither relay nor code host gets canaries.
-Final reports are checked against seed and returned credential canaries.
+The relay must send an explicit success byte after both forwarding paths finish;
+bare EOF cannot prove completion. Private proxy descriptors regain CLOEXEC
+immediately after intake, before any version probe or client exec. Final reports
+are checked against seed and returned credential canaries.
 
 `scripts/native-vm-image.py` builds only from a clean committed source archive,
 the exact pinned Codex/Claude/code-host snapshots, and explicit hashed kernel
@@ -129,3 +134,10 @@ return and whole-unit stop. A completed engine checkpoint must resume without
 another VM or a changed ledger. The canned findings and peer judgments test
 transport and protocol, not review quality. Native refresh/restart and hostile
 capability qualification remain separate requirements.
+
+The BIOS descriptor fix does not qualify the complete host QEMU runtime. The
+[x86 loader in QEMU 10.2.1](https://raw.githubusercontent.com/qemu/qemu/v10.2.1/hw/i386/x86-common.c)
+also selects an ancillary Linux boot ROM from the QEMU data directory. That ROM
+and host dynamic runtime capture remain source qualification work before live
+use. The separately required trusted `Check` cannot treat these fixtures as a
+production release qualification.

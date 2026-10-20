@@ -90,6 +90,7 @@ def main():
               "Negative": args.case == "forbidden",
               "ProtocolRounds": args.peer_rounds if args.case == "adversarial" else 0,
               "QEMU": asset(Path("/usr/bin/qemu-system-x86_64")),
+              "Firmware": asset(Path("/usr/share/seabios/bios-256k.bin")),
               "Kernel": asset(image/"vmlinuz", manifest["kernel_sha256"]),
               "Initrd": asset(image/"native.cpio.gz", manifest["initrd_sha256"]),
               "Stub": asset(image/"nativevmstub", manifest["programs"]["nativevmstub"])}

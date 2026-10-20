@@ -19,8 +19,8 @@ import (
 )
 
 // NativeVMManifest is a distinct payload authority from the synthetic fixture.
-// Its seven descriptors are QEMU, kernel, initrd, KVM, private control, immutable
-// object RPC and provider HTTP. It contains no executable/path/argv selector.
+// Its eight descriptors are QEMU, kernel, initrd, KVM, private control, immutable
+// object RPC, provider HTTP and BIOS. It contains no executable/path/argv selector.
 // The immutable initrd supplies the separately pinned privileged guest runtime.
 type NativeVMManifest struct {
 	Version     int
@@ -32,7 +32,7 @@ type NativeVMManifest struct {
 }
 
 func (m NativeVMManifest) valid() bool {
-	if m.Version != 1 || m.Purpose != "native-review" || !m.Binding.valid() || m.SessionHash != m.Binding.SessionHash || !validAuthHash(m.SessionHash) || !m.Provider.Valid() || len(m.Assets) != 3 {
+	if m.Version != 2 || m.Purpose != "native-review" || !m.Binding.valid() || m.SessionHash != m.Binding.SessionHash || !validAuthHash(m.SessionHash) || !m.Provider.Valid() || len(m.Assets) != 4 {
 		return false
 	}
 	for i, a := range m.Assets {
@@ -49,11 +49,11 @@ func (i *VMBootImages) NativeManifest(s Session) (NativeVMManifest, error) {
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.closed || i.spec.Binding.SessionHash != Digest(s) {
+	if i.closed || i.firmware == nil || i.spec.Binding.SessionHash != Digest(s) {
 		return NativeVMManifest{}, ErrVMBoot
 	}
-	m := NativeVMManifest{Version: 1, Purpose: "native-review", Binding: i.spec.Binding, SessionHash: Digest(s), Provider: s.Identity.Provider}
-	for _, a := range []VMBootAsset{i.spec.QEMU, i.spec.Kernel, i.spec.Initrd} {
+	m := NativeVMManifest{Version: 2, Purpose: "native-review", Binding: i.spec.Binding, SessionHash: Digest(s), Provider: s.Identity.Provider}
+	for _, a := range []VMBootAsset{i.spec.QEMU, i.spec.Kernel, i.spec.Initrd, i.firmwareAsset} {
 		m.Assets = append(m.Assets, VMAssetPin{a.SHA256, a.Bytes})
 	}
 	if !m.valid() {
@@ -174,6 +174,18 @@ func (g *ContainmentGate) grantNativeVM(ctx context.Context, identity GateIdenti
 			return ErrVMBoot
 		}
 	}
+	firmware, err := images.duplicateFirmware()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if firmware != nil {
+			firmware.Close()
+		}
+	}()
+	if verifyGrantedVMAsset(ctx, firmware, m.Assets[3], 3) != nil {
+		return ErrVMBoot
+	}
 	kvm, err := openVMKVM()
 	if err != nil {
 		return err
@@ -184,6 +196,8 @@ func (g *ContainmentGate) grantNativeVM(ctx context.Context, identity GateIdenti
 		return err
 	}
 	files = append(files, private...)
+	files = append(files, firmware)
+	firmware = nil // The grant's descriptor list now owns this retained BIOS.
 	raw, err := json.Marshal(nativeVMGrant{3, g.binding, identity, m})
 	if err != nil {
 		return ErrVMBoot
@@ -198,7 +212,7 @@ func nativeVMArgs(nonce string) []string {
 	args := []string{"-no-user-config", "-nodefaults", "-machine", "q35,dump-guest-core=off,mem-merge=off",
 		"-add-fd", "fd=6,set=1,opaque=sfl-kvm", "-accel", "kvm,device=/dev/fdset/1", "-cpu", "host",
 		"-m", "2048M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none", "-no-reboot",
-		"-L", "/usr/share/qemu", "-bios", "/usr/share/seabios/bios-256k.bin", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5",
+		"-L", "/usr/share/qemu", "-bios", "/proc/self/fd/10", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5",
 		"-append", "rdinit=/native-init panic=1 sfl-native=" + nonce, "-serial", "none", "-device", "virtio-serial-pci,id=sflserial"}
 	for index, name := range []string{"control", "objects", "provider"} {
 		id := "sfl" + name
@@ -208,7 +222,7 @@ func nativeVMArgs(nonce string) []string {
 }
 
 func receiveNativeVMGrant(conn *net.UnixConn) (grant nativeVMGrant, files []*os.File, result error) {
-	raw, files, result := receiveVMDescriptorFrame(conn, 7)
+	raw, files, result := receiveVMDescriptorFrame(conn, 8)
 	if result != nil {
 		return grant, nil, result
 	}
@@ -324,7 +338,7 @@ func receiveNativeVM(ctx context.Context, endpoint string, binding AuthBinding, 
 	if verifyGrantedKVM(files[3]) != nil {
 		return grant, files, ErrVMBoot
 	}
-	if nativeVMStreams(files[4:]) != nil {
+	if nativeVMStreams(files[4:7]) != nil || verifyGrantedVMAsset(ctx, files[7], grant.Manifest.Assets[3], 3) != nil {
 		return grant, files, ErrVMBoot
 	}
 	return grant, files, nil

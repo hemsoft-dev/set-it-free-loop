@@ -29,7 +29,7 @@ func nativeHostPhaseFixture(t *testing.T) (*nativeVMHostPhase, *fakeContainmentM
 	manager.observation.ControlGroup = manager.kernel.group.Path
 	spec := vmSpec(t)
 	spec.Binding = q.Binding
-	images, err := OpenVMBootImages(context.Background(), spec)
+	images, err := openNativeBootTestImages(t, context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestNativeVMExportGateReopensExactGrantedPrivateBinding(t *testing.T) {
 	}
 	held.close()
 	// Fake manager/journal evidence exercises the gate; it does not qualify an
-	// actual VM. The seven-descriptor transport is independently tested on Unix.
+	// actual VM. The eight-descriptor transport is independently tested on Unix.
 	if err = g.ConfirmAuthExport(context.Background(), p.request.Binding); err != nil {
 		t.Fatal(err)
 	}

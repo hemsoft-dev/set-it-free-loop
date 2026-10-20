@@ -20,15 +20,15 @@ import (
 // client, isolation, billing and owner activation gates before any auth read.
 // No default gate, credentials, transport, supervisor or guest image is chosen.
 type NativeVMOptions struct {
-	Provider             Provider
-	Root, Stub, StubHash string
-	QEMU, Kernel, Initrd VMBootAsset
-	Auth                 *AuthStore
-	Reader               *Reader
-	Policy               EgressPolicy
-	Transport            http.RoundTripper
-	ProfileHints         NativeVMProfileHints
-	Check                func(context.Context, Session) error
+	Provider                       Provider
+	Root, Stub, StubHash           string
+	QEMU, Kernel, Initrd, Firmware VMBootAsset
+	Auth                           *AuthStore
+	Reader                         *Reader
+	Policy                         EgressPolicy
+	Transport                      http.RoundTripper
+	ProfileHints                   NativeVMProfileHints
+	Check                          func(context.Context, Session) error
 }
 
 type NativeVMReviewer struct{ options NativeVMOptions }
@@ -150,7 +150,7 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 	if !request.valid() {
 		return blocked()
 	}
-	images, err := OpenVMBootImages(ctx, VMBootSpec{Version: 1, Binding: binding, QEMU: r.options.QEMU, Kernel: r.options.Kernel, Initrd: r.options.Initrd})
+	images, err := OpenNativeVMBootImages(ctx, VMBootSpec{Version: 1, Binding: binding, QEMU: r.options.QEMU, Kernel: r.options.Kernel, Initrd: r.options.Initrd}, r.options.Firmware)
 	if err != nil {
 		return Report{}, nil, nil, workerLauncherError(err, true)
 	}
@@ -349,7 +349,7 @@ func (p *nativeVMHostPhase) finish(ctx context.Context, report Report, primary e
 			}
 		}
 	}
-	if p.started && p.persistAudit(cleanup, report, access, evidence, primary == nil) != nil {
+	if p.started && p.persistAudit(cleanup, report, access, evidence, primary) != nil {
 		primary = errors.Join(primary, ErrProviderAuditPending)
 	}
 	if primary != nil {
@@ -374,7 +374,7 @@ func nativeVMCauses(err error) error {
 	return errors.Join(retained...)
 }
 
-func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report Report, access *SourceAccess, evidence *ProviderEvidence, complete bool) error {
+func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report Report, access *SourceAccess, evidence *ProviderEvidence, failure error) error {
 	s := p.supervisor.supervisor
 	r, err := s.snapshotUnit(ctx, p.request.Binding)
 	if err != nil || !r.Stopped || !r.Aborted {
@@ -406,7 +406,8 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report Report, acc
 		AuthExported, AuthReturned                        bool
 		GuestStage                                        string
 		Native                                            *nativeResultObservation
-	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, complete, p.stage, p.exported, p.authReturned, "", nil}
+		Failure                                           string
+	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, failure == nil, p.stage, p.exported, p.authReturned, "", nil, nativeVMFailureKind(failure)}
 	if p.finished != nil && nativeVMGuestStage(p.finished.GuestStage) {
 		receipt.GuestStage = p.finished.GuestStage
 	}
@@ -418,6 +419,27 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report Report, acc
 		return ErrProviderAuditPending
 	}
 	return writeAuth(held.root, "native-audit.json", raw)
+}
+
+func nativeVMFailureKind(err error) string {
+	if err == nil {
+		return ""
+	}
+	for _, cause := range []struct {
+		err  error
+		kind string
+	}{
+		{ErrWorkerStopPending, "stop"}, {ErrAuthRecoveryRequired, "auth-return"},
+		{ErrSourceAuditPending, "source-audit"}, {ErrSourceService, "source-service"},
+		{ErrProviderAuditPending, "provider-audit"}, {ErrProviderEgressPending, "provider-stop"},
+		{ErrProviderEgressFailed, "provider-egress"}, {context.DeadlineExceeded, "deadline"},
+		{context.Canceled, "cancelled"},
+	} {
+		if errors.Is(err, cause.err) {
+			return cause.kind
+		}
+	}
+	return "other"
 }
 
 var _ AuditedReviewer = (*NativeVMReviewer)(nil)

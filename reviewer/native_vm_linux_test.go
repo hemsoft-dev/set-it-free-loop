@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +17,72 @@ import (
 
 	"golang.org/x/sys/unix"
 )
+
+func TestNativeFirmwareExecChild(t *testing.T) {
+	if os.Getenv("SFL_NATIVE_BIOS_TEST") != "1" {
+		return
+	}
+	for index, arg := range os.Args {
+		if arg == "-bios" && index+1 < len(os.Args) {
+			file, err := os.Open(os.Args[index+1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer file.Close()
+			raw, err := io.ReadAll(io.LimitReader(file, 1025))
+			if err != nil || len(raw) > 1024 || authHash(raw) != os.Getenv("SFL_NATIVE_BIOS_HASH") {
+				t.Fatal("boot argv did not read the retained pinned BIOS")
+			}
+			return
+		}
+	}
+	t.Fatal("BIOS argument absent")
+}
+
+func TestNativeFirmwareExecUsesSealedBytesAfterSourceReplacement(t *testing.T) {
+	spec := vmSpec(t)
+	s := testSession(Codex)
+	spec.Binding.SessionHash = Digest(s)
+	firmware := vmAsset(t, filepath.Join(t.TempDir(), "bios"), []byte("synthetic firmware pin"))
+	images, err := OpenNativeVMBootImages(context.Background(), spec, firmware)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer images.Close()
+	manifest, err := images.NativeManifest(s)
+	if err != nil || len(manifest.Assets) != 4 || manifest.Assets[3].SHA256 != firmware.SHA256 {
+		t.Fatal("firmware absent from native manifest", err)
+	}
+	if os.Chmod(firmware.Path, 0700) != nil || os.WriteFile(firmware.Path, []byte("replacement ambient firmware"), 0600) != nil {
+		t.Fatal("firmware replacement fixture failed")
+	}
+	sealed, err := images.duplicateFirmware()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sealed.Close()
+	if verifyGrantedVMAsset(context.Background(), sealed, manifest.Assets[3], 3) != nil {
+		t.Fatal("source replacement changed retained firmware")
+	}
+	inert, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer inert.Close()
+	args := append([]string{"-test.run=^TestNativeFirmwareExecChild$", "--"}, nativeVMArgs(manifest.Binding.LaunchID)...)
+	command := exec.Command(os.Args[0], args...)
+	command.Env = []string{"SFL_NATIVE_BIOS_TEST=1", "SFL_NATIVE_BIOS_HASH=" + firmware.SHA256}
+	command.ExtraFiles = []*os.File{inert, inert, inert, inert, inert, inert, inert, sealed}
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("firmware argv probe failed: %s %v", output, err)
+	}
+}
+
+func openNativeBootTestImages(t *testing.T, ctx context.Context, spec VMBootSpec) (*VMBootImages, error) {
+	t.Helper()
+	firmware := vmAsset(t, filepath.Join(t.TempDir(), "bios"), []byte("synthetic pinned BIOS"))
+	return OpenNativeVMBootImages(ctx, spec, firmware)
+}
 
 func TestNativeVMConcreteKernelLimitsCannotUseLegacyOrMixedProfile(t *testing.T) {
 	for _, profile := range []struct {
@@ -48,7 +115,7 @@ func TestNativeVMManifestRejectsFixtureAndForeignSession(t *testing.T) {
 	s := testSession(Codex)
 	spec := vmSpec(t)
 	spec.Binding.SessionHash = Digest(s)
-	images, err := OpenVMBootImages(context.Background(), spec)
+	images, err := openNativeBootTestImages(t, context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +123,12 @@ func TestNativeVMManifestRejectsFixtureAndForeignSession(t *testing.T) {
 	m, err := images.NativeManifest(s)
 	if err != nil || !m.valid() || m.Purpose != "native-review" {
 		t.Fatal("native manifest unavailable", err)
+	}
+	unpinned := m
+	unpinned.Version = 1
+	unpinned.Assets = unpinned.Assets[:3]
+	if unpinned.valid() {
+		t.Fatal("legacy unpinned BIOS manifest accepted")
 	}
 	fixture := m
 	fixture.Purpose = "synthetic-role-fixture"
@@ -147,7 +220,7 @@ func TestNativeVMGrantRejectsWrongPurposeWithoutOpeningKVM(t *testing.T) {
 	s := testSession(Codex)
 	spec := vmSpec(t)
 	spec.Binding.SessionHash = Digest(s)
-	images, err := OpenVMBootImages(context.Background(), spec)
+	images, err := openNativeBootTestImages(t, context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,6 +239,12 @@ func TestNativeVMGrantRejectsWrongPurposeWithoutOpeningKVM(t *testing.T) {
 	bad.Purpose = "synthetic-role-fixture"
 	if g.grantNativeVM(context.Background(), GateIdentity{}, bad, images, c) == nil {
 		t.Fatal("fixture grant accepted")
+	}
+	bad = m
+	bad.Assets = append([]VMAssetPin{}, m.Assets...)
+	bad.Assets[3].SHA256 = strings.Repeat("f", 64)
+	if g.grantNativeVM(context.Background(), GateIdentity{}, bad, images, c) == nil {
+		t.Fatal("mismatched retained BIOS accepted before KVM/channel access")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -188,7 +267,7 @@ func nativeGrantFixture(t *testing.T) (NativeVMManifest, []*os.File, *nativeVMCh
 	s := testSession(Codex)
 	spec := vmSpec(t)
 	spec.Binding.SessionHash = Digest(s)
-	images, err := OpenVMBootImages(context.Background(), spec)
+	images, err := openNativeBootTestImages(t, context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,11 +298,17 @@ func nativeGrantFixture(t *testing.T) (NativeVMManifest, []*os.File, *nativeVMCh
 		t.Fatal(err)
 	}
 	files = append(files, private...)
+	firmware, err := images.duplicateFirmware()
+	if err != nil {
+		closeVMFiles(files)
+		t.Fatal(err)
+	}
+	files = append(files, firmware)
 	t.Cleanup(func() { closeVMFiles(files) })
 	return m, files, channels
 }
 
-func TestNativeVMActualAuthenticatedSevenDescriptorGrant(t *testing.T) {
+func TestNativeVMActualAuthenticatedEightDescriptorGrant(t *testing.T) {
 	m, files, channels := nativeGrantFixture(t)
 	root, err := os.MkdirTemp("", "sflnat-")
 	if err != nil {
@@ -264,7 +349,7 @@ func TestNativeVMActualAuthenticatedSevenDescriptorGrant(t *testing.T) {
 			return
 		}
 		defer closeVMFiles(received)
-		if Digest(grant.Manifest) != Digest(m) || len(received) != 7 {
+		if Digest(grant.Manifest) != Digest(m) || len(received) != 8 {
 			done <- ErrVMBoot
 			return
 		}
@@ -280,7 +365,7 @@ func TestNativeVMActualAuthenticatedSevenDescriptorGrant(t *testing.T) {
 					return
 				}
 			}
-			if index >= 4 {
+			if index >= 4 && index < 7 {
 				if nativeVMStream(file) != nil {
 					done <- ErrVMBoot
 					return
@@ -366,7 +451,7 @@ func TestNativeVMSupervisorRequiresNativeRecoveryAndResourceProfile(t *testing.T
 	binding.SessionHash = Digest(session)
 	binding.LaunchID = strings.Repeat("a", 32)
 	spec.Binding = binding
-	images, err := OpenVMBootImages(context.Background(), spec)
+	images, err := openNativeBootTestImages(t, context.Background(), spec)
 	if err != nil {
 		t.Fatal(err)
 	}

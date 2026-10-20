@@ -348,7 +348,7 @@ func (g *ContainmentGate) GrantFake(ctx context.Context, identity GateIdentity, 
 }
 
 func (g *ContainmentGate) grant(ctx context.Context, identity GateIdentity, manifestHash string, protocol int, raw []byte, files []*os.File) error {
-	if ctx.Err() != nil || !validAuthHash(manifestHash) || len(raw) == 0 || len(raw) > 4096 || (protocol != 0 && protocol != 2 && protocol != 3) || (protocol == 0 && len(files) != 0) || (protocol == 2 && len(files) != 4) || (protocol == 3 && len(files) != 7) {
+	if ctx.Err() != nil || !validAuthHash(manifestHash) || len(raw) == 0 || len(raw) > 4096 || (protocol != 0 && protocol != 2 && protocol != 3) || (protocol == 0 && len(files) != 0) || (protocol == 2 && len(files) != 4) || (protocol == 3 && len(files) != 8) {
 		return ErrContainmentGate
 	}
 	g.mu.Lock()
