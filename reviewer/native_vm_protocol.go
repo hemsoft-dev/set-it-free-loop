@@ -107,6 +107,10 @@ func nativeBootStageValid(stage string) bool {
 }
 
 func nativeVMGuestStage(stage string) bool {
+	if strings.HasPrefix(stage, "client-error-") {
+		class := strings.TrimPrefix(stage, "client-error-")
+		return class != "" && nativeDiagnosticClass(class)
+	}
 	if strings.HasPrefix(stage, "diag-") {
 		suffix := strings.TrimPrefix(stage, "diag-")
 		return nativeBootStageValid(suffix) || suffix == "oom" || suffix == "panic" || suffix == "vm-error" || suffix == "vm-exit" || suffix == "unpack-other" || suffix == "unpack-write" || suffix == "unpack-read" || suffix == "unpack-compression" || suffix == "unpack-format" || suffix == "unpack-memory"

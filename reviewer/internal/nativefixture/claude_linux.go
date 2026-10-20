@@ -14,12 +14,13 @@ import (
 )
 
 type claudeBackend struct {
-	mode     string
-	mu       sync.Mutex
-	s        r.Session
-	calls    int
-	failures int
-	requests int
+	mode        string
+	mu          sync.Mutex
+	s           r.Session
+	calls       int
+	failures    int
+	requests    int
+	accessToken string
 }
 
 func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
@@ -38,7 +39,11 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		http.Error(w, "request cap", 413)
 		return
 	}
-	if q.Method != "POST" || q.URL.Path != "/v1/messages" || q.URL.RawQuery != "" && q.URL.RawQuery != "beta=true" || q.Header.Get("Authorization") != "Bearer sfl-fake-access" || q.Header.Get("X-Api-Key") != "" {
+	accessToken := b.accessToken
+	if accessToken == "" {
+		accessToken = "sfl-fake-access"
+	}
+	if q.Method != "POST" || q.URL.Path != "/v1/messages" || q.URL.RawQuery != "" && q.URL.RawQuery != "beta=true" || q.Header.Get("Authorization") != "Bearer "+accessToken || q.Header.Get("X-Api-Key") != "" {
 		b.failures++
 		http.Error(w, "unexpected fixture route", 404)
 		return

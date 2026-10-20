@@ -150,8 +150,10 @@ shell or Git enters the image. It never opens KVM or runs a client or host unit.
 
 Ordinary tests cover these protocols and hostile inputs using synthetic auth,
 real local Unix transports and fake managers. Full measured resource limits,
-native refresh/restart behavior and broader guest capability qualification
-remain unfinished. Happy-path auth return has passed for both native clients.
+interrupted refresh/crash recovery and broader guest capability qualification
+remain unfinished. Both native clients have refreshed expired synthetic auth,
+returned the changed tokens and reused them after reopening the store in a fresh
+VM. Those bounded cases do not qualify interrupted refresh or production use.
 No source-level test or built image closes the parent issue.
 
 `scripts/native-vm-fake.py --run-fake-only` is the separate opt-in qualification
@@ -171,7 +173,7 @@ prior report hashes, verifies real source read/search exchanges against fake
 TLS, and checks auth recovery. Each private unit must record completion, auth
 return and whole-unit stop. A completed engine checkpoint must resume without
 another VM or a changed ledger. The canned findings and peer judgments test
-transport and protocol, not review quality. Native refresh/restart and hostile
+transport and protocol, not review quality. Interrupted refresh/crash recovery and hostile
 capability qualification remain separate requirements.
 
 The captured host runtime includes the ancillary Linux boot ROM selected by the
@@ -208,3 +210,90 @@ roughly 700 MB runtime while preserving explicit bounds inside the 2 GiB guest.
 Linux 7.0 [accepts early rootfs options](https://raw.githubusercontent.com/torvalds/linux/v7.0/fs/namespace.c)
 and [defaults ordinary tmpfs mounts to half of total RAM](https://raw.githubusercontent.com/torvalds/linux/v7.0/mm/shmem.c).
 The prior implicit boot-time capacity was insufficient in failed runs.
+
+
+When the captured policy declares refresh or explicitly TLS-only metadata routes, the root client supervisor
+creates a session-only CA and a distinct server certificate and retains its private key in memory.
+The official CLI receives a fixed public CA file and an HTTPS proxy on its
+existing private loopback listener. CONNECT permits only declared refresh and metadata
+names on port 443, requires matching SNI and HTTP Host, and terminates TLS
+inside the disposable namespace. The decoded request still passes the same
+method/path/body budgets and private host egress guard. This is not an opaque
+TCP tunnel. Other authorities, IP literals, ports and host overrides fail closed.
+
+Four incomplete TLS handshakes are the maximum. Header/handshake deadlines and
+cancellation bound intake; shutdown closes and joins the owned connections and
+requests. The CA file is root-owned and read-only; its key never enters a file,
+CLI, source reader or host report. No system trust or interactive profile is
+modified. Without either kind of route, no TLS proxy or new trust environment is enabled.
+
+The opt-in fake fixture adds `--case refresh` for each single provider. It starts
+with expired synthetic auth, requires a counted refresh and changed returned
+tokens, reopens the protected store, and starts a fresh native job that must use
+the returned tokens without another refresh. Both jobs must produce source-backed
+fixture reports, return auth, stop their whole units and remove runtime roots.
+The exact pinned clients passed this path against fake TLS. Hand-built OAuth
+responses and TLS unit tests remain supporting evidence; the native runs are
+required to establish that the real clients consumed and persisted those
+responses. This does not establish real account support or provider permission.
+
+The CA signs a separate non-CA leaf certificate, since
+[WebPKI rejects a CA used as an end entity](https://github.com/rustls/webpki/issues/200).
+Claude refresh also fetches its exact declared OAuth profile endpoint; its fake
+response contains only synthetic account/subscription metadata. This route has
+an independent metadata allowance and uses the rotated bearer token. CONNECT's
+HTTP Host and selected route must agree; adding metadata cannot redirect a
+request with the same path to another captured authority.
+
+A client may close its own HTTP/TLS connection after refresh. The sidecar removes
+ordinary close/keep-alive Connection headers before the separate private hop,
+while preserving the local WebSocket negotiation contract. Other nominated
+connection tokens are refused. A real Unix-stream regression reproduced the old
+502 on the next metadata request; both pinned clients now complete refresh and
+subsequent source review without retiring that private stream.
+
+An idle reader receives trusted SIGTERM cancellation, emits its failed audit and
+is still checked/killed through its owned cgroup. This avoids spending the whole
+cleanup deadline waiting for a client that never connected. Native failed-client
+runs now return stopped auth without implying a valid source report. A separate
+process fixture verifies cancellation before the deadline and retains the
+physical-stop enforcement.
+
+The client supervisor's private readiness pipe remains available for one bound
+failure classification after Ready. Only fixed enums travel there, with launch
+and request hashes. The pipe is CLOEXEC before any client/version exec. A status
+cannot establish Ready, auth export or successful work. Both EOF and malformed
+status have bounded handling. Stderr scanning retains a small transient suffix
+and publishes no raw messages; failed phases can report a fixed client-error
+stage without losing their auth recovery evidence.
+
+After any attempted refresh, the host commits returned auth only when its
+stopped provider receipt is complete, has no failure or exhausted budget, and
+the returned file differs from the exported seed. A lost reply or unchanged
+file retains the exported recovery journal. Model output failure alone does
+not discard a changed return after fully captured successful HTTP. This rule
+is conservative: an unrelated later transport failure also retains recovery.
+
+The fake-only `--case refresh-uncertain` accepts one synthetic refresh then
+closes the loopback TLS connection before returning response bytes. It requires
+both the current store and a reopened store to refuse further auth mutation,
+no substantive report, whole-unit stop, and runtime-root removal. It launches
+one VM, leaves its private recovery state for inspection, and never reseeds it.
+This bounded response-loss case does not qualify arbitrary host crashes,
+operator recovery or production account behavior.
+
+Reader SIGTERM is a graceful intake stop. It closes an idle listener immediately,
+but an accepted source connection retains its bounded phase context through
+queued work and clean EOF so it can emit a complete audit. The hard phase
+context still closes active work, and guest PID1 still enforces cgroup kill and
+empty-group checks within its cleanup deadline. Plaintext loopback requests can
+reach the intended inference and metadata routes, but a refresh route requires
+the CONNECT/TLS path and its captured authority, SNI and inner Host checks.
+
+Captured `EgressRoute.TLSOnly` marks proxy-only metadata, including Claude's
+hardcoded OAuth profile lookup. The guest rejects a direct plaintext request
+for that route before forwarding. Ordinary Codex model/account metadata routes
+keep their explicit local HTTP behavior. Refresh routes always require TLS.
+The flag is allowed only for refresh/metadata, remains part of the policy hash,
+and also enables the private TLS proxy for a metadata-only policy that requests
+it. The host egress guard continues to use HTTPS for every admitted upstream.

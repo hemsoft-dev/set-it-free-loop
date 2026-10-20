@@ -26,6 +26,7 @@ type nativeResultObservation struct {
 	Bytes      int
 	Hash, Kind string
 	ExitFailed bool
+	ExitClass  string
 	Trailer    *nativeCodexTrailer
 }
 
@@ -94,6 +95,9 @@ func (o *nativeResultObservation) valid(s Session) bool {
 	if o == nil || !nativeResultKind(o.Kind) || len(o.Hash) != 64 || !objectID.MatchString(o.Hash) || o.Bytes < 0 || o.Bytes > NativeTransportLimit(s)+1 {
 		return false
 	}
+	if !nativeDiagnosticClass(o.ExitClass) {
+		return false
+	}
 	if o.Trailer != nil {
 		for _, value := range []string{o.Trailer.Type, o.Trailer.Item, o.Trailer.Server, o.Trailer.Tool, o.Trailer.Status} {
 			if value != "other" && nativeEventClass(value) != value {
@@ -112,6 +116,14 @@ func (o *nativeResultObservation) valid(s Session) bool {
 		}
 	}
 	return true
+}
+
+func nativeDiagnosticClass(value string) bool {
+	switch value {
+	case "", "tls", "proxy", "auth", "filesystem", "configuration", "runtime", "other", "launch", "cancelled", "signal", "silent-exit", "tls-authority", "tls-intake", "tls-handshake", "tls-host", "provider-route", "provider-url", "provider-ambiguous", "provider-transport", "provider-response", "diagnostic-invalid":
+		return true
+	}
+	return false
 }
 
 // Match concrete execution implementations. A marker method can be promoted

@@ -24,9 +24,15 @@ import (
 
 func (c config) validCase() bool {
 	if c.ProtocolRounds == 0 {
-		return c.Provider.Valid()
+		modes := 0
+		for _, enabled := range []bool{c.Refresh, c.Negative, c.UncertainRefresh} {
+			if enabled {
+				modes++
+			}
+		}
+		return c.Provider.Valid() && modes <= 1
 	}
-	return c.Provider == "" && !c.Negative && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
+	return c.Provider == "" && !c.Negative && !c.Refresh && !c.UncertainRefresh && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
 }
 
 type protocolPhase struct {
@@ -122,7 +128,7 @@ func (w protocolReviewer) ReviewAudited(ctx context.Context, s r.Session) (r.Rep
 	return report, access, evidence, reviewErr
 }
 
-func protocolUpstream(backend http.Handler) (localOnly, func()) {
+func protocolUpstream(backend http.Handler, refresh ...r.Provider) (localOnly, func()) {
 	server := httptest.NewTLSServer(backend)
 	target, _ := url.Parse(server.URL)
 	base := server.Client().Transport.(*http.Transport).Clone()
@@ -134,7 +140,11 @@ func protocolUpstream(backend http.Handler) (localOnly, func()) {
 		}
 		return dialer.DialContext(ctx, network, address)
 	}
-	return localOnly{target, base}, func() { base.CloseIdleConnections(); server.Close() }
+	provider := r.Provider("")
+	if len(refresh) == 1 {
+		provider = refresh[0]
+	}
+	return localOnly{target: target, base: base, refresh: provider}, func() { base.CloseIdleConnections(); server.Close() }
 }
 
 type protocolUnit struct {
@@ -157,6 +167,10 @@ func readProtocolJSON(path string, target any) error {
 }
 
 func (p *nativeProtocolFixture) units() ([]protocolUnit, bool) {
+	return p.unitsExpectingCompletion(true)
+}
+
+func (p *nativeProtocolFixture) unitsExpectingCompletion(expected bool) ([]protocolUnit, bool) {
 	paths, err := filepath.Glob(filepath.Join(p.config.Root, "launches", "*", "unit.json"))
 	units := []protocolUnit{}
 	seen := map[string]bool{}
@@ -181,7 +195,7 @@ func (p *nativeProtocolFixture) units() ([]protocolUnit, bool) {
 		}
 	}
 	for _, unit := range units {
-		if !unit.Captured || !unit.Stopped || !unit.Complete || !unit.AuthReturned {
+		if !unit.Captured || !unit.Stopped || unit.Complete != expected || unit.AuthReturned != expected {
 			return units, false
 		}
 	}

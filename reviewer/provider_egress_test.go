@@ -22,7 +22,7 @@ func (f egressRoundTrip) RoundTrip(r *http.Request) (*http.Response, error) { re
 
 func egressTestPolicy(p Provider) EgressPolicy {
 	s := testSession(p)
-	return EgressPolicy{Provider: p, Routes: []EgressRoute{{"provider.example", "POST", "/infer", "inference", ""}, {"auth.provider.example", "POST", "/refresh", "refresh", ""}, {"provider.example", "GET", "/metadata", "metadata", ""}}, Headers: []string{"Authorization", "Content-Type", "Accept", "Accept-Encoding", "User-Agent"}, Limits: DefaultEgressLimits(s)}
+	return EgressPolicy{Provider: p, Routes: []EgressRoute{{"provider.example", "POST", "/infer", "inference", "", false}, {"auth.provider.example", "POST", "/refresh", "refresh", "", false}, {"provider.example", "GET", "/metadata", "metadata", "", false}}, Headers: []string{"Authorization", "Content-Type", "Accept", "Accept-Encoding", "User-Agent"}, Limits: DefaultEgressLimits(s)}
 }
 
 func egressTestBridge(t *testing.T, p EgressPolicy, handler http.Handler) (*ProviderEgress, *httptest.Server, *atomic.Int32) {
@@ -673,4 +673,20 @@ func TestProviderEgressRejectsInheritedCredentialTrace(t *testing.T) {
 	defer cancel()
 	guard.Close(closeCtx)
 	t.Fatal("credential trace was accepted", leaked, calls.Load(), err)
+}
+
+func TestCapturedTLSOnlyPolicyAppliesToRefreshAndMetadata(t *testing.T) {
+	for _, index := range []int{0, 1, 2} {
+		policy := egressTestPolicy(Codex)
+		policy.Routes[index].TLSOnly = true
+		_, err := validateEgressPolicy(Codex, testSession(Codex).Limits, policy)
+		if (err != nil) != (index == 0) {
+			t.Fatal("unsupported TLS-only route or valid metadata policy rejected", index, err)
+		}
+	}
+	policy := egressTestPolicy(Codex)
+	policy.Routes = append(policy.Routes, EgressRoute{Authority: "provider.example", Method: "GET", Path: "/infer", Kind: "local_negotiation", TLSOnly: true})
+	if _, err := validateEgressPolicy(Codex, testSession(Codex).Limits, policy); err == nil {
+		t.Fatal("TLS-only local negotiation accepted")
+	}
 }

@@ -137,6 +137,9 @@ func nativeGuestInvocation(q nativeVMRequest, base string) (Invocation, error) {
 		return Invocation{}, ErrVMBoot
 	}
 	inv.Environment = append([]string{"HOME=/profile", "PATH=/usr/bin:/bin", "GOMAXPROCS=1"}, inv.Environment...)
+	if nativeGuestTLSEnabled(q.Policy) {
+		inv.Environment = append(inv.Environment, "HTTPS_PROXY="+base, "NO_PROXY=127.0.0.1,localhost,::1", "SSL_CERT_FILE="+nativeGuestCAPath, "NODE_EXTRA_CA_CERTS="+nativeGuestCAPath, "CODEX_CA_CERTIFICATE="+nativeGuestCAPath)
+	}
 	if q.Session.Identity.Provider == Codex {
 		extra := []string{"-c", `cli_auth_credentials_store="file"`, "-c", `openai_base_url="` + base + `/v1"`, "-c", `chatgpt_base_url="` + base + `/backend-api/"`, "-c", `features.enable_request_compression=false`}
 		inv.Args = append(append(inv.Args[:len(inv.Args)-1:len(inv.Args)-1], extra...), "-")
@@ -155,7 +158,7 @@ func (nativeGuestNoObjects) Read(context.Context, string, string, int) (Object, 
 // This mode runs as the trusted root sidecar inside the client PID/net/mount
 // namespace. The actual CLI has the unprivileged provider UID. Only this root
 // sidecar receives the private provider device and readiness/start descriptors.
-func nativeGuestClientProxyMain() int {
+func nativeGuestClientProxyMain() (result int) {
 	if os.Getpid() != 1 || os.Getuid() != 0 {
 		return 2
 	}
@@ -211,7 +214,41 @@ func nativeGuestClientProxyMain() int {
 	transport := nativeProviderTransport(nativeGuestConn{provider})
 	defer transport.CloseIdleConnections()
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, ReadTimeout: q.Session.Limits.Timeout, WriteTimeout: q.Session.Limits.Timeout, IdleTimeout: q.Session.Limits.Timeout, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
-	server.Handler = nativeGuestProviderHandler(q, transport, cancel)
+	var statusOnce sync.Once
+	publishStatus := func(class string) {
+		if class != "" && nativeDiagnosticClass(class) {
+			statusOnce.Do(func() { _ = writeVMRecord(ready, nativeGuestClientStatus{1, q.Binding, Digest(q), class}, 4096) })
+		}
+	}
+	server.Handler = nativeGuestProviderHandlerObserved(q, transport, func(class string) { publishStatus(class); cancel() })
+	var refreshProxy *nativeGuestTLSProxy
+	if nativeGuestTLSEnabled(q.Policy) {
+		proxy, certificate, err := newNativeGuestTLSProxy(ctx, q.Policy, server.Handler, func() {
+			if refreshProxy != nil {
+				publishStatus(nativeGuestClientClass(refreshProxy.failureCode()))
+			}
+			cancel()
+		})
+		if err != nil {
+			return 2
+		}
+		defer func() {
+			if proxy.Close() != nil {
+				result = 2
+			}
+		}()
+		file, err := os.OpenFile(nativeGuestCAPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0444)
+		if err != nil {
+			return 2
+		}
+		n, writeErr := file.Write(certificate)
+		modeErr, syncErr, closeErr := file.Chmod(0444), file.Sync(), file.Close()
+		if writeErr != nil || n != len(certificate) || modeErr != nil || syncErr != nil || closeErr != nil {
+			return 2
+		}
+		refreshProxy = proxy
+		server.Handler = proxy
+	}
 	go server.Serve(listener)
 	defer server.Close()
 	inv, err := nativeGuestInvocation(q, "http://"+listener.Addr().String())
@@ -252,7 +289,6 @@ func nativeGuestClientProxyMain() int {
 	if writeVMRecord(ready, nativeGuestProxyReady{nativeVMReady{1, q.Binding, Digest(q), q.Session.Identity, "native-vm-profile-1"}, listener.Addr().(*net.TCPAddr).Port}, 4096) != nil {
 		return 2
 	}
-	ready.Close()
 	start, err := readVMRecord[nativeGuestStart](config, 256)
 	if err != nil || start.Version != 1 || start.Kind != "start" {
 		return 2
@@ -266,37 +302,63 @@ func nativeGuestClientProxyMain() int {
 	client.Env = inv.Environment
 	client.Stdin = os.Stdin
 	client.Stdout = os.Stdout
-	client.Stderr = io.Discard
+	diagnostics := &nativeGuestClientDiagnostics{}
+	client.Stderr = diagnostics
 	client.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: nativeVMIPCGID, Groups: []uint32{}}, Pdeathsig: syscall.SIGKILL}
 	client.WaitDelay = 2 * time.Second
-	if client.Run() != nil {
-		return 1
+	if runErr := client.Run(); runErr != nil {
+		if refreshProxy != nil && refreshProxy.failureCode() != 0 {
+			publishStatus(nativeGuestClientClass(refreshProxy.failureCode()))
+			return refreshProxy.failureCode()
+		}
+		code := diagnostics.exitCode(runErr)
+		publishStatus(nativeGuestClientClass(code))
+		return code
 	}
 	return 0
 }
 
 func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, stop func()) http.Handler {
+	return nativeGuestProviderHandlerObserved(q, transport, func(string) { stop() })
+}
+func nativeGuestProviderHandlerObserved(q nativeVMRequest, transport http.RoundTripper, stop func(string)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, in *http.Request) {
 		failed := true
+		class := "provider-route"
 		defer func() {
 			if failed {
 				// A denied response cannot become a review. Stop this owned CLI
 				// now so guest PID1 can reap it and return refreshed auth, rather
 				// than waiting for an opaque client's retry loop to time out.
-				stop()
+				stop(class)
 			}
 		}()
 		var authority string
+		kind := ""
 		for _, route := range q.Policy.Routes {
+			// Refresh and explicitly TLS-only metadata must traverse CONNECT
+			// and its authority/SNI checks. Other captured routes support the
+			// official client's intentional loopback inference/metadata base URL.
+			if (route.Kind == "refresh" || route.TLSOnly) && in.TLS == nil {
+				continue
+			}
+			if in.TLS != nil && route.Authority != strings.TrimSuffix(in.Host, ":443") {
+				continue
+			}
 			if route.Method == in.Method && route.Path == in.URL.Path && route.RawQuery == in.URL.RawQuery {
 				if authority != "" && authority != route.Authority {
+					class = "provider-ambiguous"
 					http.Error(w, "ambiguous provider route", 403)
 					return
 				}
 				authority = route.Authority
+				kind = route.Kind
 			}
 		}
 		if authority == "" || in.URL.IsAbs() || in.URL.User != nil || in.URL.RawPath != "" || len(in.Trailer) != 0 {
+			if authority != "" {
+				class = "provider-url"
+			}
 			http.Error(w, "provider route denied", 403)
 			return
 		}
@@ -306,8 +368,30 @@ func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, 
 		request.RequestURI = ""
 		request.GetBody = nil
 		request.Close = false
+		if kind != "local_negotiation" {
+			// Closing the CLI's HTTP/TLS hop must not retire the private stream.
+			// Reject nominated headers instead of silently hiding them from the
+			// host guard; preserve the separate local Upgrade contract verbatim.
+			for name, values := range request.Header {
+				if !strings.EqualFold(name, "Connection") {
+					continue
+				}
+				for _, value := range values {
+					for _, token := range strings.Split(value, ",") {
+						token = strings.TrimSpace(strings.ToLower(token))
+						if token != "close" && token != "keep-alive" {
+							class = "provider-url"
+							http.Error(w, "provider connection denied", 403)
+							return
+						}
+					}
+				}
+				delete(request.Header, name)
+			}
+		}
 		response, err := transport.RoundTrip(request)
 		if err != nil {
+			class = "provider-transport"
 			http.Error(w, "provider unavailable", 502)
 			return
 		}
@@ -321,6 +405,7 @@ func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, 
 		// quota responses still reach the CLI's refresh/error handling, and the
 		// local WebSocket refusal still permits the pinned HTTP fallback.
 		failed = response.Header.Get(nativeProviderFatalHeader) == "1" || err != nil || n > int64(q.Policy.Limits.ResponseBytes)
+		class = "provider-response"
 	})
 }
 

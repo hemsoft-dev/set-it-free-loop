@@ -257,6 +257,56 @@ func TestNativeVMGuestProviderPreservesUpstreamAuthHandling(t *testing.T) {
 	}
 }
 
+func TestNativeVMGuestClientCloseDoesNotRetirePrivateRefreshStream(t *testing.T) {
+	guest, host := vmSocketPair(t)
+	s := testSession(Codex)
+	policy := egressTestPolicy(Codex)
+	policy.ResponsePolicy = CodexSourceResponses
+	var calls atomic.Int32
+	bridge, err := startNativeProviderBridge(context.Background(), s, policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	}), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := nativeProviderTransport(guest)
+	defer func() {
+		transport.CloseIdleConnections()
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		bridge.close(ctx)
+	}()
+	var stopped atomic.Int32
+	_, client, _, _ := nativeTLSFixture(t, nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, transport, func() { stopped.Add(1) }), policy)
+	first, _ := http.NewRequest("POST", "https://auth.provider.example/refresh", strings.NewReader(`{}`))
+	first.Close = true
+	first.Header.Set("Connection", "close")
+	first.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != 200 || !response.Close {
+		t.Fatal("client connection did not close independently", response.StatusCode)
+	}
+	response, err = client.Get("https://provider.example/metadata")
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != 200 || calls.Load() != 2 || stopped.Load() != 0 {
+		t.Fatal("client close retired the one-use private channel", response.StatusCode, calls.Load(), stopped.Load())
+	}
+	access := bridge.guard.Snapshot()
+	if access.RefreshRequests != 1 || access.MetadataRequests != 1 || access.Failed {
+		t.Fatal("refresh/profile receipt incomplete", access)
+	}
+}
+
 func TestNativeVMProviderRejectsWrongModelBeforeUpstream(t *testing.T) {
 	bridge, client, calls, _ := nativeProviderFixture(t, codexToolStream("exec"))
 	status, body := nativeProviderCall(t, client, "wrong-model")

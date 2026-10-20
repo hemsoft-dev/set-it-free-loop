@@ -119,7 +119,7 @@ func TestPublicEgressHTTPConnectionFaultCannotHideAutomaticRetry(t *testing.T) {
 		t.Fatal("fixture TLS certificate has no DNS authority")
 	}
 	p := egressTestPolicy(Codex)
-	p.Routes = []EgressRoute{{authority, "GET", "/metadata", "metadata", ""}}
+	p.Routes = []EgressRoute{{authority, "GET", "/metadata", "metadata", "", false}}
 	// Only test dependencies redirect the validated numeric dial to a local
 	// TLS server. Production uses the real resolver/dialer and denies loopback.
 	transport, err := publicEgressTransport(p, func(context.Context, string, string) ([]netip.Addr, error) {

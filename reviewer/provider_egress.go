@@ -29,6 +29,7 @@ type EgressRoute struct {
 	Path      string `json:"path"`
 	Kind      string `json:"kind"` // inference, refresh, metadata or local_negotiation
 	RawQuery  string `json:"raw_query,omitempty"`
+	TLSOnly   bool   `json:"tls_only,omitempty"` // native guest route requires CONNECT/TLS; refresh always does
 }
 
 type EgressLimits struct {
@@ -215,7 +216,7 @@ func validateEgressPolicy(provider Provider, limits Limits, p EgressPolicy) (map
 	hasInference := false
 	for _, route := range p.Routes {
 		key := route.Authority + " " + route.Method + " " + route.Path + "?" + route.RawQuery
-		if !egressAuthority(route.Authority) || !egressPath(route.Path) || !egressQuery(route.RawQuery) || (route.Method != "POST" && route.Method != "GET") || seen[key] || (route.Kind != "inference" && route.Kind != "refresh" && route.Kind != "metadata" && route.Kind != "local_negotiation") || (route.Kind != "metadata" && route.Kind != "local_negotiation" && route.Method != "POST") || (route.Kind == "local_negotiation" && (provider != Codex || route.Method != "GET" || l.NegotiationRequests != 1)) {
+		if !egressAuthority(route.Authority) || !egressPath(route.Path) || !egressQuery(route.RawQuery) || (route.Method != "POST" && route.Method != "GET") || seen[key] || (route.Kind != "inference" && route.Kind != "refresh" && route.Kind != "metadata" && route.Kind != "local_negotiation") || (route.Kind != "metadata" && route.Kind != "local_negotiation" && route.Method != "POST") || (route.Kind == "local_negotiation" && (provider != Codex || route.Method != "GET" || l.NegotiationRequests != 1)) || (route.TLSOnly && route.Kind != "metadata" && route.Kind != "refresh") {
 			return nil, ErrLiveBlocked
 		}
 		seen[key] = true

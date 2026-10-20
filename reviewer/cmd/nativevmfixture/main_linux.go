@@ -29,19 +29,32 @@ type config struct {
 	Purpose, ImageSourceHead, Root       string
 	Provider                             r.Provider
 	Negative                             bool
+	Refresh, UncertainRefresh            bool
 	ProtocolRounds                       int
 	QEMU, Kernel, Initrd, Stub, Firmware r.VMBootAsset
 	Runtime                              r.NativeVMRuntimeSpec
 }
 type localOnly struct {
-	target *url.URL
-	base   *http.Transport
+	target  *url.URL
+	base    *http.Transport
+	refresh r.Provider
 }
 
 func (t localOnly) RoundTrip(q *http.Request) (*http.Response, error) {
-	if q.URL.Scheme != "https" || q.URL.Host != "fixture.provider.example" {
+	allowed := q.URL.Host == "fixture.provider.example"
+	if t.refresh == r.Codex && q.URL.Host == f.RefreshAuthority(r.Codex) && q.Method == "POST" && q.URL.Path == "/oauth/token" && q.URL.RawQuery == "" {
+		allowed = true
+	}
+	if t.refresh == r.Claude && q.Method == "POST" && q.URL.Host == f.RefreshAuthority(r.Claude) && q.URL.Path == "/v1/oauth/token" && q.URL.RawQuery == "" {
+		allowed = true
+	}
+	if t.refresh == r.Claude && q.Method == "GET" && q.URL.Host == "api.anthropic.com" && q.URL.Path == "/api/oauth/profile" && q.URL.RawQuery == "" {
+		allowed = true
+	}
+	if q.URL.Scheme != "https" || !allowed {
 		return nil, errors.New("fake-only destination denied")
 	}
+
 	copy := q.Clone(q.Context())
 	u := *q.URL
 	u.Host = t.target.Host
@@ -72,6 +85,9 @@ func run(c config) error {
 	// cannot become a seed. All subsequent state lives in this new private root.
 	if os.Mkdir(c.Root, 0700) != nil {
 		return errors.New("fresh fake root required")
+	}
+	if c.Refresh || c.UncertainRefresh {
+		return runNativeRefresh(c)
 	}
 	if c.ProtocolRounds != 0 {
 		return runNativeProtocol(c)
@@ -132,7 +148,7 @@ func run(c config) error {
 	if os.Mkdir(filepath.Join(c.Root, "launches"), 0700) != nil {
 		return errors.New("fake launch root failed")
 	}
-	worker, err := r.NewNativeVMReviewer(r.NativeVMOptions{Provider: c.Provider, Root: filepath.Join(c.Root, "launches"), Stub: c.Stub.Path, StubHash: c.Stub.SHA256, QEMU: c.QEMU, Kernel: c.Kernel, Initrd: c.Initrd, Firmware: c.Firmware, Runtime: c.Runtime, Auth: auth, Reader: reader, Policy: policy, Transport: localOnly{target, base}, ProfileHints: hints, Check: func(_ context.Context, got r.Session) error {
+	worker, err := r.NewNativeVMReviewer(r.NativeVMOptions{Provider: c.Provider, Root: filepath.Join(c.Root, "launches"), Stub: c.Stub.Path, StubHash: c.Stub.SHA256, QEMU: c.QEMU, Kernel: c.Kernel, Initrd: c.Initrd, Firmware: c.Firmware, Runtime: c.Runtime, Auth: auth, Reader: reader, Policy: policy, Transport: localOnly{target: target, base: base}, ProfileHints: hints, Check: func(_ context.Context, got r.Session) error {
 		if r.Digest(got) != r.Digest(s) {
 			return errors.New("foreign fake session")
 		}

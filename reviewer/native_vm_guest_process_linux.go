@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -493,9 +494,13 @@ func (p *nativeGuestProcess) Stop(ctx context.Context) error {
 	p.stopOnce.Do(func() {
 		p.in.Close()
 		if strings.HasSuffix(p.group, "reader") {
-			select {
-			case <-p.done:
-			case <-ctx.Done():
+			// The finite manifest already consumed stdin. SIGTERM closes reader
+			// intake only; accepted source work drains under its phase deadline.
+			if p.command == nil || p.command.Process == nil || p.command.Process.Signal(syscall.SIGTERM) == nil {
+				select {
+				case <-p.done:
+				case <-ctx.Done():
+				}
 			}
 		}
 		if os.WriteFile(filepath.Join(p.group, "cgroup.kill"), []byte("1"), 0600) != nil {
@@ -544,6 +549,8 @@ func nativeGuestReaderMain() int {
 	if !nativeGuestUnprivileged(nativeVMReaderUID) {
 		return 2
 	}
+	ctx, stopReader := signal.NotifyContext(context.Background(), syscall.SIGTERM)
+	defer stopReader()
 	objects := os.NewFile(3, "private-vm-objects")
 	if objects == nil {
 		return 2
@@ -551,7 +558,7 @@ func nativeGuestReaderMain() int {
 	defer objects.Close()
 	// Read only the bounded manifest, then reconstruct its finite input for the
 	// shared service. No host path/Git executable is present in this reader jail.
-	intake, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	intake, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	stop := context.AfterFunc(intake, func() { os.Stdin.Close() })
 	defer stop()
@@ -568,7 +575,10 @@ func nativeGuestReaderMain() int {
 		return 2
 	}
 	defer store.Close()
-	return SourceReaderMainWithStore(context.Background(), []string{"LANG=C.UTF-8"}, io.NopCloser(bytes.NewReader(raw)), os.Stdout, store)
+	return sourceReaderMainWithStore(context.Background(), []string{"LANG=C.UTF-8"}, io.NopCloser(bytes.NewReader(raw)), os.Stdout, store,
+		func(phase context.Context, config SourceReaderConfig, reader *Reader, ready func(SourceEndpoint) error) (*SourceAccess, error) {
+			return serveSourceSocketDraining(phase, ctx, config, reader, ready, sourcePeerUID)
+		})
 }
 
 var _ Worker = (*nativeGuestProcess)(nil)

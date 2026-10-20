@@ -10,7 +10,7 @@ import (
 
 func negotiationPolicy() EgressPolicy {
 	p := egressTestPolicy(Codex)
-	p.Routes = append(p.Routes, EgressRoute{"provider.example", "GET", "/infer", "local_negotiation", ""})
+	p.Routes = append(p.Routes, EgressRoute{"provider.example", "GET", "/infer", "local_negotiation", "", false})
 	return p
 }
 
