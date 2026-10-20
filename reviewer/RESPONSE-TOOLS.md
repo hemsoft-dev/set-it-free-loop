@@ -17,6 +17,13 @@ response latches bridge failure and returns a fixed HTTP 400 without tool bytes.
 Its request, forwarding and observed response-byte counters remain charged; it
 is not counted as an accepted response and cannot qualify a completed receipt.
 Metadata, refresh and local negotiation keep their separately captured routes.
+Codex response.failed and response.incomplete also terminate the validated stream
+and reach the client unchanged, matching response.completed framing. Their
+nested output objects still pass the same tool restrictions, and later executable
+events remain denied. This is transport acceptance, not successful review output;
+the native phase decoder must still validate completion and the report.
+The [official streaming reference](https://developers.openai.com/api/reference/resources/responses/streaming-events)
+defines these terminal response events.
 
 The Codex policy admits custom functions.exec calls and assistant/reasoning data
 in its supported response events. Other custom or native function handlers are

@@ -211,3 +211,43 @@ func TestProviderResponseClaudeEndConversationJSONMatchesNativeControlPolicy(t *
 		t.Fatal(err)
 	}
 }
+
+func TestProviderResponseCodexFailureTerminalsRemainVisibleToClient(t *testing.T) {
+	for _, kind := range []string{"response.failed", "response.incomplete"} {
+		t.Run(kind, func(t *testing.T) {
+			response := map[string]any{"id": "resp_fixture", "object": "response", "status": strings.TrimPrefix(kind, "response."), "output": []any{}}
+			if kind == "response.failed" {
+				response["error"] = map[string]any{"code": "server_error", "message": "Synthetic provider failure"}
+			} else {
+				response["incomplete_details"] = map[string]any{"reason": "max_output_tokens"}
+			}
+			stream := responseEvent(kind, map[string]any{"response": response, "sequence_number": 1}, false)
+			policy := egressTestPolicy(Codex)
+			policy.ResponsePolicy = CodexSourceResponses
+			guard, err := NewProviderEgress(context.Background(), testSession(Codex), policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(stream)), ContentLength: int64(len(stream))}, nil
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			recorder := httptest.NewRecorder()
+			q := httptest.NewRequest("POST", "/infer", strings.NewReader(`{}`))
+			q.Host = "provider.example"
+			guard.ServeHTTP(recorder, q)
+			audit, err := guard.Close(context.Background())
+			if recorder.Code != 200 || recorder.Body.String() != stream || err != nil || audit.Failed || !audit.Stopped || audit.Requests != 1 || audit.Responses != 1 || audit.ResponseBytes != len(stream) {
+				t.Fatal("provider terminal replaced or audit poisoned", recorder.Code, audit, err)
+			}
+			for _, unsafe := range []string{
+				responseEvent(kind, map[string]any{"response": map[string]any{"output": []any{map[string]any{"type": "custom_tool_call", "namespace": "functions", "name": "apply_patch", "call_id": "hidden", "input": "forbidden"}}}}, false),
+				stream + codexToolStream("exec"),
+				responseEvent(kind, map[string]any{"response": nil}, false),
+				stream + stream,
+			} {
+				if validateProviderResponse(Codex, CodexSourceResponses, "text/event-stream", 200, []byte(unsafe)) == nil {
+					t.Fatal("unsafe or post-terminal output accepted", unsafe)
+				}
+			}
+		})
+	}
+}

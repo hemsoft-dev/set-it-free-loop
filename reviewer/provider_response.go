@@ -474,7 +474,7 @@ func validateProviderResponse(provider Provider, policy, contentType string, sta
 				return ErrProviderToolResponse
 			}
 			return nil
-		case "response.completed":
+		case "response.completed", "response.failed", "response.incomplete":
 			if err = codexResponseObject(value["response"]); err != nil {
 				return err
 			}
