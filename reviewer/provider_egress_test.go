@@ -246,7 +246,7 @@ func TestProviderEgressExactByteCapsAndOverrun(t *testing.T) {
 }
 
 func TestProviderEgressRejectsRedirectCompressedAndPartialResponses(t *testing.T) {
-	for _, kind := range []string{"redirect", "compressed", "trailer", "incomplete", "error-canary"} {
+	for _, kind := range []string{"redirect", "compressed", "multiple-encodings", "duplicate-identity", "combined-encodings", "empty-encoding", "trailer", "incomplete", "error-canary"} {
 		t.Run(kind, func(t *testing.T) {
 			p := egressTestPolicy(Codex)
 			rt := egressRoundTrip(func(*http.Request) (*http.Response, error) {
@@ -260,6 +260,14 @@ func TestProviderEgressRejectsRedirectCompressedAndPartialResponses(t *testing.T
 					r.Header.Set("Location", "http://127.0.0.1/private-canary")
 				case "compressed":
 					r.Header.Set("Content-Encoding", "gzip")
+				case "multiple-encodings":
+					r.Header["Content-Encoding"] = []string{"identity", "gzip"}
+				case "duplicate-identity":
+					r.Header["Content-Encoding"] = []string{"identity", "identity"}
+				case "combined-encodings":
+					r.Header.Set("Content-Encoding", "identity, gzip")
+				case "empty-encoding":
+					r.Header.Set("Content-Encoding", "")
 				case "trailer":
 					r.Trailer = http.Header{"X-Canary": nil}
 				case "incomplete":
@@ -281,6 +289,55 @@ func TestProviderEgressRejectsRedirectCompressedAndPartialResponses(t *testing.T
 			a, err := b.Close(context.Background())
 			if err != nil || !a.Failed || a.Responses != 0 {
 				t.Fatal(a, err)
+			}
+		})
+	}
+}
+
+func TestProviderEgressControlsUserAgentOnActualTransport(t *testing.T) {
+	for _, kind := range []string{"unlisted", "absent", "captured"} {
+		t.Run(kind, func(t *testing.T) {
+			p := egressTestPolicy(Codex)
+			if kind == "unlisted" {
+				p.Headers = p.Headers[:len(p.Headers)-1]
+			}
+			want := ""
+			if kind == "captured" {
+				want = "pinned-client-fixture"
+			}
+			b, server, calls := egressTestBridge(t, p, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if got := r.Header.Get("User-Agent"); got != want {
+					t.Errorf("wire User-Agent = %q, want %q", got, want)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Content-Encoding", "identity")
+				_, _ = io.WriteString(w, `{}`)
+			}))
+			status, _ := egressRequest(t, server, "POST", "provider.example", "/infer", `{}`, func(r *http.Request) {
+				r.Header["User-Agent"] = nil // Suppress the test client's own default.
+				if want != "" {
+					r.Header.Set("User-Agent", want)
+				}
+			})
+			a, err := b.Close(context.Background())
+			if status != 200 || calls.Load() != 1 || err != nil || a.ValidateCompleted(testSession(Codex), p) != nil {
+				t.Fatal(status, a, err)
+			}
+		})
+	}
+}
+
+func TestProviderEgressRejectsHopByHopPolicyHeaders(t *testing.T) {
+	for _, header := range []string{"Keep-Alive", "Connection", "Proxy-Connection", "Upgrade", "Te", "Trailer", "Transfer-Encoding"} {
+		t.Run(header, func(t *testing.T) {
+			p := egressTestPolicy(Codex)
+			p.Headers = append(p.Headers, header)
+			_, err := NewProviderEgress(context.Background(), testSession(Codex), p, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+				t.Fatal("invalid policy reached transport")
+				return nil, nil
+			}))
+			if !errors.Is(err, ErrLiveBlocked) {
+				t.Fatal("connection-management header accepted", err)
 			}
 		})
 	}

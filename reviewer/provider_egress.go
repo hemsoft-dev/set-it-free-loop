@@ -140,7 +140,7 @@ func egressQuery(query string) bool {
 
 func egressHeaderAllowed(name string) bool {
 	switch strings.ToLower(name) {
-	case "host", "connection", "proxy-connection", "proxy-authorization", "proxy-authenticate", "upgrade", "te", "trailer", "transfer-encoding", "content-length", "cookie", "set-cookie", "x-api-key", "api-key":
+	case "host", "connection", "keep-alive", "proxy-connection", "proxy-authorization", "proxy-authenticate", "upgrade", "te", "trailer", "transfer-encoding", "content-length", "cookie", "set-cookie", "x-api-key", "api-key":
 		return false
 	}
 	for _, c := range name {
@@ -325,6 +325,9 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	upstream.GetBody = nil
 	upstream.Close = true
+	// An absent key lets net/http add its own User-Agent. A nil value
+	// explicitly suppresses that default when the client supplied none.
+	upstream.Header["User-Agent"] = nil
 	for name, values := range r.Header {
 		if b.headers[name] && name != "Accept-Encoding" {
 			upstream.Header[name] = append([]string(nil), values...)
@@ -345,7 +348,8 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	stopOutput := context.AfterFunc(ctx, func() { _ = response.Body.Close() })
 	defer stopOutput()
-	if response.StatusCode < 200 || response.StatusCode >= 300 && response.StatusCode < 400 || response.StatusCode > 599 || len(response.Trailer) != 0 || response.Header.Get("Upgrade") != "" || response.Header.Get("Content-Encoding") != "" && response.Header.Get("Content-Encoding") != "identity" {
+	encoding := response.Header.Values("Content-Encoding")
+	if response.StatusCode < 200 || response.StatusCode >= 300 && response.StatusCode < 400 || response.StatusCode > 599 || len(response.Trailer) != 0 || response.Header.Get("Upgrade") != "" || len(encoding) != 0 && (len(encoding) != 1 || encoding[0] != "identity") {
 		b.fail(false)
 		http.Error(w, "provider response denied", http.StatusBadGateway)
 		return
