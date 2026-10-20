@@ -5,6 +5,7 @@ package reviewer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -19,20 +20,24 @@ import (
 )
 
 // NativeVMManifest is a distinct payload authority from the synthetic fixture.
-// Its eight descriptors are QEMU, kernel, initrd, KVM, private control, immutable
-// object RPC, provider HTTP and BIOS. It contains no executable/path/argv selector.
+// Its ten descriptors are QEMU, kernel, initrd, KVM, private control, immutable
+// object RPC, provider HTTP, BIOS, runtime artifact and original namespace helper. It contains no executable/path/argv selector.
 // The immutable initrd supplies the separately pinned privileged guest runtime.
+const nativeVMGrantProtocol = 4
+const nativeVMDescriptorCount = 10
+
 type NativeVMManifest struct {
-	Version     int
-	Purpose     string
-	Binding     AuthBinding
-	SessionHash string
-	Provider    Provider
-	Assets      []VMAssetPin
+	Version            int
+	Purpose            string
+	Binding            AuthBinding
+	SessionHash        string
+	Provider           Provider
+	Assets             []VMAssetPin
+	BootstrapLibraries []nativeRuntimeFile
 }
 
 func (m NativeVMManifest) valid() bool {
-	if m.Version != 2 || m.Purpose != "native-review" || !m.Binding.valid() || m.SessionHash != m.Binding.SessionHash || !validAuthHash(m.SessionHash) || !m.Provider.Valid() || len(m.Assets) != 4 {
+	if m.Version != 3 || m.Purpose != "native-review" || !m.Binding.valid() || m.SessionHash != m.Binding.SessionHash || !validAuthHash(m.SessionHash) || !m.Provider.Valid() || len(m.Assets) != 6 {
 		return false
 	}
 	for i, a := range m.Assets {
@@ -40,7 +45,8 @@ func (m NativeVMManifest) valid() bool {
 			return false
 		}
 	}
-	return true
+	raw, _ := json.Marshal(m)
+	return nativeBootstrapPinsValid(m.BootstrapLibraries) && len(raw) <= 4096
 }
 
 func (i *VMBootImages) NativeManifest(s Session) (NativeVMManifest, error) {
@@ -49,13 +55,14 @@ func (i *VMBootImages) NativeManifest(s Session) (NativeVMManifest, error) {
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
-	if i.closed || i.firmware == nil || i.spec.Binding.SessionHash != Digest(s) {
+	if i.closed || i.firmware == nil || i.runtimeArtifact == nil || i.namespaceHelper == nil || i.spec.Binding.SessionHash != Digest(s) {
 		return NativeVMManifest{}, ErrVMBoot
 	}
-	m := NativeVMManifest{Version: 2, Purpose: "native-review", Binding: i.spec.Binding, SessionHash: Digest(s), Provider: s.Identity.Provider}
-	for _, a := range []VMBootAsset{i.spec.QEMU, i.spec.Kernel, i.spec.Initrd, i.firmwareAsset} {
+	m := NativeVMManifest{Version: 3, Purpose: "native-review", Binding: i.spec.Binding, SessionHash: Digest(s), Provider: s.Identity.Provider}
+	for _, a := range []VMBootAsset{i.spec.QEMU, i.spec.Kernel, i.spec.Initrd, i.firmwareAsset, i.runtimeAsset, i.namespaceHelperAsset} {
 		m.Assets = append(m.Assets, VMAssetPin{a.SHA256, a.Bytes})
 	}
+	m.BootstrapLibraries = append([]nativeRuntimeFile{}, i.bootstrapLibraries...)
 	if !m.valid() {
 		return NativeVMManifest{}, ErrVMBoot
 	}
@@ -198,22 +205,30 @@ func (g *ContainmentGate) grantNativeVM(ctx context.Context, identity GateIdenti
 	files = append(files, private...)
 	files = append(files, firmware)
 	firmware = nil // The grant's descriptor list now owns this retained BIOS.
-	raw, err := json.Marshal(nativeVMGrant{3, g.binding, identity, m})
+	runtimeFiles, err := images.duplicateNativeRuntime(ctx)
+	if err != nil {
+		return err
+	}
+	files = append(files, runtimeFiles...)
+	if verifyGrantedVMAsset(ctx, files[8], m.Assets[4], 4) != nil || verifyNativeBootstrap(ctx, files[9], m.Assets[5]) != nil {
+		return ErrNativeRuntime
+	}
+	raw, err := json.Marshal(nativeVMGrant{nativeVMGrantProtocol, g.binding, identity, m})
 	if err != nil {
 		return ErrVMBoot
 	}
-	return g.grant(ctx, identity, Digest(m), 3, raw, files)
+	return g.grant(ctx, identity, Digest(m), nativeVMGrantProtocol, raw, files)
 }
 
 // Native boot is KVM only and has no NIC, host share, interactive monitor,
 // arbitrary argument or fallback. Three distinct virtio ports carry private
-// supervisor traffic. Serial output is disabled rather than mixed with reports.
+// supervisor traffic. A separate bounded serial reader emits fixed boot stages.
 func nativeVMArgs(nonce string) []string {
 	args := []string{"-no-user-config", "-nodefaults", "-machine", "q35,dump-guest-core=off,mem-merge=off",
 		"-add-fd", "fd=6,set=1,opaque=sfl-kvm", "-accel", "kvm,device=/dev/fdset/1", "-cpu", "host",
 		"-m", "2048M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none", "-no-reboot",
-		"-L", "/usr/share/qemu", "-bios", "/proc/self/fd/10", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5",
-		"-append", "console=ttyS0 loglevel=3 initramfs_options=size=1024m,nr_inodes=4096 rdinit=/native-init panic=1 sfl-native=" + nonce, "-chardev", "socket,id=sflbootdiag,fd=11", "-serial", "chardev:sflbootdiag", "-device", "virtio-serial-pci,id=sflserial"}
+		"-L", "/firmware", "-bios", "/proc/self/fd/10", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5",
+		"-append", "console=ttyS0 loglevel=3 initramfs_options=size=1024m,nr_inodes=4096 rdinit=/native-init panic=1 sfl-native=" + nonce, "-chardev", "socket,id=sflbootdiag,fd=13", "-serial", "chardev:sflbootdiag", "-device", "virtio-serial-pci,id=sflserial"}
 	for index, name := range []string{"control", "objects", "provider"} {
 		id := "sfl" + name
 		args = append(args, "-chardev", "socket,id="+id+",fd="+strconv.Itoa(index+7), "-device", "virtserialport,bus=sflserial.0,chardev="+id+",name=sfl."+name)
@@ -222,7 +237,7 @@ func nativeVMArgs(nonce string) []string {
 }
 
 func receiveNativeVMGrant(conn *net.UnixConn) (grant nativeVMGrant, files []*os.File, result error) {
-	raw, files, result := receiveVMDescriptorFrame(conn, 8)
+	raw, files, result := receiveVMDescriptorFrame(conn, nativeVMDescriptorCount)
 	if result != nil {
 		return grant, nil, result
 	}
@@ -233,7 +248,7 @@ func receiveNativeVMGrant(conn *net.UnixConn) (grant nativeVMGrant, files []*os.
 		}
 	}()
 	grant, result = DecodeStrict[nativeVMGrant](raw, 4096)
-	if result != nil || grant.Version != 3 || !grant.Manifest.valid() || grant.Binding != grant.Manifest.Binding {
+	if result != nil || grant.Version != nativeVMGrantProtocol || !grant.Manifest.valid() || grant.Binding != grant.Manifest.Binding {
 		return grant, files, ErrContainmentGate
 	}
 	return grant, files, nil
@@ -310,7 +325,7 @@ func receiveNativeVM(ctx context.Context, endpoint string, binding AuthBinding, 
 	if err != nil || pid != supervisorPID || uid != uint32(os.Geteuid()) {
 		return grant, nil, ErrVMBoot
 	}
-	raw, _ := json.Marshal(gateHello{3, binding, invocation, hash})
+	raw, _ := json.Marshal(gateHello{nativeVMGrantProtocol, binding, invocation, hash})
 	if n, err := conn.Write(raw); err != nil || n != len(raw) {
 		return grant, nil, ErrVMBoot
 	}
@@ -341,13 +356,16 @@ func receiveNativeVM(ctx context.Context, endpoint string, binding AuthBinding, 
 	if nativeVMStreams(files[4:7]) != nil || verifyGrantedVMAsset(ctx, files[7], grant.Manifest.Assets[3], 3) != nil {
 		return grant, files, ErrVMBoot
 	}
+	if verifyGrantedVMAsset(ctx, files[8], grant.Manifest.Assets[4], 4) != nil || verifyNativeBootstrap(ctx, files[9], grant.Manifest.Assets[5]) != nil || verifyNativeBootstrapLibraries(ctx, grant.Manifest.BootstrapLibraries) != nil {
+		return grant, files, ErrNativeRuntime
+	}
 	return grant, files, nil
 }
 
 // NativeVMStub is the new fixed native payload. It remains inert until its
-// owned-unit and authenticated version-3 descriptor checks succeed. This is not
+// owned-unit and authenticated version-4 descriptor checks succeed. This is not
 // a provider configuration, activation command or an auth stop attestation.
-func NativeVMStub(ctx context.Context, endpoint string, binding AuthBinding, invocation, hash string, supervisorPID int) error {
+func NativeVMStub(ctx context.Context, endpoint string, binding AuthBinding, invocation, hash string, supervisorPID int) (result error) {
 	if vmGrantedUnitWithKernel(binding, invocation, nativeContainmentKernel{}) != nil {
 		return ErrVMBoot
 	}
@@ -369,15 +387,30 @@ func NativeVMStub(ctx context.Context, endpoint string, binding AuthBinding, inv
 		return ErrVMBoot
 	}
 	defer control.Close()
+	prepared, err := prepareNativeRuntimeOwned(filepath.Dir(endpoint), io.NewSectionReader(files[8], 0, grant.Manifest.Assets[4].Bytes), grant.Manifest.Assets[0], io.NewSectionReader(files[0], 0, grant.Manifest.Assets[0].Bytes+1), func(root *nativeRuntimeRoot) error {
+		return root.recordOwnership(binding, hash)
+	})
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, prepared.Close()) }()
+	runtimeRoot, err := prepared.directoryFD()
+	if err != nil {
+		return err
+	}
+	defer runtimeRoot.Close()
+	if writeVMRecord(control, nativeVMProgress{1, "guest-stage", "runtime-prepared"}, 4096) != nil {
+		return ErrNativeRuntime
+	}
 	diagnostics := &nativeBootDiagnostics{}
 	diagnosticDone := make(chan struct{})
 	go func() { readNativeBootDiagnostics(serial, diagnostics); close(diagnosticDone) }()
 	defer func() { serial.Close(); <-diagnosticDone }()
-	command := exec.CommandContext(ctx, "/proc/self/fd/3", nativeVMArgs(grant.Binding.LaunchID)...)
-	command.Args[0] = "sfl-native-qemu"
-	command.Env = []string{"LANG=C.UTF-8", "PATH=/usr/bin:/bin"}
+	command := exec.CommandContext(ctx, "/proc/self/fd/12", nativeRuntimeNamespaceArgs(nativeVMArgs(grant.Binding.LaunchID))...)
+	command.Args[0] = "sfl-native-bootstrap"
+	command.Env = []string{"LANG=C", "LC_ALL=C"}
 	command.Dir = "/"
-	command.ExtraFiles = append(append([]*os.File{}, files...), serialChild)
+	command.ExtraFiles = append(append([]*os.File{}, files...), serialChild, runtimeRoot)
 	command.Stdout = io.Discard
 	command.Stderr = diagnostics
 	command.WaitDelay = 2 * time.Second
@@ -387,6 +420,7 @@ func NativeVMStub(ctx context.Context, endpoint string, binding AuthBinding, inv
 	}
 	closeVMFiles(files) // Only QEMU and the diagnostic control duplicate remain.
 	serialChild.Close()
+	runtimeRoot.Close()
 	waitErr := command.Wait()
 	select {
 	case <-diagnosticDone:

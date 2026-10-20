@@ -31,6 +31,7 @@ type config struct {
 	Negative                             bool
 	ProtocolRounds                       int
 	QEMU, Kernel, Initrd, Stub, Firmware r.VMBootAsset
+	Runtime                              r.NativeVMRuntimeSpec
 }
 type localOnly struct {
 	target *url.URL
@@ -131,7 +132,7 @@ func run(c config) error {
 	if os.Mkdir(filepath.Join(c.Root, "launches"), 0700) != nil {
 		return errors.New("fake launch root failed")
 	}
-	worker, err := r.NewNativeVMReviewer(r.NativeVMOptions{Provider: c.Provider, Root: filepath.Join(c.Root, "launches"), Stub: c.Stub.Path, StubHash: c.Stub.SHA256, QEMU: c.QEMU, Kernel: c.Kernel, Initrd: c.Initrd, Firmware: c.Firmware, Auth: auth, Reader: reader, Policy: policy, Transport: localOnly{target, base}, ProfileHints: hints, Check: func(_ context.Context, got r.Session) error {
+	worker, err := r.NewNativeVMReviewer(r.NativeVMOptions{Provider: c.Provider, Root: filepath.Join(c.Root, "launches"), Stub: c.Stub.Path, StubHash: c.Stub.SHA256, QEMU: c.QEMU, Kernel: c.Kernel, Initrd: c.Initrd, Firmware: c.Firmware, Runtime: c.Runtime, Auth: auth, Reader: reader, Policy: policy, Transport: localOnly{target, base}, ProfileHints: hints, Check: func(_ context.Context, got r.Session) error {
 		if r.Digest(got) != r.Digest(s) {
 			return errors.New("foreign fake session")
 		}

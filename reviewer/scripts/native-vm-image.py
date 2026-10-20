@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import stat
 import subprocess
+import sys
 
 
 PINNED = {
@@ -147,10 +148,13 @@ class Image:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ["kernel", "kernel-config", "codex", "claude", "codehost", "output"]:
+    for name in ["kernel", "kernel-config", "codex", "claude", "codehost", "qemu", "namespace-helper", "firmware-dir", "bios", "output"]:
         parser.add_argument("--"+name, type=Path, required=True)
     parser.add_argument("--kernel-sha256", required=True)
     parser.add_argument("--kernel-config-sha256", required=True)
+    parser.add_argument("--qemu-sha256", required=True)
+    parser.add_argument("--namespace-helper-sha256", required=True)
+    parser.add_argument("--bios-sha256", required=True)
     parser.add_argument("--go", required=True)
     parser.add_argument("--module-cache", type=Path, required=True)
     args = parser.parse_args()
@@ -164,6 +168,19 @@ def main():
                for name, expected in PINNED.items()}
     output = args.output.absolute()
     output.mkdir(mode=0o700, parents=False, exist_ok=False)
+    # Capture QEMU's named runtime dependencies before any native launch. The
+    # helper remains an original root-owned host bootstrap prerequisite.
+    subprocess.run([sys.executable, "-B", str(Path(__file__).with_name("native-vm-runtime.py")),
+                    "--qemu", str(args.qemu), "--qemu-sha256", args.qemu_sha256,
+                    "--namespace-helper", str(args.namespace_helper),
+                    "--namespace-helper-sha256", args.namespace_helper_sha256,
+                    "--firmware-dir", str(args.firmware_dir),
+                    "--output", str(output/"host-runtime")],
+                   env=BUILD_ENV, check=True, timeout=60)
+    host_runtime = json.loads((output/"host-runtime"/"manifest.json").read_bytes())
+    bios = pinned_bytes(args.bios, args.bios_sha256, 64 << 20)
+    (output/"bios.bin").write_bytes(bios)
+    (output/"bios.bin").chmod(0o444)
     snapshots = {}
     for name, data in clients.items():
         snapshots[name] = output / (name+"-snapshot")
@@ -215,7 +232,10 @@ def main():
     manifest = {"version": 1, "purpose": "native-review", **source,
                 "kernel_sha256": args.kernel_sha256, "kernel_config_sha256": args.kernel_config_sha256,
                 "initrd_sha256": common.digest(initrd), "initrd_bytes": initrd.stat().st_size,
-                "programs": programs, "release": release, "state": "built-only",
+                "programs": programs, "release": release,
+                "host_runtime": host_runtime,
+                "qemu": {"Path": str(args.qemu.absolute()), **host_runtime["manifest"]["Program"]},
+                "bios_sha256": args.bios_sha256, "state": "built-only",
                 "runtime_qualified": False, "provider_eligibility_qualified": False}
     with (output / "manifest.json").open("x") as stream:
         json.dump(manifest, stream, indent=2)

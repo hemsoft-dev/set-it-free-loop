@@ -35,17 +35,30 @@ type VMBootSpec struct {
 // pathname or a worker/auth lease. It does not create a process, unit or guest.
 // Pins and paths must come from trusted release configuration, never PR content.
 type VMBootImages struct {
-	mu            sync.Mutex
-	files         [3]*os.File
-	spec          VMBootSpec
-	firmware      *os.File
-	firmwareAsset VMBootAsset
-	closed        bool
+	mu                   sync.Mutex
+	files                [3]*os.File
+	spec                 VMBootSpec
+	firmware             *os.File
+	firmwareAsset        VMBootAsset
+	runtimeArtifact      *os.File
+	runtimeAsset         VMBootAsset
+	namespaceHelper      *os.File
+	namespaceHelperAsset VMBootAsset
+	bootstrapLibraries   []nativeRuntimeFile
+	closed               bool
 }
 
-// Native execution additionally pins the BIOS. Legacy synthetic fixture
+// Native execution additionally pins BIOS, runtime and host bootstrap inputs.
+// Legacy synthetic fixture
 // manifests retain their three-asset contract and cannot acquire this authority.
-func OpenNativeVMBootImages(ctx context.Context, spec VMBootSpec, firmware VMBootAsset) (*VMBootImages, error) {
+func OpenNativeVMBootImages(ctx context.Context, spec VMBootSpec, firmware VMBootAsset, runtimeSpec NativeVMRuntimeSpec) (*VMBootImages, error) {
+	libraryPins, libraryErr := nativeBootstrapLibraryPins(runtimeSpec.BootstrapLibraries)
+	if ctx == nil || libraryErr != nil || !sourcePath(runtimeSpec.Artifact.Path) || !validAuthHash(runtimeSpec.Artifact.SHA256) || runtimeSpec.Artifact.Bytes <= 0 || runtimeSpec.Artifact.Bytes > nativeRuntimeArtifactLimit {
+		return nil, ErrVMBoot
+	}
+	if verifyNativeBootstrapLibraries(ctx, libraryPins) != nil {
+		return nil, ErrNativeRuntime
+	}
 	if !sourcePath(firmware.Path) || !validAuthHash(firmware.SHA256) || firmware.Bytes <= 0 || firmware.Bytes > vmAssetLimit(3) {
 		return nil, ErrVMBoot
 	}
@@ -59,6 +72,19 @@ func OpenNativeVMBootImages(ctx context.Context, spec VMBootSpec, firmware VMBoo
 		return nil, err
 	}
 	images.firmwareAsset = firmware
+	images.runtimeArtifact, err = sealVMAsset(ctx, runtimeSpec.Artifact, false)
+	if err != nil {
+		images.Close()
+		return nil, err
+	}
+	images.namespaceHelper, err = retainNativeBootstrap(ctx, runtimeSpec.NamespaceHelper)
+	if err != nil {
+		images.Close()
+		return nil, err
+	}
+	images.runtimeAsset = runtimeSpec.Artifact
+	images.namespaceHelperAsset = runtimeSpec.NamespaceHelper
+	images.bootstrapLibraries = libraryPins
 	return images, nil
 }
 
@@ -83,6 +109,9 @@ func (i *VMBootImages) duplicateFirmware() (*os.File, error) {
 }
 
 func vmAssetLimit(index int) int64 {
+	if index == 4 {
+		return nativeRuntimeArtifactLimit
+	}
 	if index == 2 {
 		return 512 << 20
 	}
@@ -201,8 +230,10 @@ func (i *VMBootImages) Close() error {
 			err = errors.Join(err, file.Close())
 		}
 	}
-	if i.firmware != nil {
-		err = errors.Join(err, i.firmware.Close())
+	for _, file := range []*os.File{i.firmware, i.runtimeArtifact, i.namespaceHelper} {
+		if file != nil {
+			err = errors.Join(err, file.Close())
+		}
 	}
 	return err
 }

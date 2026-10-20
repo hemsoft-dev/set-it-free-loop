@@ -44,13 +44,13 @@ func TestNativeFirmwareExecUsesSealedBytesAfterSourceReplacement(t *testing.T) {
 	s := testSession(Codex)
 	spec.Binding.SessionHash = Digest(s)
 	firmware := vmAsset(t, filepath.Join(t.TempDir(), "bios"), []byte("synthetic firmware pin"))
-	images, err := OpenNativeVMBootImages(context.Background(), spec, firmware)
+	images, err := OpenNativeVMBootImages(context.Background(), spec, firmware, nativeTestRuntimeSpec(t, spec))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer images.Close()
 	manifest, err := images.NativeManifest(s)
-	if err != nil || len(manifest.Assets) != 4 || manifest.Assets[3].SHA256 != firmware.SHA256 {
+	if err != nil || len(manifest.Assets) != 6 || manifest.Assets[3].SHA256 != firmware.SHA256 {
 		t.Fatal("firmware absent from native manifest", err)
 	}
 	if os.Chmod(firmware.Path, 0700) != nil || os.WriteFile(firmware.Path, []byte("replacement ambient firmware"), 0600) != nil {
@@ -81,7 +81,7 @@ func TestNativeFirmwareExecUsesSealedBytesAfterSourceReplacement(t *testing.T) {
 func openNativeBootTestImages(t *testing.T, ctx context.Context, spec VMBootSpec) (*VMBootImages, error) {
 	t.Helper()
 	firmware := vmAsset(t, filepath.Join(t.TempDir(), "bios"), []byte("synthetic pinned BIOS"))
-	return OpenNativeVMBootImages(ctx, spec, firmware)
+	return OpenNativeVMBootImages(ctx, spec, firmware, nativeTestRuntimeSpec(t, spec))
 }
 
 func TestNativeVMConcreteKernelLimitsCannotUseLegacyOrMixedProfile(t *testing.T) {
@@ -208,7 +208,7 @@ func TestNativeVMArgvExposesOnlyThreePrivateDescriptorPorts(t *testing.T) {
 			t.Fatal("unapproved VM capability", forbidden)
 		}
 	}
-	for _, required := range []string{"-nic none", "-monitor none", "-serial chardev:sflbootdiag", "socket,id=sflbootdiag,fd=11", "kvm,device=/dev/fdset/1", "-m 2048M", "rdinit=/native-init", "initramfs_options=size=1024m,nr_inodes=4096", "socket,id=sflcontrol,fd=7", "socket,id=sflobjects,fd=8", "socket,id=sflprovider,fd=9", "name=sfl.control", "name=sfl.objects", "name=sfl.provider"} {
+	for _, required := range []string{"-nic none", "-monitor none", "-serial chardev:sflbootdiag", "socket,id=sflbootdiag,fd=13", "kvm,device=/dev/fdset/1", "-m 2048M", "rdinit=/native-init", "initramfs_options=size=1024m,nr_inodes=4096", "socket,id=sflcontrol,fd=7", "socket,id=sflobjects,fd=8", "socket,id=sflprovider,fd=9", "name=sfl.control", "name=sfl.objects", "name=sfl.provider"} {
 		if !strings.Contains(joined, required) {
 			t.Fatal("missing fixed VM boundary", required)
 		}
@@ -304,18 +304,24 @@ func nativeGrantFixture(t *testing.T) (NativeVMManifest, []*os.File, *nativeVMCh
 		t.Fatal(err)
 	}
 	files = append(files, firmware)
+	runtimeFiles, err := images.duplicateNativeRuntime(context.Background())
+	if err != nil {
+		closeVMFiles(files)
+		t.Fatal(err)
+	}
+	files = append(files, runtimeFiles...)
 	t.Cleanup(func() { closeVMFiles(files) })
 	return m, files, channels
 }
 
-func TestNativeVMActualAuthenticatedEightDescriptorGrant(t *testing.T) {
+func TestNativeVMActualAuthenticatedTenDescriptorGrant(t *testing.T) {
 	m, files, channels := nativeGrantFixture(t)
 	root, err := os.MkdirTemp("", "sflnat-")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(root)
-	gate, err := prepareContainmentGateHash(root, m.Binding, Digest(m), 3)
+	gate, err := prepareContainmentGateHash(root, m.Binding, Digest(m), nativeVMGrantProtocol)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +330,7 @@ func TestNativeVMActualAuthenticatedEightDescriptorGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := json.Marshal(nativeVMGrant{3, m.Binding, identity, m})
+	raw, err := json.Marshal(nativeVMGrant{nativeVMGrantProtocol, m.Binding, identity, m})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +343,7 @@ func TestNativeVMActualAuthenticatedEightDescriptorGrant(t *testing.T) {
 		}
 		defer conn.Close()
 		conn.SetDeadline(time.Now().Add(2 * time.Second))
-		hello, _ := json.Marshal(gateHello{3, m.Binding, identity.InvocationID, Digest(m)})
+		hello, _ := json.Marshal(gateHello{nativeVMGrantProtocol, m.Binding, identity.InvocationID, Digest(m)})
 		if _, err = conn.Write(hello); err != nil {
 			done <- err
 			return
@@ -349,7 +355,7 @@ func TestNativeVMActualAuthenticatedEightDescriptorGrant(t *testing.T) {
 			return
 		}
 		defer closeVMFiles(received)
-		if Digest(grant.Manifest) != Digest(m) || len(received) != 8 {
+		if Digest(grant.Manifest) != Digest(m) || len(received) != nativeVMDescriptorCount {
 			done <- ErrVMBoot
 			return
 		}
@@ -380,7 +386,7 @@ func TestNativeVMActualAuthenticatedEightDescriptorGrant(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err = gate.grant(ctx, identity, Digest(m), 3, raw, files); err != nil {
+	if err = gate.grant(ctx, identity, Digest(m), nativeVMGrantProtocol, raw, files); err != nil {
 		t.Fatal(err)
 	}
 	channels.host[0].SetDeadline(time.Now().Add(2 * time.Second))
@@ -397,7 +403,7 @@ func TestNativeVMActualAuthenticatedEightDescriptorGrant(t *testing.T) {
 	}
 	record, err := gate.read(held)
 	held.close()
-	if err != nil || record.Phase != "granted" || record.Protocol != 3 {
+	if err != nil || record.Phase != "granted" || record.Protocol != nativeVMGrantProtocol {
 		t.Fatal("native authorization not durable", record, err)
 	}
 }
@@ -406,7 +412,7 @@ func TestNativeVMReceiverRefusesFixturePurposeAndDescriptorCounts(t *testing.T) 
 	for _, kind := range []string{"fixture", "version", "missing", "extra"} {
 		t.Run(kind, func(t *testing.T) {
 			m, files, _ := nativeGrantFixture(t)
-			grant := nativeVMGrant{Version: 3, Binding: m.Binding, Manifest: m}
+			grant := nativeVMGrant{Version: nativeVMGrantProtocol, Binding: m.Binding, Manifest: m}
 			if kind == "fixture" {
 				grant.Manifest.Purpose = "synthetic-role-fixture"
 			}
@@ -568,4 +574,27 @@ func TestNativeVMChannelsCannotAliasCredentialAndObjectStreams(t *testing.T) {
 	if nativeVMStreams([]*os.File{files[0], inert, files[2]}) == nil {
 		t.Fatal("device passed as private stream")
 	}
+}
+
+func nativeRootOwnedTestAsset(t *testing.T, path string) VMBootAsset {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Skip("root-owned native bootstrap fixture unavailable")
+	}
+	return VMBootAsset{path, authHash(raw), int64(len(raw))}
+}
+func nativeTestRuntimeSpec(t *testing.T, spec VMBootSpec) NativeVMRuntimeSpec {
+	t.Helper()
+	manifest, body := nativeRuntimeFixture(t)
+	manifest.Program = VMAssetPin{spec.QEMU.SHA256, spec.QEMU.Bytes}
+	artifact := vmAsset(t, filepath.Join(t.TempDir(), "runtime"), nativeRuntimeFrame(t, manifest, body))
+	helperPath := "/usr/bin/bwrap"
+	if _, err := os.Lstat(helperPath); err != nil {
+		helperPath, err = filepath.EvalSymlinks("/bin/true")
+		if err != nil {
+			t.Skip("root-owned executable fixture unavailable")
+		}
+	}
+	return NativeVMRuntimeSpec{Artifact: artifact, NamespaceHelper: nativeRootOwnedTestAsset(t, helperPath), BootstrapLibraries: []VMBootAsset{nativeRootOwnedTestAsset(t, "/lib64/ld-linux-x86-64.so.2"), nativeRootOwnedTestAsset(t, "/usr/lib/x86_64-linux-gnu/libc.so.6")}}
 }
