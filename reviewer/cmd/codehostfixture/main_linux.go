@@ -33,8 +33,7 @@ const marker = "sfl-codehost-synthetic-only-1\n"
 var forbidden = []string{"sfl-fake-access", "sfl-fake-refresh", "sfl-fake-account", "fixture@example.invalid"}
 
 type streamObservation struct {
-	Bytes int64 `json:"bytes"
- "bufio"`
+	Bytes      int64  `json:"bytes"`
 	SHA256     string `json:"sha256"`
 	SecretSeen bool   `json:"synthetic_secret_seen"`
 	Capped     bool   `json:"capped"`

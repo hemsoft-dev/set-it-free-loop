@@ -7,10 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type chunkReader struct{ chunks [][]byte }
@@ -75,5 +78,55 @@ func TestChildAndRelayRefuseOrdinaryHostExecution(t *testing.T) {
 		if c.Run() == nil {
 			t.Fatal("host relay invocation accepted", args)
 		}
+	}
+}
+
+func TestBrokerPreludeAndRealPeerCredentials(t *testing.T) {
+	for _, kind := range []string{"valid", "wrong-peer", "command-selector", "short-prelude"} {
+		t.Run(kind, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "stdio.sock")
+			listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer listener.Close()
+			listener.SetDeadline(time.Now().Add(time.Second))
+			done := make(chan error, 1)
+			go func() {
+				conn, err := listener.AcceptUnix()
+				if err != nil {
+					done <- err
+					return
+				}
+				defer conn.Close()
+				uid := uint32(os.Getuid())
+				if kind == "wrong-peer" {
+					uid++
+				}
+				done <- acceptBrokerPeer(conn, uid)
+			}()
+			conn, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: path, Net: "unix"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			prelude := hello
+			if kind == "command-selector" {
+				prelude = `{"exec":"/bin/sh"}` + "\n"
+			}
+			if kind == "short-prelude" {
+				prelude = hello[:5]
+			}
+			conn.Write([]byte(prelude))
+			conn.CloseWrite()
+			select {
+			case err := <-done:
+				if (err == nil) != (kind == "valid") {
+					t.Fatal(kind, err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("broker prelude did not terminate")
+			}
+		})
 	}
 }

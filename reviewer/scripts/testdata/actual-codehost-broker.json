@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "passed": true,
+  "input": {
+    "bytes": 3162,
+    "sha256": "65fda4658aed0b27d1e4d9d64526a34b151bf1c5a853d1d30c64a29ae009470a",
+    "synthetic_secret_seen": false,
+    "capped": false
+  },
+  "output": {
+    "bytes": 2222,
+    "sha256": "12913e6c37ba952e8e5eabc92dab6cf60d63b8165db143fb96583acb4dea5a7a",
+    "synthetic_secret_seen": false,
+    "capped": false
+  },
+  "probe_passed": true,
+  "fake_only": true,
+  "production_boundary_qualified": false
+}

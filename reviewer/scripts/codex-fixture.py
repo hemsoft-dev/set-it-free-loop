@@ -64,11 +64,15 @@ def observation_passed(receipt, result, source, case):
 
 
 def code_host_observation_passed(value):
-    if (value.get("version") != 1 or value.get("passed") is not True or value.get("probe_passed") is not True
+    if not isinstance(value, dict):
+        return False
+    if (type(value.get("version")) is not int or value.get("version") != 1 or value.get("passed") is not True or value.get("probe_passed") is not True
             or value.get("fake_only") is not True or value.get("production_boundary_qualified") is not False):
         return False
     for name in ["input", "output"]:
         stream = value.get(name, {})
+        if not isinstance(stream, dict):
+            return False
         if (type(stream.get("bytes")) is not int or not 0 < stream["bytes"] <= 8 << 20
                 or stream.get("synthetic_secret_seen") is not False or stream.get("capped") is not False
                 or not isinstance(stream.get("sha256"), str) or len(stream["sha256"]) != 64
