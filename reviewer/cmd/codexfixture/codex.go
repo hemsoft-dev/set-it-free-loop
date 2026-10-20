@@ -338,7 +338,12 @@ func codexMain(mode string) {
 		panic(err)
 	}
 	b := &codexBackend{session: s, mode: mode}
-	server := &http.Server{Handler: b, ReadHeaderTimeout: time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, MaxHeaderBytes: 32 << 10}
+	guard, policy, intake, closeUpstream, err := fixtureEgress(s, b)
+	if err != nil {
+		panic(err)
+	}
+	defer closeUpstream()
+	server := &http.Server{Handler: intake, ReadHeaderTimeout: time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, MaxHeaderBytes: 32 << 10}
 	go server.Serve(listener)
 	defer server.Close()
 	base := "http://" + listener.Addr().String()
@@ -366,6 +371,12 @@ func codexMain(mode string) {
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
 	stopErr := server.Shutdown(stopCtx)
 	stopCancel()
+	guardCtx, guardCancel := context.WithTimeout(context.Background(), time.Second)
+	access, guardStopErr := guard.Close(guardCtx)
+	guardCancel()
+	guardErr := access.ValidateCompleted(s, policy)
+	write("provider-access.json", access)
+	write("provider-policy.json", policy)
 	if stopErr != nil {
 		_ = server.Close()
 	}
@@ -375,7 +386,7 @@ func codexMain(mode string) {
 	shapeErr := r.ValidateReport(report, s)
 	_, canaryErr := os.Stat("/work/undeclared-canary.txt")
 	b.mu.Lock()
-	calls, failed, negotiations, metadata, telemetry := b.calls, b.failed, b.negotiations, b.metadata, b.telemetry
+	calls, failed, negotiations, metadata, telemetry := b.calls, b.failed, access.NegotiationRequests, b.metadata, b.telemetry
 	metadataRoutes := map[string]int{}
 	for path, count := range b.metadataRoutes {
 		metadataRoutes[path] = count
@@ -390,13 +401,13 @@ func codexMain(mode string) {
 		}
 		return e.Error()
 	}
-	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "negotiations": negotiations, "metadata_requests": metadata, "metadata_routes": metadataRoutes, "telemetry_requests": telemetry, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
+	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "provider_access_error": text(guardErr), "provider_stop_error": text(guardStopErr), "negotiations": negotiations, "metadata_requests": metadata, "metadata_routes": metadataRoutes, "telemetry_requests": telemetry, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
 	fmt.Printf("case=%s calls=%d run=%v normalize=%v shape=%v negative_denied=%t\n", mode, calls, runErr, normErr, shapeErr, denied)
 	expected := 3
 	if mode == "undeclared-patch" {
 		expected = 2
 	}
-	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || failed != 0 || telemetry != 0 || metadata < 4 || metadata > 5 || !validMetadataRoutes(metadataRoutes) || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
+	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || guardStopErr != nil || guardErr != nil || failed != 0 || telemetry != 0 || metadata < 4 || metadata > 5 || !validMetadataRoutes(metadataRoutes) || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
 		os.Exit(1)
 	}
 }

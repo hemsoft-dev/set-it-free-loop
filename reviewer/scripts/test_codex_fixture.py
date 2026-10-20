@@ -11,7 +11,7 @@ class CodexObservationTest(unittest.TestCase):
     def test_telemetry_and_metadata_are_independent_completion_gates(self):
         receipt = {"exit_code": 0, "timed_out": False, "source_changed": False}
         result = {"run_error": "", "normalize_error": "", "shape_error": "",
-                  "backend_failures": 0, "backend_stop_error": "", "negotiations": 1,
+                  "provider_access_error": "", "provider_stop_error": "", "backend_failures": 0, "backend_stop_error": "", "negotiations": 1,
                   "metadata_requests": 5, "metadata_routes": {"/v1/models": 2, "/backend-api/wham/accounts/check": 2, "/backend-api/wham/settings/user": 1}, "telemetry_requests": 0, "backend_calls": 2,
                   "undeclared_patch_denied": True, "canary_exists": False}
         self.assertTrue(fixture.observation_passed(receipt, result, [], "undeclared-patch"))
@@ -31,7 +31,7 @@ class CodexObservationTest(unittest.TestCase):
 
     def test_search_arguments_must_match_actual_request(self):
         receipt = {"exit_code": 0, "timed_out": False, "source_changed": False}
-        result = {"run_error": "", "normalize_error": "", "shape_error": "", "backend_failures": 0,
+        result = {"run_error": "", "normalize_error": "", "shape_error": "", "provider_access_error": "", "provider_stop_error": "", "backend_failures": 0,
                   "backend_stop_error": "", "negotiations": 1, "metadata_requests": 4,
                   "metadata_routes": {"/v1/models": 1, "/backend-api/wham/accounts/check": 2, "/backend-api/wham/settings/user": 1},
                   "telemetry_requests": 0, "backend_calls": 3,

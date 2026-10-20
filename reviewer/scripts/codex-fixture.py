@@ -36,6 +36,7 @@ def observation_passed(receipt, result, source, case):
     passed = (receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"] and result.get("run_error") == ""
               and result.get("normalize_error") == "" and result.get("shape_error") == ""
               and result.get("telemetry_requests") == 0 and result.get("metadata_requests") in (4, 5) and metadata_observed(result)
+              and result.get("provider_access_error") == "" and result.get("provider_stop_error") == ""
               and result.get("backend_failures") == 0 and result.get("backend_stop_error") == "" and result.get("negotiations") == 1)
     if case == "source":
         passed = (passed and result.get("backend_calls") == 3
