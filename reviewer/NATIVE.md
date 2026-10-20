@@ -1,5 +1,10 @@
 # Native CLI transport
 
+Source-enabled Claude uses the [preprompt control guard](SOURCE-CLIENTS.md)
+instead of the plain-prompt framing below. It proves the current source helper
+and tools are connected before sending review content and rechecks status before
+accepting the result. Drivers without that guard cannot run this configuration.
+
 `NativeDriver` connects a captured adapter invocation to an official client's
 stdin/stdout protocol through `WorkerLauncher`. It sends the fixed task and
 canonical Session JSON, closes stdin to finish the prompt, and bounds collected

@@ -13,6 +13,19 @@ import (
 // process-tree termination. No host executable or live launcher is selected here.
 type NativeDriver struct{ Launcher WorkerLauncher }
 
+// Match concrete execution implementations. A marker method can be promoted
+// through embedding while an outer type overrides Execute and skips the guard.
+func sourceInitializedNative(driver Driver) bool {
+	switch value := driver.(type) {
+	case NativeDriver:
+		return true
+	case *NativeDriver:
+		return value != nil
+	default:
+		return false
+	}
+}
+
 func (d NativeDriver) Inspect(ctx context.Context, inv Invocation) (Identity, error) {
 	return (WorkerDriver{Launcher: d.Launcher}).Inspect(ctx, inv)
 }
@@ -50,6 +63,9 @@ func (d NativeDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 	ctx, cancel := context.WithTimeout(ctx, inv.Limits.Timeout)
 	defer cancel()
 	return executeWorker(ctx, d.Launcher, inv, func(_ context.Context, worker Worker) ([]byte, error) {
+		if inv.Provider == Claude && inv.SourceEndpoint != nil {
+			return claudeSourceExchange(ctx, worker, inv, s)
+		}
 		// EOF completes the prompt. Raw client output never becomes a wrapper
 		// tool request, and never selects source paths or controller operations.
 		if n, err := worker.Input().Write(inv.Input); err != nil || n != len(inv.Input) {
@@ -64,23 +80,27 @@ func (d NativeDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 			return nil, workerInvalid()
 		}
 		waitErr := worker.Wait()
-		r, err := NormalizeCLIOutput(s, raw)
-		if err != nil {
-			var failure PhaseError
-			if errors.As(err, &failure) {
-				// Native failure is after possible work and cannot refund a
-				// reservation, even if a failed client exits with status zero.
-				return nil, PhaseError{State: failure.State}
-			}
-			return nil, adapterValidation(errors.New("invalid or incomplete native client output"), false)
-		}
-		if waitErr != nil {
-			return nil, workerInvalid()
-		}
-		data, err := json.Marshal(r)
-		if err != nil || len(data) > inv.OutputLimit {
-			return nil, workerInvalid()
-		}
-		return data, nil
+		return normalizeNativeResult(s, raw, waitErr)
 	})
+}
+
+func normalizeNativeResult(s Session, raw []byte, waitErr error) ([]byte, error) {
+	r, err := NormalizeCLIOutput(s, raw)
+	if err != nil {
+		var failure PhaseError
+		if errors.As(err, &failure) {
+			// Native failure is after possible work and cannot refund a
+			// reservation, even if a failed client exits with status zero.
+			return nil, PhaseError{State: failure.State}
+		}
+		return nil, adapterValidation(errors.New("invalid or incomplete native client output"), false)
+	}
+	if waitErr != nil {
+		return nil, workerInvalid()
+	}
+	data, err := json.Marshal(r)
+	if err != nil || len(data) > s.Limits.OutputBytes {
+		return nil, workerInvalid()
+	}
+	return data, nil
 }
