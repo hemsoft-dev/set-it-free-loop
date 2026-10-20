@@ -1,0 +1,25 @@
+{
+  "producer": "cmd/vmbootfixture, actual synthetic KVM execution, not hand-written receipt fields",
+  "capture_commit": "7c11cd4300e549855217edffb47eb28c786d4a27",
+  "qemu_sha256": "0cd4112a8f0cb891eb7c10e8df38c9dfeec8c7389bb22db6aa425f0d6fe733dc",
+  "kernel_sha256": "9f55ef7253055a9cf68f8a04323c93dead2fca617386d842fbde9ca7b178b27e",
+  "expected": {
+    "SourceHead": "7c11cd4300e549855217edffb47eb28c786d4a27",
+    "SourceTree": "3f67041bfe982309c950e4a247068142fe40f0f0",
+    "BindingHash": "13522fdd2bfd2f3148eb14ccefd72dc997f60d8eb470585a3f135e63dac6ab9e",
+    "BootSpecHash": "d6478d6db8dd9a3443287215cc0425073989b0f7a46e838484472e67a2d494ef"
+  },
+  "execution": {
+    "Version": 1,
+    "SourceHead": "7c11cd4300e549855217edffb47eb28c786d4a27",
+    "SourceTree": "3f67041bfe982309c950e4a247068142fe40f0f0",
+    "BindingHash": "13522fdd2bfd2f3148eb14ccefd72dc997f60d8eb470585a3f135e63dac6ab9e",
+    "BootSpecHash": "d6478d6db8dd9a3443287215cc0425073989b0f7a46e838484472e67a2d494ef",
+    "VerifiedExecutable": true,
+    "QEMUExited": true,
+    "FakeOnly": true,
+    "ProductionBoundaryQualified": false,
+    "Stage": "complete",
+    "Error": ""
+  }
+}

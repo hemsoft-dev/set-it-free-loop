@@ -96,6 +96,11 @@ class AcceleratorTests(unittest.TestCase):
 
 
 class SealedBootReceiptTests(unittest.TestCase):
+    def test_actual_sealed_qemu_producer_receipt(self):
+        captured = json.loads(Path(__file__).with_name("testdata").joinpath("actual-sealed-vm-boot.json").read_text())
+        self.assertEqual(fixture["parse_sealed_boot_receipt"](json.dumps(captured["execution"]), captured["expected"]),
+                         captured["execution"])
+
     def test_exact_execution_receipt_and_rejections(self):
         expected = {"SourceHead": "a"*40, "SourceTree": "e"*40, "BindingHash": "b"*64, "BootSpecHash": "c"*64}
         good = {"Version": 1, **expected, "VerifiedExecutable": True, "QEMUExited": True,
