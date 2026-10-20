@@ -114,7 +114,7 @@ func (f nativeVMFinished) valid(q nativeVMRequest) bool {
 		return false
 	}
 	switch f.State {
-	case "complete", "auth_failed", "provider_unavailable", "invalid_output", "cancelled", "blocked":
+	case "complete", "auth_failed", "provider_unavailable", "invalid_output", "cancelled", "blocked", "quota_wait", "incomplete_expired":
 	default:
 		return false
 	}

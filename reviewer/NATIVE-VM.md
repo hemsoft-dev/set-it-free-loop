@@ -2,9 +2,9 @@
 
 This branch is implementing the native review path for
 [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
-The current host boundary is not a complete reviewer or a qualified VM release.
-It has no activation command, guest implementation, provider credential import,
-live inference, App installation or deployment.
+The source includes a host reviewer and guest runtime, but is not a qualified VM
+release. It has no activation command, live inference, App installation or
+deployment. The separately required owner/provider/account gates stay closed.
 
 `NativeVMManifest` uses purpose `native-review` and containment protocol 3.
 Synthetic fixture purpose and protocol 2 stay separate. The manifest binds the
@@ -47,11 +47,49 @@ a stopped host-side provider receipt. Control request/ready/finished envelopes
 bind the full launch, session and request digest; the host must still validate
 their actual source audit/auth return before accepting a report.
 
-The next implementation work must connect the private channels to a pinned
-guest runtime with separate provider, reader and code-host identities; implement
-native read-only client execution, exclusive bounded provider egress and private
-source/provider receipts; transfer only the allowlisted auth record and return it
-before shutdown; then accept reports and commit refreshed auth only after a
-fresh whole-VM stop proof. Host and guest result framing, image assembly,
-`AuditedReviewer` composition and exact-client fake-backend KVM qualification are
-unfinished. No partial host implementation closes the parent issue.
+`NativeVMReviewer` implements `AuditedReviewer`. Its explicit trusted `Check`
+must establish all activation/eligibility gates; construction chooses no default
+gate or credential path. It checks peers on the host, starts and grants the
+concrete native containment, then waits for a matching private guest ready
+record before leasing auth. Export verifies the still-captured granted unit.
+Every return stops the whole unit, drains object/provider channels, validates
+private source/provider evidence and persists a nonsecret audit. A valid auth
+return is committed after physical stop even when model output is invalid.
+A missing return preserves recovery and cannot recommit a possibly stale seed.
+
+`cmd/nativevmguest` is the sealed `/native-init`. Normal host invocation refuses
+before mounting or opening a device. Guest PID1 verifies the release and boot
+nonce, prepares separate chroots/namespaces/cgroups, and starts the UID1201
+reader on the private object port. Only this session's socket directory is
+bound into the client jail. The trusted root client proxy owns its private
+provider port and loopback listener. It checks the pinned CLI's no-auth version
+and absence of remaining probe processes before ready, then waits for a private
+start signal. The CLI uses UID1202 for Codex or UID1204 for Claude and receives
+neither private control nor provider descriptors.
+
+Auth seed intake accepts only the selected subscription-file schema. It writes
+one fixed file into the disposable client profile. After all roles stop, guest
+PID1 checks owner, permissions, link count, size and confinement of the returned
+file, then emits a bound `AuthTransfer` return. API-key and opposite-provider
+formats are refused. This parsing does not establish entitlement.
+
+Codex's code-mode executable is a relay to a trusted guest PID1 broker. Separate
+data and failure-control sockets require the same UID1202 peer in the exact
+client cgroup. The actual pinned code host runs in its own UID1203/PID/network/
+mount/cgroup confinement, without a profile, source socket or provider route.
+The root broker scans bounded streams for seed canaries and records byte/hash,
+failure and physical-stop evidence. Neither relay nor code host gets canaries.
+Final reports are checked against seed and returned credential canaries.
+
+`scripts/native-vm-image.py` builds only from a clean committed source archive,
+the exact pinned Codex/Claude/code-host snapshots, and explicit hashed kernel
+and configuration. Its kernel requires built-in virtio-console and isolation
+facilities. It records named ELF dependencies including the interpreter and
+generates a canonical role-specific release. No source checkout, auth profile,
+shell or Git enters the image. It never opens KVM or runs a client or host unit.
+
+Ordinary tests cover these protocols and hostile inputs using synthetic auth,
+real local Unix transports and fake managers. Exact-client fake-backend KVM
+execution, measured native resource limits, refresh/return behavior and actual
+guest UID/namespace/forbidden-capability qualification remain unfinished.
+No source-level test or built image closes the parent issue.
