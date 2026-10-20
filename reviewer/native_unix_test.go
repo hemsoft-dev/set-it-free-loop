@@ -103,7 +103,11 @@ func TestNativeCLIExecutable(t *testing.T) {
 	os.Exit(code)
 }
 
-type nativeFixtureLauncher struct{ fixtureLauncher }
+type nativeFixtureLauncher struct {
+	fixtureLauncher
+	fixtureTest string
+	auditPath   string
+}
 
 func (l *nativeFixtureLauncher) Start(ctx context.Context, inv Invocation) (Worker, error) {
 	if l.startErr != nil && !l.startThenError {
@@ -113,8 +117,21 @@ func (l *nativeFixtureLauncher) Start(ctx context.Context, inv Invocation) (Work
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(binary, "-test.run=^TestNativeCLIExecutable$")
+	test := l.fixtureTest
+	if test == "" {
+		test = "TestNativeCLIExecutable"
+	}
+	cmd := exec.Command(binary, "-test.run=^"+test+"$")
 	cmd.Env = []string{"LANG=C.UTF-8", "GORACE=atexit_sleep_ms=0", "SFL_NATIVE_FIXTURE=" + l.mode}
+	if l.auditPath != "" {
+		cmd.Env = append(cmd.Env, "SFL_NATIVE_FIXTURE_AUDIT="+l.auditPath)
+		config, err := capturedClaudeSource(inv)
+		if err != nil {
+			return nil, err
+		}
+		data, _ := json.Marshal(config)
+		cmd.Env = append(cmd.Env, "SFL_NATIVE_FIXTURE_MCP="+string(data))
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stderr = io.Discard
 	input, err := cmd.StdinPipe()

@@ -154,6 +154,11 @@ func (a Adapter) review(ctx context.Context, s Session, source SourceTools) (Rep
 	if a.Driver == nil {
 		return Report{}, errors.Join(PhaseError{State: "blocked", BeforeWork: true}, ErrLiveBlocked)
 	}
+	if inv.Provider == Claude && inv.SourceEndpoint != nil {
+		if _, ok := a.Driver.(sourceInitializedDriver); !ok {
+			return Report{}, errors.Join(PhaseError{State: "blocked", BeforeWork: true}, ErrLiveBlocked)
+		}
+	}
 	if a.Reader != nil && a.Reader.snapshot != s.Snapshot {
 		return Report{}, adapterValidation(errors.New("reader belongs to another captured snapshot"), true)
 	}

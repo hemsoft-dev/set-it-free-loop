@@ -89,7 +89,7 @@ func TestSourceClientManifestsBindExactlyOneSession(t *testing.T) {
 						t.Fatal("source path has incompatible mode", arg)
 					}
 				}
-				for flag, expected := range map[string]string{"--tools": "", "--setting-sources": "", "--settings": `{"disableAllHooks":true}`, "--permission-mode": "dontAsk", "--permission-prompts": "none", "--max-turns": "24", "--allowedTools": "mcp__sfl-source__read,mcp__sfl-source__search"} {
+				for flag, expected := range map[string]string{"--input-format": "stream-json", "--output-format": "stream-json", "--tools": "", "--setting-sources": "", "--settings": `{"disableAllHooks":true}`, "--permission-mode": "dontAsk", "--permission-prompts": "none", "--max-turns": "24", "--allowedTools": "mcp__sfl-source__read,mcp__sfl-source__search"} {
 					if got, ok := argumentValue(inv.Args, flag); !ok || got != expected {
 						t.Fatal("missing source control", flag, got)
 					}

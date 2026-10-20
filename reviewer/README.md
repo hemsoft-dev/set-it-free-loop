@@ -34,8 +34,9 @@ enforce the declared turn/tool/memory/network limits inside a qualified worker.
 `DisabledLiveDriver` always returns a blocked error. The reusable
 [worker transport](WORKER.md) supplies bounded JSONL framing, phase cancellation,
 trusted pre/post identity inspection and fail-closed supervisor-stop handling.
-Its tests launch fake wrapper executables. Official-client wrappers and a
-qualified OS launcher remain separate implementation work; live execution waits
+Its tests launch fake wrapper executables. `NativeDriver` also handles native
+client framing and Claude's source-enabled preprompt initialization guard.
+A qualified OS launcher and protected reader service remain implementation work; live execution waits
 for passing gates and activation authority. Substituting a fake is not isolation
 proof. Optional trusted `SourceBridge` configuration now binds each session to
 one MCP server through a credential-free Linux Unix-socket proxy. Its required

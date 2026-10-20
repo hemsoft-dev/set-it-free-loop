@@ -14,6 +14,33 @@ is forwarded to the helper. Claude receives one explicit stdio server, strict
 MCP configuration, no built-in source tools, a source-tool permission allowlist,
 noninteractive denial, and the captured maximum agentic-turn count.
 
+Claude's wait/strict flags do not require successful source initialization.
+The source-enabled path therefore uses stream-json input/output and NativeDriver's
+control handshake. Before sending any user prompt, it correlates initialize and
+bounded `mcp_status` responses, requires exactly one dynamic `sfl-source` server,
+checks its actual command/arguments against the captured configuration, and
+requires connected status with exactly raw `read` and `search` tools. Missing,
+failed, disabled, authentication-required, redacted or mismatched status stops
+the worker without sending review content. Pending status can be rechecked at
+most 32 times, one second apart, within the captured phase deadline.
+
+The first-turn init must then match the pinned model/client, connected server
+and source tool inventory. Forbidden tool traces and duplicate completion fail.
+Before accepting a result, a final correlated status check must still match the
+captured server/tools. That final check measures the current state, not continuous
+availability or actual reads. Broker receipts remain authoritative for actual
+source activity. Status omits environment variables, so the pristine filesystem,
+allowlisted environment and OS boundary still need separate qualification.
+
+The adapter rejects a source-enabled Claude driver without the built-in
+initialization guard before inspection or launch. The JSONL wrapper driver is
+not an implicit fallback. The native control path's fake-process tests prove
+zero user frames for failed/missing/partial tools, wrong helper/config/scope,
+uncorrelated responses and pending timeout. They also cover successful startup,
+pending-to-ready, forbidden inventories, identity changes and post-turn disconnect.
+These are control-protocol fixtures; the exact unmodified client still needs its
+credential-free fake-backend qualification before any live use.
+
 The helper command is `/usr/bin/env -i LANG=C.UTF-8` followed by an absolute
 `sourceproxy` program and typed socket/UID/limit options. It runs no shell. A
 trusted test fixture uses a shell wrapper solely to dispatch the Go test binary;
@@ -93,6 +120,8 @@ References inspected October 19, 2026:
 - [Codex noninteractive mode](https://learn.chatgpt.com/docs/non-interactive-mode) covers isolated configuration and required MCP initialization.
 - [Claude CLI controls](https://code.claude.com/docs/en/cli-reference) cover MCP, safe/restricted mode, settings, tools and agentic-turn limits.
 - [Claude hook precedence](https://code.claude.com/docs/en/hooks#disable-or-remove-hooks) explains why per-run settings alone cannot disable managed hooks.
+- [SDK connection sequence](https://github.com/anthropics/claude-agent-sdk-python/blob/c01a99416a02805b0a050d058da51bde53f6df64/src/claude_agent_sdk/client.py#L220-L233) initializes before the optional first prompt; [MCP status](https://github.com/anthropics/claude-agent-sdk-python/blob/c01a99416a02805b0a050d058da51bde53f6df64/src/claude_agent_sdk/client.py#L471-L501) is available without a query.
+- [MCP connection timing](https://code.claude.com/docs/en/agent-sdk/mcp#connection-timing) explains why wait deadlines and first-turn init metadata alone are insufficient readiness guards.
 
 The exact installed Codex CLI 0.163.0 also accepted the generated MCP overrides
 through its read-only `mcp get` parser in a disposable Bubblewrap guest with an

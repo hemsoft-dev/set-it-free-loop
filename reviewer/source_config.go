@@ -65,13 +65,18 @@ func (a Adapter) sourceInvocation(s Session, inv Invocation) (Invocation, error)
 		// Safe mode disables MCP. The source-enabled profile instead requires a
 		// pristine externally confined client filesystem plus explicit controls.
 		args := make([]string, 0, len(inv.Args)+16)
-		for _, arg := range inv.Args {
+		for i := 0; i < len(inv.Args); i++ {
+			arg := inv.Args[i]
 			if arg != "--safe-mode" {
 				args = append(args, arg)
 			}
+			if arg == "--output-format" {
+				args = append(args, "stream-json")
+				i++
+			}
 		}
 		config, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"sfl-source": map[string]any{"type": "stdio", "command": "/usr/bin/env", "args": arguments}}})
-		args = append(args, "--setting-sources", "", "--settings", `{"disableAllHooks":true}`, "--mcp-config", string(config), "--allowedTools", "mcp__sfl-source__read,mcp__sfl-source__search", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--max-turns", strconv.Itoa(s.Limits.MaxTurns))
+		args = append(args, "--input-format", "stream-json", "--verbose", "--setting-sources", "", "--settings", `{"disableAllHooks":true}`, "--mcp-config", string(config), "--allowedTools", "mcp__sfl-source__read,mcp__sfl-source__search", "--permission-mode", "dontAsk", "--permission-prompts", "none", "--max-turns", strconv.Itoa(s.Limits.MaxTurns))
 		inv.Args = args
 	default:
 		return Invocation{}, errors.New("unsupported source provider")
