@@ -47,25 +47,70 @@ type codexBackend struct {
 }
 
 func outputFor(value any, id string) (any, bool) {
-	switch x := value.(type) {
-	case []any:
-		for _, v := range x {
-			if out, ok := outputFor(v, id); ok {
-				return out, true
-			}
-		}
-	case map[string]any:
-		if x["type"] == "custom_tool_call_output" && x["call_id"] == id {
-			return x["output"], true
-		}
-		for _, v := range x {
-			if out, ok := outputFor(v, id); ok {
-				return out, true
-			}
+	body, ok := value.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	items, ok := body["input"].([]any)
+	if !ok {
+		return nil, false
+	}
+	var output any
+	count := 0
+	for _, item := range items {
+		if v, ok := item.(map[string]any); ok && v["type"] == "custom_tool_call_output" && v["call_id"] == id {
+			count++
+			output = v["output"]
 		}
 	}
-	return nil, false
+	return output, count == 1
 }
+func verifiedSourceOutput(value any, id string) bool {
+	parts, ok := value.([]any)
+	if !ok {
+		return false
+	}
+	count := 0
+	for _, part := range parts {
+		v, ok := part.(map[string]any)
+		if !ok || v["type"] != "input_text" {
+			return false
+		}
+		text, ok := v["text"].(string)
+		if !ok {
+			return false
+		}
+		if !strings.HasPrefix(strings.TrimSpace(text), "{") {
+			continue
+		}
+		result, err := r.DecodeStrict[struct {
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+			IsError bool `json:"isError"`
+		}]([]byte(text), 1<<16)
+		if err != nil || result.IsError || len(result.Content) != 1 || result.Content[0].Type != "text" {
+			return false
+		}
+		count++
+		switch id {
+		case "fixture_read":
+			if result.Content[0].Text != source {
+				return false
+			}
+		case "fixture_search":
+			matches, err := r.DecodeStrict[[]r.Anchor]([]byte(result.Content[0].Text), 1<<16)
+			if err != nil || len(matches) != 1 || matches[0] != (r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return count == 1
+}
+
 func inventory(value any) ([]string, bool) {
 	switch x := value.(type) {
 	case []any:
@@ -217,7 +262,7 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		if b.mode == "undeclared-patch" {
 			b.negativeOutput = string(data)
 		} else {
-			if !bytes.Contains(data, []byte("immutable source evidence")) {
+			if !verifiedSourceOutput(value, previousID) {
 				deny("missing source result")
 				return
 			}
@@ -299,6 +344,12 @@ func codexMain(mode string) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.WaitDelay = 2 * time.Second
 	runErr := cmd.Run()
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+	stopErr := server.Shutdown(stopCtx)
+	stopCancel()
+	if stopErr != nil {
+		_ = server.Close()
+	}
 	_ = os.WriteFile("/artifacts/client-stdout.jsonl", stdout.buf.Bytes(), 0600)
 	_ = os.WriteFile("/artifacts/client-stderr.txt", stderr.buf.Bytes(), 0600)
 	report, normErr := r.NormalizeCLIOutput(s, stdout.buf.Bytes())
@@ -316,13 +367,13 @@ func codexMain(mode string) {
 		}
 		return e.Error()
 	}
-	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "negotiations": negotiations, "metadata_requests": metadata, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
+	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "negotiations": negotiations, "metadata_requests": metadata, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
 	fmt.Printf("case=%s calls=%d run=%v normalize=%v shape=%v negative_denied=%t\n", mode, calls, runErr, normErr, shapeErr, denied)
 	expected := 3
 	if mode == "undeclared-patch" {
 		expected = 2
 	}
-	if runErr != nil || normErr != nil || shapeErr != nil || failed != 0 || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
+	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || failed != 0 || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
 		os.Exit(1)
 	}
 }

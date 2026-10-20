@@ -1,0 +1,32 @@
+[
+  {
+    "id": "fixture_read",
+    "output": [
+      {
+        "type": "input_text",
+        "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+      },
+      {
+        "type": "input_text",
+        "text": "[\"mcp__sfl_source__read\",\"mcp__sfl_source__search\"]"
+      },
+      {
+        "type": "input_text",
+        "text": "{\"content\":[{\"type\":\"text\",\"text\":\"immutable source evidence\\n\"}],\"isError\":false}"
+      }
+    ]
+  },
+  {
+    "id": "fixture_search",
+    "output": [
+      {
+        "type": "input_text",
+        "text": "Script completed\nWall time 0.0 seconds\nOutput:\n"
+      },
+      {
+        "type": "input_text",
+        "text": "{\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"path\\\":\\\"source.go\\\",\\\"line\\\":1,\\\"quote\\\":\\\"immutable source evidence\\\",\\\"revision\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"}]\"}],\"isError\":false}"
+      }
+    ]
+  }
+]

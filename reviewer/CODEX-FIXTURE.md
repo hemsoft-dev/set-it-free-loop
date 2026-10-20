@@ -6,7 +6,9 @@ feature boolean. MCP `omit_tools_from=["deferred"]` exposes Read/Search in that
 runtime without requiring ToolSearch. Namespace exclusions remove builtin
 nested handles, and explicit controls disable questions and native V2 agent
 tools. The ordinary `multi_agent=false` setting alone does not control the
-model-selected V2 path.
+model-selected V2 path. Analytics and feedback are disabled explicitly, and
+OpenTelemetry metrics use the `none` exporter. Account/model policy metadata
+remains distinct from nonessential telemetry.
 
 These are necessary configuration controls. They are not a complete capability
 allowlist or proof of the required external isolation profile. The adapter
@@ -29,19 +31,25 @@ python3 -B reviewer/scripts/codex-fixture.py \
   --output /absolute/path/to/new-private-negative-artifacts
 ```
 
-Both executable hashes are pinned before launch. The fixture mounts only those
+Both executable hashes are pinned before launch. The command requires clean
+committed source, builds an immutable archive with offline-only module resolution
+and executes verified private executable snapshots. Missing cached dependencies
+fail closed; no automatic dependency or toolchain download is allowed. The fixture mounts only those
 executables, its own helper and minimal `/usr/bin/env` runtime dependencies in a
 new PID/mount/network namespace. It creates synthetic stored ChatGPT account
 bytes in a fresh profile. No real profile, host home, SSH socket or credential
 is mounted. Only a local fake backend is reachable. A local HTTP426 response
 negotiates the same builtin provider's WebSocket attempt down to HTTP; the fixture
 never opens a WebSocket or substitutes a model/provider. Production egress does
-not yet implement that negotiation.
+not yet implement that negotiation. The measured account/model/settings metadata
+also needs its own captured budget; the earlier bridge default of four metadata
+requests is below the five observed after telemetry suppression. This fixture
+does not qualify that bridge or increase its budgets.
 
 The source case checks the exact model and advertised `functions.exec`/`wait`
 wrappers, then asks the runtime for its actual `ALL_TOOLS` names. They must be
 exactly `mcp__sfl_source__read` and `mcp__sfl_source__search`. It executes Read and
-Search against the real immutable Reader over a synthetic ObjectStore. Matching
+Search against the real immutable Reader over a synthetic ObjectStore. Distinct exact non-error Read and Search
 results must appear in the subsequent native requests before the backend sends
 its final report. Production CLI output normalization and report validation
 process the actual native envelopes. Source operations use the fixture helper,
@@ -72,3 +80,8 @@ Pinned source references:
 - [MCP exposure and runtime namespace exclusions](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/spec_plan.rs#L197-L289), [nested construction](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/spec_plan.rs#L950-L1009).
 - [Question controls](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/spec_plan.rs#L1331-L1369) and [native V2 control](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/spec_plan.rs#L724-L740).
 - [Direct call routing](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/router.rs#L258-L393), [registry lookup](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/registry.rs#L576-L584) and [native MCP event mapping](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/exec/src/event_processor_with_jsonl_output.rs#L207-L236).
+
+Telemetry controls are pinned in the [analytics sender](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/analytics/src/client.rs#L314-L324).
+The [Git attribution policy](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/app-server/src/git_attribution/policy.rs#L68-L80)
+still requires account settings; the retired Git attribution feature flag cannot
+be used as an effective suppression switch.

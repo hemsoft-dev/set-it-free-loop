@@ -71,6 +71,9 @@ func (a Adapter) sourceInvocation(s Session, inv Invocation) (Invocation, error)
 			"-c", "features.image_generation=false",
 			"-c", "features.goals=false",
 			"-c", "features.sleep_tool=false",
+			"-c", "analytics.enabled=false",
+			"-c", "feedback.enabled=false",
+			"-c", "otel.metrics_exporter=\"none\"",
 		}
 		// Preserve the positional stdin prompt marker after all added options.
 		inv.Args = append(append(inv.Args[:len(inv.Args)-1:len(inv.Args)-1], extra...), "-")

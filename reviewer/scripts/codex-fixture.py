@@ -13,7 +13,6 @@ import pathlib
 import shutil
 import signal
 import subprocess
-import tempfile
 
 CLIENT_SHA256 = "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215"
 HOST_SHA256 = "8724d73ec190536233ab4628d24a071bfbcf27e5124f08fe35129f26fe48b916"
@@ -32,6 +31,7 @@ def main():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--case", choices=["source", "undeclared-patch"], required=True)
     parser.add_argument("--go", default="go")
+    parser.add_argument("--module-cache", type=pathlib.Path)
     args = parser.parse_args()
     client = args.client.resolve(strict=True)
     code_host = args.code_host.resolve(strict=True)
@@ -40,18 +40,18 @@ def main():
     bwrap = shutil.which("bwrap")
     if bwrap is None or not pathlib.Path("/proc/self/ns/net").exists():
         parser.error("Linux and Bubblewrap required")
+    module = pathlib.Path(__file__).resolve().parent.parent
+    manifest = _common.source_manifest(module)
     out = args.output.absolute()
     out.mkdir(mode=0o700)
     artifacts = out / "artifacts"
     artifacts.mkdir(mode=0o700)
-    module = pathlib.Path(__file__).resolve().parent.parent
+    client = _common.snapshot_file(client, out / "client-snapshot", CLIENT_SHA256)
+    code_host = _common.snapshot_file(code_host, out / "code-host-snapshot", HOST_SHA256)
     helper = out / "helper"
-    environment = dict(os.environ, CGO_ENABLED="0", GOOS="linux", GOARCH="amd64")
-    with tempfile.TemporaryDirectory(prefix="sfl-codex-build-") as cache:
-        environment["GOCACHE"] = cache
-        subprocess.run([args.go, "-C", str(module), "build", "-trimpath", "-o",
-                        str(helper), "./cmd/codexfixture"], env=environment,
-                       check=True, timeout=120)
+    _common.build_offline(module, args.go, helper, "./cmd/codexfixture", manifest, args.module_cache)
+    if _common.source_manifest(module) != manifest:
+        raise RuntimeError("source changed during helper build")
     command = [bwrap, "--unshare-all", "--die-with-parent", "--new-session", "--clearenv",
                "--ro-bind", str(client), "/client", "--ro-bind", str(code_host), "/codex-code-mode-host",
                "--ro-bind", str(helper), "/helper", "--ro-bind", "/usr/bin/env", "/usr/bin/env",
@@ -77,18 +77,20 @@ def main():
     receipt = {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "case": args.case,
                "client_version": "0.163.0", "client_sha256": CLIENT_SHA256, "code_host_sha256": HOST_SHA256,
                "helper_sha256": _common.digest(helper), "command": command,
-               "source_commit": subprocess.check_output(["git", "-C", str(module), "rev-parse", "HEAD"], text=True).strip(),
-               "source_tree": subprocess.check_output(["git", "-C", str(module), "rev-parse", "HEAD^{tree}"], text=True).strip(),
-               "source_dirty": bool(subprocess.check_output(["git", "-C", str(module), "status", "--porcelain"])),
+               **manifest,
                "exit_code": process.returncode, "timed_out": timed_out,
                "fake_only": True, "actual_account_qualified": False,
                "capability_allowlist_qualified": False, "production_boundary_qualified": False}
+    try:
+        receipt["source_changed"] = _common.source_manifest(module) != manifest
+    except RuntimeError:
+        receipt["source_changed"] = True
     (out / "host-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     result = json.loads((artifacts / "result.json").read_text()) if (artifacts / "result.json").exists() else {}
     source = [json.loads(line) for line in (artifacts / "source.jsonl").read_text().splitlines()] if (artifacts / "source.jsonl").exists() else []
-    passed = (process.returncode == 0 and not timed_out and result.get("run_error") == ""
+    passed = (process.returncode == 0 and not timed_out and not receipt["source_changed"] and result.get("run_error") == ""
               and result.get("normalize_error") == "" and result.get("shape_error") == ""
-              and result.get("backend_failures") == 0 and result.get("negotiations") == 1)
+              and result.get("backend_failures") == 0 and result.get("backend_stop_error") == "" and result.get("negotiations") == 1)
     if args.case == "source":
         passed = (passed and result.get("backend_calls") == 3
                   and result.get("runtime_inventory") == ["mcp__sfl_source__read", "mcp__sfl_source__search"]
