@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -16,7 +17,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"strings"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -32,7 +33,8 @@ const marker = "sfl-codehost-synthetic-only-1\n"
 var forbidden = []string{"sfl-fake-access", "sfl-fake-refresh", "sfl-fake-account", "fixture@example.invalid"}
 
 type streamObservation struct {
-	Bytes      int64  `json:"bytes"`
+	Bytes int64 `json:"bytes"
+ "bufio"`
 	SHA256     string `json:"sha256"`
 	SecretSeen bool   `json:"synthetic_secret_seen"`
 	Capped     bool   `json:"capped"`
@@ -119,7 +121,15 @@ func pinned(path string) bool {
 	n, err := io.Copy(h, io.LimitReader(f, 80<<20))
 	return err == nil && n > 0 && hex.EncodeToString(h.Sum(nil)) == hostHash
 }
+
+const hello = "SFL_CODEHOST_STDIO_1\n"
+const ready = "SFL_CODEHOST_READY_1\n"
+
 func main() {
+	if len(os.Args) == 6 && os.Args[1] == "--broker" {
+		runBroker(os.Args[2], os.Args[3], os.Args[4], os.Args[5])
+		return
+	}
 	if len(os.Args) == 4 && os.Args[1] == "--child" {
 		child(os.Args[2], os.Args[3])
 		return
@@ -128,7 +138,7 @@ func main() {
 		os.Exit(2)
 	}
 	raw, err := os.ReadFile("/run/sfl-codehost-fixture")
-	if err != nil || string(raw) != marker || !pinned("/code-host-pinned") {
+	if err != nil || string(raw) != marker {
 		os.Exit(2)
 	}
 	result := relay()
@@ -138,6 +148,105 @@ func main() {
 	}
 }
 func relay() observation {
+	result := observation{Version: 1, FakeOnly: true}
+	conn, err := net.DialTimeout("unix", "/codehost/stdio.sock", 5*time.Second)
+	if err != nil {
+		return result
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(40 * time.Second))
+	if _, err = io.WriteString(conn, hello); err != nil {
+		return result
+	}
+	response := make([]byte, len(ready))
+	if _, err = io.ReadFull(conn, response); err != nil || string(response) != ready {
+		return result
+	}
+	result.ProbePassed = true
+	type copied struct {
+		value streamObservation
+		err   error
+	}
+	input := make(chan copied, 1)
+	go func() {
+		v, e := copyStream(conn, os.Stdin)
+		if socket, ok := conn.(*net.UnixConn); ok {
+			socket.CloseWrite()
+		}
+		input <- copied{v, e}
+	}()
+	result.Output, err = copyStream(os.Stdout, conn)
+	os.Stdout.Close()
+	os.Stdin.Close()
+	var in copied
+	select {
+	case in = <-input:
+	case <-time.After(time.Second):
+		in.err = errors.New("input did not stop")
+	}
+	result.Input = in.value
+	result.Passed = err == nil && (in.err == nil || errors.Is(in.err, os.ErrClosed)) && !in.value.SecretSeen && !result.Output.SecretSeen
+	return result
+}
+
+func runBroker(socket, host, probe, receipt string) {
+	result := observation{Version: 1, FakeOnly: true}
+	code := 1
+	defer func() {
+		raw, _ := json.MarshalIndent(result, "", "  ")
+		if os.WriteFile(receipt, append(raw, '\n'), 0600) != nil {
+			code = 1
+		}
+		os.Exit(code)
+	}()
+	if os.Getenv("SFL_FAKE_CODEHOST_BROKER") != "1" || !filepath.IsAbs(socket) || !filepath.IsAbs(host) || !filepath.IsAbs(probe) || !filepath.IsAbs(receipt) || filepath.Dir(host) != filepath.Dir(probe) || filepath.Dir(host) != filepath.Dir(receipt) || !pinned(host) {
+		return
+	}
+	self, err := os.Executable()
+	if err != nil || self != probe {
+		return
+	}
+	parent, err := os.Stat(filepath.Dir(socket))
+	if err != nil || !parent.IsDir() || parent.Mode().Perm() != 0700 {
+		return
+	}
+	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
+	if err != nil {
+		return
+	}
+	defer listener.Close()
+	if os.Chmod(socket, 0600) != nil {
+		return
+	}
+	listener.SetDeadline(time.Now().Add(45 * time.Second))
+	conn, err := listener.AcceptUnix()
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	rawConn, err := conn.SyscallConn()
+	if err != nil {
+		return
+	}
+	peerOK := false
+	if rawConn.Control(func(fd uintptr) {
+		peer, e := unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+		peerOK = e == nil && peer.Uid == uint32(os.Getuid()) && peer.Pid > 0
+	}) != nil || !peerOK {
+		return
+	}
+	conn.SetDeadline(time.Now().Add(40 * time.Second))
+	request := make([]byte, len(hello))
+	if _, err = io.ReadFull(conn, request); err != nil || string(request) != hello {
+		return
+	}
+	result = brokerExchange(conn, host, probe, filepath.Join(filepath.Dir(receipt), "codehost-stderr.txt"))
+	if result.Passed {
+		code = 0
+	}
+}
+
+func brokerExchange(conn *net.UnixConn, host, probe, stderrPath string) observation {
 	result := observation{Version: 1, FakeOnly: true}
 	parentNet, err := os.Readlink("/proc/self/ns/net")
 	if err != nil {
@@ -149,8 +258,10 @@ func relay() observation {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
+	// Use the installed, policy-authorized Bubblewrap executable. No host policy
+	// is modified and no namespace is created by a child inside the client root.
 	args := []string{"--unshare-all", "--die-with-parent", "--new-session", "--clearenv", "--cap-drop", "ALL",
-		"--ro-bind", "/code-host-pinned", "/code-host", "--ro-bind", "/code-host-relay", "/probe",
+		"--ro-bind", host, "/code-host", "--ro-bind", probe, "/probe",
 		"--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp", "--dir", "/work", "--chdir", "/work", "--remount-ro", "/",
 		"--", "/probe", "--child", parentNet, parentPID}
 	command := exec.CommandContext(ctx, "/usr/bin/bwrap", args...)
@@ -165,22 +276,61 @@ func relay() observation {
 		in.Close()
 		return result
 	}
-	stderr := &boundedBuffer{}
-	command.Stderr = stderr
-	if command.Start() != nil {
+	stderr, err := command.StderrPipe()
+	if err != nil {
 		in.Close()
 		out.Close()
 		return result
 	}
-	// Input may remain open until the CLI sees output EOF. Do not wait for its
-	// EOF after the child exits; close this relay's stdin to release the copier.
+	if command.Start() != nil {
+		in.Close()
+		out.Close()
+		stderr.Close()
+		return result
+	}
+	reaped := false
+	defer func() {
+		if !reaped {
+			cancel()
+			command.Wait()
+		}
+	}()
+	diagnostics := &boundedBuffer{}
+	probeDone := make(chan bool, 1)
+	stderrDone := make(chan error, 1)
+	go func() {
+		reader := bufio.NewReader(io.LimitReader(stderr, (64<<10)+1))
+		first, e := reader.ReadBytes('\n')
+		diagnostics.Write(first)
+		probeDone <- e == nil && string(first) == "SFL_CODEHOST_PROBE_OK\n"
+		_, e = io.Copy(diagnostics, reader)
+		stderrDone <- e
+	}()
+	select {
+	case result.ProbePassed = <-probeDone:
+	case <-ctx.Done():
+	}
+	if !result.ProbePassed {
+		cancel()
+		command.Wait()
+		reaped = true
+		select {
+		case <-stderrDone:
+		case <-time.After(time.Second):
+		}
+		os.WriteFile(stderrPath, []byte(diagnostics.String()), 0600)
+		return result
+	}
+	if _, err = io.WriteString(conn, ready); err != nil {
+		return result
+	}
 	type copied struct {
 		value streamObservation
 		err   error
 	}
 	input, output := make(chan copied, 1), make(chan copied, 1)
 	go func() {
-		v, e := copyStream(in, os.Stdin)
+		v, e := copyStream(in, conn)
 		in.Close()
 		input <- copied{v, e}
 		if e != nil && !errors.Is(e, os.ErrClosed) {
@@ -188,32 +338,32 @@ func relay() observation {
 		}
 	}()
 	go func() {
-		v, e := copyStream(os.Stdout, out)
+		v, e := copyStream(conn, out)
 		output <- copied{v, e}
 		if e != nil {
 			cancel()
 		}
 	}()
 	o := <-output
-	// Signal EOF to the CLI before waiting for its still-open input pipe.
-	// Otherwise both peers can wait for each other after the host exits.
-	os.Stdout.Close()
+	conn.CloseWrite()
 	waitErr := command.Wait()
-	os.Stdin.Close()
+	reaped = true
+	conn.CloseRead()
 	var i copied
 	select {
 	case i = <-input:
 	case <-time.After(time.Second):
 		i.err = errors.New("input did not stop")
 	}
-	result.Input, result.Output = i.value, o.value
-	if os.WriteFile("/artifacts/codehost-stderr.txt", []byte(stderr.String()), 0600) != nil {
-		return result
+	var stderrErr error
+	select {
+	case stderrErr = <-stderrDone:
+	case <-time.After(time.Second):
+		stderrErr = errors.New("stderr did not stop")
 	}
-	result.ProbePassed = strings.HasPrefix(stderr.String(), "SFL_CODEHOST_PROBE_OK\n")
-	// Closing relay stdin after a clean host exit is expected, not a peer failure.
-	inputOK := i.err == nil || errors.Is(i.err, os.ErrClosed)
-	result.Passed = waitErr == nil && o.err == nil && inputOK && result.ProbePassed && !i.value.SecretSeen && !o.value.SecretSeen && ctx.Err() == nil
+	result.Input, result.Output = i.value, o.value
+	saved := os.WriteFile(stderrPath, []byte(diagnostics.String()), 0600) == nil
+	result.Passed = waitErr == nil && o.err == nil && (i.err == nil || errors.Is(i.err, os.ErrClosed)) && stderrErr == nil && saved && !i.value.SecretSeen && !o.value.SecretSeen && ctx.Err() == nil
 	return result
 }
 

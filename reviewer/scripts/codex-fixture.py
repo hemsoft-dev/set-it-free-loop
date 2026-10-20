@@ -13,6 +13,8 @@ import pathlib
 import shutil
 import signal
 import subprocess
+import tempfile
+import time
 
 CLIENT_SHA256 = "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215"
 HOST_SHA256 = "8724d73ec190536233ab4628d24a071bfbcf27e5124f08fe35129f26fe48b916"
@@ -109,25 +111,29 @@ def main():
     relay_mounts = []
     runtime = set(_common.runtime_files(pathlib.Path("/usr/bin/env")))
     isolation_manifest = None
+    ipc = None
+    broker_command = None
     if args.isolate_code_host:
         relay = out / "code-host-relay"
         _common.build_offline(module, args.go, relay, "./cmd/codehostfixture", manifest, args.module_cache)
         marker = out / "synthetic-codehost-marker"
         marker.write_text("sfl-codehost-synthetic-only-1\n")
         marker.chmod(0o400)
-        nested = _common.snapshot_file(pathlib.Path(bwrap), out / "bwrap-snapshot", _common.digest(pathlib.Path(bwrap)))
-        runtime.update(_common.runtime_files(nested))
-        relay_mounts = ["--ro-bind", str(relay), "/codex-code-mode-host", "--ro-bind", str(relay), "/code-host-relay",
-                        "--ro-bind", str(nested), "/usr/bin/bwrap", "--ro-bind", str(marker), "/run/sfl-codehost-fixture"]
-        host_mount = "/code-host-pinned"
-        isolation_manifest = {"relay_sha256": _common.digest(relay), "bwrap_sha256": _common.digest(nested),
+        ipc = tempfile.TemporaryDirectory(prefix="sfl-codehost-")
+        broker_command = [str(relay), "--broker", str(pathlib.Path(ipc.name) / "stdio.sock"), str(code_host), str(relay), str(out / "codehost-broker.json")]
+        relay_mounts = ["--ro-bind", str(relay), "/codex-code-mode-host", "--ro-bind", ipc.name, "/codehost", "--ro-bind", str(marker), "/run/sfl-codehost-fixture"]
+        host_mount = None
+        isolation_manifest = {"relay_sha256": _common.digest(relay), "bwrap_sha256": _common.digest(pathlib.Path(bwrap)),
+                              "broker_mode": "sibling-namespace-stdio-1",
                               "runtime": [{"path": name, "sha256": _common.digest(pathlib.Path(name))} for name in sorted(runtime)],
                               "separate_guest_uid_qualified": False, "vm_worker_qualified": False}
     command = [bwrap, "--unshare-all", "--die-with-parent", "--new-session", "--clearenv",
-               "--ro-bind", str(client), "/client", "--ro-bind", str(code_host), host_mount,
+               "--ro-bind", str(client), "/client",
                "--ro-bind", str(helper), "/helper", "--ro-bind", "/usr/bin/env", "/usr/bin/env",
                "--ro-bind", "/lib64/ld-linux-x86-64.so.2", "/lib64/ld-linux-x86-64.so.2",
                "--symlink", "usr/lib", "/lib"]
+    if host_mount is not None:
+        command += ["--ro-bind", str(code_host), host_mount]
     for library in sorted(runtime):
         command += ["--ro-bind", library, library]
     command += relay_mounts
@@ -137,21 +143,43 @@ def main():
                 "--setenv", "GOMAXPROCS", "1", "--setenv", "SFL_FAKE_CLIENT_FIXTURE", "1",
                 "--chdir", "/work", "--", "/helper", "--fixture", "--case", args.case]
     timed_out = False
-    with (out / "host-stdout.txt").open("wb") as stdout, (out / "host-stderr.txt").open("wb") as stderr:
-        process = subprocess.Popen(command, stdout=stdout, stderr=stderr, start_new_session=True,
-                                   env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
-        try:
-            process.wait(timeout=50)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait(timeout=5)
+    broker = None
+    broker_stopped = True
+    try:
+        if broker_command is not None:
+            with (out / "broker-stdout.txt").open("wb") as broker_out, (out / "broker-stderr.txt").open("wb") as broker_err:
+                broker = subprocess.Popen(broker_command, stdout=broker_out, stderr=broker_err, start_new_session=True,
+                                          env={"LANG": "C.UTF-8", "SFL_FAKE_CODEHOST_BROKER": "1"})
+            deadline = time.monotonic() + 5
+            while not (pathlib.Path(ipc.name) / "stdio.sock").exists():
+                if broker.poll() is not None or time.monotonic() >= deadline:
+                    raise RuntimeError("code-host broker did not become ready")
+                time.sleep(0.02)
+        with (out / "host-stdout.txt").open("wb") as stdout, (out / "host-stderr.txt").open("wb") as stderr:
+            process = subprocess.Popen(command, stdout=stdout, stderr=stderr, start_new_session=True,
+                                       env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+            try:
+                process.wait(timeout=50)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait(timeout=5)
+    finally:
+        if broker is not None:
+            try:
+                broker.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                broker_stopped = False
+                os.killpg(broker.pid, signal.SIGKILL)
+                broker.wait(timeout=5)
+        if ipc is not None:
+            ipc.cleanup()
     receipt = {"at": datetime.datetime.now(datetime.timezone.utc).isoformat(), "case": args.case,
                "client_version": "0.163.0", "client_sha256": CLIENT_SHA256, "code_host_sha256": HOST_SHA256,
                "helper_sha256": _common.digest(helper), "command": command,
                **manifest,
                "exit_code": process.returncode, "timed_out": timed_out,
-               "code_host_isolation": isolation_manifest,
+               "code_host_isolation": isolation_manifest, "broker_stopped_cleanly": broker_stopped,
                "fake_only": True, "actual_account_qualified": False,
                "capability_allowlist_qualified": False, "production_boundary_qualified": False}
     try:
@@ -165,7 +193,11 @@ def main():
     if args.isolate_code_host:
         relay_path = artifacts / "codehost-relay.json"
         isolated = json.loads(relay_path.read_text()) if relay_path.exists() else {}
-        passed = passed and code_host_observation_passed(isolated)
+        broker_path = out / "codehost-broker.json"
+        broker_result = json.loads(broker_path.read_text()) if broker_path.exists() else {}
+        passed = (passed and broker_stopped and broker.returncode == 0
+                  and code_host_observation_passed(isolated) and code_host_observation_passed(broker_result)
+                  and isolated.get("input") == broker_result.get("input") and isolated.get("output") == broker_result.get("output"))
     print(json.dumps({"observation_passed": passed, "case": args.case, "output": str(out),
                       "capability_allowlist_qualified": False, "production_boundary_qualified": False}))
     return 0 if passed else 1
