@@ -64,7 +64,9 @@ exercise its separate reader/worker identities, source canaries and cgroup stop
 checks. A successful boot does not qualify native CLI/code-host separation, auth
 transfer/refresh/disposal, provider egress, model eligibility or production
 isolation. The fixed systemd fake-marker payload remains unchanged. A separate
-pinned VM payload/grant adapter is still required before composing native workers.
+pinned [VM fixture payload/grant adapter](VM-GRANT.md) now exercises descriptor
+transfer and durable whole-unit stop. Native role/auth/egress composition remains
+required before composing native workers.
 
 ## Validation
 

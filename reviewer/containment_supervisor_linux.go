@@ -198,6 +198,7 @@ type unitJournal struct {
 	StartJob, StopJob                                  string
 	Identity                                           GateIdentity
 	Cgroup                                             cgroupBinding
+	PayloadKind                                        string
 }
 
 // SystemdSupervisor currently starts only the fixed fake-marker stub. It owns
@@ -213,6 +214,7 @@ type SystemdSupervisor struct {
 	starts               map[AuthBinding]chan struct{}
 	image                *retainedStubImage
 	closed               bool
+	payloadKind          string
 }
 
 // OpenSystemdSupervisor is explicit construction, never an Engine fallback.
@@ -246,8 +248,12 @@ func (s *SystemdSupervisor) readUnit(held *authLock, binding AuthBinding) (unitJ
 	if err != nil {
 		return unitJournal{}, ErrAuthRecoveryRequired
 	}
+	raw, err = legacyContainmentField(raw, "PayloadKind", json.RawMessage(`""`))
+	if err != nil {
+		return unitJournal{}, ErrAuthRecoveryRequired
+	}
 	r, err := DecodeStrict[unitJournal](raw, 65536)
-	if err != nil || r.Version != 1 || r.Binding != binding || !binding.valid() || r.Unit != "sfl-alpha-"+binding.LaunchID+".service" || r.StubHash != s.stubHash || !validAuthHash(r.ManifestHash) || r.ManagerOwner == "" || r.BootID == "" {
+	if err != nil || r.Version != 1 || r.PayloadKind != s.payloadKind || r.Binding != binding || !binding.valid() || r.Unit != "sfl-alpha-"+binding.LaunchID+".service" || r.StubHash != s.stubHash || !validAuthHash(r.ManifestHash) || r.ManagerOwner == "" || r.BootID == "" {
 		return r, ErrAuthRecoveryRequired
 	}
 	if r.StartSettled && !r.Started || r.Captured && (!r.Started || !r.StartSettled || r.Identity.PID <= 0 || r.Cgroup.Inode == 0 || !validUnitCgroup(r.Cgroup.Path, r.Unit)) || r.Stopped && !r.Aborted {
@@ -284,7 +290,14 @@ func (s *SystemdSupervisor) snapshotUnit(ctx context.Context, binding AuthBindin
 	return r, err
 }
 func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateManifest) error {
-	if !binding.valid() {
+	if s.payloadKind != "" || !validFakeGateManifest(manifest) {
+		return ErrAuthRecoveryRequired
+	}
+	return s.preparePayload(binding, Digest(manifest), 0)
+}
+
+func (s *SystemdSupervisor) preparePayload(binding AuthBinding, hash string, protocol int) error {
+	if !binding.valid() || !validAuthHash(hash) || (s.payloadKind == "" && protocol != 0) || (s.payloadKind == "vm-fixture" && protocol != 2) || (s.payloadKind != "" && s.payloadKind != "vm-fixture") {
 		return ErrAuthRecoveryRequired
 	}
 	s.mu.Lock()
@@ -303,7 +316,7 @@ func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateMa
 	if err != nil {
 		return ErrAuthRecoveryRequired
 	}
-	gate, err := PrepareContainmentGate(s.root, binding, manifest)
+	gate, err := prepareContainmentGateHash(s.root, binding, hash, protocol)
 	if err != nil {
 		return err
 	}
@@ -318,7 +331,7 @@ func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateMa
 		return ErrAuthRecoveryRequired
 	}
 	defer held.close()
-	r := unitJournal{Version: 1, Binding: binding, Unit: "sfl-alpha-" + binding.LaunchID + ".service", BootID: boot, ManagerOwner: s.manager.Owner(), StubHash: s.stubHash, ManifestHash: Digest(manifest)}
+	r := unitJournal{Version: 1, Binding: binding, Unit: "sfl-alpha-" + binding.LaunchID + ".service", BootID: boot, ManagerOwner: s.manager.Owner(), StubHash: s.stubHash, ManifestHash: hash, PayloadKind: s.payloadKind}
 	raw, err := json.Marshal(r)
 	if err != nil || writeAuth(held.root, "unit.json", raw) != nil {
 		return ErrAuthRecoveryRequired
@@ -334,7 +347,16 @@ func (s *SystemdSupervisor) PrepareFake(binding AuthBinding, manifest FakeGateMa
 	return nil
 }
 func expectedFakeObservation(r unitJournal, o unitObservation) bool {
-	return o.Unit == r.Unit && o.Path.IsValid() && o.InvocationID != "" && o.Description == "SFL fake containment "+Digest(r.Binding) &&
+	return r.PayloadKind == "" && expectedPayloadObservation(r, o)
+}
+func payloadDescription(kind string, binding AuthBinding) string {
+	if kind == "vm-fixture" {
+		return "SFL sealed VM containment " + Digest(binding)
+	}
+	return "SFL fake containment " + Digest(binding)
+}
+func expectedPayloadObservation(r unitJournal, o unitObservation) bool {
+	return (r.PayloadKind == "" || r.PayloadKind == "vm-fixture") && o.Unit == r.Unit && o.Path.IsValid() && o.InvocationID != "" && o.Description == payloadDescription(r.PayloadKind, r.Binding) &&
 		o.Transient && o.Job.ID == 0 && o.MemoryMax == 1<<30 && o.MemorySwapMax == 0 && o.TasksMax == 64 && o.CPUQuotaPerSecUSec == 1000000 &&
 		o.KillMode == "control-group" && o.Restart == "no" && o.CollectMode == "inactive" && o.RemainAfterExit && o.NoNewPrivileges
 }
@@ -350,7 +372,7 @@ func (s *SystemdSupervisor) captureUnit(ctx context.Context, r unitJournal) (uni
 	if err != nil {
 		return r, err
 	}
-	if !expectedFakeObservation(r, o) {
+	if !expectedPayloadObservation(r, o) {
 		return r, errors.Join(ErrAuthRecoveryRequired, errors.New("systemd restriction mismatch"))
 	}
 	identity, err := unitProcessIdentity(ctx, s.manager, o)
@@ -377,6 +399,12 @@ func (s *SystemdSupervisor) captureUnit(ctx context.Context, r unitJournal) (uni
 	return r, nil
 }
 func (s *SystemdSupervisor) StartFake(ctx context.Context, binding AuthBinding) error {
+	if s.payloadKind != "" {
+		return ErrAuthRecoveryRequired
+	}
+	return s.startPayload(ctx, binding)
+}
+func (s *SystemdSupervisor) startPayload(ctx context.Context, binding AuthBinding) error {
 	if !binding.valid() {
 		return ErrAuthRecoveryRequired
 	}
@@ -419,7 +447,7 @@ func (s *SystemdSupervisor) StartFake(ctx context.Context, binding AuthBinding) 
 	}
 	raw, _ := json.Marshal(binding)
 	args := []string{retainedStubExec, s.gate(binding).Endpoint(), string(raw), r.ManifestHash, strconv.Itoa(os.Getpid())}
-	job, err := s.manager.Start(ctx, r.Unit, retainedStubExec, args, "SFL fake containment "+Digest(binding), int(s.image.file.Fd()))
+	job, err := s.manager.Start(ctx, r.Unit, retainedStubExec, args, payloadDescription(s.payloadKind, binding), int(s.image.file.Fd()))
 	if err != nil {
 		return errors.Join(ErrAuthRecoveryRequired, err)
 	}
@@ -458,6 +486,9 @@ func (s *SystemdSupervisor) postStartUpdate(ctx context.Context, binding AuthBin
 }
 
 func (s *SystemdSupervisor) GrantFake(ctx context.Context, binding AuthBinding, manifest FakeGateManifest) error {
+	if s.payloadKind != "" {
+		return ErrAuthRecoveryRequired
+	}
 	r, err := s.snapshotUnit(ctx, binding)
 	if err != nil || r.Aborted || !r.StartSettled || !r.Captured || r.Stopped || r.ManifestHash != Digest(manifest) {
 		return ErrAuthRecoveryRequired
@@ -547,7 +578,7 @@ func (s *SystemdSupervisor) AbortAndWait(ctx context.Context, binding AuthBindin
 		return s.kernel.Empty(r.Cgroup)
 	}
 	before, err := s.manager.Observe(ctx, r.Unit)
-	if err != nil || before.InvocationID != r.Identity.InvocationID || before.Unit != r.Unit || before.Description != "SFL fake containment "+Digest(binding) {
+	if err != nil || before.InvocationID != r.Identity.InvocationID || before.Unit != r.Unit || before.Description != payloadDescription(r.PayloadKind, binding) {
 		return ErrAuthRecoveryRequired
 	}
 	job, err := s.manager.Stop(ctx, r.Unit)
@@ -576,6 +607,9 @@ func (s *SystemdSupervisor) AbortAndWait(ctx context.Context, binding AuthBindin
 // Its only supported payload creates no profile mounts. An auth journal cannot
 // supply an executable, a different payload or a replacement launch identity.
 func (s *SystemdSupervisor) ConfirmAuthStopped(ctx context.Context, binding AuthBinding) error {
+	if s.payloadKind != "" {
+		return ErrAuthRecoveryRequired
+	}
 	return s.AbortAndWait(ctx, binding)
 }
 func (s *SystemdSupervisor) Close() error {

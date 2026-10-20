@@ -319,7 +319,13 @@ func validContainmentUnit(unit string) bool {
 }
 func prop(name string, value any) unitProperty { return unitProperty{name, dbus.MakeVariant(value)} }
 func fixedFakeUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
-	if imageFD < 0 || stub != retainedStubExec || !validContainmentUnit(unit) || !path.IsAbs(stub) || path.Clean(stub) != stub || len(args) != 5 || args[0] != stub || len(description) != len("SFL fake containment ")+64 || !strings.HasPrefix(description, "SFL fake containment ") {
+	return fixedPayloadUnitProperties(unit, stub, args, description, imageFD, "SFL fake containment ")
+}
+func fixedVMUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
+	return fixedPayloadUnitProperties(unit, stub, args, description, imageFD, "SFL sealed VM containment ")
+}
+func fixedPayloadUnitProperties(unit, stub string, args []string, description string, imageFD int, prefix string) ([]unitProperty, error) {
+	if imageFD < 0 || stub != retainedStubExec || !validContainmentUnit(unit) || !path.IsAbs(stub) || path.Clean(stub) != stub || len(args) != 5 || args[0] != stub || len(description) != len(prefix)+64 || !strings.HasPrefix(description, prefix) || !validAuthHash(strings.TrimPrefix(description, prefix)) {
 		return nil, ErrAuthRecoveryRequired
 	}
 	bootstrap, err := trustedStubBootstrap()
@@ -340,7 +346,13 @@ func fixedFakeUnitProperties(unit, stub string, args []string, description strin
 	}, nil
 }
 func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string, imageFD int) (string, error) {
-	properties, err := fixedFakeUnitProperties(unit, stub, args, description, imageFD)
+	var properties []unitProperty
+	var err error
+	if strings.HasPrefix(description, "SFL sealed VM containment ") {
+		properties, err = fixedVMUnitProperties(unit, stub, args, description, imageFD)
+	} else {
+		properties, err = fixedFakeUnitProperties(unit, stub, args, description, imageFD)
+	}
 	if err != nil {
 		return "", err
 	}
