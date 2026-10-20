@@ -24,6 +24,22 @@ _common = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_common)
 
 
+def observation_passed(receipt, result, source, case):
+    passed = (receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"] and result.get("run_error") == ""
+              and result.get("normalize_error") == "" and result.get("shape_error") == ""
+              and result.get("telemetry_requests") == 0 and result.get("metadata_requests") == 5
+              and result.get("backend_failures") == 0 and result.get("backend_stop_error") == "" and result.get("negotiations") == 1)
+    if case == "source":
+        passed = (passed and result.get("backend_calls") == 3
+                  and result.get("runtime_inventory") == ["mcp__sfl_source__read", "mcp__sfl_source__search"]
+                  and len(source) == 2 and [item.get("tool") for item in source] == ["read", "search"]
+                  and all(item.get("success") is True for item in source))
+    else:
+        passed = (passed and result.get("backend_calls") == 2 and not source
+                  and result.get("undeclared_patch_denied") is True and result.get("canary_exists") is False)
+    return passed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", type=pathlib.Path, required=True)
@@ -88,17 +104,7 @@ def main():
     (out / "host-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     result = json.loads((artifacts / "result.json").read_text()) if (artifacts / "result.json").exists() else {}
     source = [json.loads(line) for line in (artifacts / "source.jsonl").read_text().splitlines()] if (artifacts / "source.jsonl").exists() else []
-    passed = (process.returncode == 0 and not timed_out and not receipt["source_changed"] and result.get("run_error") == ""
-              and result.get("normalize_error") == "" and result.get("shape_error") == ""
-              and result.get("backend_failures") == 0 and result.get("backend_stop_error") == "" and result.get("negotiations") == 1)
-    if args.case == "source":
-        passed = (passed and result.get("backend_calls") == 3
-                  and result.get("runtime_inventory") == ["mcp__sfl_source__read", "mcp__sfl_source__search"]
-                  and len(source) == 2 and [item.get("tool") for item in source] == ["read", "search"]
-                  and all(item.get("success") is True for item in source))
-    else:
-        passed = (passed and result.get("backend_calls") == 2 and not source
-                  and result.get("undeclared_patch_denied") is True and result.get("canary_exists") is False)
+    passed = observation_passed(receipt, result, source, args.case)
     print(json.dumps({"observation_passed": passed, "case": args.case, "output": str(out),
                       "capability_allowlist_qualified": False, "production_boundary_qualified": False}))
     return 0 if passed else 1

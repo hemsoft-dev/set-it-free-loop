@@ -4,9 +4,21 @@ package main
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"os"
 	"testing"
 )
+
+func TestTelemetryCannotCountAsAllowedMetadata(t *testing.T) {
+	for _, method := range []string{"GET", "POST"} {
+		b := &codexBackend{logHTTP: func(any) {}}
+		w := httptest.NewRecorder()
+		b.ServeHTTP(w, httptest.NewRequest(method, "/backend-api/codex/analytics-events/events", nil))
+		if w.Code != 400 || b.telemetry != 1 || b.failed != 1 || b.metadata != 0 || b.calls != 0 {
+			t.Fatal("telemetry accepted or hidden in metadata", method, w.Code, b)
+		}
+	}
+}
 
 // Sanitized output fragments produced by pinned Codex against the fake backend.
 func TestCapturedNativeCodeModeSourceResults(t *testing.T) {

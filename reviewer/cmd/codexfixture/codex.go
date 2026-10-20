@@ -38,12 +38,13 @@ func seedCodex() {
 }
 
 type codexBackend struct {
-	mu                                    sync.Mutex
-	session                               r.Session
-	mode                                  string
-	calls, failed, negotiations, metadata int
-	negativeOutput                        string
-	runtimeInventory                      []string
+	logHTTP                                          func(any)
+	mu                                               sync.Mutex
+	session                                          r.Session
+	mode                                             string
+	calls, failed, negotiations, metadata, telemetry int
+	negativeOutput                                   string
+	runtimeInventory                                 []string
 }
 
 func outputFor(value any, id string) (any, bool) {
@@ -194,7 +195,11 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	for h := range q.Header {
 		headers = append(headers, h)
 	}
-	record("http.jsonl", map[string]any{"method": q.Method, "path": q.URL.Path, "query": q.URL.RawQuery, "headers": headers, "body": string(raw), "upgrade": q.Header.Get("Upgrade")})
+	logHTTP := b.logHTTP
+	if logHTTP == nil {
+		logHTTP = func(v any) { record("http.jsonl", v) }
+	}
+	logHTTP(map[string]any{"method": q.Method, "path": q.URL.Path, "query": q.URL.RawQuery, "headers": headers, "body": string(raw), "upgrade": q.Header.Get("Upgrade")})
 	deny := func(message string) { b.failed++; http.Error(w, message, 400) }
 	if err != nil || len(raw) > 2<<20 {
 		deny("input cap")
@@ -209,9 +214,14 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		w.WriteHeader(http.StatusUpgradeRequired)
 		return
 	}
-	if q.Method == "GET" && q.URL.Path != "/v1/responses" || q.Method == "POST" && q.URL.Path == "/backend-api/codex/analytics-events/events" {
+	if q.URL.Path == "/backend-api/codex/analytics-events/events" {
+		b.telemetry++
+		deny("telemetry disabled")
+		return
+	}
+	if q.Method == "GET" && q.URL.Path != "/v1/responses" {
 		b.metadata++
-		if b.metadata > 12 {
+		if b.metadata > 5 {
 			deny("metadata cap")
 			return
 		}
@@ -224,8 +234,6 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		case "/backend-api/wham/config/bundle":
 			_, _ = io.WriteString(w, `{}`)
 		case "/backend-api/wham/settings/user":
-			_, _ = io.WriteString(w, `{}`)
-		case "/backend-api/codex/analytics-events/events":
 			_, _ = io.WriteString(w, `{}`)
 		default:
 			deny("unexpected metadata route")
@@ -356,7 +364,7 @@ func codexMain(mode string) {
 	shapeErr := r.ValidateReport(report, s)
 	_, canaryErr := os.Stat("/work/undeclared-canary.txt")
 	b.mu.Lock()
-	calls, failed, negotiations, metadata := b.calls, b.failed, b.negotiations, b.metadata
+	calls, failed, negotiations, metadata, telemetry := b.calls, b.failed, b.negotiations, b.metadata, b.telemetry
 	negative := b.negativeOutput
 	names := append([]string{}, b.runtimeInventory...)
 	b.mu.Unlock()
@@ -367,13 +375,13 @@ func codexMain(mode string) {
 		}
 		return e.Error()
 	}
-	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "negotiations": negotiations, "metadata_requests": metadata, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
+	write("result.json", map[string]any{"provider": "codex", "case": mode, "run_error": text(runErr), "normalize_error": text(normErr), "shape_error": text(shapeErr), "report": report, "backend_calls": calls, "backend_failures": failed, "backend_stop_error": text(stopErr), "negotiations": negotiations, "metadata_requests": metadata, "telemetry_requests": telemetry, "runtime_inventory": names, "undeclared_patch_denied": denied, "undeclared_patch_output": negative, "canary_exists": canaryErr == nil, "fake_only": true, "capability_allowlist_qualified": false, "actual_account_qualified": false, "production_boundary_qualified": false})
 	fmt.Printf("case=%s calls=%d run=%v normalize=%v shape=%v negative_denied=%t\n", mode, calls, runErr, normErr, shapeErr, denied)
 	expected := 3
 	if mode == "undeclared-patch" {
 		expected = 2
 	}
-	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || failed != 0 || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
+	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || failed != 0 || telemetry != 0 || metadata != 5 || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
 		os.Exit(1)
 	}
 }
