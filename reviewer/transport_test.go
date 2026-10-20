@@ -32,6 +32,18 @@ func TestNativeObservationPreservesResultGateWithoutRawDiagnostics(t *testing.T)
 	if observation.Kind != "provider_unavailable" || bytes.Contains(encoded, []byte("secret-native-error")) {
 		t.Fatal("native failure leaked or changed category")
 	}
+	late := append(append([]byte{}, raw...), []byte("{\"type\":\"error\",\"message\":\"private-late-diagnostic\"}\n")...)
+	_, _, observation = normalizeNativeObservedResult(s, late, nil)
+	encoded, _ = json.Marshal(observation)
+	if observation.Kind != "after-completion" || observation.Trailer == nil || observation.Trailer.Type != "error" || bytes.Contains(encoded, []byte("private-late-diagnostic")) {
+		t.Fatal("trailing native event lost or leaked")
+	}
+	late = append(append([]byte{}, raw...), []byte("{\"type\":\"private-arbitrary-event-name\"}\n")...)
+	_, _, observation = normalizeNativeObservedResult(s, late, nil)
+	encoded, _ = json.Marshal(observation)
+	if observation.Trailer == nil || observation.Trailer.Type != "other" || bytes.Contains(encoded, []byte("private-arbitrary-event-name")) {
+		t.Fatal("arbitrary event name retained")
+	}
 }
 
 func TestNativeFailureMetadataNeverPromotesOrRefunds(t *testing.T) {

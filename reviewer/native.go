@@ -1,6 +1,7 @@
 package reviewer
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -24,6 +25,37 @@ type nativeResultObservation struct {
 	Bytes      int
 	Hash, Kind string
 	ExitFailed bool
+	Trailer    *nativeCodexTrailer
+}
+
+type nativeCodexTrailer struct{ Type, Item, Server, Tool, Status string }
+
+func nativeEventClass(value string) string {
+	switch value {
+	case "", "thread.started", "thread.closed", "thread.stopped", "turn.started", "turn.completed", "turn.failed", "error", "item.started", "item.updated", "item.completed", "reasoning", "agent_message", "mcp_tool_call", "command_execution", "file_change", "code_execution", "completed", "in_progress", "failed", "sfl-source", "read", "search":
+		return value
+	}
+	return "other"
+}
+
+func nativeTrailer(raw []byte) *nativeCodexTrailer {
+	scan := bufio.NewScanner(bytes.NewReader(raw))
+	scan.Buffer(make([]byte, 4096), len(raw)+1)
+	completed := false
+	for scan.Scan() {
+		var event struct {
+			Type string                                      `json:"type"`
+			Item struct{ Type, Server, Tool, Status string } `json:"item"`
+		}
+		if json.Unmarshal(scan.Bytes(), &event) != nil {
+			return nil
+		}
+		if completed {
+			return &nativeCodexTrailer{nativeEventClass(event.Type), nativeEventClass(event.Item.Type), nativeEventClass(event.Item.Server), nativeEventClass(event.Item.Tool), nativeEventClass(event.Item.Status)}
+		}
+		completed = event.Type == "turn.completed" || event.Type == "turn.failed" || event.Type == "error"
+	}
+	return nil
 }
 
 func nativeResultKind(kind string) bool {
@@ -35,7 +67,17 @@ func nativeResultKind(kind string) bool {
 }
 
 func (o *nativeResultObservation) valid(s Session) bool {
-	return o != nil && nativeResultKind(o.Kind) && len(o.Hash) == 64 && objectID.MatchString(o.Hash) && o.Bytes >= 0 && o.Bytes <= NativeTransportLimit(s)+1
+	if o == nil || !nativeResultKind(o.Kind) || len(o.Hash) != 64 || !objectID.MatchString(o.Hash) || o.Bytes < 0 || o.Bytes > NativeTransportLimit(s)+1 {
+		return false
+	}
+	if o.Trailer != nil {
+		for _, value := range []string{o.Trailer.Type, o.Trailer.Item, o.Trailer.Server, o.Trailer.Tool, o.Trailer.Status} {
+			if value != "other" && nativeEventClass(value) != value {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // Match concrete execution implementations. A marker method can be promoted
@@ -132,6 +174,7 @@ func normalizeNativeObservedResult(s Session, raw []byte, waitErr error) ([]byte
 			observed.Kind = "unsupported-event"
 		case "unexpected client data after completion":
 			observed.Kind = "after-completion"
+			observed.Trailer = nativeTrailer(raw)
 		case "incomplete Codex transport":
 			observed.Kind = "incomplete"
 		case "missing Codex report":
