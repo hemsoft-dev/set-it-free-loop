@@ -142,6 +142,10 @@ func nativeGuestMount(source, target, kind string, flags uintptr, options string
 	return mount(source, target, kind, flags, options)
 }
 
+func nativeGuestRootFSBudget(info unix.Statfs_t) bool {
+	return info.Type == unix.TMPFS_MAGIC && info.Bsize > 0 && uint64(info.Bsize) <= 1<<30 && (1<<30)%uint64(info.Bsize) == 0 && info.Blocks == (1<<30)/uint64(info.Bsize) && info.Files == 4096
+}
+
 func nativeGuestSetup() (nativeGuestRelease, error) {
 	var release nativeGuestRelease
 	// Refuse host execution before a mount, cgroup, device or account operation.
@@ -158,6 +162,11 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 	}
 	canonical, _ := json.Marshal(release)
 	if !bytes.Equal(canonical, raw) {
+		return release, ErrVMBoot
+	}
+	nativeGuestBootStage("rootfs")
+	var rootfs unix.Statfs_t
+	if unix.Statfs("/", &rootfs) != nil || !nativeGuestRootFSBudget(rootfs) {
 		return release, ErrVMBoot
 	}
 	nativeGuestBootStage("proc")
@@ -226,7 +235,7 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 				stage = "runtime-short"
 			}
 			var rootfs unix.Statfs_t
-			if unix.Statfs("/", &rootfs) == nil && rootfs.Bavail == 0 {
+			if unix.Statfs("/", &rootfs) == nil && rootfs.Type == unix.TMPFS_MAGIC && rootfs.Bavail == 0 {
 				stage = "runtime-full"
 			}
 			nativeGuestBootStage(stage)

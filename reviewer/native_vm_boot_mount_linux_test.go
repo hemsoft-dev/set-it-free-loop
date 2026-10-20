@@ -3,6 +3,7 @@
 package reviewer
 
 import (
+	"golang.org/x/sys/unix"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,6 +51,29 @@ func TestNativeBootMountRejectsUnsafeTargetsBeforeKernelMount(t *testing.T) {
 		mount := func(string, string, string, uintptr, string) error { calls++; return nil }
 		if err := nativeGuestMount("sysfs", target, "sysfs", 0, "", mount); err == nil || calls != 0 {
 			t.Error("unsafe target reached kernel mount", target, err, calls)
+		}
+	}
+}
+
+func TestNativeBootRootFSRequiresExplicitBoundedKernelBudget(t *testing.T) {
+	good := unix.Statfs_t{Type: unix.TMPFS_MAGIC, Bsize: 4096, Blocks: 262144, Files: 4096}
+	if !nativeGuestRootFSBudget(good) {
+		t.Fatal("fixed tmpfs budget rejected")
+	}
+	for _, edit := range []func(*unix.Statfs_t){
+		func(s *unix.Statfs_t) { s.Type = unix.RAMFS_MAGIC },
+		func(s *unix.Statfs_t) { s.Bsize = 0 },
+		func(s *unix.Statfs_t) { s.Bsize = -1 },
+		func(s *unix.Statfs_t) { s.Blocks = 0 },
+		func(s *unix.Statfs_t) { s.Blocks = 200000 },
+		func(s *unix.Statfs_t) { s.Blocks = ^uint64(0) },
+		func(s *unix.Statfs_t) { s.Files = 0 },
+		func(s *unix.Statfs_t) { s.Files = 8192 },
+	} {
+		bad := good
+		edit(&bad)
+		if nativeGuestRootFSBudget(bad) {
+			t.Fatal("unqualified filesystem budget accepted", bad)
 		}
 	}
 }

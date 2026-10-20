@@ -213,7 +213,7 @@ func nativeVMArgs(nonce string) []string {
 		"-add-fd", "fd=6,set=1,opaque=sfl-kvm", "-accel", "kvm,device=/dev/fdset/1", "-cpu", "host",
 		"-m", "2048M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none", "-no-reboot",
 		"-L", "/usr/share/qemu", "-bios", "/proc/self/fd/10", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5",
-		"-append", "console=ttyS0 loglevel=3 rdinit=/native-init panic=1 sfl-native=" + nonce, "-chardev", "socket,id=sflbootdiag,fd=11", "-serial", "chardev:sflbootdiag", "-device", "virtio-serial-pci,id=sflserial"}
+		"-append", "console=ttyS0 loglevel=3 initramfs_options=size=1024m,nr_inodes=4096 rdinit=/native-init panic=1 sfl-native=" + nonce, "-chardev", "socket,id=sflbootdiag,fd=11", "-serial", "chardev:sflbootdiag", "-device", "virtio-serial-pci,id=sflserial"}
 	for index, name := range []string{"control", "objects", "provider"} {
 		id := "sfl" + name
 		args = append(args, "-chardev", "socket,id="+id+",fd="+strconv.Itoa(index+7), "-device", "virtserialport,bus=sflserial.0,chardev="+id+",name=sfl."+name)

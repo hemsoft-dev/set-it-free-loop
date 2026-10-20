@@ -86,7 +86,7 @@ type nativeVMProgress struct {
 	Kind, Stage string
 }
 
-var nativeBootStages = []string{"entry", "release", "proc", "mounts", "cgroup", "runtime", "modules", "ports", "intake", "binding", "ready", "runtime-missing", "runtime-short", "runtime-metadata", "runtime-invalid", "runtime-full"}
+var nativeBootStages = []string{"entry", "release", "rootfs", "proc", "mounts", "cgroup", "runtime", "modules", "ports", "intake", "binding", "ready", "runtime-missing", "runtime-short", "runtime-metadata", "runtime-invalid", "runtime-full"}
 
 func init() {
 	for _, mount := range []string{"mount-dev", "mount-sys", "mount-run"} {

@@ -171,3 +171,12 @@ before the kernel mount calls. It rejects symlinks, non-directories, writable
 mountpoints and wrong ownership. Repeated native runs caught a missing `/sys`
 mountpoint before any auth export; bootstrap no longer assumes its presence.
 Runtime files still require their full pinned-byte checks before Ready.
+
+Repeated native boots exposed kernel initramfs write failures with an exhausted
+root filesystem before auth export. The fixed command line now supplies
+`initramfs_options=size=1024m,nr_inodes=4096`. Guest PID1 requires the actual
+tmpfs byte and inode limits to match before proceeding. This accommodates the
+roughly 700 MB runtime while preserving explicit bounds inside the 2 GiB guest.
+Linux 7.0 [accepts early rootfs options](https://raw.githubusercontent.com/torvalds/linux/v7.0/fs/namespace.c)
+and [defaults ordinary tmpfs mounts to half of total RAM](https://raw.githubusercontent.com/torvalds/linux/v7.0/mm/shmem.c).
+The prior implicit boot-time capacity was insufficient in failed runs.
