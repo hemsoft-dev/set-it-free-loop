@@ -43,6 +43,23 @@ type WorkerLauncher interface {
 // It cannot select an executable, credentials, job, identity or GitHub endpoint.
 type WorkerDriver struct{ Launcher WorkerLauncher }
 
+// Keep only canonical causes and a bounded phase classification. Joining the
+// original launcher error could disclose host paths or credentials; dropping
+// context sentinels would turn cancellation into provider_unavailable later.
+func workerLauncherError(err error, beforeWork bool) error {
+	phase := PhaseError{State: phaseState(err), BeforeWork: beforeWork}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return errors.Join(phase, context.DeadlineExceeded)
+	case errors.Is(err, context.Canceled):
+		return errors.Join(phase, context.Canceled)
+	case errors.Is(err, ErrLiveBlocked):
+		return errors.Join(phase, ErrLiveBlocked)
+	default:
+		return phase
+	}
+}
+
 func (d WorkerDriver) Inspect(ctx context.Context, inv Invocation) (Identity, error) {
 	if d.Launcher == nil {
 		return Identity{}, ErrLiveBlocked
@@ -52,7 +69,7 @@ func (d WorkerDriver) Inspect(ctx context.Context, inv Invocation) (Identity, er
 	}
 	identity, err := d.Launcher.Inspect(ctx, inv)
 	if err != nil {
-		return Identity{}, PhaseError{State: phaseState(err), BeforeWork: true}
+		return Identity{}, workerLauncherError(err, true)
 	}
 	return identity, nil
 }
@@ -243,7 +260,7 @@ func (d WorkerDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 		if startErr == nil {
 			startErr = errors.New("launcher returned no worker")
 		}
-		return nil, Identity{}, PhaseError{State: phaseState(startErr), BeforeWork: true}
+		return nil, Identity{}, workerLauncherError(startErr, true)
 	}
 	type result struct {
 		data []byte
@@ -255,7 +272,7 @@ func (d WorkerDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 	if startErr == nil {
 		go func() { data, err := workerExchange(exchangeCtx, worker, inv, initial); done <- result{data, err} }()
 	} else {
-		done <- result{err: PhaseError{State: phaseState(startErr)}}
+		done <- result{err: workerLauncherError(startErr, false)}
 	}
 	var r result
 	collected := false
@@ -300,7 +317,7 @@ func (d WorkerDriver) Execute(ctx context.Context, inv Invocation) ([]byte, Iden
 	}
 	identity, err := d.Launcher.Inspect(ctx, inv)
 	if err != nil {
-		return nil, Identity{}, PhaseError{State: phaseState(err)}
+		return nil, Identity{}, workerLauncherError(err, false)
 	}
 	return r.data, identity, err
 }

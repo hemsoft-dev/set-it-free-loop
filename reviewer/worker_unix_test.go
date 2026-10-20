@@ -47,24 +47,30 @@ func (w *fixtureWorker) Stop(context.Context) error {
 }
 
 type fixtureLauncher struct {
-	identity     Identity
-	mode         string
-	workers      []*fixtureWorker
-	inspectCalls int
-	postIdentity *Identity
-	startErr     error
-	stopErr      error
+	identity       Identity
+	mode           string
+	workers        []*fixtureWorker
+	inspectCalls   int
+	postIdentity   *Identity
+	startErr       error
+	stopErr        error
+	inspectErr     error
+	inspectErrAt   int
+	startThenError bool
 }
 
 func (l *fixtureLauncher) Inspect(context.Context, Invocation) (Identity, error) {
 	l.inspectCalls++
+	if l.inspectCalls == l.inspectErrAt && l.inspectErr != nil {
+		return Identity{}, l.inspectErr
+	}
 	if l.inspectCalls%2 == 0 && l.postIdentity != nil {
 		return *l.postIdentity, nil
 	}
 	return l.identity, nil
 }
 func (l *fixtureLauncher) Start(ctx context.Context, inv Invocation) (Worker, error) {
-	if l.startErr != nil {
+	if l.startErr != nil && !l.startThenError {
 		return nil, l.startErr
 	}
 	binary, err := os.Executable()
@@ -96,7 +102,7 @@ func (l *fixtureLauncher) Start(ctx context.Context, inv Invocation) (Worker, er
 	}
 	w := &fixtureWorker{cmd: cmd, in: input, out: output, stopErr: l.stopErr}
 	l.workers = append(l.workers, w)
-	return w, nil
+	return w, l.startErr
 }
 
 func TestWorkerWrapperExecutable(t *testing.T) {
@@ -406,5 +412,62 @@ func TestWorkerDriverPrecheckAndStartFailureNeverExecuteProvider(t *testing.T) {
 	_, _, err = a.ReviewSource(context.Background(), testSession(Codex))
 	if !errors.As(err, &pe) || !pe.BeforeWork || strings.Contains(err.Error(), "secret-canary") || len(l.workers) != 0 {
 		t.Fatal("before-start failure was not safely classified", err)
+	}
+}
+
+func TestLauncherContextErrorsRetainDurableStateAndCharges(t *testing.T) {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		for _, path := range []string{"pre-inspect", "before-start", "after-start", "post-inspect"} {
+			t.Run(cause.Error()+"/"+path, func(t *testing.T) {
+				store, job, _ := admittedFixture(t)
+				adapter, launcher := workerFixtureAdapter(t, Codex, "source")
+				sensitive := fmt.Errorf("private-launcher-secret-canary: %w", cause)
+				beforeWork := path == "pre-inspect" || path == "before-start"
+				switch path {
+				case "pre-inspect":
+					launcher.inspectErrAt = 1
+					launcher.inspectErr = sensitive
+				case "before-start":
+					launcher.startErr = sensitive
+				case "after-start":
+					launcher.startErr = sensitive
+					launcher.startThenError = true
+				case "post-inspect":
+					launcher.inspectErrAt = 2
+					launcher.inspectErr = sensitive
+				}
+				engine := Engine{Reader: brokerReader, Reviewers: map[Provider]Reviewer{Codex: adapter}}
+				now := controlTime.Add(4 * time.Minute)
+				out, err := store.RunStopped(context.Background(), job.ID, engine, func() time.Time { return now })
+				expected := phaseState(cause)
+				if !errors.Is(err, cause) || phaseState(err) != expected || out.State != expected || strings.Contains(err.Error(), "secret-canary") {
+					t.Fatal("canonical context classification lost or private cause leaked", out.State, err)
+				}
+				var pe PhaseError
+				if !errors.As(err, &pe) || pe.BeforeWork != beforeWork {
+					t.Fatal("wrong refund attestation", err)
+				}
+				saved, e := store.Snapshot(context.Background())
+				if e != nil {
+					t.Fatal(e)
+				}
+				jobState := saved.Jobs[job.ID]
+				charge := 1
+				if beforeWork {
+					charge = 0
+				}
+				if jobState.State != expected || jobState.LeaseToken != "" || jobState.Outstanding || jobState.Checkpoint.ConsumedSessions != charge || out.ConsumedSessions != charge {
+					t.Fatal("durable cancellation/expiry, stop or reservation incorrect", jobState, out)
+				}
+				assertFixtureStopped(t, launcher)
+				expectedWorkers := 1
+				if beforeWork {
+					expectedWorkers = 0
+				}
+				if len(launcher.workers) != expectedWorkers {
+					t.Fatal("unexpected process launch", len(launcher.workers))
+				}
+			})
+		}
 	}
 }
