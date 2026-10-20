@@ -111,12 +111,38 @@ def probe_accelerator(accelerator):
     return {"accelerator": "kvm", "kvm_device_opened": True, "kvm_api_version": version}
 
 
-def run_fixture(output, manifest, kernel, image):
+def parse_sealed_boot_receipt(raw, expected):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise RuntimeError("duplicate sealed boot receipt key")
+            result[key] = value
+        return result
+    value = json.loads(raw, object_pairs_hook=unique)
+    keys = {"Version", "SourceHead", "BindingHash", "BootSpecHash", "VerifiedExecutable",
+            "QEMUExited", "FakeOnly", "ProductionBoundaryQualified", "Error"}
+    if (not isinstance(value, dict) or set(value) != keys or type(value["Version"]) is not int
+            or value["Version"] != 1 or value["VerifiedExecutable"] is not True
+            or value["QEMUExited"] is not True or value["FakeOnly"] is not True
+            or value["ProductionBoundaryQualified"] is not False or value["Error"] != ""
+            or any(value.get(key) != expected[key] for key in ["SourceHead", "BindingHash", "BootSpecHash"])):
+        raise RuntimeError("sealed boot executable/custody receipt differs")
+    return value
+
+
+def run_fixture(output, manifest, kernel, image, sealed_boot=None):
     nonce = manifest["nonce"]
     unit = "sfl-isolation-fixture-" + nonce + ".service"
     description = "SFL credential-free fixture " + nonce
     boot = output / "boot.log"
     accelerator = manifest["accelerator"]
+    if sealed_boot is not None:
+        if accelerator != "kvm":
+            raise RuntimeError("sealed boot fixture has no non-KVM mode")
+        unit = "sfl-vm-fixture-" + nonce + ".service"
+        description = "SFL sealed VM fixture " + nonce
+        boot = output / "serial.log"
     accelerator_probe = probe_accelerator(accelerator)
     if digest(Path("/usr/bin/qemu-system-x86_64").read_bytes()) != manifest["qemu_sha256"]:
         raise RuntimeError("QEMU executable changed after manifest capture")
@@ -134,6 +160,15 @@ def run_fixture(output, manifest, kernel, image):
                "--property=KillMode=control-group", "--property=TimeoutStopSec=5s",
                "--property=NoNewPrivileges=yes", "--", "/usr/bin/env", "-i",
                "LANG=C.UTF-8", "PATH=/usr/bin:/bin", *qemu]
+    if sealed_boot is not None:
+        # The existing OS interpreter is trusted bootstrap code. Isolated mode
+        # ignores user Python state; exec retains only invocation/locale/PATH.
+        bootstrap = "import os,sys; os.execve(sys.argv[1], sys.argv[1:], {'INVOCATION_ID':os.environ['INVOCATION_ID'], 'LANG':'C.UTF-8', 'PATH':'/usr/bin:/bin'})"
+        if digest(Path(sealed_boot["program"]).read_bytes()) != sealed_boot["program_sha256"]:
+            raise RuntimeError("sealed boot fixture executable changed")
+        boundary = command.index("--")
+        command = command[:boundary+1] + ["/usr/bin/python3", "-I", "-S", "-c", bootstrap,
+                                         sealed_boot["program"], sealed_boot["configuration"]]
     # This is fake-only execution. It never selects or falls back from a
     # production accelerator, credentials, provider endpoint or App identity.
     prepared = {"state": "prepared", "nonce": nonce, "unit": unit, "description": description,
@@ -182,10 +217,19 @@ def run_fixture(output, manifest, kernel, image):
         if len(matches) != 1:
             raise RuntimeError("missing or ambiguous current-invocation guest receipt")
         result = parse_guest_result(matches[0], nonce, manifest["synthetic_commit"])
+        execution = None
+        if sealed_boot is not None:
+            rows = [line for line in (output / "unit.log").read_bytes().splitlines()
+                    if line.startswith(b'{"Version":')]
+            if len(rows) != 1:
+                raise RuntimeError("missing or ambiguous sealed boot executable receipt")
+            execution = parse_sealed_boot_receipt(rows[0], sealed_boot)
         final = {"state": "passed", "nonce": nonce, "manifest_sha256": digest((output / "manifest.json").read_bytes()),
                  "host_accelerator": accelerator, "accelerator_probe": accelerator_probe,
                  "guest": result, "host_unit": properties, "host_exit": process.returncode,
                  "scope": "Trusted fake guest identity/filesystem/source/cgroup fixture only; production boundary remains unqualified."}
+        if sealed_boot is not None:
+            final["sealed_boot"] = execution
     except BaseException as error:
         failure = error
     cleanup_error = None

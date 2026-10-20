@@ -79,6 +79,23 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
+To build a fresh synthetic guest and run the sealed path in its bounded unit:
+
+```sh
+python3 -B reviewer/scripts/vm-boot-fixture.py \
+  --kernel /absolute/verified/vmlinuz \
+  --kernel-sha256 VERIFIED_KERNEL_SHA256 \
+  --output /absolute/new/private-artifact-directory \
+  --go /absolute/pinned/go
+```
+
+The driver builds only committed source with cached dependencies, validates both
+the Go execution receipt and the independent guest role receipt, then reuses the
+existing fixture's observed-unit cleanup gate. Neither receipt alone is enough.
+The fixed isolated OS Python bootstrap preserves only systemd's invocation ID,
+locale and PATH for the fixture executable. No provider/GitHub environment reaches
+it or QEMU. All configuration and raw serial output stays in the private output.
+
 Actual host/KVM execution is separate opt-in fake-only qualification. Preserve
 source/image/kernel/QEMU hashes, KVM probe, the captured unit properties, raw
 nonce-bound synthetic serial output and terminal whole-unit cleanup. Failed
