@@ -334,6 +334,7 @@ func nativeGuestProviderHandlerObserved(q nativeVMRequest, transport http.RoundT
 			}
 		}()
 		var authority string
+		kind := ""
 		for _, route := range q.Policy.Routes {
 			if in.TLS != nil && route.Authority != strings.TrimSuffix(in.Host, ":443") {
 				continue
@@ -345,6 +346,7 @@ func nativeGuestProviderHandlerObserved(q nativeVMRequest, transport http.RoundT
 					return
 				}
 				authority = route.Authority
+				kind = route.Kind
 			}
 		}
 		if authority == "" || in.URL.IsAbs() || in.URL.User != nil || in.URL.RawPath != "" || len(in.Trailer) != 0 {
@@ -360,6 +362,27 @@ func nativeGuestProviderHandlerObserved(q nativeVMRequest, transport http.RoundT
 		request.RequestURI = ""
 		request.GetBody = nil
 		request.Close = false
+		if kind != "local_negotiation" {
+			// Closing the CLI's HTTP/TLS hop must not retire the private stream.
+			// Reject nominated headers instead of silently hiding them from the
+			// host guard; preserve the separate local Upgrade contract verbatim.
+			for name, values := range request.Header {
+				if !strings.EqualFold(name, "Connection") {
+					continue
+				}
+				for _, value := range values {
+					for _, token := range strings.Split(value, ",") {
+						token = strings.TrimSpace(strings.ToLower(token))
+						if token != "close" && token != "keep-alive" {
+							class = "provider-url"
+							http.Error(w, "provider connection denied", 403)
+							return
+						}
+					}
+				}
+				delete(request.Header, name)
+			}
+		}
 		response, err := transport.RoundTrip(request)
 		if err != nil {
 			class = "provider-transport"
