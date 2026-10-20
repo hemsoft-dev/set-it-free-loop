@@ -195,6 +195,9 @@ func relay() observation {
 		}
 	}()
 	o := <-output
+	// Signal EOF to the CLI before waiting for its still-open input pipe.
+	// Otherwise both peers can wait for each other after the host exits.
+	os.Stdout.Close()
 	waitErr := command.Wait()
 	os.Stdin.Close()
 	var i copied
