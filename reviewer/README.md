@@ -96,3 +96,7 @@ Transport references: [Codex JSONL and schema output](https://learn.chatgpt.com/
 The Linux [containment launch gate](CONTAINMENT-GATE.md) persists one-use grant
 authority before an inert fake-only stub receives work. Its abort/recovery
 protocol does not yet attest whole-unit shutdown or release auth leases.
+
+The [systemd supervisor](SYSTEMD-SUPERVISOR.md) binds the fake-only gate to the
+user manager, physical cgroup limits and durable stopped-auth recovery. Its
+explicit host fixture uses an inert escaped child and synthetic auth bytes.
