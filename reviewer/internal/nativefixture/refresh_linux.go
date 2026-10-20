@@ -19,10 +19,10 @@ const rotatedAccess = "sfl-fake-rotated-access"
 const rotatedRefresh = "sfl-fake-rotated-refresh"
 
 type refreshBackend struct {
-	mu              sync.Mutex
-	provider        r.Provider
-	reused          bool
-	calls, failures int
+	mu                        sync.Mutex
+	provider                  r.Provider
+	reused                    bool
+	calls, failures, profiles int
 }
 
 func RefreshAuthority(provider r.Provider) string {
@@ -51,6 +51,11 @@ func NewRefresh(s r.Session, reused bool) (*Backend, r.EgressPolicy, error) {
 	}
 	p.Routes = append(p.Routes, r.EgressRoute{Authority: RefreshAuthority(s.Identity.Provider), Method: "POST", Path: refreshPath(s.Identity.Provider), Kind: "refresh"})
 	p.Limits.RefreshRequests = 1
+	if s.Identity.Provider == r.Claude {
+		p.Routes = append(p.Routes, r.EgressRoute{Authority: "api.anthropic.com", Method: "GET", Path: "/api/oauth/profile", Kind: "metadata"})
+		p.Headers = append(p.Headers, "Cache-Control")
+		p.Limits.MetadataRequests = 1
+	}
 	p.Limits.Requests = p.Limits.InferenceRequests + p.Limits.RefreshRequests + p.Limits.MetadataRequests + p.Limits.NegotiationRequests
 	return b, p, nil
 }
@@ -90,6 +95,19 @@ func RotatedAuth(provider r.Provider, raw []byte) bool {
 }
 
 func (b *refreshBackend) serve(w http.ResponseWriter, q *http.Request) bool {
+	if b.provider == r.Claude && q.URL.Path == "/api/oauth/profile" {
+		b.mu.Lock()
+		defer b.mu.Unlock()
+		b.profiles++
+		if b.profiles > 1 || q.Method != "GET" || q.URL.RawQuery != "" || q.Header.Get("Authorization") != "Bearer "+rotatedAccess || q.Header.Get("X-Api-Key") != "" {
+			b.failures++
+			http.Error(w, "synthetic profile denied", 400)
+			return true
+		}
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, `{"account":{"uuid":"11111111-1111-4111-8111-111111111111","email":"fixture@example.invalid","created_at":"2026-01-01T00:00:00Z"},"organization":{"uuid":"22222222-2222-4222-8222-222222222222","organization_type":"claude_max","rate_limit_tier":"default_claude_max_5x","billing_type":"stripe","has_extra_usage_enabled":false,"subscription_created_at":"2026-01-01T00:00:00Z","cc_onboarding_flags":{}}}`)
+		return true
+	}
 	if q.URL.Path != refreshPath(b.provider) {
 		return false
 	}

@@ -41,9 +41,20 @@ type localOnly struct {
 }
 
 func (t localOnly) RoundTrip(q *http.Request) (*http.Response, error) {
-	if q.URL.Scheme != "https" || (q.URL.Host != "fixture.provider.example" && (!t.refresh.Valid() || q.URL.Host != f.RefreshAuthority(t.refresh) || q.Method != "POST" || q.URL.RawQuery != "" || (q.URL.Path != "/oauth/token" && q.URL.Path != "/v1/oauth/token"))) {
+	allowed := q.URL.Host == "fixture.provider.example"
+	if t.refresh == r.Codex && q.URL.Host == f.RefreshAuthority(r.Codex) && q.Method == "POST" && q.URL.Path == "/oauth/token" && q.URL.RawQuery == "" {
+		allowed = true
+	}
+	if t.refresh == r.Claude && q.Method == "POST" && q.URL.Host == f.RefreshAuthority(r.Claude) && q.URL.Path == "/v1/oauth/token" && q.URL.RawQuery == "" {
+		allowed = true
+	}
+	if t.refresh == r.Claude && q.Method == "GET" && q.URL.Host == "api.anthropic.com" && q.URL.Path == "/api/oauth/profile" && q.URL.RawQuery == "" {
+		allowed = true
+	}
+	if q.URL.Scheme != "https" || !allowed {
 		return nil, errors.New("fake-only destination denied")
 	}
+
 	copy := q.Clone(q.Context())
 	u := *q.URL
 	u.Host = t.target.Host

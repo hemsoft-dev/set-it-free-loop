@@ -496,7 +496,7 @@ func (p *nativeGuestProcess) Stop(ctx context.Context) error {
 		if strings.HasSuffix(p.group, "reader") {
 			// The finite manifest already consumed stdin. An idle listener needs
 			// a separate trusted cancellation signal to flush its failed audit.
-			if p.command.Process.Signal(syscall.SIGTERM) == nil {
+			if p.command == nil || p.command.Process == nil || p.command.Process.Signal(syscall.SIGTERM) == nil {
 				select {
 				case <-p.done:
 				case <-ctx.Done():

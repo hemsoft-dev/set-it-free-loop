@@ -18,12 +18,15 @@ import (
 	"time"
 )
 
-func nativeTLSFixture(t *testing.T, handler http.Handler) (*nativeGuestTLSProxy, *http.Client, string, *atomic.Int32) {
+func nativeTLSFixture(t *testing.T, handler http.Handler, policies ...EgressPolicy) (*nativeGuestTLSProxy, *http.Client, string, *atomic.Int32) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	stops := &atomic.Int32{}
 	policy := EgressPolicy{Routes: []EgressRoute{{Authority: "refresh.example", Method: "POST", Path: "/oauth/token", Kind: "refresh"}}}
+	if len(policies) == 1 {
+		policy = policies[0]
+	}
 	p, certificate, err := newNativeGuestTLSProxy(ctx, policy, handler, func() { stops.Add(1) })
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +46,54 @@ func nativeTLSFixture(t *testing.T, handler http.Handler) (*nativeGuestTLSProxy,
 	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, DisableKeepAlives: true, ForceAttemptHTTP2: false}
 	t.Cleanup(transport.CloseIdleConnections)
 	return p, &http.Client{Transport: transport, Timeout: 3 * time.Second}, proxyURL.Host, stops
+}
+
+func TestNativeGuestTLSUsesSeparateNonCALeafCertificate(t *testing.T) {
+	p, _, _, _ := nativeTLSFixture(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	if len(p.certificate.Certificate) != 2 {
+		t.Fatal("root and end-entity chain missing")
+	}
+	leaf, err := x509.ParseCertificate(p.certificate.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuer, err := x509.ParseCertificate(p.certificate.Certificate[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaf.IsCA || !issuer.IsCA || leaf.CheckSignatureFrom(issuer) != nil || leaf.VerifyHostname("refresh.example") != nil {
+		t.Fatal("end-entity certificate violates client PKI requirements")
+	}
+}
+
+func TestNativeGuestTLSMetadataCannotRedirectAnotherAuthority(t *testing.T) {
+	policy := EgressPolicy{Routes: []EgressRoute{{Authority: "refresh.example", Method: "POST", Path: "/oauth/token", Kind: "refresh"}, {Authority: "profile.example", Method: "GET", Path: "/profile", Kind: "metadata"}}, Limits: EgressLimits{ResponseBytes: 128}}
+	var calls atomic.Int32
+	transport := egressRoundTrip(func(q *http.Request) (*http.Response, error) {
+		calls.Add(1)
+		if q.Host != "profile.example" {
+			t.Error("metadata authority changed")
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})
+	_, client, _, stops := nativeTLSFixture(t, nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, transport, func() {}), policy)
+	response, err := client.Get("https://profile.example/profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if response.StatusCode != 200 || calls.Load() != 1 {
+		t.Fatal("declared metadata failed")
+	}
+	response, err = client.Get("https://refresh.example/profile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != 403 || calls.Load() != 1 || stops.Load() != 0 {
+		t.Fatal("foreign authority selected metadata route")
+	}
 }
 
 func TestNativeGuestTLSRefreshUsesVerifiedTLSAndOnlyPrivateHandler(t *testing.T) {

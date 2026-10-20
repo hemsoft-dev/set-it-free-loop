@@ -318,6 +318,9 @@ func nativeGuestProviderHandler(q nativeVMRequest, transport http.RoundTripper, 
 		}()
 		var authority string
 		for _, route := range q.Policy.Routes {
+			if in.TLS != nil && route.Authority != strings.TrimSuffix(in.Host, ":443") {
+				continue
+			}
 			if route.Method == in.Method && route.Path == in.URL.Path && route.RawQuery == in.URL.RawQuery {
 				if authority != "" && authority != route.Authority {
 					http.Error(w, "ambiguous provider route", 403)

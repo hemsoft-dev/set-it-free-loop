@@ -34,7 +34,7 @@ func nativeGuestRefreshEnabled(policy EgressPolicy) bool {
 
 // The CA exists only inside one disposable client namespace. Its public
 // certificate is readable by the CLI; the key stays in its root supervisor.
-// CONNECT admits only exact refresh authorities from the captured policy.
+// CONNECT admits only exact refresh/metadata authorities from captured policy.
 type nativeGuestTLSProxy struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
@@ -55,7 +55,7 @@ func newNativeGuestTLSProxy(parent context.Context, policy EgressPolicy, handler
 	}
 	authorities := map[string]bool{}
 	for _, route := range policy.Routes {
-		if route.Kind == "refresh" {
+		if route.Kind == "refresh" || route.Kind == "metadata" {
 			if !egressAuthority(route.Authority) {
 				return nil, nil, ErrVMBoot
 			}
@@ -79,15 +79,25 @@ func newNativeGuestTLSProxy(parent context.Context, policy EgressPolicy, handler
 		return nil, nil, ErrVMBoot
 	}
 	now := time.Now()
-	template := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "SFL private session"}, DNSNames: names,
+	template := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "SFL private session CA"},
 		NotBefore: now.Add(-time.Minute), NotAfter: now.Add(10 * time.Minute), IsCA: true, BasicConstraintsValid: true,
-		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+		KeyUsage: x509.KeyUsageCertSign | x509.KeyUsageCRLSign}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, key.Public(), key)
 	if err != nil {
 		return nil, nil, ErrVMBoot
 	}
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, ErrVMBoot
+	}
+	leaf := &x509.Certificate{SerialNumber: new(big.Int).Add(serial, big.NewInt(1)), Subject: pkix.Name{CommonName: "SFL private session"}, DNSNames: names,
+		NotBefore: template.NotBefore, NotAfter: template.NotAfter, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leaf, template, leafKey.Public(), key)
+	if err != nil {
+		return nil, nil, ErrVMBoot
+	}
 	ctx, cancel := context.WithCancel(parent)
-	p := &nativeGuestTLSProxy{ctx: ctx, cancel: cancel, certificate: tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, authorities: authorities, handler: handler, stop: stop, connections: map[*nativeGuestTLSConn]bool{}}
+	p := &nativeGuestTLSProxy{ctx: ctx, cancel: cancel, certificate: tls.Certificate{Certificate: [][]byte{leafDER, der}, PrivateKey: leafKey}, authorities: authorities, handler: handler, stop: stop, connections: map[*nativeGuestTLSConn]bool{}}
 	return p, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
 }
 
@@ -164,7 +174,7 @@ func (p *nativeGuestTLSProxy) ServeHTTP(w http.ResponseWriter, q *http.Request) 
 			p.mu.Unlock()
 			defer p.wg.Done()
 			if in.Host != authority && in.Host != authority+":443" {
-				p.stop()
+				p.fail(224)
 				http.Error(w, "refresh host denied", 403)
 				return
 			}

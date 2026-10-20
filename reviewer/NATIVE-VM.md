@@ -211,9 +211,9 @@ The prior implicit boot-time capacity was insufficient in failed runs.
 
 
 When the captured policy declares refresh routes, the root client supervisor
-creates a session-only TLS certificate and retains its private key in memory.
+creates a session-only CA and a distinct server certificate and retains its private key in memory.
 The official CLI receives a fixed public CA file and an HTTPS proxy on its
-existing private loopback listener. CONNECT permits only declared refresh
+existing private loopback listener. CONNECT permits only declared refresh and metadata
 names on port 443, requires matching SNI and HTTP Host, and terminates TLS
 inside the disposable namespace. The decoded request still passes the same
 method/path/body budgets and private host egress guard. This is not an opaque
@@ -232,3 +232,11 @@ the returned tokens without another refresh. Both jobs must produce source-backe
 fixture reports, return auth, stop their whole units and remove runtime roots.
 This source path still needs the actual pinned-client qualification; hand-built
 OAuth responses and TLS unit tests alone do not establish it.
+
+The CA signs a separate non-CA leaf certificate, since
+[WebPKI rejects a CA used as an end entity](https://github.com/rustls/webpki/issues/200).
+Claude refresh also fetches its exact declared OAuth profile endpoint; its fake
+response contains only synthetic account/subscription metadata. This route has
+an independent metadata allowance and uses the rotated bearer token. CONNECT's
+HTTP Host and selected route must agree; adding metadata cannot redirect a
+request with the same path to another captured authority.

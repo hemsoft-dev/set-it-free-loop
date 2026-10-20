@@ -110,6 +110,7 @@ func (b *Backend) Counts() (result Counts) {
 			b.Refresh.mu.Lock()
 			result.Refreshes = b.Refresh.calls
 			result.RefreshFailures = b.Refresh.failures
+			result.Metadata += b.Refresh.profiles
 			b.Refresh.mu.Unlock()
 		}
 	}()
