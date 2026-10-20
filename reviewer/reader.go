@@ -81,7 +81,7 @@ func (r *Reader) Read(ctx context.Context, revision, p string) (string, error) {
 	defer r.mu.Unlock()
 	fail := func(reason string) (string, error) {
 		loggedPath := p
-		if !validPath(loggedPath) {
+		if !validPath(loggedPath) || !r.paths[loggedPath] {
 			loggedPath = ""
 		}
 		if len(r.coverage) < 256 {
@@ -122,8 +122,14 @@ func (r *Reader) Read(ctx context.Context, revision, p string) (string, error) {
 }
 
 func (r *Reader) Search(ctx context.Context, revision, needle string, maxResults int) ([]Anchor, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if needle == "" || len(needle) > 256 || strings.ContainsAny(needle, "\r\n") || maxResults < 1 || maxResults > 100 {
 		return nil, errors.New("invalid bounded search")
+	}
+	if revision != r.snapshot.Head && revision != r.snapshot.Base && revision != r.snapshot.MergeBase {
+		return nil, errors.New("revision outside job snapshot")
 	}
 	paths := make([]string, 0, len(r.paths))
 	for p := range r.paths {
@@ -134,7 +140,18 @@ func (r *Reader) Search(ctx context.Context, revision, needle string, maxResults
 	for _, p := range paths {
 		text, err := r.Read(ctx, revision, p)
 		if err != nil {
-			return matches, err
+			if ctx.Err() != nil {
+				return matches, ctx.Err()
+			}
+			r.mu.Lock()
+			exhausted := r.calls >= r.limits.ReaderCalls || r.used >= r.limits.ReaderBytes
+			r.mu.Unlock()
+			if exhausted {
+				return matches, err
+			}
+			// Unreadable material retains its authoritative omission. One binary,
+			// deleted or oversized path must not disable later text matches.
+			continue
 		}
 		for i, line := range strings.Split(text, "\n") {
 			if strings.Contains(line, needle) {

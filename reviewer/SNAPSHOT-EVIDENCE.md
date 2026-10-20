@@ -29,7 +29,7 @@ fails. Patch omission can leave room for later small files. An omitted patch
 never supplies inline anchors.
 
 Fixed Git flags disable external diff drivers, text conversion, rename
-detection, color, replacement objects and lazy fetch. Git receives no inherited
+detection, color, replacement objects and lazy fetch. `--ignore-submodules=none` overrides candidate `.gitmodules` and repository ignore settings. Git receives no inherited
 user environment or global/system configuration. The explicitly selected Git
 binary and object repository configuration remain trusted. Their provisioning
 must stay outside candidate source. No shell is used by capture.
@@ -53,7 +53,7 @@ bound, err := capture.Bind(job)
 // Handle err before providing a reader or publication anchors.
 engine.Reader = bound.Reader
 // After stopped-worker execution:
-intent, err := publisher.Prepare(ctx, outcome, bound.DiffLines())
+intent, err := publisher.PrepareEvidence(ctx, outcome, bound)
 ```
 
 `Bind` requires the exact admitted snapshot and packet plus a valid job. If a
@@ -61,10 +61,10 @@ retry returns a previously stored packet and a fresh capture differs, binding
 fails. Recovery must reproduce the original captured packet or retain explicit
 uncertainty; it cannot silently replace its omissions or source input. A bound
 reader uses the job's configured limits and rejects a different snapshot.
-Accessors return copies of paths, coverage and inline maps.
+Paths and coverage accessors return copies. Inline maps stay private; use `bound.Render` or `Publisher.PrepareEvidence` so publication revalidates the complete admitted job hash. The low-level map-taking renderer/publisher remain transport test seams and reject captured snapshot packets.
 
 Supply an independently budgeted bound reader to each adapter as well as the
-engine's citation-verification factory. Initial controller coverage is retained
+engine's citation-verification factory. Search skips unreadable paths with recorded coverage and still stops on cancellation or budget exhaustion. Source receipts combine unique controller-owned reasons per allowed path, reserving space for global denial/exhaustion facts. Unknown attempted paths are sanitized rather than stored as source inventory. Initial controller coverage is retained
 when the in-process source broker forks the adapter's reader. It consumes no
 model read budget. Citation validation and the engine's existing authoritative
 coverage merge preserve these omissions even if the model reports none. The

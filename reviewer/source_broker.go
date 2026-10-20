@@ -193,8 +193,31 @@ func (b *sourceBroker) seal() *SourceAccess {
 	b.reader.mu.Lock()
 	calls, used := b.reader.calls, b.reader.used
 	b.reader.mu.Unlock()
-	coverage = append(coverage, b.denials...)
+	coverage = compactSourceCoverage(append(coverage, b.denials...))
 	return &SourceAccess{Version: 1, SessionHash: Digest(b.session), ToolCalls: b.calls, ReaderCalls: calls, Bytes: used, Exhausted: b.exhausted, Reads: append([]ReadRecord{}, reads...), Coverage: append([]Coverage{}, coverage...)}
+}
+
+// Group controller-owned reasons by allowed path, including global denials.
+// Inventory omissions and repeated reads cannot consume separate slots for
+// the same path and crowd out the one-time exhaustion fact. Unknown/unsafe
+// attempted paths are sanitized to the global path by Reader.Read.
+func compactSourceCoverage(records []Coverage) []Coverage {
+	out := []Coverage{}
+	indices := map[string]int{}
+	seen := map[Coverage]bool{}
+	for _, record := range records {
+		if seen[record] {
+			continue
+		}
+		seen[record] = true
+		if index, ok := indices[record.Path]; ok {
+			out[index].Reason += "; " + record.Reason
+		} else {
+			indices[record.Path] = len(out)
+			out = append(out, record)
+		}
+	}
+	return out
 }
 
 func (b *sourceBroker) revoke() {

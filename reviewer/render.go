@@ -50,6 +50,13 @@ func sourceURL(snapshot Snapshot, a Anchor) string {
 // findings outside the diff stay in the summary. Incomplete jobs never expose
 // substantive partial findings, even if prior phases succeeded.
 func Render(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
+	if snapshotEvidencePacket(out.Job.Packet) {
+		return Document{}, ErrFenced
+	}
+	return renderOutcome(out, diffLines)
+}
+
+func renderOutcome(out Outcome, diffLines map[string]map[int]bool) (Document, error) {
 	doc := Document{Inline: []InlineComment{}}
 	if err := out.Job.Validate(); err != nil {
 		return doc, err

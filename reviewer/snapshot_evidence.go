@@ -35,13 +35,41 @@ type SnapshotEvidence struct {
 type JobEvidence struct {
 	evidence *SnapshotEvidence
 	limits   Limits
+	jobHash  string
 }
 
 func (e *SnapshotEvidence) Bind(job Job) (*JobEvidence, error) {
 	if e == nil || job.Snapshot != e.snapshot || job.Packet != e.packet || job.Validate() != nil {
 		return nil, ErrFenced
 	}
-	return &JobEvidence{evidence: e, limits: job.Config.Limits}, nil
+	return &JobEvidence{evidence: e, limits: job.Config.Limits, jobHash: Digest(job)}, nil
+}
+
+func (bound *JobEvidence) validateJob(job Job) error {
+	if bound == nil || bound.evidence == nil || job.Validate() != nil || bound.jobHash != Digest(job) {
+		return ErrFenced
+	}
+	return nil
+}
+
+func snapshotEvidencePacket(packet string) bool {
+	var header struct{ Version string }
+	return json.Unmarshal([]byte(packet), &header) == nil && header.Version == "sfl-snapshot-evidence-1"
+}
+
+// Render retains the admitted-job binding through inline eligibility checks.
+func (bound *JobEvidence) Render(out Outcome) (Document, error) {
+	if err := bound.validateJob(out.Job); err != nil {
+		return Document{}, err
+	}
+	return renderOutcome(out, bound.diffLines())
+}
+
+func (p Publisher) PrepareEvidence(ctx context.Context, out Outcome, bound *JobEvidence) (WriteIntent, error) {
+	if err := bound.validateJob(out.Job); err != nil {
+		return WriteIntent{}, err
+	}
+	return p.prepare(ctx, out, bound.diffLines())
 }
 
 type snapshotFile struct {
@@ -61,7 +89,7 @@ func (e *SnapshotEvidence) Paths() []string { return append([]string(nil), e.pat
 func (e *SnapshotEvidence) Coverage() []Coverage {
 	return append([]Coverage(nil), e.coverage...)
 }
-func (bound *JobEvidence) DiffLines() map[string]map[int]bool {
+func (bound *JobEvidence) diffLines() map[string]map[int]bool {
 	e := bound.evidence
 	out := map[string]map[int]bool{}
 	for path, lines := range e.lines {
@@ -76,6 +104,9 @@ func (bound *JobEvidence) DiffLines() map[string]map[int]bool {
 // Reader supplies independent budgets while retaining controller-observed
 // omissions. It does not grant source access outside this captured path list.
 func (bound *JobEvidence) Reader(snapshot Snapshot) (*Reader, error) {
+	if bound == nil || bound.evidence == nil {
+		return nil, ErrFenced
+	}
 	e := bound.evidence
 	if snapshot != e.snapshot {
 		return nil, ErrFenced
@@ -110,7 +141,7 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 	if err != nil || string(ancestor) != snapshot.MergeBase+"\n" {
 		return nil, errors.New("snapshot merge-base history unavailable or ambiguous")
 	}
-	args := []string{"diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-color", snapshot.MergeBase, snapshot.Head, "--"}
+	args := []string{"diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--ignore-submodules=none", "--no-ext-diff", "--no-textconv", "--no-color", snapshot.MergeBase, snapshot.Head, "--"}
 	raw, err := git.command(ctx, snapshotObjectBytes, args...)
 	if err != nil {
 		return nil, errors.New("complete changed-path inventory unavailable")
@@ -147,7 +178,7 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 			omit("binary or non-UTF-8 diff omitted")
 			continue
 		}
-		patch, err := git.command(ctx, snapshotObjectBytes, "-c", "diff.suppressBlankEmpty=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--no-prefix", "--text", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=3", snapshot.MergeBase, snapshot.Head, "--", ":(literal)"+file.Path)
+		patch, err := git.command(ctx, snapshotObjectBytes, "-c", "diff.suppressBlankEmpty=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--ignore-submodules=none", "--no-color", "--no-prefix", "--text", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=3", snapshot.MergeBase, snapshot.Head, "--", ":(literal)"+file.Path)
 		if err != nil {
 			omit("patch unavailable or patch byte limit exhausted")
 			continue

@@ -131,7 +131,7 @@ func TestSnapshotEvidenceUsesActualGitWithoutCheckoutOrExternalDrivers(t *testin
 		t.Fatalf("%+v", p)
 	}
 	bound := bindSnapshotEvidence(t, e)
-	lines := bound.DiffLines()
+	lines := bound.diffLines()
 	if !lines["safe.go"][4] || !lines["safe.go"][17] || lines["safe.go"][10] || len(lines["removed.go"]) != 0 || !lines["dir/sp ace[1]\".go"][3] {
 		t.Fatal(lines)
 	}
@@ -149,7 +149,7 @@ func TestSnapshotEvidenceUsesActualGitWithoutCheckoutOrExternalDrivers(t *testin
 	paths[0] = "outside"
 	coverage := e.Coverage()
 	coverage[0].Reason = "forged"
-	if bindSnapshotEvidence(t, e).DiffLines()["safe.go"][10] || e.Paths()[0] == "outside" || e.Coverage()[0].Reason == "forged" {
+	if bindSnapshotEvidence(t, e).diffLines()["safe.go"][10] || e.Paths()[0] == "outside" || e.Coverage()[0].Reason == "forged" {
 		t.Fatal("mutable evidence")
 	}
 	r, err := bound.Reader(f.snapshot)
@@ -238,7 +238,7 @@ func TestSnapshotEvidenceRetainsSizeOmissionsAndEnforcesInventoryCap(t *testing.
 	if !strings.Contains(reasons["huge.go"], "source byte limit") || !strings.Contains(reasons["patch-large.go"], "packet byte limit") || len(e.Packet()) > snapshotPacketBytes {
 		t.Fatal(reasons)
 	}
-	if len(bindSnapshotEvidence(t, e).DiffLines()["huge.go"]) != 0 || len(bindSnapshotEvidence(t, e).DiffLines()["patch-large.go"]) != 0 {
+	if len(bindSnapshotEvidence(t, e).diffLines()["huge.go"]) != 0 || len(bindSnapshotEvidence(t, e).diffLines()["patch-large.go"]) != 0 {
 		t.Fatal("omitted patch admitted inline")
 	}
 	for i := 0; i <= snapshotFileLimit; i++ {
@@ -348,7 +348,7 @@ func TestSnapshotEvidenceOmissionsSurviveDurableFakeReviewAndRecovery(t *testing
 	if err != nil || calls != 4 {
 		t.Fatal("recovery repeated fake sessions", calls, err)
 	}
-	doc, err := Render(recovered, bound.DiffLines())
+	doc, err := bound.Render(recovered)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,13 +389,46 @@ func TestSnapshotEvidenceBindingRejectsRecapturedOrSubstitutedJob(t *testing.T) 
 	}
 }
 
+func TestSnapshotEvidenceTypedPublicationRejectsDifferentAdmittedJob(t *testing.T) {
+	f := newSnapshotGitFixture(t)
+	e, err := CaptureSnapshotEvidence(context.Background(), f.store(), f.snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := testJob()
+	job.Snapshot = f.snapshot
+	job.Packet = e.Packet()
+	bound, err := e.Bind(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Render(Outcome{Job: job, State: "provider_unavailable"}, bound.diffLines()); err != ErrFenced {
+		t.Fatal("captured packet accepted unbound render map", err)
+	}
+	if _, err := (Publisher{}).Prepare(context.Background(), Outcome{Job: job}, bound.diffLines()); err != ErrFenced {
+		t.Fatal("captured packet accepted unbound publication map", err)
+	}
+	for _, change := range []func(*Job){func(j *Job) { j.ID = "different-job" }, func(j *Job) { j.Packet += " " }, func(j *Job) { j.Generation++ }, func(j *Job) { j.Snapshot.HeadRepositoryID++ }} {
+		other := job
+		change(&other)
+		out := Outcome{Job: other, State: "provider_unavailable"}
+		if _, err := bound.Render(out); err != ErrFenced {
+			t.Fatal("cross-job render accepted", err)
+		}
+		// A nil publisher would panic if the binding check reached storage.
+		if _, err := (Publisher{}).PrepareEvidence(context.Background(), out, bound); err != ErrFenced {
+			t.Fatal("cross-job publication reached storage", err)
+		}
+	}
+}
+
 func TestSnapshotEvidenceReadsActualSHA256GitObjects(t *testing.T) {
 	f := snapshotGitFixtureFormat(t, "sha256")
 	e, err := CaptureSnapshotEvidence(context.Background(), f.store(), f.snapshot)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(f.snapshot.Head) != 64 || !bindSnapshotEvidence(t, e).DiffLines()["safe.go"][4] {
+	if len(f.snapshot.Head) != 64 || !bindSnapshotEvidence(t, e).diffLines()["safe.go"][4] {
 		t.Fatal("SHA256 object protocol not captured")
 	}
 }
@@ -442,7 +475,7 @@ func TestSnapshotEvidenceMissingPromisorBlobNeverFetches(t *testing.T) {
 			found = true
 		}
 	}
-	if !found || len(bindSnapshotEvidence(t, e).DiffLines()["safe.go"]) != 0 {
+	if !found || len(bindSnapshotEvidence(t, e).diffLines()["safe.go"]) != 0 {
 		t.Fatal("missing source counted as clean", e.Coverage())
 	}
 }

@@ -102,7 +102,13 @@ func redactDocument(doc Document, secrets []string) Document {
 	return doc
 }
 func (p Publisher) Prepare(ctx context.Context, out Outcome, diff map[string]map[int]bool) (WriteIntent, error) {
-	doc, err := Render(out, diff)
+	if snapshotEvidencePacket(out.Job.Packet) {
+		return WriteIntent{}, ErrFenced
+	}
+	return p.prepare(ctx, out, diff)
+}
+func (p Publisher) prepare(ctx context.Context, out Outcome, diff map[string]map[int]bool) (WriteIntent, error) {
+	doc, err := renderOutcome(out, diff)
 	if err != nil {
 		return WriteIntent{}, err
 	}
