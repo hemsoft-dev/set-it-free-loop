@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 import runpy
 import unittest
+from unittest.mock import patch
 
-parse = runpy.run_path(str(Path(__file__).with_name("vm-grant-fixture.py")))["parse_grant_result"]
+fixture = runpy.run_path(str(Path(__file__).with_name("vm-grant-fixture.py")))
+parse = fixture["parse_grant_result"]
 
 
 def receipt():
@@ -25,6 +27,17 @@ def receipt():
 
 
 class GrantReceiptTests(unittest.TestCase):
+    def test_final_probe_uses_fixed_local_user_bus_and_rejects_live_unit(self):
+        raw = b"LoadState=not-found\nActiveState=inactive\nMainPID=0\nControlGroup=\n"
+        with patch.object(fixture["_shared"], "execute", return_value=raw) as execute:
+            self.assertEqual(fixture["terminal_unit"]("fixed-unit")[0], raw)
+            environment = execute.call_args.kwargs["env"]
+            self.assertEqual(environment["XDG_RUNTIME_DIR"], "/run/user/"+str(__import__("os").geteuid()))
+            self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", environment)
+        with patch.object(fixture["_shared"], "execute", return_value=raw.replace(b"MainPID=0", b"MainPID=42")):
+            with self.assertRaises(RuntimeError):
+                fixture["terminal_unit"]("fixed-unit")
+
     def test_bound_receipt(self):
         value, expected = receipt()
         self.assertEqual(parse(json.dumps(value), expected), value)

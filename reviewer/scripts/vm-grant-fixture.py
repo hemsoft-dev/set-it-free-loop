@@ -58,6 +58,17 @@ def parse_grant_result(raw, expected):
     return value
 
 
+def terminal_unit(unit):
+    cleanup = _shared.execute(["/usr/bin/systemctl", "--user", "show", unit,
+                               "-p", "LoadState", "-p", "ActiveState", "-p", "MainPID", "-p", "ControlGroup"],
+                              env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8",
+                                   "XDG_RUNTIME_DIR": "/run/user/"+str(os.geteuid())})
+    properties = dict(line.split("=", 1) for line in cleanup.decode().splitlines())
+    if properties != {"LoadState": "not-found", "ActiveState": "inactive", "MainPID": "0", "ControlGroup": ""}:
+        raise RuntimeError("unit not terminal/collected after physical stop")
+    return cleanup, properties
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--kernel", type=Path, required=True)
@@ -136,12 +147,8 @@ def main():
     if len(matches) != 1:
         raise RuntimeError("missing or ambiguous synthetic guest result")
     guest = _shared.parse_guest_result(matches[0], nonce, manifest["synthetic_commit"])
-    cleanup = _shared.execute(["/usr/bin/systemctl", "--user", "show", expected["Unit"],
-                               "-p", "LoadState", "-p", "ActiveState", "-p", "MainPID", "-p", "ControlGroup"])
+    cleanup, properties = terminal_unit(expected["Unit"])
     (output / "final-unit.txt").write_bytes(cleanup)
-    properties = dict(line.split("=", 1) for line in cleanup.decode().splitlines())
-    if properties != {"LoadState": "not-found", "ActiveState": "inactive", "MainPID": "0", "ControlGroup": ""}:
-        raise RuntimeError("unit not terminal/collected after physical stop")
     _shared.write_json(output / "result.json", {"state": "passed", "grant": result, "guest": guest,
                                                "final_unit": properties, "fake_only": True,
                                                "production_boundary_qualified": False})
