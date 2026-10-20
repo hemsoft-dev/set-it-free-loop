@@ -77,6 +77,39 @@ func TestSourceProxyChecksPeerUIDBeforeReadingAnyClientBytes(t *testing.T) {
 		t.Fatal("untrusted peer connection not closed")
 	}
 }
+
+func TestSourceProxyAcceptsExactByteCapsWithoutForwardingOverflow(t *testing.T) {
+	for _, direction := range []string{"input", "output"} {
+		t.Run(direction, func(t *testing.T) {
+			socket, listener := proxySocket(t)
+			limits := DefaultLimits()
+			limits.InputBytes, limits.ReaderCalls, limits.ReaderBytes = 1, 1, 1
+			input, response := "request", "response"
+			if direction == "input" {
+				input = strings.Repeat("i", limits.InputBytes+limits.ReaderCalls*2048)
+			} else {
+				response = strings.Repeat("o", 12*limits.ReaderBytes+limits.ReaderCalls*8192+(128<<10))
+			}
+			received := make(chan []byte, 1)
+			go func() {
+				connection, err := listener.AcceptUnix()
+				if err != nil {
+					received <- nil
+					return
+				}
+				defer connection.Close()
+				data, _ := io.ReadAll(connection)
+				received <- data
+				_, _ = io.WriteString(connection, response)
+			}()
+			out := &proxyOutput{}
+			err := ProxySourceMCP(context.Background(), socket, os.Getuid(), limits, io.NopCloser(strings.NewReader(input)), out)
+			if err != nil || out.String() != response || string(<-received) != input {
+				t.Fatal("exact bound rejected/truncated", err, out.Len())
+			}
+		})
+	}
+}
 func TestSourceProxyOwnsStreamsAndHonorsControllerCancellation(t *testing.T) {
 	socket, listener := proxySocket(t)
 	accepted := make(chan *net.UnixConn, 1)

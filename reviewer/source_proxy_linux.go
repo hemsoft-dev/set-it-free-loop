@@ -80,11 +80,20 @@ func ProxySourceMCP(ctx context.Context, socket string, readerUID int, limits Li
 	done := make(chan result, 2)
 	copyBounded := func(destination io.Writer, source io.Reader, limit int64) error {
 		n, err := io.Copy(destination, io.LimitReader(source, limit))
-		if n == limit {
-			return ErrSourceProxyBudget
-		}
 		if err != nil {
 			return ErrSourceProxyUnavailable
+		}
+		if n == limit {
+			// Observe at most one extra byte without forwarding it. EOF at
+			// exactly the advertised cap is valid; only an overrun exhausts it.
+			var extra [1]byte
+			more, err := io.ReadFull(source, extra[:])
+			if more != 0 {
+				return ErrSourceProxyBudget
+			}
+			if err != io.EOF {
+				return ErrSourceProxyUnavailable
+			}
 		}
 		return nil
 	}

@@ -85,7 +85,7 @@ endpoints and verifies `SO_PEERCRED` against the captured non-root reader UID
 before reading or sending any client data. It forwards opaque bounded MCP bytes;
 the session MCP server enforces methods and source rules. It has no listener,
 HTTP client, DNS, arbitrary endpoint scheme or credential flow. Input/output caps
-include protocol overhead and reaching either cap terminates the connection.
+include protocol overhead and exceeding either cap terminates the connection.
 Deadlines close owned streams and join both copy directions. Errors are static
 and contain no host path, source payload or backend message. Other platforms
 fail closed.
