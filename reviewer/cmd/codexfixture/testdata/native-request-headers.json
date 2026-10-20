@@ -1,0 +1,67 @@
+{
+  "producer": "Codex0.163.0",
+  "source_commit": "7e1f92c2e0c443d76b29d2b815294ea15115e734",
+  "sanitization": "header names only; no values or bodies",
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/v1/responses",
+      "query": "",
+      "headers": [
+        "Authorization",
+        "Chatgpt-Account-Id",
+        "Connection",
+        "Openai-Beta",
+        "Originator",
+        "Sec-Websocket-Extensions",
+        "Sec-Websocket-Key",
+        "Sec-Websocket-Version",
+        "Session-Id",
+        "Thread-Id",
+        "Upgrade",
+        "User-Agent",
+        "Version",
+        "X-Client-Request-Id",
+        "X-Codex-Beta-Features",
+        "X-Codex-Routing-Hint",
+        "X-Codex-Turn-Metadata",
+        "X-Codex-Window-Id"
+      ]
+    },
+    {
+      "method": "GET",
+      "path": "/backend-api/wham/settings/user",
+      "query": "",
+      "headers": [
+        "Accept",
+        "Authorization",
+        "Cache-Control",
+        "Chatgpt-Account-Id",
+        "User-Agent"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/responses",
+      "query": "",
+      "headers": [
+        "Accept",
+        "Authorization",
+        "Chatgpt-Account-Id",
+        "Content-Length",
+        "Content-Type",
+        "Originator",
+        "Session-Id",
+        "Thread-Id",
+        "User-Agent",
+        "Version",
+        "X-Client-Request-Id",
+        "X-Codex-Beta-Features",
+        "X-Codex-Routing-Hint",
+        "X-Codex-Turn-Metadata",
+        "X-Codex-Window-Id",
+        "X-Openai-Internal-Codex-Responses-Lite"
+      ]
+    }
+  ]
+}
