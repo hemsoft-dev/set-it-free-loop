@@ -302,6 +302,12 @@ func (r nativeGuestRelease) jail(role string) (string, error) {
 	if os.Chmod(root, 0555) != nil {
 		return "", ErrVMBoot
 	}
+	// A chroot directory is not necessarily a mount point. Its namespace's
+	// trusted PID1 must be able to mark / private before mounting its own proc.
+	// Recursive self-bind preserves the already read-only runtime file binds.
+	if unix.Mount(root, root, "", unix.MS_BIND|unix.MS_REC, "") != nil {
+		return "", ErrVMBoot
+	}
 	return root, nil
 }
 
