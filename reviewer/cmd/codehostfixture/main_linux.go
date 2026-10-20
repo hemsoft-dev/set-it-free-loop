@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -233,7 +234,7 @@ func runBroker(socket, host, probe, receipt string) {
 		return
 	}
 	self, err := os.Executable()
-	if err != nil || self != probe {
+	if err != nil || !sameExecutableFile(self, probe) {
 		return
 	}
 	parent, err := os.Stat(filepath.Dir(socket))
@@ -298,6 +299,34 @@ func acceptBrokerPeer(conn *net.UnixConn, uid uint32) error {
 		return errors.New("fixture broker prelude denied")
 	}
 	return nil
+}
+
+func sameExecutableFile(a, b string) bool {
+	first, err := os.Stat(a)
+	if err != nil || !first.Mode().IsRegular() {
+		return false
+	}
+	second, err := os.Stat(b)
+	return err == nil && second.Mode().IsRegular() && os.SameFile(first, second)
+}
+func drainStderr(ctx context.Context, pipe io.ReadCloser, done <-chan error) error {
+	select {
+	case err := <-done:
+		return err
+	default:
+	}
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		pipe.Close()
+		select {
+		case <-done:
+			return ctx.Err()
+		case <-time.After(time.Second):
+			return errors.New("stderr did not stop after cancellation")
+		}
+	}
 }
 
 func socketPeer(conn *net.UnixConn) (*unix.Ucred, error) {
@@ -371,6 +400,15 @@ func brokerExchange(conn, control *net.UnixConn, host, probe, stderrPath string)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
+	var mono unix.Timespec
+	if unix.ClockGettime(unix.CLOCK_MONOTONIC, &mono) != nil {
+		return result
+	}
+	deadline := mono.Sec*int64(time.Second) + mono.Nsec + int64(40*time.Second)
+	// Private host progress, never a client/model completion receipt.
+	if os.WriteFile(filepath.Join(filepath.Dir(stderrPath), "codehost-deadline.ns"), []byte(strconv.FormatInt(deadline, 10)+"\n"), 0600) != nil {
+		return result
+	}
 	var controlFailed atomic.Bool
 	defer func() { result.RelayFailure = result.RelayFailure || controlFailed.Load() }()
 	controlDone := make(chan error, 1)
@@ -414,16 +452,17 @@ func brokerExchange(conn, control *net.UnixConn, host, probe, stderrPath string)
 		stderr.Close()
 		return result
 	}
+	stderrDone := make(chan error, 1)
 	reaped := false
 	defer func() {
 		if !reaped {
 			cancel()
+			drainStderr(ctx, stderr, stderrDone)
 			command.Wait()
 		}
 	}()
 	diagnostics := &boundedBuffer{}
 	probeDone := make(chan bool, 1)
-	stderrDone := make(chan error, 1)
 	go func() {
 		reader := bufio.NewReader(io.LimitReader(stderr, (64<<10)+1))
 		first, e := reader.ReadBytes('\n')
@@ -438,12 +477,9 @@ func brokerExchange(conn, control *net.UnixConn, host, probe, stderrPath string)
 	}
 	if !result.ProbePassed {
 		cancel()
+		drainStderr(ctx, stderr, stderrDone)
 		command.Wait()
 		reaped = true
-		select {
-		case <-stderrDone:
-		case <-time.After(time.Second):
-		}
 		os.WriteFile(stderrPath, []byte(diagnostics.String()), 0600)
 		return result
 	}
@@ -472,6 +508,7 @@ func brokerExchange(conn, control *net.UnixConn, host, probe, stderrPath string)
 	}()
 	o := <-output
 	conn.CloseWrite()
+	stderrErr := drainStderr(ctx, stderr, stderrDone)
 	waitErr := command.Wait()
 	reaped = true
 	conn.CloseRead()
@@ -480,12 +517,6 @@ func brokerExchange(conn, control *net.UnixConn, host, probe, stderrPath string)
 	case i = <-input:
 	case <-time.After(time.Second):
 		i.err = errors.New("input did not stop")
-	}
-	var stderrErr error
-	select {
-	case stderrErr = <-stderrDone:
-	case <-time.After(time.Second):
-		stderrErr = errors.New("stderr did not stop")
 	}
 	result.Input, result.Output = i.value, o.value
 	var controlErr error

@@ -65,6 +65,24 @@ def observation_passed(receipt, result, source, case):
 def bwrap_binary():
     return "/usr/bin/bwrap"
 
+def broker_shutdown_budget(output, started, now):
+    # The broker records CLOCK_MONOTONIC after opening its bounded exchange.
+    # Without that record it is still in the 45-second accept/setup window.
+    deadline_path = output / "codehost-deadline.ns"
+    try:
+        with deadline_path.open("rb") as stream:
+            raw = stream.read(32)
+    except FileNotFoundError:
+        deadline = started + 45
+    else:
+        if not raw.endswith(b"\n") or not raw[:-1].isdigit() or len(raw) > 21:
+            raise RuntimeError("invalid private broker deadline")
+        deadline = int(raw[:-1]) / 1_000_000_000
+        if not started <= deadline <= started + 90:
+            raise RuntimeError("private broker deadline exceeds lifetime bound")
+    return max(0, deadline - now) + 3
+
+
 def code_host_observation_passed(value, expected_bwrap):
     if not isinstance(value, dict):
         return False
@@ -156,10 +174,12 @@ def main():
                 "--chdir", "/work", "--", "/helper", "--fixture", "--case", args.case]
     timed_out = False
     broker = None
+    broker_started = None
     broker_stopped = True
     try:
         if broker_command is not None:
             with (out / "broker-stdout.txt").open("wb") as broker_out, (out / "broker-stderr.txt").open("wb") as broker_err:
+                broker_started = time.monotonic()
                 broker = subprocess.Popen(broker_command, stdout=broker_out, stderr=broker_err, start_new_session=True,
                                           env={"LANG": "C.UTF-8", "SFL_FAKE_CODEHOST_BROKER": "1"})
             deadline = time.monotonic() + 5
@@ -179,8 +199,8 @@ def main():
     finally:
         if broker is not None:
             try:
-                broker.wait(timeout=3)
-            except subprocess.TimeoutExpired:
+                broker.wait(timeout=broker_shutdown_budget(out, broker_started, time.monotonic()))
+            except (subprocess.TimeoutExpired, RuntimeError):
                 broker_stopped = False
                 os.killpg(broker.pid, signal.SIGKILL)
                 broker.wait(timeout=5)

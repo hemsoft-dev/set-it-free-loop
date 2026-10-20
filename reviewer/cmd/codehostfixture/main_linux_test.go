@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -259,5 +260,66 @@ func TestControlRejectsAnotherProcessEvenWithTheSameUID(t *testing.T) {
 	}
 	if err = command.Wait(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBrokerExecutableUsesFileIdentityThroughSymlinkedAncestors(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err = os.Symlink(filepath.Dir(self), alias); err != nil {
+		t.Fatal(err)
+	}
+	if !sameExecutableFile(self, filepath.Join(alias, filepath.Base(self))) {
+		t.Fatal("same executable through lexical alias rejected")
+	}
+	other := filepath.Join(t.TempDir(), "other")
+	if err = os.WriteFile(other, []byte("different inode"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if sameExecutableFile(self, other) || sameExecutableFile(self, other+"-missing") {
+		t.Fatal("different/missing executable accepted")
+	}
+}
+
+func TestStderrDrainCompletesBeforeCommandWait(t *testing.T) {
+	if os.Getenv("SFL_TEST_STDERR_DRAIN") == "1" {
+		os.Stdout.Close()
+		for i := 0; i < 16; i++ {
+			os.Stderr.Write(bytes.Repeat([]byte("diagnostics"), 256))
+		}
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestStderrDrainCompletesBeforeCommandWait$")
+	command.Env = []string{"SFL_TEST_STDERR_DRAIN=1"}
+	stderr, err := command.StderrPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var captured bytes.Buffer
+	done := make(chan error, 1)
+	go func() { _, e := io.Copy(&captured, stderr); done <- e }()
+	if _, err = io.Copy(io.Discard, stdout); err != nil {
+		t.Fatal(err)
+	}
+	if err = drainStderr(ctx, stderr, done); err != nil {
+		t.Fatal(err)
+	}
+	if err = command.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if captured.Len() != 16*256*len("diagnostics") {
+		t.Fatal("buffered stderr lost", captured.Len())
 	}
 }

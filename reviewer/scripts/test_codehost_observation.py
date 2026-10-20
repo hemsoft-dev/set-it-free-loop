@@ -46,6 +46,18 @@ class CodeHostReceiptTests(unittest.TestCase):
             with mock.patch.dict(os.environ, {"PATH": directory}):
                 self.assertEqual(FIXTURE.bwrap_binary(), "/usr/bin/bwrap")
 
+    def test_shutdown_wait_uses_private_monotonic_exchange_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory)
+            self.assertEqual(FIXTURE.broker_shutdown_budget(output, 100, 120), 28)
+            (output / "codehost-deadline.ns").write_bytes(b"150000000000\n")
+            self.assertEqual(FIXTURE.broker_shutdown_budget(output, 100, 120), 33)
+            self.assertEqual(FIXTURE.broker_shutdown_budget(output, 100, 160), 3)
+            for value in [b"nan\n", b"200000000000\n", b"99000000000\n", b"150000000000extra"]:
+                (output / "codehost-deadline.ns").write_bytes(value)
+                with self.assertRaises(RuntimeError):
+                    FIXTURE.broker_shutdown_budget(output, 100, 120)
+
 
 if __name__ == "__main__":
     unittest.main()
