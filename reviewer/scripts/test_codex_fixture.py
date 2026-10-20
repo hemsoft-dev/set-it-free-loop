@@ -15,7 +15,8 @@ class CodexObservationTest(unittest.TestCase):
                   "metadata_requests": 5, "telemetry_requests": 0, "backend_calls": 2,
                   "undeclared_patch_denied": True, "canary_exists": False}
         self.assertTrue(fixture.observation_passed(receipt, result, [], "undeclared-patch"))
-        for key, value in [("telemetry_requests", 1), ("metadata_requests", 4), ("metadata_requests", 6)]:
+        self.assertTrue(fixture.observation_passed(receipt, {**result, "metadata_requests": 4}, [], "undeclared-patch"))
+        for key, value in [("telemetry_requests", 1), ("metadata_requests", 3), ("metadata_requests", 6)]:
             changed = {**result, key: value}
             self.assertFalse(fixture.observation_passed(receipt, changed, [], "undeclared-patch"))
         for key in ["telemetry_requests", "metadata_requests"]:

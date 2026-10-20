@@ -46,8 +46,9 @@ also needs its own captured budget; the earlier bridge default of four metadata
 requests is below the five observed after telemetry suppression. This fixture
 does not qualify that bridge or increase its budgets.
 
-The fixture requires exactly five startup metadata requests and zero telemetry
-requests. Analytics traffic is counted separately and rejected, even if the
+The fixture requires four or five startup metadata requests and zero telemetry
+requests. The client can omit a second model-list request on a short run. Five
+remains the strict ceiling. Analytics traffic is counted separately and rejected, even if the
 client ignores that failure and still returns a valid report.
 
 The source case checks the exact model and advertised `functions.exec`/`wait`

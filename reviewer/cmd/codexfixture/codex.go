@@ -381,7 +381,7 @@ func codexMain(mode string) {
 	if mode == "undeclared-patch" {
 		expected = 2
 	}
-	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || failed != 0 || telemetry != 0 || metadata != 5 || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
+	if runErr != nil || normErr != nil || shapeErr != nil || stopErr != nil || failed != 0 || telemetry != 0 || metadata < 4 || metadata > 5 || calls != expected || negotiations != 1 || mode == "undeclared-patch" && !denied {
 		os.Exit(1)
 	}
 }
