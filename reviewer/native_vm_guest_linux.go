@@ -90,6 +90,9 @@ func NativeVMGuestMain(args []string) int {
 	// All roles are stopped and audit/auth return constructed on every path,
 	// including a malformed native result after a successful refresh.
 	defer phase.finish(context.WithoutCancel(ctx))
+	if phase.progress("jails") != nil {
+		return 2
+	}
 	readerRoot, err := release.jail("reader")
 	if err != nil {
 		return 2
@@ -99,7 +102,13 @@ func NativeVMGuestMain(args []string) int {
 		return 2
 	}
 	phase.clientRoot = clientRoot
+	if phase.progress("profile") != nil {
+		return 2
+	}
 	if nativeGuestPrepareProfile(clientRoot, q) != nil {
+		return 2
+	}
+	if phase.progress("reader") != nil {
 		return 2
 	}
 	readerSource := filepath.Join(readerRoot, nativeVMSourceRoot)
@@ -113,6 +122,9 @@ func NativeVMGuestMain(args []string) int {
 	phase.readerAudit = make(chan readerAuditResult, 1)
 	readyReader := make(chan bool, 1)
 	go readManagedAudit(phase.reader.out, q.readerConfig(), readyReader, phase.readerAudit)
+	if phase.progress("source-ready") != nil {
+		return 2
+	}
 	manifest, _ := json.Marshal(q.readerConfig())
 	if !nativeGuestWrite(ctx, phase.reader.in, manifest, true) {
 		return 2
@@ -125,11 +137,17 @@ func NativeVMGuestMain(args []string) int {
 	case <-ctx.Done():
 		return 2
 	}
+	if phase.progress("source-bind") != nil {
+		return 2
+	}
 	sourceMount := filepath.Join(clientRoot, nativeVMSourceRoot, Digest(q.Session))
 	if os.MkdirAll(filepath.Dir(sourceMount), 0755) != nil || os.Mkdir(sourceMount, 0710) != nil || nativeGuestBindDirectory(filepath.Join(readerSource, Digest(q.Session)), sourceMount) != nil {
 		return 2
 	}
 	if q.Session.Identity.Provider == Codex {
+		if phase.progress("codehost") != nil {
+			return 2
+		}
 		codeRoot, err := release.jail("codehost")
 		if err != nil {
 			return 2
@@ -144,6 +162,9 @@ func NativeVMGuestMain(args []string) int {
 		if os.Mkdir(filepath.Join(clientRoot, "codehost"), 0710) != nil || nativeGuestBindDirectory("/run/native/code-rpc", filepath.Join(clientRoot, "codehost")) != nil {
 			return 2
 		}
+	}
+	if phase.progress("client-proxy") != nil {
+		return 2
 	}
 	configRead, configWrite, err := os.Pipe()
 	if err != nil {
@@ -169,6 +190,9 @@ func NativeVMGuestMain(args []string) int {
 	if writeVMRecord(configWrite, q, 4<<20) != nil {
 		return 2
 	}
+	if phase.progress("client-ready") != nil {
+		return 2
+	}
 	observed, err := readVMRecord[nativeGuestProxyReady](readyRead, 4096)
 	if err != nil || !observed.Ready.valid(q) || observed.Port <= 0 || observed.Port > 65535 {
 		return 2
@@ -180,6 +204,7 @@ func NativeVMGuestMain(args []string) int {
 	if writeVMRecord(control, observed.Ready, 4096) != nil {
 		return 2
 	}
+	phase.stage = "auth-seed"
 	wire, err := readVMRecord[[]byte](control, 100<<10)
 	if err != nil {
 		return 2
@@ -195,6 +220,7 @@ func NativeVMGuestMain(args []string) int {
 		return 2
 	}
 	phase.seed = &info
+	phase.stage = "auth-profile"
 	if seed.Consume(func(raw []byte) error {
 		values, err := nativeAuthValues(info.Provider, raw)
 		if err != nil {
@@ -220,11 +246,13 @@ func NativeVMGuestMain(args []string) int {
 		go func() { phase.brokerDone <- phase.broker.serve(brokerCtx, q.Session, phase.canaries) }()
 	}
 	launcher := &nativeGuestLauncher{request: q, ready: observed.Ready, invocation: inv, process: phase.client, control: configWrite}
+	phase.stage = "native-execute"
 	data, _, err := (NativeDriver{Launcher: launcher}).Execute(ctx, inv)
 	if err != nil {
 		phase.state = phaseState(err)
 		return 1
 	}
+	phase.stage = "native-output"
 	if nativeCredentialCanarySeen(data, phase.canaries) {
 		phase.state = "invalid_output"
 		clear(data)
@@ -237,6 +265,7 @@ func NativeVMGuestMain(args []string) int {
 		return 1
 	}
 	phase.report, phase.state = data, "complete"
+	phase.stage = "complete"
 	return 0
 }
 
@@ -303,6 +332,15 @@ type nativeGuestPhase struct {
 	canaries       [][]byte
 	report         []byte
 	state          string
+	stage          string
+}
+
+func (p *nativeGuestPhase) progress(stage string) error {
+	if !nativeVMGuestStage(stage) {
+		return ErrVMBoot
+	}
+	p.stage = stage
+	return writeVMRecord(p.control, nativeVMProgress{1, "guest-stage", stage}, 4096)
 }
 
 func (p *nativeGuestPhase) finish(parent context.Context) {
@@ -314,7 +352,7 @@ func (p *nativeGuestPhase) finish(parent context.Context) {
 		}
 		clear(p.report)
 	}()
-	finished := nativeVMFinished{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), State: p.state}
+	finished := nativeVMFinished{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), State: p.state, GuestStage: p.stage}
 	if finished.State == "" {
 		finished.State = "blocked"
 	}

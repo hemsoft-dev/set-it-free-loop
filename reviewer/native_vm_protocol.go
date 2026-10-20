@@ -3,6 +3,7 @@ package reviewer
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"sort"
 	"strings"
 )
@@ -80,6 +81,49 @@ type nativeVMReady struct {
 	RestrictedProfile string
 }
 
+type nativeVMProgress struct {
+	Version     int
+	Kind, Stage string
+}
+
+func nativeVMGuestStage(stage string) bool {
+	switch stage {
+	case "ports", "jails", "profile", "reader", "source-ready", "source-bind", "codehost", "client-proxy", "client-ready", "auth-seed", "auth-profile", "native-execute", "native-output", "complete":
+		return true
+	}
+	return false
+}
+
+func readNativeVMReady(input io.Reader, q nativeVMRequest, progress func(string)) (nativeVMReady, error) {
+	for range 16 {
+		raw, err := readVMRecord[json.RawMessage](input, 4096)
+		if err != nil {
+			return nativeVMReady{}, ErrVMBoot
+		}
+		var stage nativeVMProgress
+		if DecodeErr := json.Unmarshal(raw, &stage); DecodeErr == nil && stage.Version == 1 && stage.Kind == "guest-stage" && nativeVMGuestStage(stage.Stage) {
+			canonical, _ := json.Marshal(stage)
+			if !bytes.Equal(canonical, raw) {
+				return nativeVMReady{}, ErrVMBoot
+			}
+			if progress != nil {
+				progress(stage.Stage)
+			}
+			continue
+		}
+		var ready nativeVMReady
+		if json.Unmarshal(raw, &ready) != nil || !ready.valid(q) {
+			return nativeVMReady{}, ErrVMBoot
+		}
+		canonical, _ := json.Marshal(ready)
+		if !bytes.Equal(canonical, raw) {
+			return nativeVMReady{}, ErrVMBoot
+		}
+		return ready, nil
+	}
+	return nativeVMReady{}, ErrVMBoot
+}
+
 func (r nativeVMReady) valid(q nativeVMRequest) bool {
 	return q.valid() && r.Version == 1 && r.Binding == q.Binding && r.RequestHash == Digest(q) && r.Identity == q.Session.Identity && r.RestrictedProfile == "native-vm-profile-1"
 }
@@ -96,6 +140,7 @@ type nativeVMFinished struct {
 	SourceAudit []byte
 	AuthReturn  []byte
 	CodeHost    *nativeVMCodeHostAccess
+	GuestStage  string
 }
 type nativeVMCodeHostAccess struct {
 	Version                 int
@@ -110,7 +155,7 @@ func (a *nativeVMCodeHostAccess) valid(s Session) bool {
 	return a != nil && a.Version == 1 && a.SessionHash == Digest(s) && a.UID == nativeVMCodeHostUID && a.InputBytes >= 0 && a.InputBytes <= 8<<20 && a.OutputBytes >= 0 && a.OutputBytes <= 8<<20 && validAuthHash(a.InputHash) && validAuthHash(a.OutputHash) && !a.Failed && a.Stopped
 }
 func (f nativeVMFinished) valid(q nativeVMRequest) bool {
-	if !q.valid() || f.Version != 1 || f.Binding != q.Binding || f.RequestHash != Digest(q) || len(f.Report) > q.Session.Limits.OutputBytes || len(f.SourceAudit) > 2<<20 || len(f.AuthReturn) > authTransferLimit+authTransferHeaderLimit+len(authTransferMagic)+4 {
+	if !q.valid() || f.Version != 1 || f.Binding != q.Binding || f.RequestHash != Digest(q) || (f.GuestStage != "" && !nativeVMGuestStage(f.GuestStage)) || len(f.Report) > q.Session.Limits.OutputBytes || len(f.SourceAudit) > 2<<20 || len(f.AuthReturn) > authTransferLimit+authTransferHeaderLimit+len(authTransferMagic)+4 {
 		return false
 	}
 	switch f.State {

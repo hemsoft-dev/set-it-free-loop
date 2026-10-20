@@ -196,7 +196,7 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 		return Report{}, nil, nil, workerLauncherError(ErrVMBoot, true)
 	}
 	phase.stage = "ready"
-	ready, err := readVMRecord[nativeVMReady](channels.host[0], 4096)
+	ready, err := readNativeVMReady(channels.host[0], request, func(stage string) { phase.stage = "guest/" + stage })
 	if err != nil || !ready.valid(request) {
 		return Report{}, nil, nil, workerLauncherError(ErrVMBoot, true)
 	}
@@ -401,7 +401,11 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report Report, acc
 		Complete                                          bool
 		Stage                                             string
 		AuthExported, AuthReturned                        bool
-	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, complete, p.stage, p.exported, p.authReturned}
+		GuestStage                                        string
+	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, complete, p.stage, p.exported, p.authReturned, ""}
+	if p.finished != nil && nativeVMGuestStage(p.finished.GuestStage) {
+		receipt.GuestStage = p.finished.GuestStage
+	}
 	raw, err := json.Marshal(receipt)
 	if err != nil || len(raw) > 65536 {
 		return ErrProviderAuditPending

@@ -201,6 +201,17 @@ func nativeGuestPort(name string) (*os.File, error) {
 	if os.Getuid() != 0 || os.Getpid() != 1 || (name != "control" && name != "objects" && name != "provider") {
 		return nil, ErrVMBoot
 	}
+	for range 100 {
+		file, err := nativeGuestPortOnce(name)
+		if err == nil {
+			return file, nil
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return nil, ErrVMBoot
+}
+
+func nativeGuestPortOnce(name string) (*os.File, error) {
 	entries, err := os.ReadDir("/sys/class/virtio-ports")
 	if err != nil {
 		return nil, ErrVMBoot

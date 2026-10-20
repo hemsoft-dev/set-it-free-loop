@@ -169,3 +169,46 @@ func TestNativeVMSeedRecordUsesActualOneUseAuthProducer(t *testing.T) {
 		t.Fatal("private seed sent twice", err)
 	}
 }
+
+func TestNativeVMGuestProgressCannotReplaceRestrictedReady(t *testing.T) {
+	q := nativeRequestFixture(t, Codex)
+	for _, kind := range []string{"complete", "progress-only", "unknown-stage", "flood", "foreign-ready"} {
+		t.Run(kind, func(t *testing.T) {
+			var wire bytes.Buffer
+			stage := "reader"
+			count := 1
+			if kind == "unknown-stage" {
+				stage = "candidate-auth-path"
+			}
+			if kind == "flood" {
+				count = 16
+			}
+			for range count {
+				if err := writeVMRecord(&wire, nativeVMProgress{1, "guest-stage", stage}, 4096); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if kind != "progress-only" {
+				ready := nativeVMReady{1, q.Binding, Digest(q), q.Session.Identity, "native-vm-profile-1"}
+				if kind == "foreign-ready" {
+					ready.RequestHash = Digest("foreign")
+				}
+				if err := writeVMRecord(&wire, ready, 4096); err != nil {
+					t.Fatal(err)
+				}
+			}
+			seen := []string{}
+			ready, err := readNativeVMReady(&wire, q, func(stage string) { seen = append(seen, stage) })
+			if kind == "complete" {
+				if err != nil || !ready.valid(q) || len(seen) != 1 || seen[0] != "reader" {
+					t.Fatal("private ready after progress rejected", err)
+				}
+			} else if err != ErrVMBoot || ready.valid(q) {
+				t.Fatal("progress or invalid ready authorized auth", kind, err)
+			}
+			if kind == "unknown-stage" && len(seen) != 0 {
+				t.Fatal("candidate stage was retained")
+			}
+		})
+	}
+}
