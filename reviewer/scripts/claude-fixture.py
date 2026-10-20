@@ -92,6 +92,17 @@ def build_offline(module, go, target, package, manifest, module_cache=None):
     return digest(target)
 
 
+def observation_passed(receipt, result, source):
+    passed = (receipt["exit_code"] == 0 and not receipt["timed_out"] and not receipt["source_changed"] and result.get("run_error") == ""
+              and result.get("backend_stop_error") == "" and result.get("provider_stop_error") == "" and result.get("provider_access_error") == ""
+              and result.get("report_error") == "" and result.get("backend_calls") == 3 and result.get("backend_requests") == 3 and result.get("backend_failures") == 0
+              and len(source) == 2 and [item.get("tool") for item in source] == ["read", "search"]
+              and all(item.get("success") is True for item in source)
+              and source[0].get("revision") == "a" * 40 and source[0].get("path") == "source.go"
+              and source[1].get("revision") == "a" * 40 and source[1].get("needle") == "immutable" and source[1].get("max_results") == 5)
+    return passed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", type=pathlib.Path, required=True)
@@ -157,10 +168,7 @@ def main():
     (out / "host-receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     result = json.loads((artifacts / "result.json").read_text()) if (artifacts / "result.json").exists() else {}
     source = [json.loads(line) for line in (artifacts / "source.jsonl").read_text().splitlines()] if (artifacts / "source.jsonl").exists() else []
-    passed = (process.returncode == 0 and not timed_out and not receipt["source_changed"] and result.get("run_error") == ""
-              and result.get("report_error") == "" and result.get("backend_calls") == 3 and result.get("backend_requests") == 3 and result.get("backend_failures") == 0
-              and len(source) == 2 and [item.get("tool") for item in source] == ["read", "search"]
-              and all(item.get("success") for item in source))
+    passed = observation_passed(receipt, result, source)
     print(json.dumps({"protocol_passed": passed, "output": str(out),
                       "actual_account_qualified": False, "production_boundary_qualified": False}))
     return 0 if passed else 1

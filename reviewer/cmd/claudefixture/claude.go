@@ -295,7 +295,12 @@ func claudeMain() {
 		panic(e)
 	}
 	b := &claudeBackend{s: s}
-	server := &http.Server{Handler: b, ReadHeaderTimeout: time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, MaxHeaderBytes: 32 << 10}
+	guard, policy, intake, closeUpstream, e := fixtureEgress(s, b)
+	if e != nil {
+		panic(e)
+	}
+	defer closeUpstream()
+	server := &http.Server{Handler: intake, ReadHeaderTimeout: time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, MaxHeaderBytes: 32 << 10}
 	go server.Serve(listener)
 	defer server.Close()
 	base := "http://" + listener.Addr().String()
@@ -312,6 +317,18 @@ func claudeMain() {
 	} else {
 		validation = decodeErr
 	}
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
+	stopErr := server.Shutdown(stopCtx)
+	stopCancel()
+	if stopErr != nil {
+		_ = server.Close()
+	}
+	guardCtx, guardCancel := context.WithTimeout(context.Background(), time.Second)
+	access, guardStopErr := guard.Close(guardCtx)
+	guardCancel()
+	guardErr := access.ValidateCompleted(s, policy)
+	write("provider-access.json", access)
+	write("provider-policy.json", policy)
 	b.mu.Lock()
 	calls := b.calls
 	failures := b.failures
@@ -323,9 +340,9 @@ func claudeMain() {
 		}
 		return e.Error()
 	}
-	write("result.json", map[string]any{"provider": "claude", "run_error": str(err), "report_error": str(validation), "report": report, "backend_calls": calls, "backend_failures": failures, "backend_requests": requests, "fake_only": true, "identity_and_stop_inputs": "protocol fixture fakes; outer PID namespace only", "actual_account_qualified": false, "production_boundary_qualified": false})
+	write("result.json", map[string]any{"provider": "claude", "run_error": str(err), "report_error": str(validation), "report": report, "backend_stop_error": str(stopErr), "provider_stop_error": str(guardStopErr), "provider_access_error": str(guardErr), "backend_calls": calls, "backend_failures": failures, "backend_requests": requests, "fake_only": true, "identity_and_stop_inputs": "protocol fixture fakes; outer PID namespace only", "actual_account_qualified": false, "production_boundary_qualified": false})
 	fmt.Printf("calls=%d run=%v report=%v\n", calls, err, validation)
-	if err != nil || validation != nil || failures != 0 || requests != 3 {
+	if err != nil || validation != nil || stopErr != nil || guardStopErr != nil || guardErr != nil || failures != 0 || requests != 3 {
 		os.Exit(1)
 	}
 }
