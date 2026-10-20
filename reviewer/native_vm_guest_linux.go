@@ -53,20 +53,35 @@ func NativeVMGuestMain(args []string) int {
 		return 2
 	}
 	defer control.Close()
+	bootProgress := func(stage string) bool {
+		return writeVMRecord(control, nativeVMProgress{1, "guest-stage", stage}, 4096) == nil
+	}
+	if !bootProgress("boot-control") {
+		return 2
+	}
 	objects, err := nativeGuestPort("objects")
 	if err != nil {
 		return 2
 	}
 	defer objects.Close()
+	if !bootProgress("boot-objects") {
+		return 2
+	}
 	provider, err := nativeGuestPort("provider")
 	if err != nil {
 		return 2
 	}
 	defer provider.Close()
+	if !bootProgress("boot-provider") {
+		return 2
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Minute)
 	defer cancel()
 	stop := context.AfterFunc(ctx, func() { control.Close(); objects.Close(); provider.Close() })
 	defer stop()
+	if !bootProgress("boot-request") {
+		return 2
+	}
 	q, err := readVMRecord[nativeVMRequest](control, 4<<20)
 	if err != nil || !q.valid() {
 		return 2

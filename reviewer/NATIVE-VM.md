@@ -151,3 +151,11 @@ also selects an ancillary Linux boot ROM from the QEMU data directory. That ROM
 and host dynamic runtime capture remain source qualification work before live
 use. The separately required trusted `Check` cannot treat these fixtures as a
 production release qualification.
+
+Port discovery also waits for connected writability before framed intake. The
+[Linux 7.0 virtio-console implementation](https://raw.githubusercontent.com/torvalds/linux/v7.0/drivers/char/virtio_console.c)
+can return EOF and POLLHUP after a device node appears but before the host-open
+notification arrives. The bounded readiness wait rejects HUP even when another
+readiness bit is set. Fixed boot-control/object/provider/request progress
+records remain separate from the authenticated Ready record and cannot export
+auth. The complete pre-Ready stream remains bounded to 24 records.

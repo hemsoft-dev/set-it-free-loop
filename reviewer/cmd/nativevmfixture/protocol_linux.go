@@ -245,7 +245,7 @@ func runNativeProtocol(c config) error {
 		Version                                                          int
 		Purpose, RunnerSourceHead, RunnerSourceTree, ImageSourceHead     string
 		Passed, FakeOnly, RuntimeQualified, ProviderEligibilityQualified bool
-		PeerRounds, NativeSessions, ConsumedSessions                     int
+		PeerRounds, PhaseAttempts, ConsumedSessions                      int
 		State, LedgerHash                                                string
 		ElapsedMS                                                        int64
 		ResumedWithoutWork                                               bool

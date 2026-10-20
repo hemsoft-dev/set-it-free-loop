@@ -201,14 +201,46 @@ func nativeGuestPort(name string) (*os.File, error) {
 	if os.Getuid() != 0 || os.Getpid() != 1 || (name != "control" && name != "objects" && name != "provider") {
 		return nil, ErrVMBoot
 	}
+	deadline := time.Now().Add(2 * time.Second)
 	for range 100 {
 		file, err := nativeGuestPortOnce(name)
 		if err == nil {
+			if nativeGuestPortConnected(file, deadline) != nil {
+				file.Close()
+				return nil, ErrVMBoot
+			}
 			return file, nil
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	return nil, ErrVMBoot
+}
+
+func nativeGuestPortConnected(file *os.File, deadline time.Time) error {
+	// virtio-console may publish a port before the host-open notification.
+	// In that window reads report EOF and poll reports HUP. Wait for actual
+	// connected writability before any framed protocol intake.
+	if file == nil {
+		return ErrVMBoot
+	}
+	poll := []unix.PollFd{{Fd: int32(file.Fd()), Events: unix.POLLOUT}}
+	for time.Now().Before(deadline) {
+		poll[0].Revents = 0
+		_, err := unix.Poll(poll, 20)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil || poll[0].Revents&(unix.POLLERR|unix.POLLNVAL) != 0 {
+			return ErrVMBoot
+		}
+		if poll[0].Revents&unix.POLLOUT != 0 && poll[0].Revents&unix.POLLHUP == 0 {
+			return nil
+		}
+		if poll[0].Revents&unix.POLLHUP != 0 {
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	return ErrVMBoot
 }
 
 func nativeGuestPortOnce(name string) (*os.File, error) {

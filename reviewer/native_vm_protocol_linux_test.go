@@ -183,7 +183,7 @@ func TestNativeVMGuestProgressCannotReplaceRestrictedReady(t *testing.T) {
 				stage = "candidate-auth-path"
 			}
 			if kind == "flood" {
-				count = 16
+				count = 24
 			}
 			for range count {
 				if err := writeVMRecord(&wire, nativeVMProgress{1, "guest-stage", stage}, 4096); err != nil {

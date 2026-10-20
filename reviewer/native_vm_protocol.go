@@ -88,6 +88,8 @@ type nativeVMProgress struct {
 
 func nativeVMGuestStage(stage string) bool {
 	switch stage {
+	case "boot-control", "boot-objects", "boot-provider", "boot-request":
+		return true
 	case "ports", "jails", "profile", "reader", "source-ready", "source-bind", "codehost", "client-proxy", "client-ready", "auth-seed", "auth-profile", "native-execute", "native-output", "complete":
 		return true
 	case "client-config", "client-loopback", "client-proc", "client-listener", "client-version", "client-probe-clean":
@@ -97,7 +99,7 @@ func nativeVMGuestStage(stage string) bool {
 }
 
 func readNativeVMReady(input io.Reader, q nativeVMRequest, progress func(string)) (nativeVMReady, error) {
-	for range 16 {
+	for range 24 {
 		raw, err := readVMRecord[json.RawMessage](input, 4096)
 		if err != nil {
 			return nativeVMReady{}, ErrVMBoot
