@@ -24,6 +24,21 @@ type Remote interface {
 	Scan(context.Context, Scope, string) ([]RemoteReceipt, bool, error)
 	Annotate(context.Context, Scope, int64, string) error
 }
+
+// intentScanner avoids expanding unrelated App reviews during reconciliation.
+// Completeness still requires scanning every collection page and rejecting
+// duplicate IDs and multiple matching intent markers.
+type intentScanner interface {
+	ScanIntent(context.Context, WriteIntent) ([]RemoteReceipt, bool, error)
+}
+
+// publicationRejected is emitted only by a trusted transport after a definitive
+// write rejection. Missing/malformed success receipts never qualify.
+type publicationRejected struct{ cause error }
+
+func (e *publicationRejected) Error() string { return e.cause.Error() }
+func (e *publicationRejected) Unwrap() error { return e.cause }
+
 type RemoteState struct {
 	Access, Open bool
 	Snapshot     Snapshot
@@ -190,7 +205,13 @@ func (p Publisher) Reconcile(ctx context.Context, id string) error {
 	if w.State != "unknown" && w.State != "dispatched" {
 		return ErrDeferred
 	}
-	receipts, complete, err := p.Remote.Scan(ctx, w.Scope, w.Kind)
+	var receipts []RemoteReceipt
+	var complete bool
+	if scanner, ok := p.Remote.(intentScanner); ok {
+		receipts, complete, err = scanner.ScanIntent(ctx, *w)
+	} else {
+		receipts, complete, err = p.Remote.Scan(ctx, w.Scope, w.Kind)
+	}
 	if err != nil {
 		return err
 	}
@@ -305,13 +326,18 @@ func (p Publisher) Dispatch(ctx context.Context, id string) error {
 	}
 	receipt, postErr := p.Remote.Post(ctx, *w)
 	if postErr != nil || !validateReceipt(*w, receipt, d.Enrollment.BotID) {
-		_ = p.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
-			if d.Writes[id].State == "dispatched" {
-				d.Writes[id].State = "unknown"
+		var rejected *publicationRejected
+		definitive := errors.As(postErr, &rejected)
+		saveErr := p.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
+			if target := d.Writes[id]; target != nil && target.State == "dispatched" {
+				target.State = "unknown"
+				if definitive {
+					target.State = "prepared"
+				}
 			}
 			return nil
 		})
-		return ErrDeferred
+		return errors.Join(ErrDeferred, postErr, saveErr)
 	}
 	if err = p.confirm(context.WithoutCancel(ctx), id, receipt); err != nil {
 		return err

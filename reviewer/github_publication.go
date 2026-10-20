@@ -19,11 +19,12 @@ import (
 const githubOrigin = "https://api.github.com"
 const githubRepoPath = "/repos/hemsoft-dev/set-it-free-loop"
 
-// Four maximum-sized raw comment bodies, even with six-byte JSON escaping,
-// leave room for ordinary API metadata under the two-MiB read cap. Keep the
-// original ten-thousand-item scan ceiling while requesting smaller pages.
-const githubPageSize = 4
-const githubMaxPages = 2500
+// One hundred maximum-sized bodies with six-byte JSON escaping fit the
+// collection-only 48-MiB cap. Other responses retain the two-MiB cap.
+const githubPageSize = 100
+const githubMaxPages = 100
+const githubCollectionBytes = 48 << 20
+const githubScanTimeout = 25 * time.Minute
 
 // Every accepted document is below 750 KiB before encoding. JSON can expand
 // each input byte to at most six bytes; eight MiB covers all accepted writes.
@@ -94,6 +95,9 @@ type GitHubHTTPError struct {
 func (e *GitHubHTTPError) Error() string { return fmt.Sprintf("GitHub HTTP status %d", e.Status) }
 
 func (g *GitHubPublicationHTTP) request(ctx context.Context, method, path string, payload any, status int, out any) (http.Header, error) {
+	return g.requestBounded(ctx, method, path, payload, status, out, 2<<20)
+}
+func (g *GitHubPublicationHTTP) requestBounded(ctx context.Context, method, path string, payload any, status int, out any, limit int64) (http.Header, error) {
 	var body io.ReadCloser
 	if payload != nil {
 		raw, err := json.Marshal(payload)
@@ -125,8 +129,8 @@ func (g *GitHubPublicationHTTP) request(ctx context.Context, method, path string
 		}
 		return nil, &GitHubHTTPError{r.StatusCode, delay}
 	}
-	raw, err := io.ReadAll(io.LimitReader(r.Body, (2<<20)+1))
-	if err != nil || len(raw) > 2<<20 || uniqueJSONKeys(json.NewDecoder(bytes.NewReader(raw)), 0) != nil {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
+	if err != nil || int64(len(raw)) > limit || uniqueJSONKeys(json.NewDecoder(bytes.NewReader(raw)), 0) != nil {
 		return nil, ErrDeferred
 	}
 	if json.Unmarshal(raw, out) != nil {
@@ -188,24 +192,40 @@ func nextGitHubPage(header http.Header, collection string, page int) (bool, erro
 	}
 	return found, nil
 }
-func githubPages[T any](ctx context.Context, g *GitHubPublicationHTTP, path string) ([]T, error) {
-	all := []T{}
+func visitGitHubPages[T any](ctx context.Context, g *GitHubPublicationHTTP, path string, visit func(T) error) error {
 	for page := 1; page <= githubMaxPages; page++ {
 		var items []T
-		h, err := g.request(ctx, "GET", path+"?per_page="+strconv.Itoa(githubPageSize)+"&page="+strconv.Itoa(page), nil, 200, &items)
+		h, err := g.requestBounded(ctx, "GET", path+"?per_page="+strconv.Itoa(githubPageSize)+"&page="+strconv.Itoa(page), nil, 200, &items, githubCollectionBytes)
 		if err != nil || items == nil || len(items) > githubPageSize {
-			return nil, errors.Join(ErrDeferred, err)
+			return errors.Join(ErrDeferred, err)
 		}
-		all = append(all, items...)
 		next, err := nextGitHubPage(h, path, page)
 		if err != nil {
-			return nil, err
+			return err
+		}
+		if next && len(items) == 0 {
+			return ErrDeferred
+		}
+		for _, item := range items {
+			if err := visit(item); err != nil {
+				return err
+			}
 		}
 		if !next {
-			return all, nil
+			return nil
 		}
 	}
-	return nil, ErrDeferred
+	return ErrDeferred
+}
+
+// Only a direct POST validation rejection proves that this attempt wrote
+// nothing. A 422 from a later receipt GET must remain an unknown write.
+func rejectedGitHubPost(err error) error {
+	var status *GitHubHTTPError
+	if errors.As(err, &status) && status.Status == http.StatusUnprocessableEntity {
+		return &publicationRejected{err}
+	}
+	return err
 }
 
 type githubAuthor struct {
@@ -249,7 +269,14 @@ func (g *GitHubPublicationHTTP) reviewReceipt(ctx context.Context, scope Scope, 
 	if marker == "" {
 		return RemoteReceipt{}, ErrDeferred
 	}
-	comments, err := githubPages[githubComment](ctx, g, githubPR(scope)+"/reviews/"+strconv.FormatInt(r.ID, 10)+"/comments")
+	comments := []githubComment{}
+	err := visitGitHubPages(ctx, g, githubPR(scope)+"/reviews/"+strconv.FormatInt(r.ID, 10)+"/comments", func(c githubComment) error {
+		if len(comments) == 40 {
+			return ErrDeferred
+		}
+		comments = append(comments, c)
+		return nil
+	})
 	if err != nil || len(comments) > 40 {
 		return RemoteReceipt{}, errors.Join(ErrDeferred, err)
 	}
@@ -305,7 +332,7 @@ func (g *GitHubPublicationHTTP) Post(ctx context.Context, w WriteIntent) (Remote
 		var c githubComment
 		_, err := g.request(ctx, "POST", githubIssue(w.Scope)+"/comments", map[string]any{"body": w.Document.Summary}, 201, &c)
 		if err != nil {
-			return RemoteReceipt{}, err
+			return RemoteReceipt{}, rejectedGitHubPost(err)
 		}
 		r, err := g.ackReceipt(w.Scope, c)
 		if err != nil || !validateReceipt(w, r, g.enrollment.BotID) {
@@ -320,7 +347,7 @@ func (g *GitHubPublicationHTTP) Post(ctx context.Context, w WriteIntent) (Remote
 	var review githubReview
 	_, err := g.request(ctx, "POST", githubPR(w.Scope)+"/reviews", map[string]any{"event": "COMMENT", "commit_id": w.Snapshot.Head, "body": w.Document.Summary, "comments": comments}, 200, &review)
 	if err != nil {
-		return RemoteReceipt{}, err
+		return RemoteReceipt{}, rejectedGitHubPost(err)
 	}
 	r, err := g.reviewReceipt(ctx, w.Scope, review)
 	if err != nil || !validateReceipt(w, r, g.enrollment.BotID) {
@@ -328,8 +355,23 @@ func (g *GitHubPublicationHTTP) Post(ctx context.Context, w WriteIntent) (Remote
 	}
 	return r, nil
 }
+
+// ScanIntent exhausts the entire collection but expands only the requested
+// marker. At most 100 collection pages, one repository lookup and forty
+// nonempty inline pages fit within twenty-five minutes at the ten-second
+// request limit. Two matching markers fail closed, so historical App reviews cannot
+// multiply the request budget or the retained body memory.
+func (g *GitHubPublicationHTTP) ScanIntent(ctx context.Context, w WriteIntent) ([]RemoteReceipt, bool, error) {
+	if w.Marker != "<!-- sfl-alpha:"+w.ID+" -->" || !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(w.ID) {
+		return nil, false, ErrIgnored
+	}
+	return g.scan(ctx, w.Scope, w.Kind, w.Marker)
+}
 func (g *GitHubPublicationHTTP) Scan(ctx context.Context, scope Scope, kind string) ([]RemoteReceipt, bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	return g.scan(ctx, scope, kind, "")
+}
+func (g *GitHubPublicationHTTP) scan(ctx context.Context, scope Scope, kind, marker string) ([]RemoteReceipt, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, githubScanTimeout)
 	defer cancel()
 	if !g.enrollment.accepts(scope) || (kind != "ack" && kind != "review") {
 		return nil, false, ErrIgnored
@@ -339,44 +381,52 @@ func (g *GitHubPublicationHTTP) Scan(ctx context.Context, scope Scope, kind stri
 	}
 	result := []RemoteReceipt{}
 	seen := map[int64]bool{}
-	if kind == "ack" {
-		items, err := githubPages[githubComment](ctx, g, githubIssue(scope)+"/comments")
-		if err != nil {
-			return nil, false, err
+	candidate := func(id, author int64, body string) (bool, error) {
+		if id <= 0 || seen[id] {
+			return false, ErrDeferred
 		}
-		for _, c := range items {
-			if c.ID <= 0 || seen[c.ID] {
-				return nil, false, ErrDeferred
+		seen[id] = true
+		if author != g.enrollment.BotID || !strings.Contains(body, "<!-- sfl-alpha:") {
+			return false, nil
+		}
+		if marker != "" {
+			if !strings.Contains(body, marker) {
+				return false, nil
 			}
-			seen[c.ID] = true
-			if c.User.ID != g.enrollment.BotID || !strings.Contains(c.Body, "<!-- sfl-alpha:") {
-				continue
+			if len(result) != 0 {
+				return false, ErrDeferred
+			}
+		}
+		return true, nil
+	}
+	var err error
+	if kind == "ack" {
+		err = visitGitHubPages(ctx, g, githubIssue(scope)+"/comments", func(c githubComment) error {
+			ok, err := candidate(c.ID, c.User.ID, c.Body)
+			if err != nil || !ok {
+				return err
 			}
 			r, err := g.ackReceipt(scope, c)
-			if err != nil {
-				return nil, false, err
+			if err == nil {
+				result = append(result, r)
 			}
-			result = append(result, r)
-		}
+			return err
+		})
 	} else {
-		items, err := githubPages[githubReview](ctx, g, githubPR(scope)+"/reviews")
-		if err != nil {
-			return nil, false, err
-		}
-		for _, v := range items {
-			if v.ID <= 0 || seen[v.ID] {
-				return nil, false, ErrDeferred
-			}
-			seen[v.ID] = true
-			if v.User.ID != g.enrollment.BotID || !strings.Contains(v.Body, "<!-- sfl-alpha:") {
-				continue
+		err = visitGitHubPages(ctx, g, githubPR(scope)+"/reviews", func(v githubReview) error {
+			ok, err := candidate(v.ID, v.User.ID, v.Body)
+			if err != nil || !ok {
+				return err
 			}
 			r, err := g.reviewReceipt(ctx, scope, v)
-			if err != nil {
-				return nil, false, err
+			if err == nil {
+				result = append(result, r)
 			}
-			result = append(result, r)
-		}
+			return err
+		})
+	}
+	if err != nil {
+		return nil, false, err
 	}
 	return result, true, nil
 }

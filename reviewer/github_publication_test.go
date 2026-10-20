@@ -20,6 +20,7 @@ type githubFixture struct {
 	wireBytes              int
 	mu                     sync.Mutex
 	posts, puts, calls     int
+	rejectStatus           int
 	review                 map[string]any
 	comments               []map[string]any
 	ack                    map[string]any
@@ -72,6 +73,11 @@ func githubHTTPFixture(t *testing.T, reader GitHubPublicationReader) (*GitHubPub
 			write(map[string]any{"id": RepositoryID, "full_name": "hemsoft-dev/set-it-free-loop"})
 		case path == pr+"/reviews" && q.Method == "POST":
 			f.posts++
+			if f.rejectStatus != 0 {
+				w.WriteHeader(f.rejectStatus)
+				write(map[string]any{"message": "private validation detail"})
+				return
+			}
 			if f.redirect {
 				w.Header().Set("Location", githubOrigin+pr+"/review-again")
 				w.WriteHeader(307)
@@ -117,8 +123,11 @@ func githubHTTPFixture(t *testing.T, reader GitHubPublicationReader) (*GitHubPub
 				t.Error("missing explicit page bounds")
 				return
 			}
-			start := min((page-1)*size, len(f.comments))
-			end := min(start+size, len(f.comments))
+			// Return short, nonempty pages while retaining the requested per_page
+			// in Link. This exercises complete inline traversal even below the limit.
+			actualSize := min(size, 4)
+			start := min((page-1)*actualSize, len(f.comments))
+			end := min(start+actualSize, len(f.comments))
 			if end < len(f.comments) {
 				alias := "/repositories/" + strconv.FormatInt(RepositoryID, 10) + strings.TrimPrefix(path, githubRepoPath)
 				w.Header().Set("Link", "<"+githubOrigin+alias+"?per_page="+strconv.Itoa(size)+"&page="+strconv.Itoa(page+1)+">; rel=\"next\"")
@@ -343,12 +352,12 @@ func TestGitHubPublicationRedirectNeverReplaysPost(t *testing.T) {
 func TestGitHubPaginationRejectsForeignLoopingAndAmbiguousLinks(t *testing.T) {
 	path := githubPR(alphaScope()) + "/reviews"
 	for _, link := range []string{
-		"<https://other.example" + path + "?per_page=4&page=2>; rel=\"next\"",
-		"<" + githubOrigin + "/repositories/1/pulls/1/reviews?per_page=4&page=2>; rel=\"next\"",
-		"<" + githubOrigin + path + "?per_page=4&page=1>; rel=\"next\"",
-		"<" + githubOrigin + path + "?per_page=4&page=2&page=3>; rel=\"next\"",
-		"<" + githubOrigin + path + "?per_page=4&page=2>; rel=next",
-		"<" + githubOrigin + path + "?per_page=4&page=2>; rel=\"unknown\"",
+		"<https://other.example" + path + "?per_page=100&page=2>; rel=\"next\"",
+		"<" + githubOrigin + "/repositories/1/pulls/1/reviews?per_page=100&page=2>; rel=\"next\"",
+		"<" + githubOrigin + path + "?per_page=100&page=1>; rel=\"next\"",
+		"<" + githubOrigin + path + "?per_page=100&page=2&page=3>; rel=\"next\"",
+		"<" + githubOrigin + path + "?per_page=100&page=2>; rel=next",
+		"<" + githubOrigin + path + "?per_page=100&page=2>; rel=\"unknown\"",
 	} {
 		if _, err := nextGitHubPage(http.Header{"Link": []string{link}}, path, 1); err == nil {
 			t.Fatal("unsafe cutoff/link accepted", link)
@@ -409,7 +418,11 @@ func TestGitHubPublicationPartialInlinePaginationCannotConfirm(t *testing.T) {
 		if strings.HasSuffix(q.URL.Path, "/comments") && q.URL.Query().Get("page") == "2" {
 			return &http.Response{StatusCode: 503, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"message":"unavailable"}`))}, nil
 		}
-		return transport.RoundTrip(q)
+		r, err := transport.RoundTrip(q)
+		if err == nil && strings.HasSuffix(q.URL.Path, "/comments") && q.URL.Query().Get("page") == "1" {
+			r.Header.Set("Link", "<"+githubOrigin+q.URL.Path+"?per_page="+strconv.Itoa(githubPageSize)+"&page=2>; rel=\"next\"")
+		}
+		return r, err
 	})
 	receipts, complete, err := g.Scan(context.Background(), alphaScope(), "review")
 	if err == nil || complete || len(receipts) != 0 {
@@ -461,7 +474,7 @@ func TestGitHubPublicationLargeRawCollectionsFitReadPages(t *testing.T) {
 				collection = issue + "/comments"
 			}
 			items := []map[string]any{}
-			for i := 0; i < 40; i++ {
+			for i := 0; i < 100; i++ {
 				marker := fmt.Sprintf("<!-- sfl-alpha:%032x -->", i+1)
 				body := strings.Repeat("<", 64<<10) + "\n" + marker
 				if kind == "review" {
@@ -471,7 +484,7 @@ func TestGitHubPublicationLargeRawCollectionsFitReadPages(t *testing.T) {
 				}
 			}
 			if kind == "ack" {
-				items = append(items, map[string]any{"id": 41, "user": map[string]any{"id": 9003}, "body": "accepted ACK\n<!-- sfl-alpha:ffffffffffffffffffffffffffffffff -->", "issue_url": githubOrigin + issue, "created_at": controlTime})
+				items = append(items, map[string]any{"id": 101, "user": map[string]any{"id": 9003}, "body": "accepted ACK\n<!-- sfl-alpha:ffffffffffffffffffffffffffffffff -->", "issue_url": githubOrigin + issue, "created_at": controlTime})
 			}
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -512,7 +525,7 @@ func TestGitHubPublicationLargeRawCollectionsFitReadPages(t *testing.T) {
 				t.Fatal(err)
 			}
 			receipts, complete, err := g.Scan(context.Background(), alphaScope(), kind)
-			want := 40
+			want := 100
 			if kind == "ack" {
 				want = 1
 			}
@@ -558,5 +571,225 @@ func TestGitHubPublicationRepositoryIDPaginationAlias(t *testing.T) {
 	receipts, complete, err := g.Scan(context.Background(), alphaScope(), "ack")
 	if err != nil || !complete || len(receipts) != 0 {
 		t.Fatal("documented repository-ID next link rejected", receipts, complete, err)
+	}
+}
+
+func TestGitHubPublicationIntentScanFullBoundFitsDeadline(t *testing.T) {
+	for _, kind := range []string{"review", "ack"} {
+		t.Run(kind, func(t *testing.T) {
+			doc := Document{Summary: "target", Inline: []InlineComment{}}
+			w := newIntent(kind, alphaScope(), 1, 1, testSnapshot(), strings.Repeat("d", 64), doc, controlTime)
+			pr, issue := githubPR(w.Scope), githubIssue(w.Scope)
+			collection := pr + "/reviews"
+			if kind == "ack" {
+				collection = issue + "/comments"
+			}
+			calls, inlineCalls := 0, 0
+			server := httptest.NewTLSServer(http.HandlerFunc(func(rw http.ResponseWriter, q *http.Request) {
+				calls++
+				var v any
+				switch {
+				case q.URL.Path == githubRepoPath:
+					v = map[string]any{"id": RepositoryID, "full_name": "hemsoft-dev/set-it-free-loop"}
+				case q.URL.Path == collection:
+					page, _ := strconv.Atoi(q.URL.Query().Get("page"))
+					size, _ := strconv.Atoi(q.URL.Query().Get("per_page"))
+					if size != 100 || page < 1 || page > 100 {
+						t.Error("scan request count cannot fit budget", q.URL)
+						rw.WriteHeader(400)
+						return
+					}
+					time.Sleep(13 * time.Millisecond)
+					items := []map[string]any{}
+					for i := 0; i < size; i++ {
+						id := (page-1)*size + i + 1
+						body := fmt.Sprintf("unrelated App review <!-- sfl-alpha:%032x -->", id)
+						if id == 10000 {
+							body = w.Document.Summary
+						}
+						item := map[string]any{"id": id, "user": map[string]any{"id": 9003}, "body": body, "state": "COMMENTED", "commit_id": w.Snapshot.Head, "pull_request_url": githubOrigin + pr, "submitted_at": controlTime, "issue_url": githubOrigin + issue, "created_at": controlTime}
+						items = append(items, item)
+					}
+					if page < 100 {
+						rw.Header().Set("Link", "<"+githubOrigin+collection+"?per_page=100&page="+strconv.Itoa(page+1)+">; rel=\"next\"")
+					}
+					v = items
+				case q.URL.Path == pr+"/reviews/10000/comments":
+					inlineCalls++
+					v = []any{}
+				default:
+					t.Error("unrelated review expanded", q.URL)
+					rw.WriteHeader(400)
+					return
+				}
+				if err := json.NewEncoder(rw).Encode(v); err != nil {
+					t.Error(err)
+				}
+			}))
+			defer server.Close()
+			base, _ := url.Parse(server.URL)
+			route := githubFixtureRoute{base, server.Client().Transport, t}
+			g, err := NewGitHubPublicationHTTP(alphaEnrollment(), liveFake(native(1, controlTime)), githubResponseTransport(func(q *http.Request) (*http.Response, error) {
+				deadline, ok := q.Context().Deadline()
+				if !ok || time.Until(deadline) < 9*time.Second {
+					t.Error("missing per-request deadline")
+				}
+				return route.RoundTrip(q)
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			receipts, complete, err := g.ScanIntent(context.Background(), w)
+			wantCalls, wantInline := 102, 1
+			if kind == "ack" {
+				wantCalls, wantInline = 101, 0
+			}
+			if err != nil || !complete || len(receipts) != 1 || !validateReceipt(w, receipts[0], 9003) || calls != wantCalls || inlineCalls != wantInline {
+				t.Fatal("bounded full collection failed", len(receipts), complete, err, calls, inlineCalls)
+			}
+			if githubScanTimeout < time.Duration(1+githubMaxPages+40)*10*time.Second {
+				t.Fatal("worst-case request budget exceeds scan deadline")
+			}
+		})
+	}
+}
+
+func TestGitHubPublicationDefinitiveRejectionRestoresPrepared(t *testing.T) {
+	for _, status := range []int{422, 403, 429, 503} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			s, out, reader := completeFixture(t)
+			g, f := githubHTTPFixture(t, reader)
+			f.rejectStatus = status
+			p := Publisher{Store: s, Remote: g}
+			w, err := p.Prepare(context.Background(), out, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = p.Dispatch(context.Background(), w.ID); !errors.Is(err, ErrDeferred) || strings.Contains(err.Error(), "private") {
+				t.Fatal(err)
+			}
+			d, err := s.Snapshot(context.Background())
+			want := "unknown"
+			if status == 422 {
+				want = "prepared"
+			}
+			if err != nil || d.Writes[w.ID].State != want {
+				t.Fatal("incorrect rejected/uncertain boundary", d.Writes[w.ID], err)
+			}
+			f.mu.Lock()
+			f.rejectStatus = 0
+			f.mu.Unlock()
+			err = p.Dispatch(context.Background(), w.ID)
+			if status == 422 {
+				if err != nil {
+					t.Fatal("definitive rejection could not retry", err)
+				}
+			} else if !errors.Is(err, ErrDeferred) {
+				t.Fatal("uncertain write retried", err)
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			wantPosts := 1
+			if status == 422 {
+				wantPosts = 2
+			}
+			if f.posts != wantPosts {
+				t.Fatal("unexpected POST count", f.posts)
+			}
+		})
+	}
+}
+func TestGitHubPublicationRejectionRetryRechecksSnapshot(t *testing.T) {
+	s, out, reader := completeFixture(t)
+	g, f := githubHTTPFixture(t, reader)
+	f.rejectStatus = 422
+	p := Publisher{Store: s, Remote: g}
+	w, err := p.Prepare(context.Background(), out, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.Dispatch(context.Background(), w.ID); !errors.Is(err, ErrDeferred) {
+		t.Fatal(err)
+	}
+	reader.state.Snapshot.Head = strings.Repeat("f", 40)
+	if err = p.Dispatch(context.Background(), w.ID); !errors.Is(err, ErrDeferred) {
+		t.Fatal(err)
+	}
+	d, _ := s.Snapshot(context.Background())
+	if d.Writes[w.ID].State != "stale" || !d.PRs[w.Scope.key()].Paused {
+		t.Fatal("stale rejection retried", d.Writes[w.ID])
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.posts != 1 {
+		t.Fatal("stale retry POST", f.posts)
+	}
+}
+func TestGitHubPublicationReceiptGET422RemainsUnknown(t *testing.T) {
+	s, out, reader := completeFixture(t)
+	g, f := githubHTTPFixture(t, reader)
+	route := g.client.Transport
+	g.client.Transport = githubResponseTransport(func(q *http.Request) (*http.Response, error) {
+		if q.Method == "GET" && strings.HasSuffix(q.URL.Path, "/comments") {
+			return &http.Response{StatusCode: 422, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"message":"private"}`))}, nil
+		}
+		return route.RoundTrip(q)
+	})
+	p := Publisher{Store: s, Remote: g}
+	w, err := p.Prepare(context.Background(), out, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = p.Dispatch(context.Background(), w.ID); !errors.Is(err, ErrDeferred) {
+		t.Fatal(err)
+	}
+	d, _ := s.Snapshot(context.Background())
+	if d.Writes[w.ID].State != "unknown" {
+		t.Fatal("readback rejection retried accepted POST", d.Writes[w.ID])
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.posts != 1 || f.review == nil {
+		t.Fatal("fixture did not accept POST")
+	}
+}
+
+func TestGitHubPublicationIntentScanRejectsDuplicateMarkerOnLaterPage(t *testing.T) {
+	g, _ := githubHTTPFixture(t, liveFake(native(1, controlTime)))
+	w := httpReviewIntent()
+	if _, err := g.Post(context.Background(), w); err != nil {
+		t.Fatal(err)
+	}
+	route := g.client.Transport
+	g.client.Transport = githubResponseTransport(func(q *http.Request) (*http.Response, error) {
+		r, err := route.RoundTrip(q)
+		if err != nil || q.URL.Path != githubPR(w.Scope)+"/reviews" {
+			return r, err
+		}
+		if q.URL.Query().Get("page") == "1" {
+			r.Header.Set("Link", "<"+githubOrigin+q.URL.Path+"?per_page=100&page=2>; rel=\"next\"")
+		} else {
+			raw, readErr := io.ReadAll(r.Body)
+			r.Body.Close()
+			if readErr != nil {
+				return nil, readErr
+			}
+			var items []map[string]any
+			if err := json.Unmarshal(raw, &items); err != nil {
+				return nil, err
+			}
+			items[0]["id"] = 81
+			encoded, err := json.Marshal(items)
+			if err != nil {
+				return nil, err
+			}
+			r.Body = io.NopCloser(strings.NewReader(string(encoded)))
+			r.ContentLength = int64(len(encoded))
+		}
+		return r, nil
+	})
+	receipts, complete, err := g.ScanIntent(context.Background(), w)
+	if err == nil || complete || len(receipts) != 0 {
+		t.Fatal("duplicate marker confirmed", receipts, complete, err)
 	}
 }

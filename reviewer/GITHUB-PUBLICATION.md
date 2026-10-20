@@ -35,8 +35,10 @@ IDs, replies mixed into the original review, changed/missing comments, wrong
 commits and ambiguous markers cannot confirm an intent. The publisher now checks
 the receipt's actual commit independently of the summary/document hash.
 
-Reconciliation exhausts review or acknowledgment pages, then each candidate
-review's inline pages. Collection IDs cannot repeat. A next link must remain on
+Reconciliation exhausts review or acknowledgment pages. The durable publisher
+uses the adapter's intent-specific scanner, which retains only matching receipts
+and expands inline pages only for that intent's marker. Unrelated historical App
+reviews do not add receipt requests. Multiple matching markers fail closed. Collection IDs cannot repeat. A next link must remain on
 the fixed origin and exact collection, with the next numeric page and fixed page
 size. GitHub's documented repository-ID alias is accepted only for the enrolled
 immutable repository ID and identical collection suffix. Malformed, looping, foreign and duplicate-query links fail the scan. Only
@@ -49,15 +51,29 @@ below 750 KiB before encoding, and JSON expands each input byte at most sixfold.
 A valid prepared document cannot hit the former one-MiB wire rejection after
 dispatch becomes uncertain.
 
-Each HTTP request has a ten-second timeout, a two-MiB response cap and strict
-JSON duplicate-key/trailing-data rejection. Public operations have a thirty-second
-context; pages request four records so large raw bodies fit the read cap before
-candidate filtering. The 2,500-page cap preserves the original 10,000-record
-ceiling. Writes have no replayable
-body, idempotency header, redirect or application retry. Errors expose status
+Each HTTP request has a ten-second timeout and strict JSON duplicate-key and
+trailing-data rejection. Collection pages request 100 records under a dedicated
+48-MiB cap. One hundred maximally JSON-escaped 66-KiB bodies leave room for API
+metadata under that cap. Other responses retain the two-MiB cap. Pages are
+processed individually, so unrelated bodies are discarded after each page.
+
+The intent-specific scan has a 25-minute outer deadline. Its worst case has
+100 collection pages, one repository lookup and at most 40 nonempty inline
+pages for one matching review. Those 141 requests fit the deadline even when
+each takes ten seconds. Empty pages with a next link are invalid. The
+100-page cap retains the 10,000-record ceiling. A caller's shorter deadline
+still cancels the scan and cannot authorize a duplicate POST. Other public
+operations retain thirty-second contexts. The general Scan method may expand
+all owned reviews for diagnostics; Publisher uses ScanIntent for recovery.
+Writes have no replayable body, idempotency header, redirect or application retry. Errors expose status
 and bounded Retry-After seconds, never submitted content or GitHub error bodies.
 A timeout, lost response, malformed receipt or partial scan retains the durable
 publication_unknown boundary. It does not prove that the remote write failed.
+A direct POST response with GitHub's documented HTTP 422 validation rejection
+is distinguished from uncertainty and restores the durable intent to prepared.
+A later Dispatch rechecks the current snapshot and owner request before writing.
+A 422 from receipt readback after an accepted POST remains unknown. Other status
+codes remain conservative unknown results. No retry occurs inside Dispatch.
 
 Supersession reads and verifies the exact known App review, then PUTs its summary
 with a fixed marker and sanitized reason. It never appends another review or
