@@ -61,13 +61,15 @@ limitations, never evidence of clean code. Candidate hooks and instructions are
 inert data. The reader must run as a separate identity outside the provider
 worker, without provider/GitHub credentials.
 
-`AuthStore` on Linux/macOS serializes trusted refresh callbacks with a
-cross-process advisory lock, reads the current state after locking, and
-atomically writes it with fsync. State and lock files are private. Provider
-stores are separate. Callback/precommit errors preserve previous state; a directory fsync failure after rename reports uncertain durability and must never cause restoring an old seed. Tests use fake bytes only.
-It does not import the owner's interactive auth, provision worker credentials,
-or itself prove distinct OS users/network isolation. Stale seeds are not an
-input to refresh; the callback sees only the current leased state.
+`AuthStore` on Linux/macOS serializes trusted local state updates and per-phase
+profile leases with a cross-process lock. A durable profile journal survives
+controller loss, blocks stale seed reuse and commits returned credentials only
+after a trusted containment shutdown check. Provider stores stay separate.
+[Protected auth profiles](AUTH-PROFILES.md) describes exact allowlisted files,
+crash recovery, retirement and synthetic validation. `Refresh` callbacks must
+remain local; provider-side refresh runs in the leased client profile. Tests
+use fake bytes only. This code does not import interactive auth, provision
+credentials or qualify production credential transfer and OS containment.
 
 ## Remaining live gates
 

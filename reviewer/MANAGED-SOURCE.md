@@ -55,8 +55,9 @@ readiness, client launch failure, cancellation and uncertainty in either role.
 They do not provision identities or qualify an OS containment mechanism.
 
 No production OS launcher or provider credentials are selected by this module.
-Qualified reader/client launchers, persisted OS recovery records, protected auth
-leases, disposable profiles, memory/egress/request limits and exact-client
-fake-backend qualification remain implementation or qualification work in #174.
+Qualified reader/client launchers, persisted OS recovery records, integration
+with [protected auth leases](AUTH-PROFILES.md), disposable worker profiles,
+memory/egress/request limits and exact-client fake-backend qualification remain
+implementation or qualification work in #174.
 Actual account eligibility, App installation, live inference and activation are
 separate owner/provider gates. Merging this code activates none of them.
