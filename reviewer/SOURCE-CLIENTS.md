@@ -72,8 +72,11 @@ go -C reviewer test -race -count=1 ./...
 
 Linux fixtures require a non-root account, matching the alpha host. Both generated
 client commands execute the fake helper with parent credential/home canaries
-absent and preserve private socket request/response bytes. Tests check wrong
-peer UID consumes/sends zero client bytes, input/output caps, blocked-I/O timeout,
+absent and complete MCP initialization/discovery plus captured Read/Search over
+the private socket. Actual broker receipts retain both search scans and remain
+separate from citation validation. Tests check wrong
+peer UID consumes/sends zero client bytes, input/output caps, exactly-once stream
+closure, blocked-I/O timeout,
 symlink/missing endpoints, malformed flags, typed per-session configuration and
 profile controls. These are fake-client and transport tests, not provider
 inference, account entitlement, official-client tool inventory or OS isolation.
@@ -90,3 +93,9 @@ References inspected October 19, 2026:
 - [Codex noninteractive mode](https://learn.chatgpt.com/docs/non-interactive-mode) covers isolated configuration and required MCP initialization.
 - [Claude CLI controls](https://code.claude.com/docs/en/cli-reference) cover MCP, safe/restricted mode, settings, tools and agentic-turn limits.
 - [Claude hook precedence](https://code.claude.com/docs/en/hooks#disable-or-remove-hooks) explains why per-run settings alone cannot disable managed hooks.
+
+The exact installed Codex CLI 0.163.0 also accepted the generated MCP overrides
+through its read-only `mcp get` parser in a disposable Bubblewrap guest with an
+empty auth/home filesystem and no network. That measured parser check supplies
+syntax/config metadata only. It starts no server or model session and establishes
+no subscription permission, tool inventory or inference-time isolation.

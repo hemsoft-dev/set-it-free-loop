@@ -3,6 +3,7 @@
 package reviewer
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -213,32 +215,109 @@ func TestBothGeneratedClientCommandsExecuteCredentialFreeSourceProxy(t *testing.
 				t.Fatal(err)
 			}
 			defer listener.Close()
-			response := `{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"captured source"}],"isError":false}}` + "\n"
-			received := make(chan []byte, 1)
+
+			sessionContext, cancelSession := context.WithCancel(context.Background())
+			defer cancelSession()
+			broker, err := newSourceBroker(sessionContext, session, reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			inv.Source = broker
+			serverDone := make(chan error, 1)
 			go func() {
-				c, err := listener.AcceptUnix()
+				connection, err := listener.AcceptUnix()
 				if err != nil {
-					received <- nil
+					serverDone <- err
 					return
 				}
-				defer c.Close()
-				data, _ := io.ReadAll(c)
-				received <- data
-				_, _ = io.WriteString(c, response)
+				serverDone <- ServeSourceMCP(sessionContext, inv, connection)
 			}()
 			command, args := sourceProxyCommand(t, inv)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, command, args...)
-			request := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{"revision":"` + session.Snapshot.Head + `","path":"source.go"}}}` + "\n"
-			cmd.Stdin = strings.NewReader(request)
-			actual, err := cmd.Output()
-			if err != nil || string(actual) != response {
-				t.Fatal("generated helper failed private source transport", err, string(actual))
+			input, err := cmd.StdinPipe()
+			if err != nil {
+				t.Fatal(err)
 			}
-			if string(<-received) != request {
-				t.Fatal("proxy changed source request bytes")
+			output, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatal(err)
 			}
+			if err = cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			waited := false
+			defer func() {
+				if !waited {
+					_ = cmd.Process.Kill()
+					_ = cmd.Wait()
+				}
+			}()
+			scan := bufio.NewScanner(output)
+			scan.Buffer(make([]byte, 4096), 1<<20)
+			call := func(request string) map[string]json.RawMessage {
+				t.Helper()
+				if _, err := io.WriteString(input, request+"\n"); err != nil {
+					t.Fatal(err)
+				}
+				if !scan.Scan() {
+					t.Fatal("missing generated-client MCP response", scan.Err())
+				}
+				var response map[string]json.RawMessage
+				if json.Unmarshal(scan.Bytes(), &response) != nil || response["error"] != nil {
+					t.Fatal("source proxy protocol failed", string(scan.Bytes()))
+				}
+				return response
+			}
+			call(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"fake-client","version":"1"},"_meta":{"progressToken":"source-init"}}}`)
+			if _, err = io.WriteString(input, `{"jsonrpc":"2.0","method":"notifications/initialized","params":{ }}`+"\n"); err != nil {
+				t.Fatal(err)
+			}
+			listed := call(`{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{ }}`)
+			var tools struct {
+				Tools []struct {
+					Name string `json:"name"`
+				} `json:"tools"`
+			}
+			if json.Unmarshal(listed["result"], &tools) != nil || len(tools.Tools) != 2 {
+				t.Fatal("wrong source capabilities", string(listed["result"]))
+			}
+			response := call(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"read","arguments":{"revision":"` + session.Snapshot.Head + `","path":"worker.go"}}}`)
+			var content struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+				IsError bool `json:"isError"`
+			}
+			if json.Unmarshal(response["result"], &content) != nil || content.IsError || len(content.Content) != 1 || content.Content[0].Text != "worker-only evidence" {
+				t.Fatal("immutable read failed", string(response["result"]))
+			}
+			response = call(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"search","arguments":{"revision":"` + session.Snapshot.Head + `","needle":"worker-only","max_results":1}}}`)
+			if json.Unmarshal(response["result"], &content) != nil || content.IsError || !strings.Contains(content.Content[0].Text, "worker.go") {
+				t.Fatal("immutable search failed", string(response["result"]))
+			}
+			_ = input.Close()
+			if scan.Scan() {
+				t.Fatal("helper emitted extra protocol bytes", string(scan.Bytes()))
+			}
+			err = cmd.Wait()
+			waited = true
+			if err != nil {
+				t.Fatal("generated proxy failed", err)
+			}
+			if err = <-serverDone; err != nil {
+				t.Fatal("session MCP server failed", err)
+			}
+			access := broker.seal()
+			if access.ToolCalls != 2 || access.ReaderCalls != 3 || len(access.Reads) != 3 || access.SessionHash != Digest(session) {
+				t.Fatal("actual process source receipts lost", access)
+			}
+			reads, _ := reader.Evidence()
+			if len(reads) != 0 {
+				t.Fatal("citation reads masqueraded as worker reads")
+			}
+
 		})
 	}
 }
@@ -248,5 +327,37 @@ func TestSourceProxyMainRejectsMalformedFlagsAndLimits(t *testing.T) {
 		if code := SourceProxyMain(context.Background(), args, io.NopCloser(strings.NewReader("")), &proxyOutput{}); code != 2 {
 			t.Fatal("malformed helper arguments accepted", args, code)
 		}
+	}
+}
+
+type countedProxyInput struct {
+	io.ReadCloser
+	closes atomic.Int32
+}
+
+func (s *countedProxyInput) Close() error { s.closes.Add(1); return s.ReadCloser.Close() }
+
+type countedProxyOutput struct {
+	proxyOutput
+	closes atomic.Int32
+}
+
+func (s *countedProxyOutput) Close() error { s.closes.Add(1); return nil }
+func TestSourceProxyClosesEachOwnedStreamOnce(t *testing.T) {
+	socket, listener := proxySocket(t)
+	go func() {
+		connection, err := listener.AcceptUnix()
+		if err != nil {
+			return
+		}
+		defer connection.Close()
+		_, _ = io.ReadAll(connection)
+		_, _ = io.WriteString(connection, "reply")
+	}()
+	input := &countedProxyInput{ReadCloser: io.NopCloser(strings.NewReader("request"))}
+	output := &countedProxyOutput{}
+	err := ProxySourceMCP(context.Background(), socket, os.Getuid(), DefaultLimits(), input, output)
+	if err != nil || input.closes.Load() != 1 || output.closes.Load() != 1 || output.String() != "reply" {
+		t.Fatal("owned streams closed repeatedly or transfer lost", err, input.closes.Load(), output.closes.Load())
 	}
 }
