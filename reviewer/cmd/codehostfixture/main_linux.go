@@ -204,6 +204,9 @@ func relay() observation {
 		i.err = errors.New("input did not stop")
 	}
 	result.Input, result.Output = i.value, o.value
+	if os.WriteFile("/artifacts/codehost-stderr.txt", []byte(stderr.String()), 0600) != nil {
+		return result
+	}
 	result.ProbePassed = strings.HasPrefix(stderr.String(), "SFL_CODEHOST_PROBE_OK\n")
 	// Closing relay stdin after a clean host exit is expected, not a peer failure.
 	inputOK := i.err == nil || errors.Is(i.err, os.ErrClosed)
