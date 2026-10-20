@@ -92,3 +92,7 @@ open while its acceptance criteria remain unmet. Raw transcripts and credentials
 never belong in public artifacts.
 
 Transport references: [Codex JSONL and schema output](https://learn.chatgpt.com/docs/non-interactive-mode), [Claude structured results](https://code.claude.com/docs/en/headless). These documents support the offline decoders; live compatibility remains unproven.
+
+The Linux [containment launch gate](CONTAINMENT-GATE.md) persists one-use grant
+authority before an inert fake-only stub receives work. Its abort/recovery
+protocol does not yet attest whole-unit shutdown or release auth leases.
