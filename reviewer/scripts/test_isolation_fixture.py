@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import runpy
 import unittest
+from unittest.mock import patch
 
 fixture = runpy.run_path(str(Path(__file__).with_name("isolation-fixture.py")))
 parse = fixture["parse_guest_result"]
@@ -61,6 +62,37 @@ class ReceiptTests(unittest.TestCase):
         captured = json.loads(Path(__file__).with_name("testdata").joinpath("actual-uid-guest.json").read_text())
         value = captured["guest"]
         self.assertEqual(parse(json.dumps(value), value["nonce"], captured["synthetic_commit"]), value)
+
+
+class AcceleratorTests(unittest.TestCase):
+    def test_explicit_accelerator_has_no_fallback(self):
+        options = fixture["accelerator_options"]
+        self.assertEqual(options("tcg"), ["-accel", "tcg,thread=single", "-cpu", "max"])
+        self.assertEqual(options("kvm"), ["-accel", "kvm", "-cpu", "host"])
+        for bad in ["kvm:tcg", "auto", "", None]:
+            with self.subTest(value=bad), self.assertRaises(RuntimeError):
+                options(bad)
+
+    def test_tcg_does_not_open_hardware(self):
+        with patch("os.open", side_effect=AssertionError("unexpected device access")):
+            self.assertEqual(fixture["probe_accelerator"]("tcg"),
+                             {"accelerator": "tcg", "kvm_device_opened": False})
+
+    def test_kvm_open_api_and_failure_are_explicit(self):
+        probe = fixture["probe_accelerator"]
+        with patch("os.open", return_value=73) as opened, patch("fcntl.ioctl", return_value=12) as ioctl, patch("os.close") as closed:
+            self.assertEqual(probe("kvm"), {"accelerator": "kvm", "kvm_device_opened": True, "kvm_api_version": 12})
+            self.assertEqual(opened.call_args.args[0], "/dev/kvm")
+            ioctl.assert_called_once_with(73, 0xAE00, 0)
+            closed.assert_called_once_with(73)
+        with patch("os.open", side_effect=PermissionError("denied")), self.assertRaises(RuntimeError):
+            probe("kvm")
+        for answer in [11, OSError("ioctl failed")]:
+            with self.subTest(answer=answer), patch("os.open", return_value=73), patch("os.close") as closed:
+                with patch("fcntl.ioctl", side_effect=answer if isinstance(answer, OSError) else None,
+                           return_value=answer), self.assertRaises(RuntimeError):
+                    probe("kvm")
+                closed.assert_called_once_with(73)
 
 
 if __name__ == "__main__":

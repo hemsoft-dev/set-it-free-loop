@@ -2,6 +2,7 @@
 """Build/run a marked, credential-free Linux role fixture. Never a live launcher."""
 import argparse
 import base64
+import fcntl
 import gzip
 import hashlib
 import json
@@ -84,13 +85,43 @@ def archive(entries, target):
         item(len(entries)+1, "TRAILER!!!", 0, b"")
 
 
+def accelerator_options(accelerator):
+    if accelerator == "tcg":
+        return ["-accel", "tcg,thread=single", "-cpu", "max"]
+    if accelerator == "kvm":
+        # A single explicit accelerator has no TCG fallback.
+        return ["-accel", "kvm", "-cpu", "host"]
+    raise RuntimeError("unsupported fixture accelerator")
+
+
+def probe_accelerator(accelerator):
+    accelerator_options(accelerator)
+    if accelerator == "tcg":
+        return {"accelerator": "tcg", "kvm_device_opened": False}
+    try:
+        fd = os.open("/dev/kvm", os.O_RDWR | os.O_CLOEXEC)
+        try:
+            version = fcntl.ioctl(fd, 0xAE00, 0)  # KVM_GET_API_VERSION
+        finally:
+            os.close(fd)
+    except OSError as error:
+        raise RuntimeError("explicit KVM fixture is unavailable; no fallback") from error
+    if version != 12:
+        raise RuntimeError("unsupported KVM API; no fallback")
+    return {"accelerator": "kvm", "kvm_device_opened": True, "kvm_api_version": version}
+
+
 def run_fixture(output, manifest, kernel, image):
     nonce = manifest["nonce"]
     unit = "sfl-isolation-fixture-" + nonce + ".service"
     description = "SFL credential-free fixture " + nonce
     boot = output / "boot.log"
+    accelerator = manifest["accelerator"]
+    accelerator_probe = probe_accelerator(accelerator)
+    if digest(Path("/usr/bin/qemu-system-x86_64").read_bytes()) != manifest["qemu_sha256"]:
+        raise RuntimeError("QEMU executable changed after manifest capture")
     qemu = ["/usr/bin/qemu-system-x86_64", "-no-user-config", "-nodefaults",
-            "-machine", "q35,dump-guest-core=off", "-accel", "tcg,thread=single", "-cpu", "max",
+            "-machine", "q35,dump-guest-core=off", *accelerator_options(accelerator),
             "-m", "512M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none",
             "-no-reboot", "-kernel", str(kernel), "-initrd", str(image),
             "-append", "console=ttyS0 rdinit=/init panic=1 sfl-fixture="+nonce+" -- --guest-init",
@@ -106,6 +137,7 @@ def run_fixture(output, manifest, kernel, image):
     # This is fake-only execution. It never selects or falls back from a
     # production accelerator, credentials, provider endpoint or App identity.
     prepared = {"state": "prepared", "nonce": nonce, "unit": unit, "description": description,
+                "accelerator_probe": accelerator_probe, "qemu_sha256": manifest["qemu_sha256"],
                 "image_sha256": digest(image.read_bytes()), "kernel_sha256": digest(kernel.read_bytes()),
                 "command": command, "fake_clients": True, "production_boundary_qualified": False}
     write_json(output / "launch-prepared.json", prepared)
@@ -151,8 +183,9 @@ def run_fixture(output, manifest, kernel, image):
             raise RuntimeError("missing or ambiguous current-invocation guest receipt")
         result = parse_guest_result(matches[0], nonce, manifest["synthetic_commit"])
         final = {"state": "passed", "nonce": nonce, "manifest_sha256": digest((output / "manifest.json").read_bytes()),
+                 "host_accelerator": accelerator, "accelerator_probe": accelerator_probe,
                  "guest": result, "host_unit": properties, "host_exit": process.returncode,
-                 "scope": "Trusted fake guest identity/filesystem/source/cgroup fixture only; TCG is not a production security boundary."}
+                 "scope": "Trusted fake guest identity/filesystem/source/cgroup fixture only; production boundary remains unqualified."}
     except BaseException as error:
         failure = error
     cleanup_error = None
@@ -197,6 +230,8 @@ def main():
     parser.add_argument("--kernel-sha256", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--go", required=True)
+    parser.add_argument("--accelerator", choices=["tcg", "kvm"], default="tcg",
+                        help="Explicit trusted-fake accelerator; KVM never falls back")
     parser.add_argument("--run", action="store_true", help="Run trusted fake guest only")
     args = parser.parse_args()
     module = Path(__file__).resolve().parent.parent
@@ -267,6 +302,9 @@ def main():
     image = output / "fixture.cpio.gz"
     archive(entries, image)
     manifest = {"version": 1, "nonce": nonce, "source_head": execute(["git", "rev-parse", "HEAD"], cwd=module).decode().strip(),
+                "accelerator": args.accelerator,
+                "qemu_sha256": digest(Path("/usr/bin/qemu-system-x86_64").read_bytes()),
+                "qemu_version": execute(["/usr/bin/qemu-system-x86_64", "--version"]).decode().splitlines()[0],
                 "kernel_source_path": str(args.kernel.absolute()), "kernel_path": str(kernel), "kernel_sha256": args.kernel_sha256,
                 "init_sha256": digest((output / "init").read_bytes()), "sourceproxy_sha256": digest((output / "sourceproxy").read_bytes()),
                 "image_sha256": digest(image.read_bytes()), "synthetic_commit": commit, "runtime": runtime_manifest,
