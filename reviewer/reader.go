@@ -224,9 +224,11 @@ func (g GitStore) command(ctx context.Context, max int, args ...string) ([]byte,
 	if !filepath.IsAbs(g.Git) || !filepath.IsAbs(g.GitDir) || max <= 0 || max > 2<<20 {
 		return nil, errors.New("invalid trusted git reader configuration")
 	}
-	args = append([]string{"--no-replace-objects", "--git-dir=" + g.GitDir}, args...)
+	// Unknown options fail on old Git instead of silently ignoring an env-only
+	// no-fetch setting. Missing promisor objects are omissions, never network work.
+	args = append([]string{"--no-replace-objects", "--no-lazy-fetch", "--git-dir=" + g.GitDir}, args...)
 	c := exec.CommandContext(ctx, g.Git, args...)
-	c.Env = []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_NO_REPLACE_OBJECTS=1", "LC_ALL=C"}
+	c.Env = []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_NO_REPLACE_OBJECTS=1", "GIT_NO_LAZY_FETCH=1", "LC_ALL=C"}
 	b := &cappedOutput{max: max}
 	c.Stdout = b
 	c.Stderr = &cappedOutput{max: 2048}

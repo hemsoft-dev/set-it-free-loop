@@ -140,3 +140,77 @@ func TestGitReaderUsesImmutableObjectsWithoutCheckoutOrHooks(t *testing.T) {
 		t.Fatal("candidate hook executed")
 	}
 }
+
+func TestGitReaderMissingPromisorObjectDoesNotLaunchFetch(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git required")
+	}
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("local inert fetch-trap fixture needs sh")
+	}
+	git, _ = filepath.Abs(git)
+	dir := t.TempDir()
+	env := []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_NO_LAZY_FETCH=0", "LC_ALL=C"}
+	run := func(args ...string) string {
+		t.Helper()
+		cmd := exec.Command(git, args...)
+		cmd.Dir, cmd.Env = dir, env
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("fixture git failed: %v: %s", err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("init", "-q")
+	run("config", "user.name", "Fixture")
+	run("config", "user.email", "fixture@example.invalid")
+	if err := os.WriteFile(filepath.Join(dir, "source.go"), []byte("immutable promised object"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "source.go")
+	run("commit", "-qm", "fixture")
+	head, blob := run("rev-parse", "HEAD"), run("rev-parse", "HEAD:source.go")
+	marker, helper := filepath.Join(dir, "fetch-invoked"), filepath.Join(dir, "inert-fetch-trap")
+	quotedMarker := "'" + strings.ReplaceAll(marker, "'", "'\\''") + "'"
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf invoked > "+quotedMarker+"\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	run("config", "core.repositoryformatversion", "1")
+	run("config", "extensions.partialClone", "origin")
+	run("config", "remote.origin.promisor", "true")
+	run("config", "remote.origin.url", "ext::"+helper)
+	run("config", "protocol.ext.allow", "always")
+	if err := os.Remove(filepath.Join(dir, ".git", "objects", blob[:2], blob[2:])); err != nil {
+		t.Fatal(err)
+	}
+	// Prove the local fixture reaches the lazy-fetch helper without the control.
+	// The helper only writes a marker and exits; no network command is executed.
+	baseline := exec.Command(git, "cat-file", "-s", blob)
+	baseline.Dir, baseline.Env = dir, env
+	if baseline.Run() == nil {
+		t.Fatal("missing object unexpectedly present")
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatal("fixture did not exercise lazy fetch", err)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	s := testSnapshot()
+	s.Head, s.Base, s.MergeBase = head, head, head
+	reader, err := NewReader(GitStore{Git: git, GitDir: filepath.Join(dir, ".git")}, s, []string{"source.go"}, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Read(context.Background(), head, "source.go"); err == nil {
+		t.Fatal("missing promised object accepted")
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("source read launched implicit fetch", err)
+	}
+	reads, coverage := reader.Evidence()
+	if len(reads) != 0 || len(coverage) != 1 || coverage[0].Reason != "missing or unreadable object" {
+		t.Fatal("missing promisor object not recorded as omission", reads, coverage)
+	}
+}
