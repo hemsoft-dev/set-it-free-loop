@@ -73,23 +73,25 @@ type PRRecord struct {
 	CurrentRequest   int64
 }
 type DurableJob struct {
-	Job              Job
-	Scope            Scope
-	RequestID        int64
-	CreatedAt        time.Time
-	State            string
-	Checkpoint       Checkpoint
-	LeaseToken       string
-	LeaseUntil       time.Time
-	Outstanding      bool
-	AttemptProvider  Provider
-	AttemptRound     int
-	AttemptChargeDay string
-	ChargeDays       []string
-	AttemptID        string
-	AttemptInputHash string
-	SourceAttempts   []SourceAttempt
-	ProviderAttempts []ProviderAttempt
+	Job                             Job
+	Scope                           Scope
+	RequestID                       int64
+	CreatedAt                       time.Time
+	State                           string
+	Checkpoint                      Checkpoint
+	LeaseToken                      string
+	LeaseUntil                      time.Time
+	Outstanding                     bool
+	AttemptProvider                 Provider
+	AttemptRound                    int
+	AttemptChargeDay                string
+	ChargeDays                      []string
+	AttemptID                       string
+	AttemptInputHash                string
+	SourceAttempts                  []SourceAttempt
+	ProviderAttempts                []ProviderAttempt
+	AuditedProviders                []Provider
+	AttemptProviderEvidenceRequired bool
 }
 
 type SourceAttempt struct {
@@ -580,6 +582,22 @@ func (s *Store) ReleaseStopped(ctx context.Context, id, token string, state stri
 		if j == nil || token == "" || j.LeaseToken != token {
 			return ErrFenced
 		}
+		if j.Outstanding && j.AttemptProviderEvidenceRequired {
+			recorded := false
+			limits, err := protocolLimits(j.Job)
+			if err != nil {
+				return err
+			}
+			for _, attempt := range j.ProviderAttempts {
+				if attempt.ID == j.AttemptID && attempt.Evidence.validateStoppedCaptured(j.AttemptProvider, limits, j.AttemptInputHash) == nil {
+					recorded = true
+					break
+				}
+			}
+			if !recorded {
+				return ErrProviderAuditPending
+			}
+		}
 		j.LeaseToken = ""
 		j.LeaseUntil = time.Time{}
 		j.Outstanding = false
@@ -600,6 +618,11 @@ func (s *Store) RefundStoppedBeforeWork(ctx context.Context, id, token string, p
 		j := d.Jobs[id]
 		if j == nil || token == "" || j.LeaseToken != token || !j.Outstanding || j.AttemptProvider != provider || j.AttemptRound != round || j.Checkpoint.ConsumedSessions <= 0 {
 			return ErrFenced
+		}
+		for _, attempt := range j.ProviderAttempts {
+			if attempt.ID == j.AttemptID && attempt.Evidence != nil && attempt.Evidence.Access.Requests > 0 {
+				return ErrFenced
+			}
 		}
 		j.Checkpoint.ConsumedSessions--
 		if j.AttemptChargeDay != "" {
@@ -673,11 +696,11 @@ func (r DurableReviewer) Review(ctx context.Context, session Session) (Report, e
 
 func (r DurableReviewer) ReviewSource(ctx context.Context, session Session) (Report, *SourceAccess, error) {
 	var access *SourceAccess
-	report, err := r.review(ctx, session, func(a *SourceAccess) { access = cloneSourceAccess(a) })
+	report, err := r.review(ctx, session, func(a *SourceAccess, _ *ProviderEvidence, _ bool) { access = cloneSourceAccess(a) })
 	return report, access, err
 }
 
-func (r DurableReviewer) review(ctx context.Context, session Session, capture func(*SourceAccess)) (Report, error) {
+func (r DurableReviewer) review(ctx context.Context, session Session, capture func(*SourceAccess, *ProviderEvidence, bool)) (Report, error) {
 	now := r.Now
 	if now == nil {
 		now = time.Now
@@ -701,6 +724,20 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 		if Digest(j.Job) != Digest(r.Job) || j.Outstanding || j.Checkpoint.ConsumedSessions >= j.Job.Config.MaxSessions() {
 			return ErrFenced
 		}
+		_, requiresAudit := r.Inner.(AuditedReviewer)
+		knownAudit := false
+		for _, provider := range j.AuditedProviders {
+			if provider == session.Identity.Provider {
+				knownAudit = true
+				break
+			}
+		}
+		if knownAudit && !requiresAudit {
+			return ErrProviderAuditPending
+		}
+		if requiresAudit && !knownAudit {
+			j.AuditedProviders = append(j.AuditedProviders, session.Identity.Provider)
+		}
 		day := now().UTC().Format("2006-01-02")
 		j.AttemptChargeDay = ""
 		if !chargedOn(j, day) {
@@ -722,6 +759,7 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 		j.AttemptRound = session.Round
 		j.AttemptID = attemptID
 		j.AttemptInputHash = Digest(session)
+		_, j.AttemptProviderEvidenceRequired = r.Inner.(AuditedReviewer)
 		j.LeaseUntil = now().Add(j.Job.Config.Limits.Timeout + time.Minute)
 		return nil
 	})
@@ -731,12 +769,17 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 		}
 		return Report{}, err
 	}
-	report, access, err := reviewSource(ctx, r.Inner, session)
-	capture(access)
-	if errors.Is(err, ErrWorkerStopPending) {
+	report, access, providerEvidence, providerRequired, err := reviewPhase(ctx, r.Inner, session)
+	capture(access, providerEvidence, providerRequired)
+	if errors.Is(err, ErrWorkerStopPending) || errors.Is(err, ErrProviderAuditPending) || errors.Is(err, ErrProviderEgressPending) {
 		// No stopped-worker write, refund or lease release is safe until the
 		// supervisor recovers the physical worker. Return the retained audit.
 		return Report{}, err
+	}
+	if providerEvidence != nil {
+		if auditErr := r.Store.RecordStoppedProviderEvidence(context.WithoutCancel(ctx), r.Job.ID, r.Token, attemptID, providerEvidence); auditErr != nil {
+			return Report{}, errors.Join(workerLauncherError(err, false), ErrProviderAuditPending, auditErr)
+		}
 	}
 	if access != nil {
 		auditErr := r.Store.RecordStoppedSourceAccess(context.WithoutCancel(ctx), r.Job.ID, r.Token, attemptID, access)
@@ -782,7 +825,7 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 	if err != nil || len(encoded) > session.Limits.OutputBytes {
 		return Report{}, errors.Join(PhaseError{State: "invalid_output"}, errors.New("durable report exceeds output bound"))
 	}
-	a := Artifact{JobHash: Digest(r.Job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}, SourceAccess: cloneSourceAccess(access)}
+	a := Artifact{JobHash: Digest(r.Job), InputHash: Digest(session), Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}, SourceAccess: cloneSourceAccess(access), ProviderEvidence: cloneProviderEvidence(providerEvidence), ProviderEvidenceRequired: providerRequired}
 	if reader != nil {
 		reads, coverage := reader.Evidence()
 		a.ValidationReads = append([]ReadRecord{}, reads...)
@@ -897,7 +940,12 @@ func (s *Store) RunStopped(ctx context.Context, id string, engine Engine, now fu
 	token := j.LeaseToken
 	wrapped := Engine{Reader: engine.Reader, Reviewers: map[Provider]Reviewer{}}
 	for provider, inner := range engine.Reviewers {
-		wrapped.Reviewers[provider] = DurableReviewer{Store: s, Job: j.Job, Token: token, Inner: inner, Reader: engine.Reader, Now: now}
+		d := DurableReviewer{Store: s, Job: j.Job, Token: token, Inner: inner, Reader: engine.Reader, Now: now}
+		if _, required := inner.(AuditedReviewer); required {
+			wrapped.Reviewers[provider] = durableAuditedReviewer{d}
+		} else {
+			wrapped.Reviewers[provider] = d
+		}
 	}
 	out, runErr := wrapped.Run(ctx, j.Job, j.Checkpoint)
 	if errors.Is(runErr, ErrRefundPending) || errors.Is(runErr, ErrSourceAuditPending) || errors.Is(runErr, ErrProviderAuditPending) || errors.Is(runErr, ErrProviderEgressPending) || errors.Is(runErr, ErrWorkerStopPending) {
@@ -923,6 +971,11 @@ func (s *Store) RecoverCompleted(ctx context.Context, id string, source func(Sna
 	j := d.Jobs[id]
 	if j == nil || j.LeaseToken != "" || j.Outstanding || (j.State != "dual_complete" && j.State != "single_complete") || len(j.Checkpoint.Artifacts) != j.Job.Config.MaxSessions() {
 		return Outcome{}, ErrDeferred
+	}
+	for _, artifact := range j.Checkpoint.Artifacts {
+		if err := validateArtifactProviderEvidence(j, artifact); err != nil {
+			return Outcome{}, err
+		}
 	}
 	return (Engine{Reader: source}).Run(ctx, j.Job, j.Checkpoint)
 }

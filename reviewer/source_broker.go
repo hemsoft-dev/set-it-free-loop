@@ -77,20 +77,24 @@ type SourceReviewer interface {
 func reviewSource(ctx context.Context, reviewer Reviewer, s Session) (Report, *SourceAccess, error) {
 	if worker, ok := reviewer.(SourceReviewer); ok {
 		r, access, err := worker.ReviewSource(ctx, s)
-		if auditErr := access.validate(s); auditErr != nil {
-			return Report{}, nil, errors.Join(err, adapterValidation(auditErr, false))
-		}
-		if err == nil && access != nil {
-			var mergeErr error
-			r, mergeErr = mergeCoverageRecords(r, access.Coverage)
-			if mergeErr != nil {
-				return Report{}, cloneSourceAccess(access), adapterValidation(mergeErr, false)
-			}
-		}
-		return r, cloneSourceAccess(access), err
+		return sourceReviewResult(r, access, err, s)
 	}
 	r, err := reviewer.Review(ctx, s)
 	return r, nil, err
+}
+
+func sourceReviewResult(r Report, access *SourceAccess, err error, s Session) (Report, *SourceAccess, error) {
+	if auditErr := access.validate(s); auditErr != nil {
+		return Report{}, nil, errors.Join(err, adapterValidation(auditErr, false))
+	}
+	if err == nil && access != nil {
+		var mergeErr error
+		r, mergeErr = mergeCoverageRecords(r, access.Coverage)
+		if mergeErr != nil {
+			return Report{}, cloneSourceAccess(access), adapterValidation(mergeErr, false)
+		}
+	}
+	return r, cloneSourceAccess(access), err
 }
 
 type sourceBroker struct {

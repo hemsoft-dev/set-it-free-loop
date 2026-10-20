@@ -105,9 +105,11 @@ does not establish that a remote provider stopped computing after a lost respons
 Audit fields contain counts, hashes and status only. Do not store or publish raw
 headers, auth, request bodies, responses or backend errors. Preserve the private
 receipt even on failure and never refund possible provider work based on a
-network error. Durable receipt integration with the qualified worker/controller
-remains implementation work under the issue, alongside exact-client routing,
-credential transfer, production containment recovery and live eligibility gates.
+network error. [Private provider evidence](PROVIDER-AUDIT.md) now connects the audit to engine
+artifacts, exact durable attempt recovery and publication checks. The concrete
+qualified worker still must implement that channel and its durable launch
+binding, credential transfer, exclusive routing and whole-containment recovery.
+Live eligibility and activation remain separate gates.
 
 Validate with the module's vet/full race commands. Focused tests can use:
 

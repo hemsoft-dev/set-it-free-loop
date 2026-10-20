@@ -75,8 +75,10 @@ credentials or qualify production credential transfer and OS containment.
 inference/refresh request budgets, bounded payloads and private completion audits.
 Its concrete transport rejects private destinations and hidden connection retries.
 No listener, provider policy or network route is activated. The isolated launcher
-must still enforce exclusive egress, qualify the pinned clients and persist the
-private receipt before accepting a review.
+must still enforce exclusive egress and qualify the pinned clients. The
+[private provider evidence path](PROVIDER-AUDIT.md) carries required receipts
+through execution, charged attempt storage, recovery and the pre-POST gate.
+It selects no production worker or credentials.
 
 ## Remaining live gates
 

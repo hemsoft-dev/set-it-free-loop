@@ -20,6 +20,69 @@ type ProviderAttempt struct {
 	Evidence *ProviderEvidence
 }
 
+// AuditedReviewer supplies private supervisor evidence independently of model
+// output. Implementing this interface requires a stopped provider receipt on
+// success. Legacy Reviewer/SourceReviewer paths supply unknown provider usage.
+type AuditedReviewer interface {
+	ReviewAudited(context.Context, Session) (Report, *SourceAccess, *ProviderEvidence, error)
+}
+
+// Only audited inner reviewers expose this mandatory evidence interface to the
+// outer Engine. The reservation and persistence implementation remains shared.
+type durableAuditedReviewer struct{ DurableReviewer }
+
+func (r durableAuditedReviewer) ReviewAudited(ctx context.Context, s Session) (Report, *SourceAccess, *ProviderEvidence, error) {
+	var source *SourceAccess
+	var evidence *ProviderEvidence
+	report, err := r.review(ctx, s, func(a *SourceAccess, p *ProviderEvidence, _ bool) {
+		source = cloneSourceAccess(a)
+		evidence = cloneProviderEvidence(p)
+	})
+	return report, source, evidence, err
+}
+
+func (e *ProviderEvidence) validateCompletedCaptured(provider Provider, limits Limits, inputHash string) error {
+	if e == nil {
+		return ErrProviderAuditPending
+	}
+	return e.Access.validateCompletedCaptured(provider, limits, inputHash, e.Policy)
+}
+
+func reviewPhase(ctx context.Context, reviewer Reviewer, s Session) (Report, *SourceAccess, *ProviderEvidence, bool, error) {
+	worker, required := reviewer.(AuditedReviewer)
+	if !required {
+		r, source, err := reviewSource(ctx, reviewer, s)
+		return r, source, nil, false, err
+	}
+	r, source, evidence, err := worker.ReviewAudited(ctx, s)
+	r, source, err = sourceReviewResult(r, source, err, s)
+	evidence = cloneProviderEvidence(evidence)
+	var pe PhaseError
+	before := errors.As(err, &pe) && pe.BeforeWork
+	if evidence == nil {
+		if before && !errors.Is(err, ErrWorkerStopPending) && !errors.Is(err, ErrProviderEgressPending) && !errors.Is(err, ErrProviderAuditPending) {
+			return Report{}, source, nil, true, err
+		}
+		return Report{}, source, nil, true, errors.Join(err, ErrProviderAuditPending)
+	}
+	if auditErr := evidence.validateStoppedCaptured(s.Identity.Provider, s.Limits, Digest(s)); auditErr != nil {
+		return Report{}, source, evidence, true, errors.Join(err, ErrProviderAuditPending, auditErr)
+	}
+	if before && evidence.Access.Requests > 0 {
+		stopPending := errors.Is(err, ErrWorkerStopPending)
+		err = errors.Join(workerLauncherError(err, false), ErrProviderEgressFailed)
+		if stopPending {
+			err = errors.Join(err, ErrWorkerStopPending)
+		}
+	}
+	if err == nil {
+		if auditErr := evidence.Access.ValidateCompleted(s, evidence.Policy); auditErr != nil {
+			return Report{}, source, evidence, true, adapterValidation(auditErr, false)
+		}
+	}
+	return r, source, evidence, true, err
+}
+
 func cloneProviderEvidence(e *ProviderEvidence) *ProviderEvidence {
 	if e == nil {
 		return nil
@@ -28,6 +91,38 @@ func cloneProviderEvidence(e *ProviderEvidence) *ProviderEvidence {
 	copy.Policy.Routes = append([]EgressRoute{}, e.Policy.Routes...)
 	copy.Policy.Headers = append([]string{}, e.Policy.Headers...)
 	return &copy
+}
+
+func validateArtifactProviderEvidence(j *DurableJob, a Artifact) error {
+	auditedProvider := false
+	for _, provider := range j.AuditedProviders {
+		if provider == a.Report.Provider {
+			auditedProvider = true
+			break
+		}
+	}
+	for _, attempt := range j.ProviderAttempts {
+		if attempt.Evidence != nil && attempt.Evidence.Policy.Provider == a.Report.Provider {
+			auditedProvider = true
+			break
+		}
+	}
+	if !a.ProviderEvidenceRequired && a.ProviderEvidence == nil && !auditedProvider {
+		return nil
+	}
+	limits, err := protocolLimits(j.Job)
+	if err != nil {
+		return err
+	}
+	if err = a.ProviderEvidence.validateCompletedCaptured(a.Report.Provider, limits, a.InputHash); err != nil {
+		return err
+	}
+	for _, attempt := range j.ProviderAttempts {
+		if attempt.ID != "" && attempt.Evidence != nil && attempt.Evidence.Access.SessionHash == a.InputHash && Digest(attempt.Evidence) == Digest(a.ProviderEvidence) {
+			return nil
+		}
+	}
+	return ErrProviderAuditPending
 }
 
 // validateStoppedCaptured accepts stopped failed/empty receipts for recovery.

@@ -92,8 +92,21 @@ func (a *ProviderAccess) ValidateCompleted(s Session, p EgressPolicy) error {
 	if a == nil || !a.Stopped {
 		return ErrProviderEgressPending
 	}
+	if s.Validate() != nil {
+		return ErrProviderEgressFailed
+	}
+	return a.validateCompletedCaptured(s.Identity.Provider, s.Limits, Digest(s), p)
+}
+
+func (a *ProviderAccess) validateCompletedCaptured(provider Provider, limits Limits, inputHash string, p EgressPolicy) error {
+	if a == nil || !a.Stopped {
+		return ErrProviderEgressPending
+	}
+	if _, err := validateEgressPolicy(provider, limits, p); err != nil {
+		return ErrProviderEgressFailed
+	}
 	l := p.Limits
-	if s.Validate() != nil || p.Provider != s.Identity.Provider || a.Version != 1 || a.SessionHash != Digest(s) || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes {
+	if len(inputHash) != 64 || !objectID.MatchString(inputHash) || a.Version != 1 || a.SessionHash != inputHash || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes {
 		return ErrProviderEgressFailed
 	}
 	return nil

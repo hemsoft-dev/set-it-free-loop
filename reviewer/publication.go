@@ -92,6 +92,9 @@ func (p Publisher) Prepare(ctx context.Context, out Outcome, diff map[string]map
 		}
 		reports := make([]Report, 0, len(j.Checkpoint.Artifacts))
 		for _, artifact := range j.Checkpoint.Artifacts {
+			if err := validateArtifactProviderEvidence(j, artifact); err != nil {
+				return err
+			}
 			reports = append(reports, artifact.Report)
 		}
 		if Digest(buildLedger(reports, j.Job.Config.Mode)) != Digest(out.Ledger) {
@@ -248,6 +251,23 @@ func (p Publisher) Dispatch(ctx context.Context, id string) error {
 				}
 				if d.Writes[command.WriteID].State != "confirmed" {
 					return ErrDeferred
+				}
+			}
+		}
+		if target.Kind == "review" {
+			var completed *DurableJob
+			for _, job := range d.Jobs {
+				if Digest(job.Job) == target.JobHash {
+					completed = job
+					break
+				}
+			}
+			if completed == nil || completed.Outstanding || completed.LeaseToken != "" {
+				return ErrDeferred
+			}
+			for _, artifact := range completed.Checkpoint.Artifacts {
+				if err := validateArtifactProviderEvidence(completed, artifact); err != nil {
+					return err
 				}
 			}
 		}
