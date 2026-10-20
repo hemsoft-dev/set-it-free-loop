@@ -1,0 +1,88 @@
+{
+  "producer": "Claude2.1.303",
+  "source_commit": "c9c955247f644c94e5659f8bcb797f3dd49fc47a",
+  "sanitization": "Header names only; values and bodies omitted",
+  "requests": [
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "beta=true",
+      "headers": [
+        "Accept",
+        "Accept-Encoding",
+        "Anthropic-Beta",
+        "Anthropic-Dangerous-Direct-Browser-Access",
+        "Anthropic-Version",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "User-Agent",
+        "X-App",
+        "X-Claude-Code-Session-Id",
+        "X-Stainless-Arch",
+        "X-Stainless-Lang",
+        "X-Stainless-Os",
+        "X-Stainless-Package-Version",
+        "X-Stainless-Retry-Count",
+        "X-Stainless-Runtime",
+        "X-Stainless-Runtime-Version",
+        "X-Stainless-Timeout"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "beta=true",
+      "headers": [
+        "Accept",
+        "Accept-Encoding",
+        "Anthropic-Beta",
+        "Anthropic-Dangerous-Direct-Browser-Access",
+        "Anthropic-Version",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "User-Agent",
+        "X-App",
+        "X-Claude-Code-Session-Id",
+        "X-Stainless-Arch",
+        "X-Stainless-Lang",
+        "X-Stainless-Os",
+        "X-Stainless-Package-Version",
+        "X-Stainless-Retry-Count",
+        "X-Stainless-Runtime",
+        "X-Stainless-Runtime-Version",
+        "X-Stainless-Timeout"
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/v1/messages",
+      "query": "beta=true",
+      "headers": [
+        "Accept",
+        "Accept-Encoding",
+        "Anthropic-Beta",
+        "Anthropic-Dangerous-Direct-Browser-Access",
+        "Anthropic-Version",
+        "Authorization",
+        "Connection",
+        "Content-Length",
+        "Content-Type",
+        "User-Agent",
+        "X-App",
+        "X-Claude-Code-Session-Id",
+        "X-Stainless-Arch",
+        "X-Stainless-Lang",
+        "X-Stainless-Os",
+        "X-Stainless-Package-Version",
+        "X-Stainless-Retry-Count",
+        "X-Stainless-Runtime",
+        "X-Stainless-Runtime-Version",
+        "X-Stainless-Timeout"
+      ]
+    }
+  ]
+}

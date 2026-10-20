@@ -61,7 +61,7 @@ func (t sourceTools) Read(ctx context.Context, revision, path string) (string, e
 }
 func (t sourceTools) Search(ctx context.Context, revision, needle string, max int) ([]r.Anchor, error) {
 	matches, e := t.reader.Search(ctx, revision, needle, max)
-	record("source.jsonl", map[string]any{"tool": "search", "revision": revision, "matches": len(matches), "success": e == nil})
+	record("source.jsonl", map[string]any{"tool": "search", "revision": revision, "needle": needle, "max_results": max, "matches": len(matches), "success": e == nil})
 	return matches, e
 }
 

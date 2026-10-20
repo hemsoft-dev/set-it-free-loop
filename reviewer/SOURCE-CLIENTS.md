@@ -168,7 +168,18 @@ from this exact client, with only random event/session IDs replaced, plus hostil
 mutations. Raw client and MCP transcripts remain in the private local artifact
 directory and must not be uploaded.
 
-The fixture checks both actual source operations, three backend requests,
+The actual client intake passes through `ProviderEgress` to a real local TLS
+fake backend. Its explicit fake-only policy permits only three POST requests to
+`/v1/messages?beta=true`, with zero refresh, metadata or local negotiation slots.
+Captured native header names are allowlisted explicitly. The fixture maps its
+single loopback intake to one fixed synthetic authority; this substitutes for
+production peer/TLS wiring and does not qualify exclusive egress. Both the
+intake and guard must stop, and the private provider receipt must pass
+`ValidateCompleted` before accepting a report. Counts and the policy are retained
+without raw credential values. A valid report cannot override a failed receipt.
+
+The fixture checks exact Read path/revision and Search needle/limit/revision,
+both actual source operations, three backend requests,
 provenance and final report validation. Host receipts record source commit/tree,
 dirty state and helper/client hashes. The compiler cache is disposable; artifact
 output must be a new directory. Only the fixture artifact subdirectory is exposed writable from the host.
