@@ -200,12 +200,19 @@ def main():
     parser.add_argument("--run", action="store_true", help="Run trusted fake guest only")
     args = parser.parse_args()
     module = Path(__file__).resolve().parent.parent
-    if not re.fullmatch("[0-9a-f]{64}", args.kernel_sha256) or args.kernel.is_symlink() or digest(args.kernel.read_bytes()) != args.kernel_sha256:
+    kernel_data = args.kernel.read_bytes()
+    if not re.fullmatch("[0-9a-f]{64}", args.kernel_sha256) or args.kernel.is_symlink() or digest(kernel_data) != args.kernel_sha256:
         raise RuntimeError("kernel must match the supplied immutable hash")
     if execute(["git", "status", "--porcelain"], cwd=module):
         raise RuntimeError("commit fixture source before building qualification evidence")
     output = args.output.absolute()
     output.mkdir(mode=0o700, parents=False, exist_ok=False)
+    kernel = output / "vmlinuz"
+    with kernel.open("xb") as snapshot:
+        snapshot.write(kernel_data)
+        snapshot.flush()
+        os.fsync(snapshot.fileno())
+    kernel.chmod(0o444)
     nonce = secrets.token_hex(16)
     cache_env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8",
                  "GOPATH": os.environ.get("GOPATH", str(Path.home() / "go"))}
@@ -260,14 +267,14 @@ def main():
     image = output / "fixture.cpio.gz"
     archive(entries, image)
     manifest = {"version": 1, "nonce": nonce, "source_head": execute(["git", "rev-parse", "HEAD"], cwd=module).decode().strip(),
-                "kernel_path": str(args.kernel.absolute()), "kernel_sha256": args.kernel_sha256,
+                "kernel_source_path": str(args.kernel.absolute()), "kernel_path": str(kernel), "kernel_sha256": args.kernel_sha256,
                 "init_sha256": digest((output / "init").read_bytes()), "sourceproxy_sha256": digest((output / "sourceproxy").read_bytes()),
                 "image_sha256": digest(image.read_bytes()), "synthetic_commit": commit, "runtime": runtime_manifest,
                 "go_version": execute([args.go, "version"]).decode().strip(), "fake_clients": True,
                 "production_boundary_qualified": False}
     write_json(output / "manifest.json", manifest)
     if args.run:
-        run_fixture(output, manifest, args.kernel.absolute(), image)
+        run_fixture(output, manifest, kernel, image)
     else:
         print(json.dumps({"manifest": str(output / "manifest.json"), "state": "built-only"}))
 

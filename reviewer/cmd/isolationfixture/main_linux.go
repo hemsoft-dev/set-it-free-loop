@@ -273,6 +273,11 @@ func (g *guestLauncher) Start(ctx context.Context, inv r.Invocation) (r.Worker, 
 	if unix.Mknod(filepath.Join(root, "dev/null"), unix.S_IFCHR|0666, int(unix.Mkdev(1, 3))) != nil || os.Chmod(filepath.Join(root, "dev/null"), 0666) != nil {
 		return nil, errors.New("fixture null device failed")
 	}
+	// /run remains nodev. Expose only this one real null device through its
+	// own bind mount, rather than making every device in the worker root usable.
+	if unix.Mount("/dev/null", filepath.Join(root, "dev/null"), "", unix.MS_BIND, "") != nil {
+		return nil, errors.New("fixture null device mount failed")
+	}
 	target := filepath.Join(root, filepath.Dir(inv.SourceEndpoint.Socket))
 	if os.Mkdir(target, 0710) != nil || unix.Mount(filepath.Dir(inv.SourceEndpoint.Socket), target, "", unix.MS_BIND, "") != nil || unix.Mount("", target, "", unix.MS_BIND|unix.MS_REMOUNT|unix.MS_RDONLY, "") != nil {
 		return nil, errors.New("fixture IPC mount failed")
@@ -522,8 +527,8 @@ func worker() error {
 	escaped := exec.Command("/worker", "--escaped-child")
 	escaped.Env = []string{"LANG=C.UTF-8", "GOMAXPROCS=1"}
 	escaped.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	if escaped.Start() != nil {
-		return errors.New("escaped fixture child failed")
+	if err := escaped.Start(); err != nil {
+		return fmt.Errorf("escaped fixture child failed: %w", err)
 	}
 	report := r.Report{JobID: session.JobID, PolicyVersion: session.PolicyVersion, PacketHash: session.PacketHash, Provider: r.Codex, Round: session.Round, SnapshotHash: r.Digest(session.Snapshot), ConfigHash: session.ConfigHash, Findings: []r.Finding{}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}}
 	encoded, _ := json.Marshal(report)
