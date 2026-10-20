@@ -61,6 +61,20 @@ def observation_passed(receipt, result, source, case):
     return passed
 
 
+def code_host_observation_passed(value):
+    if (value.get("version") != 1 or value.get("passed") is not True or value.get("probe_passed") is not True
+            or value.get("fake_only") is not True or value.get("production_boundary_qualified") is not False):
+        return False
+    for name in ["input", "output"]:
+        stream = value.get(name, {})
+        if (type(stream.get("bytes")) is not int or not 0 < stream["bytes"] <= 8 << 20
+                or stream.get("synthetic_secret_seen") is not False or stream.get("capped") is not False
+                or not isinstance(stream.get("sha256"), str) or len(stream["sha256"]) != 64
+                or any(c not in "0123456789abcdef" for c in stream["sha256"])):
+            return False
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", type=pathlib.Path, required=True)
@@ -68,6 +82,7 @@ def main():
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--case", choices=["source", "undeclared-patch", "guarded-undeclared-patch"], required=True)
     parser.add_argument("--go", default="go")
+    parser.add_argument("--isolate-code-host", action="store_true", help="Synthetic-only nested code-host namespace/stdio observation")
     parser.add_argument("--module-cache", type=pathlib.Path)
     args = parser.parse_args()
     client = args.client.resolve(strict=True)
@@ -89,13 +104,33 @@ def main():
     _common.build_offline(module, args.go, helper, "./cmd/codexfixture", manifest, args.module_cache)
     if _common.source_manifest(module) != manifest:
         raise RuntimeError("source changed during helper build")
+    relay = None
+    host_mount = "/codex-code-mode-host"
+    relay_mounts = []
+    runtime = set(_common.runtime_files(pathlib.Path("/usr/bin/env")))
+    isolation_manifest = None
+    if args.isolate_code_host:
+        relay = out / "code-host-relay"
+        _common.build_offline(module, args.go, relay, "./cmd/codehostfixture", manifest, args.module_cache)
+        marker = out / "synthetic-codehost-marker"
+        marker.write_text("sfl-codehost-synthetic-only-1\n")
+        marker.chmod(0o400)
+        nested = _common.snapshot_file(pathlib.Path(bwrap), out / "bwrap-snapshot", _common.digest(pathlib.Path(bwrap)))
+        runtime.update(_common.runtime_files(nested))
+        relay_mounts = ["--ro-bind", str(relay), "/codex-code-mode-host", "--ro-bind", str(relay), "/code-host-relay",
+                        "--ro-bind", str(nested), "/usr/bin/bwrap", "--ro-bind", str(marker), "/run/sfl-codehost-fixture"]
+        host_mount = "/code-host-pinned"
+        isolation_manifest = {"relay_sha256": _common.digest(relay), "bwrap_sha256": _common.digest(nested),
+                              "runtime": [{"path": name, "sha256": _common.digest(pathlib.Path(name))} for name in sorted(runtime)],
+                              "separate_guest_uid_qualified": False, "vm_worker_qualified": False}
     command = [bwrap, "--unshare-all", "--die-with-parent", "--new-session", "--clearenv",
-               "--ro-bind", str(client), "/client", "--ro-bind", str(code_host), "/codex-code-mode-host",
+               "--ro-bind", str(client), "/client", "--ro-bind", str(code_host), host_mount,
                "--ro-bind", str(helper), "/helper", "--ro-bind", "/usr/bin/env", "/usr/bin/env",
                "--ro-bind", "/lib64/ld-linux-x86-64.so.2", "/lib64/ld-linux-x86-64.so.2",
                "--symlink", "usr/lib", "/lib"]
-    for library in sorted(_common.runtime_files(pathlib.Path("/usr/bin/env"))):
+    for library in sorted(runtime):
         command += ["--ro-bind", library, library]
+    command += relay_mounts
     command += ["--proc", "/proc", "--dev", "/dev", "--tmpfs", "/tmp",
                 "--dir", "/profile", "--dir", "/work", "--dir", "/run/sfl",
                 "--bind", str(artifacts), "/artifacts", "--setenv", "LANG", "C.UTF-8",
@@ -116,6 +151,7 @@ def main():
                "helper_sha256": _common.digest(helper), "command": command,
                **manifest,
                "exit_code": process.returncode, "timed_out": timed_out,
+               "code_host_isolation": isolation_manifest,
                "fake_only": True, "actual_account_qualified": False,
                "capability_allowlist_qualified": False, "production_boundary_qualified": False}
     try:
@@ -126,6 +162,10 @@ def main():
     result = json.loads((artifacts / "result.json").read_text()) if (artifacts / "result.json").exists() else {}
     source = [json.loads(line) for line in (artifacts / "source.jsonl").read_text().splitlines()] if (artifacts / "source.jsonl").exists() else []
     passed = observation_passed(receipt, result, source, args.case)
+    if args.isolate_code_host:
+        relay_path = artifacts / "codehost-relay.json"
+        isolated = json.loads(relay_path.read_text()) if relay_path.exists() else {}
+        passed = passed and code_host_observation_passed(isolated)
     print(json.dumps({"observation_passed": passed, "case": args.case, "output": str(out),
                       "capability_allowlist_qualified": False, "production_boundary_qualified": False}))
     return 0 if passed else 1
