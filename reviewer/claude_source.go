@@ -93,8 +93,9 @@ func claudeSourceExchange(ctx context.Context, worker Worker, inv Invocation, s 
 	if err != nil {
 		return nil, err
 	}
-	scan := bufio.NewScanner(io.LimitReader(worker.Output(), int64(inv.OutputLimit)+1))
-	scan.Buffer(make([]byte, 4096), inv.OutputLimit+1)
+	transportLimit := NativeTransportLimit(s)
+	scan := bufio.NewScanner(io.LimitReader(worker.Output(), int64(transportLimit)+1))
+	scan.Buffer(make([]byte, 4096), transportLimit+1)
 	used, frames, sent := 0, 0, 0
 	read := func() ([]byte, map[string]json.RawMessage, error) {
 		if !scan.Scan() {
@@ -103,7 +104,7 @@ func claudeSourceExchange(ctx context.Context, worker Worker, inv Invocation, s 
 		line := append([]byte(nil), scan.Bytes()...)
 		used += len(line) + 1
 		frames++
-		if used > inv.OutputLimit || frames > 4096 || uniqueJSONKeys(json.NewDecoder(bytes.NewReader(line)), 0) != nil {
+		if used > transportLimit || frames > 4096 || uniqueJSONKeys(json.NewDecoder(bytes.NewReader(line)), 0) != nil {
 			return nil, nil, workerInvalid()
 		}
 		var event map[string]json.RawMessage
@@ -189,7 +190,7 @@ func claudeSourceExchange(ctx context.Context, worker Worker, inv Invocation, s 
 		line := append([]byte(nil), scan.Bytes()...)
 		used += len(line) + 1
 		frames++
-		if len(terminal) != 0 || used > inv.OutputLimit || frames > 4096 || uniqueJSONKeys(json.NewDecoder(bytes.NewReader(line)), 0) != nil {
+		if len(terminal) != 0 || used > transportLimit || frames > 4096 || uniqueJSONKeys(json.NewDecoder(bytes.NewReader(line)), 0) != nil {
 			return nil, workerInvalid()
 		}
 		var event struct {

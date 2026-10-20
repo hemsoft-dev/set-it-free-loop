@@ -74,6 +74,9 @@ func TestClaudeSourceExecutable(t *testing.T) {
 				if mode == "source-forbidden-tool" {
 					_ = enc.Encode(map[string]any{"type": "assistant", "message": map[string]any{"content": []any{map[string]string{"type": "tool_use", "name": "Bash"}}}})
 				}
+				if mode == "source-large" {
+					_ = enc.Encode(map[string]any{"type": "user", "message": map[string]any{"content": []any{map[string]string{"type": "tool_result", "content": strings.Repeat("s", s.Limits.OutputBytes+1)}}}})
+				}
 				if mode == "source-duplicate-result" {
 					_ = enc.Encode(map[string]any{"type": "result", "subtype": "success", "is_error": false, "structured_output": fakeReport(s), "num_turns": 1})
 				}
@@ -173,7 +176,7 @@ func TestClaudeSourceFailuresSendZeroUserPrompts(t *testing.T) {
 }
 
 func TestClaudeSourcePromptFollowsConnectedToolStatus(t *testing.T) {
-	for _, mode := range []string{"source-success", "source-pending-ready"} {
+	for _, mode := range []string{"source-success", "source-pending-ready", "source-large"} {
 		t.Run(mode, func(t *testing.T) {
 			a, l, audit := claudeSourceFixture(t, mode)
 			s := testSession(Claude)
