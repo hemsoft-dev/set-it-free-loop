@@ -144,6 +144,24 @@ func TestNativeVMProviderActualPrivateHTTPAndStoppedReceipt(t *testing.T) {
 	}
 }
 
+func TestNativeVMProviderAllowsGuestStartupBeforeFirstHeader(t *testing.T) {
+	bridge, client, calls, s := nativeProviderFixture(t, codexToolStream("exec"))
+	// The bridge starts before QEMU boots and before the client's version probe.
+	// No HTTP header exists yet, so this is not a slow-header request.
+	time.Sleep(5200 * time.Millisecond)
+	status, _ := nativeProviderCall(t, client, s.Identity.Model)
+	if status != 200 || calls.Load() != 1 {
+		t.Fatal("guest startup consumed the HTTP header budget", status, calls.Load())
+	}
+	client.Transport.(interface{ CloseIdleConnections() }).CloseIdleConnections()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	e, err := bridge.close(ctx)
+	if err != nil || e.Access.ValidateCompleted(s, e.Policy) != nil {
+		t.Fatal("delayed guest lost completed receipt", e, err)
+	}
+}
+
 func TestNativeVMProviderRejectsWrongModelBeforeUpstream(t *testing.T) {
 	bridge, client, calls, _ := nativeProviderFixture(t, codexToolStream("exec"))
 	status, body := nativeProviderCall(t, client, "wrong-model")

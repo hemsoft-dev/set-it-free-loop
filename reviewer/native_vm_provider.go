@@ -21,11 +21,22 @@ type nativeProviderListener struct {
 	mu         sync.Mutex
 	used       bool
 	connection *nativeProviderConnection
+	startup    time.Duration
 }
 type nativeProviderConnection struct {
 	net.Conn
 	once   sync.Once
 	closed chan struct{}
+	first  []byte
+}
+
+func (c *nativeProviderConnection) Read(data []byte) (int, error) {
+	if len(c.first) != 0 {
+		n := copy(data, c.first)
+		c.first = c.first[n:]
+		return n, nil
+	}
+	return c.Conn.Read(data)
 }
 
 func (c *nativeProviderConnection) Close() error {
@@ -38,6 +49,24 @@ func (l *nativeProviderListener) Accept() (net.Conn, error) {
 	if !l.used {
 		l.used = true
 		l.mu.Unlock()
+		// QEMU boot and client initialization happen after bridge construction.
+		// Wait for one byte within the job budget before giving HTTP ownership
+		// of the connection. Its five-second header budget then starts at the
+		// first actual request, rather than expiring during guest startup.
+		if l.connection.SetReadDeadline(time.Now().Add(l.startup)) != nil {
+			l.connection.Close()
+			return nil, net.ErrClosed
+		}
+		var first [1]byte
+		if _, err := io.ReadFull(l.connection.Conn, first[:]); err != nil {
+			l.connection.Close()
+			return nil, err
+		}
+		if l.connection.SetReadDeadline(time.Time{}) != nil {
+			l.connection.Close()
+			return nil, net.ErrClosed
+		}
+		l.connection.first = first[:]
 		return l.connection, nil
 	}
 	l.mu.Unlock()
@@ -86,7 +115,7 @@ func startNativeProviderBridge(ctx context.Context, s Session, policy EgressPoli
 		}
 		guard.ServeHTTP(w, q)
 	})
-	listener := &nativeProviderListener{connection: &nativeProviderConnection{Conn: channel, closed: make(chan struct{})}}
+	listener := &nativeProviderListener{connection: &nativeProviderConnection{Conn: channel, closed: make(chan struct{})}, startup: s.Limits.Timeout}
 	bridge := &nativeProviderBridge{guard, policy, server, make(chan struct{})}
 	go func() {
 		stop := context.AfterFunc(ctx, func() { server.Close(); listener.Close() })
