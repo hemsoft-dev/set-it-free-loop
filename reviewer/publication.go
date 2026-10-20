@@ -10,8 +10,9 @@ import (
 	"time"
 )
 
-// Remote is a trusted, separately qualified GitHub transport. No HTTP/App
-// implementation or credential acquisition is supplied in this offline module.
+// Remote is a trusted GitHub transport. The explicit HTTP publisher adapter
+// supplies writes/reconciliation; native history and credential acquisition
+// require separately qualified composition.
 // Scan must exhaust pagination; hashes cover the entire normalized document,
 // including inline comments. Caller-provided markers alone are never receipts.
 // History is complete post-POST native event history, not merely pending users.
@@ -23,6 +24,21 @@ type Remote interface {
 	Scan(context.Context, Scope, string) ([]RemoteReceipt, bool, error)
 	Annotate(context.Context, Scope, int64, string) error
 }
+
+// intentScanner avoids expanding unrelated App reviews during reconciliation.
+// Completeness still requires scanning every collection page and rejecting
+// duplicate IDs and multiple matching intent markers.
+type intentScanner interface {
+	ScanIntent(context.Context, WriteIntent) ([]RemoteReceipt, bool, error)
+}
+
+// publicationRejected is emitted only by a trusted transport after a definitive
+// write rejection. Missing/malformed success receipts never qualify.
+type publicationRejected struct{ cause error }
+
+func (e *publicationRejected) Error() string { return e.cause.Error() }
+func (e *publicationRejected) Unwrap() error { return e.cause }
+
 type RemoteState struct {
 	Access, Open bool
 	Snapshot     Snapshot
@@ -40,6 +56,23 @@ func (p Publisher) now() time.Time {
 		return p.Now()
 	}
 	return time.Now()
+}
+
+// Canonical comment order makes the durable document independent of GitHub's
+// pagination/creation order while retaining every body, anchor and duplicate.
+func canonicalPublicationDocument(doc Document) Document {
+	doc.Inline = append([]InlineComment{}, doc.Inline...)
+	sort.Slice(doc.Inline, func(i, j int) bool {
+		a, b := doc.Inline[i], doc.Inline[j]
+		if a.Path != b.Path {
+			return a.Path < b.Path
+		}
+		if a.Line != b.Line {
+			return a.Line < b.Line
+		}
+		return a.Body < b.Body
+	})
+	return doc
 }
 func redactDocument(doc Document, secrets []string) Document {
 	doc.Inline = append([]InlineComment{}, doc.Inline...)
@@ -114,7 +147,7 @@ func (p Publisher) Prepare(ctx context.Context, out Outcome, diff map[string]map
 	return intent, err
 }
 func validateReceipt(w WriteIntent, receipt RemoteReceipt, bot int64) bool {
-	return receipt.ID > 0 && receipt.AuthorID == bot && receipt.Marker == w.Marker && receipt.BodyHash == w.BodyHash && !receipt.CreatedAt.IsZero()
+	return receipt.ID > 0 && receipt.AuthorID == bot && receipt.Marker == w.Marker && receipt.BodyHash == w.BodyHash && !receipt.CreatedAt.IsZero() && (w.Kind != "review" || receipt.CommitID == w.Snapshot.Head)
 }
 func (p Publisher) confirm(ctx context.Context, id string, receipt RemoteReceipt) error {
 	return p.Store.update(ctx, func(d *DurableState) error {
@@ -172,7 +205,13 @@ func (p Publisher) Reconcile(ctx context.Context, id string) error {
 	if w.State != "unknown" && w.State != "dispatched" {
 		return ErrDeferred
 	}
-	receipts, complete, err := p.Remote.Scan(ctx, w.Scope, w.Kind)
+	var receipts []RemoteReceipt
+	var complete bool
+	if scanner, ok := p.Remote.(intentScanner); ok {
+		receipts, complete, err = scanner.ScanIntent(ctx, *w)
+	} else {
+		receipts, complete, err = p.Remote.Scan(ctx, w.Scope, w.Kind)
+	}
 	if err != nil {
 		return err
 	}
@@ -287,13 +326,18 @@ func (p Publisher) Dispatch(ctx context.Context, id string) error {
 	}
 	receipt, postErr := p.Remote.Post(ctx, *w)
 	if postErr != nil || !validateReceipt(*w, receipt, d.Enrollment.BotID) {
-		_ = p.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
-			if d.Writes[id].State == "dispatched" {
-				d.Writes[id].State = "unknown"
+		var rejected *publicationRejected
+		definitive := errors.As(postErr, &rejected)
+		saveErr := p.Store.update(context.WithoutCancel(ctx), func(d *DurableState) error {
+			if target := d.Writes[id]; target != nil && target.State == "dispatched" {
+				target.State = "unknown"
+				if definitive {
+					target.State = "prepared"
+				}
 			}
 			return nil
 		})
-		return ErrDeferred
+		return errors.Join(ErrDeferred, postErr, saveErr)
 	}
 	if err = p.confirm(context.WithoutCancel(ctx), id, receipt); err != nil {
 		return err
