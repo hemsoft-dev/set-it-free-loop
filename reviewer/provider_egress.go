@@ -101,7 +101,11 @@ func (a *ProviderAccess) ValidateCompleted(s Session, p EgressPolicy) error {
 // There is deliberately no default transport, listener, auth or live policy.
 // A production launcher must authenticate the private peer, enforce exclusive
 // egress through this guard and require its stopped, nonfailed private receipt.
+const maxEgressIntake = 4 // One active request and at most three waiting headers.
+
 type ProviderEgress struct {
+	intake    chan struct{}
+	serial    chan struct{}
 	mu        sync.Mutex
 	policy    EgressPolicy
 	headers   map[string]bool
@@ -211,7 +215,7 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
 	done := make(chan struct{})
 	close(done)
-	return &ProviderEgress{policy: p, headers: headers, transport: transport, ctx: ctx, cancel: cancel, done: done, audit: ProviderAccess{Version: 1, SessionHash: Digest(s), PolicyHash: Digest(p)}}, nil
+	return &ProviderEgress{intake: make(chan struct{}, maxEgressIntake), serial: make(chan struct{}, 1), policy: p, headers: headers, transport: transport, ctx: ctx, cancel: cancel, done: done, audit: ProviderAccess{Version: 1, SessionHash: Digest(s), PolicyHash: Digest(p)}}, nil
 }
 
 func (b *ProviderEgress) Snapshot() ProviderAccess { b.mu.Lock(); defer b.mu.Unlock(); return b.audit }
@@ -369,6 +373,27 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "provider route denied", http.StatusForbidden)
 		return
 	}
+	// Bound waiting headers without reading their bodies or dialing upstream.
+	// Actual pinned clients overlap startup metadata; forwarding stays serial.
+	select {
+	case b.intake <- struct{}{}:
+	default:
+		b.fail(true)
+		http.Error(w, "provider intake exhausted", http.StatusTooManyRequests)
+		return
+	}
+	defer func() { <-b.intake }()
+	select {
+	case b.serial <- struct{}{}:
+	case <-b.ctx.Done():
+		http.Error(w, "provider bridge stopped", http.StatusTooManyRequests)
+		return
+	case <-r.Context().Done():
+		b.fail(false)
+		http.Error(w, "provider request canceled", http.StatusTooManyRequests)
+		return
+	}
+	defer func() { <-b.serial }()
 	if !b.reserve(route) {
 		http.Error(w, "provider bridge stopped or exhausted", http.StatusTooManyRequests)
 		return

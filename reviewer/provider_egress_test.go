@@ -398,7 +398,7 @@ func TestProviderEgressCapturesPolicyAndFailsWithoutExplicitTransport(t *testing
 	}
 }
 
-func TestProviderEgressConcurrentRequestCancelsActiveWork(t *testing.T) {
+func TestProviderEgressIntakeOverflowCancelsActiveAndWaitingWork(t *testing.T) {
 	entered := make(chan struct{})
 	var forwarded atomic.Int32
 	rt := egressRoundTrip(func(r *http.Request) (*http.Response, error) {
@@ -421,12 +421,20 @@ func TestProviderEgressConcurrentRequestCancelsActiveWork(t *testing.T) {
 	done := make(chan struct{})
 	go func() { defer close(done); b.ServeHTTP(httptest.NewRecorder(), request()) }()
 	<-entered
+	queued := make(chan struct{}, maxEgressIntake-1)
+	for i := 1; i < maxEgressIntake; i++ {
+		go func() { b.ServeHTTP(httptest.NewRecorder(), request()); queued <- struct{}{} }()
+	}
+	waitForEgressIntake(t, b, maxEgressIntake)
 	w := httptest.NewRecorder()
 	b.ServeHTTP(w, request())
 	if w.Code != 429 {
 		t.Fatal(w.Code)
 	}
 	<-done
+	for i := 1; i < maxEgressIntake; i++ {
+		<-queued
+	}
 	a, err := b.Close(context.Background())
 	if err != nil || forwarded.Load() != 1 || !a.Failed || !a.Stopped {
 		t.Fatal(a, err)
@@ -482,5 +490,67 @@ func TestProviderEgressRejectsPoliciesThatCannotCompleteInference(t *testing.T) 
 				t.Fatal("policy without possible inference accepted", bridge, err)
 			}
 		})
+	}
+}
+
+func waitForEgressIntake(t *testing.T, b *ProviderEgress, n int) {
+	t.Helper()
+	deadline := time.NewTimer(time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for len(b.intake) != n {
+		select {
+		case <-deadline.C:
+			t.Fatal("intake did not reach expected bound")
+		case <-tick.C:
+		}
+	}
+}
+func TestProviderEgressQueuesOverlappingRequestsWithoutParallelUpstream(t *testing.T) {
+	var calls, active, peak atomic.Int32
+	entered, release := make(chan struct{}), make(chan struct{})
+	rt := egressRoundTrip(func(q *http.Request) (*http.Response, error) {
+		n := active.Add(1)
+		defer active.Add(-1)
+		if n > 1 {
+			t.Error("parallel upstream requests")
+		}
+		peak.Store(n)
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})
+	p := egressTestPolicy(Codex)
+	s := testSession(Codex)
+	b, err := NewProviderEgress(context.Background(), s, p, rt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan int, maxEgressIntake)
+	run := func() {
+		q := httptest.NewRequest("POST", "/infer", strings.NewReader(`{}`))
+		q.Host = "provider.example"
+		w := httptest.NewRecorder()
+		b.ServeHTTP(w, q)
+		done <- w.Code
+	}
+	go run()
+	<-entered
+	for i := 1; i < maxEgressIntake; i++ {
+		go run()
+	}
+	waitForEgressIntake(t, b, maxEgressIntake)
+	close(release)
+	for i := 0; i < maxEgressIntake; i++ {
+		if status := <-done; status != 200 {
+			t.Fatal(status)
+		}
+	}
+	a, err := b.Close(context.Background())
+	if err != nil || a.ValidateCompleted(s, p) != nil || a.Forwarded != maxEgressIntake || calls.Load() != maxEgressIntake || peak.Load() != 1 {
+		t.Fatal(a, err, calls.Load(), peak.Load())
 	}
 }
