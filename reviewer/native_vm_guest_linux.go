@@ -41,13 +41,14 @@ func NativeVMGuestMain(args []string) int {
 	if len(args) != 0 || os.Getpid() != 1 || os.Getuid() != 0 {
 		return 2
 	}
+	nativeGuestBootStage("entry")
+	// Even setup failure must power off before a host can classify the launch.
+	defer unix.Reboot(unix.LINUX_REBOOT_CMD_POWER_OFF)
 	release, err := nativeGuestSetup()
 	if err != nil {
 		return 2
 	}
-	// Even a failed guest must be powered off; host whole-unit stop remains the
-	// independent authority for committing auth and accepting a result.
-	defer unix.Reboot(unix.LINUX_REBOOT_CMD_POWER_OFF)
+	nativeGuestBootStage("ports")
 	control, err := nativeGuestPort("control")
 	if err != nil {
 		return 2
@@ -82,10 +83,12 @@ func NativeVMGuestMain(args []string) int {
 	if !bootProgress("boot-request") {
 		return 2
 	}
+	nativeGuestBootStage("intake")
 	q, err := readVMRecord[nativeVMRequest](control, 4<<20)
 	if err != nil || !q.valid() {
 		return 2
 	}
+	nativeGuestBootStage("binding")
 	line, err := os.ReadFile("/proc/cmdline")
 	if err != nil {
 		return 2
@@ -216,6 +219,7 @@ func NativeVMGuestMain(args []string) int {
 	if err != nil {
 		return 2
 	}
+	nativeGuestBootStage("ready")
 	if writeVMRecord(control, observed.Ready, 4096) != nil {
 		return 2
 	}

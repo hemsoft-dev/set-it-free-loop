@@ -130,6 +130,7 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 	if os.Getpid() != 1 || os.Getuid() != 0 {
 		return release, ErrLiveBlocked
 	}
+	nativeGuestBootStage("release")
 	raw, err := os.ReadFile("/native-release.json")
 	if err != nil || len(raw) > 65536 {
 		return release, ErrVMBoot
@@ -141,6 +142,7 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 	if !bytes.Equal(canonical, raw) {
 		return release, ErrVMBoot
 	}
+	nativeGuestBootStage("proc")
 	if unix.Mount("proc", "/proc", "proc", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "") != nil {
 		return release, ErrVMBoot
 	}
@@ -160,6 +162,7 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 	if len(nonce) != 32 || strings.Trim(nonce, "0123456789abcdef") != "" {
 		return release, ErrVMBoot
 	}
+	nativeGuestBootStage("mounts")
 	for _, mount := range []struct {
 		source, target, kind, options string
 		flags                         uintptr
@@ -168,17 +171,20 @@ func nativeGuestSetup() (nativeGuestRelease, error) {
 			return release, ErrVMBoot
 		}
 	}
+	nativeGuestBootStage("cgroup")
 	if os.MkdirAll("/sys/fs/cgroup", 0755) != nil || unix.Mount("none", "/sys/fs/cgroup", "cgroup2", 0, "") != nil || os.WriteFile("/sys/fs/cgroup/cgroup.subtree_control", []byte("+memory +pids +cpu"), 0600) != nil {
 		return release, ErrVMBoot
 	}
 	if os.Mkdir("/run/native", 0700) != nil {
 		return release, ErrVMBoot
 	}
+	nativeGuestBootStage("runtime")
 	for _, file := range release.Files {
 		if nativeGuestVerifiedFile(file) != nil {
 			return release, ErrVMBoot
 		}
 	}
+	nativeGuestBootStage("modules")
 	for _, module := range release.Modules {
 		pin := nativeGuestFile{Source: module.Path, SHA256: module.SHA256, Bytes: module.Bytes}
 		if nativeGuestVerifiedFile(pin) != nil {

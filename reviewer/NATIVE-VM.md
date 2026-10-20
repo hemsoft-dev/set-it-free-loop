@@ -159,3 +159,9 @@ notification arrives. The bounded readiness wait rejects HUP even when another
 readiness bit is set. Fixed boot-control/object/provider/request progress
 records remain separate from the authenticated Ready record and cannot export
 auth. The complete pre-Ready stream remains bounded to 24 records.
+
+A separate owned serial socket sends early boot output only to a bounded host
+parser. It retains fixed setup-stage, panic and OOM enums, discards raw bytes,
+and never publishes transcripts. Guest client and reader jails have no UART
+device. This channel cannot establish Ready or authorize auth export. It
+exists to distinguish setup failure from private virtio-stream intake failure.

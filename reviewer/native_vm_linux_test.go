@@ -208,7 +208,7 @@ func TestNativeVMArgvExposesOnlyThreePrivateDescriptorPorts(t *testing.T) {
 			t.Fatal("unapproved VM capability", forbidden)
 		}
 	}
-	for _, required := range []string{"-nic none", "-monitor none", "-serial none", "kvm,device=/dev/fdset/1", "-m 2048M", "rdinit=/native-init", "socket,id=sflcontrol,fd=7", "socket,id=sflobjects,fd=8", "socket,id=sflprovider,fd=9", "name=sfl.control", "name=sfl.objects", "name=sfl.provider"} {
+	for _, required := range []string{"-nic none", "-monitor none", "-serial chardev:sflbootdiag", "socket,id=sflbootdiag,fd=11", "kvm,device=/dev/fdset/1", "-m 2048M", "rdinit=/native-init", "socket,id=sflcontrol,fd=7", "socket,id=sflobjects,fd=8", "socket,id=sflprovider,fd=9", "name=sfl.control", "name=sfl.objects", "name=sfl.provider"} {
 		if !strings.Contains(joined, required) {
 			t.Fatal("missing fixed VM boundary", required)
 		}

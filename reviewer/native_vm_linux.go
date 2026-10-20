@@ -213,7 +213,7 @@ func nativeVMArgs(nonce string) []string {
 		"-add-fd", "fd=6,set=1,opaque=sfl-kvm", "-accel", "kvm,device=/dev/fdset/1", "-cpu", "host",
 		"-m", "2048M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none", "-no-reboot",
 		"-L", "/usr/share/qemu", "-bios", "/proc/self/fd/10", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5",
-		"-append", "rdinit=/native-init panic=1 sfl-native=" + nonce, "-serial", "none", "-device", "virtio-serial-pci,id=sflserial"}
+		"-append", "console=ttyS0 loglevel=3 rdinit=/native-init panic=1 sfl-native=" + nonce, "-chardev", "socket,id=sflbootdiag,fd=11", "-serial", "chardev:sflbootdiag", "-device", "virtio-serial-pci,id=sflserial"}
 	for index, name := range []string{"control", "objects", "provider"} {
 		id := "sfl" + name
 		args = append(args, "-chardev", "socket,id="+id+",fd="+strconv.Itoa(index+7), "-device", "virtserialport,bus=sflserial.0,chardev="+id+",name=sfl."+name)
@@ -358,20 +358,49 @@ func NativeVMStub(ctx context.Context, endpoint string, binding AuthBinding, inv
 		return err
 	}
 	defer closeVMFiles(files)
+	serial, serialChild, err := nativeBootDiagnosticChannel()
+	if err != nil {
+		return err
+	}
+	defer serial.Close()
+	defer serialChild.Close()
+	control, err := net.FileConn(files[4])
+	if err != nil {
+		return ErrVMBoot
+	}
+	defer control.Close()
+	diagnostics := &nativeBootDiagnostics{}
+	diagnosticDone := make(chan struct{})
+	go func() { readNativeBootDiagnostics(serial, diagnostics); close(diagnosticDone) }()
+	defer func() { serial.Close(); <-diagnosticDone }()
 	command := exec.CommandContext(ctx, "/proc/self/fd/3", nativeVMArgs(grant.Binding.LaunchID)...)
 	command.Args[0] = "sfl-native-qemu"
 	command.Env = []string{"LANG=C.UTF-8", "PATH=/usr/bin:/bin"}
 	command.Dir = "/"
-	command.ExtraFiles = files
+	command.ExtraFiles = append(append([]*os.File{}, files...), serialChild)
 	command.Stdout = io.Discard
-	command.Stderr = io.Discard
+	command.Stderr = diagnostics
 	command.WaitDelay = 2 * time.Second
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 	if command.Start() != nil {
 		return ErrVMBoot
 	}
-	closeVMFiles(files) // Only QEMU now owns the child sides of private channels.
-	if command.Wait() != nil {
+	closeVMFiles(files) // Only QEMU and the diagnostic control duplicate remain.
+	serialChild.Close()
+	waitErr := command.Wait()
+	select {
+	case <-diagnosticDone:
+	case <-time.After(time.Second):
+		serial.Close()
+		<-diagnosticDone
+	}
+	control.SetWriteDeadline(time.Now().Add(time.Second))
+	for _, stage := range diagnostics.stages(waitErr != nil) {
+		if writeVMRecord(control, nativeVMProgress{1, "guest-stage", stage}, 4096) != nil {
+			break
+		}
+	}
+	if waitErr != nil {
 		return ErrVMBoot
 	}
 	return nil
