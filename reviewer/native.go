@@ -29,7 +29,10 @@ type nativeResultObservation struct {
 	Trailer    *nativeCodexTrailer
 }
 
-type nativeCodexTrailer struct{ Type, Item, Server, Tool, Status, ErrorClass, IO string }
+type nativeCodexTrailer struct {
+	Type, Item, Server, Tool, Status, ErrorClass, IO string
+	Debug                                            string `json:"debug_native_tail,omitempty"`
+}
 
 func nativeErrorClass(message string) (string, string) {
 	message = strings.ToLower(message)
@@ -75,7 +78,7 @@ func nativeTrailer(raw []byte) *nativeCodexTrailer {
 			if event.Type == "error" {
 				class, kind = nativeErrorClass(event.Message)
 			}
-			return &nativeCodexTrailer{nativeEventClass(event.Type), nativeEventClass(event.Item.Type), nativeEventClass(event.Item.Server), nativeEventClass(event.Item.Tool), nativeEventClass(event.Item.Status), class, kind}
+			return &nativeCodexTrailer{nativeEventClass(event.Type), nativeEventClass(event.Item.Type), nativeEventClass(event.Item.Server), nativeEventClass(event.Item.Tool), nativeEventClass(event.Item.Status), class, kind, ""}
 		}
 		completed = event.Type == "turn.completed" || event.Type == "turn.failed" || event.Type == "error"
 	}
@@ -209,6 +212,32 @@ func normalizeNativeObservedResult(s Session, raw []byte, waitErr error) ([]byte
 		case "unexpected client data after completion":
 			observed.Kind = "after-completion"
 			observed.Trailer = nativeTrailer(raw)
+			// [DEBUG-native-tail] Synthetic fixture only; remove after diagnosis.
+			if s.JobID == "native-vm-fake-only" && s.Snapshot.Head == strings.Repeat("a", 40) && observed.Trailer != nil {
+				scan := bufio.NewScanner(bytes.NewReader(raw))
+				scan.Buffer(make([]byte, 4096), len(raw)+1)
+				completed := false
+				for scan.Scan() {
+					var e struct {
+						Type string `json:"type"`
+					}
+					if json.Unmarshal(scan.Bytes(), &e) != nil {
+						break
+					}
+					if completed {
+						text := string(scan.Bytes())
+						if len(text) > 4096 {
+							text = text[:4096]
+						}
+						for _, value := range []string{"sfl-fake-access", "sfl-fake-refresh", "sfl-fake-account", "fixture@example.invalid"} {
+							text = strings.ReplaceAll(text, value, "<REDACTED>")
+						}
+						observed.Trailer.Debug = text
+						break
+					}
+					completed = e.Type == "turn.completed" || e.Type == "turn.failed" || e.Type == "error"
+				}
+			}
 		case "incomplete Codex transport":
 			observed.Kind = "incomplete"
 		case "missing Codex report":
