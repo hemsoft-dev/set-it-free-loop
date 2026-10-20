@@ -13,14 +13,15 @@ import (
 var ErrLiveBlocked = errors.New("live adapter blocked: provider support, billing, isolated launcher and owner activation evidence required")
 
 type Invocation struct {
-	Provider      Provider
-	Args          []string
-	Environment   []string
-	Input         []byte
-	OutputLimit   int
-	Limits        Limits
-	ReadOnlyFiles map[string][]byte
-	Source        SourceTools `json:"-"`
+	Provider       Provider
+	Args           []string
+	Environment    []string
+	Input          []byte
+	OutputLimit    int
+	Limits         Limits
+	ReadOnlyFiles  map[string][]byte
+	Source         SourceTools `json:"-"`
+	SourceEndpoint *SourceEndpoint
 }
 
 // Driver is a trusted transport seam for a separately qualified isolated worker.
@@ -44,6 +45,7 @@ type Adapter struct {
 	Driver        Driver
 	AuthDirectory string
 	Reader        *Reader
+	SourceBridge  *SourceBridge
 }
 
 func (a Adapter) Invocation(s Session, environment map[string]string) (Invocation, error) {
@@ -96,7 +98,11 @@ func (a Adapter) Invocation(s Session, environment map[string]string) (Invocatio
 	for _, k := range keys {
 		values = append(values, k+"="+env[k])
 	}
-	return Invocation{Provider: a.Provider, Args: args, Environment: values, Input: input, OutputLimit: s.Limits.OutputBytes, Limits: s.Limits, ReadOnlyFiles: map[string][]byte{"sfl-report.schema.json": ReportSchema()}}, nil
+	inv := Invocation{Provider: a.Provider, Args: args, Environment: values, Input: input, OutputLimit: s.Limits.OutputBytes, Limits: s.Limits, ReadOnlyFiles: map[string][]byte{"sfl-report.schema.json": ReportSchema()}}
+	if a.SourceBridge != nil {
+		return a.sourceInvocation(s, inv)
+	}
+	return inv, nil
 }
 
 func (a Adapter) Review(ctx context.Context, s Session) (Report, error) {
