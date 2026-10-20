@@ -45,6 +45,17 @@ without starting a fetch helper. Use Git 2.46 or newer, with 2.53.0 inspected he
 An unsupported global option fails closed instead of silently ignoring an
 environment-only control. A network boundary is still required.
 
+Cleanup atomically retires the entire job directory into a fresh private
+quarantine through open directory descriptors, then checks its directory and
+socket inodes there before unlinking. Canonical replacements cannot be deleted
+by a stale pathname check. Unknown retired entries are restored with
+`RENAME_NOREPLACE`; if recovery already recreated the canonical name, they stay
+in quarantine for reconciliation. No recursive deletion is used. Concurrent
+recovery must not enter another live reader's private quarantine. This does not
+isolate a reader from a malicious process with the same UID. The qualified
+supervisor must protect job roots and serialize their recovery. A required
+cleanup failure also fails the service.
+
 The reader's stdout is exclusively a supervisor audit channel, separate from
 worker MCP. It emits a ready event and a stopped event containing actual
 `SourceAccess`, bounded together to 2 MiB. A failure before readiness can emit

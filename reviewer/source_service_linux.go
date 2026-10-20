@@ -36,7 +36,7 @@ func ServeSourceSocket(ctx context.Context, config SourceReaderConfig, verifier 
 	return serveSourceSocket(ctx, config, verifier, ready, sourcePeerUID)
 }
 
-func serveSourceSocket(ctx context.Context, config SourceReaderConfig, verifier *Reader, ready func(SourceEndpoint) error, peerUID func(*net.UnixConn) (uint32, error)) (*SourceAccess, error) {
+func serveSourceSocket(ctx context.Context, config SourceReaderConfig, verifier *Reader, ready func(SourceEndpoint) error, peerUID func(*net.UnixConn) (uint32, error)) (access *SourceAccess, serveErr error) {
 	uid, gid := os.Getuid(), os.Getgid()
 	if config.validate() != nil || uid <= 0 || uid != config.ReaderUID || os.Geteuid() != uid || os.Getegid() != gid || config.WorkerUID == uid || config.WorkerGID != gid || ready == nil {
 		return nil, ErrSourceService
@@ -50,6 +50,14 @@ func serveSourceSocket(ctx context.Context, config SourceReaderConfig, verifier 
 	}
 	info, err := os.Lstat(root)
 	if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 || int(info.Sys().(*syscall.Stat_t).Uid) != uid {
+		return nil, ErrSourceService
+	}
+	cleanupRoot, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, ErrSourceService
+	}
+	defer cleanupRoot.Close()
+	if opened, err := cleanupRoot.Lstat("."); err != nil || !os.SameFile(opened, info) {
 		return nil, ErrSourceService
 	}
 	ctx, cancel := context.WithTimeout(ctx, config.Session.Limits.Timeout)
@@ -85,11 +93,8 @@ func serveSourceSocket(ctx context.Context, config SourceReaderConfig, verifier 
 		if listener != nil {
 			_ = listener.Close()
 		}
-		if current, err := os.Lstat(endpoint.Socket); err == nil && socketInfo != nil && os.SameFile(current, socketInfo) {
-			_ = os.Remove(endpoint.Socket)
-		}
-		if current, err := os.Lstat(directory); err == nil && os.SameFile(current, dirInfo) {
-			_ = os.Remove(directory) // only empty owned directory, never recursive
+		if cleanupSourceEndpoint(cleanupRoot, filepath.Base(directory), dirInfo, socketInfo, nil) != nil && serveErr == nil {
+			serveErr = ErrSourceService
 		}
 	}()
 	listener, err = net.ListenUnix("unix", &net.UnixAddr{Name: endpoint.Socket, Net: "unix"})
