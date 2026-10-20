@@ -61,6 +61,11 @@ limitations, never evidence of clean code. Candidate hooks and instructions are
 inert data. The reader must run as a separate identity outside the provider
 worker, without provider/GitHub credentials.
 
+[Snapshot evidence](SNAPSHOT-EVIDENCE.md) builds the trusted changed-path packet
+and diff-line map without checkout or fetching. It binds both to the exact
+SQLite-admitted packet and carries controller-observed omissions into reader
+coverage, fake review, recovery and rendering.
+
 `AuthStore` on Linux/macOS serializes trusted local state updates and per-phase
 profile leases with a cross-process lock. A durable profile journal survives
 controller loss, blocks stale seed reuse and commits returned credentials only
