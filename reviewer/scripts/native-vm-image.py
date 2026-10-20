@@ -170,7 +170,7 @@ def main():
     output.mkdir(mode=0o700, parents=False, exist_ok=False)
     # Capture QEMU's named runtime dependencies before any native launch. The
     # helper remains an original root-owned host bootstrap prerequisite.
-    subprocess.run([sys.executable, str(Path(__file__).with_name("native-vm-runtime.py")),
+    subprocess.run([sys.executable, "-B", str(Path(__file__).with_name("native-vm-runtime.py")),
                     "--qemu", str(args.qemu), "--qemu-sha256", args.qemu_sha256,
                     "--namespace-helper", str(args.namespace_helper),
                     "--namespace-helper-sha256", args.namespace_helper_sha256,
