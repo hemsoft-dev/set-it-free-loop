@@ -30,8 +30,8 @@ type nativeRuntimeRoot struct {
 
 const nativeRuntimeDirectory = "qemu-runtime"
 
-func prepareNativeRuntime(parentPath string, input io.Reader, program VMAssetPin) (_ *nativeRuntimeRoot, result error) {
-	if !filepath.IsAbs(parentPath) || filepath.Clean(parentPath) != parentPath || privateDirectory(parentPath) != nil {
+func prepareNativeRuntime(parentPath string, input io.Reader, program VMAssetPin, programData io.Reader) (_ *nativeRuntimeRoot, result error) {
+	if programData == nil || !filepath.IsAbs(parentPath) || filepath.Clean(parentPath) != parentPath || privateDirectory(parentPath) != nil {
 		return nil, fmt.Errorf("%w: parent qualification", ErrNativeRuntime)
 	}
 	parent, err := os.OpenRoot(parentPath)
@@ -64,7 +64,7 @@ func prepareNativeRuntime(parentPath string, input io.Reader, program VMAssetPin
 			return nil, fmt.Errorf("%w: mountpoint creation", ErrNativeRuntime)
 		}
 	}
-	manifest, err := streamNativeRuntime(input, program, func(file nativeRuntimeFile, body io.Reader) error {
+	writeFile := func(file nativeRuntimeFile, body io.Reader) error {
 		parts := strings.Split(filepath.Dir(file.Path), "/")
 		for index := range parts {
 			prepared.directories[strings.Join(parts[:index+1], "/")] = true
@@ -76,22 +76,28 @@ func prepareNativeRuntime(parentPath string, input io.Reader, program VMAssetPin
 		if err != nil {
 			return ErrNativeRuntime
 		}
-		_, copyErr := io.Copy(output, body)
+		hash := sha256.New()
+		count, copyErr := io.Copy(output, io.TeeReader(io.LimitReader(body, file.Bytes+1), hash))
 		syncErr := output.Sync()
 		closeErr := output.Close()
-		if copyErr != nil || syncErr != nil || closeErr != nil {
+		if copyErr != nil || syncErr != nil || closeErr != nil || count != file.Bytes || hex.EncodeToString(hash.Sum(nil)) != file.SHA256 {
 			return ErrNativeRuntime
 		}
 		mode := os.FileMode(0444)
-		if file.Path == "lib64/ld-linux-x86-64.so.2" {
+		if file.Path == "lib64/ld-linux-x86-64.so.2" || file.Path == "qemu" {
 			mode = 0555
 		}
 		return root.Chmod(file.Path, mode)
-	})
+	}
+	manifest, err := streamNativeRuntime(input, program, writeFile)
 	if err != nil {
 		return nil, fmt.Errorf("%w: artifact stream", ErrNativeRuntime)
 	}
-	prepared.files = manifest.Files
+	programFile := nativeRuntimeFile{Path: "qemu", SHA256: program.SHA256, Bytes: program.Bytes}
+	if writeFile(programFile, programData) != nil {
+		return nil, fmt.Errorf("%w: program copy", ErrNativeRuntime)
+	}
+	prepared.files = append(manifest.Files, programFile)
 	for dir := range prepared.directories {
 		if root.Chmod(dir, 0555) != nil {
 			return nil, fmt.Errorf("%w: directory hardening", ErrNativeRuntime)

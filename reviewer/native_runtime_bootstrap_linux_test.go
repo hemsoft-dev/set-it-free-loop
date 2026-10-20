@@ -4,6 +4,7 @@ package reviewer
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -28,7 +29,14 @@ func TestNativeRuntimeOptInCapturedNamespaceLaunch(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer input.Close()
-	prepared, err := prepareNativeRuntime(nativeRuntimePrivateParent(t), input, pin)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	qemu, err := sealVMAsset(ctx, VMBootAsset{os.Getenv("SFL_NATIVE_RUNTIME_QEMU_PATH"), pin.SHA256, pin.Bytes}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer qemu.Close()
+	prepared, err := prepareNativeRuntime(nativeRuntimePrivateParent(t), input, pin, io.NewSectionReader(qemu, 0, pin.Bytes+1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,18 +54,11 @@ func TestNativeRuntimeOptInCapturedNamespaceLaunch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	helper, err := retainNativeBootstrap(ctx, VMBootAsset{helperPath, os.Getenv("SFL_NATIVE_RUNTIME_HELPER_SHA256"), helperBytes})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer helper.Close()
-	qemu, err := sealVMAsset(ctx, VMBootAsset{os.Getenv("SFL_NATIVE_RUNTIME_QEMU_PATH"), pin.SHA256, pin.Bytes}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer qemu.Close()
 	inert, err := os.Open(os.DevNull)
 	if err != nil {
 		t.Fatal(err)

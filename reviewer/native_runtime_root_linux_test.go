@@ -23,7 +23,7 @@ func nativeRuntimePrivateParent(t *testing.T) string {
 func TestNativeRuntimePreparesOnlyVerifiedReadOnlyFilesAndRemovesOwnedTree(t *testing.T) {
 	m, body := nativeRuntimeFixture(t)
 	parent := nativeRuntimePrivateParent(t)
-	r, err := prepareNativeRuntime(parent, bytes.NewReader(nativeRuntimeFrame(t, m, body)), m.Program)
+	r, err := prepareNativeRuntime(parent, bytes.NewReader(nativeRuntimeFrame(t, m, body)), m.Program, bytes.NewReader([]byte("synthetic QEMU pin")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestNativeRuntimeRejectsCorruptBodiesWithoutRetainingPartialTree(t *testing
 	frame := nativeRuntimeFrame(t, m, body)
 	frame[len(frame)-1] ^= 1
 	parent := nativeRuntimePrivateParent(t)
-	if _, err := prepareNativeRuntime(parent, bytes.NewReader(frame), m.Program); err == nil {
+	if _, err := prepareNativeRuntime(parent, bytes.NewReader(frame), m.Program, bytes.NewReader([]byte("synthetic QEMU pin"))); err == nil {
 		t.Fatal("corrupt archive accepted")
 	}
 	if _, err := os.Lstat(filepath.Join(parent, nativeRuntimeDirectory)); !os.IsNotExist(err) {
@@ -67,13 +67,13 @@ func TestNativeRuntimeNeverAdoptsOrDeletesReplacedDirectory(t *testing.T) {
 	if os.Mkdir(path, 0700) != nil {
 		t.Fatal("setup")
 	}
-	if _, err := prepareNativeRuntime(parent, bytes.NewReader(frame), m.Program); err == nil {
+	if _, err := prepareNativeRuntime(parent, bytes.NewReader(frame), m.Program, bytes.NewReader([]byte("synthetic QEMU pin"))); err == nil {
 		t.Fatal("existing root adopted")
 	}
 	if os.Remove(path) != nil {
 		t.Fatal("setup")
 	}
-	r, err := prepareNativeRuntime(parent, bytes.NewReader(frame), m.Program)
+	r, err := prepareNativeRuntime(parent, bytes.NewReader(frame), m.Program, bytes.NewReader([]byte("synthetic QEMU pin")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestNativeRuntimeDetectsChangedBytesAndUnexpectedFilesBeforeDescriptor(t *t
 	m, body := nativeRuntimeFixture(t)
 	for _, extra := range []bool{false, true} {
 		parent := nativeRuntimePrivateParent(t)
-		r, err := prepareNativeRuntime(parent, bytes.NewReader(nativeRuntimeFrame(t, m, body)), m.Program)
+		r, err := prepareNativeRuntime(parent, bytes.NewReader(nativeRuntimeFrame(t, m, body)), m.Program, bytes.NewReader([]byte("synthetic QEMU pin")))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -132,7 +132,7 @@ func TestNativeRuntimeDetectsChangedBytesAndUnexpectedFilesBeforeDescriptor(t *t
 func TestNativeRuntimeRejectsOpenFIFOWithoutWaitingForItsWriter(t *testing.T) {
 	m, body := nativeRuntimeFixture(t)
 	parent := nativeRuntimePrivateParent(t)
-	r, err := prepareNativeRuntime(parent, bytes.NewReader(nativeRuntimeFrame(t, m, body)), m.Program)
+	r, err := prepareNativeRuntime(parent, bytes.NewReader(nativeRuntimeFrame(t, m, body)), m.Program, bytes.NewReader([]byte("synthetic QEMU pin")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,5 +166,29 @@ func TestNativeRuntimeRejectsOpenFIFOWithoutWaitingForItsWriter(t *testing.T) {
 	}
 	if r.Close() != nil {
 		t.Fatal("cleanup failed")
+	}
+}
+
+func TestNativeRuntimeProgramCopyMustMatchSeparateQEMUPin(t *testing.T) {
+	m, body := nativeRuntimeFixture(t)
+	parent := nativeRuntimePrivateParent(t)
+	if _, err := prepareNativeRuntime(parent, bytes.NewReader(nativeRuntimeFrame(t, m, body)), m.Program, bytes.NewReader([]byte("different QEMU bin"))); err == nil {
+		t.Fatal("foreign executable bytes accepted")
+	}
+	if _, err := os.Lstat(filepath.Join(parent, nativeRuntimeDirectory)); !os.IsNotExist(err) {
+		t.Fatal("failed program copy retained", err)
+	}
+	r, err := prepareNativeRuntime(parent, bytes.NewReader(nativeRuntimeFrame(t, m, body)), m.Program, bytes.NewReader([]byte("synthetic QEMU pin")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(parent, nativeRuntimeDirectory, "qemu")
+	raw, readErr := os.ReadFile(path)
+	info, statErr := os.Stat(path)
+	if readErr != nil || statErr != nil || authHash(raw) != m.Program.SHA256 || info.Mode().Perm() != 0555 {
+		t.Fatal("fixed executable copy differs", readErr, statErr)
+	}
+	if r.Close() != nil {
+		t.Fatal("cleanup")
 	}
 }

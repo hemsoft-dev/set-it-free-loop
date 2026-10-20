@@ -86,6 +86,6 @@ func verifyNativeBootstrap(ctx context.Context, file *os.File, pin VMAssetPin) e
 // helper consumes and closes the mount-source descriptor before QEMU executes;
 // carrying a host directory descriptor into QEMU could escape the new root.
 func nativeRuntimeNamespaceArgs(qemuArgs []string) []string {
-	result := []string{"--unshare-all", "--die-with-parent", "--new-session", "--clearenv", "--setenv", "LANG", "C.UTF-8", "--ro-bind-fd", strconv.Itoa(nativeRuntimeRootFD), "/", "--proc", "/proc", "--dev", "/dev", "--size", "16777216", "--tmpfs", "/tmp", "--chdir", "/", "--argv0", "sfl-native-qemu", "--", "/proc/self/fd/3"}
+	result := []string{"--unshare-all", "--disable-userns", "--die-with-parent", "--new-session", "--clearenv", "--setenv", "LANG", "C.UTF-8", "--ro-bind-fd", strconv.Itoa(nativeRuntimeRootFD), "/", "--proc", "/proc", "--dev", "/dev", "--size", "16777216", "--tmpfs", "/tmp", "--chdir", "/", "--argv0", "sfl-native-qemu", "--", "/qemu"}
 	return append(result, qemuArgs...)
 }
