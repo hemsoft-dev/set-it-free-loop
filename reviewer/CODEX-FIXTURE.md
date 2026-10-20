@@ -82,6 +82,6 @@ Pinned source references:
 - [Direct call routing](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/router.rs#L258-L393), [registry lookup](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/core/src/tools/registry.rs#L576-L584) and [native MCP event mapping](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/exec/src/event_processor_with_jsonl_output.rs#L207-L236).
 
 Telemetry controls are pinned in the [analytics sender](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/analytics/src/client.rs#L314-L324).
-The [Git attribution policy](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/app-server/src/git_attribution/policy.rs#L68-L80)
+The [Git attribution policy](https://github.com/openai/codex/blob/83086188ae0614bd882818ff1aa23f3194962012/codex-rs/ext/git-attribution/src/policy.rs#L54-L101)
 still requires account settings; the retired Git attribution feature flag cannot
 be used as an effective suppression switch.
