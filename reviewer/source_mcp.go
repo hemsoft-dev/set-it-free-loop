@@ -59,17 +59,24 @@ func rpcObject(data []byte, target any) error {
 	}
 	return nil
 }
-func rpcID(id json.RawMessage) bool {
+func rpcIDKey(id json.RawMessage) string {
 	if len(id) == 0 || len(id) > 128 {
-		return false
+		return ""
 	}
-	var s string
-	if json.Unmarshal(id, &s) == nil {
-		return len(s) > 0 && len(s) <= 80
+	var text string
+	if json.Unmarshal(id, &text) == nil {
+		if len(text) == 0 || len(text) > 80 {
+			return ""
+		}
+		return "s:" + text
 	}
-	_, err := strconv.ParseInt(string(id), 10, 64)
-	return err == nil
+	number, err := strconv.ParseInt(string(id), 10, 64)
+	if err != nil {
+		return ""
+	}
+	return "n:" + strconv.FormatInt(number, 10)
 }
+func rpcID(id json.RawMessage) bool { return rpcIDKey(id) != "" }
 func emptyRPCParams(raw json.RawMessage) bool {
 	return len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("{}"))
 }
@@ -145,14 +152,8 @@ func ServeSourceMCP(ctx context.Context, inv Invocation, connection io.ReadWrite
 			if !rpcID(request.ID) {
 				return ErrSourceMCPProtocol
 			}
-			// JSON string escapes denote the same request ID. Decode before tracking.
-			key := string(request.ID)
-			var text string
-			if json.Unmarshal(request.ID, &text) == nil {
-				key = "s:" + text
-			} else {
-				key = "n:" + key
-			}
+			// Normalize string escapes and numeric spellings such as -0/0.
+			key := rpcIDKey(request.ID)
 			if seen[key] {
 				return ErrSourceMCPProtocol
 			}
@@ -325,12 +326,10 @@ func ServeSourceMCP(ctx context.Context, inv Invocation, connection io.ReadWrite
 	return nil
 }
 func sameRPCID(current string, id json.RawMessage) bool {
-	if current == string(id) {
-		return true
-	}
-	var a, b string
-	return json.Unmarshal([]byte(current), &a) == nil && json.Unmarshal(id, &b) == nil && a == b
+	key := rpcIDKey([]byte(current))
+	return key != "" && key == rpcIDKey(id)
 }
+
 func sourceMCPTools() []map[string]any {
 	tool := func(name, description string, properties map[string]any, required []string) map[string]any {
 		return map[string]any{

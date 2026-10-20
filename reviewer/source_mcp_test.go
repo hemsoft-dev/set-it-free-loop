@@ -325,3 +325,17 @@ func TestSourceMCPRejectsCaseAliasesBeforeSourceAccess(t *testing.T) {
 		t.Fatal("case alias bypassed argument schema", r)
 	}
 }
+
+func TestSourceMCPRejectsReusedNumericZeroIDs(t *testing.T) {
+	f := newMCPFixture(t, Codex, DefaultLimits(), nil)
+	f.call(t, `{"jsonrpc":"2.0","id":0,"method":"ping"}`)
+	f.send(t, `{"jsonrpc":"2.0","id":-0,"method":"ping"}`)
+	if f.scan.Scan() {
+		t.Fatal("numeric zero alias reused a request ID")
+	}
+	err := <-f.done
+	f.done <- err
+	if !errors.Is(err, ErrSourceMCPProtocol) {
+		t.Fatal("zero alias not rejected", err)
+	}
+}
