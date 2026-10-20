@@ -40,11 +40,18 @@ new PID/mount/network namespace. It creates synthetic stored ChatGPT account
 bytes in a fresh profile. No real profile, host home, SSH socket or credential
 is mounted. Only a local fake backend is reachable. A local HTTP426 response
 negotiates the same builtin provider's WebSocket attempt down to HTTP; the fixture
-never opens a WebSocket or substitutes a model/provider. Production egress does
-not yet implement that negotiation. The measured account/model/settings metadata
-also needs its own captured budget; the earlier bridge default of four metadata
-requests is below the five observed after telemetry suppression. This fixture
-does not qualify that bridge or increase its budgets.
+never opens a WebSocket or substitutes a model/provider. The actual HTTP intake now passes through `ProviderEgress`, using a fixed
+fixture authority and an explicit fake-only transport to a real local TLS
+backend. The guard handles local426 without forwarding any upgrade. Metadata
+has a ceiling of five and the guard serializes upstream calls with at most four
+intake handlers. Captured Cache-Control and Responses-Lite header names are
+included explicitly; telemetry routes remain absent from the guard policy.
+A stopped private provider receipt must pass `ValidateCompleted` before this
+fixture accepts a report. Counts/policy are retained without auth values.
+
+This qualifies only the captured protocol path through this guard. The local
+HTTP listener and fixed Host mapping stand in for production peer/TLS wiring;
+it is not a production egress, separate-identity or exclusive-network proof.
 
 The fixture requires four or five startup metadata requests and zero telemetry
 requests. The client can omit a second model-list request on a short run. Five

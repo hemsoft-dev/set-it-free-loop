@@ -26,10 +26,14 @@ Default maximums are separate from the engine's session ledger:
 | One response payload | 16 MiB |
 | Total observed request/response payload | 32 MiB |
 | Concurrent upstream requests | 1 |
+| Intake handlers including the active request | 4 |
 | Deadline | The captured phase deadline, at most5minutes |
 
 The supervisor may lower these bounds. Every attempt reserves its request kind
-before reading the body. Every upstream `RoundTrip` is counted before invocation,
+before reading the body. Up to three additional handlers can wait for the
+active request without reading their bodies. Intake overflow cancels the phase;
+waiting observes both the phase and client deadlines. Request budgets are
+reserved when a handler acquires the single forwarding slot. Every upstream `RoundTrip` is counted before invocation,
 including a response loss that may have incurred usage. A provider429 response
 can reach the client, but client retries consume the same finite counters.
 Refresh does not consume an inference slot, and neither count is a session count.
@@ -109,7 +113,7 @@ go -C reviewer test -race -count=1 -run 'TestProviderEgress|TestPublicEgress' ./
 
 Tests exercise real local HTTP/TLS requests for both providers, finite retries,
 auth versus inference budgets, exact/overrun byte caps, hostile routes/headers,
-redirect/compression/trailer denial, incomplete IO, uncertain stop, concurrent
-request cancellation and canary-free audits. A real TLS connection-fault fixture
+redirect/compression/trailer denial, incomplete IO, uncertain stop, serialized concurrent startup, intake overflow
+and cancellation and canary-free audits. A real TLS connection-fault fixture
 confirms that the concrete transport makes no hidden pooled-connection retry.
 DNS tests replace resolver/dialer dependencies and never contact public endpoints.
