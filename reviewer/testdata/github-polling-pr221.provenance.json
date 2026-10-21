@@ -1,0 +1,6 @@
+{
+  "source": "https://api.github.com/repos/hemsoft-dev/set-it-free-loop/pulls/221",
+  "captured_at": "2026-10-21T05:33:06.925047+00:00",
+  "fixture_sha256": "c84dc943659bcb72dc10cd15356b7ae2b043df031e4aa4c88c3742017f12022f",
+  "transformation": "Whitelist identity, state, time and immutable revision metadata; strip body, links, user profile and all unrelated fields. No model or credential data. Source PR is CLOSED; test does not invent an open event."
+}

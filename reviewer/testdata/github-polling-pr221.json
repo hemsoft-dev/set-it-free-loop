@@ -1,0 +1,25 @@
+{
+  "id": 4946596831,
+  "number": 221,
+  "state": "closed",
+  "created_at": "2026-10-21T04:54:18Z",
+  "updated_at": "2026-10-21T05:25:01Z",
+  "user": {
+    "id": 8227352,
+    "type": "User"
+  },
+  "head": {
+    "sha": "81bf8669e29f7333582b62caa3e8e06cec1b2c0e",
+    "ref": "experiment/issue-173-app-picker-20261021",
+    "repo": {
+      "id": 1169772257
+    }
+  },
+  "base": {
+    "sha": "041c89cce041ec22c868a296f729265c5d14e10c",
+    "ref": "main",
+    "repo": {
+      "id": 1169772257
+    }
+  }
+}

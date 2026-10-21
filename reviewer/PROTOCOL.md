@@ -7,6 +7,7 @@ This implements the offline contract for [issue #175](https://github.com/hemsoft
 ## Owner commands
 
 ```text
+@sfl review
 /sfl config mode=adversarial
 /sfl config mode=adversarial rounds=2
 /sfl config mode=claude-only model.claude=default
@@ -17,7 +18,7 @@ This implements the offline contract for [issue #175](https://github.com/hemsoft
 
 Only original, unedited commands whose trusted GitHub author metadata names immutable owner ID `8227352` are accepted. Unknown keys, duplicate assignments, unlisted models, arbitrary flags/endpoints and excessive rounds fail. Non-owner commands are ignored. The parser and configuration functions perform no inference or writes. Reset restores the controller's trusted defaults. Selecting a mode without peer rounds resets the round setting to one unless the command explicitly specifies it.
 
-The durable controller owns command acceptance, acknowledgment intent/marker reconciliation and request ordering. A configuration change affects requests created after its acknowledged version; it does not alter captured running/resumable jobs or trigger review. Cancel fences the generation; replacement work needs a new native request. Source files, PR bodies and model output are never command metadata. An accepted command's durable decision cannot be rewritten by edits or deletion.
+The durable controller owns command acceptance, acknowledgment intent/marker reconciliation and request ordering. A configuration change affects requests created after its acknowledged version; it does not alter captured running/resumable jobs or trigger review. Cancel fences the generation; replacement work needs a fresh authorized `@sfl review` comment or a subsequent automatic head observation. The selected polling-trigger contract is documented in [GITHUB-TRIGGERS.md](GITHUB-TRIGGERS.md). Source files, PR bodies and model output are never command metadata. An accepted command's durable decision cannot be rewritten by edits or deletion.
 
 ## Bounded execution
 

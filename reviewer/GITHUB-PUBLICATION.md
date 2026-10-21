@@ -103,8 +103,9 @@ later complete scan confirms exactly the original write.
 an explicitly constructed reader, with actual App consistency still unqualified.
 Selected-installation credential attestation and private polling/runtime packaging remain [issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176) work. The
 injected read interface does not infer an owner request from a pending username.
-Actual App picker, token scope, GitHub rendering and non-atomic publication race
-qualification remain separate live gates. Owner-disabled Actions and all
+Selected App identity/token scope, new-trigger discovery, GitHub rendering and
+non-atomic publication race qualification remain separate live gates. Native picker
+eligibility is superseded by the [explicit trigger decision](GITHUB-TRIGGERS.md). Owner-disabled Actions and all
 activation restrictions remain unchanged.
 
 GitHub's [pagination guide](https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api#using-link-headers)

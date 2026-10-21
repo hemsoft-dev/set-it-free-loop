@@ -1,5 +1,7 @@
 # Native GitHub discovery
 
+The selected trigger adapter is now [comment and automatic polling discovery](GITHUB-TRIGGERS.md), following Franz's October21 decision. Native picker requests are not a trigger or activation prerequisite. The native-specific reader below is internal historical/reconciliation test support; its constructor is no longer exported. Generic bounded HTTP, pagination and base-tip helpers are reused by the selected adapter.
+
 `GitHubDiscoveryHTTP` implements the publisher's native `Current` and `History`
 reader. It is an explicitly constructed library with a bound SQLite Store and
 an explicit read-only HTTP transport. Tests use local TLS servers with synthetic
@@ -117,9 +119,10 @@ and stable snapshot reads at that request limit. Shorter caller deadlines still
 cancel. Publisher delegates Current/History under the same outer budget.
 
 A platform Date and exhausted pagination are transport evidence, not proof of
-GitHub event linearizability or arbitrary-App native picker support. Actual App
-qualification must establish an acceptable native-history recovery path, including
-lag after submission and the A/B race. It remains a separate live gate. The tests
+GitHub event linearizability or arbitrary-App native picker support. The historical native
+contract would require its own recovery qualification. Native-picker eligibility
+is now superseded; the selected [comment/automatic adapter](GITHUB-TRIGGERS.md)
+must qualify its own discovery and A/B recovery behavior before live use. The tests
 below demonstrate the offline contract; they do not qualify GitHub's consistency
 or account permissions.
 

@@ -63,6 +63,7 @@ func renderOutcome(out Outcome, diffLines map[string]map[int]bool) (Document, er
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "## SFL advisory review\n\nMode: `%s`.\n\n", out.Job.Config.Mode)
+	b.WriteString(triggerDescription(out.Job.Origin))
 	b.WriteString("<details>\n<summary>Reviewed revisions and configuration</summary>\n\n")
 	fmt.Fprintf(&b, "Head: `%s`. Base: `%s`. Merge base: `%s`.\n\nConfiguration: `%s`, version %d. Trusted release: `%s`.\n\n", out.Job.Snapshot.Head, out.Job.Snapshot.Base, out.Job.Snapshot.MergeBase, out.Job.Config.Hash(), out.Job.ConfigVersion, out.Job.Release)
 	b.WriteString("| Provider | Model | CLI version | Authentication |\n| --- | --- | --- | --- |\n")

@@ -8,9 +8,10 @@ storage, runtime activation or live installation evidence.
 This module supplies SQLite state, configuration and request admission, durable
 phase reservations, and a COMMENT review outbox through fake transport seams.
 The explicit [GitHub publication HTTP adapter](GITHUB-PUBLICATION.md) supplies
-COMMENT/ACK writes and whole-document reconciliation. The [native discovery
-reader](GITHUB-DISCOVERY.md) collects request/removal provenance, owner commands
-and live base revisions with an explicitly supplied read transport. It commits
+COMMENT/ACK writes and whole-document reconciliation. The selected [trigger
+reader](GITHUB-TRIGGERS.md) collects authorized `@sfl review` comments, automatic
+PR-open/head observations, owner commands and live base revisions through an
+explicit read transport. It commits
 complete discovery before returning Current so cancellation reaches the local
 dispatch fence. [Snapshot evidence](SNAPSHOT-EVIDENCE.md) collects a bounded
 merge-base diff from trusted immutable Git objects, verifies inline anchors
@@ -33,8 +34,10 @@ with a separately versioned polling schedule row so older state writers cannot
 erase backoff.
 A schema migration is required to change enrollment or trusted defaults.
 
-A qualified transport normalizes complete paginated original commands and native
-request/removal/re-request history into `Discovery`. Creation timestamps are
+A qualified transport normalizes complete paginated original commands and
+comment/automatic provenance into `Discovery`. The [trigger contract](GITHUB-TRIGGERS.md)
+describes the policy epoch, atomic cursor, original comment IDs and observed head
+generations. Native-specific lifecycle details below remain legacy test coverage. Creation timestamps are
 platform timestamps. Partial history defers admission. Command discovery sorts
 by original creation time and ID. Accepted IDs retain their original body hash;
 later edits cannot change them. Late events older than a trusted completed
@@ -42,12 +45,12 @@ cutoff defer reconciliation. Configurations form a FIFO acknowledgment chain.
 Only a confirmed ACK's platform timestamp makes its version effective. Requests
 before it keep the preceding version; equal timestamps defer. Pending ACKs block
 admission. Configuring does not invoke a provider. Cancellation advances the
-generation immediately and requires a new native request for replacement work.
+generation immediately and requires a fresh authorized comment or subsequent head observation for replacement work.
 
 `Admit` captures the job's immutable snapshot, release and config. Only owner
 requests for the exact bot can admit. Duplicate events reuse the captured job;
 retained admission tombstones prevent an old native request from rerunning after
-result retention. Pushes never create request identities. `RunStopped` wraps
+result retention. The selected adapter creates automatic request identities for newly observed heads, including after completion. Base-only movement fences unpublished work without starting a new request. `RunStopped` wraps
 Engine with `DurableReviewer`, reserving each session before work and storing
 validated output before returning. A crash or uncertain failure consumes its
 reservation. Only a trusted before-work failure refunds a session. Resume uses
@@ -105,7 +108,7 @@ pagination, spoofed receipts, reversed discovery, configuration timestamps,
 concurrent SQLite handles, crash session accounting, lease expiration, stale
 base, cancel fencing and the adverse A/B outcome. These are simulated transport
 results. They do not establish subscription support, official-client confinement,
-App picker eligibility, actual GitHub rendering or a successful live alpha.
+selected App/trigger qualification, actual GitHub rendering or a successful live alpha.
 
 Complete `Discover` batches commit commands, native events and the cutoff in one
 SQLite transaction. A newly discovered latest request that is already removed
