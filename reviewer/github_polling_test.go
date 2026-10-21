@@ -69,7 +69,7 @@ func TestGitHubPollingCandidatePagesAreCompleteAndReadOnly(t *testing.T) {
 			}))
 			defer server.Close()
 			base, _ := url.Parse(server.URL)
-			g, err := NewGitHubDiscoveryHTTP(alphaEnrollment(), store, githubFixtureRoute{base, server.Client().Transport, t})
+			g, err := newGitHubDiscoveryHTTP(alphaEnrollment(), store, githubFixtureRoute{base, server.Client().Transport, t})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -134,7 +134,7 @@ func TestGitHubPollingOnlyRepositoryLookup404MarksAccessLost(t *testing.T) {
 			}))
 			defer server.Close()
 			base, _ := url.Parse(server.URL)
-			g, err := NewGitHubDiscoveryHTTP(alphaEnrollment(), store, githubFixtureRoute{base, server.Client().Transport, t})
+			g, err := newGitHubDiscoveryHTTP(alphaEnrollment(), store, githubFixtureRoute{base, server.Client().Transport, t})
 			if err != nil {
 				t.Fatal(err)
 			}

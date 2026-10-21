@@ -922,7 +922,7 @@ func TestPollingRepositoryLookupAccessLossFencesActiveAndPreparedWork(t *testing
 			}))
 			defer server.Close()
 			base, _ := url.Parse(server.URL)
-			httpDiscovery, err := NewGitHubDiscoveryHTTP(alphaEnrollment(), f.store, githubFixtureRoute{base, server.Client().Transport, t})
+			httpDiscovery, err := newGitHubDiscoveryHTTP(alphaEnrollment(), f.store, githubFixtureRoute{base, server.Client().Transport, t})
 			if err != nil {
 				t.Fatal(err)
 			}

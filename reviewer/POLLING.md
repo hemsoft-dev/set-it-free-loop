@@ -1,5 +1,7 @@
 # Private polling lifecycle
 
+The selected adapter is [GitHubTriggerDiscoveryHTTP](GITHUB-TRIGGERS.md), using original `@sfl review` comments plus automatic PR-open/head observations. It never consults native pending reviewers. Native lifecycle examples elsewhere describe retained legacy tests.
+
 `OpenPollingController` composes discovery, SQLite admission, immutable evidence,
 the stopped-worker engine and the publication outbox. It creates no GitHub App,
 acquires no credentials and installs no service. Construction takes an explicit
@@ -34,7 +36,7 @@ never authorize work. A definitive 404 from the enrolled repository lookup
 returns `ErrRepositoryAccessLost`. The controller immediately cancels active
 work and atomically pauses every retained request, advancing its generation.
 Restored access does not unpause those old requests or authorize their prepared
-reviews; a fresh native request is required. Rate limits, transient errors and
+reviews; a fresh authorized comment or subsequent head observation is required. Rate limits, transient errors and
 failed collection pages do not carry that repository-wide access-loss signal.
 Larger histories may require further qualified collection
 and scheduling work; a timeout is not evidence of a clean or complete history.
@@ -54,7 +56,7 @@ failure counts defer. Enrollment/default changes still require explicit migratio
    configuration can be acknowledged before its first request. Union these with
    retained PRs and inspect an active worker's scope first. Reject foreign,
    duplicate or oversized candidate inventories.
-3. Retrieve complete native provenance/commands and stable snapshots. Commit a
+3. Retrieve complete trigger provenance/commands and stable snapshots. Commit a
    complete batch transactionally, then cancel a locally fenced worker. Access,
    closed-state or revision changes pause the old request; they do not create
    replacement inference. Empty pending state alone never removes history.
@@ -63,7 +65,7 @@ failure counts defer. Enrollment/default changes still require explicit migratio
    command acknowledgments are limited to one new ACK per cycle; remaining ACKs
    defer admission. Prune only records already eligible under retention policy.
 5. If no physical invocation or unresolved durable lease exists, select the
-   oldest runnable job or native owner request. For a new request, capture source
+   oldest runnable job or authorized comment/automatic request. For a new request, capture source
    and reobserve before admission. Restore the exact SQLite-returned packet
    against its immutable Git inventory before invoking the qualified runtime
    factory. Existing queued/completed jobs use restoration without recapture.
@@ -79,7 +81,7 @@ failure counts defer. Enrollment/default changes still require explicit migratio
 Candidate enumeration uses the [documented open default for GitHub's PR list](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests),
 with strict same-collection pagination and explicit repository-ID validation.
 Listing author names or pending users cannot establish requester provenance.
-`PollScope` returns the complete native batch for the controller's transaction;
+`PollScope` returns the complete trigger batch for the controller's transaction;
 the publisher's `Current` still commits discovery before returning. The local
 HTTP tests exercise real TLS transport, pagination and hostile responses. Actual
 App history consistency remains a separate qualification gate.

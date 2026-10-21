@@ -96,7 +96,7 @@ It selects no production worker or credentials.
 ## Remaining live gates
 
 Applicable public-target subscription support, account-specific entitlements and
-overflow controls, new native-App eligibility, externally enforced isolation,
+overflow controls, the selected App identity and trigger discovery, externally enforced isolation,
 qualified official-client transport, tool/resource enforcement and explicit
 owner activation remain required. If a client cannot remove a forbidden
 capability, record it blocked; do not weaken the contract or declare v1 complete.
@@ -119,3 +119,5 @@ sealed descriptors. The explicit fake-only KVM boot fixture checks the live
 executable and independent guest/host receipts. Native VM payload/grant, client,
 code-host, auth and egress composition remain source work; this is not a worker
 activation path or production isolation qualification.
+
+The selected [polling triggers](GITHUB-TRIGGERS.md) are authorized `@sfl review` comments plus automatic PR-open/head observations. The [model-free App report](../docs/research/2026-10-21-model-free-app-eligibility.md) records the native-picker experiment and Franz's replacement decision. No daemon or inference was activated.
