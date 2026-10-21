@@ -7,43 +7,6 @@
     "visibility": "public"
   },
   "authority": "Franz authorized model-free experiment October20,2026 at20:28 Eastern; relayed by Chief in current task. Labels216/217 already merged.",
-  "preflight": {
-    "checked_at_utc": "2026-10-21T05:01:22.156297+00:00",
-    "checked_at_eastern": "2026-10-21T01:01:22.156362-04:00",
-    "scope": "explicitly authorized model-free experiment only",
-    "app": {
-      "id": 5406096,
-      "slug": "hemsoft-sfl-reviewer",
-      "owner": "hemsoft-dev",
-      "permissions": {
-        "contents": "read",
-        "metadata": "read",
-        "pull_requests": "write"
-      },
-      "events": [],
-      "html_url": "https://github.com/apps/hemsoft-sfl-reviewer"
-    },
-    "installation": {
-      "id": 173628126,
-      "app_id": 5406096,
-      "repository_selection": "selected",
-      "repository_count": 1,
-      "repository_id": 1169772257
-    },
-    "bot": {
-      "id": 345646943,
-      "login": "hemsoft-sfl-reviewer[bot]",
-      "type": "Bot"
-    },
-    "actor": {
-      "id": 8227352,
-      "login": "HemSoft"
-    },
-    "actions_enabled": false,
-    "workflows": 0,
-    "model_requests": 0,
-    "credential_values_retained": false
-  },
   "fixture": {
     "pr": 221,
     "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/221",
@@ -83,7 +46,14 @@
         }
       },
       "requested_users_after": [],
-      "request_events_after": []
+      "request_events_after": [],
+      "actor_verification": {
+        "source": "GET /user under task-bound HemSoft credentials, checked immediately before writing this mutation intent and executing its GraphQL request",
+        "recorded_before_dispatch_at": "2026-10-21T04:59:50.710473+00:00",
+        "timestamp_semantics": "Intent timestamp bounds the preceding GET /user verification; no separate GET response timestamp retained. Actor is from GET /user, not the mutation response.",
+        "intent_receipt_sha256": "8539031350f19362d370a5f8e9effc12c2553b561347d7ff20caf613a95c887d",
+        "executor_sha256": "e142c0b48ca4fa300e5cda9cb1c8c29abb69668419d14f4dd6bd78e7fe25ef4a"
+      }
     },
     {
       "method": "requestReviews",
@@ -117,7 +87,14 @@
         }
       },
       "requested_users_after": [],
-      "request_events_after": []
+      "request_events_after": [],
+      "actor_verification": {
+        "source": "GET /user under task-bound HemSoft credentials, checked immediately before writing this mutation intent and executing its GraphQL request",
+        "recorded_before_dispatch_at": "2026-10-21T04:59:52.188768+00:00",
+        "timestamp_semantics": "Intent timestamp bounds the preceding GET /user verification; no separate GET response timestamp retained. Actor is from GET /user, not the mutation response.",
+        "intent_receipt_sha256": "e281664b45de3bb89a7b8b22d96050ed986e0a7084b2681c5020ee57dd03cb75",
+        "executor_sha256": "e142c0b48ca4fa300e5cda9cb1c8c29abb69668419d14f4dd6bd78e7fe25ef4a"
+      }
     }
   ],
   "comment": {
@@ -315,5 +292,54 @@
   "inference_requests": 0,
   "replacement_trigger_selected": false,
   "credential_values_in_evidence": false,
-  "cleanup": "Throwaway PR closed unmerged and its feature branch deleted after preserving a private ref/bundle. New App/installation and supplied key files remain as provided; no alpha service deployed."
+  "cleanup": "Throwaway PR closed unmerged and its feature branch deleted after preserving a private ref/bundle. New App/installation and supplied key files remain as provided; no alpha service deployed.",
+  "identity_and_scope_recheck": {
+    "checked_at_utc": "2026-10-21T05:01:22.156297+00:00",
+    "checked_at_eastern": "2026-10-21T01:01:22.156362-04:00",
+    "scope": "explicitly authorized model-free experiment only",
+    "app": {
+      "id": 5406096,
+      "slug": "hemsoft-sfl-reviewer",
+      "owner": "hemsoft-dev",
+      "permissions": {
+        "contents": "read",
+        "metadata": "read",
+        "pull_requests": "write"
+      },
+      "events": [],
+      "html_url": "https://github.com/apps/hemsoft-sfl-reviewer"
+    },
+    "installation": {
+      "id": 173628126,
+      "app_id": 5406096,
+      "repository_selection": "selected",
+      "repository_count": 1,
+      "repository_id": 1169772257
+    },
+    "bot": {
+      "id": 345646943,
+      "login": "hemsoft-sfl-reviewer[bot]",
+      "type": "Bot"
+    },
+    "actor": {
+      "id": 8227352,
+      "login": "HemSoft"
+    },
+    "actions_enabled": false,
+    "workflows": 0,
+    "model_requests": 0,
+    "credential_values_retained": false,
+    "timing_note": "This 01:01:22 EDT recheck occurred after both API mutations. Each route has separate earlier intent evidence written after GET /user and before mutation dispatch."
+  },
+  "replacement_trigger_decision": {
+    "at_eastern": "2026-10-21T01:19:00-04:00",
+    "authority": "Franz via Discord, relayed by Chief in current task",
+    "chosen": [
+      "@sfl review comment by authorized requester",
+      "automatic PR opened and head synchronize, discovered by polling"
+    ],
+    "machine_user": false,
+    "live_activation_authorized": false,
+    "implementation_status": "offline implementation authorized; pending"
+  }
 }
