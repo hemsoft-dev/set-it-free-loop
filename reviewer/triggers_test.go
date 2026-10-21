@@ -639,3 +639,85 @@ func TestPollingTriggersAccessLossDoesNotReleaseOldB(t *testing.T) {
 		t.Fatal("restored access reused an old request", pr)
 	}
 }
+
+func TestPollingTriggersSameSecondPublicationReleasesKnownB(t *testing.T) {
+	c, f, calls := pollControllerFixture(t, nil)
+	setTriggerPolling(t, c, f)
+	if _, err := pollOnce(t, c); err != nil {
+		t.Fatal(err)
+	}
+	awaitPollWorker(t, c)
+	a := writes(t, f.store, "review")[0]
+	f.onPost = func(f *pollingFixture) {
+		f.remote.Snapshot.Head = f.remote.Snapshot.Base
+		f.remote.Snapshot.MergeBase = f.remote.Snapshot.Base
+	}
+	// Dispatch in the initial observation's clock second. B is causally newer
+	// because its head is observed after A, despite identical platform seconds.
+	if err := c.options.Publisher.Dispatch(context.Background(), a.ID); !errors.Is(err, ErrDeferred) {
+		t.Fatal(err)
+	}
+	f.onPost = nil
+	d, _ := f.store.Snapshot(context.Background())
+	pr := d.PRs[alphaScope().key()]
+	if len(pr.Requests) != 2 || !pr.Requests[0].CreatedAt.Equal(pr.Requests[1].CreatedAt) {
+		t.Fatal("fixture did not share a platform second", pr.Requests)
+	}
+	f.clock.Advance(time.Second)
+	result, err := pollOnce(t, c)
+	if err != nil || !result.Active {
+		t.Fatal("known same-second B stranded", result, err)
+	}
+	awaitPollWorker(t, c)
+	f.clock.Advance(time.Second)
+	if _, err := pollOnce(t, c); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 8 || f.posts != 2 || f.annotations != 1 {
+		t.Fatal("A consumed or replayed B", calls.Load(), f.posts, f.annotations)
+	}
+}
+
+func TestPollingTriggersCanceledCommentCannotSuppressNewHead(t *testing.T) {
+	for _, editedCancel := range []bool{false, true} {
+		t.Run(map[bool]string{false: "original-cancel", true: "edited-cancel"}[editedCancel], func(t *testing.T) {
+			ctx := context.Background()
+			g, f, s := triggerFixture(t)
+			if _, err := g.Current(ctx, alphaScope()); err != nil {
+				t.Fatal(err)
+			}
+			f.mu.Lock()
+			f.through = controlTime.Add(24 * time.Minute)
+			f.snapshot.Head = strings.Repeat("e", 40)
+			cancel := reviewComment(992, controlTime.Add(22*time.Minute))
+			cancel["body"] = "/sfl cancel"
+			if editedCancel {
+				cancel["updated_at"] = controlTime.Add(23 * time.Minute)
+			}
+			f.comments = []map[string]any{reviewComment(991, controlTime.Add(21*time.Minute)), cancel}
+			f.mu.Unlock()
+			state, err := g.Current(ctx, alphaScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "synchronize"
+			if editedCancel {
+				want = "comment"
+			}
+			if state.Request.ID == 0 || state.Request.Origin.Kind != want || state.Request.Snapshot != f.snapshot {
+				t.Fatal("head consumed by canceled comment", state.Request)
+			}
+			id := state.Request.ID
+			f.through = f.through.Add(time.Minute)
+			next, err := g.Current(ctx, alphaScope())
+			if err != nil || next.Request.ID != id {
+				t.Fatal("next unchanged poll lost or replayed request", next, err)
+			}
+			d, _ := s.Snapshot(ctx)
+			pr := d.PRs[alphaScope().key()]
+			if !editedCancel && !state.Request.CreatedAt.After(pr.CancelledThrough) {
+				t.Fatal("automatic request predates cancel", state.Request, pr.CancelledThrough)
+			}
+		})
+	}
+}

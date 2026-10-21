@@ -481,11 +481,11 @@ func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
 		// observed head is causally later than the previous observation even
 		// when GitHub's Date header has the same second. This is not a claim
 		// that numeric remote event IDs order independent manual comments.
-		observedLater := r.Origin != nil && r.Origin.Kind != "comment" && old.ID < r.ID
+		observedLater := requestBefore(old, r)
 		if old.CreatedAt.Equal(r.CreatedAt) && old.ID != r.ID && !observedLater {
 			p.Paused = true
 		}
-		if old.CreatedAt.After(latest.CreatedAt) && !observedLater {
+		if requestBefore(latest, old) {
 			latest = old
 		}
 	}

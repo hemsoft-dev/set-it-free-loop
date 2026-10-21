@@ -1,6 +1,6 @@
 # Comment and automatic polling triggers
 
-Franz selected both triggers on October21,2026 at01:19 EDT, relayed by the Chief:
+Franz selected both triggers on October 21, 2026 at 01:19 EDT, relayed by the Chief:
 an original **`@sfl review`** PR comment and automatic review when a PR opens or
 its head receives a new push (`synchronize`). This replaces native-picker
 assignment. It adds no machine user, webhook, Actions workflow, service, model
@@ -17,7 +17,7 @@ It never reads `requested_reviewers` or native request/removal events.
 
 ## Original commands
 
-Only immutable owner ID8227352 can issue `@sfl review`, `/sfl config ...` and
+Only immutable owner ID 8227352 can issue `@sfl review`, `/sfl config ...` and
 `/sfl cancel`. The review command is the exact entire original comment body;
 quotes, mentions in other text, extra flags, alternate case, PR body text,
 configuration files and model output are not commands. Unknown authors receive
@@ -47,7 +47,8 @@ Base-only movement fences old work and does not create a request. Observed
 A→B→A heads are separate generations; the head hash is not a global dedup key.
 Repeated identical observations cannot rerun a completed or admitted request.
 A fresh manual comment discovered with the same automatic head coalesces into
-one explicit request for that capture.
+one explicit request only when it survives all accepted cancellation commands in
+that batch. A canceled comment cannot suppress the automatic observation.
 
 These are polling observations, not fabricated webhook receipts. `RequestOrigin`
 records the PR's immutable database ID, verified PR author ID with role
@@ -91,7 +92,9 @@ Head/base/generation fences cancel and retire unpublished stale work. The publis
 refreshes this same ledger before and after COMMENT publication and retains its
 existing durable outbox/unknown-POST reconciliation. A's COMMENT never fulfills B.
 If B arrives during A's write, A is superseded and annotated when possible. B may
-run after that known write is reconciled; it does not need a third request. An
+run after that known write is reconciled; it does not need a third request. Serialized automatic observation order also
+releases a known same-second B; independent same-time manual events remain
+ambiguous. An
 unknown A write still blocks release. UI pending-review state is irrelevant.
 Only the publisher holds a scoped write transport; origin metadata gives models
 no credentials or destination control.

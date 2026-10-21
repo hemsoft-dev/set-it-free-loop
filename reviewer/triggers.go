@@ -69,6 +69,21 @@ type TriggerBatch struct {
 	Cursor       TriggerCursor
 }
 
+// requestBefore preserves timestamp ambiguity for independent manual events.
+// Automatic requests additionally have serialized local observation ordering;
+// their numeric IDs are local ledger identities, never remote causal guesses.
+func requestBefore(a, b NativeRequest) bool {
+	if a.ID == b.ID {
+		return false
+	}
+	if a.CreatedAt.Before(b.CreatedAt) {
+		return true
+	}
+	return a.Origin != nil && b.Origin != nil && b.Origin.Kind != "comment" && a.ID < b.ID &&
+		a.Origin.PullID == b.Origin.PullID && a.Origin.PolicyEnabledAt.Equal(b.Origin.PolicyEnabledAt) &&
+		!b.Origin.ObservedAt.Before(a.Origin.ObservedAt)
+}
+
 func triggerStateHash(pr *PRRecord) string { return Digest(pr) }
 func exactReviewComment(c CommandEvent) bool {
 	return c.AuthorID == OwnerID && c.ID > 0 && c.Body == "@sfl review" && !c.CreatedAt.IsZero() && c.CreatedAt.Equal(c.UpdatedAt)
@@ -160,7 +175,7 @@ func applyTriggers(d *DurableState, batch Discovery) error {
 			safe = false
 		}
 		for _, r := range pr.Requests {
-			if r.ID != latest.ID && !r.CreatedAt.Before(latest.CreatedAt) {
+			if r.ID != latest.ID && !requestBefore(r, latest) {
 				safe = false
 			}
 		}
@@ -213,6 +228,22 @@ func buildTriggerBatch(policy TriggerPolicy, scope Scope, saved *PRRecord, pullI
 			cursor.Sequence = prev.Sequence
 		}
 	}
+	cancelledThrough := time.Time{}
+	if saved != nil {
+		cancelledThrough = saved.CancelledThrough
+	}
+	// applyCommands runs before requests. Account for valid, newly discovered
+	// cancellation here too; an earlier review comment cannot absorb a head
+	// observation and then disappear behind that cancellation in the transaction.
+	for _, event := range commands {
+		if known[event.ID] {
+			continue
+		}
+		command, err := ParseCommand(event)
+		if err == nil && command.Action == "cancel" && !event.CreatedAt.After(through) && event.CreatedAt.After(cancelledThrough) {
+			cancelledThrough = event.CreatedAt
+		}
+	}
 	batch := Discovery{Scope: scope, Commands: commands, Through: through, Complete: true, Triggers: &TriggerBatch{PreviousHash: triggerStateHash(saved), Cursor: cursor}}
 	sortCommands(comments)
 	for _, comment := range comments {
@@ -239,7 +270,13 @@ func buildTriggerBatch(policy TriggerPolicy, scope Scope, saved *PRRecord, pullI
 		cursor.Sequence++
 		// A fresh explicit request already targets this captured head. Coalescing the
 		// automatic observation avoids duplicate provider work in the same poll.
-		if len(batch.Requests) == 0 {
+		survivingManual := false
+		for _, request := range batch.Requests {
+			if request.CreatedAt.After(cancelledThrough) {
+				survivingManual = true
+			}
+		}
+		if !survivingManual {
 			origin := RequestOrigin{PolicyEnabledAt: policy.EnabledAt, Kind: kind, PolicyOwnerID: OwnerID, PullID: pullID, ActorID: authorID, ActorRole: "pr_author", EventAt: created, ObservedAt: through, Sequence: cursor.Sequence}
 			if kind == "synchronize" {
 				origin.EventAt = time.Time{}
