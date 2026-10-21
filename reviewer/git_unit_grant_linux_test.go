@@ -64,12 +64,23 @@ func newGitGrantFixture(t *testing.T) gitGrantFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { helper.Close() })
-	artifact := []byte("synthetic pinned artifact; never parsed as runtime by fake unit")
+	runtimeManifest, bodies := gitRuntimeFixture(t)
+	artifact, runtimePins := gitRuntimeFrame(t, runtimeManifest, bodies)
+	runtimeRoot, err := prepareGitRuntime(context.Background(), nativeRuntimePrivateParent(t), bytes.NewReader(artifact), runtimePins, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { runtimeRoot.Close() })
+	runtimeFD, err := runtimeRoot.directoryFD()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { runtimeFD.Close() })
 	filterPin, err := gitFixedFilterPin()
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := gitGrantManifest{1, "isolated-git-acquisition", GitRuntimePins{VMAssetPin{Digest("git"), 1}, VMAssetPin{Digest("http"), 1}, VMAssetPin{gitRawHash(artifact), int64(len(artifact))}}, helperPin, VMAssetPin{f.stubHash, workerInfo.Size()}, filterPin}
+	manifest := gitGrantManifest{2, "isolated-git-acquisition", runtimePins, helperPin, VMAssetPin{f.stubHash, workerInfo.Size()}, filterPin}
 	f.binding.RuntimeHash = Digest(manifest)
 	manifestRaw, _ := json.Marshal(manifest)
 	gitPath := filepath.Join(directory, "git.sock")
@@ -96,7 +107,7 @@ func newGitGrantFixture(t *testing.T) gitGrantFixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { worker.Close() })
-	files := []*os.File{gitGrantSealedData(t, manifestRaw), gitGrantSealedData(t, artifact), helper, worker, filter, broker, writePipe, gitTestPIDFD(t, os.Getpid())}
+	files := []*os.File{gitGrantSealedData(t, manifestRaw), runtimeFD, helper, worker, filter, broker, writePipe, gitTestPIDFD(t, os.Getpid())}
 	f.prepareStart(t)
 	if json.NewEncoder(f.input).Encode(f.binding) != nil {
 		t.Fatal("binding fixture")

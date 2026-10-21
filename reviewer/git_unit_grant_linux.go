@@ -41,7 +41,7 @@ func gitFixedFilterPin() (VMAssetPin, error) {
 }
 func (m gitGrantManifest) valid(binding gitMaterializationBinding) bool {
 	filter, err := gitFixedFilterPin()
-	return err == nil && m.Version == 1 && m.Purpose == "isolated-git-acquisition" && binding.valid() && Digest(m) == binding.RuntimeHash &&
+	return err == nil && m.Version == 2 && m.Purpose == "isolated-git-acquisition" && binding.valid() && Digest(m) == binding.RuntimeHash &&
 		gitRuntimePin(m.Runtime.Git, 64<<20) && gitRuntimePin(m.Runtime.HTTP, 64<<20) && gitRuntimePin(m.Runtime.Artifact, gitRuntimeDataBytes+gitRuntimeManifestBytes+int64(len(gitRuntimeMagic))+4) &&
 		gitRuntimePin(m.NamespaceHelper, 64<<20) && gitRuntimePin(m.Worker, 64<<20) && m.Filter == filter
 }
@@ -83,7 +83,7 @@ func readGitUnitGrant(ctx context.Context, conn *net.UnixConn, binding gitMateri
 	return packet, files, nil
 }
 
-// Bootstrap roles are fixed: manifest, runtime artifact, original namespace
+// Manifest v2 bootstrap roles: manifest, verified runtime directory, original namespace
 // helper, sealed worker, sealed filter, broker directory, export write pipe,
 // original supervisor pidfd. None is a provider or GitHub credential.
 func verifyGitBootstrapGrant(ctx context.Context, binding gitMaterializationBinding, files []*os.File, stubHash string, supervisor GateIdentity) (gitGrantManifest, error) {
@@ -110,7 +110,7 @@ func verifyGitBootstrapGrant(ctx context.Context, binding gitMaterializationBind
 	for _, item := range []struct {
 		index int
 		pin   VMAssetPin
-	}{{0, VMAssetPin{binding.RuntimeHash, int64(len(raw))}}, {1, manifest.Runtime.Artifact}, {4, manifest.Filter}} {
+	}{{0, VMAssetPin{binding.RuntimeHash, int64(len(raw))}}, {4, manifest.Filter}} {
 		file := files[item.index]
 		if verifyGrantedVMAsset(ctx, file, item.pin, 1) != nil {
 			return zero, errGitUnit
@@ -119,6 +119,9 @@ func verifyGitBootstrapGrant(ctx context.Context, binding gitMaterializationBind
 		if err != nil || seals&unix.F_SEAL_EXEC == 0 {
 			return zero, errGitUnit
 		}
+	}
+	if _, err := verifyGitRuntimeDirectory(ctx, files[1], manifest.Runtime); err != nil {
+		return zero, errGitUnit
 	}
 	if verifyNativeBootstrap(ctx, files[2], manifest.NamespaceHelper) != nil || verifyGrantedVMAsset(ctx, files[3], manifest.Worker, 0) != nil {
 		return zero, errGitUnit

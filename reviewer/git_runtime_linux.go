@@ -30,6 +30,7 @@ const gitRuntimeDirectory = "git-runtime"
 const gitRuntimeProgram = "usr/bin/git"
 const gitRuntimeHTTP = "usr/lib/git-core/git-remote-http"
 const gitRuntimeLoader = "lib64/ld-linux-x86-64.so.2"
+const gitRuntimeMetadata = "sfl-runtime.json"
 
 // GitRuntimePins are release inputs. Artifact binds all metadata/library bytes;
 // per-program pins additionally bind the two specific permitted executables.
@@ -333,7 +334,7 @@ func prepareGitRuntime(ctx context.Context, parentPath string, input io.Reader, 
 	if created != nil && created(prepared) != nil {
 		return nil, errGitRuntime
 	}
-	for _, path := range []string{"proc", "dev", "work", "broker"} {
+	for _, path := range []string{"proc", "dev", "work", "tmp", "broker"} {
 		prepared.directories[path] = true
 		if root.Mkdir(path, 0700) != nil {
 			return nil, errGitRuntime
@@ -368,6 +369,30 @@ func prepareGitRuntime(ctx context.Context, parentPath string, input io.Reader, 
 	}
 	prepared.manifest = m
 	prepared.files = append([]nativeRuntimeFile(nil), m.Files...)
+	// The host assembles only trusted release bytes. The bootstrap receives
+	// this immutable directory, keeping executables off the noexec candidate
+	// tmpfs. Metadata lets it reconstruct and verify the original artifact hash.
+	metadata, err := json.Marshal(m)
+	if err != nil {
+		return nil, errGitRuntime
+	}
+	for _, file := range gitRuntimeExtraFiles(metadata) {
+		body := []byte{}
+		if file.Path == gitRuntimeMetadata {
+			body = metadata
+		}
+		output, err := root.OpenFile(file.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
+		if err != nil {
+			return nil, errGitRuntime
+		}
+		_, writeErr := output.Write(body)
+		syncErr := output.Sync()
+		closeErr := output.Close()
+		if writeErr != nil || syncErr != nil || closeErr != nil || root.Chmod(file.Path, 0444) != nil {
+			return nil, errGitRuntime
+		}
+		prepared.files = append(prepared.files, file)
+	}
 	for path := range prepared.directories {
 		if root.Chmod(path, 0555) != nil {
 			return nil, errGitRuntime

@@ -2,8 +2,9 @@
 
 These private Linux helpers supply the one-use descriptor handoff for the
 unfinished acquisition factory. They start no service, read no credentials and
-grant no provider or publisher capability. The sealed stub, runtime assembly,
-full helper admission and controller composition remain unfinished. See the
+grant no provider or publisher capability. The fixed executable and bootstrap receiver now exist; aggregate physical
+qualification, full helper admission and controller composition remain
+unfinished. See [bootstrap and entry points](GIT-BOOTSTRAP.md). See the
 [unit owner](GIT-UNIT.md) and [descriptor design research](GIT-WORKER-FD-HANDOFF.md).
 
 ## Transport and fixed roles
@@ -28,20 +29,36 @@ recipient PID/start/boot/invocation identity and manifest hash. Bootstrap and
 worker are the only stages. Unknown fields, duplicate or differently cased
 fields, noncanonical bytes and substituted binding/stage metadata refuse.
 
-The canonical release manifest selects the Git runtime artifact, Git/helper
+Release manifest version2 selects the Git runtime artifact hash, Git/helper
 pins, original namespace helper, sealed worker and fixed payload filter. Its
 hash must equal the binding's RuntimeHash. Bootstrap grants carry exactly:
 
 | Index | Role | Validation |
 | --- | --- | --- |
 | 0 | Canonical manifest | Sealed non-executable bytes, 4 KiB maximum, exact hash/schema |
-| 1 | Runtime artifact | Sealed non-executable bytes, pinned size/hash |
+| 1 | Prepared runtime directory | Exact immutable layout; reconstruct pinned artifact size/hash and all library bytes |
 | 2 | Namespace helper | Retained original root-owned executable, pinned size/hash |
 | 3 | Worker image | Sealed executable, exact unit-owner worker hash and pinned size |
 | 4 | Payload filter | Sealed non-executable bytes matching the fixed compiled policy |
 | 5 | Broker directory | Owned mode0700 directory containing only the two mode0600 sockets and exact used marker |
 | 6 | Export writer | Write end of a pipe |
 | 7 | Supervisor pidfd | Original live supervisor identity and native 64-bit pidfs representation |
+
+Version1 release manifests are rejected. The canonical grant packet stays
+version1 because its fields and durable consumption hashes are unchanged;
+preexisting journal records retain their recovery semantics. The release
+manifest hash in the binding distinguishes the new role contract, alongside
+the pinned worker image. Old artifact descriptors cannot satisfy the directory
+role.
+
+The supervisor prepares only trusted release files outside the candidate
+workspace. An executable directory cannot live on the mandatory `noexec`
+candidate tmpfs. Its canonical metadata and every file reconstruct the original
+artifact framing/hash; fixed empty device mount targets are separately checked.
+The directory must be executable, immutable and contain no extra paths. The
+namespace helper consumes its FD after binding it read-only. Host directory
+FDs never reach Git. This change supplies no writable host fallback for
+candidate objects.
 
 The worker grant carries no descriptors. The factory must separately prove
 runtime format, mounts, helper/library identity, resources, route absence,

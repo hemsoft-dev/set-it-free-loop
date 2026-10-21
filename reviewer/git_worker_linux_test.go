@@ -64,7 +64,11 @@ func TestGitAcquisitionWorkerChild(t *testing.T) {
 
 func gitSealedTestImage(t *testing.T) (*os.File, VMAssetPin) {
 	t.Helper()
-	raw, err := os.ReadFile(os.Args[0])
+	return gitSealExecutableAt(t, os.Args[0])
+}
+func gitSealExecutableAt(t *testing.T, source string) (*os.File, VMAssetPin) {
+	t.Helper()
+	raw, err := os.ReadFile(source)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +113,7 @@ func TestGitAcquisitionWorkerSealedProcessGrantAndExport(t *testing.T) {
 			// Synthetic release metadata. The factory must qualify runtime
 			// files separately; no test dummy is a production release receipt.
 			pin := VMAssetPin{Digest("synthetic"), 1}
-			manifest := gitGrantManifest{1, "isolated-git-acquisition", GitRuntimePins{pin, pin, pin}, pin, imagePin, filterPin}
+			manifest := gitGrantManifest{2, "isolated-git-acquisition", GitRuntimePins{pin, pin, pin}, pin, imagePin, filterPin}
 			binding := gitMaterializationBinding{strings.Repeat("a", 32), Digest("synthetic release"), Digest(manifest), fixture.snapshot}
 			rawManifest, _ := json.Marshal(manifest)
 			manifestFile := gitGrantSealedData(t, rawManifest)

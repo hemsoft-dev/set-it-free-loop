@@ -7,8 +7,9 @@ provider profile. Only the explicit private start method requests a new unit.
 The offline [measured runtime builder](GIT-RUNTIME.md) and namespace startup
 check are available; they do not qualify aggregate acquisition. The private [worker phase](GIT-WORKER.md) now authenticates the supervisor,
 checks its running sealed image, waits for a matching worker grant and performs
-fetch/verify/plain export. Its process fixtures run outside bubblewrap. The public
-production factory, fixed sealed worker executable/entry point, aggregate grant/export
+fetch/verify/plain export. Its process fixtures run outside bubblewrap. The [fixed worker executable/root bootstrap](GIT-BOOTSTRAP.md) also exists;
+actual full-unit inheritance and launch remain unqualified. The public
+production factory, aggregate grant/export
 orchestration, full namespace/mount inspection, concrete helper admission and broker/result
 orchestration remain unfinished.
 

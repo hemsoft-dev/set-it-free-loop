@@ -1,9 +1,9 @@
 # Private Git acquisition worker
 
 October 21, 2026 EDT. This is worker-side source plumbing, not a production
-launcher, qualified factory or live source capability. The sealed executable
-entry point, fixed bootstrap layout, runtime/mount/helper inspection and
-aggregate source publication path remain unfinished. On mini, the requested
+launcher, qualified factory or live source capability. The [fixed executable and bootstrap layout](GIT-BOOTSTRAP.md) now exist.
+Independent runtime/mount/helper inspection and the aggregate source
+publication/controller path remain unfinished. On mini, the requested
 systemd tmpfs and sealed inner bubblewrap exec currently fail. See
 [GIT-LAUNCH-CONSTRAINTS.md](GIT-LAUNCH-CONSTRAINTS.md). No credential, App access,
 model inference or host policy change is involved in these tests.
@@ -14,8 +14,8 @@ hash, a sealed executable matching the manifest and the actual running inode,
 an original supervisor pidfd and a write-only export pipe. It closes the image
 and manifest before any Git child. Its nonblocking, close-on-exec export
 duplicate supports Go poller cancellation even when the receiver stops reading.
-The source files and descriptor numbers are private bootstrap inputs. There is
-no public launcher or model-selectable command/path interface.
+The source files and descriptor numbers are private bootstrap inputs. The fixed process entry point owns explicit inherited roles; there is no
+model-selectable command/path interface or automatic service launcher.
 
 The worker opens a fresh named Unix seqpacket connection and authenticates
 [the supervisor's original kernel identity](GIT-GRANT.md), including across
