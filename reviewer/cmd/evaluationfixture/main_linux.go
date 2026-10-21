@@ -360,7 +360,7 @@ func run(c config) error {
 		}
 		return nil
 	}, Source: func(_ context.Context, q r.EvaluationSourceRequest) (r.EvaluationSource, error) {
-		// Only one case is authorized by this fixture. Remaining19 are explicitly
+		// Only one case is authorized by this fixture. Remaining 19 are explicitly
 		// missing, never padded, scored or silently treated as clean controls.
 		if q.Snapshot.PR != 1 {
 			return r.EvaluationSource{}, r.ErrLiveBlocked

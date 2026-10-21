@@ -68,10 +68,15 @@ profile. If the final database write fails after disposal, retry uses the
 intent, exact returned auth-state hash and absence of a lease. A missing return
 never permits the original seed to substitute for returned credentials.
 
-For native VMs, durable `auth-return-intent.json` and `source-access.json` records
+For native VMs, version 2 `auth-return-intent.json`, `native-request.json` and `source-access.json` records
 bind the original stopped unit, request, capability, manifest, returned auth
-hash and captured receipts. They contain no auth bytes. The host saves them
-before profile disposal. A failed intent write keeps the returned lease.
+hash and captured receipts. The private canonical native request includes the
+captured packet, paths, policy and non-secret profile hints; it contains no auth
+bytes. Recovery validates its full hash separately from the capability hash.
+The host validates stopped provider evidence for the same captured session and
+policy before saving these records and disposing the profile. Invalid source or
+provider evidence, or a failed record write, keeps the returned lease. A malformed source audit cannot
+create a null source receipt or a qualifying intent.
 `NativeVMSupervisor.StoppedAttemptEvidence` reopens those private records;
 `ConfirmReturnedAuth` supplies the typed proof for an already disposed profile.
 Missing, altered, unqualified or legacy receipts remain fenced. Preserve the

@@ -239,8 +239,8 @@ func TestEvaluationRunnerRetiresDisposedNativeReturnWithoutReplay(t *testing.T) 
 
 func TestNativeVMEvaluationHostPersistsIntentBeforeProfileDisposal(t *testing.T) {
 	for _, control := range []bool{false, true} {
-		for _, fault := range []bool{false, true} {
-			t.Run(fmt.Sprintf("control-%t/write-fault-%t", control, fault), func(t *testing.T) {
+		for _, failure := range []string{"none", "intent-write", "malformed-source", "wrong-provider-session"} {
+			t.Run(fmt.Sprintf("control-%t/failure-%s", control, failure), func(t *testing.T) {
 				ctx := context.Background()
 				capability := testSession(Codex)
 				var input *ControlSession
@@ -288,16 +288,27 @@ func TestNativeVMEvaluationHostPersistsIntentBeforeProfileDisposal(t *testing.T)
 				}
 				p.exported = true
 				p.finished = &nativeVMFinished{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), State: "invalid_output", AuthReturn: authWire(t, returned), SourceAudit: nativeHostAuditFixture(t, p.request)}
+				if failure == "malformed-source" {
+					p.finished.SourceAudit = []byte("not a captured source audit")
+				}
 				guest, host := vmSocketPair(t)
 				defer guest.Close()
-				p.bridge, err = startNativeProviderBridge(ctx, capability, p.request.Policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+				bridgeCapability := capability
+				if failure == "wrong-provider-session" {
+					if strings.HasPrefix(bridgeCapability.JobID, "control_") {
+						bridgeCapability.JobID = "control_" + Digest("different provider session")
+					} else {
+						bridgeCapability.JobID = "different_provider_session"
+					}
+				}
+				p.bridge, err = startNativeProviderBridge(ctx, bridgeCapability, p.request.Policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
 					t.Fatal("invalid-output retirement reached upstream")
 					return nil, ErrLiveBlocked
 				}), host)
 				if err != nil {
 					t.Fatal(err)
 				}
-				if fault {
+				if failure == "intent-write" {
 					path := filepath.Join(p.supervisor.supervisor.root, p.request.Binding.LaunchID, "auth-return-intent.json")
 					if os.Mkdir(path, 0700) != nil {
 						t.Fatal("inject host intent failure")
@@ -307,8 +318,17 @@ func TestNativeVMEvaluationHostPersistsIntentBeforeProfileDisposal(t *testing.T)
 				if err == nil || result.review.JobID != "" || result.control != nil {
 					t.Fatal("invalid output exposed report", err)
 				}
-				if fault {
-					if p.authReturned || !errors.Is(err, ErrAuthRecoveryRequired) || !errors.Is(err, ErrProviderAuditPending) {
+				if failure != "none" {
+					pending := ErrProviderAuditPending
+					if failure == "malformed-source" {
+						pending = ErrSourceAuditPending
+						for _, name := range []string{"auth-return-intent.json", "source-access.json", "native-request.json"} {
+							if _, statErr := os.Stat(filepath.Join(p.supervisor.supervisor.root, p.request.Binding.LaunchID, name)); !os.IsNotExist(statErr) {
+								t.Fatal("malformed source persisted a recovery receipt", name, statErr)
+							}
+						}
+					}
+					if p.authReturned || !errors.Is(err, ErrAuthRecoveryRequired) || !errors.Is(err, pending) {
 						t.Fatal("host disposed profile after failed intent", p.authReturned, err)
 					}
 					recovered, recoverErr := store.RecoverProfile(ctx, p.request.Binding)
@@ -327,5 +347,77 @@ func TestNativeVMEvaluationHostPersistsIntentBeforeProfileDisposal(t *testing.T)
 				}
 			})
 		}
+	}
+}
+
+func TestNativeVMEvaluationRecoveryRejectsChangedNativeRequestHash(t *testing.T) {
+	ctx := context.Background()
+	p := evaluationNativePhase(t, testSession(Codex))
+	_, provider := evaluationNativeReturnedProfile(t, p)
+	if Digest(p.request) == Digest(p.request.Session) {
+		t.Fatal("native request and capability are different contracts")
+	}
+	if err := p.persistReturnedAuthIntent(ctx, provider); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.profile.Complete(ctx, p.supervisor); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.supervisor.StoppedAttemptEvidence(ctx, p.request.Binding, p.request.Session); err != nil {
+		t.Fatal("actual request hash did not qualify", err)
+	}
+	path := filepath.Join(p.supervisor.supervisor.root, p.request.Binding.LaunchID, "auth-return-intent.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var intent nativeVMAuthReturnIntent
+	if json.Unmarshal(raw, &intent) != nil {
+		t.Fatal("invalid intent fixture")
+	}
+	originalIntent := append([]byte{}, raw...)
+	intent.RequestHash = Digest("different original native request")
+	raw, _ = json.Marshal(intent)
+	if os.WriteFile(path, raw, 0600) != nil {
+		t.Fatal("cannot mutate request hash")
+	}
+	if _, err := p.supervisor.StoppedAttemptEvidence(ctx, p.request.Binding, p.request.Session); !errors.Is(err, ErrEvaluationRecovery) {
+		t.Fatal("unbound native request hash qualified recovery", err)
+	}
+	if os.WriteFile(path, originalIntent, 0600) != nil {
+		t.Fatal("restore original intent")
+	}
+	requestPath := filepath.Join(filepath.Dir(path), "native-request.json")
+	originalRequest, err := os.ReadFile(requestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedRequest := p.request
+	changedRequest.Paths = []string{"different.go"}
+	changedRaw, _ := json.Marshal(changedRequest)
+	for _, mutation := range []struct {
+		name string
+		raw  []byte
+	}{
+		{"missing", nil}, {"noncanonical", append(append([]byte{}, originalRequest...), ' ')},
+		{"changed-paths", changedRaw}, {"oversized", bytes.Repeat([]byte{' '}, (4<<20)+1)},
+	} {
+		t.Run(mutation.name, func(t *testing.T) {
+			if err := os.Remove(requestPath); err != nil {
+				t.Fatal(err)
+			}
+			if mutation.raw != nil && os.WriteFile(requestPath, mutation.raw, 0600) != nil {
+				t.Fatal("write request mutation")
+			}
+			if _, err := p.supervisor.StoppedAttemptEvidence(ctx, p.request.Binding, p.request.Session); !errors.Is(err, ErrEvaluationRecovery) {
+				t.Fatal("invalid retained request qualified recovery", err)
+			}
+			if os.WriteFile(requestPath, originalRequest, 0600) != nil {
+				t.Fatal("restore retained request")
+			}
+		})
+	}
+	if _, err := p.supervisor.StoppedAttemptEvidence(ctx, p.request.Binding, p.request.Session); err != nil {
+		t.Fatal("restored original request did not qualify", err)
 	}
 }

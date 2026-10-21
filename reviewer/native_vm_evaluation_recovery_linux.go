@@ -17,6 +17,9 @@ type nativeVMAuthReturnIntent struct {
 	RequestHash, ManifestHash, SourceHash, ReturnedAuthHash string
 	Provider                                                *ProviderEvidence
 }
+
+const nativeVMAuthReturnIntentVersion = 2
+
 type NativeVMStoppedAttemptEvidence struct {
 	Binding                      AuthBinding
 	Source                       *SourceAccess
@@ -28,7 +31,7 @@ type NativeVMStoppedAttemptEvidence struct {
 // and before disposing its profile. A failed write leaves the returned lease
 // recoverable. No auth bytes are persisted in the containment directory.
 func (p *nativeVMHostPhase) persistReturnedAuthIntent(ctx context.Context, evidence *ProviderEvidence) error {
-	if p.profile == nil || p.finished == nil || p.finished.Binding != p.request.Binding || p.finished.RequestHash != Digest(p.request) {
+	if p.profile == nil || p.finished == nil || !p.request.valid() || p.finished.Binding != p.request.Binding || p.finished.RequestHash != Digest(p.request) {
 		return ErrProviderAuditPending
 	}
 	p.profile.mu.Lock()
@@ -48,16 +51,28 @@ func (p *nativeVMHostPhase) persistReturnedAuthIntent(ctx context.Context, evide
 		return ErrProviderAuditPending
 	}
 	defer held.close()
-	var source *SourceAccess
 	audit, err := DecodeSourceReaderAudit(p.request.readerConfig(), p.finished.SourceAudit)
-	if err == nil {
-		source = cloneSourceAccess(audit.Access)
+	if err != nil || audit.Access == nil || audit.Access.validate(p.request.Session) != nil {
+		// A null source record cannot later qualify stopped retirement. Keep
+		// the matching returned profile instead of disposing its last evidence.
+		return ErrSourceAuditPending
 	}
+	if evidence.validateStoppedCaptured(p.request.Session.Identity.Provider, p.request.Session.Limits, Digest(p.request.Session)) != nil || Digest(evidence.Policy) != Digest(p.request.Policy) {
+		return ErrProviderAuditPending
+	}
+	source := cloneSourceAccess(audit.Access)
 	sourceRaw, err := json.Marshal(source)
 	if err != nil || len(sourceRaw) > 2<<20 || writeAuth(held.root, "source-access.json", sourceRaw) != nil {
 		return ErrSourceAuditPending
 	}
-	intent := nativeVMAuthReturnIntent{1, p.request.Binding, Digest(p.request), unit.ManifestHash, Digest(source), journal.TransferHash, cloneProviderEvidence(evidence)}
+	// The native request hash covers paths, policy, hints and control input in
+	// addition to the capability. Retain those exact canonical, non-auth bytes
+	// so recovery can verify the full request rather than only its hash shape.
+	requestRaw, err := json.Marshal(p.request)
+	if err != nil || len(requestRaw) > 4<<20 || writeAuth(held.root, "native-request.json", requestRaw) != nil {
+		return ErrProviderAuditPending
+	}
+	intent := nativeVMAuthReturnIntent{nativeVMAuthReturnIntentVersion, p.request.Binding, Digest(p.request), unit.ManifestHash, Digest(source), journal.TransferHash, cloneProviderEvidence(evidence)}
 	raw, err := json.Marshal(intent)
 	if err != nil || len(raw) > 65536 || writeAuth(held.root, "auth-return-intent.json", raw) != nil {
 		return ErrProviderAuditPending
@@ -117,7 +132,19 @@ func (v *NativeVMSupervisor) StoppedAttemptEvidence(ctx context.Context, binding
 		return fail()
 	}
 	canonical, _ := json.Marshal(intent)
-	if !bytes.Equal(raw, canonical) || intent.Version != 1 || intent.Binding != binding || intent.ManifestHash != unit.ManifestHash || !validAuthHash(intent.RequestHash) || !validAuthHash(intent.ReturnedAuthHash) || intent.Provider.validateStoppedCaptured(capability.Identity.Provider, capability.Limits, Digest(capability)) != nil {
+	if !bytes.Equal(raw, canonical) || intent.Version != nativeVMAuthReturnIntentVersion || intent.Binding != binding || intent.ManifestHash != unit.ManifestHash || !validAuthHash(intent.RequestHash) || !validAuthHash(intent.ReturnedAuthHash) || intent.Provider.validateStoppedCaptured(capability.Identity.Provider, capability.Limits, Digest(capability)) != nil {
+		return fail()
+	}
+	requestRaw, err := readNativeEvidenceFile(held.root, "native-request.json", 4<<20)
+	if err != nil {
+		return fail()
+	}
+	var request nativeVMRequest
+	if json.Unmarshal(requestRaw, &request) != nil || !request.valid() || request.Binding != binding || Digest(request.Session) != Digest(capability) || Digest(request) != intent.RequestHash || Digest(request.Policy) != Digest(intent.Provider.Policy) {
+		return fail()
+	}
+	canonical, _ = json.Marshal(request)
+	if !bytes.Equal(requestRaw, canonical) {
 		return fail()
 	}
 	policy := intent.Provider.Policy.ResponsePolicy
