@@ -411,6 +411,56 @@ func TestGitHubCredentialOwnerExpiryAndBackwardClockCloseAdmission(t *testing.T)
 	}
 }
 
+func TestGitHubCredentialOwnerCancellationDuringFinalEligibility(t *testing.T) {
+	for _, request := range []bool{false, true} {
+		t.Run(fmt.Sprint("request-", request), func(t *testing.T) {
+			owner, options, _, _, _ := credentialOwnerFixture(t)
+			if owner.Refresh(context.Background()) != nil {
+				t.Fatal("qualify pair")
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			// Cancel from the clock during the final locked receipt check,
+			// after the earlier context and local eligibility checks passed.
+			checks, cancelAt := 0, 2
+			if request {
+				cancelAt = 3
+			}
+			clock := options.Journal.now
+			options.Journal.now = func() time.Time {
+				checks++
+				if checks == cancelAt {
+					cancel()
+				}
+				return clock()
+			}
+			defer func() { options.Journal.now = clock }()
+			if !request {
+				if owner.Ready(ctx) == nil || ctx.Err() == nil {
+					t.Fatal("canceled final eligibility was accepted")
+				}
+				return
+			}
+			reader := owner.state.current.reader.state
+			inner := reader.inner
+			defer func() { reader.inner = inner }()
+			calls := 0
+			reader.inner = githubResponseTransport(func(q *http.Request) (*http.Response, error) {
+				calls++
+				q.Body.Close()
+				return nil, errors.New("unexpected canceled dispatch")
+			})
+			body := &installationBodyProbe{}
+			q := installationQuery(t, "GET", githubRepoPath).WithContext(ctx)
+			q.Body = body
+			r, err := owner.Reader().RoundTrip(q)
+			if err == nil || r != nil || ctx.Err() == nil || calls != 0 || body.closed != 1 {
+				t.Fatal("canceled final HTTP admission reached transport or leaked body", err, calls, body.closed)
+			}
+		})
+	}
+}
+
 func TestGitHubCredentialOwnerRequestLimitAndDeniedBodyClosure(t *testing.T) {
 	owner, _, reader, _, _ := credentialOwnerFixture(t)
 	if err := owner.Refresh(context.Background()); err != nil {

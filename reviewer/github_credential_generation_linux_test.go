@@ -419,3 +419,69 @@ func TestGitHubCredentialGenerationConcurrentStopRetainsUnreturnedProof(t *testi
 		t.Fatal("completed stop was replayed or could not close")
 	}
 }
+
+func TestGitHubCredentialGenerationStopDeadlineRetainsSingleFlight(t *testing.T) {
+	owner, options, _, _, _ := credentialOwnerFixture(t)
+	if owner.Refresh(context.Background()) != nil {
+		t.Fatal("qualify pair")
+	}
+	pair := owner.state.current
+	g, stopChild, _ := credentialAcquisitionFixture(t, owner)
+	original := g.stopper
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	defer unblock()
+	var calls atomic.Int32
+	g.stopper = func(ctx context.Context) error {
+		if calls.Add(1) == 1 {
+			close(entered)
+			<-release  // Deliberately ignore cancellation to exercise retained ownership.
+			return nil // A late success must not release the generation.
+		}
+		return original(ctx)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Millisecond)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- g.stop(ctx) }()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("stop capability not entered")
+	}
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatal("stop did not return caller deadline", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("unreturned stop capability exceeded caller deadline")
+	}
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 35*time.Millisecond)
+	err := g.stop(ctx2)
+	cancel2()
+	if !errors.Is(err, context.DeadlineExceeded) || calls.Load() != 1 {
+		t.Fatal("timed-out stop proof replayed while still running", err)
+	}
+	ctx3, cancel3 := context.WithTimeout(context.Background(), 35*time.Millisecond)
+	err = owner.Close(ctx3)
+	cancel3()
+	if !errors.Is(err, context.DeadlineExceeded) || credentialPairCleared(pair) {
+		t.Fatal("unreturned stop released tokens", err)
+	}
+	if replacement, err := OpenGitHubCredentialOwner(context.Background(), options); err == nil {
+		replacement.Close(context.Background())
+		t.Fatal("unreturned stop released service lock")
+	}
+	stopChild()
+	unblock()
+	// The first callback has now returned, but its deadline expired before proof.
+	// Only the explicit retry may obtain a fresh, valid stopped result.
+	if err := g.stop(context.Background()); err != nil || calls.Load() != 2 {
+		t.Fatal("late proof released ownership or prevented explicit retry", err, calls.Load())
+	}
+	if owner.Close(context.Background()) != nil || !credentialPairCleared(pair) {
+		t.Fatal("confirmed stopped retry failed to dispose owner")
+	}
+}

@@ -175,7 +175,12 @@ func (g *githubReaderGeneration) stop(ctx context.Context) error {
 		return ownerContextError(phase)
 	case <-g.operation:
 	}
-	defer func() { g.operation <- struct{}{} }()
+	proofOwnsOperation := false
+	defer func() {
+		if !proofOwnsOperation {
+			g.operation <- struct{}{}
+		}
+	}()
 	o := g.owner
 	for {
 		o.mu.Lock()
@@ -202,18 +207,34 @@ func (g *githubReaderGeneration) stop(ctx context.Context) error {
 	if phase.Err() != nil {
 		return ownerContextError(phase)
 	}
-	if g.stopper(phase) != nil || phase.Err() != nil {
+	// A caller may time out while an uncooperative trusted proof is still
+	// running. That proof keeps the serialization token until it returns.
+	// No caller may replay it or release ownership in the meantime.
+	proofOwnsOperation = true
+	result := make(chan error, 1)
+	go func() {
+		defer func() { g.operation <- struct{}{} }()
+		if g.stopper(phase) != nil || phase.Err() != nil {
+			result <- ownerContextError(phase)
+			return
+		}
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		if g.borrows != 0 || o.acquisitions[g.id] != g || o.current != g.pair || phase.Err() != nil {
+			result <- ownerContextError(phase)
+			return
+		}
+		delete(o.acquisitions, g.id)
+		g.released = true
+		g.pair = nil
+		g.stopper = nil
+		o.signal()
+		result <- nil
+	}()
+	select {
+	case err := <-result:
+		return err
+	case <-phase.Done():
 		return ownerContextError(phase)
 	}
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	if g.borrows != 0 || o.acquisitions[g.id] != g || o.current != g.pair {
-		return ErrGitHubCredentialOwner
-	}
-	delete(o.acquisitions, g.id)
-	g.released = true
-	g.pair = nil
-	g.stopper = nil
-	o.signal()
-	return nil
 }

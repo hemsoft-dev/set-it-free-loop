@@ -198,7 +198,7 @@ func (o *githubCredentialOwnerState) Ready(ctx context.Context) error {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if !o.usable() {
+	if !o.usable() || ctx.Err() != nil {
 		return ErrGitHubCredentialOwner
 	}
 	return nil
@@ -315,7 +315,7 @@ func (t *GitHubCredentialRoleTransport) RoundTrip(q *http.Request) (*http.Respon
 	}
 	o := t.owner
 	o.mu.Lock()
-	if !o.usable() || len(o.active) >= 64 {
+	if !o.usable() || len(o.active) >= 64 || q.Context().Err() != nil {
 		o.mu.Unlock()
 		return nil, ErrGitHubCredentialOwner
 	}

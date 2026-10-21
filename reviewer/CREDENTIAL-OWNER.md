@@ -46,7 +46,10 @@ stop capability once at a time under the caller's deadline and a 30-second
 ceiling. Only a successful stopped result releases the generation. A failed,
 uncertain or unreturned stop keeps the credential pair and service lock owned.
 Concurrent stop callers cannot replay the in-progress proof. A later explicit
-stop retry is allowed; there is no automatic credential retry or fallback.
+stop retry is allowed after that proof returns; there is no automatic credential
+retry or fallback. The stop caller returns at its deadline even if the trusted
+capability ignores cancellation. The one in-progress proof retains ownership
+until it returns. Its late success cannot release an expired stop operation.
 Close cancels the acquisition and waits for this ownership to be released. It
 cannot turn cancellation into physical-stop proof.
 
