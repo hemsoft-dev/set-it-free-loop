@@ -122,6 +122,14 @@ path and actual cgroup/hierarchy, with stable manager, boot, fixed properties
 and repeated observations. A pending job must be that same accepted job. A
 missing or failed birth write never arms a grant or repeats the start.
 
+The accepted start is asynchronous. Birth capture waits within the existing
+manager/caller deadline for that job's initially empty invocation or cgroup to
+materialize. An all-zero invocation is pending, never an admitted identity.
+Only the same accepted pending job and an absent cgroup directory permit a
+bounded observation retry. Fixed-property, permission and identity failures
+refuse immediately. Once observed, its object path, nonzero invocation and
+cgroup path cannot change while waiting. No observation retry resends StartGit.
+
 If that bound unit later fails, a separate early-stop path requires the original
 manager and boot, all fixed unit properties, no pending job, no MainPID, and a
 terminal state. It uses the original recorded cgroup, requires it empty, then

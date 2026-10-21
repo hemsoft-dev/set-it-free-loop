@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -215,5 +216,50 @@ func TestGitGenerationReaderExchangeFailureRetiresOnlyHTTPBorrow(t *testing.T) {
 	stopChild()
 	if g.stop(context.Background()) != nil || owner.Close(context.Background()) != nil {
 		t.Fatal("failure cleanup did not retain explicit physical-stop path")
+	}
+}
+
+func TestGitGenerationReaderPreservesActualInnerDeadline(t *testing.T) {
+	if os.Getenv("SFL_GIT_FIXED_TIMEOUT") != "1" {
+		t.Skip("explicit 90-second fixed exchange timeout integration")
+	}
+	owner, _, _, _, _ := credentialOwnerFixture(t)
+	if owner.Refresh(context.Background()) != nil {
+		t.Fatal("qualify pair")
+	}
+	g, err := owner.retainReaderGeneration(context.Background(), func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if g.stop(context.Background()) != nil {
+			t.Error("retire synthetic stopped generation")
+		}
+	}()
+	pair := owner.state.current
+	inner := pair.reader.state.inner
+	defer func() { pair.reader.state.inner = inner }()
+	calls := 0
+	pair.reader.state.inner = githubResponseTransport(func(q *http.Request) (*http.Response, error) {
+		calls++
+		deadline, ok := q.Context().Deadline()
+		remaining := time.Until(deadline)
+		if !ok || remaining < 89*time.Second || remaining > 90*time.Second {
+			t.Fatal("not the production fixed inner timeout", remaining)
+		}
+		t.Log("entered fixed inner deadline; no production bound was shortened")
+		<-q.Context().Done()
+		return nil, q.Context().Err()
+	})
+	reader := &gitGenerationReader{g}
+	body, err := reader.Exchange(context.Background(), GitHubGitReadRequest{Operation: GitHubGitAdvertisement})
+	if body != nil || !errors.Is(err, ErrGitHubGitRead) || !errors.Is(err, context.DeadlineExceeded) || calls != 1 || g.ctx.Err() != nil {
+		t.Fatal("inner deadline was lost or confused with generation expiry", err, calls, g.ctx.Err())
+	}
+	owner.state.mu.Lock()
+	active, owned := len(owner.state.active), len(owner.state.acquisitions)
+	owner.state.mu.Unlock()
+	if active != 0 || owned != 1 {
+		t.Fatal("inner timeout leaked HTTP borrow or released whole generation", active, owned)
 	}
 }

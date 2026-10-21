@@ -4,8 +4,10 @@ package reviewer
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 )
@@ -29,29 +31,84 @@ func (e gitUnitBirthEvidence) valid(r gitUnitRecord) bool {
 	return err == nil && n != 0 && strconv.FormatUint(n, 10) == id && e.StartJob == r.StartJob && e.Unit.valid(r.Unit)
 }
 
-func gitBirthObservation(r gitUnitRecord, v unitObservation) bool {
+func gitBirthProperties(r gitUnitRecord, v unitObservation) bool {
 	job := v.Job
 	v.Job = unitJob{}
+	// StartTransientUnit installs fixed properties before activation assigns
+	// an invocation/cgroup. Check policy independently of that pending state.
+	v.InvocationID = strings.Repeat("a", 32)
 	if !expectedGitUnit(r, v) {
 		return false
 	}
-	return job.ID == 0 || string(job.Path) == r.StartJob && strings.HasSuffix(r.StartJob, "/"+strconv.FormatUint(uint64(job.ID), 10))
+	return job.ID == 0 && (job.Path == "" || job.Path == "/") || string(job.Path) == r.StartJob && strings.HasSuffix(r.StartJob, "/"+strconv.FormatUint(uint64(job.ID), 10))
+}
+
+func gitBirthObservation(r gitUnitRecord, v unitObservation) bool {
+	return gitBirthProperties(r, v) && gitQuarantineHex(v.InvocationID, 32) && v.InvocationID != strings.Repeat("0", 32) && validUnitCgroup(v.ControlGroup, r.Unit)
 }
 
 // Fresh-start only, before WaitJob/root capture. The accepted job and original
 // manager bind the observed unit; the durable receipt survives a later failed
 // job or crash. A missing receipt is never reconstructed during recovery.
 func (o *gitUnitOwner) captureBirth(ctx context.Context, r gitUnitRecord) (gitUnitRecord, error) {
+	if ctx == nil {
+		return r, errGitUnit
+	}
+	ctx, cancel := boundedManagerContext(ctx)
+	defer cancel()
 	if ctx.Err() != nil || !r.Started || r.StartJob == "" || r.Birth != nil || r.Captured || r.Revoked || r.Stopped || r.ManagerOwner != o.manager.Owner() {
 		return r, errGitUnit
 	}
-	before, err := o.manager.Observe(ctx, r.Unit)
-	if err != nil || !gitBirthObservation(r, before) {
-		return r, errGitUnit
-	}
-	group, err := o.kernel.Capture(before.ControlGroup, r.Unit)
-	if err != nil || group.Path != before.ControlGroup {
-		return r, errGitUnit
+	var before unitObservation
+	var group cgroupBinding
+	var path dbus.ObjectPath
+	var invocation, controlGroup string
+	for {
+		if ctx.Err() != nil || r.ManagerOwner != o.manager.Owner() {
+			return r, errGitUnit
+		}
+		var err error
+		before, err = o.manager.Observe(ctx, r.Unit)
+		if err != nil || !gitBirthProperties(r, before) || !strings.HasPrefix(string(before.Path), "/org/freedesktop/systemd1/unit/") || path != "" && path != before.Path {
+			return r, errGitUnit
+		}
+		path = before.Path
+		pending := before.Job.ID != 0 && (before.ActiveState == "activating" || before.ActiveState == "inactive")
+		missingInvocation := before.InvocationID == "" || before.InvocationID == strings.Repeat("0", 32)
+		missingGroup := before.ControlGroup == ""
+		if !missingInvocation && !gitQuarantineHex(before.InvocationID, 32) || !missingGroup && !validUnitCgroup(before.ControlGroup, r.Unit) || invocation != "" && invocation != before.InvocationID || controlGroup != "" && controlGroup != before.ControlGroup {
+			return r, errGitUnit
+		}
+		if !missingInvocation {
+			invocation = before.InvocationID
+		}
+		if !missingGroup {
+			controlGroup = before.ControlGroup
+		}
+		if !missingInvocation && !missingGroup {
+			group, err = o.kernel.Capture(before.ControlGroup, r.Unit)
+			if err == nil {
+				if group.Path != before.ControlGroup {
+					return r, errGitUnit
+				}
+				break
+			}
+			// Only an absent directory for this same accepted pending job is
+			// initialization. Policy/permission/identity failures are terminal.
+			if !os.IsNotExist(err) {
+				return r, errGitUnit
+			}
+		}
+		if !pending {
+			return r, errGitUnit
+		}
+		timer := time.NewTimer(5 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return r, errGitUnit
+		case <-timer.C:
+		}
 	}
 	birth := gitUnitBirthEvidence{r.StartJob, gitEarlyStopEvidence{before.InvocationID, before.Path, group}}
 	if !birth.valid(r) {

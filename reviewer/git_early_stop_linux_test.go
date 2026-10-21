@@ -276,6 +276,131 @@ func TestGitEarlyStopRecoversPersistedBirthAfterActualOwnerCrash(t *testing.T) {
 	}
 }
 
+type gitBirthInitializingManager struct {
+	gitUnitManager
+	remaining int
+	reads     int
+	observed  chan struct{}
+	once      sync.Once
+}
+
+func (m *gitBirthInitializingManager) Observe(ctx context.Context, unit string) (unitObservation, error) {
+	v, err := m.gitUnitManager.Observe(ctx, unit)
+	m.reads++
+	if m.remaining > 0 {
+		m.remaining--
+		v.InvocationID = strings.Repeat("0", 32)
+		v.ControlGroup = ""
+		v.ActiveState = "activating"
+		v.Job = unitJob{1, "/org/freedesktop/systemd1/job/1"}
+		if m.observed != nil {
+			m.once.Do(func() { close(m.observed) })
+		}
+	}
+	return v, err
+}
+
+type gitBirthDelayedCgroup struct {
+	containmentKernel
+	remaining int
+	reads     int
+}
+
+func (k *gitBirthDelayedCgroup) Capture(group, unit string) (cgroupBinding, error) {
+	k.reads++
+	if k.remaining > 0 {
+		k.remaining--
+		return cgroupBinding{}, os.ErrNotExist
+	}
+	return k.containmentKernel.Capture(group, unit)
+}
+
+func TestGitBirthWaitsForAcceptedJobInitializationWithoutRestart(t *testing.T) {
+	for _, phase := range []string{"properties", "cgroup"} {
+		t.Run(phase, func(t *testing.T) {
+			f := newGitUnitFixture(t)
+			if phase == "properties" {
+				f.owner.manager = &gitBirthInitializingManager{gitUnitManager: f.manager, remaining: 3}
+			} else {
+				f.manager.observation.Job = unitJob{1, "/org/freedesktop/systemd1/job/1"}
+				f.manager.observation.ActiveState = "activating"
+				f.manager.afterWait = func() {
+					if f.manager.observation.Job.ID == 1 {
+						f.manager.observation.Job = unitJob{}
+						f.manager.observation.ActiveState = "active"
+					}
+				}
+				f.owner.kernel = &gitBirthDelayedCgroup{containmentKernel: f.manager.kernel, remaining: 3}
+			}
+			f.prepareStart(t)
+			r, err := f.owner.read(f.binding.Attempt)
+			if err != nil || r.Birth == nil || !r.Captured || !r.StartSettled || f.manager.starts != 1 || r.Birth.Unit.InvocationID == strings.Repeat("0", 32) {
+				t.Fatal("accepted pending job was lost or restarted", r, err)
+			}
+			if f.owner.stop(context.Background(), f.binding) != nil || f.owner.Close() != nil {
+				t.Fatal("initialized unit cleanup")
+			}
+		})
+	}
+}
+
+func TestGitBirthPendingInitializationHonorsCallerCancellation(t *testing.T) {
+	f := newGitUnitFixture(t)
+	if f.owner.prepare(context.Background(), f.binding) != nil {
+		t.Fatal("prepare")
+	}
+	manager := &gitBirthInitializingManager{gitUnitManager: f.manager, remaining: 100000, observed: make(chan struct{})}
+	f.owner.manager = manager
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- f.owner.start(ctx, f.binding, "/private/bootstrap.sock") }()
+	select {
+	case <-manager.observed:
+	case <-time.After(time.Second):
+		t.Fatal("pending start not observed")
+	}
+	cancel()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("uninitialized accepted job succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending initialization ignored cancellation")
+	}
+	r, err := f.owner.read(f.binding.Attempt)
+	if err != nil || !r.Started || r.StartJob == "" || r.Birth != nil || r.Captured || f.manager.starts != 1 || f.owner.Close() == nil {
+		t.Fatal("canceled start lost uncertainty or repeated work", r, err)
+	}
+	f.manager.kernel.boot = "new-boot-for-canceled-initialization-fixture"
+	if f.owner.stop(context.Background(), f.binding) != nil || f.owner.Close() != nil {
+		t.Fatal("explicit fixture recovery")
+	}
+}
+
+func TestGitBirthPendingInitializationRejectsChangedInvocation(t *testing.T) {
+	f := newGitUnitFixture(t)
+	f.manager.observation.Job = unitJob{1, "/org/freedesktop/systemd1/job/1"}
+	f.manager.observation.ActiveState = "activating"
+	manager := &gitEarlyStopChangingManager{gitUnitManager: f.manager, change: func(v *unitObservation) {
+		v.InvocationID = strings.Repeat("d", 32)
+	}}
+	f.owner.manager = manager
+	f.owner.kernel = &gitBirthDelayedCgroup{containmentKernel: f.manager.kernel, remaining: 3}
+	if f.owner.prepare(context.Background(), f.binding) != nil || f.owner.start(context.Background(), f.binding, "/private/bootstrap.sock") == nil {
+		t.Fatal("changed invocation admitted while waiting for its group")
+	}
+	r, err := f.owner.read(f.binding.Attempt)
+	if err != nil || r.Birth != nil || r.Captured || f.manager.starts != 1 || manager.reads != 2 || f.owner.Close() == nil {
+		t.Fatal("pending identity was rebound or uncertain start released", r, err, manager.reads)
+	}
+	f.manager.kernel.boot = "new-boot-for-changed-pending-identity"
+	if f.owner.stop(context.Background(), f.binding) != nil || f.owner.Close() != nil {
+		t.Fatal("explicit changed-boot fixture recovery")
+	}
+}
+
 func TestGitEarlyStopRefusesIncompleteTerminalEvidence(t *testing.T) {
 	for _, kind := range []string{"missing-unit", "manager", "description", "invocation", "pending-job", "active", "populated", "changed-group", "missing-group", "limits", "replacement-before-recovery"} {
 		t.Run(kind, func(t *testing.T) {

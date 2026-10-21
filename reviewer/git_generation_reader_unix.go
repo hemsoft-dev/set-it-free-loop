@@ -42,7 +42,14 @@ func (r *gitGenerationReader) Exchange(ctx context.Context, request GitHubGitRea
 	}
 	// Exchange owns the input body on all paths from this point onward.
 	stream, err := reader.Exchange(phase, request)
-	if err != nil || stream == nil {
+	if err != nil {
+		// The typed exchange already scrubs private transport details and
+		// preserves its own bounded context cause, which can expire before
+		// this outer generation context. Do not recompute from the outer one.
+		finish()
+		return nil, err
+	}
+	if stream == nil {
 		failure := gitReadError(phase)
 		finish()
 		return nil, failure

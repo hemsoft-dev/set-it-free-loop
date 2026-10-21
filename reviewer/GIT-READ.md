@@ -40,6 +40,14 @@ owner retains its HTTP borrow and token pair until Read returns and the actual
 inert process is stopped. Failure tests assert no extra dispatch, closed input,
 scrubbed errors and retained whole-generation ownership.
 
+The wrapper preserves the typed exchange's scrubbed cancellation/deadline
+cause. Its fixed 90-second operation ceiling can expire while the outer
+acquisition remains live; that still matches `context.DeadlineExceeded`.
+`SFL_GIT_FIXED_TIMEOUT=1` enables the separate actual 90-second integration
+test. It is skipped by default to avoid repeating that wait in every full
+suite; its explicit before/after execution is recorded separately. The test
+uses the production timeout and synthetic transport, never a shortened bound.
+
 Tests run the installed Git HTTP client and `git-http-backend` against a synthetic repository. A loopback test bridge selects the typed operation, which authenticates to a real local TLS upstream. The fixture verifies the upstream Basic identity, strips it, and invokes the actual Git backend without the token. Actual protocol v0 and v2 fetches each exercise advertisement and upload-pack, pass full strict fsck and compare every fetched object's raw bytes with its source. Binary blobs and unusual paths are included. The test bridge is not production peer isolation.
 
 Other tests cover protocol/media headers, exact binary request and response preservation, role/operation/context refusal, unchanged REST restrictions, Close and expiry refusal, malformed/ambiguous headers, redirects, auth failures, compressed responses, known and streamed excess bodies, exactly full POST responses, private transport/read/close errors, caller body ownership and cancellation during input and output. Handles and returned bodies redact value, pointer and JSON formatting. Only synthetic credentials and local transports are used. Installed executable and backend provenance are recorded with the mission receipts; the host-specific producer test skips when its backend is unavailable.
