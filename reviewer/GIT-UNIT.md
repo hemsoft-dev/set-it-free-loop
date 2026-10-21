@@ -12,6 +12,22 @@ production factory, fixed sealed worker executable/entry point, aggregate grant/
 orchestration, full namespace/mount inspection, concrete helper admission and broker/result
 orchestration remain unfinished.
 
+The private Git manager start method requires two fixed inherited descriptor
+roles: sealed executable first and the original supervisor pidfd second. The
+owner retains that pidfd from construction until it can close all owned work.
+Closed or substituted supervisor handles fail before durable start intent.
+The generic single-image manager method refuses Git descriptions. The typed
+D-Bus `ExtraFileDescriptors` array is `a(hs)` and preserves the two role names.
+Its intended packed slots are image FD3 and supervisor FD4. Pinned upstream
+[service FD collection](https://github.com/systemd/systemd/blob/b3d8fc43e9cb531d958c17ef2cd93b374bc14e8a/src/core/service.c)
+appends the extra-FD array after socket/store descriptors, and
+[exec setup](https://github.com/systemd/systemd/blob/b3d8fc43e9cb531d958c17ef2cd93b374bc14e8a/src/core/exec-invoke.c)
+packs the selected array and clears CLOEXEC before exec. These fresh units
+request no socket activation or FD store. Physical two-FD
+bootstrap qualification remains outstanding because the full fixed unit fails
+before exec on mini. This source change does not qualify that path or permit
+numeric-PID reopening inside the future bootstrap.
+
 One private service directory and cross-process flock own the pinned sealed
 worker image and at most 128 retained attempt records. Each fresh attempt is a
 spent nonce. A nonterminal attempt blocks preparing another one; missing or

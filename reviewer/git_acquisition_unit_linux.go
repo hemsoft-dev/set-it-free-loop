@@ -33,13 +33,19 @@ type gitUnitRecord struct {
 	WorkerGrantHash                                   string       `json:",omitempty"`
 	WorkerIdentity                                    GateIdentity `json:",omitzero"`
 }
+type gitUnitManager interface {
+	containmentManager
+	StartGit(context.Context, string, string, []string, string, int, int) (string, error)
+}
+
 type gitUnitOwner struct {
 	operation     chan struct{}
 	root          *os.Root
 	lock          *os.File
 	image         *retainedStubImage
 	stubHash      string
-	manager       containmentManager
+	supervisor    *os.File
+	manager       gitUnitManager
 	kernel        containmentKernel
 	rootPIDFDs    map[string]int
 	grantFailed   map[string]bool
@@ -70,6 +76,10 @@ func newGitUnitOwner(ctx context.Context, root, stub, stubHash string, manager c
 	if ctx == nil || ctx.Err() != nil || manager == nil || kernel == nil || manager.Owner() == "" || !filepath.IsAbs(root) || filepath.Clean(root) != root || privateDirectory(root) != nil {
 		return nil, errGitUnit
 	}
+	gitManager, ok := manager.(gitUnitManager)
+	if !ok {
+		return nil, errGitUnit
+	}
 	resolved, err := filepath.EvalSymlinks(root)
 	if err != nil || resolved != root {
 		return nil, errGitUnit
@@ -78,11 +88,14 @@ func newGitUnitOwner(ctx context.Context, root, stub, stubHash string, manager c
 	if err != nil {
 		return nil, errGitUnit
 	}
-	owner := &gitUnitOwner{root: anchored, manager: manager, kernel: kernel, rootPIDFDs: map[string]int{}, grantFailed: map[string]bool{}, grantEligible: map[string]bool{}, operation: make(chan struct{}, 1), stubHash: stubHash}
+	owner := &gitUnitOwner{root: anchored, manager: gitManager, kernel: kernel, rootPIDFDs: map[string]int{}, grantFailed: map[string]bool{}, grantEligible: map[string]bool{}, operation: make(chan struct{}, 1), stubHash: stubHash}
 	owner.operation <- struct{}{}
 	good := false
 	defer func() {
 		if !good {
+			if owner.supervisor != nil {
+				owner.supervisor.Close()
+			}
 			if owner.image != nil {
 				owner.image.Close()
 			}
@@ -117,6 +130,14 @@ func newGitUnitOwner(ctx context.Context, root, stub, stubHash string, manager c
 	}
 	owner.image, err = retainStubImage(root, stub, stubHash)
 	if err != nil {
+		return nil, errGitUnit
+	}
+	fd, err := unix.PidfdOpen(os.Getpid(), 0)
+	if err != nil {
+		return nil, errGitUnit
+	}
+	owner.supervisor = os.NewFile(uintptr(fd), "sfl-git-original-supervisor")
+	if _, err := gitLivePIDFDIdentity(owner.supervisor); err != nil {
 		return nil, errGitUnit
 	}
 	if _, err := owner.records(); err != nil {
@@ -378,6 +399,13 @@ func (o *gitUnitOwner) start(ctx context.Context, binding gitMaterializationBind
 	if err != nil || boot != r.BootID {
 		return errGitUnit
 	}
+	if _, err := gitLivePIDFDIdentity(o.supervisor); err != nil {
+		return errGitUnit
+	}
+	supervisorIdentity, err := processGateIdentity(os.Getpid(), strings.Repeat("0", 32))
+	if err != nil || gitCheckProcessPIDFD(supervisorIdentity, int(o.supervisor.Fd())) != nil {
+		return errGitUnit
+	}
 	r.Started = true
 	// Durable start intent precedes any manager call. No automatic retry follows
 	// a missing reply, failed job or failed receipt write.
@@ -387,7 +415,7 @@ func (o *gitUnitOwner) start(ctx context.Context, binding gitMaterializationBind
 	bounded, cancel := boundedManagerContext(ctx)
 	defer cancel()
 	raw, _ := json.Marshal(binding)
-	job, err := o.manager.Start(bounded, r.Unit, retainedStubExec, []string{retainedStubExec, endpoint, string(raw), Digest(binding), strconv.Itoa(os.Getpid())}, gitUnitDescriptionPrefix+Digest(binding), int(o.image.file.Fd()))
+	job, err := o.manager.StartGit(bounded, r.Unit, retainedStubExec, []string{retainedStubExec, endpoint, string(raw), Digest(binding), strconv.Itoa(os.Getpid())}, gitUnitDescriptionPrefix+Digest(binding), int(o.image.file.Fd()), int(o.supervisor.Fd()))
 	if err != nil {
 		return errGitUnit
 	}
@@ -539,5 +567,5 @@ func (o *gitUnitOwner) Close() error {
 		unix.Close(fd)
 		delete(o.rootPIDFDs, attempt)
 	}
-	return errors.Join(o.image.Close(), o.manager.Close(), o.lock.Close(), o.root.Close())
+	return errors.Join(o.supervisor.Close(), o.image.Close(), o.manager.Close(), o.lock.Close(), o.root.Close())
 }

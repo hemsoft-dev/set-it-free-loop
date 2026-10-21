@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -23,7 +24,11 @@ import (
 
 func TestGitAcquisitionFixedUnitWireIsSeparateAndBounded(t *testing.T) {
 	unit := "sfl-alpha-" + strings.Repeat("a", 32) + ".service"
-	args := []string{retainedStubExec, "/private/git-gate.sock", "fixed binding", Digest("binding"), "123"}
+	args := []string{retainedStubExec, "/private/git-gate.sock", "fixed binding", Digest("binding"), fmt.Sprint(os.Getpid())}
+	supervisor := gitTestPIDFD(t, os.Getpid())
+	image, _ := gitSealedTestImage(t)
+	imageFD := int(image.Fd())
+	supervisorFD := int(supervisor.Fd())
 	calls := 0
 	manager := &dbusContainmentManager{jobs: &systemdJobs{completed: map[string]jobResult{}, changed: make(chan struct{})}, calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, method string, args ...any) ([]any, error) {
 		calls++
@@ -37,6 +42,10 @@ func TestGitAcquisitionFixedUnitWireIsSeparateAndBounded(t *testing.T) {
 				t.Fatal("duplicate property")
 			}
 			values[property.Name] = property.Value
+		}
+		wantFDs := []namedUnitFD{{dbus.UnixFD(imageFD), "sfl-unitstub"}, {dbus.UnixFD(supervisorFD), "sfl-git-supervisor"}}
+		if values["ExtraFileDescriptors"].Signature().String() != "a(hs)" || !reflect.DeepEqual(values["ExtraFileDescriptors"].Value(), wantFDs) {
+			t.Fatal("wrong original descriptor roles/order", values["ExtraFileDescriptors"])
 		}
 		if values["TemporaryFileSystem"].Signature().String() != "a(ss)" || values["RestrictAddressFamilies"].Signature().String() != "(bas)" || values["SystemCallArchitectures"].Signature().String() != "as" || values["SystemCallFilter"].Signature().String() != "(bas)" || values["SystemCallErrorNumber"].Signature().String() != "i" {
 			t.Fatal("wrong typed policy wire")
@@ -54,13 +63,34 @@ func TestGitAcquisitionFixedUnitWireIsSeparateAndBounded(t *testing.T) {
 		}
 		return []any{dbus.ObjectPath("/org/freedesktop/systemd1/job/1")}, nil
 	})}
-	if _, err := manager.Start(context.Background(), unit, retainedStubExec, args, gitUnitDescriptionPrefix+Digest("binding"), 7); err != nil || calls != 1 {
+	if _, err := manager.StartGit(context.Background(), unit, retainedStubExec, args, gitUnitDescriptionPrefix+Digest("binding"), imageFD, supervisorFD); err != nil || calls != 1 {
 		t.Fatal(err, calls)
+	}
+	if _, err := manager.Start(context.Background(), "sfl-alpha-"+strings.Repeat("b", 32)+".service", retainedStubExec, args, gitUnitDescriptionPrefix+Digest("binding"), imageFD); err == nil || calls != 1 {
+		t.Fatal("generic single-FD launch accepted Git")
+	}
+	other := exec.Command("/usr/bin/sleep", "5")
+	if other.Start() != nil {
+		t.Fatal("inert other supervisor")
+	}
+	defer func() { other.Process.Kill(); other.Wait() }()
+	otherFD := gitTestPIDFD(t, other.Process.Pid)
+	regular := gitPacketFile(t)
+	for index, badFD := range []int{-1, imageFD, int(otherFD.Fd()), int(regular.Fd())} {
+		freshUnit := fmt.Sprintf("sfl-alpha-%032x.service", index+1)
+		if _, err := manager.StartGit(context.Background(), freshUnit, retainedStubExec, args, gitUnitDescriptionPrefix+Digest("binding"), imageFD, badFD); err == nil || calls != 1 {
+			t.Fatal("wrong supervisor descriptor reached manager")
+		}
+	}
+	wrongArgs := append([]string(nil), args...)
+	wrongArgs[4] = fmt.Sprint(other.Process.Pid)
+	if _, err := manager.StartGit(context.Background(), "sfl-alpha-"+strings.Repeat("c", 32)+".service", retainedStubExec, wrongArgs, gitUnitDescriptionPrefix+Digest("binding"), imageFD, supervisorFD); err == nil || calls != 1 {
+		t.Fatal("substituted numeric supervisor reached manager")
 	}
 	if _, err := fixedFakeUnitProperties(unit, retainedStubExec, args, gitUnitDescriptionPrefix+Digest("binding"), 7); err == nil {
 		t.Fatal("Git accepted as fake auth payload")
 	}
-	if _, err := fixedGitUnitProperties(unit, retainedStubExec, args, "SFL native VM containment "+Digest("binding"), 7); err == nil {
+	if _, err := fixedGitUnitProperties(unit, retainedStubExec, args, "SFL native VM containment "+Digest("binding"), imageFD, supervisorFD); err == nil {
 		t.Fatal("native identity accepted as Git")
 	}
 }
@@ -173,6 +203,7 @@ func newGitUnitFixture(t *testing.T, grantEndpoint ...string) gitUnitFixture {
 		<-done
 		if owner.Close() != nil {
 			owner.image.Close()
+			owner.supervisor.Close()
 			owner.lock.Close()
 			owner.root.Close()
 			for _, fd := range owner.rootPIDFDs {
@@ -201,6 +232,9 @@ func TestGitAcquisitionUnitDurableCaptureAndWholeStop(t *testing.T) {
 	}
 	if err := f.owner.Close(); err == nil {
 		t.Fatal("live ownership discarded")
+	}
+	if _, err := gitLivePIDFDIdentity(f.owner.supervisor); err != nil {
+		t.Fatal("close discarded supervisor ownership", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Millisecond)
 	defer cancel()
@@ -566,5 +600,39 @@ func TestGitAcquisitionUnitActualOwnerCrashPreservesUncertainStart(t *testing.T)
 	}
 	if f.manager.starts != 0 || f.manager.stops != 1 {
 		t.Fatal("recovery operations changed")
+	}
+}
+
+// Fake manager shares the fixed descriptor/property validation but does not
+// execute a systemd unit. Actual full-unit compatibility remains failed on mini.
+func (m *fakeContainmentManager) StartGit(ctx context.Context, unit, stub string, args []string, description string, imageFD, supervisorFD int) (string, error) {
+	if _, err := fixedGitUnitProperties(unit, stub, args, description, imageFD, supervisorFD); err != nil {
+		return "", err
+	}
+	return m.Start(ctx, unit, stub, args, description, imageFD)
+}
+
+func TestGitAcquisitionRefusesSubstitutedBirthSupervisorBeforeStartIntent(t *testing.T) {
+	for _, kind := range []string{"other-process", "closed-original"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newGitUnitFixture(t)
+			if f.owner.prepare(context.Background(), f.binding) != nil {
+				t.Fatal("prepare")
+			}
+			original := f.owner.supervisor
+			if kind == "other-process" {
+				f.owner.supervisor = gitTestPIDFD(t, f.child.Process.Pid)
+				defer func() { f.owner.supervisor = original }()
+			} else {
+				original.Close()
+			}
+			if f.owner.start(context.Background(), f.binding, "/private/git-gate.sock") == nil || f.manager.starts != 0 {
+				t.Fatal("substituted original supervisor started unit")
+			}
+			record, err := f.owner.read(f.binding.Attempt)
+			if err != nil || record.Started || record.StartJob != "" {
+				t.Fatal("failed preflight wrote start intent", record, err)
+			}
+		})
 	}
 }

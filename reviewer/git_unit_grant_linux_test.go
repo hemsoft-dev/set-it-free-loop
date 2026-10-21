@@ -286,6 +286,7 @@ func TestGitUnitGrantReopeningAndRecaptureCannotRearmOldAttempt(t *testing.T) {
 		unix.Close(fd)
 	}
 	old.image.Close()
+	old.supervisor.Close()
 	old.lock.Close()
 	old.root.Close()
 	old.closed = true
@@ -312,12 +313,12 @@ func TestGitUnitGrantReopeningAndRecaptureCannotRearmOldAttempt(t *testing.T) {
 }
 
 type gitGrantWriteFaultManager struct {
-	containmentManager
+	gitUnitManager
 	fail func()
 }
 
 func (m *gitGrantWriteFaultManager) Observe(ctx context.Context, unit string) (unitObservation, error) {
-	value, err := m.containmentManager.Observe(ctx, unit)
+	value, err := m.gitUnitManager.Observe(ctx, unit)
 	if m.fail != nil {
 		fail := m.fail
 		m.fail = nil
@@ -328,7 +329,7 @@ func (m *gitGrantWriteFaultManager) Observe(ctx context.Context, unit string) (u
 func TestGitUnitGrantPersistenceFailureSendsNothing(t *testing.T) {
 	f := newGitGrantFixture(t)
 	directory := filepath.Join(f.unit.root, gitUnitDirectory(f.unit.binding.Attempt))
-	f.unit.owner.manager = &gitGrantWriteFaultManager{containmentManager: f.unit.manager, fail: func() {
+	f.unit.owner.manager = &gitGrantWriteFaultManager{gitUnitManager: f.unit.manager, fail: func() {
 		if os.Chmod(directory, 0500) != nil {
 			t.Fatal("fault setup")
 		}

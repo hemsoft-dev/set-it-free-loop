@@ -343,10 +343,22 @@ type gitUnitSyscallFilter struct {
 const gitUnitDescriptionPrefix = "SFL Git acquisition "
 const gitUnitTmpfsOptions = "size=268435456,nr_inodes=65536,noswap,nosuid,nodev,noexec,mode=0700"
 
-func fixedGitUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
+func fixedGitUnitProperties(unit, stub string, args []string, description string, imageFD, supervisorFD int) ([]unitProperty, error) {
 	properties, err := fixedPayloadUnitProperties(unit, stub, args, description, imageFD, gitUnitDescriptionPrefix)
 	if err != nil {
 		return nil, err
+	}
+	if imageFD == supervisorFD || supervisorFD < 0 || args[4] != strconv.Itoa(os.Getpid()) {
+		return nil, errGitUnit
+	}
+	identity, identityErr := processGateIdentity(os.Getpid(), strings.Repeat("0", 32))
+	if identityErr != nil || gitCheckProcessPIDFD(identity, supervisorFD) != nil {
+		return nil, errGitUnit
+	}
+	for index := range properties {
+		if properties[index].Name == "ExtraFileDescriptors" {
+			properties[index] = prop("ExtraFileDescriptors", []namedUnitFD{{dbus.UnixFD(imageFD), "sfl-unitstub"}, {dbus.UnixFD(supervisorFD), "sfl-git-supervisor"}})
+		}
 	}
 	return append(properties,
 		prop("TemporaryFileSystem", []gitUnitTemporaryFS{{"/tmp", gitUnitTmpfsOptions}}),
@@ -388,7 +400,9 @@ func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, a
 	var properties []unitProperty
 	var err error
 	if strings.HasPrefix(description, gitUnitDescriptionPrefix) {
-		properties, err = fixedGitUnitProperties(unit, stub, args, description, imageFD)
+		// Git must inherit its original supervisor pidfd from birth. The
+		// generic single-image path cannot launch that payload.
+		return "", errGitUnit
 	} else if strings.HasPrefix(description, "SFL native VM containment ") {
 		properties, err = fixedNativeVMUnitProperties(unit, stub, args, description, imageFD)
 	} else if strings.HasPrefix(description, "SFL sealed VM containment ") {
@@ -399,6 +413,18 @@ func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, a
 	if err != nil {
 		return "", err
 	}
+	return m.startProperties(ctx, unit, properties)
+}
+
+func (m *dbusContainmentManager) StartGit(ctx context.Context, unit, stub string, args []string, description string, imageFD, supervisorFD int) (string, error) {
+	properties, err := fixedGitUnitProperties(unit, stub, args, description, imageFD, supervisorFD)
+	if err != nil {
+		return "", err
+	}
+	return m.startProperties(ctx, unit, properties)
+}
+
+func (m *dbusContainmentManager) startProperties(ctx context.Context, unit string, properties []unitProperty) (string, error) {
 	if m.jobs == nil || m.jobs.begin(unit) != nil {
 		return "", ErrAuthRecoveryRequired
 	}
