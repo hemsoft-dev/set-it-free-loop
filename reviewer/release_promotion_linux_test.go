@@ -440,8 +440,15 @@ func TestReleasePromotionEpochRechecksAfterIndependentGate(t *testing.T) {
 	second.Revision = strings.Repeat("e", 40)
 	promote := promotionRequest(t, state, second, "promote", 2)
 	options.Check = func(context.Context, Enrollment, string, string) error {
-		_, err := registry.Apply(ctx, promote, second, allowPromotion)
-		return err
+		// A noncooperating synthetic writer bypasses the lifecycle lock. Keep the
+		// epoch recheck effective even for this invalid read-only callback.
+		updated := state
+		updated.Changes = append(append([]ReleasePromotionRequest{}, state.Changes...), promote)
+		raw, err := json.Marshal(updated)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(registry.directory, "promotion.json"), raw, 0600)
 	}
 	opened := 0
 	counted := func(ctx context.Context, a, b, c string) (*gitUnitOwner, error) {
@@ -450,5 +457,196 @@ func TestReleasePromotionEpochRechecksAfterIndependentGate(t *testing.T) {
 	}
 	if service, err := openPromotedGitReviewerService(ctx, registry, options, counted); err == nil || service != nil || opened != 0 {
 		t.Fatal("decision changed inside eligibility gate admitted startup", err, opened)
+	}
+}
+
+func awaitPromotionLockWaiter(t *testing.T, identity os.FileInfo) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		entries, err := os.ReadDir("/proc/self/fd")
+		if err != nil {
+			t.Fatal(err)
+		}
+		count := 0
+		for _, entry := range entries {
+			info, err := os.Stat(filepath.Join("/proc/self/fd", entry.Name()))
+			if err == nil && os.SameFile(info, identity) {
+				count++
+			}
+		}
+		if count >= 2 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("second operation did not open the held lock")
+}
+func TestReleasePromotionRevalidatesDirectoryAfterLockWait(t *testing.T) {
+	for _, kind := range []string{"foreign-entry", "public-mode", "replaced-path"} {
+		t.Run(kind, func(t *testing.T) {
+			registry, _ := promotionRegistryFixture(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			held, err := registry.lock(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer held.close()
+			identity, err := held.file.Stat()
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := make(chan error, 1)
+			go func() { _, err := registry.Snapshot(ctx); result <- err }()
+			awaitPromotionLockWaiter(t, identity)
+			temporary := filepath.Join(registry.directory, ".replace-"+strings.Repeat("a", 32))
+			if os.WriteFile(temporary, []byte("synthetic retained fragment"), 0600) != nil {
+				t.Fatal("temp fixture")
+			}
+			switch kind {
+			case "foreign-entry":
+				if os.WriteFile(filepath.Join(registry.directory, "foreign.json"), []byte("foreign ownership canary"), 0600) != nil {
+					t.Fatal("foreign fixture")
+				}
+			case "public-mode":
+				if os.Chmod(registry.directory, 0755) != nil {
+					t.Fatal("mode fixture")
+				}
+				t.Cleanup(func() { os.Chmod(registry.directory, 0700) })
+			case "replaced-path":
+				old := registry.directory + "-old"
+				if os.Rename(registry.directory, old) != nil || os.Mkdir(registry.directory, 0700) != nil {
+					t.Fatal("path fixture")
+				}
+				temporary = filepath.Join(old, filepath.Base(temporary))
+				t.Cleanup(func() { os.RemoveAll(old) })
+			}
+			if err = held.close(); err != nil {
+				t.Fatal(err)
+			}
+			if err = <-result; !errors.Is(err, ErrFenced) {
+				t.Fatal("post-lock foreign directory accepted", kind, err)
+			}
+			if raw, err := os.ReadFile(temporary); err != nil || string(raw) != "synthetic retained fragment" {
+				t.Fatal("refusal cleaned foreign-owner evidence", kind, err)
+			}
+		})
+	}
+}
+func TestReleasePromotionStartupRefusesUnapprovedOrRevokedCatalog(t *testing.T) {
+	for _, revoked := range []bool{false, true} {
+		t.Run(strconv.FormatBool(revoked), func(t *testing.T) {
+			ctx := context.Background()
+			options, _, opener, _ := gitReviewerStartupFixture(t)
+			e := options.Credentials.Journal.enrollment
+			registry, err := CreateReleasePromotionRegistry(ctx, nativeRuntimePrivateParent(t), e)
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := options.Releases[options.Current]
+			state, _ := registry.Snapshot(ctx)
+			state, err = registry.Apply(ctx, promotionRequest(t, state, first, "bootstrap", 1), first, allowPromotion)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second := first
+			second.Revision = strings.Repeat("e", 40)
+			if revoked {
+				state, err = registry.Apply(ctx, promotionRequest(t, state, second, "promote", 2), second, allowPromotion)
+				if err != nil {
+					t.Fatal(err)
+				}
+				state, err = registry.Apply(ctx, promotionRequest(t, state, first, "rollback", 3), first, allowPromotion)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			options.Releases[second.Revision] = second
+			options.Providers[second.Revision] = options.Providers[first.Revision]
+			opened := 0
+			counted := func(ctx context.Context, a, b, c string) (*gitUnitOwner, error) {
+				opened++
+				return opener(ctx, a, b, c)
+			}
+			service, err := openPromotedGitReviewerService(ctx, registry, options, counted)
+			if service != nil {
+				defer service.Close(ctx)
+			}
+			if err == nil || opened != 0 {
+				t.Fatal("unapproved or revoked catalog opened startup", revoked, opened, err)
+			}
+		})
+	}
+}
+func TestReleasePromotionSerializesThroughCompleteServiceConstruction(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	options, _, opener, _ := gitReviewerStartupFixture(t)
+	e := options.Credentials.Journal.enrollment
+	registry, err := CreateReleasePromotionRegistry(ctx, nativeRuntimePrivateParent(t), e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := options.Releases[options.Current]
+	state, _ := registry.Snapshot(ctx)
+	state, err = registry.Apply(ctx, promotionRequest(t, state, first, "bootstrap", 1), first, allowPromotion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.Revision = strings.Repeat("e", 40)
+	request := promotionRequest(t, state, second, "promote", 2)
+	entered, release := make(chan struct{}), make(chan struct{})
+	type startupResult struct {
+		service *GitReviewerService
+		err     error
+	}
+	started := make(chan startupResult, 1)
+	blocked := func(ctx context.Context, a, b, c string) (*gitUnitOwner, error) {
+		close(entered)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return opener(ctx, a, b, c)
+	}
+	go func() {
+		service, err := openPromotedGitReviewerService(ctx, registry, options, blocked)
+		started <- startupResult{service, err}
+	}()
+	<-entered
+	applying := make(chan struct{})
+	applied := make(chan error, 1)
+	go func() {
+		close(applying)
+		_, err := registry.Apply(ctx, request, second, allowPromotion)
+		applied <- err
+	}()
+	<-applying
+	early := false
+	var applyErr error
+	select {
+	case applyErr = <-applied:
+		early = true
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	out := <-started
+	if out.service != nil {
+		defer out.service.Close(context.Background())
+	}
+	if !early {
+		applyErr = <-applied
+	}
+	if early {
+		t.Fatal("promotion committed while startup still owned partial resources", applyErr, out.err)
+	}
+	if out.err != nil || out.service == nil || applyErr != nil {
+		t.Fatal("serialized construction/promotion failed", out.err, applyErr)
+	}
+	if out.service.inner.check(ctx, e, first.Revision) == nil {
+		t.Fatal("old service not fenced after subsequent decision")
 	}
 }

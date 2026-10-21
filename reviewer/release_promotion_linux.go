@@ -215,51 +215,54 @@ func (r *ReleasePromotionRegistry) read(root *os.Root) (ReleasePromotionState, e
 	}
 	return state, nil
 }
-func (r *ReleasePromotionRegistry) lock(ctx context.Context) (*authLock, error) {
-	if r == nil || ctx == nil || ctx.Err() != nil {
-		return nil, ErrLiveBlocked
+func (r *ReleasePromotionRegistry) validateDirectory(root *os.Root) error {
+	actual, err := root.Stat(".")
+	if err != nil || r.identity == nil || !os.SameFile(actual, r.identity) {
+		return ErrFenced
+	}
+	owner, ok := actual.Sys().(*syscall.Stat_t)
+	if !ok || owner.Uid != uint32(os.Geteuid()) || actual.Mode().Perm()&0077 != 0 {
+		return ErrFenced
 	}
 	canonical, err := filepath.EvalSymlinks(r.directory)
-	if err != nil || canonical != r.directory {
-		return nil, ErrFenced
+	named, namedErr := os.Lstat(r.directory)
+	if err != nil || canonical != r.directory || namedErr != nil || !os.SameFile(named, r.identity) {
+		return ErrFenced
+	}
+	directory, err := root.Open(".")
+	if err != nil {
+		return ErrFenced
+	}
+	entries, readErr := directory.ReadDir(129)
+	directory.Close()
+	if (readErr != nil && readErr != io.EOF) || len(entries) > 128 {
+		return ErrFenced
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if name != "promotion.json" && name != "promotion.lock" && name != "startup.lock" && !(strings.HasPrefix(name, ".replace-") && promotionID(strings.TrimPrefix(name, ".replace-"))) {
+			return ErrFenced
+		}
+	}
+	return nil
+}
+func (r *ReleasePromotionRegistry) lock(ctx context.Context) (*authLock, error) {
+	return r.lockFile(ctx, "promotion.lock")
+}
+func (r *ReleasePromotionRegistry) lockFile(ctx context.Context, name string) (*authLock, error) {
+	if r == nil || ctx == nil || ctx.Err() != nil || (name != "promotion.lock" && name != "startup.lock") {
+		return nil, ErrLiveBlocked
 	}
 	root, err := os.OpenRoot(r.directory)
 	if err != nil {
 		return nil, err
 	}
-	actual, err := root.Stat(".")
-	owner, ok := func() (*syscall.Stat_t, bool) {
-		if actual == nil {
-			return nil, false
-		}
-		v, ok := actual.Sys().(*syscall.Stat_t)
-		return v, ok
-	}()
-	if err != nil || r.identity == nil || !os.SameFile(actual, r.identity) || !ok || owner.Uid != uint32(os.Geteuid()) || actual.Mode().Perm()&0077 != 0 {
+	// Refuse a foreign owner before creating a lock or cleaning any fragment.
+	if r.validateDirectory(root) != nil {
 		root.Close()
 		return nil, ErrFenced
 	}
-	// Refuse a credential store or any other directory owner before creating
-	// a lock or cleaning reserved replacement files in the anchored directory.
-	directory, err := root.Open(".")
-	if err != nil {
-		root.Close()
-		return nil, ErrFenced
-	}
-	entries, readErr := directory.ReadDir(129)
-	directory.Close()
-	if (readErr != nil && readErr != io.EOF) || len(entries) > 128 {
-		root.Close()
-		return nil, ErrFenced
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if name != "promotion.json" && name != "promotion.lock" && !(strings.HasPrefix(name, ".replace-") && promotionID(strings.TrimPrefix(name, ".replace-"))) {
-			root.Close()
-			return nil, ErrFenced
-		}
-	}
-	file, err := root.OpenFile("promotion.lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
+	file, err := root.OpenFile(name, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
 	if err != nil {
 		root.Close()
 		return nil, ErrFenced
@@ -276,7 +279,17 @@ func (r *ReleasePromotionRegistry) lock(ctx context.Context) (*authLock, error) 
 		}
 		err = syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 		if err == nil {
-			if err = clearAuthTemps(root); err != nil {
+			// Waiting can span a rename, chmod or another directory owner's arrival.
+			// Repeat every invariant before any cleanup or registry operation.
+			if ctx.Err() != nil {
+				held.close()
+				return nil, ctx.Err()
+			}
+			if r.validateDirectory(root) != nil {
+				held.close()
+				return nil, ErrFenced
+			}
+			if name == "promotion.lock" && clearAuthTemps(root) != nil {
 				held.close()
 				return nil, ErrFenced
 			}
@@ -328,6 +341,13 @@ func (r *ReleasePromotionRegistry) Apply(ctx context.Context, request ReleasePro
 	}
 	phase, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	// Lock order is startup then metadata. Snapshot/epoch checks take only the
+	// metadata lock, so they remain usable during an owned construction.
+	lifecycle, err := r.lockFile(phase, "startup.lock")
+	if err != nil {
+		return ReleasePromotionState{}, err
+	}
+	defer lifecycle.close()
 	held, err := r.lock(phase)
 	if err != nil {
 		return ReleasePromotionState{}, err
@@ -401,6 +421,11 @@ func openPromotedGitReviewerService(ctx context.Context, registry *ReleasePromot
 	}
 	phase, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
+	lifecycle, err := registry.lockFile(phase, "startup.lock")
+	if err != nil {
+		return nil, ErrLiveBlocked
+	}
+	defer lifecycle.close()
 	state, err := registry.Snapshot(phase)
 	if err != nil {
 		return nil, ErrLiveBlocked
@@ -413,6 +438,17 @@ func openPromotedGitReviewerService(ctx context.Context, registry *ReleasePromot
 	_, actual, err := EncodeGitReviewerRelease(release)
 	if err != nil || actual != hash {
 		return nil, ErrLiveBlocked
+	}
+	approved, revoked := state.catalog()
+	if len(options.Releases) < 1 || len(options.Releases) > 8 {
+		return nil, ErrLiveBlocked
+	}
+	for revision, configured := range options.Releases {
+		_, digest, encodeErr := EncodeGitReviewerRelease(configured)
+		approval, known := approved[revision]
+		if encodeErr != nil || configured.Revision != revision || !known || revoked[revision] || approval.PackageHash != digest {
+			return nil, ErrLiveBlocked
+		}
 	}
 	epoch := state.Hash()
 	independent := options.Check
