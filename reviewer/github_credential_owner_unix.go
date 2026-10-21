@@ -70,6 +70,7 @@ type githubCredentialOwnerState struct {
 	ready, refreshing, closing, closed bool
 	refreshCancel                      context.CancelFunc
 	active                             map[uint64]context.CancelFunc
+	acquisitions                       map[uint64]*githubReaderGeneration
 	serial                             uint64
 	changed                            chan struct{}
 }
@@ -110,7 +111,7 @@ func OpenGitHubCredentialOwner(ctx context.Context, o GitHubCredentialOwnerOptio
 	if err != nil {
 		return nil, ErrGitHubCredentialOwner
 	}
-	return &GitHubCredentialOwner{&githubCredentialOwnerState{options: o, held: held, active: map[uint64]context.CancelFunc{}, changed: make(chan struct{})}}, nil
+	return &GitHubCredentialOwner{&githubCredentialOwnerState{options: o, held: held, active: map[uint64]context.CancelFunc{}, acquisitions: map[uint64]*githubReaderGeneration{}, changed: make(chan struct{})}}, nil
 }
 
 func (o *GitHubCredentialOwner) Ready(ctx context.Context) error {
@@ -205,7 +206,7 @@ func (o *githubCredentialOwnerState) Ready(ctx context.Context) error {
 func (o *githubCredentialOwnerState) waitIdle(ctx context.Context, includeRefresh bool) error {
 	for {
 		o.mu.Lock()
-		idle := len(o.active) == 0 && (!includeRefresh || !o.refreshing)
+		idle := len(o.active) == 0 && len(o.acquisitions) == 0 && (!includeRefresh || !o.refreshing)
 		changed := o.changed
 		o.mu.Unlock()
 		if idle {
@@ -252,6 +253,7 @@ func (o *githubCredentialOwnerState) Refresh(ctx context.Context) error {
 	o.mu.Unlock()
 	defer func() { o.mu.Lock(); o.refreshing = false; o.refreshCancel = nil; o.signal(); o.mu.Unlock() }()
 	if o.waitIdle(phase, false) != nil {
+		o.cancelAcquisitions()
 		return ownerContextError(phase)
 	}
 	if o.options.Check(phase, o.options.Journal.enrollment) != nil || phase.Err() != nil {
@@ -382,6 +384,9 @@ func (o *githubCredentialOwnerState) Close(ctx context.Context) error {
 	}
 	for _, cancel := range o.active {
 		cancellations = append(cancellations, cancel)
+	}
+	for _, acquisition := range o.acquisitions {
+		cancellations = append(cancellations, acquisition.cancel)
 	}
 	o.signal()
 	o.mu.Unlock()
