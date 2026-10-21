@@ -7,6 +7,37 @@ environment, locate private keys, sign JWTs, install an App or start polling.
 This source is tested only with synthetic credentials and local fake TLS.
 The owner freeze still prohibits actual credential acquisition and activation.
 
+## Explicit App JWT signing
+
+`NewGitHubAppJWTSigner` accepts an enrolled identity, a caller-owned
+`crypto.Signer` and an explicit clock. It discovers no key, reads no profile or
+environment, creates no key, persists nothing and makes no HTTP request. The
+caller must supply a bounded RSA signing capability. The local public-key bound
+is 2048 through 8192 bits. The handle's formatting and JSON forms are redacted;
+the original capability and its lifetime remain the caller's responsibility.
+
+`Sign` emits only the RS256 protected header and `iss`, `iat`, `exp` claims.
+The issuer is the enrolled numeric App ID. It backdates `iat` by sixty seconds
+and expires nine minutes after the captured clock. It independently verifies the
+returned PKCS#1 v1.5 SHA-256 signature with the captured public key. A changed key,
+wrong padding, private signer error, cancelled context, backwards clock or result
+with less than sixty seconds left in its nominal lifetime is refused. Signing
+is never retried. `crypto.Signer` has no cancellation method, so cancellation is
+checked around its call and cannot interrupt an uncooperative signing capability.
+
+The returned JWT bytes are explicitly caller-owned input to
+`AcquireGitHubInstallation`. Temporary immutable strings cannot be reliably
+erased. Signing does not verify that GitHub associates this key with the App;
+the installation handshake still checks the authenticated App and every selected
+repository/role boundary. Synthetic-key tests independently verify the produced
+signature and send that exact JWT through the real local TLS handshake for both
+roles. No actual key or live credential is used in qualification.
+
+Claims and RS256 follow [GitHub's JWT requirements](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app),
+[compact JWS serialization](https://www.rfc-editor.org/rfc/rfc7515#section-3.1)
+and [the RS256 definition](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.3).
+The operation uses the standard [Go signing capability](https://pkg.go.dev/crypto@go1.25.0#Signer).
+
 ## Checks before returning a transport
 
 The handshake uses the fixed `https://api.github.com` origin, pinned API version
@@ -93,11 +124,12 @@ method, expiry and cancellation rejection, redaction and shared-handle disposal.
 These are fake GitHub responses, not a captured live installation qualification.
 
 ```sh
-go -C reviewer test -race -count=1 -run TestGitHubInstallation .
+go -C reviewer test -race -count=1 -run 'TestGitHubAppJWT|TestGitHubInstallation' .
 go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-JWT signing/key storage, role refresh composition, qualified immutable object
-acquisition, packaged runtime startup and actual installation qualification still
-need integration. No live GitHub App token was obtained during these tests.
+Trusted key-source injection/storage, role refresh composition, qualified
+immutable object acquisition, packaged runtime startup and actual installation
+qualification still need integration. The explicit signer adds no key loading
+or activation path. No live GitHub App token was obtained during these tests.

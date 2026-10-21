@@ -45,9 +45,15 @@ func (r installationRoute) RoundTrip(q *http.Request) (*http.Response, error) {
 	return r.inner.RoundTrip(clone)
 }
 
-func installationHTTPFixture(t *testing.T, role GitHubCredentialRole) (*installationFixture, GitHubInstallationOptions) {
+func installationHTTPFixture(t *testing.T, role GitHubCredentialRole, appJWT ...string) (*installationFixture, GitHubInstallationOptions) {
 	t.Helper()
 	f := &installationFixture{role: role}
+	jwt := "synthetic-app-jwt"
+	if len(appJWT) == 1 {
+		jwt = appJWT[0]
+	} else if len(appJWT) > 1 {
+		t.Fatal("one explicit fixture App JWT required")
+	}
 	repo := func() map[string]any {
 		return map[string]any{"id": RepositoryID, "full_name": "hemsoft-dev/set-it-free-loop", "owner": map[string]any{"id": int64(71), "login": "hemsoft-dev", "type": "Organization"}}
 	}
@@ -62,7 +68,7 @@ func installationHTTPFixture(t *testing.T, role GitHubCredentialRole) (*installa
 		appRequest := p == "/app" || p == githubRepoPath+"/installation" || strings.HasPrefix(p, "/app/installations/")
 		expected := "Bearer synthetic-installation-" + string(role)
 		if appRequest {
-			expected = "Bearer synthetic-app-jwt"
+			expected = "Bearer " + jwt
 		}
 		if q.Header.Get("Authorization") != expected {
 			t.Error("credential crossed app/installation role boundary", p)
@@ -133,7 +139,7 @@ func installationHTTPFixture(t *testing.T, role GitHubCredentialRole) (*installa
 	t.Cleanup(server.Close)
 	base, _ := url.Parse(server.URL)
 	f.transport = installationRoute{base, server.Client().Transport, t}
-	return f, GitHubInstallationOptions{alphaEnrollment(), role, []byte("synthetic-app-jwt"), f.transport, func() time.Time { return controlTime }}
+	return f, GitHubInstallationOptions{alphaEnrollment(), role, []byte(jwt), f.transport, func() time.Time { return controlTime }}
 }
 
 func TestGitHubInstallationComposesWithPublisherAcknowledgment(t *testing.T) {
