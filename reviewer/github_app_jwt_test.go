@@ -286,3 +286,39 @@ func TestGitHubAppJWTHandleFormattingRedactsCapability(t *testing.T) {
 		}
 	}
 }
+
+func TestGitHubAppJWTVerificationUsesOriginalBytesWhenSignerMutatesDigest(t *testing.T) {
+	for _, before := range []bool{true, false} {
+		t.Run(fmt.Sprint("mutateBeforeSigning=", before), func(t *testing.T) {
+			key := newAppJWTTestSigner(t)
+			key.sign = func(random io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+				if before {
+					digest[0] ^= 1
+				}
+				signature, err := key.key.Sign(random, digest, opts)
+				if !before {
+					clear(digest)
+				}
+				return signature, err
+			}
+			signer, err := NewGitHubAppJWTSigner(alphaEnrollment(), key, func() time.Time { return controlTime })
+			if err != nil {
+				t.Fatal(err)
+			}
+			token, err := signer.Sign(context.Background())
+			if before {
+				if len(token) != 0 || !errors.Is(err, ErrGitHubAppJWT) {
+					t.Fatal("signature for mutated digest was accepted")
+				}
+			} else {
+				if err != nil {
+					t.Fatal("valid original-byte signature rejected after buffer clearing", err)
+				}
+				verifyAppJWT(t, token, &key.key.PublicKey, controlTime)
+			}
+			if key.calls != 1 {
+				t.Fatal("mutating signer was replayed")
+			}
+		})
+	}
+}

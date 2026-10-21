@@ -121,7 +121,10 @@ func (s *GitHubAppJWTSigner) Sign(ctx context.Context) ([]byte, error) {
 	if cancelErr := githubJWTContextError(ctx); cancelErr != nil {
 		return nil, cancelErr
 	}
-	if err != nil || rsa.VerifyPKCS1v15(&s.public, crypto.SHA256, digest[:], signature) != nil {
+	// The signing capability owns its call and may mutate the digest slice.
+	// Verify independently from the original compact-JWS bytes.
+	verificationDigest := sha256.Sum256([]byte(signing))
+	if err != nil || rsa.VerifyPKCS1v15(&s.public, crypto.SHA256, verificationDigest[:], signature) != nil {
 		return nil, ErrGitHubAppJWT
 	}
 	// Refuse a stale result or a backwards clock, even after a slow signer.

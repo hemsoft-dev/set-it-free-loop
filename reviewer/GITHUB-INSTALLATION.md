@@ -19,7 +19,9 @@ the original capability and its lifetime remain the caller's responsibility.
 `Sign` emits only the RS256 protected header and `iss`, `iat`, `exp` claims.
 The issuer is the enrolled numeric App ID. It backdates `iat` by sixty seconds
 and expires nine minutes after the captured clock. It independently verifies the
-returned PKCS#1 v1.5 SHA-256 signature with the captured public key. A changed key,
+returned PKCS#1 v1.5 SHA-256 signature with the captured public key and a freshly
+computed digest of the original JWS bytes. Mutating or clearing the digest
+slice inside the signing capability cannot change what verification accepts. A changed key,
 wrong padding, private signer error, cancelled context, backwards clock or result
 with sixty seconds or less left in its nominal lifetime is refused. Signing
 is never retried. `crypto.Signer` has no cancellation method, so cancellation is
