@@ -21,6 +21,10 @@ func gitQuarantineFixture(t *testing.T, formats ...string) (GitStore, Snapshot) 
 		format = formats[0]
 	}
 	f := snapshotGitFixtureFormat(t, format)
+	return gitQuarantineFromFixture(t, f, format)
+}
+func gitQuarantineFromFixture(t *testing.T, f snapshotGitFixture, format string) (GitStore, Snapshot) {
+	t.Helper()
 	f.run(t, "update-ref", "refs/heads/base", f.snapshot.Base)
 	directory := filepath.Join(t.TempDir(), "objects.git")
 	if err := os.Mkdir(directory, 0700); err != nil {

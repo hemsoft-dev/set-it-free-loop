@@ -13,3 +13,9 @@ Only a bounded inventory receipt returns on success. It binds the snapshot and s
 Tests use the installed Git producer with actual packs, indexes and reverse indexes. Complete SHA-1 and SHA-256 repositories pass. Corrupt packs and every listed metadata escape route fail. Separate fixtures exceed each configured bound and cancel input. Another fixture has present head, base and merge-base commits but a missing older parent; it returns no qualified inventory. The strict checker also rejected an initial fixture whose symbolic HEAD pointed outside `refs/heads`, so the producer now writes the exact detached head instead of weakening fsck.
 
 Production composition is unfinished. The measured factory must create a fresh quarantine, pin all executables and libraries, run fetch, verification, packet capture and export within its aggregate boundary, validate private input/output bindings and prove whole-unit and broker shutdown before retaining results. Host-side `CaptureSnapshotEvidence` or `GitStore.command` against downloaded pack files would leave an unconstrained parser gap even after worker verification. A bounded plain-object materialization, or a separately protected concrete reader, must close that gap. Neither this inventory nor the direct algorithm tests establish protected-unit qualification, a production immutable store, App eligibility or activation authority.
+
+The [worker export and sealed reader](GIT-MATERIALIZATION.md) now materialize
+bounded plain blobs and restore the packet without host-side Git parsing.
+They remain private staging until the acquisition factory proves authenticated
+worker ownership and whole-unit/broker stop. Their existence does not qualify
+that factory or provide durable crash recovery.
