@@ -18,6 +18,12 @@ A retained duplicate belongs to the factory; it still needs liveness, measured
 helper/library, ancestry, namespace and owning-unit checks at admission. This
 capability alone is not a source grant.
 
+The private [process boundary](GIT-PROCESS-BOUNDARY.md) now checks actual
+worker/helper root, executable/maps, capabilities, six namespaces, cgroup,
+network tables and retained ancestry. It still requires factory composition
+with exact manager/unit ownership, mounts, descriptors, launch/filter proof
+and physical stop before any production broker admission.
+
 The kernel's [pidfd fdinfo implementation](https://github.com/torvalds/linux/blob/v6.17/fs/pidfs.c#L165-L250)
 reports `Pid` in the procfs instance's PID namespace, and its poll operation
 reports process exit. The supervisor must use a trusted procfs view consistent

@@ -10,8 +10,14 @@ checks its running sealed image, waits for a matching worker grant and performs
 fetch/verify/plain export. Its process fixtures run outside bubblewrap. The [fixed worker executable/root bootstrap](GIT-BOOTSTRAP.md) also exists;
 actual full-unit inheritance and launch remain unqualified. The public
 production factory, aggregate grant/export
-orchestration, full namespace/mount inspection, concrete helper admission and broker/result
+orchestration, full mount/descriptor inspection, complete helper admission and broker/result
 orchestration remain unfinished.
+
+The private [process boundary](GIT-PROCESS-BOUNDARY.md) adds actual
+worker/helper runtime and executable-map checks, six private namespaces,
+capabilities, route inspection and retained Git-parent ancestry. Its inert
+namespace fixtures pass before and after dumpability is cleared. Exact unit,
+mount/descriptor and launch/filter composition still belongs to the factory.
 
 The private Git manager start method requires two fixed inherited descriptor
 roles: sealed executable first and the original supervisor pidfd second. The
