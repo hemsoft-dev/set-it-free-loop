@@ -66,13 +66,13 @@ def main():
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--provider", choices=["codex", "claude", "both"], required=True)
-    parser.add_argument("--case", choices=["source", "forbidden", "adversarial", "refresh", "refresh-uncertain"], required=True)
+    parser.add_argument("--case", choices=["source", "forbidden", "adversarial", "refresh", "refresh-uncertain", "cancel-provider", "cancel-reader", "cancel-refresh"], required=True)
     parser.add_argument("--peer-rounds", type=int, choices=[1, 2], default=1)
     parser.add_argument("--go", required=True)
     parser.add_argument("--module-cache", type=Path, required=True)
     args = parser.parse_args()
     if (args.provider == "both") != (args.case == "adversarial"):
-        parser.error("adversarial requires both providers; source/forbidden/refresh/refresh-uncertain require one")
+        parser.error("adversarial requires both providers; every other case requires one")
     if args.case != "adversarial" and args.peer_rounds != 1:
         parser.error("extra peer rounds require the adversarial case")
     common = sibling("claude-fixture")
@@ -113,6 +113,7 @@ def main():
     config = {"Version": 1, "Purpose": "native-fake-only", "ImageSourceHead": manifest["source_commit"],
               "Root": str(state), "Provider": "" if args.provider == "both" else args.provider,
               "Negative": args.case == "forbidden", "Refresh": args.case == "refresh", "UncertainRefresh": args.case == "refresh-uncertain",
+              "Cancellation": args.case.removeprefix("cancel-") if args.case.startswith("cancel-") else "",
               "ProtocolRounds": args.peer_rounds if args.case == "adversarial" else 0,
               "QEMU": asset(Path(manifest["qemu"]["Path"]), manifest["qemu"]["SHA256"]),
               "Firmware": asset(image/"bios.bin", manifest["bios_sha256"]),

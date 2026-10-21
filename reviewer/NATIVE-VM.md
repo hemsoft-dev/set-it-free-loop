@@ -297,3 +297,32 @@ keep their explicit local HTTP behavior. Refresh routes always require TLS.
 The flag is allowed only for refresh/metadata, remains part of the policy hash,
 and also enables the private TLS proxy for a metadata-only policy that requests
 it. The host egress guard continues to use HTTPS for every admitted upstream.
+
+The fake-only driver also accepts `--case cancel-provider`, `cancel-reader` and
+`cancel-refresh` with one provider. It cancels the caller only after the pinned
+client reaches a validated fake SSE response, a captured immutable object read,
+or a validated fake SSE response after refresh. The response fault withholds
+headers and bytes, and the reader fault returns no object. Both must leave their
+blocked work when cancellation arrives, with one fault invocation and no replay.
+
+These cases require a retained cancellation cause, an empty report, stopped
+provider work, a captured physically stopped unit, an incomplete private audit,
+and runtime-root removal. The unit and incomplete audit must bind the exact
+session, launch and containment identity. Their private provider evidence must
+match the captured policy and returned stopped evidence. Return must occur
+within twenty seconds of the target
+cancellation. The auth disposition must agree after reopening the protected
+store: a safely returned stopped profile may persist, while a missing or
+uncertain return retains recovery. Cancellation after refresh requires recovery
+under the current conservative receipt policy. Each case starts with a new
+synthetic seed and never repairs, adopts or reuses another case's auth state.
+
+Reopening the store tests persisted auth disposition, not a host process crash.
+These cancellation cases do not establish arbitrary crash recovery, operator
+credential repair, resource pressure or the broader hostile capability boundary.
+
+The host control socket interrupts pending reads and writes when the caller
+cancels, even if the original phase deadline remains in the future. Cleanup
+then stops the entire unit and keeps uncertain exported auth held. A blocked
+source read exposed a seventy-second wait for the original deadline; a stopped
+source channel alone did not wake the host's guest-result read.

@@ -25,14 +25,14 @@ import (
 func (c config) validCase() bool {
 	if c.ProtocolRounds == 0 {
 		modes := 0
-		for _, enabled := range []bool{c.Refresh, c.Negative, c.UncertainRefresh} {
+		for _, enabled := range []bool{c.Refresh, c.Negative, c.UncertainRefresh, c.Cancellation != ""} {
 			if enabled {
 				modes++
 			}
 		}
-		return c.Provider.Valid() && modes <= 1
+		return c.Provider.Valid() && modes <= 1 && (c.Cancellation == "" || c.Cancellation == "provider" || c.Cancellation == "reader" || c.Cancellation == "refresh")
 	}
-	return c.Provider == "" && !c.Negative && !c.Refresh && !c.UncertainRefresh && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
+	return c.Provider == "" && !c.Negative && !c.Refresh && !c.UncertainRefresh && c.Cancellation == "" && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
 }
 
 type protocolPhase struct {

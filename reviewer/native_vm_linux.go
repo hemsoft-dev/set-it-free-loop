@@ -107,6 +107,18 @@ func openNativeVMChannels() (*nativeVMChannels, error) {
 	return c, nil
 }
 
+// Interrupt blocking control reads/writes on caller cancellation, even when the
+// original phase deadline is still far away. Cleanup then stops the whole unit
+// and preserves any uncertain auth export; it does not wait for guest progress.
+func (c *nativeVMChannels) interruptControlOnCancel(ctx context.Context) func() bool {
+	// Set the phase deadline before registering cancellation so a later write
+	// cannot replace an already-fired cancellation with a future deadline.
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = c.host[0].SetDeadline(deadline)
+	}
+	return context.AfterFunc(ctx, func() { _ = c.host[0].SetDeadline(time.Now()) })
+}
+
 func (c *nativeVMChannels) Close() error {
 	if c == nil {
 		return nil

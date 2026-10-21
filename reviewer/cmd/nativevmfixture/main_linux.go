@@ -30,6 +30,7 @@ type config struct {
 	Provider                             r.Provider
 	Negative                             bool
 	Refresh, UncertainRefresh            bool
+	Cancellation                         string
 	ProtocolRounds                       int
 	QEMU, Kernel, Initrd, Stub, Firmware r.VMBootAsset
 	Runtime                              r.NativeVMRuntimeSpec
@@ -85,6 +86,9 @@ func run(c config) error {
 	// cannot become a seed. All subsequent state lives in this new private root.
 	if os.Mkdir(c.Root, 0700) != nil {
 		return errors.New("fresh fake root required")
+	}
+	if c.Cancellation != "" {
+		return runNativeCancellation(c)
 	}
 	if c.Refresh || c.UncertainRefresh {
 		return runNativeRefresh(c)
