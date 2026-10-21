@@ -10,6 +10,7 @@ import (
 	"net/http/httptrace"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -18,7 +19,8 @@ var ErrGitHubCredentialOwner = errors.New("GitHub credential generation qualific
 
 // GitHubCredentialOwnerOptions contains only explicitly supplied capabilities.
 // JWT transfers one bounded fresh buffer to the owner, which clears it. Check
-// must establish current trusted installation/activation eligibility without
+// must establish current trusted installation/activation eligibility with a
+// read-only local check, without
 // starting acquisition. Neither callback may retry or hide credential fallback.
 // Both callbacks and the supplied transports must honor bounded contexts.
 type GitHubCredentialOwnerOptions struct {
@@ -78,8 +80,20 @@ func (GitHubCredentialOwner) MarshalJSON() ([]byte, error) {
 	return []byte(`"GitHubCredentialOwner{redacted}"`), nil
 }
 
+func nilGitHubCredentialTransport(transport http.RoundTripper) bool {
+	if transport == nil {
+		return true
+	}
+	value := reflect.ValueOf(transport)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	}
+	return false
+}
+
 func OpenGitHubCredentialOwner(ctx context.Context, o GitHubCredentialOwnerOptions) (*GitHubCredentialOwner, error) {
-	if ctx == nil || o.Journal == nil || !o.Journal.valid() || o.JWT == nil || o.ReaderTransport == nil || o.PublisherTransport == nil || o.Check == nil {
+	if ctx == nil || o.Journal == nil || !o.Journal.valid() || o.JWT == nil || nilGitHubCredentialTransport(o.ReaderTransport) || nilGitHubCredentialTransport(o.PublisherTransport) || o.Check == nil {
 		return nil, ErrGitHubCredentialOwner
 	}
 	directory := filepath.Join(filepath.Dir(o.Journal.store.path), "github-credential-owner")
@@ -159,7 +173,7 @@ func (o *githubCredentialOwnerState) usable() bool {
 			return false
 		}
 		receipt := t.Receipt()
-		if receipt.Enrollment != o.options.Journal.enrollment || receipt.Role != role || !now.Before(receipt.ExpiresAt.Add(-time.Minute)) {
+		if receipt.Enrollment != o.options.Journal.enrollment || receipt.Role != role || now.Before(receipt.CheckedAt) || !now.Before(receipt.ExpiresAt.Add(-time.Minute)) {
 			return false
 		}
 	}
@@ -349,7 +363,7 @@ func (b *githubOwnedResponseBody) Close() error {
 }
 
 // Close rejects new work, cancels admitted requests and qualification, and waits
-// for local response bodies and callbacks. Timeout retains the private owner
+// for local response bodies and the qualification callback. Timeout retains the private owner
 // lock and token ownership for an explicit retry. It is not remote revocation.
 func (o *githubCredentialOwnerState) Close(ctx context.Context) error {
 	if o == nil || ctx == nil {
