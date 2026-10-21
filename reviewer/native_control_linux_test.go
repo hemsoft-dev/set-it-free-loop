@@ -7,12 +7,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func controlRequestFixture(t *testing.T, p Provider) nativeVMRequest {
@@ -306,5 +308,67 @@ func TestNativeControlHistoryHasPerReportVerificationBudget(t *testing.T) {
 	reads, _ := reader.Evidence()
 	if len(reads) != 0 {
 		t.Fatal("preflight consumed the caller's reader")
+	}
+}
+
+func TestNativeRejectedTaskRetainsOriginalPrivateReportHash(t *testing.T) {
+	for _, control := range []bool{false, true} {
+		name := "review"
+		if control {
+			name = "control"
+		}
+		t.Run(name, func(t *testing.T) {
+			var phase *nativeVMHostPhase
+			if control {
+				phase, _ = nativeControlHostPhaseFixture(t)
+			} else {
+				phase, _ = nativeHostPhaseFixture(t)
+			}
+			guest, host := vmSocketPair(t)
+			var err error
+			phase.bridge, err = startNativeProviderBridge(context.Background(), phase.request.Session, phase.request.Policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+				return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(codexToolStream("exec")))}, nil
+			}), host)
+			if err != nil {
+				t.Fatal(err)
+			}
+			transport := nativeProviderTransport(guest)
+			defer transport.CloseIdleConnections()
+			client := &http.Client{Transport: transport, Timeout: time.Second}
+			status, _ := nativeProviderCall(t, client, phase.request.Session.Identity.Model)
+			if status != 200 {
+				t.Fatal("private provider precondition", status)
+			}
+			report := nativeVMTaskReport{review: protocolReport(phase.request.Session)}
+			if control {
+				r := fakeControl(*phase.request.Control)
+				report = nativeVMTaskReport{control: &r}
+			}
+			raw, _ := json.Marshal(report.value())
+			phase.finished = &nativeVMFinished{Version: 1, Binding: phase.request.Binding, RequestHash: Digest(phase.request), State: "complete", Report: raw, SourceAudit: nativeHostAuditFixture(t, phase.request), AuthReturn: []byte("synthetic structural return"), CodeHost: &nativeVMCodeHostAccess{Version: 2, SessionHash: Digest(phase.request.Session), UID: nativeVMCodeHostUID, InputHash: Digest("input"), OutputHash: Digest("output"), Stopped: true, RelayComplete: true}}
+			if !phase.finished.valid(phase.request) {
+				t.Fatal("invalid private completed envelope")
+			}
+			// The host fixture's immutable store is empty: schema-valid allegations
+			// must fail source verification after completed source/provider receipts.
+			result, _, _, err := phase.finishTask(context.Background(), report, nil)
+			if err == nil || result.control != nil || len(result.review.Findings) != 0 {
+				t.Fatal("rejected task escaped", err)
+			}
+			data, err := os.ReadFile(filepath.Join(phase.supervisor.supervisor.root, phase.request.Binding.LaunchID, "native-audit.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var audit struct {
+				ReportHash, Failure string
+				Complete            bool
+			}
+			if json.Unmarshal(data, &audit) != nil || audit.Complete || audit.Failure != "source-service" {
+				t.Fatal("did not exercise source rejection", string(data))
+			}
+			if audit.ReportHash != Digest(report.value()) {
+				t.Fatal("private rejected-report identity was erased", audit.ReportHash, Digest(report.value()))
+			}
+		})
 	}
 }

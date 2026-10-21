@@ -376,7 +376,11 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 		}
 	}
 	if primary == nil {
-		report, primary = validateNativeVMTaskSource(cleanup, p.request, report, access, p.reader)
+		validated, validationErr := validateNativeVMTaskSource(cleanup, p.request, report, access, p.reader)
+		primary = validationErr
+		if validationErr == nil {
+			report = validated
+		}
 	}
 
 	if p.started && p.persistAudit(cleanup, report.value(), access, evidence, primary) != nil {
