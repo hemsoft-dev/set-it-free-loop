@@ -322,7 +322,7 @@ func checkGitRetirementDirectory(root *os.Root, name string, id gitKernelFileID,
 // and archive roots must share a filesystem for the unit-directory rename.
 func finishGitRetirement(ctx context.Context, unit *gitUnitOwner, archive *gitExportArchive, intent gitRetirement) error {
 	attempt := intent.Unit.Binding.Attempt
-	hash, err := unit.imageHash()
+	hash, err := unit.recordImageHash(intent.Unit.StubHash)
 	if ctx.Err() != nil || err != nil || !intent.valid(attempt) || intent.Unit.StubHash != hash || archive.verifyRoot() != nil {
 		return errGitUnit
 	}
