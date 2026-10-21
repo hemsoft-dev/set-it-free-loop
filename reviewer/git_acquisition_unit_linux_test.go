@@ -609,7 +609,25 @@ func (m *fakeContainmentManager) StartGit(ctx context.Context, unit, stub string
 	if _, err := fixedGitUnitProperties(unit, stub, args, description, imageFD, supervisorFD); err != nil {
 		return "", err
 	}
-	return m.Start(ctx, unit, stub, args, description, imageFD)
+	job, err := m.Start(ctx, unit, stub, args, description, imageFD)
+	if err != nil {
+		return job, err
+	}
+	// Model the accepted start job as pending until WaitJob. A completed job
+	// alone cannot identify whichever invocation currently occupies the name.
+	if m.observation.Job.ID == 0 {
+		m.observation.Job = unitJob{1, "/org/freedesktop/systemd1/job/1"}
+	}
+	afterWait := m.afterWait
+	m.afterWait = func() {
+		if m.observation.Job.ID == 1 {
+			m.observation.Job = unitJob{}
+		}
+		if afterWait != nil {
+			afterWait()
+		}
+	}
+	return job, nil
 }
 
 func TestGitAcquisitionRefusesSubstitutedBirthSupervisorBeforeStartIntent(t *testing.T) {
@@ -632,6 +650,77 @@ func TestGitAcquisitionRefusesSubstitutedBirthSupervisorBeforeStartIntent(t *tes
 			record, err := f.owner.read(f.binding.Attempt)
 			if err != nil || record.Started || record.StartJob != "" {
 				t.Fatal("failed preflight wrote start intent", record, err)
+			}
+		})
+	}
+}
+
+func TestGitAcquisitionUnitReopensPreviousCachedWorkerImage(t *testing.T) {
+	for _, kind := range []string{"retained", "missing", "corrupt"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newGitUnitFixture(t)
+			if f.owner.prepare(context.Background(), f.binding) != nil || f.owner.stop(context.Background(), f.binding) != nil || f.owner.Close() != nil {
+				t.Fatal("stopped previous-image fixture")
+			}
+			original, err := os.ReadFile(f.stub)
+			if err != nil {
+				t.Fatal(err)
+			}
+			upgraded := append(original, []byte("\nsynthetic next worker image\n")...)
+			path := filepath.Join(t.TempDir(), "new-worker")
+			if os.WriteFile(path, upgraded, 0500) != nil || os.Remove(f.stub) != nil {
+				t.Fatal("upgraded image fixture")
+			}
+			cache := filepath.Join(f.root, "executables", f.stubHash)
+			if kind == "missing" {
+				if os.Remove(cache) != nil {
+					t.Fatal("remove owned old cache")
+				}
+			} else if kind == "corrupt" {
+				if os.Chmod(cache, 0700) != nil || os.WriteFile(cache, []byte("wrong old worker bytes"), 0500) != nil || os.Chmod(cache, 0500) != nil {
+					t.Fatal("corrupt owned old cache")
+				}
+			}
+			current := gitRawHash(upgraded)
+			reopened, err := newGitUnitOwner(context.Background(), f.root, path, current, f.manager, f.manager.kernel)
+			if kind != "retained" {
+				if err == nil || reopened != nil {
+					t.Fatal("unverifiable previous image accepted")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("retained previous worker blocked reopening", err)
+			}
+			defer reopened.Close()
+			record, err := reopened.read(f.binding.Attempt)
+			if err != nil || record.StubHash != f.stubHash || !record.Stopped || !record.Revoked || reopened.grantEligible[f.binding.Attempt] {
+				t.Fatal("previous receipt changed or rearmed", record, err)
+			}
+			// Model a durable before-start receipt from the previous release.
+			// Authentication permits recovery, never execution of that old pin
+			// through the newly configured launch image.
+			record.Stopped, record.Revoked = false, false
+			if reopened.write(record) != nil {
+				t.Fatal("old unstarted fixture")
+			}
+			if reopened.start(context.Background(), f.binding, "/private/bootstrap.sock") == nil || f.manager.starts != 0 {
+				t.Fatal("old-image receipt rearmed under new image")
+			}
+			if reopened.stop(context.Background(), f.binding) != nil {
+				t.Fatal("old receipt could not persist recovery")
+			}
+			next := f.binding
+			next.Attempt = strings.Repeat("b", 32)
+			if reopened.prepare(context.Background(), next) != nil {
+				t.Fatal("new-image preparation")
+			}
+			record, err = reopened.read(next.Attempt)
+			if err != nil || record.StubHash != current || f.manager.starts != 0 {
+				t.Fatal("fresh attempt did not use current worker", record, err)
+			}
+			if reopened.stop(context.Background(), next) != nil || reopened.Close() != nil {
+				t.Fatal("owned fixture cleanup")
 			}
 		})
 	}

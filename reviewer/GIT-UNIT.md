@@ -115,6 +115,67 @@ from the old root. A missing unknown unit alone does not prove termination. A
 changed kernel boot can prove the prior boot's processes dead without contacting
 another manager's unit.
 
+An accepted start can fail before a live root is captured. The fresh start
+persists a `Birth` record after the accepted start-job reply and before waiting
+for that job. It binds the accepted job to the observed invocation, unit object
+path and actual cgroup/hierarchy, with stable manager, boot, fixed properties
+and repeated observations. The first nonzero invocation must be observed while
+that same accepted job is attached. Observing only empty properties before the
+job disappears cannot bind a later invocation, even at the same unit path.
+If the job completes before that correlation is observed, the attempt remains
+uncertain. It cannot grant, replay or adopt a later invocation. A missing or
+failed birth write never arms a grant or repeats the start.
+
+The accepted start is asynchronous. Birth capture waits within the existing
+manager/caller deadline for that job's initially empty invocation or cgroup to
+materialize. An all-zero invocation is pending, never an admitted identity.
+Only the same accepted pending job and an absent cgroup directory permit a
+bounded observation retry. Fixed-property, permission and identity failures
+refuse immediately. Once observed, its object path, nonzero invocation and
+cgroup path cannot change while waiting. No observation retry resends StartGit.
+If the original cgroup was captured before a fast terminal failure removed its
+directory, the original hierarchy's emptiness proof and repeated identical
+terminal observations preserve that binding. Stable active/exited metadata with
+no MainPID or pending job and the same empty original group also preserves the
+birth; it does not yet grant or prove termination. Permission errors, a live root,
+repopulation and replacement hierarchies still refuse.
+
+If that bound unit later fails, a separate early-stop path requires the original
+manager and boot, all fixed unit properties, no pending job, no MainPID, and
+inactive/failed state or active/exited metadata with the original empty cgroup.
+It repeats manager and original-group emptiness observations before persisting
+an `EarlyStop` receipt. With `Restart=no`, no PID, no queued job and no process
+in that bound group, the original acquisition has physically ended even when
+`RemainAfterExit` keeps the manager entry active.
+
+This path never sends a name-based StopUnit or creates a stop job. That API has
+no invocation guard, so another client could replace the invocation between an
+observation and dispatch. The receipt proves physical termination of the owned
+acquisition, not deactivation of the manager entry. Active/exited unit metadata
+may remain after local disposal and source retirement; it requires separately
+coordinated manager cleanup. Source retention does not stop a unit name later.
+This residual metadata must be included in complete host/resource qualification.
+See the [systemd service states](https://www.freedesktop.org/software/systemd/man/262/systemd.service.html)
+and [manager API](https://www.freedesktop.org/software/systemd/man/262/org.freedesktop.systemd1.html).
+
+Recovery never creates a missing birth record by adopting whichever unit exists
+then. A persisted all-zero invocation is invalid, just as it is during capture.
+Invocation, object path and original cgroup identity must match the durable
+birth record. The receipt does not fabricate a root identity or original pidfd.
+It is valid only for a revoked, stopped attempt that never captured a root or
+consumed either grant.
+
+A reopened early-stop receipt rechecks its original cgroup hierarchy and exact
+terminal invocation rather than recapturing a replacement group. The original
+kernel hierarchy may prove that its previously captured group was removed.
+Without that birth record, including a lost accepted-start reply, terminal
+recovery remains uncertain even when a matching terminal unit is visible. Changed
+properties, repopulation, a new invocation, manager/boot change during proof or
+cancellation cannot release ownership. A real kernel reboot retains its existing
+separate old-boot recovery rule. This path makes an early failure recoverable
+when the required independent evidence survives; it does not qualify an export
+or restore fresh grant authority.
+
 Operation admission honors the caller's cancellation while another start/stop
 is in progress. Close refuses to discard the process lock or image while an
 operation is running or any record lacks a stopped receipt. Recovery calls stop
@@ -131,3 +192,12 @@ actual controller child after a durable uncertain start; reopening refuses a
 restart and recovers the separately retained inert root. No production systemd
 Git unit, namespace/resource pressure qualification, actual Git worker binary,
 credential, App or provider inference is exercised by these tests.
+
+Retained receipts may name an older worker image after an upgrade. The current
+sealed launch image remains independently verified. Reading or updating an old
+receipt additionally hashes its existing private content-addressed worker copy,
+using the same owner, link, mode and size checks as image retention. Missing or
+changed old bytes refuse recovery; no pathname is imported from a receipt and
+no missing image is recreated. A fresh start must use the configured current
+worker hash, so authenticating an old receipt never re-arms its execution. Keep
+old image copies until their dependent durable records have retired.

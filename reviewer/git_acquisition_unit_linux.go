@@ -29,9 +29,11 @@ type gitUnitRecord struct {
 	StartJob, StopJob                                 string
 	Identity                                          GateIdentity
 	Cgroup                                            cgroupBinding
-	BootstrapGrantHash                                string       `json:",omitempty"`
-	WorkerGrantHash                                   string       `json:",omitempty"`
-	WorkerIdentity                                    GateIdentity `json:",omitzero"`
+	BootstrapGrantHash                                string                `json:",omitempty"`
+	WorkerGrantHash                                   string                `json:",omitempty"`
+	WorkerIdentity                                    GateIdentity          `json:",omitzero"`
+	EarlyStop                                         *gitEarlyStopEvidence `json:",omitempty"`
+	Birth                                             *gitUnitBirthEvidence `json:",omitempty"`
 }
 type gitUnitManager interface {
 	containmentManager
@@ -196,6 +198,12 @@ func (r gitUnitRecord) valid(attempt, hash string) bool {
 	} else if r.Identity != (GateIdentity{}) || r.Cgroup != (cgroupBinding{}) {
 		return false
 	}
+	if r.Birth != nil && (!r.Started || !r.Birth.valid(r) || r.Captured && (r.Birth.Unit.InvocationID != r.Identity.InvocationID || r.Birth.Unit.Cgroup != r.Cgroup)) {
+		return false
+	}
+	if r.EarlyStop != nil && (!r.Started || !r.StartSettled || !r.Revoked || !r.Stopped || r.Captured || r.BootstrapGrantHash != "" || r.WorkerGrantHash != "" || !r.EarlyStop.valid(r.Unit) || r.Birth == nil || *r.EarlyStop != r.Birth.Unit) {
+		return false
+	}
 	if r.BootstrapGrantHash != "" && (!r.Captured || r.BootstrapGrantHash != Digest(gitUnitGrantPacket{1, gitBootstrapGrant, r.Binding, r.Identity, r.Binding.RuntimeHash})) {
 		return false
 	}
@@ -227,9 +235,9 @@ func (o *gitUnitOwner) read(attempt string) (gitUnitRecord, error) {
 		return gitUnitRecord{}, errGitUnit
 	}
 	canonical, err := json.Marshal(r)
-	// The expected image is hashed from the retained descriptor, never inferred
-	// from the untrusted record itself.
-	hash, errHash := o.imageHash()
+	// Recovery authenticates a previous worker against its retained bytes;
+	// the current launch image need not be the one that made this receipt.
+	hash, errHash := o.recordImageHash(r.StubHash)
 	if err != nil || errHash != nil || !bytes.Equal(canonical, raw) || !r.valid(attempt, hash) {
 		return gitUnitRecord{}, errGitUnit
 	}
@@ -240,6 +248,28 @@ func (o *gitUnitOwner) imageHash() (string, error) {
 		return "", errGitUnit
 	}
 	return o.stubHash, nil
+}
+
+func (o *gitUnitOwner) recordImageHash(hash string) (string, error) {
+	current, err := o.imageHash()
+	if err != nil || !validAuthHash(hash) {
+		return "", errGitUnit
+	}
+	if hash == current {
+		return current, nil
+	}
+	// Only an existing content-addressed private copy can authenticate an old
+	// record. Never import a pathname from that record or recreate a missing
+	// image. Hash the actual bytes, with the existing owner/link/mode/size checks.
+	directory := filepath.Join(o.root.Name(), "executables")
+	if privateDirectory(directory) != nil {
+		return "", errGitUnit
+	}
+	raw, err := readPinnedStub(filepath.Join(directory, hash), hash, true)
+	if err != nil {
+		return "", errGitUnit
+	}
+	return gitRawHash(raw), nil
 }
 func (o *gitUnitOwner) enter(ctx context.Context) bool {
 	if ctx == nil {
@@ -258,7 +288,7 @@ func (o *gitUnitOwner) enter(ctx context.Context) bool {
 }
 func (o *gitUnitOwner) leave() { o.operation <- struct{}{} }
 func (o *gitUnitOwner) write(r gitUnitRecord) error {
-	hash, err := o.imageHash()
+	hash, err := o.recordImageHash(r.StubHash)
 	if err != nil || !r.valid(r.Binding.Attempt, hash) {
 		return errGitUnit
 	}
@@ -319,6 +349,9 @@ func (o *gitUnitOwner) capture(ctx context.Context, r gitUnitRecord) (gitUnitRec
 	if err != nil || !expectedGitUnit(r, observed) || observed.MainPID == 0 {
 		return r, errGitUnit
 	}
+	if r.Birth != nil && (r.Birth.Unit.InvocationID != observed.InvocationID || r.Birth.Unit.UnitPath != observed.Path || r.Birth.Unit.Cgroup.Path != observed.ControlGroup) {
+		return r, errGitUnit
+	}
 	fd, err := unix.PidfdOpen(int(observed.MainPID), 0)
 	if err != nil {
 		return r, errGitUnit
@@ -344,7 +377,7 @@ func (o *gitUnitOwner) capture(ctx context.Context, r gitUnitRecord) (gitUnitRec
 		return r, errGitUnit
 	}
 	group, err := o.kernel.Capture(observed.ControlGroup, r.Unit)
-	if err != nil {
+	if err != nil || r.Birth != nil && r.Birth.Unit.Cgroup != group {
 		return r, errGitUnit
 	}
 	if r.Captured && (r.Identity != identity || r.Cgroup != group) {
@@ -392,7 +425,7 @@ func (o *gitUnitOwner) start(ctx context.Context, binding gitMaterializationBind
 		return errGitUnit
 	}
 	r, err := o.read(binding.Attempt)
-	if err != nil || r.Binding != binding || r.Started || r.Revoked || r.Stopped || r.ManagerOwner != o.manager.Owner() {
+	if err != nil || r.Binding != binding || r.StubHash != o.stubHash || r.Started || r.Revoked || r.Stopped || r.ManagerOwner != o.manager.Owner() {
 		return errGitUnit
 	}
 	boot, err := o.kernel.BootID()
@@ -420,7 +453,13 @@ func (o *gitUnitOwner) start(ctx context.Context, binding gitMaterializationBind
 		return errGitUnit
 	}
 	r.StartJob = job
-	if o.write(r) != nil || o.manager.WaitJob(bounded, job, r.Unit) != nil {
+	if o.write(r) != nil {
+		return errGitUnit
+	}
+	// Only this fresh accepted start may bind a pre-root identity. Recovery
+	// never creates a missing birth record from whichever unit exists later.
+	r, err = o.captureBirth(bounded, r)
+	if err != nil || o.write(r) != nil || o.manager.WaitJob(bounded, job, r.Unit) != nil {
 		return errGitUnit
 	}
 	r.StartSettled = true
@@ -507,6 +546,13 @@ func (o *gitUnitOwner) stop(ctx context.Context, binding gitMaterializationBindi
 	bounded, cancel := boundedManagerContext(ctx)
 	defer cancel()
 	if !r.Captured {
+		terminal, handled, terminalErr := o.stopBeforeCapture(bounded, r)
+		if terminalErr != nil {
+			return terminalErr
+		}
+		if handled {
+			return o.write(terminal)
+		}
 		r, err = o.captureStarted(bounded, r)
 		if err != nil || o.write(r) != nil {
 			return errGitUnit
