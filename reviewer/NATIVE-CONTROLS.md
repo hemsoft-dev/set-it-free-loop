@@ -72,16 +72,30 @@ all assertions pass.
 
 ## Remaining work and gates
 
+On October 21, 2026, source and fresh image `da1846c` passed four control
+sessions each with pinned Codex 0.163.0 and Claude 2.1.303 against the local
+fake TLS backend. Codex's four phases took 22.858 seconds and Claude's took
+22.186 seconds. Each phase performed the exact Read and Search exchange before
+output, retained the expected frozen history and passed transport-owned usage
+validation. All eight units were captured, stopped and inactive with zero main
+PID and no remaining control group. Matching auth returns completed, and the
+owned QEMU runtime directories were removed. These are synthetic producer and
+native lifecycle observations, not model-quality, account or whole-host Git
+acquisition qualifications. Private receipts and synthetic auth remain local.
+
 This source does not run or score the frozen corpus. A durable six-arm runner,
 private attempt reservations, no-replay restart accounting, independent
 assessments and a new explicitly frozen release plan remain work under
 [#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177).
 The corpus and its labels, packet hashes and freeze receipts are unchanged.
 
-Current unit tests use fake workers, fake kernel/unit evidence and Unix protocol
-transports. Producer qualification must record actual pinned CLI and fresh
-image provenance separately; source tests alone prove neither VM execution nor
-review quality. Existing whole-host containment failures remain failed.
+Unit tests use fake workers, fake kernel/unit evidence and Unix protocol
+transports. The separate pinned-client observations above cover the positive
+four-step producer path. Swapped output types, forged hashes/history, source
+failures, forbidden tool events, quota and uncertain-stop rejection are tested
+with synthetic transports and kernel evidence. Those negative cases have not
+all been reproduced through the actual clients. Existing whole-host containment
+failures remain failed.
 Provider policy, account entitlement, public-target subscription support,
 quota and paid-overflow evidence, full containment/resource/recovery
 qualification, final App/trigger evidence and explicit owner activation remain
