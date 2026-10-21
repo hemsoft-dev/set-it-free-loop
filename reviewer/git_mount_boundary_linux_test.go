@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -181,6 +182,21 @@ func TestGitMountNamespaceChild(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+	if mode := os.Getenv("SFL_GIT_DESCRIPTOR_CHILD"); mode != "" {
+		supervisor := os.NewFile(3, "fixture-supervisor")
+		peer, err := authenticateGitSupervisor(ctx, conn, supervisor)
+		supervisor.Close()
+		if err != nil {
+			t.Fatal("fixture supervisor", err)
+		}
+		defer peer.Close()
+		unix.CloseOnExec(4)
+		if mode == "clean" {
+			unix.Close(5)
+		} else if mode != "inheritable" {
+			unix.CloseOnExec(5)
+		}
+	}
 	if unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0) != nil || writeGitControlPacket(ctx, conn, []byte("ready"), nil) != nil {
 		t.Fatal("inert mount readiness")
 	}
@@ -245,6 +261,20 @@ func gitMountInertRuntime(t *testing.T, ctx context.Context) (*os.File, *os.File
 }
 
 func TestGitMountActualPrivateViewRefusesUnqualifiedWorkspace(t *testing.T) {
+	gitMountPrivateFixture(t, "")
+}
+
+func TestGitDescriptorActualPrivateWorker(t *testing.T) {
+	if os.Getenv("SFL_GIT_DESCRIPTOR_KERNEL") != "1" {
+		t.Skip("explicit aggregate descriptor qualification using actual private worker roles")
+	}
+	for _, mode := range []string{"clean", "host-file", "host-directory", "internet-socket", "inheritable"} {
+		t.Run(mode, func(t *testing.T) { gitMountPrivateFixture(t, mode) })
+	}
+}
+
+func gitMountPrivateFixture(t *testing.T, descriptorMode string) {
+	t.Helper()
 	if os.Getenv("SFL_GIT_BOOTSTRAP_NAMESPACE") != "1" {
 		t.Skip("explicit inert private-namespace mount observation")
 	}
@@ -300,8 +330,49 @@ func TestGitMountActualPrivateViewRefusesUnqualifiedWorkspace(t *testing.T) {
 	command := exec.CommandContext(ctx, fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), helper.Fd()), args...)
 	command.Env = []string{}
 	command.ExtraFiles = []*os.File{root, broker, filter, work, alias}
+	var exportRead, supervisor *os.File
+	if descriptorMode != "" {
+		var exportWrite *os.File
+		exportRead, exportWrite, err = os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer exportRead.Close()
+		defer exportWrite.Close()
+		fd, err := unix.PidfdOpen(os.Getpid(), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		supervisor = os.NewFile(uintptr(fd), "fixture-supervisor")
+		defer supervisor.Close()
+		var extra *os.File
+		switch descriptorMode {
+		case "host-directory":
+			extra, err = os.Open(t.TempDir())
+		case "internet-socket":
+			var fd int
+			fd, err = unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+			if err == nil {
+				extra = os.NewFile(uintptr(fd), "fixture-inherited-internet")
+			}
+		default:
+			extra, err = os.CreateTemp(t.TempDir(), "outside-worker-")
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer extra.Close()
+		args = []string{"--unshare-all", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--cap-drop", "ALL", "--clearenv", "--setenv", "SFL_GIT_MOUNT_CHILD", "1", "--setenv", "SFL_GIT_DESCRIPTOR_CHILD", descriptorMode, "--ro-bind-fd", "6", "/", "--ro-bind-fd", "7", "/broker", "--bind-fd", "9", "/work", "--bind-fd", "10", "/tmp", "--proc", "/proc", "--remount-ro", "/proc", "--dev-bind", "/dev/null", "/dev/null", "--dev-bind", "/dev/urandom", "/dev/urandom", "--remount-ro", "/dev/urandom", "--chdir", "/", "--seccomp", "8", "--", "/usr/bin/git", "-test.run=^TestGitMountNamespaceChild$"}
+		command = exec.CommandContext(ctx, fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), helper.Fd()), args...)
+		command.Env = []string{}
+		command.ExtraFiles = []*os.File{supervisor, exportWrite, extra, root, broker, filter, work, alias}
+		// The fixed production launcher uses null standard streams. Preserve
+		// that actual descriptor policy in this inert fixture as well.
+	}
 	var output bytes.Buffer
-	command.Stdout, command.Stderr = &output, &output
+	if descriptorMode == "" {
+		command.Stdout, command.Stderr = &output, &output
+	}
 	if command.Start() != nil {
 		t.Fatal("inert mount namespace launch")
 	}
@@ -365,6 +436,37 @@ func TestGitMountActualPrivateViewRefusesUnqualifiedWorkspace(t *testing.T) {
 		t.Fatal("actual process boundary", err)
 	}
 	defer boundary.Close()
+	if descriptorMode != "" {
+		rows, err := observeGitDescriptors(ctx, identity, original)
+		if err != nil {
+			duplicate, duplicateErr := unix.PidfdGetfd(original, 0, 0)
+			if duplicateErr == nil {
+				unix.Close(duplicate)
+			}
+			t.Log("actual original-pidfd standard-input duplication", duplicateErr)
+			names, readErr := os.ReadDir(fmt.Sprintf("/proc/%d/fd", identity.PID))
+			t.Log("actual fd directory access", readErr)
+			for _, name := range names {
+				fd, parseErr := strconv.Atoi(name.Name())
+				if parseErr != nil {
+					t.Fatal(parseErr)
+				}
+				duplicate, duplicateErr := unix.PidfdGetfd(original, fd, 0)
+				if duplicateErr == nil {
+					unix.Close(duplicate)
+				}
+				t.Log("actual original-pidfd descriptor duplication", fd, duplicateErr)
+			}
+			t.Fatal("actual descriptor observation", err)
+		}
+		result := checkGitDescriptorBoundary(ctx, boundary, exportRead, supervisor, conn)
+		if descriptorMode == "clean" && result != nil {
+			t.Fatalf("fixed descriptor roles refused: %v\n%+v", result, rows)
+		}
+		if descriptorMode != "clean" && result == nil {
+			t.Fatalf("inherited %s accepted: %+v", descriptorMode, rows)
+		}
+	}
 	binding, _ := gitMountTableFixture(t)
 	if checkGitMountBoundary(ctx, boundary, broker, binding) == nil {
 		t.Fatal("unqualified host workspace became a source admission proof")
