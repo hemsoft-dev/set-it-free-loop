@@ -1,0 +1,298 @@
+{
+  "status": "replacement-research-proposal-only",
+  "preserves_original_20_counts": {
+    "clean": 14,
+    "defect": 6,
+    "unlabeled": 0
+  },
+  "selection_rule": "Most recent merged pre-alpha PR not in original20 with full original base/head changed-path inventory <=128; chronology and size fixed before label research.",
+  "selected_number": 148,
+  "selected_paths": 86,
+  "metadata": {
+    "number": 148,
+    "title": "docs: reconcile executed organization migration evidence",
+    "html_url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/148",
+    "state": "closed",
+    "merged": true,
+    "merged_at": "2026-10-08T04:40:52Z",
+    "merge_commit_sha": "6f631ec574f87f126f8b02030f180055fb4023ed",
+    "changed_files": 86,
+    "additions": 4322,
+    "deletions": 38,
+    "baseRefOid": "197e0d2d7af1b60647e80148a9cfd75f81c95c16",
+    "headRefOid": "a35ecf858a2945f3538d25c023efcf2c2464961d"
+  },
+  "observation_cutoff_commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+  "proposed_clean": true,
+  "rationale": "No later corrective Git change to the candidate introduced validator behavior found in seven-calendar-day history or through immutable cutoff. Fourteen introduced/modified helper functions remain text-identical; later central validator changes introduce separate wider-pilot qualification or preserve historical evidence during intentional retirement. This is bounded negative Git evidence, not proof of absence of defects or complete receipt audit.",
+  "candidate_lines": [
+    {
+      "path": "deployment/scripts/validate-org-rollout.py",
+      "start": 460,
+      "end": 502,
+      "revision": "head"
+    },
+    {
+      "path": "deployment/scripts/validate-org-rollout.py",
+      "start": 513,
+      "end": 545,
+      "revision": "head"
+    },
+    {
+      "path": "deployment/scripts/validate-org-rollout.py",
+      "start": 548,
+      "end": 578,
+      "revision": "head"
+    },
+    {
+      "path": "deployment/scripts/validate-org-rollout.py",
+      "start": 1666,
+      "end": 1743,
+      "revision": "head"
+    }
+  ],
+  "survival_window": {
+    "days": 7,
+    "start": "2026-10-08T04:40:52+00:00",
+    "end": "2026-10-15T04:40:52+00:00"
+  },
+  "changed_paths": [
+    "deployment/scripts/validate-org-rollout.py",
+    "deployment/tests/fixtures/retired-gh-x-sfl.json",
+    "deployment/tests/test_org_rollout.py",
+    "docs/organization-migration/README.md",
+    "docs/organization-migration/ROLLOUT.md",
+    "docs/organization-migration/current-survival-resources.json",
+    "docs/organization-migration/execution/README.md",
+    "docs/organization-migration/execution/dashboard-policy-repair.json",
+    "docs/organization-migration/execution/fhemmer-post-transfer-browser-audit.json",
+    "docs/organization-migration/execution/fhemmer-protection-owner-refresh.json",
+    "docs/organization-migration/execution/fhemmer-protection-verification-limitation.json",
+    "docs/organization-migration/execution/owner-repository-first-direction.json",
+    "docs/organization-migration/execution/post-transfer-app-installation.json",
+    "docs/organization-migration/execution/post-transfer-manifests.json",
+    "docs/organization-migration/execution/post-transfer-reviewer-execution-plan.json",
+    "docs/organization-migration/execution/pr147-main-delivery.json",
+    "docs/organization-migration/execution/rc16-independent-download-proof.json",
+    "docs/organization-migration/execution/repository-first-final-inventory.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1002223819.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1039658773.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1070353109.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1076389234.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1086124099.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1096201366.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1104960030.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1106290960.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1107323158.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1107806657.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1119892824.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1120321254.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1120402599.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1122850110.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1126133188.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1127994043.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1135799306.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1136522036.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1141008729.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1141507514.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1141615583.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1143951439.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1143972745.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1145574258.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1148500296.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1169772257.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1169875606.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1188676172.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1214914496.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1229335234.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1234389239.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-124155847.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1255413023.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1262580000.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1266823833.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1271503908.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1285058368.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1298365902.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1318635011.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1332684620.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-133668217.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-133669754.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1349305052.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1353177297.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1358408598.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1360796394.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1398757511.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-1399232444.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-173613643.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-193121052.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-223324060.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-223800408.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-286901159.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-46445245.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-579605475.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-804681121.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-85017515.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-941842262.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-945738366.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-982944435.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-987270315.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-987895155.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-992260357.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-995371240.json",
+    "docs/organization-migration/execution/repository-transfers/repository-transfer-996911586.json",
+    "docs/organization-migration/execution/sfl-app-credential-metadata.json",
+    "docs/organization-migration/historical-workflow-reconciliation.json",
+    "docs/organization-migration/integration-ledger.csv"
+  ],
+  "later_history_commits": [
+    {
+      "commit": "2dd6ffd08c7d8a12cb97d5f8247219fe16478b45",
+      "time": "2026-10-08T01:26:36-04:00",
+      "subject": "fix: qualify the existing full deployment as wider pilot (#152)",
+      "within_survival_window": true,
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/commit/2dd6ffd08c7d8a12cb97d5f8247219fe16478b45"
+    },
+    {
+      "commit": "89425320ace3127a829d86e3b642fe2b31fd979e",
+      "time": "2026-10-08T05:10:43-04:00",
+      "subject": "fix: reject native reviews with ambiguous base provenance (#155)",
+      "within_survival_window": true,
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/commit/89425320ace3127a829d86e3b642fe2b31fd979e"
+    },
+    {
+      "commit": "ef807fc3ac3cb734efa70435a6a3970223680476",
+      "time": "2026-10-08T09:04:22-04:00",
+      "subject": "fix: require terminal immediate predecessor for Codex review retries (#157)",
+      "within_survival_window": true,
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/commit/ef807fc3ac3cb734efa70435a6a3970223680476"
+    },
+    {
+      "commit": "4447b3eff8a797ba77a9a9f16120829b9af424e6",
+      "time": "2026-10-08T12:36:22-04:00",
+      "subject": "docs: record executed organization transfers and remaining gates (#156)",
+      "within_survival_window": true,
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/commit/4447b3eff8a797ba77a9a9f16120829b9af424e6"
+    },
+    {
+      "commit": "05e71cfb6d433a95764e4bf695db9c09c3779bc3",
+      "time": "2026-10-08T13:39:09-04:00",
+      "subject": "fix: invalidate published gates when verification errors (#163)",
+      "within_survival_window": true,
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/commit/05e71cfb6d433a95764e4bf695db9c09c3779bc3"
+    },
+    {
+      "commit": "fd3a5a2d407aa830f64db0a8fa413f3e293f6152",
+      "time": "2026-10-09T19:00:49-04:00",
+      "subject": "Retire source SFL deployment and record central pilot delivery (#170)",
+      "within_survival_window": true,
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/commit/fd3a5a2d407aa830f64db0a8fa413f3e293f6152"
+    },
+    {
+      "commit": "75759b6d3055d6d6dab7cf6ced0afb2ccff081d2",
+      "time": "2026-10-09T22:28:53-04:00",
+      "subject": "Freeze SFL and remove active repository automation (#171)",
+      "within_survival_window": true,
+      "url": "https://github.com/hemsoft-dev/set-it-free-loop/commit/75759b6d3055d6d6dab7cf6ced0afb2ccff081d2"
+    }
+  ],
+  "function_retention_checks": [
+    {
+      "function": "original_protection_contract",
+      "start": 426,
+      "end": 457,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "reviewed_survival_resources",
+      "start": 460,
+      "end": 502,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "protection_contract",
+      "start": 505,
+      "end": 510,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_windows_startup",
+      "start": 513,
+      "end": 545,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_source_browser_protection",
+      "start": 548,
+      "end": 578,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_protection_responses",
+      "start": 581,
+      "end": 642,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_reference_scan",
+      "start": 1611,
+      "end": 1663,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "secret_references",
+      "start": 1666,
+      "end": 1669,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_inactive_historical_references",
+      "start": 1672,
+      "end": 1743,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_branch_reference_files",
+      "start": 1746,
+      "end": 1792,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_source_refresh",
+      "start": 1847,
+      "end": 1972,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_runner_captures",
+      "start": 2179,
+      "end": 2292,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_repository_transfer",
+      "start": 2345,
+      "end": 2391,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate_provider_success",
+      "start": 2601,
+      "end": 2711,
+      "unchanged_at_cutoff": true
+    },
+    {
+      "function": "validate",
+      "start": 3010,
+      "end": 3786,
+      "unchanged_at_cutoff": false
+    }
+  ],
+  "key_independent_source_evidence_urls": [
+    "https://github.com/hemsoft-dev/set-it-free-loop/pull/148",
+    "https://github.com/hemsoft-dev/set-it-free-loop/blob/a35ecf858a2945f3538d25c023efcf2c2464961d/deployment/scripts/validate-org-rollout.py#L460-L502",
+    "https://github.com/hemsoft-dev/set-it-free-loop/blob/a35ecf858a2945f3538d25c023efcf2c2464961d/deployment/scripts/validate-org-rollout.py#L513-L545",
+    "https://github.com/hemsoft-dev/set-it-free-loop/blob/a35ecf858a2945f3538d25c023efcf2c2464961d/deployment/scripts/validate-org-rollout.py#L548-L578",
+    "https://github.com/hemsoft-dev/set-it-free-loop/blob/a35ecf858a2945f3538d25c023efcf2c2464961d/deployment/scripts/validate-org-rollout.py#L1672-L1743",
+    "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff"
+  ]
+}
