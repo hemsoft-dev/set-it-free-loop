@@ -114,3 +114,67 @@ func recoverGitFactory(ctx context.Context, unit *gitUnitOwner, archive *gitExpo
 	}
 	return retained, nil
 }
+
+// A known stopped failure must not poison the next fresh nonce until restart.
+// The run stays registered, and no intake can retire while its generation is
+// unaccepted or its owned broker/acquisition callbacks have not joined.
+func (f *gitSourceFactory) retireFailedCapture(ctx context.Context, run *gitFactoryRun) error {
+	if ctx == nil || run == nil || run.unit != f.unit || run.archive != f.archive || f.runs[run.binding.Attempt] != run {
+		return errGitUnit
+	}
+	run.mu.Lock()
+	stopped, closed, generation := run.stopped, run.closed, run.generation
+	run.mu.Unlock()
+	if !stopped || !closed {
+		return errGitUnit
+	}
+	if generation != nil {
+		if generation.owner != f.credentials.state {
+			return errGitUnit
+		}
+		generation.owner.mu.Lock()
+		released := generation.released
+		generation.owner.mu.Unlock()
+		if !released {
+			return errGitUnit
+		}
+	}
+	if !f.archive.enter(ctx) {
+		return errGitUnit
+	}
+	var state string
+	inspect := func() error {
+		if f.archive.verifyRoot() != nil {
+			return errGitUnit
+		}
+		if _, err := f.archive.root.Lstat(gitExportDirectory(run.binding.Attempt)); os.IsNotExist(err) {
+			return nil
+		} else if err != nil {
+			return errGitUnit
+		}
+		root, err := f.archive.attempt(run.binding.Attempt)
+		if err != nil {
+			return errGitUnit
+		}
+		defer root.Close()
+		record, err := readGitExportRecord(root)
+		if err != nil || record.Binding != run.binding {
+			return errGitUnit
+		}
+		state = record.State
+		return nil
+	}
+	err := inspect()
+	f.archive.leave()
+	if err != nil {
+		return errGitUnit
+	}
+	switch state {
+	case "receiving", "discarded":
+		return f.archive.discardStoppedIntake(ctx, f.unit, run.binding)
+	case "", "staged":
+		return nil
+	default:
+		return errGitUnit
+	}
+}

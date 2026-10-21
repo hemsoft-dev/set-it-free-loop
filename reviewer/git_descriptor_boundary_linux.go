@@ -230,11 +230,12 @@ func gitObserveDescriptor(fd int) (gitDescriptorObservation, error) {
 // This is a private policy check, not reusable admission authority. Expected
 // pipe/pidfd identities come from factory-owned retained kernel handles.
 func validateGitDescriptors(rows []gitDescriptorObservation, export gitKernelFileID, supervisor gitPIDFDIdentity, controlPath string) error {
-	if len(rows) < 6 || len(rows) > gitDescriptorLimit || export == (gitKernelFileID{}) || supervisor == (gitPIDFDIdentity{}) || !filepath.IsAbs(controlPath) || filepath.Clean(controlPath) != controlPath || filepath.Base(controlPath) != "worker.sock" || len(controlPath) > 107 {
+	if len(rows) != 8 || export == (gitKernelFileID{}) || supervisor == (gitPIDFDIdentity{}) || !filepath.IsAbs(controlPath) || filepath.Clean(controlPath) != controlPath || filepath.Base(controlPath) != "worker.sock" || len(controlPath) > 107 {
 		return errGitUnit
 	}
 	seen := map[int]bool{}
 	controlCount, exportCount, supervisorCount := 0, 0, 0
+	eventCount, pollCount := 0, 0
 	for _, row := range rows {
 		if row.Number < 0 || seen[row.Number] {
 			return errGitUnit
@@ -261,13 +262,15 @@ func validateGitDescriptors(rows []gitDescriptorObservation, export gitKernelFil
 			controlCount++
 		case row.Mode&unix.S_IFMT == 0 && row.File == gitKernelFileID(supervisor):
 			supervisorCount++
-		case row.Mode&unix.S_IFMT == 0 && (row.Target == "anon_inode:[eventpoll]" || row.Target == "anon_inode:[eventfd]"):
-			// The measured Go runtime's private CLOEXEC poller handles.
+		case row.Mode&unix.S_IFMT == 0 && row.Target == "anon_inode:[eventpoll]":
+			pollCount++
+		case row.Mode&unix.S_IFMT == 0 && row.Target == "anon_inode:[eventfd]":
+			eventCount++
 		default:
 			return errGitUnit
 		}
 	}
-	if !seen[0] || !seen[1] || !seen[2] || controlCount != 1 || exportCount != 1 || supervisorCount != 1 {
+	if !seen[0] || !seen[1] || !seen[2] || controlCount != 1 || exportCount != 1 || supervisorCount != 1 || eventCount != 1 || pollCount != 1 {
 		return errGitUnit
 	}
 	return nil

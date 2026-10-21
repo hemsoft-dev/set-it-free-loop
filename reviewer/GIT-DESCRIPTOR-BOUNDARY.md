@@ -27,7 +27,9 @@ accepted control connection, with the current supervisor's kernel peer
 credentials. The namespace-local `/broker/worker.sock` alias does not change the
 kernel's stored server pathname. The accepted connection's original peer pidfd
 must match the retained worker. Exactly one pidfd must match the retained original supervisor.
-The measured Go runtime's CLOEXEC eventpoll and eventfd handles are permitted.
+The inventory must contain exactly eight descriptors, including exactly one
+CLOEXEC eventpoll and one CLOEXEC eventfd for the pinned Go runtime. Extra
+poller handles are not admitted merely because they share those anonymous types.
 Extra sockets, directories, regular files, pipes, pidfds and other anonymous
 objects refuse, even when they have CLOEXEC. Socket domain checks never exercise
 inherited Internet sockets.
@@ -44,7 +46,7 @@ the dynamic loader's temporary library descriptors before inert readiness.
 An explicit private-namespace fixture runs an ordinary measured Go executable,
 authenticates the original supervisor and disables dumpability. It supplies a
 real export pipe and tests the fixed roles plus actual extra host file,
-directory, Internet socket and inheritable descriptor cases. It uses trusted
+directory, Internet socket, inheritable descriptor and extra eventfd/epoll cases. It uses trusted
 empty fixture storage, never candidate input or a production storage fallback.
 
 ```sh

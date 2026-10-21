@@ -268,7 +268,7 @@ func TestGitDescriptorActualPrivateWorker(t *testing.T) {
 	if os.Getenv("SFL_GIT_DESCRIPTOR_KERNEL") != "1" {
 		t.Skip("explicit aggregate descriptor qualification using actual private worker roles")
 	}
-	for _, mode := range []string{"clean", "host-file", "host-directory", "internet-socket", "inheritable"} {
+	for _, mode := range []string{"clean", "host-file", "host-directory", "internet-socket", "inheritable", "extra-eventfd", "extra-epoll"} {
 		t.Run(mode, func(t *testing.T) { gitMountPrivateFixture(t, mode) })
 	}
 }
@@ -347,6 +347,16 @@ func gitMountPrivateFixture(t *testing.T, descriptorMode string) {
 		defer supervisor.Close()
 		var extra *os.File
 		switch descriptorMode {
+		case "extra-eventfd", "extra-epoll":
+			var fd int
+			if descriptorMode == "extra-eventfd" {
+				fd, err = unix.Eventfd(0, unix.EFD_CLOEXEC)
+			} else {
+				fd, err = unix.EpollCreate1(unix.EPOLL_CLOEXEC)
+			}
+			if err == nil {
+				extra = os.NewFile(uintptr(fd), "fixture-extra-poller")
+			}
 		case "host-directory":
 			extra, err = os.Open(t.TempDir())
 		case "internet-socket":

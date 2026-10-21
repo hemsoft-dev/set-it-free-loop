@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"time"
 )
 
 // Internal service composition, never a model capability or serialized gate.
@@ -30,14 +32,17 @@ type gitSourceFactory struct {
 	packets                         map[string]string
 	materialized                    map[string]*gitMaterialization
 	closed                          bool
+	ready                           bool
 }
 
 // Opening performs startup recovery before asking the credential owner for any
-// ready generation. Caller transfers exclusive lifecycle ownership of unit,
-// archive and prepared runtime; credentials remain shared with the publisher.
+// ready generation. Basic validation failures return nil and leave inputs owned
+// by the caller. Once a nonnil factory is returned, including with an error, it
+// owns unit/archive/runtime: retain it for Recover or Close. Capture/Restore are
+// fenced until startup recovery succeeds. Credentials remain caller-owned.
 // Call this before credential Refresh. No refresh, App install or HTTP occurs.
-func newGitSourceFactory(ctx context.Context, credentials *GitHubCredentialOwner, unit *gitUnitOwner, archive *gitExportArchive, runtime *gitRuntimeRoot, helper *os.File, m gitGrantManifest, release, releaseHash, directory string) (_ *gitSourceFactory, result error) {
-	if ctx == nil || ctx.Err() != nil || credentials == nil || credentials.state == nil || unit == nil || archive == nil || runtime == nil || helper == nil || !objectID.MatchString(release) || !validAuthHash(releaseHash) || !filepath.IsAbs(directory) || filepath.Clean(directory) != directory || len(directory) > 33 || privateDirectory(directory) != nil {
+func newGitSourceFactory(ctx context.Context, credentials *GitHubCredentialOwner, unit *gitUnitOwner, archive *gitExportArchive, runtime *gitRuntimeRoot, helper *os.File, m gitGrantManifest, release, releaseHash, directory string) (*gitSourceFactory, error) {
+	if ctx == nil || ctx.Err() != nil || credentials == nil || credentials.state == nil || unit == nil || archive == nil || runtime == nil || helper == nil || !objectID.MatchString(release) || !validAuthHash(releaseHash) || !filepath.IsAbs(directory) || filepath.Clean(directory) != directory || !gitFactoryRunPaths(filepath.Join(directory, "run-"+strings.Repeat("a", 32))) || privateDirectory(directory) != nil {
 		return nil, errGitUnit
 	}
 	resolved, err := filepath.EvalSymlinks(directory)
@@ -76,52 +81,99 @@ func newGitSourceFactory(ctx context.Context, credentials *GitHubCredentialOwner
 	if err != nil {
 		return nil, errGitUnit
 	}
-	f := &gitSourceFactory{operation: make(chan struct{}, 1), credentials: credentials, unit: unit, archive: archive, runtime: runtime, manifest: m, release: release, releaseHash: releaseHash, directory: directory, root: root, runs: map[string]*gitFactoryRun{}, packets: map[string]string{}, materialized: map[string]*gitMaterialization{}}
+	identity, err := root.Stat(".")
+	if err != nil {
+		root.Close()
+		return nil, errGitUnit
+	}
+	retainedHelper, err := duplicateGitControlFile(helper)
+	if err != nil {
+		root.Close()
+		return nil, errGitUnit
+	}
+	// Ownership transfers only after every required local handle is retained.
+	// A returned recovery handle is therefore complete even when recovery fails.
+	f := &gitSourceFactory{operation: make(chan struct{}, 1), credentials: credentials, unit: unit, archive: archive, runtime: runtime, manifest: m, release: release, releaseHash: releaseHash, directory: directory, root: root, identity: identity, helper: retainedHelper, runs: map[string]*gitFactoryRun{}, packets: map[string]string{}, materialized: map[string]*gitMaterialization{}}
 	f.operation <- struct{}{}
-	defer func() {
-		if result != nil {
-			if f.helper != nil {
-				f.helper.Close()
-			}
-			root.Close()
-		}
-	}()
-	f.identity, err = root.Stat(".")
-	if err != nil {
-		return nil, errGitUnit
-	}
-	f.helper, err = duplicateGitControlFile(helper)
-	if err != nil {
-		return nil, errGitUnit
-	}
-	f.bindings, err = recoverGitFactory(ctx, unit, archive)
-	if err != nil {
-		return nil, errGitUnit
-	}
-	if !archive.enter(ctx) {
-		return nil, errGitUnit
-	}
-	exports, err := archive.records()
-	archive.leave()
-	if err != nil {
-		return nil, errGitUnit
-	}
-	for _, record := range exports {
-		if record.State == "staged" {
-			f.packets[record.Binding.Attempt] = record.PacketHash
-		}
+	if f.Recover(ctx) != nil {
+		return f, errGitUnit
 	}
 	return f, nil
 }
 
+// Recover is a trusted explicit recovery action. It never refreshes credentials
+// or restarts an acquisition. Local unknown runs first drain their actual broker
+// and generation; only startup owners can rely on the old process's released
+// cross-process lock as proof that its broker cannot still execute.
+func (f *gitSourceFactory) Recover(ctx context.Context) error {
+	if !f.enter(ctx) {
+		return errGitUnit
+	}
+	defer f.leave()
+	if f.closed {
+		return errGitUnit
+	}
+	if f.ready {
+		return nil
+	}
+	if f.helper == nil || f.identity == nil || f.checkRoot() != nil {
+		return errGitUnit
+	}
+	for _, run := range f.runs {
+		run.mu.Lock()
+		generation := run.generation
+		run.mu.Unlock()
+		if generation != nil {
+			if generation.stop(ctx) != nil {
+				return errGitUnit
+			}
+		} else if run.stop(ctx) != nil {
+			return errGitUnit
+		}
+		if run.close() != nil {
+			return errGitUnit
+		}
+	}
+	f.credentials.state.mu.Lock()
+	busy := len(f.credentials.state.acquisitions) != 0
+	f.credentials.state.mu.Unlock()
+	if busy {
+		return errGitUnit
+	}
+	bindings, err := recoverGitFactory(ctx, f.unit, f.archive)
+	if err != nil {
+		return errGitUnit
+	}
+	if !f.archive.enter(ctx) {
+		return errGitUnit
+	}
+	exports, err := f.archive.records()
+	f.archive.leave()
+	if err != nil {
+		return errGitUnit
+	}
+	packets := map[string]string{}
+	for _, record := range exports {
+		if record.State == "staged" {
+			packets[record.Binding.Attempt] = record.PacketHash
+		}
+	}
+	f.bindings, f.packets, f.ready = bindings, packets, true
+	return nil
+}
+
 func (f *gitSourceFactory) enter(ctx context.Context) bool {
-	if f == nil || ctx == nil {
+	if f == nil || ctx == nil || ctx.Err() != nil {
 		return false
 	}
 	select {
 	case <-ctx.Done():
 		return false
 	case <-f.operation:
+		if ctx.Err() != nil {
+			f.leave()
+			return false
+		}
 		return true
 	}
 }
@@ -141,7 +193,7 @@ func (f *gitSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*Sna
 		return nil, errGitUnit
 	}
 	defer f.leave()
-	if f.closed || f.checkRoot() != nil || snapshot.Validate() != nil || snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
+	if f.closed || !f.ready || f.checkRoot() != nil || snapshot.Validate() != nil || snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
 		return nil, errGitUnit
 	}
 	var nonce [16]byte
@@ -160,11 +212,18 @@ func (f *gitSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*Sna
 	defer runtime.Close()
 	run, err := newGitFactoryRun(ctx, f.unit, f.archive, binding, f.manifest, runtime, f.helper, filepath.Join(f.directory, name))
 	if err != nil {
+		f.ready = false
 		return nil, errGitUnit
 	}
 	f.runs[binding.Attempt] = run
 	m, err := runGitFactoryAcquisition(ctx, f.credentials, binding, run)
 	if err != nil {
+		phase, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		retireErr := f.retireFailedCapture(phase, run)
+		cancel()
+		if retireErr != nil {
+			f.ready = false
+		}
 		return nil, errGitUnit
 	}
 	evidence, err := captureGitMaterializationEvidence(ctx, m)
@@ -183,7 +242,7 @@ func (f *gitSourceFactory) Restore(ctx context.Context, job Job) (*JobEvidence, 
 		return nil, errGitUnit
 	}
 	defer f.leave()
-	if f.closed || f.checkRoot() != nil || job.Validate() != nil || job.Release != f.release || job.Snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
+	if f.closed || !f.ready || f.checkRoot() != nil || job.Validate() != nil || job.Release != f.release || job.Snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
 		return nil, ErrFenced
 	}
 	attempts := []string{}
@@ -256,7 +315,7 @@ func (f *gitSourceFactory) Close(ctx context.Context) error {
 		}
 		delete(f.materialized, attempt)
 	}
-	if f.helper.Close() != nil {
+	if f.helper != nil && f.helper.Close() != nil {
 		failed = true
 	}
 	if f.root.Close() != nil {

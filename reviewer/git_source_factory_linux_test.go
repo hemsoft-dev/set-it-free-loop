@@ -5,11 +5,14 @@ package reviewer
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func gitFactoryWorkRoot(t *testing.T) string {
@@ -133,5 +136,152 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 	}
 	if signs.Load() != 0 {
 		t.Fatal("restore dispatched credential work")
+	}
+}
+
+func TestGitSourceFactoryValidLongRootAndFailedStartupOwnership(t *testing.T) {
+	for _, mode := range []string{"long-root", "failed-recovery"} {
+		t.Run(mode, func(t *testing.T) {
+			r, f, runtime := gitFactoryAssetsFixture(t)
+			helper, err := duplicateGitControlFile(r.files[2])
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer helper.Close()
+			if r.stop(context.Background()) != nil || r.close() != nil {
+				t.Fatal("prepared fixture cleanup")
+			}
+			root := gitFactoryWorkRoot(t)
+			if mode == "long-root" {
+				root = filepath.Join(root, strings.Repeat("x", 40-len(root)))
+				if len(root) <= 33 || len(filepath.Join(root, "run-"+strings.Repeat("a", 32), "broker", "worker.sock")) > 107 || os.Mkdir(root, 0700) != nil {
+					t.Fatal("long valid Unix path fixture")
+				}
+			} else {
+				_, binding, store := gitMaterializationFixture(t, "sha1")
+				binding.Attempt = strings.Repeat("d", 32)
+				// Write a valid orphan archive through its real framing path.
+				// Re-encode the binding in trusted synthetic producer output.
+				var frame bytes.Buffer
+				if writeGitMaterialization(context.Background(), &frame, store, binding, DefaultGitAcquisitionBounds()) != nil {
+					t.Fatal("orphan fixture")
+				}
+				wire := frame.Bytes()
+				m, err := r.archive.stage(context.Background(), binding, io.NopCloser(bytes.NewReader(wire)))
+				if err != nil {
+					t.Fatal(err)
+				}
+				m.Close()
+			}
+			owner, _, _, _, _ := credentialOwnerFixture(t)
+			factory, err := newGitSourceFactory(context.Background(), owner, f.owner, r.archive, runtime, helper, r.manifest, testJob().Release, r.binding.ReleaseHash, root)
+			if mode == "long-root" {
+				if err != nil || factory == nil {
+					t.Fatal("valid deployment root refused", err)
+				}
+			} else {
+				if err == nil || factory == nil {
+					t.Fatal("failed startup lost transferred ownership handle", err)
+				}
+			}
+			if factory.Close(context.Background()) != nil {
+				t.Fatal("transferred startup resources not closed")
+			}
+		})
+	}
+}
+
+func TestGitSourceFactoryFailedStartupRetainsUnknownOwnerUntilRecovery(t *testing.T) {
+	r, f, runtime := gitFactoryAssetsFixture(t)
+	helper, err := duplicateGitControlFile(r.files[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer helper.Close()
+	f.manager.startErr = errors.New("fake unknown accepted start")
+	if f.owner.start(context.Background(), r.binding, "/private/bootstrap.sock") == nil {
+		t.Fatal("unknown start fixture")
+	}
+	owner, _, _, _, signs := credentialOwnerFixture(t)
+	factory, err := newGitSourceFactory(context.Background(), owner, f.owner, r.archive, runtime, helper, r.manifest, testJob().Release, r.binding.ReleaseHash, gitFactoryWorkRoot(t))
+	if err == nil || factory == nil {
+		t.Fatal("unknown startup lost owner handle", err)
+	}
+	if factory.Close(context.Background()) == nil || factory.closed || f.owner.closed {
+		t.Fatal("uncertain startup disposed live ownership")
+	}
+	if evidence, err := factory.Capture(context.Background(), testSnapshot()); err == nil || evidence != nil || signs.Load() != 0 {
+		t.Fatal("failed startup admitted new work")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	other, lockErr := newGitUnitOwner(ctx, f.root, f.stub, f.stubHash, f.manager, f.manager.kernel)
+	cancel()
+	if lockErr == nil || other != nil {
+		t.Fatal("failed startup released cross-process owner lock")
+	}
+	fd, err := runtime.directoryFD()
+	if err != nil {
+		t.Fatal("unknown startup lost runtime")
+	}
+	fd.Close()
+	// Explicit synthetic next-boot evidence resolves this fake manager branch.
+	// The fixture's separate actual inert child is still reaped by its cleanup.
+	f.manager.kernel.mu.Lock()
+	f.manager.kernel.boot = "synthetic-next-boot"
+	f.manager.kernel.mu.Unlock()
+	if factory.Recover(context.Background()) != nil || !factory.ready {
+		t.Fatal("explicit known-terminal startup recovery failed")
+	}
+	if r.stop(context.Background()) != nil || r.close() != nil || factory.Close(context.Background()) != nil {
+		t.Fatal("recovered startup cleanup")
+	}
+}
+
+func TestGitSourceFactoryRetiresKnownStoppedIntakeAfterLeaseAcceptance(t *testing.T) {
+	r, f, runtime := gitFactoryAssetsFixture(t)
+	owner, _, _, _, _ := credentialOwnerFixture(t)
+	factory, err := newGitSourceFactory(context.Background(), owner, f.owner, r.archive, runtime, r.files[2], r.manifest, testJob().Release, r.binding.ReleaseHash, gitFactoryWorkRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if owner.Refresh(context.Background()) != nil {
+		t.Fatal("fake pair qualification")
+	}
+	g, err := owner.retainReaderGeneration(context.Background(), r.stop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.retainGeneration(g)
+	factory.runs[r.binding.Attempt] = r
+	if m, err := r.archive.stage(context.Background(), r.binding, io.NopCloser(strings.NewReader("incomplete"))); err == nil || m != nil {
+		t.Fatal("partial frame staged")
+	}
+	if r.stop(context.Background()) != nil || r.close() != nil {
+		t.Fatal("known physical stop")
+	}
+	if factory.retireFailedCapture(context.Background(), r) == nil {
+		t.Fatal("unaccepted generation allowed intake retirement")
+	}
+	if g.stop(context.Background()) != nil {
+		t.Fatal("accept stopped generation")
+	}
+	if factory.retireFailedCapture(context.Background(), r) != nil {
+		t.Fatal("known stopped failure poisoned intake")
+	}
+	r.archive.enter(context.Background())
+	attempt, err := r.archive.attempt(r.binding.Attempt)
+	if err != nil {
+		r.archive.leave()
+		t.Fatal(err)
+	}
+	record, err := readGitExportRecord(attempt)
+	_, payloadErr := attempt.Lstat("payload.bin")
+	attempt.Close()
+	r.archive.leave()
+	if err != nil || record.State != "discarded" || !os.IsNotExist(payloadErr) {
+		t.Fatal("same-process recovery not durable", record, err, payloadErr)
+	}
+	if factory.Close(context.Background()) != nil {
+		t.Fatal("recovered failed capture cleanup")
 	}
 }

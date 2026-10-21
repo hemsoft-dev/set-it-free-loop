@@ -10,7 +10,11 @@ Construction takes exclusive lifecycle ownership of a newly opened unit owner,
 export archive and prepared runtime. It validates the fixed manifest/helper and
 runtime pins, then performs startup recovery before requesting any credential
 generation. The composing service must call this before credential Refresh and
-retain the factory until controller work has joined. Credentials remain shared
+retain the factory until controller work has joined. Before local handles are retained, a nil factory with an error leaves inputs
+owned by its caller. After ownership transfers, a failed startup returns a
+complete nonnil factory with the error. Retain that handle for explicit Recover
+or Close; Capture and Restore remain fenced until recovery succeeds. Unknown
+units keep their runtime and owner lock. Credentials remain shared
 with the publisher; the source factory never exposes a raw token or refresh
 capability to a worker or broker.
 
@@ -19,7 +23,9 @@ capability to a worker or broker.
 Each capture spends a random 128-bit attempt nonce. Its binding fixes the
 release hash, canonical runtime-manifest hash and immutable PR head/base/merge
 base. A fresh private attempt directory contains separate bootstrap and broker
-sockets. No failed or uncertain attempt automatically starts again.
+sockets. No failed or uncertain attempt automatically starts again. Unix pathname bounds
+are checked against each actual bootstrap/worker/broker socket path, including
+the fixed nonce directory, rather than an arbitrary short root limit.
 
 The factory seals the fixed non-executable manifest, duplicates measured runtime
 and helper handles, and retains the original sealed worker image and supervisor
@@ -97,6 +103,10 @@ owner proves physical stop. A canonical terminal `discarded` receipt is fsynced
 before removing the bounded owned payload. Recovery can repeat after a crash;
 the nonce remains spent, and discarded intake can never be reopened as source.
 A later fresh nonce may stage after the incomplete attempt becomes terminal.
+The same retirement runs after a failed capture in the current process, once
+its physical stop and credential-generation acceptance are known. Unknown or
+corrupt outcomes fence Capture/Restore until explicit Recover first drains the
+retained local runs; recovery does not restart them.
 Staged admitted source is retained; this path does not discard a complete export.
 All existing 128-record bounds remain. The factory retains its private working
 directories as recovery artifacts; it does not recursively delete a replacement

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -271,5 +272,17 @@ func TestGitFactoryBrokerSetupFailureRetiresOnlyKnownUnstartedLease(t *testing.T
 	}
 	if f.manager.starts != 0 || f.manager.stops != 0 {
 		t.Fatal("setup refusal dispatched a unit")
+	}
+}
+
+func TestGitFactorySocketPathBounds(t *testing.T) {
+	longest := "/" + strings.Repeat("x", 87)
+	if len(filepath.Join(longest, "broker", "worker.sock")) != 107 || !gitFactoryRunPaths(longest) {
+		t.Fatal("valid maximum socket path refused")
+	}
+	for _, path := range []string{longest + "x", "relative", "/tmp/../other", "/tmp/invalid\x00"} {
+		if gitFactoryRunPaths(path) {
+			t.Fatal("invalid socket path accepted")
+		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -35,6 +36,18 @@ type gitFactoryRun struct {
 	acquireDone, brokerDone         chan struct{}
 	brokerAudit                     GitReadBrokerAudit
 	stopOperation                   chan struct{}
+}
+
+func gitFactoryRunPaths(directory string) bool {
+	if !filepath.IsAbs(directory) || filepath.Clean(directory) != directory || strings.ContainsRune(directory, 0) {
+		return false
+	}
+	for _, name := range []string{"bootstrap.sock", "broker/worker.sock", "broker/git.sock"} {
+		if len(filepath.Join(directory, name)) > 107 {
+			return false
+		}
+	}
+	return true
 }
 
 func (r *gitFactoryRun) retainGeneration(g *githubReaderGeneration) {
@@ -80,7 +93,7 @@ func retainGitFactoryManifest(binding gitMaterializationBinding, m gitGrantManif
 // factory must retain their protected backing until this run is physically
 // stopped. Construction never starts a unit or dispatches GitHub HTTP.
 func newGitFactoryRun(ctx context.Context, unit *gitUnitOwner, archive *gitExportArchive, binding gitMaterializationBinding, m gitGrantManifest, runtime, helper *os.File, directory string) (_ *gitFactoryRun, result error) {
-	if ctx == nil || ctx.Err() != nil || unit == nil || archive == nil || runtime == nil || helper == nil || !m.valid(binding) || !filepath.IsAbs(directory) || filepath.Clean(directory) != directory || len(directory) > 70 || privateDirectory(directory) != nil {
+	if ctx == nil || ctx.Err() != nil || unit == nil || archive == nil || runtime == nil || helper == nil || !m.valid(binding) || !gitFactoryRunPaths(directory) || privateDirectory(directory) != nil {
 		return nil, errGitUnit
 	}
 	resolved, err := filepath.EvalSymlinks(directory)
