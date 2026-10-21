@@ -55,9 +55,11 @@ materialization fences later reads and releases its descriptors.
 helpers keep their Git-backed behavior; the eventual acquisition factory must
 choose the materialized path for downloaded source. The private receiver and
 restore functions are plumbing, not production stop enforcement. Sealed memfds
-are process-local: durable storage/reopening of the exact admitted export and
-recovery ownership remain factory work. Losing this staging handle must not
-cause an automatic re-fetch or recapture of an admitted job.
+are process-local. The private [export archive](GIT-EXPORT-ARCHIVE.md) now retains
+and reopens the exact plain export across controller processes. It remains
+staging; authenticated producer/stop evidence, recovery ownership and controller
+selection are still factory work. Losing source must not cause an automatic
+re-fetch or recapture of an admitted job.
 
 Tests use actual Git-produced SHA-1 and SHA-256 packs, capture the packet, delete
 the entire quarantine, then restore and read every retained object. They compare

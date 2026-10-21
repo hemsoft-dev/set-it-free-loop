@@ -79,8 +79,9 @@ actual pinned helper's output; fsck/object-validation checks were not relaxed.
 The concrete acquisition worker/factory must still authenticate its private
 channels and helper peers, inspect actual namespaces/mounts/resource limits,
 perform all Git parsing/materialization inside the measured unit, revoke/drain
-the broker and prove whole-unit termination before publication. Durable plain
-export reopening, uncertain-attempt recovery, credential-generation leases and
+the broker and prove whole-unit termination before publication. Private
+[plain-export retention/reopening](GIT-EXPORT-ARCHIVE.md) is available but still
+needs factory/recovery authority. Uncertain-attempt recovery, credential-generation leases and
 release/controller composition remain open. See [unit ownership](GIT-UNIT.md),
 [broker](GIT-BROKER.md), [quarantine checks](GIT-QUARANTINE.md) and
 [bounded materialization](GIT-MATERIALIZATION.md). No live inference or deployment
