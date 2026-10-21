@@ -5,8 +5,10 @@ acquisition factory. It uses a separate nonsecret Git binding and journal, never
 a fabricated provider/auth binding. Opening it does not launch a unit or read a
 provider profile. Only the explicit private start method requests a new unit.
 The offline [measured runtime builder](GIT-RUNTIME.md) and namespace startup
-check are available; they do not qualify aggregate acquisition. The public
-production factory, sealed worker executable, aggregate grant/export
+check are available; they do not qualify aggregate acquisition. The private [worker phase](GIT-WORKER.md) now authenticates the supervisor,
+checks its running sealed image, waits for a matching worker grant and performs
+fetch/verify/plain export. Its process fixtures run outside bubblewrap. The public
+production factory, fixed sealed worker executable/entry point, aggregate grant/export
 orchestration, full namespace/mount inspection, concrete helper admission and broker/result
 orchestration remain unfinished.
 
@@ -39,6 +41,13 @@ filter also denies namespace changes, mount APIs, cross-process inspection,
 keyrings, io_uring and x32/foreign ABIs. It allows ordinary Unix sockets and
 process creation. The factory must enforce its installation and descriptor
 handoff; these private helpers grant no source capability.
+
+An actual inert unit attempt on mini failed with `226/NAMESPACE` before its
+payload, so the fixed tmpfs request is currently incompatible there. Sealed
+inner-worker execution independently failed with `EACCES`. The
+[launch constraints report](GIT-LAUNCH-CONSTRAINTS.md) preserves both failures,
+primary-source privilege constraints and separate reproduction commands.
+No Git capability was issued by either probe. No host policy was changed.
 
 These are requested properties, not proof that the future Git worker's mounts
 or resource pressure have been qualified. The worker still needs its fixed
