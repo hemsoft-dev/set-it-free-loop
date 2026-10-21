@@ -1,6 +1,6 @@
 # Model-free App reviewer experiment
 
-Checked October 21, 2026, Eastern, for [#173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173). The new App can publish a COMMENT review. Neither the checked native UI nor either documented Bot-request mutation created a pending review request. Native reviewer assignment is therefore **not qualified** for this App/configuration. Its later appearance as an existing commenter does not establish requestability. The experiment does not identify a GitHub eligibility rule or root cause.
+Checked October 21, 2026, Eastern, for [#173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173). The new App can publish a COMMENT review. Neither the checked native UI nor either documented Bot-request mutation created a pending review request. Native reviewer assignment is therefore **not qualified** for this App/configuration. Its later appearance as an existing commenter does not establish requestability. The experiment does not identify a GitHub eligibility rule or root cause. The dedicated post-comment GraphQL `rerequestReviews` route was not tested; no conclusion about that route is claimed. Franz independently selected replacement triggers below.
 
 Franz authorized this model-free experiment on October 20 at 20:28 Eastern, relayed by the Chief in the task. The prerequisite label work merged in #216/#217. The Chief created and installed the new App; this experiment used the supplied key for App JWTs and ephemeral installation tokens. It used no provider profile, model inference, paid usage or deployed alpha service. Normal repository review of this report is a separate delivery gate.
 
@@ -17,12 +17,13 @@ Franz authorized this model-free experiment on October 20 at 20:28 Eastern, rela
 | App-authored COMMENT | Pass | [Review **5595158403**](https://github.com/hemsoft-dev/set-it-free-loop/pull/221#pullrequestreview-5595158403), state `COMMENTED`, Bot ID345646943, exact fixture head, submitted **01:01:22 EDT** / `05:01:22Z`. The body explicitly identifies canned, model-free text. |
 | Existing-reviewer display after COMMENT | Pass | The App appears as an existing reviewer and an already-ticked picker entry after publishing its comment. This is participant display only. |
 | Post-comment native request or re-request | Failed in observed browser | The Chief found no request/re-request control. Selecting the ticked entry, closing and reloading left the sidebar unchanged and persisted no request/event. |
+| Post-comment API `rerequestReviews` | Untested | No dedicated post-review mutation was executed. This route and its lifecycle remain unqualified; the UI result does not prove API impossibility. |
 | Owner attribution on a native request | Blocked | The API caller was independently verified as HemSoft/8227352, but there is no persisted native request/event whose actor can be qualified. |
 | Polling discovery and requests during downtime | Blocked | No native request exists to discover or replay. Empty polling reads cannot qualify this gate. |
 | COMMENT fulfilling a native request | Blocked | The comment had no pending request to fulfill. Authorship alone cannot prove completion semantics. |
 | Native removal and re-request lifecycle | Blocked | No pending request or removal event was created. |
 | Old completion A versus newer request B | Blocked | Neither A nor B could be established as a native request. No safe reconciliation behavior is claimed from this experiment. |
-| Throwaway cleanup | Pass | #221 closed **01:13:30 EDT** / `05:13:30Z`; `mergedAt` and `mergeCommit` are null. Its feature branch was deleted after retaining the fixture privately for evidence. |
+| Throwaway cleanup | Pass | #221 closed **01:13:30 EDT** / `05:13:30Z`; `mergedAt` and `mergeCommit` are null. Its exact `experiment/issue-173-app-picker-20261021` branch was deleted after retaining the fixture privately; the evidence now records a later missing-ref GET404 and empty `git ls-remote`, separately from the closure time. |
 | Retired automation | Pass at checked snapshot | Actions remains disabled and registered workflows are zero. No legacy service was restored or replacement trigger enabled. |
 
 ## Procedure and exact observations
@@ -68,6 +69,9 @@ gh api repos/hemsoft-dev/set-it-free-loop/pulls/221/requested_reviewers
 gh api 'repos/hemsoft-dev/set-it-free-loop/issues/221/timeline?per_page=100' --paginate --slurp
 gh api 'repos/hemsoft-dev/set-it-free-loop/pulls/221/reviews?per_page=100' --paginate --slurp
 gh pr view 221 --repo hemsoft-dev/set-it-free-loop --json state,closedAt,mergedAt,mergeCommit,headRefOid
+# Expected missing-ref HTTP404 after the separately recorded branch deletion:
+gh api --include repos/hemsoft-dev/set-it-free-loop/git/ref/heads/experiment/issue-173-app-picker-20261021
+git ls-remote --heads origin refs/heads/experiment/issue-173-app-picker-20261021
 gh api repos/hemsoft-dev/set-it-free-loop/actions/permissions --jq .enabled
 gh api repos/hemsoft-dev/set-it-free-loop/actions/workflows --jq .total_count
 ```

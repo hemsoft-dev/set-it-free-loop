@@ -342,5 +342,22 @@
     "live_activation_authorized": false,
     "implementation_status": "offline implementation authorized; pending"
   },
-  "replacement_trigger_enabled": false
+  "replacement_trigger_enabled": false,
+  "branch_absence_receipt": {
+    "checked_at_utc": "2026-10-21T05:37:32.521628+00:00",
+    "head_repository": "hemsoft-dev/set-it-free-loop",
+    "head_repository_id": 1169772257,
+    "head_ref": "refs/heads/experiment/issue-173-app-picker-20261021",
+    "last_fixture_head": "81bf8669e29f7333582b62caa3e8e06cec1b2c0e",
+    "method": "GET",
+    "api_route": "repos/hemsoft-dev/set-it-free-loop/git/ref/heads/experiment/issue-173-app-picker-20261021",
+    "http_status": 404,
+    "git_ls_remote_heads": [],
+    "meaning": "Post-deletion absence observed; original delete response/time were not retained. No deletion was repeated."
+  },
+  "post_comment_api_rerequest": {
+    "operation": "rerequestReviews",
+    "tested": false,
+    "reason": "No post-COMMENT API re-request was executed. The observed UI supplied no control and the owner directed closure of the fixture. No claim that this untested API route is impossible; replacement triggers are an explicit owner decision."
+  }
 }
