@@ -97,6 +97,25 @@ func authDisposition(store *r.AuthStore) (pending bool, hash string, valid bool)
 	return errors.Is(err, r.ErrAuthRecoveryRequired), hash, err == nil || errors.Is(err, r.ErrAuthRecoveryRequired)
 }
 
+type cancellationUnitReceipt struct {
+	Captured, Stopped bool
+	Binding           r.AuthBinding
+}
+
+type cancellationAuditReceipt struct {
+	Complete, AuthExported, AuthReturned bool
+	Binding                              r.AuthBinding
+	Provider                             *r.ProviderEvidence
+}
+
+// Incomplete work still needs independently bound private receipts. A stopped
+// receipt from another launch or policy cannot qualify this cancellation.
+func cancellationReceiptsBound(s r.Session, policy r.EgressPolicy, launch string, unit cancellationUnitReceipt, audit cancellationAuditReceipt, evidence *r.ProviderEvidence) bool {
+	hash := r.Digest(s)
+	binding := unit.Binding
+	return unit.Captured && unit.Stopped && binding.SessionHash == hash && binding.LaunchID == launch && len(launch) == 32 && binding.ContainmentID == r.Digest(struct{ Session, Launch string }{hash, launch}) && audit.Binding == binding && !audit.Complete && audit.AuthExported && evidence != nil && audit.Provider != nil && r.Digest(audit.Provider) == r.Digest(evidence) && evidence.Policy.Provider == s.Identity.Provider && r.Digest(evidence.Policy) == r.Digest(policy) && evidence.Access.Version == 1 && evidence.Access.SessionHash == hash && evidence.Access.PolicyHash == r.Digest(policy) && evidence.Access.Stopped
+}
+
 func runNativeCancellation(c config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -205,9 +224,9 @@ func runNativeCancellation(c config) error {
 		consistent = valid && pending == otherPending && hash == otherHash
 	}
 	paths, globErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "unit.json"))
-	var unit struct{ Captured, Stopped bool }
-	var audit struct{ Complete, AuthExported, AuthReturned bool }
-	unitValid := globErr == nil && len(paths) == 1 && readProtocolJSON(paths[0], &unit) == nil && readProtocolJSON(filepath.Join(filepath.Dir(paths[0]), "native-audit.json"), &audit) == nil
+	var unit cancellationUnitReceipt
+	var audit cancellationAuditReceipt
+	unitValid := globErr == nil && len(paths) == 1 && readProtocolJSON(paths[0], &unit) == nil && readProtocolJSON(filepath.Join(filepath.Dir(paths[0]), "native-audit.json"), &audit) == nil && cancellationReceiptsBound(s, policy, filepath.Base(filepath.Dir(paths[0])), unit, audit, evidence)
 	roots, rootErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "qemu-runtime"))
 	cancellationMS := int64(-1)
 	if triggered {

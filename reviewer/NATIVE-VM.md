@@ -307,7 +307,10 @@ blocked work when cancellation arrives, with one fault invocation and no replay.
 
 These cases require a retained cancellation cause, an empty report, stopped
 provider work, a captured physically stopped unit, an incomplete private audit,
-and runtime-root removal. Return must occur within twenty seconds of the target
+and runtime-root removal. The unit and incomplete audit must bind the exact
+session, launch and containment identity. Their private provider evidence must
+match the captured policy and returned stopped evidence. Return must occur
+within twenty seconds of the target
 cancellation. The auth disposition must agree after reopening the protected
 store: a safely returned stopped profile may persist, while a missing or
 uncertain return retains recovery. Cancellation after refresh requires recovery

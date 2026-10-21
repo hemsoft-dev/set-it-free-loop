@@ -11,6 +11,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
+	f "github.com/hemsoft-dev/set-it-free-loop/reviewer/internal/nativefixture"
 )
 
 func TestCancellationWriterWaitsBeforeResponseHeadersAndDoesNotReplay(t *testing.T) {
@@ -120,5 +123,68 @@ func TestCancellationStoreOnlyBlocksValidImmutableReadAndReturnsNoBytes(t *testi
 	case <-point.returned:
 	default:
 		t.Fatal("read completion not retained")
+	}
+}
+
+func TestCancellationReceiptsRejectForeignPrivateEvidence(t *testing.T) {
+	snapshot := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: strings.Repeat("a", 40), Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("c", 40)}
+	session, err := r.NewSession("cancel-binding", snapshot, r.Digest("packet"), r.Codex, 1, "packet", nil, nil, r.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, policy, err := f.New(session, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch := strings.Repeat("d", 32)
+	hash := r.Digest(session)
+	binding := r.AuthBinding{SessionHash: hash, LaunchID: launch, ContainmentID: r.Digest(struct{ Session, Launch string }{hash, launch})}
+	evidence := r.ProviderEvidence{Policy: policy, Access: r.ProviderAccess{Version: 1, SessionHash: hash, PolicyHash: r.Digest(policy), Stopped: true}}
+	unit := cancellationUnitReceipt{Captured: true, Stopped: true, Binding: binding}
+	audit := cancellationAuditReceipt{AuthExported: true, Binding: binding, Provider: &evidence}
+	if !cancellationReceiptsBound(session, policy, launch, unit, audit, &evidence) {
+		t.Fatal("valid incomplete stopped evidence rejected")
+	}
+	mutations := map[string]func(*cancellationUnitReceipt, *cancellationAuditReceipt, *r.ProviderEvidence){
+		"unit session": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			u.Binding.SessionHash = r.Digest("foreign")
+		},
+		"launch": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			u.Binding.LaunchID = strings.Repeat("e", 32)
+		},
+		"containment": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			u.Binding.ContainmentID = r.Digest("foreign")
+		},
+		"audit launch": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			a.Binding.LaunchID = strings.Repeat("e", 32)
+		},
+		"provider": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			e.Policy.Provider = r.Claude
+		},
+		"provider session": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			e.Access.SessionHash = r.Digest("foreign")
+		},
+		"policy binding": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			e.Access.PolicyHash = r.Digest("foreign")
+		},
+		"captured policy": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			e.Policy.Headers = append([]string{}, "foreign")
+		},
+		"unstopped": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			e.Access.Stopped = false
+		},
+		"missing private provider": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) { a.Provider = nil },
+		"completed audit": func(u *cancellationUnitReceipt, a *cancellationAuditReceipt, e *r.ProviderEvidence) {
+			a.Complete = true
+		},
+	}
+	for name, mutate := range mutations {
+		t.Run(name, func(t *testing.T) {
+			u, a, e := unit, audit, evidence
+			mutate(&u, &a, &e)
+			if cancellationReceiptsBound(session, policy, launch, u, a, &e) {
+				t.Fatal("foreign or incomplete private evidence accepted")
+			}
+		})
 	}
 }
