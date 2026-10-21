@@ -183,8 +183,14 @@ func (r githubInstallationRepo) valid() bool {
 // and one role's minimal permissions. It never retries POST or follows redirects.
 // Caller cancellation/deadlines are honored; the complete handshake is bounded.
 func AcquireGitHubInstallation(ctx context.Context, o GitHubInstallationOptions) (*GitHubInstallationTransport, error) {
+	return acquireGitHubInstallation(ctx, o, nil)
+}
+
+// beforeMint must durably record intent before the non-replayable token POST.
+// A failed callback prevents dispatch; the helper never retries it.
+func acquireGitHubInstallation(ctx context.Context, o GitHubInstallationOptions, beforeMint func(context.Context) error) (*GitHubInstallationTransport, error) {
 	want := githubPermissions(o.Role)
-	if o.Enrollment.Validate() != nil || want == nil || !githubCredential(o.AppJWT) || o.Transport == nil || httptrace.ContextClientTrace(ctx) != nil {
+	if ctx == nil || o.Enrollment.Validate() != nil || want == nil || !githubCredential(o.AppJWT) || o.Transport == nil || httptrace.ContextClientTrace(ctx) != nil {
 		return nil, ErrGitHubInstallation
 	}
 	if o.Now == nil {
@@ -216,6 +222,9 @@ func AcquireGitHubInstallation(ctx context.Context, o GitHubInstallationOptions)
 	endpoint := "/app/installations/" + strconv.FormatInt(o.Enrollment.InstallationID, 10)
 	body := map[string]any{"repository_ids": []int64{RepositoryID}, "permissions": want}
 	started := o.Now()
+	if beforeMint != nil && beforeMint(ctx) != nil {
+		return nil, ErrGitHubInstallation
+	}
 	if installationRequest(ctx, client, jwt, "POST", endpoint+"/access_tokens", body, 201, &minted) != nil {
 		return nil, ErrGitHubInstallation
 	}
