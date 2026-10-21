@@ -176,6 +176,8 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 		return blocked()
 	}
 	defer channels.Close()
+	stopControl := channels.interruptControlOnCancel(ctx)
+	defer stopControl()
 	phase := &nativeVMHostPhase{request: request, manifest: manifest, reader: reader, supervisor: supervisor, channels: channels, stage: "provider-bridge"}
 	// Every later return drains the concrete containment and private transports.
 	defer func() { report, access, evidence, result = phase.finish(ctx, report, result) }()
@@ -197,9 +199,6 @@ func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (report
 	phase.stage = "grant"
 	if err = supervisor.grant(ctx, manifest, images, channels); err != nil {
 		return Report{}, nil, nil, workerLauncherError(err, true)
-	}
-	if deadline, ok := ctx.Deadline(); ok {
-		channels.host[0].SetDeadline(deadline)
 	}
 	phase.stage = "request"
 	if writeVMRecord(channels.host[0], request, 4<<20) != nil {

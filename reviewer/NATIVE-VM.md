@@ -320,3 +320,9 @@ synthetic seed and never repairs, adopts or reuses another case's auth state.
 Reopening the store tests persisted auth disposition, not a host process crash.
 These cancellation cases do not establish arbitrary crash recovery, operator
 credential repair, resource pressure or the broader hostile capability boundary.
+
+The host control socket interrupts pending reads and writes when the caller
+cancels, even if the original phase deadline remains in the future. Cleanup
+then stops the entire unit and keeps uncertain exported auth held. A blocked
+source read exposed a seventy-second wait for the original deadline; a stopped
+source channel alone did not wake the host's guest-result read.
