@@ -9,7 +9,7 @@ Every new owner starts unqualified. Persisted qualified journal receipts cannot 
 1. Close admission and wait for every already admitted request, response body and acquisition-generation lease to finish. The phase has a three-minute ceiling and also honors the caller's earlier cancellation or deadline.
 2. Check current local eligibility and both durable role latches before signing or issuing any new reader request. An unresolved publisher acquisition also blocks a new reader acquisition.
 3. Sign once and pass the same bounded JWT buffer through the reader and publisher handshakes. Clear the transferred buffer on success and failure.
-4. Recheck eligibility, then replace both role transports together. Clear the old pair only after its admitted work has drained.
+4. Recheck eligibility, then validate both new receipts against one current time under the handover lock. Both must match their enrolled role and remain more than one minute from expiry, with no backward clock or canceled phase. Only then replace both role transports together. Clear the old pair only after its admitted work has drained.
 
 Failure leaves admission closed, including when the old pair still exists in memory. There is no fallback, background renewal, retry of an uncertain POST or implicit journal recovery. A failed partial pair is closed. Unknown mint outcomes remain latched in the journal across process restart. Recovery remains the journal's separate explicit operation with exact attempt identity and checked stopped-owner evidence. This owner does not authorize recovery.
 

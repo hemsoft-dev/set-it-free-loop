@@ -411,6 +411,99 @@ func TestGitHubCredentialOwnerExpiryAndBackwardClockCloseAdmission(t *testing.T)
 	}
 }
 
+func TestGitHubCredentialOwnerRefreshRevalidatesPairAtHandover(t *testing.T) {
+	for _, kind := range []string{"reader-during-publisher", "publisher-at-final-check", "backward-clock", "canceled-by-final-clock"} {
+		t.Run(kind, func(t *testing.T) {
+			owner, options, reader, publisher, signs := credentialOwnerFixture(t)
+			var now atomic.Int64
+			now.Store(controlTime.UnixNano())
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var cancelClock atomic.Bool
+			options.Journal.now = func() time.Time {
+				if cancelClock.Load() {
+					cancel()
+				}
+				return time.Unix(0, now.Load())
+			}
+			if owner.Refresh(context.Background()) != nil {
+				t.Fatal("initial pair")
+			}
+			old := owner.state.current
+			if kind == "reader-during-publisher" {
+				reader.mu.Lock()
+				reader.mutate = func(path string, doc map[string]any) {
+					if strings.HasSuffix(path, "/access_tokens") {
+						doc["expires_at"] = controlTime.Add(130 * time.Second)
+					}
+				}
+				reader.mu.Unlock()
+				publisher.mu.Lock()
+				publisher.mutate = func(path string, _ map[string]any) {
+					if path == "/app" {
+						now.Store(controlTime.Add(80 * time.Second).UnixNano())
+					}
+				}
+				publisher.mu.Unlock()
+			} else if kind == "publisher-at-final-check" {
+				publisher.mu.Lock()
+				publisher.mutate = func(path string, doc map[string]any) {
+					if strings.HasSuffix(path, "/access_tokens") {
+						doc["expires_at"] = controlTime.Add(130 * time.Second)
+					}
+				}
+				publisher.mu.Unlock()
+			}
+			checks := 0
+			owner.state.options.Check = func(context.Context, Enrollment) error {
+				checks++
+				if checks == 2 {
+					switch kind {
+					case "publisher-at-final-check":
+						now.Store(controlTime.Add(80 * time.Second).UnixNano())
+					case "backward-clock":
+						now.Store(controlTime.Add(-time.Second).UnixNano())
+					case "canceled-by-final-clock":
+						cancelClock.Store(true)
+					}
+				}
+				return nil
+			}
+			if err := owner.Refresh(ctx); err == nil {
+				t.Fatal("unusable or canceled new pair reported successful refresh")
+			}
+			if checks != 2 || owner.state.current != old || owner.Ready(context.Background()) == nil || credentialPairCleared(old) {
+				t.Fatal("failed handover replaced ownership, restored readiness or destroyed old tokens", checks)
+			}
+			rBefore, rMints := credentialCounts(reader)
+			pBefore, pMints := credentialCounts(publisher)
+			if signs.Load() != 2 || rMints != 2 || pMints != 2 {
+				t.Fatal("pair handover was not exercised exactly once", signs.Load(), rMints, pMints)
+			}
+			for _, role := range []GitHubCredentialRole{GitHubReader, GitHubPublisher} {
+				latest, err := options.Journal.Latest(context.Background(), role)
+				if err != nil || latest.State != "qualified" {
+					t.Fatal("fixture failed before final handover", role, latest, err)
+				}
+			}
+			body := &installationBodyProbe{}
+			q := installationQuery(t, "GET", githubRepoPath)
+			q.Body = body
+			if response, err := owner.Reader().RoundTrip(q); err == nil || response != nil || body.closed != 1 {
+				t.Fatal("failed handover admitted reader HTTP")
+			}
+			rAfter, _ := credentialCounts(reader)
+			pAfter, _ := credentialCounts(publisher)
+			if rBefore != rAfter || pBefore != pAfter || signs.Load() != 2 {
+				t.Fatal("failed handover automatically retried or dispatched")
+			}
+			if owner.Close(context.Background()) != nil || !credentialPairCleared(old) {
+				t.Fatal("retained old ownership could not close")
+			}
+		})
+	}
+}
+
 func TestGitHubCredentialOwnerCancellationDuringFinalEligibility(t *testing.T) {
 	for _, request := range []bool{false, true} {
 		t.Run(fmt.Sprint("request-", request), func(t *testing.T) {

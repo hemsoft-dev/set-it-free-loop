@@ -57,6 +57,20 @@ func (p *githubCredentialPair) transport(role GitHubCredentialRole) *GitHubInsta
 	return nil
 }
 
+func (p *githubCredentialPair) usable(enrollment Enrollment, now time.Time) bool {
+	for _, role := range []GitHubCredentialRole{GitHubReader, GitHubPublisher} {
+		t := p.transport(role)
+		if t == nil {
+			return false
+		}
+		receipt := t.Receipt()
+		if receipt.Enrollment != enrollment || receipt.Role != role || now.Before(receipt.CheckedAt) || !now.Before(receipt.ExpiresAt.Add(-time.Minute)) {
+			return false
+		}
+	}
+	return true
+}
+
 // GitHubCredentialOwner holds a distinct service-directory flock for its whole
 // lifetime. It starts unqualified on every process restart. Only explicit Refresh
 // can obtain a pair; neither construction, readiness nor requests renew it.
@@ -167,18 +181,7 @@ func (o *githubCredentialOwnerState) usable() bool {
 	if !o.ready || o.refreshing || o.closing || o.closed || o.current == nil {
 		return false
 	}
-	now := o.options.Journal.now()
-	for _, role := range []GitHubCredentialRole{GitHubReader, GitHubPublisher} {
-		t := o.current.transport(role)
-		if t == nil {
-			return false
-		}
-		receipt := t.Receipt()
-		if receipt.Enrollment != o.options.Journal.enrollment || receipt.Role != role || now.Before(receipt.CheckedAt) || !now.Before(receipt.ExpiresAt.Add(-time.Minute)) {
-			return false
-		}
-	}
-	return true
+	return o.current.usable(o.options.Journal.enrollment, o.options.Journal.now())
 }
 
 // Ready checks current eligibility and the in-memory qualified pair. Persisted
@@ -289,7 +292,7 @@ func (o *githubCredentialOwnerState) Refresh(ctx context.Context) error {
 		return ownerContextError(phase)
 	}
 	o.mu.Lock()
-	if o.closing || o.closed || phase.Err() != nil {
+	if o.closing || o.closed || !next.usable(o.options.Journal.enrollment, o.options.Journal.now()) || phase.Err() != nil {
 		o.mu.Unlock()
 		return ownerContextError(phase)
 	}
