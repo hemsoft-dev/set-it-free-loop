@@ -53,12 +53,25 @@ until it returns. Its late success cannot release an expired stop operation.
 Close cancels the acquisition and waits for this ownership to be released. It
 cannot turn cancellation into physical-stop proof.
 
+The proof callback never releases a generation. Its caller accepts a returned
+successful proof under the owner lock and commits the release itself. Once that
+acceptance succeeds, the call returns success even if cancellation arrives
+during the commit. A caller that selects its deadline or rejects a late result
+retains the generation. The proof remains single-flight until both the callback
+and its caller's acceptance decision have completed.
+
 These leases are local ownership, not a durable unit journal. After a controller
 restart, the composing service must recover every unknown acquisition from its
 durable unit/archive records before its eligibility check can permit Refresh.
 The old lease, process death or lock availability cannot qualify that recovery.
 Complete factory/startup recovery and broker/unit composition remain in #176.
 No production stop capability or credential-bearing service is activated here.
+
+Close timeouts before disposal retain ownership. Once all owned work has drained
+and lock-descriptor closure has been attempted, the owner is terminal even if
+that close reports an error. The initial Close reports the error, clears the
+disposed handle and credentials, and later Close is idempotent. An already
+released or uncertain descriptor is never represented as a retained flock.
 
 The signer, local checks, transports and clock are explicitly trusted bounded capabilities. `crypto.Signer` itself has no cancellation API. The owner cannot interrupt a callback that ignores its context, so it retains ownership when Close times out. Pre-admission readiness checks do not borrow token state and are not qualification leases. An uncooperative response body remains counted until its caller releases it. The private directory and file lock assume the host service identity is trusted. This component does not establish a hostile same-UID boundary or qualify worker containment.
 

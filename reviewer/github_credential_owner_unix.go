@@ -403,11 +403,12 @@ func (o *githubCredentialOwnerState) Close(ctx context.Context) error {
 	}
 	o.current.close()
 	o.current = nil
-	if err := o.held.close(); err != nil {
-		return ErrGitHubCredentialOwner
-	}
+	err := o.held.close()
 	o.held = nil
 	o.closed = true
 	o.signal()
+	if err != nil {
+		return ErrGitHubCredentialOwner
+	}
 	return nil
 }

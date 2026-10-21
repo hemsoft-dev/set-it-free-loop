@@ -212,28 +212,42 @@ func (g *githubReaderGeneration) stop(ctx context.Context) error {
 	// No caller may replay it or release ownership in the meantime.
 	proofOwnsOperation = true
 	result := make(chan error, 1)
+	decision := make(chan struct{})
+	defer close(decision)
 	go func() {
-		defer func() { g.operation <- struct{}{} }()
+		// A returned proof remains single-flight until its caller accepts or
+		// rejects it. A timed-out caller releases this token only after the
+		// callback itself returns, without allowing a late success to commit.
+		defer func() { <-decision; g.operation <- struct{}{} }()
 		if g.stopper(phase) != nil || phase.Err() != nil {
 			result <- ownerContextError(phase)
 			return
 		}
+		result <- nil
+	}()
+	select {
+	case err := <-result:
+		if phase.Err() != nil {
+			return ownerContextError(phase)
+		}
+		if err != nil {
+			return err
+		}
+		// Only the caller commits the accepted proof. After this locked
+		// acceptance point it returns success, even if cancellation arrives
+		// during the commit. No deadline branch can report failure after the
+		// generation has been released by another goroutine.
 		o.mu.Lock()
 		defer o.mu.Unlock()
 		if g.borrows != 0 || o.acquisitions[g.id] != g || o.current != g.pair || phase.Err() != nil {
-			result <- ownerContextError(phase)
-			return
+			return ownerContextError(phase)
 		}
 		delete(o.acquisitions, g.id)
 		g.released = true
 		g.pair = nil
 		g.stopper = nil
 		o.signal()
-		result <- nil
-	}()
-	select {
-	case err := <-result:
-		return err
+		return nil
 	case <-phase.Done():
 		return ownerContextError(phase)
 	}

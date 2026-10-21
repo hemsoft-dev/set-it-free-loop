@@ -461,6 +461,47 @@ func TestGitHubCredentialOwnerCancellationDuringFinalEligibility(t *testing.T) {
 	}
 }
 
+func TestGitHubCredentialOwnerCloseErrorIsTerminalAfterLockDisposal(t *testing.T) {
+	for _, descriptor := range []string{"lock", "root"} {
+		t.Run(descriptor, func(t *testing.T) {
+			owner, options, _, _, signs := credentialOwnerFixture(t)
+			if owner.Refresh(context.Background()) != nil {
+				t.Fatal("qualify pair")
+			}
+			pair := owner.state.current
+			// A closed file descriptor makes authLock.close fail. os.Root.Close
+			// is idempotent, so the closed-root case must still succeed. Either
+			// outcome is terminal once lock disposal has been attempted.
+			var err error
+			if descriptor == "lock" {
+				err = owner.state.held.file.Close()
+			} else {
+				err = owner.state.held.root.Close()
+			}
+			if err != nil {
+				t.Fatal("close fixture descriptor", err)
+			}
+			err = owner.Close(context.Background())
+			if (err == nil) != (descriptor == "root") {
+				t.Fatal("lock error was hidden or idempotent root close failed", err)
+			}
+			if !owner.state.closed || owner.state.held != nil || owner.state.current != nil || !credentialPairCleared(pair) {
+				t.Fatal("closed lock was represented as retained ownership")
+			}
+			if owner.Close(context.Background()) != nil || owner.Refresh(context.Background()) == nil || owner.Ready(context.Background()) == nil || signs.Load() != 1 {
+				t.Fatal("terminal close retry reopened, signed or failed idempotence")
+			}
+			replacement, err := OpenGitHubCredentialOwner(context.Background(), options)
+			if err != nil || replacement.Ready(context.Background()) == nil {
+				t.Fatal("released lock could not admit a fresh unqualified owner", err)
+			}
+			if replacement.Close(context.Background()) != nil {
+				t.Fatal("replacement cleanup")
+			}
+		})
+	}
+}
+
 func TestGitHubCredentialOwnerRequestLimitAndDeniedBodyClosure(t *testing.T) {
 	owner, _, reader, _, _ := credentialOwnerFixture(t)
 	if err := owner.Refresh(context.Background()); err != nil {

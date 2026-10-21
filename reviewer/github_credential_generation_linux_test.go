@@ -485,3 +485,37 @@ func TestGitHubCredentialGenerationStopDeadlineRetainsSingleFlight(t *testing.T)
 		t.Fatal("confirmed stopped retry failed to dispose owner")
 	}
 }
+
+func TestGitHubCredentialGenerationDeadlineCannotRejectReleasedProof(t *testing.T) {
+	owner, _, _, _, _ := credentialOwnerFixture(t)
+	if owner.Refresh(context.Background()) != nil {
+		t.Fatal("qualify pair")
+	}
+	// Race a real caller cancellation against each completed synthetic stop.
+	// A successful caller may release; a failed caller must still own its lease.
+	// The physical-stop capability itself is deliberately a bounded fake here.
+	for iteration := 0; iteration < 3000; iteration++ {
+		proof, canceled := make(chan struct{}), make(chan struct{})
+		var once sync.Once
+		g, err := owner.retainReaderGeneration(context.Background(), func(context.Context) error {
+			once.Do(func() { close(proof) })
+			return nil
+		})
+		if err != nil {
+			t.Fatal("retain generation", iteration, err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() { <-proof; cancel(); close(canceled) }()
+		err = g.stop(ctx)
+		<-canceled
+		owner.state.mu.Lock()
+		released, held := g.released, owner.state.acquisitions[g.id] == g
+		owner.state.mu.Unlock()
+		if err != nil && (released || !held) {
+			t.Fatal("failed stop released the generation", iteration, err)
+		}
+		if !released && g.stop(context.Background()) != nil {
+			t.Fatal("retained proof could not be explicitly retried", iteration)
+		}
+	}
+}
