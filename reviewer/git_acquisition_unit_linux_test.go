@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,6 +69,39 @@ func TestGitAcquisitionUnitInertChild(t *testing.T) {
 		return
 	}
 	os.Stdout.Write([]byte("ready\n"))
+	if endpoint := os.Getenv("SFL_GIT_UNIT_GRANT_ENDPOINT"); endpoint != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		var binding gitMaterializationBinding
+		if json.NewDecoder(os.Stdin).Decode(&binding) != nil {
+			os.Exit(2)
+		}
+		conn, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{Name: endpoint, Net: "unixpacket"})
+		if err != nil {
+			os.Exit(3)
+		}
+		defer conn.Close()
+		stage := os.Getenv("SFL_GIT_UNIT_GRANT_STAGE")
+		if stage == "" {
+			stage = gitBootstrapGrant
+		}
+		packet, files, err := readGitUnitGrant(ctx, conn, binding, stage)
+		if err != nil {
+			closeVMFiles(files)
+			var wait [1]byte
+			os.Stdin.Read(wait[:])
+			os.Exit(4)
+		}
+		own, err := processGateIdentity(os.Getpid(), packet.Recipient.InvocationID)
+		if err != nil || own != packet.Recipient {
+			closeVMFiles(files)
+			os.Exit(5)
+		}
+		closeVMFiles(files)
+		if writeGitControlPacket(ctx, conn, []byte("received"), nil) != nil {
+			os.Exit(6)
+		}
+	}
 	var one [1]byte
 	os.Stdin.Read(one[:])
 	os.Exit(0)
@@ -79,9 +113,10 @@ type gitUnitFixture struct {
 	binding              gitMaterializationBinding
 	root, stub, stubHash string
 	child                *exec.Cmd
+	input                io.WriteCloser
 }
 
-func newGitUnitFixture(t *testing.T) gitUnitFixture {
+func newGitUnitFixture(t *testing.T, grantEndpoint ...string) gitUnitFixture {
 	t.Helper()
 	parent := t.TempDir()
 	root := filepath.Join(parent, "unit-state")
@@ -95,6 +130,9 @@ func newGitUnitFixture(t *testing.T) gitUnitFixture {
 	}
 	child := exec.Command(os.Args[0], "-test.run=^TestGitAcquisitionUnitInertChild$")
 	child.Env = []string{"SFL_GIT_UNIT_INERT=1"}
+	if len(grantEndpoint) > 0 {
+		child.Env = append(child.Env, "SFL_GIT_UNIT_GRANT_ENDPOINT="+grantEndpoint[0])
+	}
 	input, err := child.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +180,7 @@ func newGitUnitFixture(t *testing.T) gitUnitFixture {
 			}
 		}
 	})
-	return gitUnitFixture{owner, manager, binding, root, stub, hash, child}
+	return gitUnitFixture{owner, manager, binding, root, stub, hash, child, input}
 }
 func (f gitUnitFixture) prepareStart(t *testing.T) {
 	t.Helper()

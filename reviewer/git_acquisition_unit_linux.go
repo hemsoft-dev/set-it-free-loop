@@ -29,17 +29,22 @@ type gitUnitRecord struct {
 	StartJob, StopJob                                 string
 	Identity                                          GateIdentity
 	Cgroup                                            cgroupBinding
+	BootstrapGrantHash                                string       `json:",omitempty"`
+	WorkerGrantHash                                   string       `json:",omitempty"`
+	WorkerIdentity                                    GateIdentity `json:",omitzero"`
 }
 type gitUnitOwner struct {
-	operation  chan struct{}
-	root       *os.Root
-	lock       *os.File
-	image      *retainedStubImage
-	stubHash   string
-	manager    containmentManager
-	kernel     containmentKernel
-	rootPIDFDs map[string]int
-	closed     bool
+	operation     chan struct{}
+	root          *os.Root
+	lock          *os.File
+	image         *retainedStubImage
+	stubHash      string
+	manager       containmentManager
+	kernel        containmentKernel
+	rootPIDFDs    map[string]int
+	grantFailed   map[string]bool
+	grantEligible map[string]bool
+	closed        bool
 }
 
 // openGitUnitOwner is private factory plumbing. It opens a fixed user-manager
@@ -73,7 +78,7 @@ func newGitUnitOwner(ctx context.Context, root, stub, stubHash string, manager c
 	if err != nil {
 		return nil, errGitUnit
 	}
-	owner := &gitUnitOwner{root: anchored, manager: manager, kernel: kernel, rootPIDFDs: map[string]int{}, operation: make(chan struct{}, 1), stubHash: stubHash}
+	owner := &gitUnitOwner{root: anchored, manager: manager, kernel: kernel, rootPIDFDs: map[string]int{}, grantFailed: map[string]bool{}, grantEligible: map[string]bool{}, operation: make(chan struct{}, 1), stubHash: stubHash}
 	owner.operation <- struct{}{}
 	good := false
 	defer func() {
@@ -168,6 +173,16 @@ func (r gitUnitRecord) valid(attempt, hash string) bool {
 			return false
 		}
 	} else if r.Identity != (GateIdentity{}) || r.Cgroup != (cgroupBinding{}) {
+		return false
+	}
+	if r.BootstrapGrantHash != "" && (!r.Captured || r.BootstrapGrantHash != Digest(gitUnitGrantPacket{1, gitBootstrapGrant, r.Binding, r.Identity, r.Binding.RuntimeHash})) {
+		return false
+	}
+	if r.WorkerGrantHash != "" {
+		if r.BootstrapGrantHash == "" || r.WorkerGrantHash != Digest(gitUnitGrantPacket{1, gitWorkerGrant, r.Binding, r.WorkerIdentity, r.Binding.RuntimeHash}) || r.WorkerIdentity.PID <= 0 || r.WorkerIdentity.PID == r.Identity.PID || r.WorkerIdentity.StartTicks == 0 || r.WorkerIdentity.BootID != r.BootID || r.WorkerIdentity.InvocationID != r.Identity.InvocationID {
+			return false
+		}
+	} else if r.WorkerIdentity != (GateIdentity{}) {
 		return false
 	}
 	return true
@@ -388,6 +403,9 @@ func (o *gitUnitOwner) start(ctx context.Context, binding gitMaterializationBind
 	if err != nil || o.write(captured) != nil {
 		return errGitUnit
 	}
+	// Only this completed fresh start may grant. Recovery capture never arms
+	// this process-local authority, even when it obtains a valid new pidfd.
+	o.grantEligible[binding.Attempt] = true
 	return nil
 }
 func (o *gitUnitOwner) rootDead(r gitUnitRecord) error {
@@ -443,6 +461,7 @@ func (o *gitUnitOwner) stop(ctx context.Context, binding gitMaterializationBindi
 		return errGitUnit
 	}
 	r.Revoked = true
+	delete(o.grantEligible, binding.Attempt)
 	if o.write(r) != nil {
 		return errGitUnit
 	}

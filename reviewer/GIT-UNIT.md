@@ -3,11 +3,11 @@
 The private `gitUnitOwner` supplies durable process ownership for the future
 acquisition factory. It uses a separate nonsecret Git binding and journal, never
 a fabricated provider/auth binding. Opening it does not launch a unit or read a
-provider profile. Only the explicit private start method contacts the manager.
+provider profile. Only the explicit private start method requests a new unit.
 The offline [measured runtime builder](GIT-RUNTIME.md) and namespace startup
 check are available; they do not qualify aggregate acquisition. The public
-production factory, authenticated grant/export
-channel, full namespace/mount inspection, concrete helper admission and broker/result
+production factory, sealed worker executable, aggregate grant/export
+orchestration, full namespace/mount inspection, concrete helper admission and broker/result
 orchestration remain unfinished.
 
 One private service directory and cross-process flock own the pinned sealed
@@ -65,6 +65,13 @@ and retained root pidfd, sealed executable, and kernel cgroup identity/limits.
 It rechecks the manager observation and waits only for the known sealed-image
 bootstrap transition under the existing bounded manager deadline. It does not
 infer helper, library, namespace or broker admission from root capture.
+
+The private [descriptor grant protocol](GIT-GRANT.md) now binds both bootstrap
+and worker handoffs to the captured unit. Its journal consumes each stage
+before sending, and records the worker recipient. Only a completed fresh start
+in the current owner instance can grant; recovery capture never restores that
+authority. Its canonical hashes bind the full immutable packet. This is
+private protocol plumbing, not the finished worker/factory or a source grant.
 
 Stop permanently records revocation, resolves an uncertain start by capturing
 its exact live invocation, then stops that unit and waits for its owned job.
