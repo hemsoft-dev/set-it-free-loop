@@ -7,6 +7,12 @@ research by `/root/label_evidence_recent` and `/root/label_evidence_older`.
 Every case and defect carries the final labeler's identity, timestamp, rationale
 and evidence. No Franz override has occurred; histories are initially empty.
 
+The original seed order is preserved. Its earlier claim to be the twenty
+most recently merged PRs was inaccurate: [#148](https://github.com/hemsoft-dev/set-it-free-loop/pull/148)
+merged later than selected [#150](https://github.com/hemsoft-dev/set-it-free-loop/pull/150)
+and was omitted. The labels describe the actual selected cases, with no
+chronological-sampling claim.
+
 The source cutoff is
 [`5dc0aa4d4bd1764ccc4882507f4600bce00d59ff`](https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff).
 No evaluated Codex or Claude review, finding, comment, or paraphrase was used as
@@ -66,7 +72,12 @@ history revision, searches and limits. For every candidate:
 commit lists. The issue metadata receipt is retained in `issue-metadata.json`. The agent
 research reports and all 12 root-replayed regression executions are retained
 with this mission's Git-local evidence. `replay-defects.py` reproduces the six
-fail-before/pass-after pairs from immutable source with fake GitHub data. The table below links the primary source needed to check the labels.
+fail-before/pass-after pairs from immutable source with fake GitHub data. The replay uses reachable main
+merge revisions and checks the tree/blob equivalence retained in
+`replay-sources.json`; those trees were verified identical to the original
+candidate heads. It succeeds in a normal full-history clone without those
+dangling original head commits or any fetch. Corpus snapshots continue to
+record the original PR heads. The table below links the primary source needed to check the labels.
 The metadata catalog is observation-time evidence; it cannot be reconstructed
 by querying today's mutable issue list.
 
@@ -129,7 +140,11 @@ model execution. It currently fails at `pr-156` with the inventory-limit error.
 It creates no output directory until **every** case materializes and the entire
 corpus validates. After supported materialization, it writes exact packet bytes,
 `corpus.json`, and `corpus.sha256` from the existing `EvaluationCorpus.Hash()`.
-A new output directory prevents overwriting frozen artifacts.
+A new output directory prevents overwriting frozen artifacts. Original PR
+head objects must already be present in that trusted store; a normal clone
+of main may lack them. This command never fetches or changes the original
+snapshots. If those objects are missing, it fails before the local inventory
+limit described above. Qualified object acquisition is a separate prerequisite.
 
 Before a real freeze, recheck held-out eligibility and update the draft's cutoff
 time after all labels. Freeze that complete corpus first, then freeze a separate

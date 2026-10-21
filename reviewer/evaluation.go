@@ -280,7 +280,7 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 		}
 		switch run.State {
 		case "complete":
-			if run.Sessions != run.Arm.Sessions() || !digestPattern.MatchString(run.ReportHash) || run.LabelledAt.Before(run.StartedAt.Add(run.Latency)) {
+			if run.Sessions != run.Arm.Sessions() || !digestPattern.MatchString(run.ReportHash) || !run.LabelledAt.After(run.StartedAt.Add(run.Latency)) {
 				return score, errors.New("incomplete run or missing label assessment time")
 			}
 		case "quota_wait", "auth_failed", "provider_unavailable", "invalid_output", "cancelled", "incomplete_expired":
@@ -346,18 +346,12 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 			if !ids[label.FindingID] || labels[label.FindingID] || strings.TrimSpace(label.Assessment.Rationale) == "" {
 				return score, errors.New("invalid actionability label")
 			}
-			if err := label.validateProvenance(run.StartedAt.Add(run.Latency), run.LabelledAt); err != nil {
+			if err := label.validateAssessments(run.StartedAt.Add(run.Latency), run.LabelledAt, known); err != nil {
 				return score, err
 			}
 			labels[label.FindingID] = true
 			if run.FindingStatuses[label.FindingID] == "retracted" && label.Assessment.Actionable {
 				return score, errors.New("withdrawn allegation cannot count as an actionable prediction")
-			}
-			if label.Assessment.Actionable && len(label.Assessment.DefectIDs) == 0 {
-				return score, errors.New("actionable finding requires ground-truth match")
-			}
-			if !label.Assessment.Actionable && len(label.Assessment.DefectIDs) > 0 {
-				return score, errors.New("non-actionable finding cannot claim recall credit")
 			}
 			for _, id := range label.Assessment.DefectIDs {
 				if !known[id] || matches[id] {

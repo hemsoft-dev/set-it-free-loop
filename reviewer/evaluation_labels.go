@@ -79,6 +79,14 @@ func (p LabelProvenance) validate(earliest, latest time.Time) error {
 	if (l.Kind != "agent" || l.HumanID != 0) && (l.Kind != "owner" || l.HumanID != OwnerID) {
 		return errors.New("labeler must be an identified agent or Franz")
 	}
+	manualSession := strings.HasPrefix(l.Session, "manual-") && strings.TrimSpace(strings.TrimPrefix(l.Session, "manual-")) != ""
+	if l.Kind == "owner" {
+		if l.Agent != "Franz" || l.Provider != "human" || l.Model != "none" || !manualSession {
+			return errors.New("owner provenance requires Franz, human/none and an identified manual- session")
+		}
+	} else if strings.EqualFold(l.Agent, "Franz") || strings.EqualFold(l.Provider, "human") || strings.EqualFold(l.Model, "none") || strings.HasPrefix(strings.ToLower(l.Session), "manual-") {
+		return errors.New("agent provenance cannot claim owner identity fields")
+	}
 	if p.OwnerOverride && l.Kind != "owner" {
 		return errors.New("only Franz can override labels")
 	}
@@ -212,11 +220,27 @@ func (c EvaluationCase) ValidateLabels(frozenAt time.Time) error {
 	return nil
 }
 
-func (l FindingLabel) validateProvenance(completedAt, assessedAt time.Time) error {
+func (l FindingLabel) validateAssessments(completedAt, assessedAt time.Time, known map[string]bool) error {
 	revisions := append(append([]FindingAssessment{}, l.History...), l.Assessment)
 	previousHash := ""
 	previousAt := time.Time{}
 	for _, a := range revisions {
+		if !a.Provenance.At.After(completedAt) {
+			return errors.New("finding assessment must be strictly after run completion")
+		}
+		if a.Actionable && len(a.DefectIDs) == 0 {
+			return errors.New("actionable finding requires ground-truth match")
+		}
+		if !a.Actionable && len(a.DefectIDs) != 0 {
+			return errors.New("non-actionable finding cannot claim recall credit")
+		}
+		seen := map[string]bool{}
+		for _, id := range a.DefectIDs {
+			if !known[id] || seen[id] {
+				return errors.New("historical/current assessment has unknown or duplicate defect match")
+			}
+			seen[id] = true
+		}
 		if strings.TrimSpace(a.Rationale) == "" {
 			return errors.New("actionability label requires rationale")
 		}

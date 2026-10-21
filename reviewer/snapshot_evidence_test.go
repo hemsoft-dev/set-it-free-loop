@@ -546,3 +546,26 @@ func TestSnapshotEvidenceBudgetsCoverageAddedAfterEarlyPatch(t *testing.T) {
 		t.Fatal("capture cannot restore with the same omissions", err)
 	}
 }
+
+func TestSnapshotPacketTrimmingSkipsNonShrinkingOmissions(t *testing.T) {
+	modePatch := "diff --git z z\nold mode 100644\nnew mode 100755\n"
+	p := snapshotPacket{Version: "sfl-snapshot-evidence-1", Snapshot: testSnapshot(), Files: []snapshotFile{{Path: "large", Patch: strings.Repeat("x", 1000)}, {Path: "z", Patch: modePatch}}, Coverage: []Coverage{}}
+	// There is space after omitting just the large patch, but replacing z's tiny
+	// mode patch with a longer coverage record needlessly exceeds this budget.
+	onlyLarge := p
+	onlyLarge.Files = append([]snapshotFile{}, p.Files...)
+	onlyLarge.Files[0].Patch = ""
+	onlyLarge.Coverage = []Coverage{{Path: "large", Reason: "patch omitted by evidence packet byte limit"}}
+	encoded, err := json.Marshal(onlyLarge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline := map[string]map[int]bool{"large": {1: true}, "z": {}}
+	raw, err := fitSnapshotPacket(&p, inline, len(encoded))
+	if err != nil {
+		t.Fatal("a non-shrinking omission prevented valid capture", err)
+	}
+	if len(raw) > len(encoded) || p.Files[1].Patch != modePatch || len(p.Coverage) != 1 || p.Coverage[0].Path != "large" || inline["large"] != nil {
+		t.Fatal("lost small valid patch or retained removed anchors")
+	}
+}

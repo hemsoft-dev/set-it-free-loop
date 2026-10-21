@@ -20,31 +20,49 @@ CASES = [
 ]
 
 
-def git_source(revision, path):
+def git_bytes(*args):
     env = {'PATH': os.environ['PATH'], 'GIT_CONFIG_NOSYSTEM': '1',
            'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1',
            'GIT_NO_LAZY_FETCH': '1', 'LC_ALL': 'C'}
     return subprocess.check_output(
         ['git', '--no-replace-objects', '--no-lazy-fetch', '-C', str(ROOT),
-         'show', revision + ':' + path], env=env)
+         *args], env=env)
+
+
+def git_source(revision, path):
+    return git_bytes('show', revision + ':' + path)
+
+
+def reachable_candidate(number, original_head, aliases):
+    alias = aliases[number]
+    if alias['original_head'] != original_head:
+        raise ValueError('candidate identity differs from retained equivalence')
+    revision = alias['reachable_merge']
+    tree = git_bytes('rev-parse', revision + '^{tree}').decode().strip()
+    blob = git_bytes('rev-parse', revision + ':' + WORKFLOW).decode().strip()
+    if tree != alias['equivalent_tree'] or blob != alias['workflow_blob']:
+        raise ValueError('reachable candidate source differs from retained equivalence')
+    return revision
 
 
 def main():
     results = []
+    aliases = {x['candidate']: x for x in json.loads(Path(__file__).with_name('replay-sources.json').read_text())}
     with tempfile.TemporaryDirectory(prefix='sfl-source-label-probes-') as temp:
         directory = Path(temp)
         for number, head, fix, test, mode, assertion in CASES:
             script = directory / f'{number}.cjs'
             script.write_bytes((Path(__file__).with_name('source-probes.cjs').read_bytes()
                                 if test == 'local' else git_source(fix, test)))
-            for phase, revision, expected in [('before', head, 1), ('after', fix, 0)]:
+            replay_head = reachable_candidate(number, head, aliases)
+            for phase, revision, expected in [('before', replay_head, 1), ('after', fix, 0)]:
                 source = directory / f'{number}-{phase}.yml'
                 source.write_bytes(git_source(revision, WORKFLOW))
                 run = subprocess.run(['node', str(script), str(source), mode],
                                      capture_output=True, text=True, timeout=30)
                 if run.returncode != expected or (phase == 'before' and assertion not in run.stderr):
                     sys.exit(f'PR {number} {phase}: unexpected regression result\n{run.stderr}')
-                results.append({'candidate': number, 'phase': phase, 'source': revision,
+                results.append({'candidate': number, 'phase': phase, 'source': revision, 'candidate_head': head,
                                 'test_revision': None if test == 'local' else fix,
                                 'assertion': assertion, 'exit_code': run.returncode})
     print(json.dumps(results, indent=2))

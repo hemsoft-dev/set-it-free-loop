@@ -2,7 +2,7 @@
   "status": "evidence-labeled-v2-corpus-unfrozen",
   "repository_id": 1169772257,
   "selected_at": "2026-10-19T05:57:49.029947+00:00",
-  "selection": "20 most recent merged PRs before alpha mission; no provider runs or tuning against these candidates",
+  "selection": "20 merged pre-alpha PRs retained from the original seed manifest, in its existing order; selection was made before alpha provider runs or tuning and was not a complete merge-chronological sample",
   "required_label_work": "Audit retained independent sources and preserve label revision history. Any revision requires a new corpus hash and evaluation plan. Provider eligibility, activation, corpus freeze and hash gates remain separate.",
   "candidates": [
     {

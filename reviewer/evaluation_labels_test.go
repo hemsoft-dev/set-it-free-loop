@@ -200,3 +200,84 @@ func TestRetainedEvaluationManifestMatchesLabels(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnerLabelProvenanceCannotUseAgentFields(t *testing.T) {
+	base := syntheticCorpus().Cases[0]
+	base.Label.Provenance.Labeler = Labeler{Kind: "owner", Agent: "Franz", Provider: "human", Model: "none", Session: "manual-test", HumanID: OwnerID}
+	for _, mutate := range []func(*Labeler){
+		func(l *Labeler) { l.Agent = "/root" },
+		func(l *Labeler) { l.Provider = "OpenAI" },
+		func(l *Labeler) { l.Model = "gpt-6.1-sol" },
+		func(l *Labeler) { l.Session = "agent-session" },
+		func(l *Labeler) { l.Session = "manual-" },
+	} {
+		test := copyEvaluationCase(t, base)
+		mutate(&test.Label.Provenance.Labeler)
+		if err := test.ValidateLabels(controlTime); err == nil {
+			t.Fatal("agent fields accepted as Franz provenance", test.Label.Provenance.Labeler)
+		}
+	}
+	if err := base.ValidateLabels(controlTime); err != nil {
+		t.Fatal("valid owner rejected", err)
+	}
+	for _, mutate := range []func(*Labeler){
+		func(l *Labeler) { l.Agent = "Franz" }, func(l *Labeler) { l.Provider = "human" },
+		func(l *Labeler) { l.Model = "none" }, func(l *Labeler) { l.Session = "manual-override" },
+	} {
+		test := copyEvaluationCase(t, syntheticCorpus().Cases[0])
+		mutate(&test.Label.Provenance.Labeler)
+		if err := test.ValidateLabels(controlTime); err == nil {
+			t.Fatal("owner-style agent provenance accepted")
+		}
+	}
+}
+func TestFindingAssessmentsMustBeStrictlyAfterRunCompletion(t *testing.T) {
+	c := syntheticCorpus()
+	p := syntheticPlan(c)
+	runs := syntheticResults(c, p)
+	run := &runs[60]
+	run.Labels[0].Assessment.Provenance = syntheticLabelProvenance(run.StartedAt.Add(run.Latency))
+	if _, err := ScoreEvaluation(c, p, runs); err == nil {
+		t.Fatal("assessment at completion boundary accepted")
+	}
+	runs = syntheticResults(c, p)
+	runs[0].LabelledAt = runs[0].StartedAt.Add(runs[0].Latency)
+	if _, err := ScoreEvaluation(c, p, runs); err == nil {
+		t.Fatal("batch assessment at completion boundary accepted")
+	}
+}
+func TestFindingAssessmentHistoryValidatesEachJudgment(t *testing.T) {
+	c := syntheticCorpus()
+	p := syntheticPlan(c)
+	for _, mutate := range []func(*FindingAssessment){
+		func(a *FindingAssessment) { a.Actionable = false },
+		func(a *FindingAssessment) { a.DefectIDs = []string{} },
+		func(a *FindingAssessment) { a.DefectIDs = []string{"unknown"} },
+		func(a *FindingAssessment) { a.DefectIDs = []string{"d1", "d1"} },
+	} {
+		runs := syntheticResults(c, p)
+		run := &runs[60]
+		label := &run.Labels[0]
+		old := FindingAssessment{Actionable: true, DefectIDs: []string{"d1"}, Rationale: "prior assessment", Provenance: syntheticLabelProvenance(run.StartedAt.Add(2 * run.Latency))}
+		mutate(&old)
+		label.History = []FindingAssessment{old}
+		label.Assessment.Provenance.Supersedes = Digest(old)
+		if _, err := ScoreEvaluation(c, p, runs); err == nil {
+			t.Fatal("invalid historical judgment accepted", old)
+		}
+	}
+	// Valid revisions preserve a superseded actionable judgment after withdrawal.
+	runs := syntheticResults(c, p)
+	run := &runs[60]
+	label := &run.Labels[0]
+	old := FindingAssessment{Actionable: true, DefectIDs: []string{"d1"}, Rationale: "prior assessment", Provenance: syntheticLabelProvenance(run.StartedAt.Add(2 * run.Latency))}
+	label.History = []FindingAssessment{old}
+	label.Assessment.Provenance.Supersedes = Digest(old)
+	label.Assessment.Actionable = false
+	label.Assessment.DefectIDs = []string{}
+	run.FindingStatuses["f1"] = "retracted"
+	run.Concessions = 1
+	if _, err := ScoreEvaluation(c, p, runs); err != nil {
+		t.Fatal("valid withdrawal revision rejected", err)
+	}
+}

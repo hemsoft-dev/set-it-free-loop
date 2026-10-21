@@ -39,9 +39,14 @@ later timestamp. Each defect records the containing label's actor and time
 and its own later evidence. Franz can override any label using kind `owner`,
 his immutable human ID, and `OwnerOverride: true` on a revision. Agent revisions
 use kind `agent`, zero human ID, and never claim owner override. Owner labels
-use provider `human`, model `none` and an identified manual session. Retain
-superseded labels and disagreements. Finding assessments use the same actor,
-time, evidence and revision rules, and must occur after their run completes.
+use agent `Franz`, provider `human`, model `none` and an identified session
+starting with `manual-`. Agent labels cannot use those owner identity fields.
+Retain superseded labels and disagreements. Finding assessments use the same
+actor, time, evidence and revision rules, and must occur strictly after their
+run completes. Each retained assessment
+revision must be internally consistent, match known defect IDs without
+duplicates, and retain its rationale. A previous actionable assessment may
+remain in history after the finding is withdrawn.
 
 Validation checks record structure, chronology, primary-source URL forms and
 revision chains. It rejects review/comment URLs and evidence kinds. It does
