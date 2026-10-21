@@ -7,7 +7,7 @@ provider profile. Only the explicit private start method contacts the manager.
 The offline [measured runtime builder](GIT-RUNTIME.md) and namespace startup
 check are available; they do not qualify aggregate acquisition. The public
 production factory, authenticated grant/export
-channel, namespace inspection, concrete helper admission and broker/result
+channel, full namespace/mount inspection, concrete helper admission and broker/result
 orchestration remain unfinished.
 
 One private service directory and cross-process flock own the pinned sealed
@@ -25,14 +25,40 @@ whole-control-group kill, the typed transient wire requests:
 
 - `TemporaryFileSystem`, signature `a(ss)`: `/tmp` with
   `size=268435456,nr_inodes=65536,noswap,nosuid,nodev,noexec,mode=0700`.
-- `RestrictAddressFamilies`, signature `(bas)`: allow only `AF_UNIX`.
+- `RestrictAddressFamilies`, signature `(bas)`: allow `AF_UNIX` and `AF_NETLINK`
+  during trusted bootstrap setup. The mandatory late payload filter permits
+  only `AF_UNIX` before any Git parser starts.
 - `SystemCallArchitectures`, signature `as`: `native`.
+- `SystemCallFilter`, signature `(bas)`: deny all three io_uring calls, with
+  `SystemCallErrorNumber`, signature `i`, set to EPERM.
+
+The [bootstrap compatibility report](GIT-BOOTSTRAP-NETWORK.md) records why a
+unit-wide AF_UNIX rule prevented bubblewrap setup and why systemd
+PrivateNetwork readback was insufficient on mini. The fixed sealed payload
+filter also denies namespace changes, mount APIs, cross-process inspection,
+keyrings, io_uring and x32/foreign ABIs. It allows ordinary Unix sockets and
+process creation. The factory must enforce its installation and descriptor
+handoff; these private helpers grant no source capability.
 
 These are requested properties, not proof that the future Git worker's mounts
 or resource pressure have been qualified. The worker still needs its fixed
 namespace, immutable measured runtime, inherited syscall policy and actual
 kernel/mount inspection before any Git broker grant. Other payload descriptions
 cannot select these properties or be mistaken for this Git journal.
+
+The separate private `gitNetworkBoundary` retains typed network-namespace FDs
+and duplicates of the original kernel pidfds for an inert inner worker and
+manager. It verifies live pidfd-to-PID correspondence, boot/start ticks, NS_GET_NSTYPE
+and namespace device/inode identity before and after capture. The worker must
+be outside both supervisor and manager network namespaces. Each peer check
+revalidates the retained identities and requires that peer's current network
+namespace to match the worker's. Caller descriptor closure cannot substitute
+another process. Exited workers, wrong namespace types, host peers and closed
+boundaries refuse. This helper does not authenticate the supplied invocation
+against systemd, prove ancestry, inspect routes or grant source access. The
+future factory must compose those checks and verify the final filter before
+using this observation. Actual inert bubblewrap tests independently open the
+private worker's namespace from the host; self-reported IDs are not accepted.
 
 Capture pins the manager owner, boot, invocation, actual root PID/start ticks
 and retained root pidfd, sealed executable, and kernel cgroup identity/limits.

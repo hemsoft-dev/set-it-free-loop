@@ -335,6 +335,10 @@ type gitUnitAddressFamilies struct {
 	Allow    bool
 	Families []string
 }
+type gitUnitSyscallFilter struct {
+	Allow bool
+	Calls []string
+}
 
 const gitUnitDescriptionPrefix = "SFL Git acquisition "
 const gitUnitTmpfsOptions = "size=268435456,nr_inodes=65536,noswap,nosuid,nodev,noexec,mode=0700"
@@ -346,8 +350,13 @@ func fixedGitUnitProperties(unit, stub string, args []string, description string
 	}
 	return append(properties,
 		prop("TemporaryFileSystem", []gitUnitTemporaryFS{{"/tmp", gitUnitTmpfsOptions}}),
-		prop("RestrictAddressFamilies", gitUnitAddressFamilies{true, []string{"AF_UNIX"}}),
+		// Only the measured bootstrap may use netlink to initialize its new
+		// network namespace. The late bwrap payload filter removes it before
+		// any Git parser runs. Internet sockets are never permitted.
+		prop("RestrictAddressFamilies", gitUnitAddressFamilies{true, []string{"AF_UNIX", "AF_NETLINK"}}),
 		prop("SystemCallArchitectures", []string{"native"}),
+		prop("SystemCallFilter", gitUnitSyscallFilter{false, []string{"io_uring_setup", "io_uring_enter", "io_uring_register"}}),
+		prop("SystemCallErrorNumber", int32(unix.EPERM)),
 	), nil
 }
 func fixedPayloadUnitProperties(unit, stub string, args []string, description string, imageFD int, prefix string) ([]unitProperty, error) {

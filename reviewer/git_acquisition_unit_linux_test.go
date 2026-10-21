@@ -37,13 +37,16 @@ func TestGitAcquisitionFixedUnitWireIsSeparateAndBounded(t *testing.T) {
 			}
 			values[property.Name] = property.Value
 		}
-		if values["TemporaryFileSystem"].Signature().String() != "a(ss)" || values["RestrictAddressFamilies"].Signature().String() != "(bas)" || values["SystemCallArchitectures"].Signature().String() != "as" {
+		if values["TemporaryFileSystem"].Signature().String() != "a(ss)" || values["RestrictAddressFamilies"].Signature().String() != "(bas)" || values["SystemCallArchitectures"].Signature().String() != "as" || values["SystemCallFilter"].Signature().String() != "(bas)" || values["SystemCallErrorNumber"].Signature().String() != "i" {
 			t.Fatal("wrong typed policy wire")
 		}
-		if !reflect.DeepEqual(values["TemporaryFileSystem"].Value(), []gitUnitTemporaryFS{{"/tmp", gitUnitTmpfsOptions}}) || !reflect.DeepEqual(values["RestrictAddressFamilies"].Value(), gitUnitAddressFamilies{true, []string{"AF_UNIX"}}) || !reflect.DeepEqual(values["SystemCallArchitectures"].Value(), []string{"native"}) {
+		if !reflect.DeepEqual(values["TemporaryFileSystem"].Value(), []gitUnitTemporaryFS{{"/tmp", gitUnitTmpfsOptions}}) || !reflect.DeepEqual(values["RestrictAddressFamilies"].Value(), gitUnitAddressFamilies{true, []string{"AF_UNIX", "AF_NETLINK"}}) || !reflect.DeepEqual(values["SystemCallArchitectures"].Value(), []string{"native"}) {
 			t.Fatal("weakened unit policy")
 		}
-		for key, want := range map[string]any{"MemoryMax": uint64(1 << 30), "MemorySwapMax": uint64(0), "TasksMax": uint64(64), "CPUQuotaPerSecUSec": uint64(1000000), "RuntimeMaxUSec": uint64(120000000), "Restart": "no", "KillMode": "control-group", "NoNewPrivileges": true} {
+		if !reflect.DeepEqual(values["SystemCallFilter"].Value(), gitUnitSyscallFilter{false, []string{"io_uring_setup", "io_uring_enter", "io_uring_register"}}) {
+			t.Fatal("io_uring policy weakened")
+		}
+		for key, want := range map[string]any{"MemoryMax": uint64(1 << 30), "MemorySwapMax": uint64(0), "TasksMax": uint64(64), "CPUQuotaPerSecUSec": uint64(1000000), "RuntimeMaxUSec": uint64(120000000), "Restart": "no", "KillMode": "control-group", "NoNewPrivileges": true, "SystemCallErrorNumber": int32(unix.EPERM)} {
 			if values[key].Value() != want {
 				t.Fatal(key)
 			}
