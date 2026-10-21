@@ -13,7 +13,9 @@ program pins, worker and namespace helper, plus each provider's pinned identity,
 VM assets, runtime/bootstrap libraries and egress policy. Use
 `EncodeGitReviewerRelease` to produce canonical JSON and its SHA-256 digest.
 Decoding checks bounded JSON, duplicate/unknown fields, structural pins and
-the supported identities. Re-encoding is stable. The Git artifact is produced
+the supported identities, then requires exact equality with the canonical bytes.
+Whitespace, reordered fields or other alternative encodings refuse; the returned
+digest always covers the supplied bytes. Re-encoding is stable. The Git artifact is produced
 by `BuildGitRuntime`; startup measures and seals its actual bytes before
 preparing the read-only runtime.
 
@@ -85,6 +87,10 @@ owned startup resources. Runtime removal checks the opened container's original
 identity. The outer startup lock is released last. A failed earlier step retains
 later owners. Close has a 30-second ceiling or the caller's earlier deadline.
 An unreturned callback keeps ownership; a timeout is not a stop receipt.
+Git runtime disposal also retains its original directory descriptors and open
+state after an identity, chmod or removal failure. Repairing the original path
+allows an explicit retry on the same owner. The code never treats a failed close
+as completion, replaces the runtime owner or skips a cached cleanup error.
 
 Each startup uses its own random private runtime container. Successful close
 removes only that container. Unknown entries from an interrupted prior startup

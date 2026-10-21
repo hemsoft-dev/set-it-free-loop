@@ -17,7 +17,7 @@ func TestGitReviewerReleaseCanonicalPackageBindsAllPins(t *testing.T) {
 		t.Fatal(err)
 	}
 	decoded, next, err := DecodeGitReviewerRelease(raw)
-	if err != nil || hash != next {
+	if err != nil || hash != next || next != gitRawHash(raw) {
 		t.Fatal("canonical package did not round trip", err)
 	}
 	again, _, _ := EncodeGitReviewerRelease(decoded)
@@ -76,5 +76,26 @@ func TestGitReviewerReleaseRejectsMalformedAndMismatchedDescriptors(t *testing.T
 				t.Fatal("invalid package accepted")
 			}
 		})
+	}
+}
+
+func TestGitReviewerReleaseRejectsNoncanonicalPackageBytes(t *testing.T) {
+	o, _, _, _ := gitReviewerStartupFixture(t)
+	raw, _, err := EncodeGitReviewerRelease(o.Releases[o.Current])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reordered map[string]any
+	if json.Unmarshal(raw, &reordered) != nil {
+		t.Fatal("fixture")
+	}
+	otherOrder, _ := json.Marshal(reordered)
+	for _, changed := range [][]byte{append([]byte(" "), raw...), append(append([]byte{}, raw...), '\n'), otherOrder} {
+		if bytes.Equal(raw, changed) {
+			t.Fatal("fixture did not change package bytes")
+		}
+		if _, hash, err := DecodeGitReviewerRelease(changed); err == nil || hash != "" {
+			t.Fatal("decoder approved a digest of different package bytes")
+		}
 	}
 }

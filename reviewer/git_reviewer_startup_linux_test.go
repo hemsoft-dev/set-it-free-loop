@@ -485,3 +485,55 @@ func TestGitReviewerStartupNativeStubPinMeasuredAfterLocalGate(t *testing.T) {
 		})
 	}
 }
+
+func TestGitReviewerStartupRetriesSameRuntimeCleanupAfterPathRepair(t *testing.T) {
+	o, _, opener, signs := gitReviewerStartupFixture(t)
+	s, err := openGitReviewerService(context.Background(), o, opener)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	runtime := s.runtime
+	if runtime.parent.Rename(gitRuntimeDirectory, "retained-runtime") != nil {
+		t.Fatal("fixture rename")
+	}
+	if s.Close(context.Background()) == nil || s.lock == nil || s.closed || runtime.closed {
+		t.Fatal("failed cleanup lost original runtime handles or outer lock")
+	}
+	if _, err := runtime.root.Stat("."); err != nil {
+		t.Fatal("failed cleanup closed the retained directory capability", err)
+	}
+	if runtime.parent.Rename("retained-runtime", gitRuntimeDirectory) != nil {
+		t.Fatal("cannot repair original directory identity")
+	}
+	if s.Close(context.Background()) != nil || !s.closed || s.runtime != runtime || signs.Load() != 0 {
+		t.Fatal("same-owner cleanup retry did not finish without requalification")
+	}
+}
+
+func TestGitReviewerStartupFailedConstructionRetainsRetryableRuntime(t *testing.T) {
+	o, _, _, signs := gitReviewerStartupFixture(t)
+	opener := func(context.Context, string, string, string) (*gitUnitOwner, error) {
+		entries, err := os.ReadDir(o.RuntimeDirectory)
+		if err != nil || len(entries) != 1 {
+			t.Fatal("fixture runtime not prepared", err)
+		}
+		container := filepath.Join(o.RuntimeDirectory, entries[0].Name())
+		if os.Rename(filepath.Join(container, gitRuntimeDirectory), filepath.Join(container, "retained-runtime")) != nil {
+			t.Fatal("fixture rename")
+		}
+		return nil, ErrLiveBlocked
+	}
+	s, err := openGitReviewerService(context.Background(), o, opener)
+	if err == nil || s == nil || s.closed || s.lock == nil || s.runtime == nil || s.runtime.closed || s.inner != nil || signs.Load() != 0 {
+		t.Fatal("failed construction lost its cleanup owner", err)
+	}
+	defer s.Close(context.Background())
+	runtime := s.runtime
+	if runtime.parent.Rename("retained-runtime", gitRuntimeDirectory) != nil {
+		t.Fatal("original path repair failed")
+	}
+	if s.Close(context.Background()) != nil || !s.closed || s.runtime != runtime {
+		t.Fatal("constructor cleanup retry could not finish the same runtime")
+	}
+}

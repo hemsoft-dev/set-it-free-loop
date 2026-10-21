@@ -3,6 +3,7 @@
 package reviewer
 
 import (
+	"bytes"
 	"encoding/json"
 )
 
@@ -81,6 +82,9 @@ func DecodeGitReviewerRelease(raw []byte) (GitReviewerRelease, string, error) {
 	if err != nil || r.Validate() != nil {
 		return GitReviewerRelease{}, "", ErrLiveBlocked
 	}
-	_, hash, err := EncodeGitReviewerRelease(r)
-	return r, hash, err
+	canonical, hash, err := EncodeGitReviewerRelease(r)
+	if err != nil || !bytes.Equal(raw, canonical) {
+		return GitReviewerRelease{}, "", ErrLiveBlocked
+	}
+	return r, hash, nil
 }

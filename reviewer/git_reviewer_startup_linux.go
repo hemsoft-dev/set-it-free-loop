@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -59,18 +60,17 @@ func (GitReviewerServiceOptions) MarshalJSON() ([]byte, error) {
 // GitReviewerService owns one explicit startup. Construction never refreshes or
 // runs. A nonnil handle returned with an error must be retained and closed.
 type GitReviewerService struct {
-	inner      *gitReviewerService
-	unit       *gitUnitOwner
-	archive    *gitExportArchive
-	runtime    *gitRuntimeRoot
-	helper     *os.File
-	lock       *authLock
-	parent     *os.Root
-	container  string
-	identity   os.FileInfo
-	operation  chan struct{}
-	closed     bool
-	cleanupErr error
+	inner     *gitReviewerService
+	unit      *gitUnitOwner
+	archive   *gitExportArchive
+	runtime   *gitRuntimeRoot
+	helper    *os.File
+	lock      *authLock
+	parent    *os.Root
+	container string
+	identity  os.FileInfo
+	operation chan struct{}
+	closed    bool
 }
 
 func (*GitReviewerService) String() string   { return "GitReviewerService{redacted}" }
@@ -250,7 +250,12 @@ func (s *GitReviewerService) prepareRuntime(ctx context.Context, parent string, 
 	if err != nil {
 		return ErrLiveBlocked
 	}
-	s.runtime, err = prepareGitRuntime(ctx, filepath.Join(parent, name), io.NewSectionReader(artifact, 0, pins.Artifact.Bytes), pins, nil)
+	_, err = prepareGitRuntime(ctx, filepath.Join(parent, name), io.NewSectionReader(artifact, 0, pins.Artifact.Bytes), pins, func(prepared *gitRuntimeRoot) error {
+		// Retain the original owner even if partial preparation cannot dispose
+		// itself. An error must not replace that handle with a nil return value.
+		s.runtime = prepared
+		return nil
+	})
 	if err == nil {
 		opened, statErr := s.runtime.parent.Stat(".")
 		if statErr != nil || !os.SameFile(opened, s.identity) {
@@ -353,9 +358,6 @@ func (s *GitReviewerService) Close(ctx context.Context) error {
 	if s.closed {
 		return nil
 	}
-	if s.cleanupErr != nil {
-		return s.cleanupErr
-	}
 	if s.unit != nil && !s.unit.closed {
 		if !s.unit.enter(ctx) {
 			return ErrWorkerStopPending
@@ -381,7 +383,6 @@ func (s *GitReviewerService) Close(ctx context.Context) error {
 	}
 	if s.runtime != nil {
 		if err := s.runtime.Close(); err != nil {
-			s.cleanupErr = err
 			return err
 		}
 	}
@@ -413,4 +414,33 @@ func (s *GitReviewerService) Close(ctx context.Context) error {
 	}
 	s.closed = true
 	return nil
+}
+
+// Git runtime owners retain their original descriptors after a failed disposal.
+// The caller must establish physical stop before invoking Close, as with the
+// existing runtime contract. A retry checks the SAME directory identity; it
+// neither reopens a pathname-selected replacement nor drops the retained owner.
+func (r *gitRuntimeRoot) Close() error {
+	if r == nil || r.nativeRuntimeRoot == nil || r.closed {
+		return nil
+	}
+	current, err := r.parent.Lstat(r.directoryName())
+	if err != nil || !os.SameFile(current, r.identity) {
+		return ErrNativeRuntime
+	}
+	directories := make([]string, 0, len(r.directories))
+	for directory := range r.directories {
+		directories = append(directories, directory)
+	}
+	sort.Strings(directories)
+	for _, directory := range directories {
+		if err := r.root.Chmod(directory, 0700); err != nil && !os.IsNotExist(err) {
+			return ErrNativeRuntime
+		}
+	}
+	if r.parent.RemoveAll(r.directoryName()) != nil {
+		return ErrNativeRuntime
+	}
+	r.closed = true
+	return errors.Join(r.root.Close(), r.parent.Close())
 }
