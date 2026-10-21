@@ -164,6 +164,12 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 	if signs.Load() != 0 {
 		t.Fatal("restore dispatched credential work")
 	}
+	if factory.Close(context.Background()) == nil || factory.closed || factory.unit.closed {
+		t.Fatal("active restored evidence lost backing storage")
+	}
+	if factory.ReleaseJob(context.Background(), bound) != nil || factory.ReleaseJob(context.Background(), bound) == nil {
+		t.Fatal("restored evidence was not released exactly once")
+	}
 }
 
 func TestGitSourceFactoryValidLongRootAndFailedStartupOwnership(t *testing.T) {

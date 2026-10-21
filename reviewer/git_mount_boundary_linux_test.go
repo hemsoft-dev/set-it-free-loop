@@ -197,7 +197,11 @@ func TestGitMountNamespaceChild(t *testing.T) {
 			unix.CloseOnExec(5)
 		}
 	}
-	if unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0) != nil || writeGitControlPacket(ctx, conn, []byte("ready"), nil) != nil {
+	if unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0) != nil {
+		t.Fatal("clear inert worker dumpability")
+	}
+	dumpable, err := unix.PrctlRetInt(unix.PR_GET_DUMPABLE, 0, 0, 0, 0)
+	if err != nil || dumpable != 0 || writeGitControlPacket(ctx, conn, []byte("ready"), nil) != nil {
 		t.Fatal("inert mount readiness")
 	}
 	packet, files, err := readGitControlPacket(ctx, conn, 0)
@@ -273,8 +277,9 @@ func TestGitDescriptorActualPrivateWorker(t *testing.T) {
 	}
 }
 
-func gitMountPrivateFixture(t *testing.T, descriptorMode string) {
+func gitMountPrivateFixture(t *testing.T, descriptorMode string, nonancestor ...bool) {
 	t.Helper()
+	detached := len(nonancestor) == 1 && nonancestor[0]
 	if os.Getenv("SFL_GIT_BOOTSTRAP_NAMESPACE") != "1" {
 		t.Skip("explicit inert private-namespace mount observation")
 	}
@@ -383,10 +388,32 @@ func gitMountPrivateFixture(t *testing.T, descriptorMode string) {
 	if descriptorMode == "" {
 		command.Stdout, command.Stderr = &output, &output
 	}
+	if detached {
+		// Only this inert inspection fixture drops the parent-death option.
+		// Its worker has its own fixed deadline and is reaped by its helper.
+		args = append([]string(nil), args...)
+		for i, arg := range args {
+			if arg == "--die-with-parent" {
+				args = append(args[:i], args[i+1:]...)
+				break
+			}
+		}
+		raw, _ := json.Marshal(args)
+		launch := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestGitDescriptorNonancestorLauncher$")
+		launch.Env = []string{"SFL_GIT_NONANCESTOR_LAUNCHER=" + string(raw)}
+		launch.ExtraFiles = append(append([]*os.File(nil), command.ExtraFiles...), helper)
+		command = launch
+	}
 	if command.Start() != nil {
 		t.Fatal("inert mount namespace launch")
 	}
 	waited := false
+	if detached {
+		if command.Wait() != nil {
+			t.Fatal("inert nonancestor launcher")
+		}
+		waited = true
+	}
 	defer func() {
 		if !waited {
 			command.Process.Kill()
@@ -417,6 +444,10 @@ func gitMountPrivateFixture(t *testing.T, descriptorMode string) {
 		t.Fatal(err)
 	}
 	defer unix.Close(original)
+	if detached {
+		defer unix.PidfdSendSignal(original, unix.SIGKILL, nil, 0)
+		gitAssertNonancestorInspector(t, identity, original)
+	}
 	raw, err := gitReadMountInfo(ctx, identity, original)
 	if err != nil {
 		t.Fatal(err)
@@ -481,7 +512,15 @@ func gitMountPrivateFixture(t *testing.T, descriptorMode string) {
 	if checkGitMountBoundary(ctx, boundary, broker, binding) == nil {
 		t.Fatal("unqualified host workspace became a source admission proof")
 	}
-	if writeGitControlPacket(ctx, conn, []byte("finish"), nil) != nil || command.Wait() != nil {
+	if writeGitControlPacket(ctx, conn, []byte("finish"), nil) != nil {
+		t.Fatal("inert namespace completion")
+	}
+	if detached {
+		poll := []unix.PollFd{{Fd: int32(original), Events: unix.POLLIN}}
+		if n, err := unix.Poll(poll, 3000); err != nil || n != 1 || poll[0].Revents&unix.POLLIN == 0 {
+			t.Fatal("inert detached worker did not exit", n, err)
+		}
+	} else if command.Wait() != nil {
 		t.Fatal("inert namespace completion")
 	}
 	waited = true

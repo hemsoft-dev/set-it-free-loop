@@ -31,6 +31,8 @@ type gitSourceFactory struct {
 	bindings                        map[string]gitMaterializationBinding
 	packets                         map[string]string
 	materialized                    map[string]*gitMaterialization
+	pendingCaptures                 map[*SnapshotEvidence]string
+	activeJobs                      map[*JobEvidence]string
 	closed                          bool
 	ready                           bool
 }
@@ -234,6 +236,10 @@ func (f *gitSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*Sna
 	f.bindings[binding.Attempt] = binding
 	f.packets[binding.Attempt] = Digest(m.packet)
 	f.materialized[binding.Attempt] = m
+	if f.pendingCaptures == nil {
+		f.pendingCaptures = map[*SnapshotEvidence]string{}
+	}
+	f.pendingCaptures[evidence] = binding.Attempt
 	return evidence, nil
 }
 
@@ -271,7 +277,39 @@ func (f *gitSourceFactory) Restore(ctx context.Context, job Job) (*JobEvidence, 
 		}
 		f.materialized[attempt] = m
 	}
-	return restoreGitMaterialization(ctx, m, job)
+	bound, err := restoreGitMaterialization(ctx, m, job)
+	if err != nil {
+		return nil, err
+	}
+	if f.activeJobs == nil {
+		f.activeJobs = map[*JobEvidence]string{}
+	}
+	f.activeJobs[bound] = attempt
+	return bound, nil
+}
+
+func (f *gitSourceFactory) ReleaseCapture(ctx context.Context, evidence *SnapshotEvidence) error {
+	if !f.enter(ctx) {
+		return errGitUnit
+	}
+	defer f.leave()
+	if f.closed || evidence == nil || f.pendingCaptures[evidence] == "" {
+		return errGitUnit
+	}
+	delete(f.pendingCaptures, evidence)
+	return nil
+}
+
+func (f *gitSourceFactory) ReleaseJob(ctx context.Context, bound *JobEvidence) error {
+	if !f.enter(ctx) {
+		return errGitUnit
+	}
+	defer f.leave()
+	if f.closed || bound == nil || f.activeJobs[bound] == "" {
+		return errGitUnit
+	}
+	delete(f.activeJobs, bound)
+	return nil
 }
 
 func (f *gitSourceFactory) Close(ctx context.Context) error {
@@ -281,6 +319,9 @@ func (f *gitSourceFactory) Close(ctx context.Context) error {
 	defer f.leave()
 	if f.closed {
 		return nil
+	}
+	if len(f.pendingCaptures) != 0 || len(f.activeJobs) != 0 {
+		return errGitUnit
 	}
 	for _, run := range f.runs {
 		run.mu.Lock()
@@ -330,3 +371,4 @@ func (f *gitSourceFactory) Close(ctx context.Context) error {
 
 // Compile-time guarantee that production uses the concrete fixed driver.
 var _ gitFactoryAcquisition = (*gitFactoryRun)(nil)
+var _ PollSource = (*gitSourceFactory)(nil)

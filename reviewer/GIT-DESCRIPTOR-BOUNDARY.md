@@ -60,6 +60,29 @@ it does not relax dumpability, change host policy or substitute pathname opens
 for retained kernel object identities. The explicit fixture's actual result
 must accompany any qualification claim. The ordinary suite skips this opt-in.
 
+Inspection also has an explicit nonancestor fixture. An inert launcher exits
+before observation, and the test checks the worker's actual ancestry through
+PID 1. The worker verifies dumpability is zero before sending readiness. The
+test checks the target user namespace's owner and its parent chain back to the
+inspector, then exercises actual root, executable, mappings, mount and original
+pidfd descriptor observation. No service, host capability or ptrace-policy
+change is made.
+
+Linux grants a parent user namespace's matching owner capabilities in its child
+and descendant namespaces. Ptrace's dumpability check permits `CAP_SYS_PTRACE`
+in the target's user namespace. These rules differ from host capabilities and
+do not depend on process ancestry. See
+[user namespaces](https://man7.org/linux/man-pages/man7/user_namespaces.7.html)
+and [ptrace access checks](https://man7.org/linux/man-pages/man2/ptrace.2.html).
+The retained pidfd identifies the process; it does not override access checks.
+Other host security policies can still refuse, and refusal never qualifies.
+
+```sh
+SFL_GIT_DESCRIPTOR_KERNEL=1 SFL_GIT_BOOTSTRAP_NAMESPACE=1 \
+  go -C reviewer test -race -count=1 -v \
+  -run '^TestGitDescriptorActualNonancestorNondumpableWorker$' .
+```
+
 This does not qualify sealed worker execution, the required whole-unit noswap
 tmpfs, installed-filter provenance, unit/cgroup ownership, authenticated export
 publication or controller recovery. Those remain separate factory requirements
