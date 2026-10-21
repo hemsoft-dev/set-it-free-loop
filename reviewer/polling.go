@@ -417,12 +417,12 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound 
 			result = errors.Join(result, c.options.Source.ReleaseCapture(phase, evidence))
 		}
 	}()
-	if w.job == "" {
-		if source, ok := c.options.Source.(pollSourceRetention); ok {
-			if err := source.PruneSource(ctx, c.options.Store, c.now()); err != nil {
-				return nil, Job{}, err
-			}
+	if source, ok := c.options.Source.(pollSourceRetention); ok {
+		if err := source.PruneSource(ctx, c.options.Store, c.now()); err != nil {
+			return nil, Job{}, err
 		}
+	}
+	if w.job == "" {
 		var captureErr error
 		evidence, captureErr = c.options.Capture(ctx, w.snapshot)
 		if captureErr != nil {
@@ -590,9 +590,14 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 		}
 	}
 
-	if c.options.Source != nil && bound != nil {
+	if c.options.Source != nil {
 		phase, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		err = errors.Join(err, c.options.Source.ReleaseJob(phase, bound))
+		if bound != nil {
+			err = errors.Join(err, c.options.Source.ReleaseJob(phase, bound))
+		}
+		if source, ok := c.options.Source.(pollSourceRetention); ok {
+			err = errors.Join(err, source.PruneSource(phase, c.options.Store, c.now()))
+		}
 		cancel()
 	}
 	c.mu.Lock()

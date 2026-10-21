@@ -143,9 +143,17 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 	if os.RemoveAll(store.GitDir) != nil {
 		t.Fatal("remove owned synthetic quarantine")
 	}
-	job := testJob()
-	job.Snapshot = r.binding.Snapshot
-	job.Packet = packet
+	durable, _ := openFixtureStore(t)
+	request := native(1, controlTime.Add(time.Minute))
+	request.Snapshot = r.binding.Snapshot
+	mustCapture(t, durable, nil, controlTime.Add(2*time.Minute))
+	if durable.RecordRequest(context.Background(), alphaScope(), request, true) != nil {
+		t.Fatal("source retention request")
+	}
+	job, err := durable.Admit(context.Background(), alphaScope(), 1, testJob().Release, packet, controlTime.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal("source retention admission", err)
+	}
 	bound, err := factory.Restore(context.Background(), job)
 	if err != nil || bound.evidence.Packet() != original.Packet() || !reflect.DeepEqual(bound.evidence.lines, original.lines) || !reflect.DeepEqual(bound.evidence.Coverage(), original.Coverage()) {
 		t.Fatal("restored evidence changed", err)
@@ -169,6 +177,49 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 	}
 	if factory.ReleaseJob(context.Background(), bound) != nil || factory.ReleaseJob(context.Background(), bound) == nil {
 		t.Fatal("restored evidence was not released exactly once")
+	}
+	// Expired lease time does not prove a worker stopped. Retention must keep
+	// the exact source and its cache while that durable lease remains owned.
+	token, err := durable.Claim(context.Background(), job.ID, controlTime.Add(4*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	later := controlTime.Add(40 * 24 * time.Hour)
+	if factory.PruneSource(context.Background(), durable, later) != nil || factory.materialized[r.binding.Attempt] == nil {
+		t.Fatal("unknown durable lease lost retained source")
+	}
+	state, err := durable.Snapshot(context.Background())
+	if err != nil || state.Jobs[job.ID] == nil {
+		t.Fatal("expired lease was stolen", err)
+	}
+	bound, err = factory.Restore(context.Background(), job)
+	if err != nil {
+		t.Fatal("retained lease source could not restore", err)
+	}
+	// This is an explicitly synthetic pending admission using independently
+	// reconstructed source evidence, not a physical Capture qualification.
+	factory.pendingCaptures = map[*SnapshotEvidence]string{evidence: r.binding.Attempt}
+	if durable.ReleaseStopped(context.Background(), job.ID, token, "cancelled") != nil {
+		t.Fatal("known stopped fake lease release")
+	}
+	if factory.PruneSource(context.Background(), durable, later) != nil {
+		t.Fatal("retained consumer pruning")
+	}
+	state, err = durable.Snapshot(context.Background())
+	if err != nil || state.Jobs[job.ID] != nil || len(factory.bindings) != 1 {
+		t.Fatal("active source or expired job retention incorrect", err)
+	}
+	if factory.ReleaseJob(context.Background(), bound) != nil || factory.PruneSource(context.Background(), durable, later) != nil || len(factory.bindings) != 1 {
+		t.Fatal("pending admission source retired")
+	}
+	if factory.ReleaseCapture(context.Background(), evidence) != nil || factory.PruneSource(context.Background(), durable, later) != nil || len(factory.bindings) != 0 || len(factory.materialized) != 0 {
+		t.Fatal("released expired source permanently consumed slots")
+	}
+	if _, err := factory.unit.root.Lstat(gitUnitDirectory(r.binding.Attempt)); !os.IsNotExist(err) {
+		t.Fatal("unit receipt not retired", err)
+	}
+	if _, err := factory.archive.root.Lstat(gitExportDirectory(r.binding.Attempt)); !os.IsNotExist(err) {
+		t.Fatal("export not retired", err)
 	}
 }
 

@@ -236,13 +236,46 @@ func (a *gitExportArchive) records() ([]gitExportRecord, error) {
 		return nil, errGitExportArchive
 	}
 	defer dir.Close()
-	entries, err := dir.ReadDir(gitExportArchiveRecords + 2)
-	if err != nil && err != io.EOF || len(entries) > gitExportArchiveRecords+1 {
+	entries, err := dir.ReadDir(gitExportArchiveRecords*4 + 2)
+	if err != nil && err != io.EOF || len(entries) > gitExportArchiveRecords*4+1 {
 		return nil, errGitExportArchive
+	}
+	retirements, err := gitRetirementIntents(a)
+	if err != nil {
+		return nil, errGitExportArchive
+	}
+	intents := map[string]gitRetirement{}
+	for _, intent := range retirements {
+		intents[intent.Unit.Binding.Attempt] = intent
 	}
 	out := []gitExportRecord{}
 	for _, entry := range entries {
 		if entry.Name() == "git-export.lock" {
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), "retire-") {
+			attempt := strings.TrimSuffix(strings.TrimPrefix(entry.Name(), "retire-"), ".json")
+			if _, ok := intents[attempt]; !ok || entry.Name() != gitRetirementName(attempt) {
+				return nil, errGitExportArchive
+			}
+			continue
+		}
+		if strings.HasPrefix(entry.Name(), "retired-") {
+			matched := false
+			for attempt, intent := range intents {
+				for kind, id := range map[string]gitKernelFileID{"unit": intent.UnitDirectory, "export": intent.ExportDirectory} {
+					if entry.Name() == gitRetirementTrash(kind, attempt) && id.Inode != 0 {
+						present, err := gitRetirementPathIdentity(a.root, entry.Name(), id)
+						if err != nil || !present {
+							return nil, errGitExportArchive
+						}
+						matched = true
+					}
+				}
+			}
+			if !matched {
+				return nil, errGitExportArchive
+			}
 			continue
 		}
 		attempt := strings.TrimPrefix(entry.Name(), "export-")
@@ -259,6 +292,9 @@ func (a *gitExportArchive) records() ([]gitExportRecord, error) {
 			return nil, errGitExportArchive
 		}
 		out = append(out, r)
+		if len(out) > gitExportArchiveRecords {
+			return nil, errGitExportArchive
+		}
 	}
 	return out, nil
 }

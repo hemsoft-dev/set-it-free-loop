@@ -114,7 +114,7 @@ func TestPollingOwnedSourceReleasesAfterAdmissionAndOnFencing(t *testing.T) {
 			awaitPollWorker(t, c)
 			source.mu.Lock()
 			defer source.mu.Unlock()
-			if source.prunes != 1 || source.capturesReleased != 1 || len(source.pending) != 0 || len(source.active) != 0 {
+			if source.prunes != 2 || source.capturesReleased != 1 || len(source.pending) != 0 || len(source.active) != 0 {
 				t.Fatal("source lifetime leaked", source.prunes, source.capturesReleased, len(source.pending), len(source.active))
 			}
 			if mode == "complete" {

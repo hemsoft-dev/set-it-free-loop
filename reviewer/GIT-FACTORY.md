@@ -2,13 +2,16 @@
 
 The private source factory composes the existing acquisition unit, pinned
 credential generation, measured runtime, authenticated bootstrap, worker and
-plain export archive. Its `Capture` and `Restore` methods fit the polling
-controller callbacks. The trusted service must construct and retain the factory;
+plain export archive. The polling controller takes it through `PollOptions.Source`
+so capture, restore, consumer release and retention share one owner. Raw
+Capture/Restore callbacks remain for fakes; they cannot be mixed with Source.
+The trusted service must construct and retain the factory;
 this change does not install a service, import credentials or activate polling.
 
 Construction takes exclusive lifecycle ownership of a newly opened unit owner,
 export archive and prepared runtime. It validates the fixed manifest/helper and
-runtime pins, then performs startup recovery before requesting any credential
+runtime pins and a shared filesystem for the unit/archive journals, then
+performs startup recovery before requesting any credential
 generation. The composing service must call this before credential Refresh and
 retain the factory until controller work has joined. Before local handles are retained, a nil factory with an error leaves inputs
 owned by its caller. After ownership transfers, a failed startup returns a
@@ -20,7 +23,8 @@ capability to a worker or broker.
 
 ## Capture and grant order
 
-Each capture spends a random 128-bit attempt nonce. Its binding fixes the
+Credential readiness is checked before allocating any durable slot or work
+directory. Each admitted capture spends a random 128-bit attempt nonce. Its binding fixes the
 release hash, canonical runtime-manifest hash and immutable PR head/base/merge
 base. A fresh private attempt directory contains separate bootstrap and broker
 sockets. No failed or uncertain attempt automatically starts again. Unix pathname bounds
@@ -87,13 +91,16 @@ Before returning SnapshotEvidence, capture reconstructs patch anchors from
 verified plain blobs. It shares the same packet validation used for restoring
 an admitted job, without inventing a job or running host Git. Restore matches
 the exact admitted packet, snapshot, release and runtime, rechecks the durable
-physical-stop journal and reopens the bounded archive into sealed blobs. There
+physical-stop journal and reopens the bounded archive into sealed blobs. A
+canonical protected stopped receipt remains valid after systemd collects the
+unit and cgroup; an unfinished stop still needs independent live proof. There
 is no network refetch, host Git parser, recapture or label-based fallback.
 
 ## Restart recovery
 
 Startup joins the newly opened cross-process-locked unit owner with the export
-archive. It independently stops every recorded old acquisition, then requires
+archive. It completes durable retirement intents, independently stops every
+remaining recorded old acquisition, then requires
 exact binding equality between journals. A staged export needs both durable
 bootstrap and worker grants from a captured unit. An orphan, different binding
 or archive without worker admission refuses startup source recovery.
@@ -107,10 +114,42 @@ The same retirement runs after a failed capture in the current process, once
 its physical stop and credential-generation acceptance are known. Unknown or
 corrupt outcomes fence Capture/Restore until explicit Recover first drains the
 retained local runs; recovery does not restart them.
-Staged admitted source is retained; this path does not discard a complete export.
+Staged admitted source is retained by the separate retention rules below.
 All existing 128-record bounds remain. The factory retains its private working
 directories as recovery artifacts; it does not recursively delete a replacement
 or foreign directory.
+
+## Consumer lifetime and retention
+
+Capture pins its evidence until admission or fencing has finished. Restore pins
+the returned job evidence until review and publication preparation have joined.
+The polling controller releases both on success and failure, using a bounded
+uncanceled cleanup context. Closing the factory refuses while either consumer
+remains. A caller outside polling must perform the same releases.
+
+Before work and after consumer release, retention calls SQLite's existing Prune
+and reads the remaining immutable jobs. Pending captures, active job evidence,
+every retained job and every unaccepted acquisition keep their source. An
+expired lease alone never permits deletion. Unused sealed caches can close
+while the plain archive remains available for exact restore. Retained jobs with
+an outstanding worker lease keep their cache as well.
+
+Only unreferenced, revoked, physically stopped attempts can retire. The factory
+fsyncs an intent containing the exact terminal unit receipt, export receipt and
+original directory/file identities and hashes. It atomically moves the complete
+unit directory into archive-owned retirement storage, then the export directory,
+before deleting known files. Both journal roots must share a filesystem. This
+keeps an interrupted deletion out of the unit owner's normal record scan.
+The intent remains until both directories are removed and synced. Recovery
+resumes it before checking ordinary unit/export correspondence. Unexpected
+entries, changed identities, mismatched content or cancellation retain the
+intent and fence new work. No recursive deletion or external path is accepted.
+
+Retirement removes terminal journal slots and in-memory run/binding/cache entries,
+so 128 is a simultaneous retained-record limit rather than a lifetime quota.
+Fresh captures still generate their own random nonces; there is no model-facing
+retry or nonce selector. Evaluation consumers must retain their capture or job
+references throughout all sessions that need them, including recovery.
 
 ## Validation and remaining gates
 
@@ -123,6 +162,11 @@ interrupted intake retirement, orphan/missing-grant recovery refusal, startup
 before credentials and retained packet/anchor restoration after deleting the
 synthetic quarantine. The separate actual namespace fixtures measure mount and
 descriptor subsets using an ordinary inert executable.
+Retention tests exceed 128 stopped attempts, preserve unreleased durable leases,
+active consumers and pending admission, and reopen after six modeled deletion
+boundaries. A real owner process is SIGKILLed after the durable unit-directory
+rename; fresh locked owners complete its interrupted retirement. Foreign file
+and directory replacements remain untouched.
 
 The complete fixed unit has not passed physical qualification on mini. Its
 required systemd noswap tmpfs fails before payload execution with

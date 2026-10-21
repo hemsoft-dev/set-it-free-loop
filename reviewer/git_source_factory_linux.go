@@ -69,6 +69,9 @@ func newGitSourceFactory(ctx context.Context, credentials *GitHubCredentialOwner
 	if runtimeErr != nil {
 		return nil, errGitUnit
 	}
+	if !gitRetirementSharedFilesystem(unit.root, archive.root) {
+		return nil, errGitUnit
+	}
 	// Recovery is startup-only. A live owner that has already started work is
 	// not interchangeable with a newly opened, cross-process-locked owner.
 	if !unit.enter(ctx) {
@@ -142,6 +145,9 @@ func (f *gitSourceFactory) Recover(ctx context.Context) error {
 	if busy {
 		return errGitUnit
 	}
+	if resumeGitRetirements(ctx, f.unit, f.archive) != nil {
+		return errGitUnit
+	}
 	bindings, err := recoverGitFactory(ctx, f.unit, f.archive)
 	if err != nil {
 		return errGitUnit
@@ -158,6 +164,41 @@ func (f *gitSourceFactory) Recover(ctx context.Context) error {
 	for _, record := range exports {
 		if record.State == "staged" {
 			packets[record.Binding.Attempt] = record.PacketHash
+		}
+	}
+	if !f.unit.enter(ctx) {
+		return errGitUnit
+	}
+	units, err := f.unit.records()
+	f.unit.leave()
+	if err != nil {
+		return errGitUnit
+	}
+	remaining := map[string]bool{}
+	for _, record := range units {
+		remaining[record.Binding.Attempt] = true
+	}
+	for _, attempt := range f.pendingCaptures {
+		if !remaining[attempt] {
+			return errGitUnit
+		}
+	}
+	for _, attempt := range f.activeJobs {
+		if !remaining[attempt] {
+			return errGitUnit
+		}
+	}
+	for attempt, materialized := range f.materialized {
+		if !remaining[attempt] {
+			if materialized.Close() != nil {
+				return errGitUnit
+			}
+			delete(f.materialized, attempt)
+		}
+	}
+	for attempt := range f.runs {
+		if !remaining[attempt] {
+			delete(f.runs, attempt)
 		}
 	}
 	f.bindings, f.packets, f.ready = bindings, packets, true
