@@ -30,6 +30,7 @@ type GitReadExchanger interface {
 type GitReadPeer struct {
 	PID      int
 	UID, GID uint32
+	kernel   *gitBrokerPeerCapability
 }
 type GitReadEndpoint struct{ Socket, URL string }
 type GitReadBrokerOptions struct {
@@ -210,10 +211,10 @@ func gitBrokerAfterFunc(ctx context.Context, work func()) func() {
 	}
 }
 
-func gitBrokerPeer(conn *net.UnixConn) (GitReadPeer, int, error) {
+func gitBrokerPeer(conn *net.UnixConn) (GitReadPeer, error) {
 	pid, uid, fd, err := gatePeer(conn)
 	if err != nil {
-		return GitReadPeer{}, -1, ErrGitReadBroker
+		return GitReadPeer{}, ErrGitReadBroker
 	}
 	raw, err := conn.SyscallConn()
 	var cred *unix.Ucred
@@ -225,9 +226,15 @@ func gitBrokerPeer(conn *net.UnixConn) (GitReadPeer, int, error) {
 	}
 	if err != nil || lookup != nil || cred == nil || int(cred.Pid) != pid || cred.Uid != uid {
 		unix.Close(fd)
-		return GitReadPeer{}, -1, ErrGitReadBroker
+		return GitReadPeer{}, ErrGitReadBroker
 	}
-	return GitReadPeer{pid, uid, cred.Gid}, fd, nil
+	peer := GitReadPeer{PID: pid, UID: uid, GID: cred.Gid}
+	peer.kernel, err = newGitBrokerPeerCapability(peer, fd)
+	if err != nil {
+		unix.Close(fd)
+		return GitReadPeer{}, ErrGitReadBroker
+	}
+	return peer, nil
 }
 func serveGitBrokerConnection(ctx context.Context, o GitReadBrokerOptions, conn *net.UnixConn, state *gitBrokerState) error {
 	phase, cancel := context.WithTimeout(ctx, 90*time.Second)
@@ -235,15 +242,15 @@ func serveGitBrokerConnection(ctx context.Context, o GitReadBrokerOptions, conn 
 	stop := gitBrokerAfterFunc(phase, func() { _ = conn.Close() })
 	defer stop()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
-	peer, fd, err := gitBrokerPeer(conn)
+	peer, err := gitBrokerPeer(conn)
 	if err != nil {
 		return ErrGitReadBroker
 	}
-	defer unix.Close(fd)
+	defer peer.kernel.Close()
 	check := func() error {
 		checkCtx, cancel := context.WithTimeout(phase, 5*time.Second)
 		defer cancel()
-		if unix.PidfdSendSignal(fd, 0, nil, 0) != nil || o.Admit(checkCtx, peer) != nil || checkCtx.Err() != nil || unix.PidfdSendSignal(fd, 0, nil, 0) != nil {
+		if peer.kernel.alive(peer) != nil || o.Admit(checkCtx, peer) != nil || checkCtx.Err() != nil || peer.kernel.alive(peer) != nil {
 			return ErrGitReadBroker
 		}
 		return nil
