@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "date_eastern": "2026-10-21",
+  "repository": {
+    "id": 1169772257,
+    "name": "hemsoft-dev/set-it-free-loop",
+    "visibility": "public"
+  },
+  "authority": "Franz authorized model-free experiment October20,2026 at20:28 Eastern; relayed by Chief in current task. Labels216/217 already merged.",
+  "preflight": {
+    "checked_at_utc": "2026-10-21T05:01:22.156297+00:00",
+    "checked_at_eastern": "2026-10-21T01:01:22.156362-04:00",
+    "scope": "explicitly authorized model-free experiment only",
+    "app": {
+      "id": 5406096,
+      "slug": "hemsoft-sfl-reviewer",
+      "owner": "hemsoft-dev",
+      "permissions": {
+        "contents": "read",
+        "metadata": "read",
+        "pull_requests": "write"
+      },
+      "events": [],
+      "html_url": "https://github.com/apps/hemsoft-sfl-reviewer"
+    },
+    "installation": {
+      "id": 173628126,
+      "app_id": 5406096,
+      "repository_selection": "selected",
+      "repository_count": 1,
+      "repository_id": 1169772257
+    },
+    "bot": {
+      "id": 345646943,
+      "login": "hemsoft-sfl-reviewer[bot]",
+      "type": "Bot"
+    },
+    "actor": {
+      "id": 8227352,
+      "login": "HemSoft"
+    },
+    "actions_enabled": false,
+    "workflows": 0,
+    "model_requests": 0,
+    "credential_values_retained": false
+  },
+  "fixture": {
+    "pr": 221,
+    "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/221",
+    "head": "81bf8669e29f7333582b62caa3e8e06cec1b2c0e",
+    "base": "041c89cce041ec22c868a296f729265c5d14e10c"
+  },
+  "executed_api_routes": [
+    {
+      "method": "requestReviewsByLogin",
+      "at": "2026-10-21T04:59:51.173448+00:00",
+      "actor": {
+        "id": 8227352,
+        "login": "HemSoft"
+      },
+      "variables": {
+        "input": {
+          "pullRequestId": "PR_kwDORblO4c8AAAABJtcT3w",
+          "union": true,
+          "clientMutationId": "sfl-model-free-pr221-by-login-20261021",
+          "botLogins": [
+            "hemsoft-sfl-reviewer[bot]"
+          ]
+        }
+      },
+      "response": {
+        "data": {
+          "requestReviewsByLogin": {
+            "clientMutationId": "sfl-model-free-pr221-by-login-20261021",
+            "pullRequest": {
+              "id": "PR_kwDORblO4c8AAAABJtcT3w",
+              "number": 221,
+              "reviewRequests": {
+                "nodes": []
+              }
+            }
+          }
+        }
+      },
+      "requested_users_after": [],
+      "request_events_after": []
+    },
+    {
+      "method": "requestReviews",
+      "at": "2026-10-21T04:59:52.716079+00:00",
+      "actor": {
+        "id": 8227352,
+        "login": "HemSoft"
+      },
+      "variables": {
+        "input": {
+          "pullRequestId": "PR_kwDORblO4c8AAAABJtcT3w",
+          "union": true,
+          "clientMutationId": "sfl-model-free-pr221-by-id-20261021",
+          "botIds": [
+            "BOT_kgDOFJonXw"
+          ]
+        }
+      },
+      "response": {
+        "data": {
+          "requestReviews": {
+            "clientMutationId": "sfl-model-free-pr221-by-id-20261021",
+            "pullRequest": {
+              "id": "PR_kwDORblO4c8AAAABJtcT3w",
+              "number": 221,
+              "reviewRequests": {
+                "nodes": []
+              }
+            }
+          }
+        }
+      },
+      "requested_users_after": [],
+      "request_events_after": []
+    }
+  ],
+  "comment": {
+    "at": "2026-10-21T05:01:22.814109+00:00",
+    "status": 200,
+    "id": 5595158403,
+    "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/221#pullrequestreview-5595158403",
+    "user": {
+      "id": 345646943,
+      "login": "hemsoft-sfl-reviewer[bot]",
+      "type": "Bot"
+    },
+    "state": "COMMENTED",
+    "commit_id": "81bf8669e29f7333582b62caa3e8e06cec1b2c0e",
+    "submitted_at": "2026-10-21T05:01:22Z",
+    "body": "Model-free App identity experiment for #173.\n\nThis is a canned COMMENT from hemsoft-sfl-reviewer, not a model-generated code review or approval. No model has analyzed this PR. Reviewed fixture head: `81bf8669e29f7333582b62caa3e8e06cec1b2c0e`. Neither the initial picker searches nor the two API bot-request mutations created a pending request; this comment does not establish native request fulfillment.\n\nExperiment ID: `sfl-model-free-pr221-comment-20261021`.",
+    "app_id": 5406096,
+    "installation_id": 173628126,
+    "model_requests": 0
+  },
+  "final_api_state": {
+    "at": "2026-10-21T05:13:28.528560+00:00",
+    "requested_reviewers": {
+      "users": [],
+      "teams": []
+    },
+    "request_or_removal_events": [],
+    "reviews": [
+      {
+        "id": 5595158403,
+        "state": "COMMENTED",
+        "user_id": 345646943,
+        "login": "hemsoft-sfl-reviewer[bot]",
+        "submitted_at": "2026-10-21T05:01:22Z",
+        "commit_id": "81bf8669e29f7333582b62caa3e8e06cec1b2c0e",
+        "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/221#pullrequestreview-5595158403"
+      }
+    ]
+  },
+  "ui": {
+    "browser": "automated Chromium on mini",
+    "signed_in_as": "HemSoft",
+    "cold": {
+      "reported_time_eastern": "approximately01:03; screenshot mtimes00:57:16\u201300:57:28",
+      "searches": [
+        "hemsoft-sfl-reviewer",
+        "HemSoft SFL",
+        "sfl"
+      ],
+      "observed": "No matching entry before App COMMENT; nothing selected."
+    },
+    "warm": {
+      "reported_time_eastern": "approximately01:10\u201301:12; screenshot mtimes01:09:23\u201301:10:00",
+      "observed": "Existing-commenter row present; bot listed already ticked; select/close/reload creates no request; no request/re-request control found."
+    },
+    "limitations": [
+      "Independent manual browser not tested.",
+      "Chief reported an earlier App-install form rejection in this browser; cause unknown.",
+      "Participant display is not proof of requestability.",
+      "Approximate reported times are retained separately from exact file/API timestamps."
+    ],
+    "screenshots": [
+      {
+        "phase": "before-comment",
+        "name": "pr221-hemsoft_sfl_reviewer.png",
+        "sha256": "53a6623735349f7d3bd075bbdfd74d15babe42293d9e34ba41fc10f325394f28",
+        "bytes": 201522,
+        "source_mtime_utc": "2026-10-21T04:57:16.105843+00:00",
+        "attachment_url": "https://github.com/user-attachments/assets/d1bbeaf3-d540-4098-a3ab-488af96d0421"
+      },
+      {
+        "phase": "before-comment",
+        "name": "pr221-HemSoft_SFL.png",
+        "sha256": "6425b0880678891d422ecc42e33366cf664ac97cd448b556e08c58e5aadda648",
+        "bytes": 200781,
+        "source_mtime_utc": "2026-10-21T04:57:20.203785+00:00",
+        "attachment_url": "https://github.com/user-attachments/assets/69d16c19-1820-4ac5-89d0-d5e852fad3bc"
+      },
+      {
+        "phase": "before-comment",
+        "name": "pr221-sfl.png",
+        "sha256": "9a4178526c4044b5e540323eda08bcb72eddcd2ae040b392f488298812e1bc58",
+        "bytes": 199823,
+        "source_mtime_utc": "2026-10-21T04:57:24.290728+00:00",
+        "attachment_url": "https://github.com/user-attachments/assets/978cb2e0-f3de-43b4-94db-241ae5368512"
+      },
+      {
+        "phase": "before-comment",
+        "name": "pr221-final.png",
+        "sha256": "53a6623735349f7d3bd075bbdfd74d15babe42293d9e34ba41fc10f325394f28",
+        "bytes": 201522,
+        "source_mtime_utc": "2026-10-21T04:57:28.372670+00:00",
+        "attachment_url": "https://github.com/user-attachments/assets/f419b4f8-faed-46d2-bb0e-f816530a4b38"
+      },
+      {
+        "phase": "after-comment",
+        "name": "pr221-final-sidebar.png",
+        "sha256": "1d2518ae28221b785a280a1345a89b31553647ec16f9af8be14485e51eaadc91",
+        "bytes": 222431,
+        "source_mtime_utc": "2026-10-21T05:09:23.732498+00:00",
+        "attachment_url": "https://github.com/user-attachments/assets/33b7f8e0-fe6b-4bc3-845c-84d8e694b9d2"
+      },
+      {
+        "phase": "after-comment",
+        "name": "pr221-final-picker.png",
+        "sha256": "a4a995b687470ce43d7e34580b04901b8ff833a6a2bacdca38517167504db1a5",
+        "bytes": 225486,
+        "source_mtime_utc": "2026-10-21T05:09:27.962436+00:00",
+        "attachment_url": "https://github.com/user-attachments/assets/336e0c41-d971-4be2-8d22-3fc6ce937b73"
+      },
+      {
+        "phase": "after-comment",
+        "name": "pr221-final-selected.png",
+        "sha256": "6c2034d482682444ab8635939052d45eb9fe0d45b5adcee20bc8c1eb84c7cb90",
+        "bytes": 225624,
+        "source_mtime_utc": "2026-10-21T05:09:47.903144+00:00",
+        "attachment_url": "https://github.com/user-attachments/assets/b2ea6109-5319-444e-aafa-a6f9d636e128"
+      },
+      {
+        "phase": "after-comment",
+        "name": "pr221-final-after-select.png",
+        "sha256": "1d2518ae28221b785a280a1345a89b31553647ec16f9af8be14485e51eaadc91",
+        "bytes": 222431,
+        "source_mtime_utc": "2026-10-21T05:10:00.368962+00:00",
+        "attachment_url": "https://github.com/user-attachments/assets/b7c621d1-ba5e-4ff2-9536-ae7fd49edecb"
+      }
+    ]
+  },
+  "closure": {
+    "closedAt": "2026-10-21T05:13:30Z",
+    "headRefOid": "81bf8669e29f7333582b62caa3e8e06cec1b2c0e",
+    "mergeCommit": null,
+    "mergedAt": null,
+    "state": "CLOSED",
+    "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/221"
+  },
+  "gates": [
+    {
+      "gate": "new_app_identity",
+      "result": "pass"
+    },
+    {
+      "gate": "selected_repository_and_permissions",
+      "result": "pass"
+    },
+    {
+      "gate": "cold_native_picker_discovery",
+      "result": "failed_in_observed_browser"
+    },
+    {
+      "gate": "api_native_request_persistence",
+      "result": "failed"
+    },
+    {
+      "gate": "app_comment_authorship",
+      "result": "pass"
+    },
+    {
+      "gate": "post_comment_participant_display",
+      "result": "pass"
+    },
+    {
+      "gate": "post_comment_native_request_or_rerequest",
+      "result": "failed_in_observed_browser"
+    },
+    {
+      "gate": "owner_native_request_attribution",
+      "result": "blocked_no_request"
+    },
+    {
+      "gate": "polling_native_request_discovery",
+      "result": "blocked_no_request"
+    },
+    {
+      "gate": "comment_fulfills_native_request",
+      "result": "blocked_no_request"
+    },
+    {
+      "gate": "native_removal_rerequest_downtime",
+      "result": "blocked_no_request"
+    },
+    {
+      "gate": "stale_A_new_B_reconciliation",
+      "result": "blocked_no_request"
+    },
+    {
+      "gate": "throwaway_closed_unmerged",
+      "result": "pass"
+    },
+    {
+      "gate": "retired_actions_disabled",
+      "result": "pass"
+    }
+  ],
+  "inference_requests": 0,
+  "replacement_trigger_selected": false,
+  "credential_values_in_evidence": false,
+  "cleanup": "Throwaway PR closed unmerged and its feature branch deleted after preserving a private ref/bundle. New App/installation and supplied key files remain as provided; no alpha service deployed."
+}
