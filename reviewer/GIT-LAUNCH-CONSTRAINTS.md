@@ -104,7 +104,8 @@ See [proc FD contract](https://man7.org/linux/man-pages/man5/proc_pid_fd.5.html)
 A measured ELF trampoline using direct `execveat(fd,"",...,AT_EMPTY_PATH)`
 removes proc pathname traversal. It does not bypass executable inode/mount
 checks or AppArmor's executable-file path and transition checks. Consequently
-it is a testable candidate, not a demonstrated fix. The installed policy's
+it was a testable candidate. The later static ELF differential below tested
+it and did not obtain a successful sealed launch. The installed policy's
 `attach_disconnected,mediate_deleted` flags also prevent inferring denial
 merely because the object is anonymous or deleted.
 See [execveat](https://man7.org/linux/man-pages/man2/execveat.2.html),
@@ -142,3 +143,45 @@ FD solely to check its immediate closure, and makes no running-image claim.
    denial, namespaces and worker identity. Keep the worker inert until the
    supervisor authorizes admission. Credentials, Git parsing and model use
    remain outside this qualification.
+
+
+## Evening static ELF differential
+
+The October 21 evening follow-up reran the existing actual Go namespace and
+sealed-worker tests at source `ef691485f9bf72668a1760e1b0cb85658c9ab15a`.
+The ordinary executable fixture passed; sealed descriptor exec again returned
+`EACCES`. This is still a failed qualification.
+
+A fixed static C ELF then compared both kernel entry methods under one bounded
+inert user unit. It used the actual Go-produced payload filter, 704 bytes,
+SHA-256 `f56ba6deb092f7e5af3119571a9c90341946032832d693b5d74e7e7c6561ff4e`.
+The same sealed inode, mode `0500` and all six seals `63` were retained across
+the comparisons. Effective UID matched the image owner, dumpability was one,
+no-new-privileges was one, and the memfd's reported filesystem flags did not
+include noexec.
+
+| Image | Outside bwrap, proc exec | Outside bwrap, execveat | Inside bwrap, proc exec | Inside bwrap, execveat |
+| --- | --- | --- | --- | --- |
+| Ordinary read-only file | Target reached | Target reached | Target reached | Target reached |
+| Same sealed memfd | Target reached | Target reached | EACCES | EACCES |
+
+The confined payload reported `bwrap//&unpriv_bwrap (enforce)`; the outside
+control reported `unconfined`. This narrows the failure to an interaction with
+the confinement boundary. It does not isolate AppArmor from namespace or other
+boundary effects. The result disproves a Python-only or proc-path-only cause,
+and also disproves ordinary image mode/seals alone as the cause. An ELF
+`execveat` trampoline is not a demonstrated workaround on mini.
+
+A further read-only `--ro-bind-fd` attempt kept the sealed inode rather than
+copying it. Bubblewrap rejected the anonymous memfd source path with `ENOENT`
+before executing the payload. The ordinary-file named-bind control reached the
+target. This is a separate setup failure, not another measured exec errno.
+No copied executable, relaxed seal requirement or host policy change followed.
+Every diagnostic unit was collected and independently observed inactive with
+MainPID zero.
+
+The reproducible opt-in [diagnostic](scripts/diagnostics/git-sealed-exec/README.md)
+records source/tool hashes, inode/seal observations, each failure stage and
+unit cleanup. A zero tool exit means the comparison was collected, not that
+acquisition is qualified. Its `qualified` and `noswap_qualified` fields remain
+false. Both the original tmpfs barrier and the sealed-worker gate remain open.
