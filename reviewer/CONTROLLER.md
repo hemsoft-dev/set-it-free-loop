@@ -108,7 +108,7 @@ pagination, spoofed receipts, reversed discovery, configuration timestamps,
 concurrent SQLite handles, crash session accounting, lease expiration, stale
 base, cancel fencing and the adverse A/B outcome. These are simulated transport
 results. They do not establish subscription support, official-client confinement,
-App picker eligibility, actual GitHub rendering or a successful live alpha.
+selected App/trigger qualification, actual GitHub rendering or a successful live alpha.
 
 Complete `Discover` batches commit commands, native events and the cutoff in one
 SQLite transaction. A newly discovered latest request that is already removed

@@ -119,9 +119,10 @@ and stable snapshot reads at that request limit. Shorter caller deadlines still
 cancel. Publisher delegates Current/History under the same outer budget.
 
 A platform Date and exhausted pagination are transport evidence, not proof of
-GitHub event linearizability or arbitrary-App native picker support. Actual App
-qualification must establish an acceptable native-history recovery path, including
-lag after submission and the A/B race. It remains a separate live gate. The tests
+GitHub event linearizability or arbitrary-App native picker support. The historical native
+contract would require its own recovery qualification. Native-picker eligibility
+is now superseded; the selected [comment/automatic adapter](GITHUB-TRIGGERS.md)
+must qualify its own discovery and A/B recovery behavior before live use. The tests
 below demonstrate the offline contract; they do not qualify GitHub's consistency
 or account permissions.
 

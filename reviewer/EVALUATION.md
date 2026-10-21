@@ -148,7 +148,9 @@ head/base, with actual rendered GitHub evidence. Run an owner-only two-week pilo
 on this repo. Record deferred cases, subscription impact, recovery and maintenance,
 plus p50 under ten minutes and p95 under twenty minutes when online and quota is
 available. Verify stop/rollback before claiming pilot completion. No org expansion,
-automatic push reviews, autonomous fixes, approvals or merges belong to this alpha.
+autonomous fixes, approvals or merges belong to this alpha. Franz authorized
+automatic PR-open/head-push [polling triggers](GITHUB-TRIGGERS.md) on October21
+for offline implementation; their live use retains all activation gates.
 
 The frozen evaluation cap is at most 32 KiB of report output per session, with
 256 KiB session input and serialized packets no larger than 64 KiB. Every arm
