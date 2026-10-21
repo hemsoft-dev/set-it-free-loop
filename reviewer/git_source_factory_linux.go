@@ -87,7 +87,9 @@ func newGitSourceFactory(ctx context.Context, credentials *GitHubCredentialOwner
 		return nil, errGitUnit
 	}
 	identity, err := root.Stat(".")
-	if err != nil {
+	unitIdentity, unitErr := unit.root.Stat(".")
+	archiveIdentity, archiveErr := archive.root.Stat(".")
+	if err != nil || unitErr != nil || archiveErr != nil || os.SameFile(identity, unitIdentity) || os.SameFile(identity, archiveIdentity) {
 		root.Close()
 		return nil, errGitUnit
 	}

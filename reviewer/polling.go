@@ -777,7 +777,10 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 	if err = c.options.Store.Prune(ctx, c.now()); err != nil {
 		return result, err
 	}
-	if source, ok := c.options.Source.(pollSourceRetention); ok {
+	c.mu.Lock()
+	activeSource := c.active != nil
+	c.mu.Unlock()
+	if source, ok := c.options.Source.(pollSourceRetention); ok && !activeSource {
 		if err = source.PruneSource(ctx, c.options.Store, c.now()); err != nil {
 			return result, err
 		}

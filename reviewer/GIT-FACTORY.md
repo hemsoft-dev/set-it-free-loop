@@ -3,7 +3,9 @@
 The private source factory composes the existing acquisition unit, pinned
 credential generation, measured runtime, authenticated bootstrap, worker and
 plain export archive. The polling controller takes it through `PollOptions.Source`
-so capture, restore, consumer release and retention share one owner. Raw
+so capture, restore, consumer release and retention share one owner. Work roots
+must have different opened directory identities from both journal roots; aliases
+refuse before transferring ownership. Raw
 Capture/Restore callbacks remain for fakes; they cannot be mixed with Source.
 The trusted service must construct and retain the factory;
 this change does not install a service, import credentials or activate polling.
@@ -133,7 +135,10 @@ remains. A caller outside polling must perform the same releases.
 
 During ordinary polling, before work and after consumer release, retention calls
 SQLite's existing Prune and reads the remaining immutable jobs. Idle polls also
-retire expired source without requiring another review job. Pending captures,
+retire expired source without requiring another review job. Polling skips the
+source retention hook while a worker owns capture, so it does not wait for the
+factory operation token or turn a healthy long acquisition into tick backoff.
+Before/after-work retention and later idle polls still collect eligible source. Pending captures,
 active job evidence, every retained job and every unaccepted acquisition keep their source. An
 expired lease alone never permits deletion. Unused sealed caches can close
 while the plain archive remains available for exact restore. Retained jobs with

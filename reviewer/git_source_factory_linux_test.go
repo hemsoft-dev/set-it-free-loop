@@ -119,7 +119,17 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 	if r.stop(context.Background()) != nil || r.close() != nil || f.owner.Close() != nil {
 		t.Fatal("fake unit/old owner shutdown")
 	}
-	reopened, err := newGitUnitOwner(context.Background(), f.root, f.stub, f.stubHash, f.manager, f.manager.kernel)
+	oldWorker, err := os.ReadFile(f.stub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newWorkerBytes := append(oldWorker, []byte("\nsynthetic upgraded worker\n")...)
+	newWorkerPath := filepath.Join(t.TempDir(), "upgraded-worker")
+	if os.WriteFile(newWorkerPath, newWorkerBytes, 0500) != nil || os.Remove(f.stub) != nil {
+		t.Fatal("upgrade worker fixture")
+	}
+	newWorkerPin := VMAssetPin{gitRawHash(newWorkerBytes), int64(len(newWorkerBytes))}
+	reopened, err := newGitUnitOwner(context.Background(), f.root, newWorkerPath, newWorkerPin.SHA256, f.manager, f.manager.kernel)
 	if err != nil {
 		t.Fatal("new startup owner", err)
 	}
@@ -146,6 +156,7 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 	}
 	defer newHelper.Close()
 	newManifest := r.manifest
+	newManifest.Worker = newWorkerPin
 	newManifest.NamespaceHelper = VMAssetPin{gitRawHash(newHelperBytes), int64(len(newHelperBytes))}
 	factory, err := newGitSourceFactory(context.Background(), owner, reopened, r.archive, runtime, newHelper, newManifest, strings.Repeat("e", 40), Digest("upgraded release"), gitFactoryWorkRoot(t))
 	if err != nil {
@@ -382,5 +393,56 @@ func TestGitSourceFactoryRetiresKnownStoppedIntakeAfterLeaseAcceptance(t *testin
 	}
 	if factory.Close(context.Background()) != nil {
 		t.Fatal("recovered failed capture cleanup")
+	}
+}
+
+func TestGitSourceFactoryRefusesJournalAliasedWorkRoots(t *testing.T) {
+	for _, kind := range []string{"unit", "archive"} {
+		t.Run(kind, func(t *testing.T) {
+			r, f, runtime := gitFactoryAssetsFixture(t)
+			helper, err := duplicateGitControlFile(r.files[2])
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer helper.Close()
+			if r.stop(context.Background()) != nil || r.close() != nil || f.owner.Close() != nil {
+				t.Fatal("old fixture disposal")
+			}
+			// Short real journal paths ensure the path-length checks do not
+			// accidentally reject this alias before directory identity is tested.
+			unit, err := newGitUnitOwner(context.Background(), gitFactoryWorkRoot(t), f.stub, f.stubHash, f.manager, f.manager.kernel)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer unit.Close()
+			archive, err := openGitExportArchive(context.Background(), gitFactoryWorkRoot(t))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer archive.Close(context.Background())
+			if unit.prepare(context.Background(), r.binding) != nil {
+				t.Fatal("caller-owned prepared receipt")
+			}
+			defer unit.stop(context.Background(), r.binding)
+			owner, _, _, _, signs := credentialOwnerFixture(t)
+			root := archive.root.Name()
+			if kind == "unit" {
+				root = unit.root.Name()
+			}
+			if !gitFactoryRunPaths(filepath.Join(root, "run-"+strings.Repeat("a", 32))) {
+				t.Fatal("alias fixture rejected by unrelated path bound")
+			}
+			factory, err := newGitSourceFactory(context.Background(), owner, unit, archive, runtime, helper, r.manifest, testJob().Release, r.binding.ReleaseHash, root)
+			if factory != nil {
+				_ = factory.Close(context.Background())
+			}
+			if err == nil || factory != nil {
+				t.Fatal("aliased work root accepted ownership", kind, err)
+			}
+			record, err := unit.read(r.binding.Attempt)
+			if err != nil || record.Stopped || unit.closed || archive.closed || signs.Load() != 0 || f.manager.starts != 0 {
+				t.Fatal("alias refusal mutated caller-owned inputs", record, err)
+			}
+		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -209,5 +210,63 @@ func TestPollingOldReleaseQualificationPrecedesRestore(t *testing.T) {
 	work := &pollWork{scope: alphaScope(), request: 1, generation: job.Generation, snapshot: job.Snapshot, job: job.ID}
 	if bound, _, err := c.beforeWork(context.Background(), work); bound != nil || !errors.Is(err, ErrLiveBlocked) || oldChecks != 1 || restores != 0 {
 		t.Fatal("old release source exposed before qualification", bound, err, oldChecks, restores)
+	}
+}
+
+type pollingBusySource struct {
+	*pollingOwnedSource
+	entered, release chan struct{}
+	busy             atomic.Bool
+}
+
+func (s *pollingBusySource) Capture(ctx context.Context, snapshot Snapshot) (*SnapshotEvidence, error) {
+	s.busy.Store(true)
+	close(s.entered)
+	defer s.busy.Store(false)
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-s.release:
+	}
+	return s.pollingOwnedSource.Capture(ctx, snapshot)
+}
+func (s *pollingBusySource) PruneSource(ctx context.Context, store *Store, now time.Time) error {
+	if s.busy.Load() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-s.release:
+		}
+	}
+	return s.pollingOwnedSource.PruneSource(ctx, store, now)
+}
+func TestPollingSkipsRetentionWhileCaptureHoldsSource(t *testing.T) {
+	old, f, calls := pollControllerFixture(t, nil)
+	options := old.options
+	if old.Close(context.Background()) != nil {
+		t.Fatal("old controller close")
+	}
+	source := &pollingBusySource{pollingOwnedSource: &pollingOwnedSource{options: options, pending: map[*SnapshotEvidence]bool{}, active: map[*JobEvidence]bool{}}, entered: make(chan struct{}), release: make(chan struct{})}
+	options.Source, options.Capture, options.Restore = source, nil, nil
+	c, err := OpenPollingController(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { close(source.release); _ = c.Close(context.Background()) }()
+	if result, err := pollOnce(t, c); err != nil || !result.Active {
+		t.Fatal(result, err)
+	}
+	select {
+	case <-source.entered:
+	case <-time.After(time.Second):
+		t.Fatal("capture not entered")
+	}
+	f.clock.Advance(time.Second)
+	if result, err := pollOnce(t, c); err != nil || !result.Active {
+		t.Fatal("healthy capture caused retention backoff", result, err)
+	}
+	state, err := options.Store.Snapshot(context.Background())
+	if err != nil || state.Polling.Failures != 0 || calls.Load() != 0 {
+		t.Fatal("active capture polling recorded spurious failure", err, calls.Load())
 	}
 }
