@@ -162,13 +162,14 @@ func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, con
 		request.Version = 2
 		request.Task = "evaluation-control-v1"
 		request.Control = control
+		historyStore := &nativeControlHistoryStore{store: store, objects: map[[2]string]Object{}, maxBytes: len(control.History) * s.Limits.ReaderBytes, maxEntries: len(control.History) * s.Limits.ReaderCalls}
 		for i, prior := range control.History {
 			input := *control
 			input.Step = i + 1
 			input.History = control.History[:i]
 			// Replaying a frozen phase gets that phase's bounded verifier.
 			// Neither other history nor current output spends its allowance.
-			historyReader, historyErr := NewReader(store, s.Snapshot, paths, s.Limits)
+			historyReader, historyErr := NewReader(historyStore, s.Snapshot, paths, s.Limits)
 			if historyErr != nil || verifyControlSource(ctx, input, prior, historyReader) != nil {
 				return nativeVMTaskReport{}, nil, nil, adapterValidation(ErrSourceService, true)
 			}

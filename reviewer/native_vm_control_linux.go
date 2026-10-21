@@ -13,6 +13,37 @@ import (
 // Construction and denied eligibility checks never read auth or start a VM.
 type NativeVMControlReviewer struct{ reviewer *NativeVMReviewer }
 
+// nativeControlHistoryStore deduplicates immutable-object I/O only within one
+// serial history preflight. Each report still gets its own Reader and must
+// recheck every quote and its original call/byte limits. Nothing is shared with
+// the current worker, another invocation, or another snapshot.
+type nativeControlHistoryStore struct {
+	store                      ObjectStore
+	objects                    map[[2]string]Object
+	used, maxBytes, maxEntries int
+}
+
+func (s *nativeControlHistoryStore) Read(ctx context.Context, revision, path string, limit int) (Object, error) {
+	if err := ctx.Err(); err != nil {
+		return Object{}, err
+	}
+	key := [2]string{revision, path}
+	if object, ok := s.objects[key]; ok {
+		return Object{Mode: object.Mode, Data: append([]byte(nil), object.Data...)}, nil
+	}
+	object, err := s.store.Read(ctx, revision, path, limit)
+	if err != nil || ctx.Err() != nil {
+		return object, errors.Join(err, ctx.Err())
+	}
+	// An oversized object must still reach Reader's normal rejection. Never
+	// retain it or expand the sum of the original historical phase allowances.
+	if len(object.Data) <= limit && len(s.objects) < s.maxEntries && len(object.Data) <= s.maxBytes-s.used {
+		s.objects[key] = Object{Mode: object.Mode, Data: append([]byte(nil), object.Data...)}
+		s.used += len(object.Data)
+	}
+	return object, nil
+}
+
 func NewNativeVMControlReviewer(o NativeVMOptions) (*NativeVMControlReviewer, error) {
 	reviewer, err := NewNativeVMReviewer(o)
 	if err != nil {

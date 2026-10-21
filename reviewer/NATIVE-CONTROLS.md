@@ -20,6 +20,14 @@ host verifies prior source quotes against the immutable reader before boot.
 Each frozen report uses its own bounded verifier with the same snapshot,
 allowlist and per-session limits. Historical verification does not consume
 another prior report's allowance or the current output's reader budget.
+Within one history preflight, repeated reads of the same immutable revision and
+path reuse captured object bytes. Every report still validates every quote and
+charges its own reader calls and bytes. The cache holds at most the sum of the
+historical reports' reader allowances (three reports maximum), keeps no failed
+or oversized reads and is discarded before the current worker starts. Replay
+retains the caller's existing phase deadline; it does not extend model time or
+detach cancellation. Distinct slow objects can still exhaust that deadline and
+must fail before auth or provider work.
 
 `ControlCapabilitySession` derives an R1 capability with job ID
 `control_` plus the digest of the full control input. It preserves the original

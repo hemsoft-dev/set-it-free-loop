@@ -259,6 +259,72 @@ func (s *controlCountingStore) Read(ctx context.Context, revision, path string, 
 	s.reads++
 	return s.store.Read(ctx, revision, path, limit)
 }
+
+type slowControlHistoryStore struct {
+	reads int
+}
+
+func (s *slowControlHistoryStore) Read(ctx context.Context, revision, path string, limit int) (Object, error) {
+	s.reads++
+	select {
+	case <-time.After(100 * time.Millisecond):
+		return Object{Mode: "100644", Data: []byte("x\n")}, nil
+	case <-ctx.Done():
+		return Object{}, ctx.Err()
+	}
+}
+
+func TestNativeControlHistoryDoesNotRepeatSlowImmutableReads(t *testing.T) {
+	for _, forged := range []bool{false, true} {
+		t.Run(strconv.FormatBool(forged), func(t *testing.T) {
+			input := controlInputFixture(Codex)
+			input.Limits.Timeout = 250 * time.Millisecond
+			input.Job.Config.Limits = input.Limits
+			anchor := Anchor{Path: "source.go", Line: 1, Quote: "x", Revision: input.Job.Snapshot.Head}
+			for step := 1; step <= 3; step++ {
+				report := ControlReport{InputHash: Digest(input), JobHash: Digest(input.Job), Step: step, Findings: []Finding{}, Judgments: []Judgment{}, Retractions: []string{}, Coverage: []Coverage{}, Usage: Usage{Turns: 1}}
+				if step == 1 {
+					report.Findings = append(report.Findings, Finding{ID: "codex:slow", Title: "Synthetic", Body: "Synthetic source evidence", Severity: 2, Anchor: anchor})
+				} else {
+					report.Judgments = append(report.Judgments, Judgment{FindingID: "codex:slow", Verdict: "confirm", Reason: "same frozen source", Evidence: []Anchor{anchor}})
+				}
+				if step == 3 && forged {
+					report.Judgments[0].Evidence[0].Quote = "forged"
+				}
+				if err := ValidateControlReport(report, input); err != nil {
+					t.Fatal("invalid slow history fixture", step, err)
+				}
+				input.History = append(input.History, report)
+				input.Step++
+			}
+			store := &slowControlHistoryStore{}
+			reader, err := NewReader(store, input.Job.Snapshot, []string{"source.go"}, input.Limits)
+			if err != nil {
+				t.Fatal(err)
+			}
+			policy := egressTestPolicy(Codex)
+			policy.ResponsePolicy = CodexSourceResponses
+			worker, err := NewNativeVMControlReviewer(NativeVMOptions{Provider: Codex, Root: "/unopened/native-root", Stub: "/unopened/stub", StubHash: strings.Repeat("a", 64), Auth: &AuthStore{provider: Codex, directory: "/unopened/auth"}, Reader: reader, Policy: policy, Transport: egressRoundTrip(func(*http.Request) (*http.Response, error) {
+				t.Fatal("history check reached HTTP")
+				return nil, ErrLiveBlocked
+			}), Check: func(context.Context, Session) error { return nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, _, err = worker.CritiqueAudited(context.Background(), input)
+			// Three independent frozen quote checks need one immutable object. Without
+			// deduplication the third read consumes the deadline before boot validation.
+			// Missing boot assets must stop this fixture after successful source checks.
+			if err == nil || errors.Is(err, ErrSourceService) != forged || store.reads != 1 {
+				t.Fatal("repeated history I/O consumed the phase deadline", store.reads, err)
+			}
+			if reads, _ := reader.Evidence(); len(reads) != 0 {
+				t.Fatal("history replay consumed the current reader")
+			}
+		})
+	}
+}
+
 func TestNativeControlHistoryHasPerReportVerificationBudget(t *testing.T) {
 	input := controlInputFixture(Codex)
 	files := map[string]Object{}
@@ -301,8 +367,9 @@ func TestNativeControlHistoryHasPerReportVerificationBudget(t *testing.T) {
 	}
 	_, _, _, err = worker.CritiqueAudited(context.Background(), input)
 	// Missing boot assets stop this no-auth test after source preflight. The
-	// actual store must see 30+60+90 reads, each prior phase within its own 128.
-	if err == nil || checks != 1 || store.reads != 180 {
+	// Per-report Readers still account for 30+60+90 reads, within their own128.
+	// The immutable store sees only90 unique objects across those verifications.
+	if err == nil || checks != 1 || store.reads != 90 {
 		t.Fatal("valid history exhausted a shared reader budget", checks, store.reads, err)
 	}
 	reads, _ := reader.Evidence()
