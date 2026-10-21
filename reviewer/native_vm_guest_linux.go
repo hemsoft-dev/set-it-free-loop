@@ -285,8 +285,7 @@ func NativeVMGuestMain(args []string) int {
 		clear(data)
 		return 1
 	}
-	report, err := DecodeStrict[Report](data, q.Session.Limits.OutputBytes)
-	if err != nil || ValidateReport(report, q.Session) != nil {
+	if q.validateReport(data) != nil {
 		phase.state = "invalid_output"
 		clear(data)
 		return 1
@@ -512,7 +511,7 @@ func nativeGuestPrepareProfile(root string, q nativeVMRequest) error {
 			return ErrVMBoot
 		}
 	}
-	return nativeGuestCreateFile(filepath.Join(root, "work/sfl-report.schema.json"), ReportSchema(), 0)
+	return nativeGuestCreateFile(filepath.Join(root, "work/sfl-report.schema.json"), q.reportSchema(), 0)
 }
 
 func nativeGuestCreateFile(path string, raw []byte, uid int) error {

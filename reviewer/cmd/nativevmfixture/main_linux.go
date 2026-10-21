@@ -72,7 +72,7 @@ func main() {
 		os.Exit(2)
 	}
 	c, err := r.DecodeStrict[config](raw, 16384)
-	if err != nil || c.Version != 1 || c.Purpose != "native-fake-only" || !c.validCase() || !filepath.IsAbs(c.Root) || len(c.ImageSourceHead) != 40 {
+	if err != nil || c.Version != 1 || (c.Purpose != "native-fake-only" && c.Purpose != "native-control-fake-only") || !c.validCase() || !filepath.IsAbs(c.Root) || len(c.ImageSourceHead) != 40 {
 		os.Exit(2)
 	}
 	if err = run(c); err != nil {
@@ -86,6 +86,9 @@ func run(c config) error {
 	// cannot become a seed. All subsequent state lives in this new private root.
 	if os.Mkdir(c.Root, 0700) != nil {
 		return errors.New("fresh fake root required")
+	}
+	if c.Purpose == "native-control-fake-only" {
+		return runNativeControl(c)
 	}
 	if c.Cancellation != "" {
 		return runNativeCancellation(c)

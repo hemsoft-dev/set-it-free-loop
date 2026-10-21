@@ -13,6 +13,7 @@ import (
 var ErrLiveBlocked = errors.New("live adapter blocked: provider support, billing, isolated launcher and owner activation evidence required")
 
 type Invocation struct {
+	Control        *ControlSession `json:"-"`
 	Provider       Provider
 	Args           []string
 	Environment    []string

@@ -38,6 +38,8 @@ func (h NativeVMProfileHints) valid(provider Provider) bool {
 // Profile hints are separately trusted qualification metadata, never App or
 // provider credentials. They do not establish subscription eligibility.
 type nativeVMRequest struct {
+	Task         string          `json:",omitempty"`
+	Control      *ControlSession `json:",omitempty"`
 	Version      int
 	Binding      AuthBinding
 	Session      Session
@@ -47,7 +49,7 @@ type nativeVMRequest struct {
 }
 
 func (q nativeVMRequest) valid() bool {
-	if q.Version != 1 || !q.Binding.valid() || q.Session.Validate() != nil || q.Binding.SessionHash != Digest(q.Session) || len(q.Paths) > 4096 || !sort.StringsAreSorted(q.Paths) || !q.ProfileHints.valid(q.Session.Identity.Provider) {
+	if !q.validTask() || !q.Binding.valid() || q.Session.Validate() != nil || q.Binding.SessionHash != Digest(q.Session) || len(q.Paths) > 4096 || !sort.StringsAreSorted(q.Paths) || !q.ProfileHints.valid(q.Session.Identity.Provider) {
 		return false
 	}
 	if _, err := validateEgressPolicy(q.Session.Identity.Provider, q.Session.Limits, q.Policy); err != nil {
@@ -234,4 +236,37 @@ func nativeVMSeedRecord(seed AuthTransfer) ([]byte, error) {
 		return nil, ErrAuthTransfer
 	}
 	return wire.Bytes(), nil
+}
+
+// Version 1 review bytes stay unchanged. Control is an explicit version 2 task;
+// an old guest cannot silently interpret it as a production review.
+func (q nativeVMRequest) validTask() bool {
+	if q.Control == nil {
+		return q.Version == 1 && q.Task == ""
+	}
+	if q.Version != 2 || q.Task != "evaluation-control-v1" {
+		return false
+	}
+	capability, err := controlCapability(*q.Control)
+	return err == nil && Digest(capability) == Digest(q.Session)
+}
+func (q nativeVMRequest) reportSchema() []byte {
+	if q.Control != nil {
+		return ControlReportSchema()
+	}
+	return ReportSchema()
+}
+func (q nativeVMRequest) validateReport(raw []byte) error {
+	if q.Control != nil {
+		r, err := DecodeStrict[ControlReport](raw, q.Session.Limits.OutputBytes)
+		if err != nil {
+			return err
+		}
+		return ValidateControlReport(r, *q.Control)
+	}
+	r, err := DecodeStrict[Report](raw, q.Session.Limits.OutputBytes)
+	if err != nil {
+		return err
+	}
+	return ValidateReport(r, q.Session)
 }

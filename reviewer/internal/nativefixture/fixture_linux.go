@@ -139,3 +139,43 @@ func Seed(provider r.Provider) []byte {
 	raw, _ := json.Marshal(map[string]any{"auth_mode": "chatgpt", "OPENAI_API_KEY": nil, "tokens": map[string]string{"id_token": jwt, "access_token": "sfl-fake-access", "refresh_token": "sfl-fake-refresh", "account_id": "sfl-fake-account"}, "last_refresh": time.Now().UTC().Format(time.RFC3339)})
 	return raw
 }
+
+// NewControl emits synthetic control output only after the same native Read and
+// Search responses as review. It does not connect to a provider or read auth.
+func NewControl(input r.ControlSession) (*Backend, r.EgressPolicy, error) {
+	capability, err := r.ControlCapabilitySession(input)
+	if err != nil {
+		return nil, r.EgressPolicy{}, err
+	}
+	backend, policy, err := New(capability, false)
+	if err != nil {
+		return nil, r.EgressPolicy{}, err
+	}
+	report := sourceControlReport(input)
+	if err = r.ValidateControlReport(report, input); err != nil {
+		return nil, r.EgressPolicy{}, err
+	}
+	if backend.Codex != nil {
+		backend.Codex.output = report
+	} else {
+		backend.Claude.output = report
+	}
+	return backend, policy, nil
+}
+func sourceControlReport(s r.ControlSession) r.ControlReport {
+	report := r.ControlReport{InputHash: r.Digest(s), JobHash: r.Digest(s.Job), Step: s.Step, Findings: []r.Finding{}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}}
+	id := string(s.Provider) + ":fixture"
+	anchor := r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}
+	if s.Step == 1 {
+		report.Findings = append(report.Findings, r.Finding{ID: id, Title: "Synthetic finding", Body: "Protocol fixture only.", Severity: 2, Anchor: anchor})
+	} else if s.Step == 4 {
+		report.Retractions = append(report.Retractions, id)
+	} else {
+		verdict := "reject"
+		if s.Step == 3 {
+			verdict = "cannot_verify"
+		}
+		report.Judgments = append(report.Judgments, r.Judgment{FindingID: id, Verdict: verdict, Reason: "Synthetic single-provider disposition.", Evidence: []r.Anchor{anchor}})
+	}
+	return report
+}

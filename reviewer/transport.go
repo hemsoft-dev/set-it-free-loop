@@ -12,7 +12,12 @@ import (
 
 // ReportSchema gives both pinned clients the same strict response contract.
 // The isolated driver must mount this generated file read-only for Codex.
-func ReportSchema() []byte {
+func ReportSchema() []byte { return reportSchema(reflect.TypeOf(Report{})) }
+
+// ControlReportSchema is distinct from production peer-report output.
+func ControlReportSchema() []byte { return reportSchema(reflect.TypeOf(ControlReport{})) }
+
+func reportSchema(shape reflect.Type) []byte {
 	var schema func(reflect.Type) map[string]any
 	schema = func(t reflect.Type) map[string]any {
 		switch t.Kind() {
@@ -22,6 +27,12 @@ func ReportSchema() []byte {
 			for i := 0; i < t.NumField(); i++ {
 				f := t.Field(i)
 				key := strings.Split(f.Tag.Get("json"), ",")[0]
+				if key == "-" {
+					continue
+				}
+				if key == "" {
+					key = f.Name
+				}
 				properties[key] = schema(f.Type)
 				required = append(required, key)
 			}
@@ -36,7 +47,7 @@ func ReportSchema() []byte {
 			return map[string]any{"type": "string"}
 		}
 	}
-	root := schema(reflect.TypeOf(Report{}))
+	root := schema(shape)
 	data, _ := json.Marshal(root)
 	return data
 }
@@ -57,13 +68,13 @@ func NativeTransportLimit(s Session) int {
 // discards progress text, and rejects incomplete/error/forbidden-tool results.
 // It never publishes raw transport output. The actual isolated driver still
 // must enforce resource/tool boundaries before execution, not after this check.
-func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
+func normalizeCLIEnvelope(s Session, raw []byte) ([]byte, Usage, error) {
 	if err := s.Validate(); err != nil {
-		return Report{}, err
+		return nil, Usage{}, err
 	}
 	transportLimit := NativeTransportLimit(s)
 	if len(raw) > transportLimit {
-		return Report{}, errors.New("client transport output exceeds byte bound")
+		return nil, Usage{}, errors.New("client transport output exceeds byte bound")
 	}
 	var result []byte
 	var usage Usage
@@ -76,7 +87,7 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 		turns := 0
 		for scanner.Scan() {
 			if uniqueJSONKeys(json.NewDecoder(bytes.NewReader(scanner.Bytes())), 0) != nil {
-				return Report{}, errors.New("ambiguous Codex JSONL event")
+				return nil, Usage{}, errors.New("ambiguous Codex JSONL event")
 			}
 			var event struct {
 				Type string `json:"type"`
@@ -89,17 +100,17 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 				Usage *transportUsage `json:"usage"`
 			}
 			if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-				return Report{}, errors.New("invalid Codex JSONL event")
+				return nil, Usage{}, errors.New("invalid Codex JSONL event")
 			}
 			if completed {
-				return Report{}, errors.New("unexpected client data after completion")
+				return nil, Usage{}, errors.New("unexpected client data after completion")
 			}
 			switch event.Type {
 			case "thread.started":
 			case "turn.started":
 				turns++
 				if turns > 1 {
-					return Report{}, errors.New("unexpected additional CLI turn")
+					return nil, Usage{}, errors.New("unexpected additional CLI turn")
 				}
 			case "item.started", "item.updated", "item.completed":
 				switch event.Item.Type {
@@ -110,14 +121,14 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 					}
 				case "mcp_tool_call":
 					if event.Item.Server != "sfl-source" || (event.Item.Tool != "read" && event.Item.Tool != "search") {
-						return Report{}, errors.New("unapproved MCP tool in client output")
+						return nil, Usage{}, errors.New("unapproved MCP tool in client output")
 					}
 				default:
-					return Report{}, errors.New("forbidden or unknown client tool/item")
+					return nil, Usage{}, errors.New("forbidden or unknown client tool/item")
 				}
 			case "turn.completed":
 				if turns != 1 {
-					return Report{}, errors.New("missing CLI turn start")
+					return nil, Usage{}, errors.New("missing CLI turn start")
 				}
 				completed = true
 				usage.Turns = turns
@@ -131,21 +142,21 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 				// code. Preserve an unknown provider failure without echoing it.
 				completed, failed = true, true
 			default:
-				return Report{}, errors.New("client error or unsupported event")
+				return nil, Usage{}, errors.New("client error or unsupported event")
 			}
 		}
 		if scanner.Err() != nil || !completed {
-			return Report{}, errors.New("incomplete Codex transport")
+			return nil, Usage{}, errors.New("incomplete Codex transport")
 		}
 		if failed {
-			return Report{}, PhaseError{State: "provider_unavailable"}
+			return nil, Usage{}, PhaseError{State: "provider_unavailable"}
 		}
 		if len(result) == 0 {
-			return Report{}, errors.New("missing Codex report")
+			return nil, Usage{}, errors.New("missing Codex report")
 		}
 	case Claude:
 		if uniqueJSONKeys(json.NewDecoder(bytes.NewReader(raw)), 0) != nil {
-			return Report{}, errors.New("ambiguous Claude result")
+			return nil, Usage{}, errors.New("ambiguous Claude result")
 		}
 		var envelope struct {
 			Type       string          `json:"type"`
@@ -159,11 +170,11 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 		}
 		d := json.NewDecoder(bytes.NewReader(raw))
 		if d.Decode(&envelope) != nil || envelope.Type != "result" || envelope.IsError == nil {
-			return Report{}, errors.New("incomplete or failed Claude transport")
+			return nil, Usage{}, errors.New("incomplete or failed Claude transport")
 		}
 		var extra any
 		if d.Decode(&extra) != io.EOF {
-			return Report{}, errors.New("trailing Claude transport value")
+			return nil, Usage{}, errors.New("trailing Claude transport value")
 		}
 		if *envelope.IsError {
 			state := "provider_unavailable"
@@ -182,12 +193,12 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 			case "error_max_structured_output_retries":
 				state = "invalid_output"
 			default:
-				return Report{}, errors.New("unknown Claude failure envelope")
+				return nil, Usage{}, errors.New("unknown Claude failure envelope")
 			}
-			return Report{}, PhaseError{State: state}
+			return nil, Usage{}, PhaseError{State: state}
 		}
 		if envelope.Subtype != "success" || envelope.Turns < 1 || (envelope.APIStatus != nil && *envelope.APIStatus >= 400) {
-			return Report{}, errors.New("inconsistent Claude completion")
+			return nil, Usage{}, errors.New("inconsistent Claude completion")
 		}
 		result = envelope.Structured
 		if len(result) == 0 || string(result) == "null" {
@@ -200,8 +211,17 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 			usage.OutputTokens = envelope.Usage.OutputTokens
 		}
 	default:
-		return Report{}, errors.New("unsupported provider")
+		return nil, Usage{}, errors.New("unsupported provider")
 	}
+	return result, usage, nil
+}
+
+func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
+	result, usage, err := normalizeCLIEnvelope(s, raw)
+	if err != nil {
+		return Report{}, err
+	}
+
 	r, err := DecodeStrict[Report](result, s.Limits.OutputBytes)
 	if err != nil {
 		return Report{}, err
@@ -212,4 +232,23 @@ func NormalizeCLIOutput(s Session, raw []byte) (Report, error) {
 		return Report{}, err
 	}
 	return r, nil
+}
+
+// NormalizeControlCLIOutput shares every transport/tool/completion barrier with
+// review, then decodes only the control contract. Usage is transport-owned.
+func NormalizeControlCLIOutput(s ControlSession, raw []byte) (ControlReport, error) {
+	capability, err := controlCapability(s)
+	if err != nil {
+		return ControlReport{}, err
+	}
+	result, usage, err := normalizeCLIEnvelope(capability, raw)
+	if err != nil {
+		return ControlReport{}, err
+	}
+	report, err := DecodeStrict[ControlReport](result, s.Limits.OutputBytes)
+	if err != nil {
+		return ControlReport{}, err
+	}
+	report.Usage = usage
+	return report, ValidateControlReport(report, s)
 }
