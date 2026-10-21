@@ -7,7 +7,7 @@ This offline alpha component composes the explicit [App JWT signer](GITHUB-INSTA
 Every new owner starts unqualified. Persisted qualified journal receipts cannot recreate a token or readiness. Only an explicit `Refresh(ctx)` can acquire credentials:
 
 1. Close admission and wait for every already admitted request, response body and acquisition-generation lease to finish. The phase has a three-minute ceiling and also honors the caller's earlier cancellation or deadline.
-2. Check current local eligibility and both durable role latches before signing or issuing any new reader request. An unresolved publisher acquisition also blocks a new reader acquisition.
+2. Check current local eligibility and both durable role latches before signing or issuing any new reader request. Hold the publisher journal's process lock from this preflight through reader qualification, so a standalone publisher acquisition cannot introduce uncertainty during that interval. The later publisher acquisition takes its own lock and rechecks its latch. An unresolved publisher acquisition blocks a new reader acquisition.
 3. Sign once and pass the same bounded JWT buffer through the reader and publisher handshakes. Clear the transferred buffer on success and failure.
 4. Recheck eligibility, then validate both new receipts against one current time under the handover lock. Both must match their enrolled role and remain more than one minute from expiry, with no backward clock or canceled phase. Only then replace both role transports together. Clear the old pair only after its admitted work has drained.
 

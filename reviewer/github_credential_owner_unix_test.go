@@ -921,3 +921,45 @@ func TestGitHubCredentialOwnerActualRSASignerAndBothTLSRoles(t *testing.T) {
 	}
 	assertJournalContainsNoCredentials(t, journal, expected)
 }
+
+func TestGitHubCredentialOwnerFencesConcurrentPublisherBeforeReader(t *testing.T) {
+	owner, options, reader, publisher, signs := credentialOwnerFixture(t)
+	other, err := NewGitHubInstallationJournal(context.Background(), options.Journal.store, options.Journal.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner.state.options.JWT = func(ctx context.Context) ([]byte, error) {
+		signs.Add(1)
+		// This runs after the owner's durable preflight. A separate journal
+		// handle must not begin publisher work while the reader is pending.
+		publisher.mu.Lock()
+		publisher.loseMint = true
+		publisher.mu.Unlock()
+		phase, cancel := context.WithTimeout(ctx, 60*time.Millisecond)
+		defer cancel()
+		transport, acquireErr := other.Acquire(phase, GitHubInstallationOptions{options.Journal.enrollment, GitHubPublisher, []byte("synthetic-app-jwt"), options.PublisherTransport, options.Journal.now})
+		if transport != nil {
+			transport.Close()
+			t.Error("competing publisher unexpectedly qualified")
+		}
+		publisher.mu.Lock()
+		publisher.loseMint = false
+		publisher.mu.Unlock()
+		if acquireErr == nil {
+			t.Error("competing publisher was not fenced")
+		}
+		return []byte("synthetic-app-jwt"), nil
+	}
+	if err := owner.Refresh(context.Background()); err != nil {
+		t.Fatal("publisher raced the reader preflight", err)
+	}
+	_, readerMints := credentialCounts(reader)
+	_, publisherMints := credentialCounts(publisher)
+	if signs.Load() != 1 || readerMints != 1 || publisherMints != 1 || owner.Ready(context.Background()) != nil {
+		t.Fatal("competing publisher dispatched or pair was not qualified", signs.Load(), readerMints, publisherMints)
+	}
+	latest, err := options.Journal.Latest(context.Background(), GitHubPublisher)
+	if err != nil || latest.State != "qualified" {
+		t.Fatal("competing publisher latched uncertainty", latest.State, err)
+	}
+}

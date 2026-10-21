@@ -262,6 +262,18 @@ func (o *githubCredentialOwnerState) Refresh(ctx context.Context) error {
 	if o.options.Check(phase, o.options.Journal.enrollment) != nil || phase.Err() != nil {
 		return ownerContextError(phase)
 	}
+	// Standalone journal callers share this process lock. Keep publisher state
+	// fenced from preflight through the complete reader acquisition, so another
+	// publisher cannot become uncertain while a fresh reader is being minted.
+	publisherFence, err := o.options.Journal.lock(phase, GitHubPublisher)
+	if err != nil {
+		return ownerContextError(phase)
+	}
+	defer func() {
+		if publisherFence != nil {
+			_ = publisherFence.close()
+		}
+	}()
 	for _, role := range []GitHubCredentialRole{GitHubReader, GitHubPublisher} {
 		latest, err := o.options.Journal.Latest(phase, role)
 		if err != nil {
@@ -283,6 +295,14 @@ func (o *githubCredentialOwnerState) Refresh(ctx context.Context) error {
 	next.reader, err = o.options.Journal.Acquire(phase, GitHubInstallationOptions{o.options.Journal.enrollment, GitHubReader, jwt, o.options.ReaderTransport, o.options.Journal.now})
 	if err != nil {
 		return ownerContextError(phase)
+	}
+	// The publisher's own Acquire takes the same lock and validates its latest
+	// durable state again. A competing attempt after this point can fence the
+	// remaining refresh, but cannot race the already completed reader work.
+	err = publisherFence.close()
+	publisherFence = nil
+	if err != nil {
+		return ErrGitHubCredentialOwner
 	}
 	next.publisher, err = o.options.Journal.Acquire(phase, GitHubInstallationOptions{o.options.Journal.enrollment, GitHubPublisher, jwt, o.options.PublisherTransport, o.options.Journal.now})
 	if err != nil {
