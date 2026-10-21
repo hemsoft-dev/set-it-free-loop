@@ -14,6 +14,10 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
+Git-backed source readers, snapshot capture and corpus replay require Git
+2.46+ with `--no-lazy-fetch` support. Older builds fail closed; no environment-only
+fallback permits lazy fetching. See the [evaluation prerequisites](testdata/evaluation/README.md#reproduce-validation-and-the-freeze-attempt).
+
 Tests use fake drivers and disposable Git/auth fixtures. They run no provider
 inference and require no GitHub or provider credentials. Actions CI remains
 disabled; record results at the exact PR head and rerun locally during review.

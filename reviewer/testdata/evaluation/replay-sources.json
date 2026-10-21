@@ -1,0 +1,44 @@
+[
+  {
+    "candidate": 161,
+    "original_head": "31482a869638604a8d6bb52e2c9c24e9d9d51589",
+    "reachable_merge": "afdf3bca1631b98ad87b9aa96ed87d455917e63b",
+    "equivalent_tree": "3418917a5ded435f604b6cb3b89ddfb03057c2bd",
+    "workflow_blob": "883f852b4a6ca8f8be9db4497510ef608d3fae4c"
+  },
+  {
+    "candidate": 160,
+    "original_head": "a293479a7615e7379e4ccc67d95bcabd43b0d802",
+    "reachable_merge": "8c53c43a860a0471308f11501352a9f2b43c7efd",
+    "equivalent_tree": "d9fb265e59e82cd9cf6c235da2419a6304b5746c",
+    "workflow_blob": "36309794f8d866b4b3fefbf66369d8fddeb91fef"
+  },
+  {
+    "candidate": 159,
+    "original_head": "e3c8bd94c5ba7375231b617bf4013598e9ebc608",
+    "reachable_merge": "3821a54140b2e1149fac20ca5e247aec8c2efae4",
+    "equivalent_tree": "d69d2dce4f81478c108baa55eac14fb28ccff299",
+    "workflow_blob": "814d919f4dd93f971a5ea11bb934efee34f40e59"
+  },
+  {
+    "candidate": 158,
+    "original_head": "d20858e5416974992544ad6fe4ed11c36daf3eea",
+    "reachable_merge": "73607a1b28beb31e794be6498e0d244866b45ab5",
+    "equivalent_tree": "838046e5d1a53e3d0b3f51afb8dc1e11a1402fba",
+    "workflow_blob": "7fe6dbee42817fe4fc7df86849d50f0738704d84"
+  },
+  {
+    "candidate": 157,
+    "original_head": "8fba49c1b67d0d2c80e5bf9d2e5a4c549823d084",
+    "reachable_merge": "ef807fc3ac3cb734efa70435a6a3970223680476",
+    "equivalent_tree": "d8feb402561d0553936b4a2ec68f54f54a92ed91",
+    "workflow_blob": "d5a4edb4c35a29325c388d66f2737a536e160353"
+  },
+  {
+    "candidate": 154,
+    "original_head": "3614b31b5f9f27c2580c024925bb30a5829bdc0a",
+    "reachable_merge": "292336619aaf8a484e45590bb8897902c7ce7fce",
+    "equivalent_tree": "5427447d0c625e5c83a0d7716ed7315ff8ffcf52",
+    "workflow_blob": "cafcac6c7f25b2d30c6ed3cf88521fc5d7b9c52e"
+  }
+]

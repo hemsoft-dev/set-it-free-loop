@@ -181,9 +181,9 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 		}
 		e.lines[file.Path] = lines
 	}
-	encoded, err := json.Marshal(p)
-	if err != nil || len(encoded) > snapshotPacketBytes {
-		return nil, errors.New("complete evidence inventory and coverage exceed packet limit")
+	encoded, err := fitSnapshotPacket(&p, e.lines, snapshotPacketBytes)
+	if err != nil {
+		return nil, err
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -453,4 +453,35 @@ func snapshotHunkLines(patch, old, new string) (map[int]bool, error) {
 		return nil, fmt.Errorf("incomplete source patch: %w", ErrDeferred)
 	}
 	return result, nil
+}
+
+// fitSnapshotPacket preserves small valid patches when an omission record
+// would cost more bytes. Every accepted retirement strictly reduces the packet.
+func fitSnapshotPacket(p *snapshotPacket, inline map[string]map[int]bool, max int) ([]byte, error) {
+	encoded, err := json.Marshal(p)
+	for i := len(p.Files) - 1; err == nil && len(encoded) > max && i >= 0; i-- {
+		file := &p.Files[i]
+		if file.Patch == "" {
+			continue
+		}
+		patch := file.Patch
+		file.Patch = ""
+		coverageLen := len(p.Coverage)
+		p.Coverage = append(p.Coverage, Coverage{file.Path, "patch omitted by evidence packet byte limit"})
+		smaller, marshalErr := json.Marshal(p)
+		if marshalErr != nil || len(smaller) >= len(encoded) {
+			file.Patch = patch
+			p.Coverage = p.Coverage[:coverageLen]
+			if marshalErr != nil {
+				return nil, marshalErr
+			}
+			continue
+		}
+		delete(inline, file.Path)
+		encoded = smaller
+	}
+	if err != nil || len(encoded) > max {
+		return nil, errors.New("complete evidence inventory and coverage exceed packet limit")
+	}
+	return encoded, nil
 }
