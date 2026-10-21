@@ -107,6 +107,9 @@ func gitProcessInheritedRoles(worker bool) error {
 		}
 		last = 6
 	}
+	if gitAuditInheritedFDs(last) != nil {
+		return errGitUnit
+	}
 	for fd := 3; fd <= last; fd++ {
 		unix.CloseOnExec(fd)
 	}

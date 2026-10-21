@@ -22,6 +22,15 @@ type gitWorkerReady struct {
 	ManifestHash string
 }
 
+// Recipient.PID is the supervisor's host PID coordinate, while local.PID is
+// a different PID in the worker namespace. They cannot be compared numerically.
+// This is used only after original-supervisor authentication and strict packet
+// validation. The sender separately binds the full host identity to the
+// connection's original SO_PEERPIDFD in owner.grant, before its durable send.
+func gitWorkerLocalIdentityMatches(recipient, local GateIdentity) bool {
+	return recipient.InvocationID == local.InvocationID && recipient.StartTicks == local.StartTicks && recipient.BootID == local.BootID
+}
+
 // These are trusted bootstrap inputs, not a candidate configuration or public
 // launcher. The future fixed executable supplies the namespace-local paths.
 type gitWorkerInput struct {
@@ -147,12 +156,15 @@ func runGitAcquisitionWorker(ctx context.Context, input gitWorkerInput) error {
 		return errGitUnit
 	}
 	own, err := processGateIdentity(os.Getpid(), input.InvocationID)
-	if err != nil || grant.Recipient.InvocationID != own.InvocationID || grant.Recipient.StartTicks != own.StartTicks || grant.Recipient.BootID != own.BootID {
+	if err != nil || !gitWorkerLocalIdentityMatches(grant.Recipient, own) {
 		return errGitUnit
 	}
 	// A host PID need not be visible in the worker PID namespace. The matching
 	// original authenticated supervisor supplied it; host admission owns that
 	// numeric identity and all physical boundary checks, never the worker.
+	if gitAuditInheritedFDs(2) != nil {
+		return errGitUnit
+	}
 	if err := acquireGitMaterialization(ctx, output, input.Git, input.Workspace, input.Endpoint, input.Binding, DefaultGitAcquisitionBounds()); err != nil {
 		return err
 	}

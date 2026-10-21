@@ -136,6 +136,9 @@ func launchGitWorker(ctx context.Context, a *gitBootstrapAssets) error {
 	command.Env = []string{}
 	command.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	command.ExtraFiles = []*os.File{a.files[7], a.files[3], a.files[0], a.files[6], a.files[4], a.files[1], a.files[5], work, alias}
+	if gitAuditInheritedFDs(2) != nil {
+		return errGitUnit
+	}
 	if command.Run() != nil {
 		return errGitUnit
 	}

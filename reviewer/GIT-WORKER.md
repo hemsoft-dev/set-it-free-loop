@@ -30,6 +30,15 @@ No repository is created or fetched before receipt of the exact binding's
 canonical worker grant. The authenticated grant's invocation, boot and start
 ticks must match this worker. Its host PID may be invisible in the worker's PID
 namespace; the supervisor owns that original-pidfd and manager correlation.
+The supervisor constructs the packet's full host identity from the connection's
+original SO_PEERPIDFD and durably hashes that exact recipient before sending.
+The worker authenticates that supervisor through its inherited original pidfd.
+Comparing the packet's host PID with the worker's namespace-local PID would
+reject valid workers. An actual private-PIDns fixture checks the host-observed
+kernel `NSpid` mapping and the child's own PID, reads the canonical worker grant,
+and exercises the same local identity check. Host and local PIDs differ while
+boot/start/invocation match; changed boot, start or invocation refuses. This
+inert fixture does not qualify the separately failed sealed inner-worker exec.
 Missing, malformed, wrong-binding or wrong-recipient grants fail without source
 work. There is no grant retry or substantive partial success.
 

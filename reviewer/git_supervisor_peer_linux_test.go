@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -208,6 +209,33 @@ for n in (3,4,5):
 	if writeGitControlPacket(ctx, conn, []byte("sealed"), nil) != nil {
 		t.Fatal("sealed")
 	}
+	binding := gitSupervisorIdentityBinding()
+	grant, files, err := readGitUnitGrant(ctx, conn, binding, gitWorkerGrant)
+	closeVMFiles(files)
+	if err != nil {
+		t.Fatal("host identity grant", err)
+	}
+	local, err := processGateIdentity(os.Getpid(), grant.Recipient.InvocationID)
+	if err != nil || local.PID <= 0 || grant.Recipient.PID == local.PID || !gitWorkerLocalIdentityMatches(grant.Recipient, local) {
+		t.Fatal("host/local PID coordinate distinction", grant.Recipient, local, err)
+	}
+	for _, field := range []string{"boot", "start", "invocation"} {
+		wrong := grant.Recipient
+		switch field {
+		case "boot":
+			wrong.BootID = "different-boot"
+		case "start":
+			wrong.StartTicks++
+		case "invocation":
+			wrong.InvocationID = strings.Repeat("f", 32)
+		}
+		if gitWorkerLocalIdentityMatches(wrong, local) {
+			t.Fatal("changed recipient identity accepted", field)
+		}
+	}
+	if writeGitControlPacket(ctx, conn, []byte("identity-bound"), nil) != nil {
+		t.Fatal("identity receipt")
+	}
 	stage, files, err = readGitControlPacket(ctx, conn, 0)
 	closeVMFiles(files)
 	if err != nil || string(stage) != "finish" {
@@ -217,8 +245,50 @@ for n in (3,4,5):
 	expected.Close()
 	canary.Close()
 	conn.Close()
-	json.NewEncoder(os.Stdout).Encode(map[string]any{"trusted": true, "peer_pid": credentials.Pid, "dumpable": dumpable, "child_proc_denied": true})
+	json.NewEncoder(os.Stdout).Encode(map[string]any{"trusted": true, "peer_pid": credentials.Pid, "dumpable": dumpable, "child_proc_denied": true, "host_pid": grant.Recipient.PID, "local_pid": local.PID})
 	os.Exit(0)
+}
+
+func gitSupervisorIdentityBinding() gitMaterializationBinding {
+	return gitMaterializationBinding{strings.Repeat("d", 32), Digest("inert namespace release"), Digest("inert namespace runtime"), testSnapshot()}
+}
+
+func gitNamespaceLocalPIDForTest(t *testing.T, identity GateIdentity, original int) int {
+	t.Helper()
+	if gitCheckProcessPIDFD(identity, original) != nil {
+		t.Fatal("original process identity")
+	}
+	file, err := os.Open(fmt.Sprintf("/proc/%d/status", identity.PID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, (64<<10)+1))
+	file.Close()
+	if err != nil || len(raw) > 64<<10 {
+		t.Fatal("kernel namespace PID list", err)
+	}
+	local, count := 0, 0
+	for _, line := range strings.Split(string(raw), "\n") {
+		if !strings.HasPrefix(line, "NSpid:") {
+			continue
+		}
+		count++
+		parts := strings.Fields(strings.TrimPrefix(line, "NSpid:"))
+		if len(parts) < 2 {
+			t.Fatal("no private PID namespace", parts)
+		}
+		for index, part := range parts {
+			pid, err := strconv.Atoi(part)
+			if err != nil || pid <= 0 || index == 0 && pid != identity.PID {
+				t.Fatal("kernel PID mapping", parts, err)
+			}
+			local = pid
+		}
+	}
+	if count != 1 || gitCheckProcessPIDFD(identity, original) != nil {
+		t.Fatal("changed original process mapping")
+	}
+	return local
 }
 
 func TestGitSupervisorActualPrivatePIDNamespaceAndDumpableBoundary(t *testing.T) {
@@ -334,6 +404,7 @@ os.execve(5,['sfl-sealed-worker','-test.run=^TestGitSupervisorPrivateChild$'],di
 					t.Log("inert worker output:", output.String())
 				}
 			}()
+			var hostPID, localPID int
 			if !wrong {
 				listener.SetDeadline(time.Now().Add(8 * time.Second))
 				conn, err := listener.AcceptUnix()
@@ -356,6 +427,8 @@ os.execve(5,['sfl-sealed-worker','-test.run=^TestGitSupervisorPrivateChild$'],di
 					t.Fatal(err)
 				}
 				defer unix.Close(fd)
+				hostPID = identity.PID
+				localPID = gitNamespaceLocalPIDForTest(t, identity, fd)
 				inspectImage := func() {
 					t.Helper()
 					if !sealed {
@@ -397,6 +470,17 @@ os.execve(5,['sfl-sealed-worker','-test.run=^TestGitSupervisorPrivateChild$'],di
 					t.Fatal("host could not revalidate after dumpable zero")
 				}
 				inspectImage()
+				binding := gitSupervisorIdentityBinding()
+				packet := gitUnitGrantPacket{1, gitWorkerGrant, binding, identity, binding.RuntimeHash}
+				raw, _ := json.Marshal(packet)
+				if writeGitControlPacket(ctx, conn, raw, nil) != nil {
+					t.Fatal("host-identity dispatch")
+				}
+				stage, files, err = readGitControlPacket(ctx, conn, 0)
+				closeVMFiles(files)
+				if err != nil || string(stage) != "identity-bound" {
+					t.Fatal("cross-namespace identity check", err)
+				}
 				if writeGitControlPacket(ctx, conn, []byte("finish"), nil) != nil {
 					t.Fatal("finish dispatch")
 				}
@@ -411,8 +495,10 @@ os.execve(5,['sfl-sealed-worker','-test.run=^TestGitSupervisorPrivateChild$'],di
 				PeerPID  int  `json:"peer_pid"`
 				Dumpable int  `json:"dumpable"`
 				Denied   bool `json:"child_proc_denied"`
+				HostPID  int  `json:"host_pid"`
+				LocalPID int  `json:"local_pid"`
 			}
-			if json.Unmarshal(output.Bytes(), &result) != nil || result.Trusted == wrong || result.PeerPID != 0 || (!wrong && (!result.Denied || result.Dumpable != 0)) {
+			if json.Unmarshal(output.Bytes(), &result) != nil || result.Trusted == wrong || result.PeerPID != 0 || (!wrong && (!result.Denied || result.Dumpable != 0 || result.HostPID != hostPID || result.LocalPID != localPID || result.HostPID == result.LocalPID)) {
 				t.Fatal("wrong kernel boundary result", output.String())
 			}
 		})

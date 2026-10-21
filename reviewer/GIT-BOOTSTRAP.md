@@ -36,6 +36,17 @@ URL is the fixed synthetic HTTP destination. No candidate command, path,
 credential or network URL can be selected through this CLI. Both entry points
 have a 110-second process deadline inside the separate 120-second unit limit.
 
+Both entries inspect the actual descriptor table after validating all raw roles,
+before taking ownership. Only the fixed roles may be inherited without CLOEXEC.
+Standard streams must be null devices or direction-appropriate pipes, never
+sockets, directories, terminals or regular host files. Other handles, including
+Go's runtime/poller descriptors, must be CLOEXEC. The audit reads at most 256
+entries and refuses unexpected inheritable descriptors, including high-numbered
+ones outside ExtraFiles. It does not close unknown handles during refusal.
+After private roles are marked CLOEXEC, the audit repeats immediately before
+the namespace-helper exec and before the worker starts Git. An argv/ExtraFiles
+list alone is not treated as a descriptor-table allowlist.
+
 ## Trusted runtime and candidate workspace
 
 The supervisor assembles only trusted release files into its owned immutable
@@ -85,6 +96,12 @@ The root's ordinary helper exit is never whole-unit stop, broker drain or
 source publication authority.
 
 ## Validation and remaining gaps
+
+Actual root/worker exec regressions supply extra files, sockets, pipes and a
+high-numbered FD preserved through direct exec, plus a socket on stdin. They
+failed against the original role-only check and now refuse. Valid handoffs and
+private CLOEXEC runtime descriptors remain usable. Existing missing-role CLI
+tests still reject without closing Go's runtime descriptors.
 
 Real producer tests prepare the installed ELF runtime, reconstruct its artifact
 hash and reject mutation, extra paths, wrong modes, links, missing placeholders,
