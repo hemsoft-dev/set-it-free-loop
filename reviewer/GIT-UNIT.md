@@ -135,22 +135,35 @@ refuse immediately. Once observed, its object path, nonzero invocation and
 cgroup path cannot change while waiting. No observation retry resends StartGit.
 If the original cgroup was captured before a fast terminal failure removed its
 directory, the original hierarchy's emptiness proof and repeated identical
-terminal observations preserve that binding. Permission errors, a live root,
+terminal observations preserve that binding. Stable active/exited metadata with
+no MainPID or pending job and the same empty original group also preserves the
+birth; it does not yet grant or prove termination. Permission errors, a live root,
 repopulation and replacement hierarchies still refuse.
 
 If that bound unit later fails, a separate early-stop path requires the original
-manager and boot, all fixed unit properties, no pending job, no MainPID, and a
-terminal state. A successful exited root may still be active because the fixed
-unit uses `RemainAfterExit`. With no root PID and the original empty cgroup,
-recovery stops that bound unit, persists the stop job and requires its successful
-completion followed by terminal observations. It uses the original recorded
-cgroup, requires it empty, then
-repeats manager and emptiness observations before persisting a distinct
-`EarlyStop` receipt. Recovery never creates a missing birth record by adopting
-whichever terminal unit exists then. Invocation, object path and original
-cgroup identity must match the durable birth record. The terminal receipt
-does not fabricate a root identity or original pidfd. It is valid only for a
-revoked, stopped attempt that never captured a root or consumed either grant.
+manager and boot, all fixed unit properties, no pending job, no MainPID, and
+inactive/failed state or active/exited metadata with the original empty cgroup.
+It repeats manager and original-group emptiness observations before persisting
+an `EarlyStop` receipt. With `Restart=no`, no PID, no queued job and no process
+in that bound group, the original acquisition has physically ended even when
+`RemainAfterExit` keeps the manager entry active.
+
+This path never sends a name-based StopUnit or creates a stop job. That API has
+no invocation guard, so another client could replace the invocation between an
+observation and dispatch. The receipt proves physical termination of the owned
+acquisition, not deactivation of the manager entry. Active/exited unit metadata
+may remain after local disposal and source retirement; it requires separately
+coordinated manager cleanup. Source retention does not stop a unit name later.
+This residual metadata must be included in complete host/resource qualification.
+See the [systemd service states](https://www.freedesktop.org/software/systemd/man/262/systemd.service.html)
+and [manager API](https://www.freedesktop.org/software/systemd/man/262/org.freedesktop.systemd1.html).
+
+Recovery never creates a missing birth record by adopting whichever unit exists
+then. A persisted all-zero invocation is invalid, just as it is during capture.
+Invocation, object path and original cgroup identity must match the durable
+birth record. The receipt does not fabricate a root identity or original pidfd.
+It is valid only for a revoked, stopped attempt that never captured a root or
+consumed either grant.
 
 A reopened early-stop receipt rechecks its original cgroup hierarchy and exact
 terminal invocation rather than recapturing a replacement group. The original

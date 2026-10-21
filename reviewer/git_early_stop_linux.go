@@ -128,7 +128,7 @@ func (o *gitUnitOwner) captureBirth(ctx context.Context, r gitUnitRecord) (gitUn
 	if err != nil {
 		// A fast failure can remove the directory between captures. Only the
 		// original hierarchy can prove removal; never capture a replacement.
-		if !os.IsNotExist(err) || !expectedGitUnit(r, after) || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed") || o.kernel.Empty(group) != nil {
+		if !os.IsNotExist(err) || !expectedGitUnit(r, after) || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed" && after.ActiveState != "active") || o.kernel.Empty(group) != nil {
 			return r, errGitUnit
 		}
 		confirmed, observeErr := o.manager.Observe(ctx, r.Unit)
@@ -148,7 +148,7 @@ func (o *gitUnitOwner) captureBirth(ctx context.Context, r gitUnitRecord) (gitUn
 
 func (e gitEarlyStopEvidence) valid(unit string) bool {
 	h := e.Cgroup.Hierarchy
-	return gitQuarantineHex(e.InvocationID, 32) && e.UnitPath.IsValid() && strings.HasPrefix(string(e.UnitPath), "/org/freedesktop/systemd1/unit/") &&
+	return gitQuarantineHex(e.InvocationID, 32) && e.InvocationID != strings.Repeat("0", 32) && e.UnitPath.IsValid() && strings.HasPrefix(string(e.UnitPath), "/org/freedesktop/systemd1/unit/") &&
 		validUnitCgroup(e.Cgroup.Path, unit) && e.Cgroup.Inode != 0 && h.Device != 0 && h.Inode != 0 && h.MountNamespace != 0 && h.CgroupNamespace != 0
 }
 
@@ -182,23 +182,11 @@ func (o *gitUnitOwner) stopBeforeCapture(ctx context.Context, r gitUnitRecord) (
 	if !proof.valid(r.Unit) || o.kernel.Empty(proof.Cgroup) != nil {
 		return r, true, errGitUnit
 	}
-	// RemainAfterExit keeps a successful, already exited root active. Stop
-	// only after the durable birth and original empty group both match.
-	if before.ActiveState == "active" {
-		job, err := o.manager.Stop(ctx, r.Unit)
-		if err != nil {
-			return r, true, errGitUnit
-		}
-		r.StopJob = job
-		if o.write(r) != nil || o.manager.WaitJob(ctx, job, r.Unit) != nil {
-			return r, true, errGitUnit
-		}
-		after, err := o.manager.Observe(ctx, r.Unit)
-		if err != nil || !expectedGitUnit(r, after) || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed") || after.InvocationID != proof.InvocationID || after.Path != proof.UnitPath || after.ControlGroup != proof.Cgroup.Path || o.kernel.Empty(proof.Cgroup) != nil {
-			return r, true, errGitUnit
-		}
-		before = after
-	}
+	// RemainAfterExit may keep manager metadata active after all original
+	// work has exited. Repeated original-group emptiness, no PID/job and the
+	// unchanged birth prove physical termination without StopUnit by name:
+	// that API has no invocation guard and could stop an unrelated restart.
+	// This receipt ends the acquisition; it does not deactivate the unit name.
 	after, err := o.manager.Observe(ctx, r.Unit)
 	if err != nil || after != before || o.kernel.Empty(proof.Cgroup) != nil {
 		return r, true, errGitUnit

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 // A real inert child terminates before any root pidfd or grant is captured.
@@ -148,7 +150,7 @@ func TestGitEarlyStopJournalRefusesQualificationAliases(t *testing.T) {
 	if err != nil || r.EarlyStop == nil || !r.valid(f.binding.Attempt, f.stubHash) {
 		t.Fatal("valid terminal proof missing", err)
 	}
-	for _, kind := range []string{"captured", "not-started", "not-settled", "not-revoked", "not-stopped", "grant", "identity", "invocation", "unit-path", "group", "inode", "hierarchy", "missing-birth", "different-job", "different-birth"} {
+	for _, kind := range []string{"captured", "not-started", "not-settled", "not-revoked", "not-stopped", "grant", "identity", "invocation", "zero-invocation", "unit-path", "group", "inode", "hierarchy", "missing-birth", "different-job", "different-birth"} {
 		t.Run(kind, func(t *testing.T) {
 			bad := r
 			proof := *r.EarlyStop
@@ -170,6 +172,11 @@ func TestGitEarlyStopJournalRefusesQualificationAliases(t *testing.T) {
 				bad.Identity.PID = 99
 			case "invocation":
 				proof.InvocationID = ""
+			case "zero-invocation":
+				proof.InvocationID = strings.Repeat("0", 32)
+				birth := *r.Birth
+				birth.Unit.InvocationID = proof.InvocationID
+				bad.Birth = &birth
 			case "unit-path":
 				proof.UnitPath = "/"
 			case "group":
@@ -311,6 +318,7 @@ type gitBirthDisappearingCgroup struct {
 	manager *fakeContainmentManager
 	reads   int
 	missing error
+	state   string
 }
 
 func (k *gitBirthDisappearingCgroup) Capture(group, unit string) (cgroupBinding, error) {
@@ -320,13 +328,16 @@ func (k *gitBirthDisappearingCgroup) Capture(group, unit string) (cgroupBinding,
 	}
 	value, err := k.containmentKernel.Capture(group, unit)
 	k.manager.observation.MainPID = 0
-	k.manager.observation.ActiveState = "failed"
+	k.manager.observation.ActiveState = k.state
+	if k.state == "" {
+		k.manager.observation.ActiveState = "failed"
+	}
 	k.manager.observation.Job = unitJob{}
 	return value, err
 }
 
 func TestGitBirthRetainsOriginalGroupWhenTerminalDirectoryDisappears(t *testing.T) {
-	for _, kind := range []string{"removed", "permission", "populated", "replaced"} {
+	for _, kind := range []string{"removed", "active-removed", "permission", "populated", "replaced"} {
 		t.Run(kind, func(t *testing.T) {
 			f := newGitUnitFixture(t)
 			if f.owner.prepare(context.Background(), f.binding) != nil {
@@ -341,6 +352,9 @@ func TestGitBirthRetainsOriginalGroupWhenTerminalDirectoryDisappears(t *testing.
 			f.manager.observation.Description = gitUnitDescriptionPrefix + Digest(f.binding)
 			f.manager.observation.Job = unitJob{1, "/org/freedesktop/systemd1/job/1"}
 			kernel := &gitBirthDisappearingCgroup{containmentKernel: f.manager.kernel, manager: f.manager, missing: os.ErrNotExist}
+			if kind == "active-removed" {
+				kernel.state = "active"
+			}
 			if kind == "permission" {
 				kernel.missing = os.ErrPermission
 			}
@@ -354,7 +368,7 @@ func TestGitBirthRetainsOriginalGroupWhenTerminalDirectoryDisappears(t *testing.
 			}
 			f.owner.kernel = kernel
 			got, err := f.owner.captureBirth(context.Background(), r)
-			if kind == "removed" {
+			if kind == "removed" || kind == "active-removed" {
 				if err != nil || got.Birth == nil || got.Birth.Unit.Cgroup != f.manager.kernel.group || got.Captured || got.Stopped {
 					t.Fatal("original removed group was discarded or termination fabricated", got, err)
 				}
@@ -541,19 +555,18 @@ func TestGitEarlyStopRecoversActiveExitedBoundUnit(t *testing.T) {
 		t.Fatal("active-exited original unit could not be stopped", err)
 	}
 	r, err := f.owner.read(f.binding.Attempt)
-	if err != nil || !r.Stopped || r.EarlyStop == nil || r.Captured || r.StopJob != "/org/freedesktop/systemd1/job/2" || f.manager.stops != 1 || f.owner.Close() != nil {
+	if err != nil || !r.Stopped || r.EarlyStop == nil || r.Captured || r.StopJob != "" || f.manager.stops != 0 || f.manager.observation.ActiveState != "active" || f.owner.Close() != nil {
 		t.Fatal("active-exited recovery lost terminal proof", r, err, f.manager.stops)
 	}
 }
 
 func TestGitEarlyStopActiveExitedRefusesReplacementOrNonemptyGroup(t *testing.T) {
-	for _, kind := range []string{"invocation", "group", "populated", "post-stop-invocation", "stop-job-failure"} {
+	for _, kind := range []string{"invocation", "group", "populated", "changed-during-proof", "pending-job"} {
 		t.Run(kind, func(t *testing.T) {
 			f := gitEarlyStopFixture(t)
 			f.manager.observation.ActiveState = "active"
 			f.manager.waitErr = nil
 			f.manager.afterWait = nil
-			wantStops := 0
 			switch kind {
 			case "invocation":
 				f.manager.observation.InvocationID = strings.Repeat("d", 32)
@@ -561,18 +574,16 @@ func TestGitEarlyStopActiveExitedRefusesReplacementOrNonemptyGroup(t *testing.T)
 				f.manager.kernel.changed = true
 			case "populated":
 				f.manager.kernel.populated = true
-			case "post-stop-invocation":
-				f.manager.changedInvocation = true
-				wantStops = 1
-			case "stop-job-failure":
-				f.manager.waitErr = errors.New("synthetic stop job failed")
-				wantStops = 1
+			case "pending-job":
+				f.manager.observation.Job.ID = 9
+			case "changed-during-proof":
+				f.owner.manager = &gitEarlyStopChangingManager{gitUnitManager: f.manager, change: func(v *unitObservation) { v.InvocationID = strings.Repeat("d", 32) }}
 			}
 			if f.owner.stop(context.Background(), f.binding) == nil || f.owner.Close() == nil {
 				t.Fatal("uncertain active-exited unit released")
 			}
 			r, err := f.owner.read(f.binding.Attempt)
-			if err != nil || r.Stopped || r.EarlyStop != nil || f.manager.stops != wantStops {
+			if err != nil || r.Stopped || r.EarlyStop != nil || f.manager.stops != 0 {
 				t.Fatal("failed recovery fabricated proof or stopped replacement", r, err, f.manager.stops)
 			}
 			f.manager.kernel.boot = "changed-boot-for-active-exited-fixture"
@@ -580,6 +591,50 @@ func TestGitEarlyStopActiveExitedRefusesReplacementOrNonemptyGroup(t *testing.T)
 				t.Fatal("fixture recovery")
 			}
 		})
+	}
+}
+
+type gitEarlyStopReplacementManager struct {
+	gitUnitManager
+	stops  int
+	onStop func()
+}
+
+func (m *gitEarlyStopReplacementManager) Stop(ctx context.Context, unit string) (string, error) {
+	m.stops++
+	m.onStop()
+	return m.gitUnitManager.Stop(ctx, unit)
+}
+func TestGitEarlyStopNeverDispatchesStopToReplacement(t *testing.T) {
+	f := gitEarlyStopFixture(t)
+	f.manager.observation.ActiveState = "active"
+	f.manager.waitErr, f.manager.afterWait = nil, nil
+	replacement := exec.Command("/bin/sleep", "30")
+	replacement.Env = []string{}
+	if err := replacement.Start(); err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	stop := func() { once.Do(func() { replacement.Process.Kill(); replacement.Wait() }) }
+	defer stop()
+	fd, err := unix.PidfdOpen(replacement.Process.Pid, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(fd)
+	manager := &gitEarlyStopReplacementManager{gitUnitManager: f.manager, onStop: func() {
+		// Simulate another manager client replacing the invocation precisely
+		// when a name-based Stop would dispatch. Actually terminate only this
+		// fixture's independent inert process to expose that side effect.
+		f.manager.observation.InvocationID = strings.Repeat("e", 32)
+		stop()
+	}}
+	f.owner.manager = manager
+	if err := f.owner.stop(context.Background(), f.binding); err != nil || manager.stops != 0 || unix.PidfdSendSignal(fd, 0, nil, 0) != nil {
+		t.Fatal("early physical-stop proof dispatched against a replacement", err, manager.stops)
+	}
+	if f.owner.Close() != nil {
+		t.Fatal("proven empty original attempt retained resources")
 	}
 }
 
