@@ -21,7 +21,7 @@ const snapshotObjectBytes = 2 << 20
 // a model. Its methods return copies; packet, reader paths and inline anchors
 // all describe the same immutable merge-base-to-head comparison.
 type SnapshotEvidence struct {
-	git      GitStore
+	store    ObjectStore
 	snapshot Snapshot
 	packet   string
 	paths    []string
@@ -111,7 +111,7 @@ func (bound *JobEvidence) Reader(snapshot Snapshot) (*Reader, error) {
 	if snapshot != e.snapshot {
 		return nil, ErrFenced
 	}
-	r, err := NewReader(e.git, snapshot, e.paths, bound.limits)
+	r, err := NewReader(e.store, snapshot, e.paths, bound.limits)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 	if err != nil {
 		return nil, err
 	}
-	e := &SnapshotEvidence{git: git, snapshot: snapshot, lines: map[string]map[int]bool{}}
+	e := &SnapshotEvidence{store: git, snapshot: snapshot, lines: map[string]map[int]bool{}}
 	p := snapshotPacket{Version: "sfl-snapshot-evidence-1", Snapshot: snapshot, Files: files, Coverage: []Coverage{}}
 	remaining := snapshotObjectBytes
 	for i := range p.Files {
@@ -163,7 +163,16 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 			omit("binary or non-UTF-8 diff omitted")
 			continue
 		}
-		patch, err := git.command(ctx, snapshotObjectBytes, "-c", "diff.suppressBlankEmpty=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--ignore-submodules=none", "--no-color", "--no-prefix", "--text", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=3", snapshot.MergeBase, snapshot.Head, "--", ":(literal)"+file.Path)
+		args := []string{"-c", "diff.suppressBlankEmpty=false", "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--ignore-submodules=none", "--no-color", "--no-prefix", "--text", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=3", snapshot.MergeBase, snapshot.Head, "--", ":(literal)" + file.Path}
+		// A literal directory pathspec still selects descendants. A file/tree
+		// transition has separate raw records for those descendants; exclude
+		// them here so this patch reproduces only this record's old/new blobs.
+		for _, other := range p.Files {
+			if strings.HasPrefix(other.Path, file.Path+"/") {
+				args = append(args, ":(literal,exclude)"+other.Path)
+			}
+		}
+		patch, err := git.command(ctx, snapshotObjectBytes, args...)
 		if err != nil {
 			omit("patch unavailable or patch byte limit exhausted")
 			continue
@@ -241,6 +250,26 @@ func RestoreSnapshotEvidence(ctx context.Context, git GitStore, job Job) (*JobEv
 	if len(p.Files) != len(inventory) {
 		return nil, ErrFenced
 	}
+	return restoreSnapshotEvidencePacket(ctx, git, job, inventory, func(id string, remaining *int) ([]byte, error) {
+		return snapshotBlob(ctx, git, id, remaining)
+	})
+}
+
+// restoreSnapshotEvidencePacket parses only bounded JSON, text and plain blob
+// bytes. The caller owns inventory/source qualification. It preserves every
+// admitted omission and never recaptures a packet during recovery.
+func restoreSnapshotEvidencePacket(ctx context.Context, store ObjectStore, job Job, inventory []snapshotFile, blob func(string, *int) ([]byte, error)) (*JobEvidence, error) {
+	if job.Validate() != nil || len(job.Packet) > snapshotPacketBytes || store == nil || blob == nil {
+		return nil, ErrFenced
+	}
+	var p snapshotPacket
+	if json.Unmarshal([]byte(job.Packet), &p) != nil {
+		return nil, ErrFenced
+	}
+	canonical, err := json.Marshal(p)
+	if err != nil || string(canonical) != job.Packet || p.Version != "sfl-snapshot-evidence-1" || p.Snapshot != job.Snapshot || len(p.Files) != len(inventory) {
+		return nil, ErrFenced
+	}
 	omissions := map[string]string{}
 	for _, c := range p.Coverage {
 		if _, duplicate := omissions[c.Path]; duplicate {
@@ -253,7 +282,7 @@ func RestoreSnapshotEvidence(ctx context.Context, git GitStore, job Job) (*JobEv
 		}
 		omissions[c.Path] = c.Reason
 	}
-	e := &SnapshotEvidence{git: git, snapshot: job.Snapshot, packet: job.Packet, coverage: append([]Coverage(nil), p.Coverage...), lines: map[string]map[int]bool{}}
+	e := &SnapshotEvidence{store: store, snapshot: job.Snapshot, packet: job.Packet, coverage: append([]Coverage(nil), p.Coverage...), lines: map[string]map[int]bool{}}
 	remaining := snapshotObjectBytes
 	for i, file := range p.Files {
 		identity := file
@@ -274,11 +303,11 @@ func RestoreSnapshotEvidence(ctx context.Context, git GitStore, job Job) (*JobEv
 		if omitted || !regular(file.OldMode) || !regular(file.NewMode) {
 			return nil, ErrFenced
 		}
-		old, err := snapshotBlob(ctx, git, file.OldObject, &remaining)
+		old, err := blob(file.OldObject, &remaining)
 		if err != nil {
 			return nil, err
 		}
-		new, err := snapshotBlob(ctx, git, file.NewObject, &remaining)
+		new, err := blob(file.NewObject, &remaining)
 		if err != nil {
 			return nil, err
 		}

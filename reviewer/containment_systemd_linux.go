@@ -327,6 +327,50 @@ func fixedVMUnitProperties(unit, stub string, args []string, description string,
 func fixedNativeVMUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
 	return fixedPayloadUnitProperties(unit, stub, args, description, imageFD, "SFL native VM containment ")
 }
+
+// Git acquisition is a distinct payload, with no provider/auth binding.
+// These typed values are the transient-unit wire form, not unit-file text.
+type gitUnitTemporaryFS struct{ Path, Options string }
+type gitUnitAddressFamilies struct {
+	Allow    bool
+	Families []string
+}
+type gitUnitSyscallFilter struct {
+	Allow bool
+	Calls []string
+}
+
+const gitUnitDescriptionPrefix = "SFL Git acquisition "
+const gitUnitTmpfsOptions = "size=268435456,nr_inodes=65536,noswap,nosuid,nodev,noexec,mode=0700"
+
+func fixedGitUnitProperties(unit, stub string, args []string, description string, imageFD, supervisorFD int) ([]unitProperty, error) {
+	properties, err := fixedPayloadUnitProperties(unit, stub, args, description, imageFD, gitUnitDescriptionPrefix)
+	if err != nil {
+		return nil, err
+	}
+	if imageFD == supervisorFD || supervisorFD < 0 || args[4] != strconv.Itoa(os.Getpid()) {
+		return nil, errGitUnit
+	}
+	identity, identityErr := processGateIdentity(os.Getpid(), strings.Repeat("0", 32))
+	if identityErr != nil || gitCheckProcessPIDFD(identity, supervisorFD) != nil {
+		return nil, errGitUnit
+	}
+	for index := range properties {
+		if properties[index].Name == "ExtraFileDescriptors" {
+			properties[index] = prop("ExtraFileDescriptors", []namedUnitFD{{dbus.UnixFD(imageFD), "sfl-unitstub"}, {dbus.UnixFD(supervisorFD), "sfl-git-supervisor"}})
+		}
+	}
+	return append(properties,
+		prop("TemporaryFileSystem", []gitUnitTemporaryFS{{"/tmp", gitUnitTmpfsOptions}}),
+		// Only the measured bootstrap may use netlink to initialize its new
+		// network namespace. The late bwrap payload filter removes it before
+		// any Git parser runs. Internet sockets are never permitted.
+		prop("RestrictAddressFamilies", gitUnitAddressFamilies{true, []string{"AF_UNIX", "AF_NETLINK"}}),
+		prop("SystemCallArchitectures", []string{"native"}),
+		prop("SystemCallFilter", gitUnitSyscallFilter{false, []string{"io_uring_setup", "io_uring_enter", "io_uring_register"}}),
+		prop("SystemCallErrorNumber", int32(unix.EPERM)),
+	), nil
+}
 func fixedPayloadUnitProperties(unit, stub string, args []string, description string, imageFD int, prefix string) ([]unitProperty, error) {
 	if imageFD < 0 || stub != retainedStubExec || !validContainmentUnit(unit) || !path.IsAbs(stub) || path.Clean(stub) != stub || len(args) != 5 || args[0] != stub || len(description) != len(prefix)+64 || !strings.HasPrefix(description, prefix) || !validAuthHash(strings.TrimPrefix(description, prefix)) {
 		return nil, ErrAuthRecoveryRequired
@@ -355,7 +399,11 @@ func fixedPayloadUnitProperties(unit, stub string, args []string, description st
 func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string, imageFD int) (string, error) {
 	var properties []unitProperty
 	var err error
-	if strings.HasPrefix(description, "SFL native VM containment ") {
+	if strings.HasPrefix(description, gitUnitDescriptionPrefix) {
+		// Git must inherit its original supervisor pidfd from birth. The
+		// generic single-image path cannot launch that payload.
+		return "", errGitUnit
+	} else if strings.HasPrefix(description, "SFL native VM containment ") {
 		properties, err = fixedNativeVMUnitProperties(unit, stub, args, description, imageFD)
 	} else if strings.HasPrefix(description, "SFL sealed VM containment ") {
 		properties, err = fixedVMUnitProperties(unit, stub, args, description, imageFD)
@@ -365,6 +413,18 @@ func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, a
 	if err != nil {
 		return "", err
 	}
+	return m.startProperties(ctx, unit, properties)
+}
+
+func (m *dbusContainmentManager) StartGit(ctx context.Context, unit, stub string, args []string, description string, imageFD, supervisorFD int) (string, error) {
+	properties, err := fixedGitUnitProperties(unit, stub, args, description, imageFD, supervisorFD)
+	if err != nil {
+		return "", err
+	}
+	return m.startProperties(ctx, unit, properties)
+}
+
+func (m *dbusContainmentManager) startProperties(ctx context.Context, unit string, properties []unitProperty) (string, error) {
 	if m.jobs == nil || m.jobs.begin(unit) != nil {
 		return "", ErrAuthRecoveryRequired
 	}

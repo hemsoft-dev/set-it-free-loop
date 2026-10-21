@@ -1,0 +1,21 @@
+# Worker-side Git quarantine verification
+
+`verifyGitQuarantine` is internal acquisition-worker plumbing. It is not a host API or a qualified-store constructor. Every Git command it runs parses untrusted objects and must execute inside the measured acquisition unit with aggregate CPU, memory, process, filesystem, disk, inode and wall-time enforcement. The direct tests use small trusted synthetic repositories and establish algorithm behavior only.
+
+The worker receives exact snapshot IDs and trusted acquisition bounds. Defaults cap 16,000 objects, 8,000 commits, 32,000 filesystem entries, 32 MiB per object, 256 MiB expanded object data and 128 MiB of repository files. Lower positive bounds are permitted. Metadata and graph command output also have a 2-MiB ceiling. These checks supplement the unit's resource boundary. They cannot replace it, since the Git parser runs before the verifier can inspect its output.
+
+The staging repository uses a fixed sparse bare configuration with hooks, fsmonitor, commit graph and multi-pack-index disabled. It has exact `refs/sfl/head` and `refs/sfl/base` values and a detached `HEAD` matching the captured head. Unknown metadata/configuration, shallow boundaries, alternate stores, grafts, replacement refs, promisor files, symlinks and hardlinks are refused. Only the expected metadata, loose objects and pack/index/reverse-index paths are permitted. Directory enumeration is incremental and bounded; the verifier never follows a repository symlink.
+
+Verification counts the complete physical object inventory, including unreachable objects, checks object types and expanded sizes, and runs full strict fsck with no configured severity overrides. Both tips and the declared merge base must be commit objects. A complete parent traversal of both tips must contain every referenced parent. `merge-base --all` must return exactly the declared unique merge base. Read-only commands retain the existing explicit no-replacement and no-lazy-fetch flags. Missing history is refusal, never shallow confidence or an automatic fetch.
+
+Only a bounded inventory receipt returns on success. It binds the snapshot and sorted object identities/types/sizes and records counts and byte totals. Every failure returns a zero inventory with a fixed error. There is no partial qualified result, network operation, credential access, candidate checkout, hook execution or publication capability.
+
+Tests use the installed Git producer with actual packs, indexes and reverse indexes. Complete SHA-1 and SHA-256 repositories pass. Corrupt packs and every listed metadata escape route fail. Separate fixtures exceed each configured bound and cancel input. Another fixture has present head, base and merge-base commits but a missing older parent; it returns no qualified inventory. The strict checker also rejected an initial fixture whose symbolic HEAD pointed outside `refs/heads`, so the producer now writes the exact detached head instead of weakening fsck.
+
+Production composition is unfinished. The measured factory must create a fresh quarantine, pin all executables and libraries, run fetch, verification, packet capture and export within its aggregate boundary, validate private input/output bindings and prove whole-unit and broker shutdown before retaining results. Host-side `CaptureSnapshotEvidence` or `GitStore.command` against downloaded pack files would leave an unconstrained parser gap even after worker verification. A bounded plain-object materialization, or a separately protected concrete reader, must close that gap. Neither this inventory nor the direct algorithm tests establish protected-unit qualification, a production immutable store, App eligibility or activation authority.
+
+The [worker export and sealed reader](GIT-MATERIALIZATION.md) now materialize
+bounded plain blobs and restore the packet without host-side Git parsing.
+They remain private staging until the acquisition factory proves authenticated
+worker ownership and whole-unit/broker stop. Their existence does not qualify
+that factory or provide durable crash recovery.
