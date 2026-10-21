@@ -29,9 +29,10 @@ type gitUnitRecord struct {
 	StartJob, StopJob                                 string
 	Identity                                          GateIdentity
 	Cgroup                                            cgroupBinding
-	BootstrapGrantHash                                string       `json:",omitempty"`
-	WorkerGrantHash                                   string       `json:",omitempty"`
-	WorkerIdentity                                    GateIdentity `json:",omitzero"`
+	BootstrapGrantHash                                string                `json:",omitempty"`
+	WorkerGrantHash                                   string                `json:",omitempty"`
+	WorkerIdentity                                    GateIdentity          `json:",omitzero"`
+	EarlyStop                                         *gitEarlyStopEvidence `json:",omitempty"`
 }
 type gitUnitManager interface {
 	containmentManager
@@ -194,6 +195,9 @@ func (r gitUnitRecord) valid(attempt, hash string) bool {
 			return false
 		}
 	} else if r.Identity != (GateIdentity{}) || r.Cgroup != (cgroupBinding{}) {
+		return false
+	}
+	if r.EarlyStop != nil && (!r.Started || !r.StartSettled || !r.Revoked || !r.Stopped || r.Captured || r.BootstrapGrantHash != "" || r.WorkerGrantHash != "" || !r.EarlyStop.valid(r.Unit)) {
 		return false
 	}
 	if r.BootstrapGrantHash != "" && (!r.Captured || r.BootstrapGrantHash != Digest(gitUnitGrantPacket{1, gitBootstrapGrant, r.Binding, r.Identity, r.Binding.RuntimeHash})) {
@@ -507,6 +511,13 @@ func (o *gitUnitOwner) stop(ctx context.Context, binding gitMaterializationBindi
 	bounded, cancel := boundedManagerContext(ctx)
 	defer cancel()
 	if !r.Captured {
+		terminal, handled, terminalErr := o.stopBeforeCapture(bounded, r)
+		if terminalErr != nil {
+			return terminalErr
+		}
+		if handled {
+			return o.write(terminal)
+		}
 		r, err = o.captureStarted(bounded, r)
 		if err != nil || o.write(r) != nil {
 			return errGitUnit

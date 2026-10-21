@@ -21,6 +21,25 @@ The capability checks the reader's qualification time and the existing one-minut
 
 ## Validation
 
+The private `gitGenerationReader` now connects this exchange to a pinned
+acquisition-generation borrow. The broker receives only the typed exchanger,
+with no owner, refresh operation, publisher handle or credential. Admission
+failure closes the input body. Exchange failure retires only its HTTP borrow;
+the whole-acquisition lease remains. Successful exchange holds that borrow
+through response closure and every admitted Read returning. Generation
+cancellation closes the response, but an unreturned Read still blocks borrow
+retirement. The factory must separately revoke and join the broker and prove
+physical unit stop before releasing the whole generation. This private wiring
+does not create the remaining production factory or activate a source service.
+
+Its focused tests use actual local TLS for both protocols and both operations,
+verify pinned token use and body retirement, and independently reject a live
+inert process as stopped evidence. Another response deliberately returns from
+Close while Read remains blocked. Cancellation closes it exactly once, but the
+owner retains its HTTP borrow and token pair until Read returns and the actual
+inert process is stopped. Failure tests assert no extra dispatch, closed input,
+scrubbed errors and retained whole-generation ownership.
+
 Tests run the installed Git HTTP client and `git-http-backend` against a synthetic repository. A loopback test bridge selects the typed operation, which authenticates to a real local TLS upstream. The fixture verifies the upstream Basic identity, strips it, and invokes the actual Git backend without the token. Actual protocol v0 and v2 fetches each exercise advertisement and upload-pack, pass full strict fsck and compare every fetched object's raw bytes with its source. Binary blobs and unusual paths are included. The test bridge is not production peer isolation.
 
 Other tests cover protocol/media headers, exact binary request and response preservation, role/operation/context refusal, unchanged REST restrictions, Close and expiry refusal, malformed/ambiguous headers, redirects, auth failures, compressed responses, known and streamed excess bodies, exactly full POST responses, private transport/read/close errors, caller body ownership and cancellation during input and output. Handles and returned bodies redact value, pointer and JSON formatting. Only synthetic credentials and local transports are used. Installed executable and backend provenance are recorded with the mission receipts; the host-specific producer test skips when its backend is unavailable.

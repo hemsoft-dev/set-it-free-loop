@@ -115,6 +115,25 @@ from the old root. A missing unknown unit alone does not prove termination. A
 changed kernel boot can prove the prior boot's processes dead without contacting
 another manager's unit.
 
+An accepted start can fail before a live root is captured. If that exact unit
+still exists, a separate early-stop path requires the original manager and boot,
+all fixed unit properties, no pending job, no MainPID, and a terminal state. It
+captures the actual cgroup and its hierarchy, requires it empty, then repeats
+the manager and emptiness observations before persisting a distinct `EarlyStop`
+receipt. Invocation, unit object path and cgroup must stay unchanged. The receipt
+does not fabricate a root identity or original pidfd. It is valid only for a
+revoked, stopped attempt that never captured a root or consumed either grant.
+
+A reopened early-stop receipt rechecks its original cgroup hierarchy and exact
+terminal invocation rather than recapturing a replacement group. The original
+kernel hierarchy may prove that its previously captured group was removed.
+Before the first capture, a missing unit or cgroup remains uncertainty. Changed
+properties, repopulation, a new invocation, manager/boot change during proof or
+cancellation cannot release ownership. A real kernel reboot retains its existing
+separate old-boot recovery rule. This path makes an early failure recoverable
+when the required independent evidence survives; it does not qualify an export
+or restore fresh grant authority.
+
 Operation admission honors the caller's cancellation while another start/stop
 is in progress. Close refuses to discard the process lock or image while an
 operation is running or any record lacks a stopped receipt. Recovery calls stop
