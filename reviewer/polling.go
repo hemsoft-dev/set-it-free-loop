@@ -23,12 +23,26 @@ type PollDiscovery interface {
 	PollScope(context.Context, Scope) (RemoteState, Discovery, error)
 }
 
+// PollSource owns captured source until admission or work has finished. Legacy
+// raw callbacks remain available to fake transports, with no retention hook.
+type PollSource interface {
+	Capture(context.Context, Snapshot) (*SnapshotEvidence, error)
+	Restore(context.Context, Job) (*JobEvidence, error)
+	ReleaseCapture(context.Context, *SnapshotEvidence) error
+	ReleaseJob(context.Context, *JobEvidence) error
+}
+
+type pollSourceRetention interface {
+	PruneSource(context.Context, *Store, time.Time) error
+}
+
 type PollOptions struct {
 	Store      *Store
 	Enrollment Enrollment
 	Release    string
 	Discovery  PollDiscovery
 	Publisher  Publisher
+	Source     PollSource
 	Capture    func(context.Context, Snapshot) (*SnapshotEvidence, error)
 	Restore    func(context.Context, Job) (*JobEvidence, error)
 	Runtime    func(context.Context, Job, *JobEvidence) (Engine, error)
@@ -73,6 +87,12 @@ type PollingController struct {
 }
 
 func OpenPollingController(ctx context.Context, o PollOptions) (*PollingController, error) {
+	if o.Source != nil {
+		if o.Capture != nil || o.Restore != nil {
+			return nil, ErrLiveBlocked
+		}
+		o.Capture, o.Restore = o.Source.Capture, o.Source.Restore
+	}
 	if o.Store == nil || o.Store.db == nil || !filepath.IsAbs(o.Store.path) || o.Enrollment.Validate() != nil || !objectID.MatchString(o.Release) || o.Discovery == nil || o.Publisher.Store != o.Store || o.Publisher.Remote == nil || o.Capture == nil || o.Restore == nil || o.Runtime == nil || o.Check == nil {
 		return nil, ErrLiveBlocked
 	}
@@ -385,11 +405,23 @@ func (c *PollingController) selectWork(d DurableState, remote map[string]RemoteS
 	return &pollWork{scope: scope, request: r.ID, generation: pr.Generation, snapshot: r.Snapshot, done: make(chan struct{})}
 }
 
-func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (*JobEvidence, Job, error) {
+func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound *JobEvidence, job Job, result error) {
 	if err := c.options.Check(ctx, c.options.Enrollment, c.options.Release); err != nil {
 		return nil, Job{}, errors.Join(ErrLiveBlocked, err)
 	}
 	var evidence *SnapshotEvidence
+	defer func() {
+		if c.options.Source != nil && evidence != nil {
+			phase, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			result = errors.Join(result, c.options.Source.ReleaseCapture(phase, evidence))
+		}
+	}()
+	if source, ok := c.options.Source.(pollSourceRetention); ok {
+		if err := source.PruneSource(ctx, c.options.Store, c.now()); err != nil {
+			return nil, Job{}, err
+		}
+	}
 	if w.job == "" {
 		var captureErr error
 		evidence, captureErr = c.options.Capture(ctx, w.snapshot)
@@ -407,7 +439,6 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (*JobEv
 	if !remote.Access || !remote.Open || remote.Snapshot != w.snapshot {
 		return nil, Job{}, ErrFenced
 	}
-	var job Job
 	if w.job != "" {
 		d, err := c.options.Store.Snapshot(ctx)
 		if err != nil {
@@ -427,16 +458,16 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (*JobEv
 			return nil, Job{}, err
 		}
 	}
-	// Admit may also return an existing immutable job. Always restore its exact
-	// persisted packet instead of substituting a new capture with different omissions.
-	bound, err := c.options.Restore(ctx, job)
-	if err == nil {
-		err = bound.validateJob(job)
-	}
-	if err == nil && job.Release != c.options.Release {
+	if job.Release != c.options.Release {
 		if qualification := c.options.Check(ctx, c.options.Enrollment, job.Release); qualification != nil {
 			return nil, job, errors.Join(ErrLiveBlocked, qualification)
 		}
+	}
+	// Admit may also return an existing immutable job. Always restore its exact
+	// persisted packet instead of substituting a new capture with different omissions.
+	bound, err = c.options.Restore(ctx, job)
+	if err == nil {
+		err = bound.validateJob(job)
 	}
 	return bound, job, err
 }
@@ -559,6 +590,16 @@ func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 		}
 	}
 
+	if c.options.Source != nil {
+		phase, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		if bound != nil {
+			err = errors.Join(err, c.options.Source.ReleaseJob(phase, bound))
+		}
+		if source, ok := c.options.Source.(pollSourceRetention); ok {
+			err = errors.Join(err, source.PruneSource(phase, c.options.Store, c.now()))
+		}
+		cancel()
+	}
 	c.mu.Lock()
 	w.err = err
 	c.mu.Unlock()
@@ -735,6 +776,14 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 	}
 	if err = c.options.Store.Prune(ctx, c.now()); err != nil {
 		return result, err
+	}
+	c.mu.Lock()
+	activeSource := c.active != nil
+	c.mu.Unlock()
+	if source, ok := c.options.Source.(pollSourceRetention); ok && !activeSource {
+		if err = source.PruneSource(ctx, c.options.Store, c.now()); err != nil {
+			return result, err
+		}
 	}
 	d, err = c.options.Store.Snapshot(ctx)
 	if err != nil {

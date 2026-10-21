@@ -18,8 +18,9 @@ An existing canonical private service directory is anchored with `os.Root` and
 owned for the archive's lifetime by a process flock. A second process cannot
 open it concurrently. Root/lock identity, ownership and private permissions are
 checked; unknown root entries or malformed record directories require recovery.
-At most 128 spent attempt directories are retained. The factory must implement
-qualified retention/cleanup; this archive does not discard evidence to free space.
+At most 128 source attempt directories are retained. Only the concrete factory
+can retire unreferenced terminal attempts after durable job retention and
+consumer-lifetime checks. The archive never discards evidence solely for space.
 
 Each `export-<32-hex-attempt>` directory contains only fixed `archive.json` and
 `payload.bin` names. Attempt names never come from a worker path. The canonical
@@ -93,3 +94,25 @@ qualification, physical-stop/recovery authority, generation leases, controller
 composition and live activation remain independent work. See
 [GIT-MATERIALIZATION.md](GIT-MATERIALIZATION.md), [GIT-UNIT.md](GIT-UNIT.md) and
 [GIT-RUNTIME.md](GIT-RUNTIME.md).
+
+## Factory recovery integration
+
+The private [factory](GIT-FACTORY.md) now binds staged exports to the exact
+unit journal and bootstrap/worker grants before restored source can escape.
+An incomplete receiving intake may become terminal `discarded` only after
+the concrete owner independently proves physical whole-unit stop. That receipt
+is fsynced before removing the bounded owned payload; a restart can complete
+cleanup. The nonce stays spent and discarded intake cannot reopen as source.
+A different nonce may stage after that recovery. Complete staged source is
+retained while a pending capture, active consumer or durable job needs it.
+The factory can retire it after those references expire, using a fsynced intent
+and atomic whole-directory moves into archive-owned retirement storage. The
+archive recognizes at most 128 intents and their two fixed retirement directories
+per intent, with exact original directory identities. Partial deletion stays
+recoverable without parsing a half-deleted source record. Unexpected files or
+replacements refuse cleanup. See [factory retention](GIT-FACTORY.md).
+This is no public force-delete or arbitrary retry interface.
+
+Close disposes both lock and root descriptors once intake has joined, records
+terminal state even if disposal reports an error, and reports that initial
+error. A timeout acquiring the operation token still retains actual ownership.

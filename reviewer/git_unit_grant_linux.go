@@ -39,11 +39,15 @@ func gitFixedFilterPin() (VMAssetPin, error) {
 	}
 	return VMAssetPin{gitRawHash(raw.Bytes()), int64(raw.Len())}, nil
 }
-func (m gitGrantManifest) valid(binding gitMaterializationBinding) bool {
+func (m gitGrantManifest) validAssets() bool {
 	filter, err := gitFixedFilterPin()
-	return err == nil && m.Version == 2 && m.Purpose == "isolated-git-acquisition" && binding.valid() && Digest(m) == binding.RuntimeHash &&
+	return err == nil && m.Version == 2 && m.Purpose == "isolated-git-acquisition" &&
 		gitRuntimePin(m.Runtime.Git, 64<<20) && gitRuntimePin(m.Runtime.HTTP, 64<<20) && gitRuntimePin(m.Runtime.Artifact, gitRuntimeDataBytes+gitRuntimeManifestBytes+int64(len(gitRuntimeMagic))+4) &&
 		gitRuntimePin(m.NamespaceHelper, 64<<20) && gitRuntimePin(m.Worker, 64<<20) && m.Filter == filter
+}
+
+func (m gitGrantManifest) valid(binding gitMaterializationBinding) bool {
+	return binding.valid() && Digest(m) == binding.RuntimeHash && m.validAssets()
 }
 
 type gitUnitGrantPacket struct {
