@@ -312,7 +312,7 @@ func (f *triggerPollingRemote) captureTriggers(ctx context.Context) (RemoteState
 	if err != nil {
 		return RemoteState{}, Discovery{}, err
 	}
-	batch, err := buildTriggerBatch(f.policy, alphaScope(), d.PRs[alphaScope().key()], 1234, OwnerID+1, controlTime.Add(time.Minute), now, snapshot, commands, append([]CommandEvent{}, f.comments...))
+	batch, err := buildTriggerBatch(f.policy, alphaScope(), d.PRs[alphaScope().key()], 1234, OwnerID+1, controlTime.Add(time.Minute), now, snapshot, commands, append([]CommandEvent{}, f.comments...), open)
 	if err != nil {
 		return RemoteState{}, Discovery{}, err
 	}
@@ -717,6 +717,80 @@ func TestPollingTriggersCanceledCommentCannotSuppressNewHead(t *testing.T) {
 			pr := d.PRs[alphaScope().key()]
 			if !editedCancel && !state.Request.CreatedAt.After(pr.CancelledThrough) {
 				t.Fatal("automatic request predates cancel", state.Request, pr.CancelledThrough)
+			}
+		})
+	}
+}
+
+func TestPollingTriggersClosedHistoryPreservesHeadForReopen(t *testing.T) {
+	for _, kind := range []string{"new-head", "observed-closed-aba", "base-only", "initial-new-closed", "initial-old-closed"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := context.Background()
+			g, f, s := triggerFixture(t)
+			initial := strings.HasPrefix(kind, "initial-")
+			if kind == "initial-old-closed" {
+				f.created = controlTime.Add(-time.Hour)
+				f.updated = f.created
+			}
+			var prior NativeRequest
+			if !initial {
+				state, err := g.Current(ctx, alphaScope())
+				if err != nil {
+					t.Fatal(err)
+				}
+				prior = state.Request
+			}
+			f.open = false
+			f.through = f.through.Add(time.Minute)
+			if kind == "base-only" {
+				f.snapshot.Base = strings.Repeat("e", 40)
+			} else if !initial {
+				f.snapshot.Head = strings.Repeat("e", 40)
+			}
+			history, err := g.History(ctx, alphaScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(history.Requests) != 0 {
+				t.Fatal("closed PR originated automatic work", history.Requests)
+			}
+			if err = s.Discover(ctx, history); err != nil {
+				t.Fatal(err)
+			}
+			if kind == "observed-closed-aba" {
+				f.snapshot.Head = prior.Snapshot.Head
+				f.through = f.through.Add(time.Minute)
+				history, err = g.History(ctx, alphaScope())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err = s.Discover(ctx, history); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f.open = true
+			f.through = f.through.Add(time.Minute)
+			current, err := g.Current(ctx, alphaScope())
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "new-head", "observed-closed-aba":
+				if current.Request.ID == prior.ID || current.Request.ID == 0 || current.Request.Origin.Kind != "synchronize" {
+					t.Fatal("closed reconciliation consumed head change", current)
+				}
+			case "base-only":
+				if current.Request.ID != prior.ID {
+					t.Fatal("base-only reopen originated automatic work", current)
+				}
+			case "initial-new-closed":
+				if current.Request.ID == 0 || current.Request.Origin.Kind != "opened" {
+					t.Fatal("closed first observation consumed opening", current)
+				}
+			case "initial-old-closed":
+				if current.Request.ID != 0 {
+					t.Fatal("pre-epoch closed backlog auto-ran", current)
+				}
 			}
 		})
 	}

@@ -56,12 +56,13 @@ func (o RequestOrigin) validate() error {
 // TriggerCursor is the bounded, persistent observation ledger for one PR. It is
 // not a webhook receipt and supplies no missing push actor or push timestamp.
 type TriggerCursor struct {
-	Policy           TriggerPolicy
-	PullID, AuthorID int64
-	CreatedAt        time.Time
-	Snapshot         Snapshot
-	ObservedAt       time.Time
-	Sequence         int64
+	Policy              TriggerPolicy
+	PullID, AuthorID    int64
+	CreatedAt           time.Time
+	Snapshot            Snapshot
+	ObservedAt          time.Time
+	Sequence            int64
+	Opened, PendingHead bool
 }
 
 type TriggerBatch struct {
@@ -112,7 +113,7 @@ func applyTriggers(d *DurableState, batch Discovery) error {
 		}
 	}
 	if prev := pr.Triggers; prev != nil {
-		if !prev.Policy.EnabledAt.Equal(c.Policy.EnabledAt) || prev.PullID != c.PullID || prev.AuthorID != c.AuthorID || !prev.CreatedAt.Equal(c.CreatedAt) || c.ObservedAt.Before(prev.ObservedAt) || c.Sequence < prev.Sequence || c.Sequence > prev.Sequence+1 {
+		if !prev.Policy.EnabledAt.Equal(c.Policy.EnabledAt) || prev.PullID != c.PullID || prev.AuthorID != c.AuthorID || !prev.CreatedAt.Equal(c.CreatedAt) || c.ObservedAt.Before(prev.ObservedAt) || c.Sequence < prev.Sequence || c.Sequence > prev.Sequence+1 || (prev.Opened && !c.Opened) {
 			return ErrDeferred
 		}
 	}
@@ -151,7 +152,7 @@ func applyTriggers(d *DurableState, batch Discovery) error {
 					return ErrDeferred
 				}
 			}
-		} else if !r.CreatedAt.Equal(r.Origin.ObservedAt) || r.Origin.Sequence != c.Sequence || r.Snapshot != c.Snapshot {
+		} else if !c.Opened || c.PendingHead || !r.CreatedAt.Equal(r.Origin.ObservedAt) || r.Origin.Sequence != c.Sequence || r.Snapshot != c.Snapshot {
 			return ErrDeferred
 		}
 		r.BotID = d.Enrollment.BotID
@@ -195,7 +196,7 @@ func applyTriggers(d *DurableState, batch Discovery) error {
 // buildTriggerBatch is a pure transformation of a complete, stable remote read.
 // It never starts inference or writes to GitHub. New comments discovered after a
 // previously complete cutoff defer rather than silently invent old provenance.
-func buildTriggerBatch(policy TriggerPolicy, scope Scope, saved *PRRecord, pullID, authorID int64, created, through time.Time, snapshot Snapshot, commands, comments []CommandEvent) (Discovery, error) {
+func buildTriggerBatch(policy TriggerPolicy, scope Scope, saved *PRRecord, pullID, authorID int64, created, through time.Time, snapshot Snapshot, commands, comments []CommandEvent, open bool) (Discovery, error) {
 	if policy.validate() != nil || pullID <= 0 || authorID <= 0 || created.IsZero() || created.After(through) || through.Before(policy.EnabledAt) || snapshot.Validate() != nil {
 		return Discovery{}, ErrDeferred
 	}
@@ -226,6 +227,8 @@ func buildTriggerBatch(policy TriggerPolicy, scope Scope, saved *PRRecord, pullI
 				return Discovery{}, ErrDeferred
 			}
 			cursor.Sequence = prev.Sequence
+			cursor.Opened = prev.Opened
+			cursor.PendingHead = prev.PendingHead || prev.Snapshot.Head != snapshot.Head || prev.Snapshot.HeadRepositoryID != snapshot.HeadRepositoryID
 		}
 	}
 	cancelledThrough := time.Time{}
@@ -259,12 +262,17 @@ func buildTriggerBatch(policy TriggerPolicy, scope Scope, saved *PRRecord, pullI
 		nextID++
 	}
 	kind := ""
-	if saved == nil || saved.Triggers == nil {
-		if !created.Before(policy.EnabledAt) {
+	// Closed reconciliation records the observed snapshot but retains a pending
+	// head transition. It cannot consume the automatic request needed when the
+	// PR reopens, including a fully observed closed-state ABA transition.
+	if open {
+		if !cursor.Opened && !created.Before(policy.EnabledAt) {
 			kind = "opened"
+		} else if cursor.PendingHead {
+			kind = "synchronize"
 		}
-	} else if saved.Triggers.Snapshot.Head != snapshot.Head || saved.Triggers.Snapshot.HeadRepositoryID != snapshot.HeadRepositoryID {
-		kind = "synchronize"
+		cursor.Opened = true
+		cursor.PendingHead = false
 	}
 	if kind != "" {
 		cursor.Sequence++

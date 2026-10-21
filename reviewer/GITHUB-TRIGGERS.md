@@ -45,6 +45,10 @@ is baselined without an initial automatic run. Subsequent head or head-repositor
 changes create a `synchronize` observation, even after a completed review.
 Base-only movement fences old work and does not create a request. Observed
 A→B→A heads are separate generations; the head hash is not a global dedup key.
+Closed-PR history retains pending head changes without creating automatic work.
+Reopening then creates the pending request, including an observed closed-state
+ABA transition; base-only changes still do not originate work. The first closed
+observation also cannot consume an eligible new PR's opening.
 Repeated identical observations cannot rerun a completed or admitted request.
 A fresh manual comment discovered with the same automatic head coalesces into
 one explicit request only when it survives all accepted cancellation commands in

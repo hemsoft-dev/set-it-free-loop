@@ -129,19 +129,9 @@ func (g *GitHubTriggerDiscoveryHTTP) read(ctx context.Context, scope Scope, hist
 	if err != nil || before != after {
 		return RemoteState{}, Discovery{}, errors.Join(ErrDeferred, err)
 	}
-	batch, err := buildTriggerBatch(g.policy, scope, local.PRs[scope.key()], before.PullID, before.AuthorID, before.CreatedAt, through, snapshot, commands, comments)
+	batch, err := buildTriggerBatch(g.policy, scope, local.PRs[scope.key()], before.PullID, before.AuthorID, before.CreatedAt, through, snapshot, commands, comments, after.Open)
 	if err != nil {
 		return RemoteState{}, Discovery{}, err
-	}
-	if !after.Open {
-		// A closed PR cannot originate a new automatic request during reconciliation.
-		filtered := batch.Requests[:0]
-		for _, request := range batch.Requests {
-			if request.Origin.Kind == "comment" {
-				filtered = append(filtered, request)
-			}
-		}
-		batch.Requests = filtered
 	}
 	for i := range batch.Requests {
 		batch.Requests[i].BotID = r.enrollment.BotID
