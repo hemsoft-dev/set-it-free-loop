@@ -458,16 +458,16 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound 
 			return nil, Job{}, err
 		}
 	}
+	if job.Release != c.options.Release {
+		if qualification := c.options.Check(ctx, c.options.Enrollment, job.Release); qualification != nil {
+			return nil, job, errors.Join(ErrLiveBlocked, qualification)
+		}
+	}
 	// Admit may also return an existing immutable job. Always restore its exact
 	// persisted packet instead of substituting a new capture with different omissions.
 	bound, err = c.options.Restore(ctx, job)
 	if err == nil {
 		err = bound.validateJob(job)
-	}
-	if err == nil && job.Release != c.options.Release {
-		if qualification := c.options.Check(ctx, c.options.Enrollment, job.Release); qualification != nil {
-			return bound, job, errors.Join(ErrLiveBlocked, qualification)
-		}
 	}
 	return bound, job, err
 }
@@ -776,6 +776,11 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 	}
 	if err = c.options.Store.Prune(ctx, c.now()); err != nil {
 		return result, err
+	}
+	if source, ok := c.options.Source.(pollSourceRetention); ok {
+		if err = source.PruneSource(ctx, c.options.Store, c.now()); err != nil {
+			return result, err
+		}
 	}
 	d, err = c.options.Store.Snapshot(ctx)
 	if err != nil {

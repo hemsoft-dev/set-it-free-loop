@@ -132,7 +132,22 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 	f.manager.kernel.changed = true
 	f.manager.kernel.mu.Unlock()
 	owner, _, _, _, signs := credentialOwnerFixture(t)
-	factory, err := newGitSourceFactory(context.Background(), owner, reopened, r.archive, runtime, helper, r.manifest, testJob().Release, r.binding.ReleaseHash, gitFactoryWorkRoot(t))
+	// A new deployment changes its capture release and runtime manifest. The
+	// retained export still belongs to the old, independently stopped attempt.
+	// A different existing root-owned inert asset changes the manifest pin.
+	// It is never executed and does not qualify namespace behavior.
+	newHelperBytes, err := os.ReadFile("/usr/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newHelper, err := os.Open("/usr/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer newHelper.Close()
+	newManifest := r.manifest
+	newManifest.NamespaceHelper = VMAssetPin{gitRawHash(newHelperBytes), int64(len(newHelperBytes))}
+	factory, err := newGitSourceFactory(context.Background(), owner, reopened, r.archive, runtime, newHelper, newManifest, strings.Repeat("e", 40), Digest("upgraded release"), gitFactoryWorkRoot(t))
 	if err != nil {
 		t.Fatal("recovery", err)
 	}
@@ -165,9 +180,9 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 		t.Fatal("capture/restore evidence mismatch", err)
 	}
 	wrong := job
-	wrong.Release = strings.Repeat("e", 40)
+	wrong.Packet += " "
 	if got, err := factory.Restore(context.Background(), wrong); err == nil || got != nil {
-		t.Fatal("other release reused retained source")
+		t.Fatal("different admitted packet reused retained source")
 	}
 	if signs.Load() != 0 {
 		t.Fatal("restore dispatched credential work")

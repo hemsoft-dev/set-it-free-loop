@@ -276,8 +276,8 @@ func TestGitFactoryBrokerSetupFailureRetiresOnlyKnownUnstartedLease(t *testing.T
 }
 
 func TestGitFactorySocketPathBounds(t *testing.T) {
-	longest := "/" + strings.Repeat("x", 87)
-	if len(filepath.Join(longest, "broker", "worker.sock")) != 107 || !gitFactoryRunPaths(longest) {
+	longest := "/" + strings.Repeat("x", 84)
+	if len(filepath.Join(longest, "bootstrap.sock")) != 100 || !gitFactoryRunPaths(longest) {
 		t.Fatal("valid maximum socket path refused")
 	}
 	for _, path := range []string{longest + "x", "relative", "/tmp/../other", "/tmp/invalid\x00"} {

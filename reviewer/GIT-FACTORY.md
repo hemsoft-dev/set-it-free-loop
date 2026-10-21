@@ -29,7 +29,8 @@ release hash, canonical runtime-manifest hash and immutable PR head/base/merge
 base. A fresh private attempt directory contains separate bootstrap and broker
 sockets. No failed or uncertain attempt automatically starts again. Unix pathname bounds
 are checked against each actual bootstrap/worker/broker socket path, including
-the fixed nonce directory, rather than an arbitrary short root limit.
+the fixed nonce directory. The bootstrap endpoint must fit the unit owner's
+100-byte limit; broker endpoints must fit the kernel's 107-byte limit.
 
 The factory seals the fixed non-executable manifest, duplicates measured runtime
 and helper handles, and retains the original sealed worker image and supervisor
@@ -90,8 +91,11 @@ different credential pair or drops an unknown unit.
 Before returning SnapshotEvidence, capture reconstructs patch anchors from
 verified plain blobs. It shares the same packet validation used for restoring
 an admitted job, without inventing a job or running host Git. Restore matches
-the exact admitted packet, snapshot, release and runtime, rechecks the durable
-physical-stop journal and reopens the bounded archive into sealed blobs. A
+the exact admitted packet and snapshot, rechecks the retained attempt's original
+release/runtime binding across both durable journals and reopens the bounded
+archive into sealed blobs. New capture assets do not replace an older attempt's
+provenance. The controller qualifies the job's admitting release before Restore,
+including after an upgrade; a revoked release exposes no restored source. A
 canonical protected stopped receipt remains valid after systemd collects the
 unit and cgroup; an unfinished stop still needs independent live proof. There
 is no network refetch, host Git parser, recapture or label-based fallback.
@@ -127,9 +131,10 @@ The polling controller releases both on success and failure, using a bounded
 uncanceled cleanup context. Closing the factory refuses while either consumer
 remains. A caller outside polling must perform the same releases.
 
-Before work and after consumer release, retention calls SQLite's existing Prune
-and reads the remaining immutable jobs. Pending captures, active job evidence,
-every retained job and every unaccepted acquisition keep their source. An
+During ordinary polling, before work and after consumer release, retention calls
+SQLite's existing Prune and reads the remaining immutable jobs. Idle polls also
+retire expired source without requiring another review job. Pending captures,
+active job evidence, every retained job and every unaccepted acquisition keep their source. An
 expired lease alone never permits deletion. Unused sealed caches can close
 while the plain archive remains available for exact restore. Retained jobs with
 an outstanding worker lease keep their cache as well.

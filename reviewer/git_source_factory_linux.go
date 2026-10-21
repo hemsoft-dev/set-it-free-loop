@@ -289,12 +289,15 @@ func (f *gitSourceFactory) Restore(ctx context.Context, job Job) (*JobEvidence, 
 		return nil, errGitUnit
 	}
 	defer f.leave()
-	if f.closed || !f.ready || f.checkRoot() != nil || job.Validate() != nil || job.Release != f.release || job.Snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
+	if f.closed || !f.ready || f.checkRoot() != nil || job.Validate() != nil || job.Snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
 		return nil, ErrFenced
 	}
 	attempts := []string{}
 	for attempt, binding := range f.bindings {
-		if binding.Snapshot == job.Snapshot && binding.ReleaseHash == f.releaseHash && binding.RuntimeHash == Digest(f.manifest) && f.packets[attempt] == Digest(job.Packet) {
+		// Recovery authenticated this retained attempt's original release and
+		// runtime binding against both journals. Current capture assets do not
+		// replace that provenance when restoring an older immutable packet.
+		if binding.Snapshot == job.Snapshot && f.packets[attempt] == Digest(job.Packet) {
 			attempts = append(attempts, attempt)
 		}
 	}

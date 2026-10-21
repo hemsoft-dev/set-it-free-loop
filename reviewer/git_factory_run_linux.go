@@ -42,6 +42,11 @@ func gitFactoryRunPaths(directory string) bool {
 	if !filepath.IsAbs(directory) || filepath.Clean(directory) != directory || strings.ContainsRune(directory, 0) {
 		return false
 	}
+	// The unit owner imposes a stricter bootstrap endpoint limit than the
+	// kernel's sockaddr_un limit used by the two broker sockets.
+	if len(filepath.Join(directory, "bootstrap.sock")) > 100 {
+		return false
+	}
 	for _, name := range []string{"bootstrap.sock", "broker/worker.sock", "broker/git.sock"} {
 		if len(filepath.Join(directory, name)) > 107 {
 			return false

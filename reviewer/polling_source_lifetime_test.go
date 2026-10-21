@@ -67,7 +67,7 @@ func (s *pollingOwnedSource) ReleaseJob(ctx context.Context, e *JobEvidence) err
 func (s *pollingOwnedSource) PruneSource(ctx context.Context, store *Store, _ time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if ctx.Err() != nil || store != s.options.Store || len(s.pending) != 0 || len(s.active) != 0 {
+	if ctx.Err() != nil || store != s.options.Store {
 		return ErrFenced
 	}
 	s.prunes++
@@ -114,7 +114,7 @@ func TestPollingOwnedSourceReleasesAfterAdmissionAndOnFencing(t *testing.T) {
 			awaitPollWorker(t, c)
 			source.mu.Lock()
 			defer source.mu.Unlock()
-			if source.prunes != 2 || source.capturesReleased != 1 || len(source.pending) != 0 || len(source.active) != 0 {
+			if source.prunes != 3 || source.capturesReleased != 1 || len(source.pending) != 0 || len(source.active) != 0 {
 				t.Fatal("source lifetime leaked", source.prunes, source.capturesReleased, len(source.pending), len(source.active))
 			}
 			if mode == "complete" {
@@ -125,5 +125,89 @@ func TestPollingOwnedSourceReleasesAfterAdmissionAndOnFencing(t *testing.T) {
 				t.Fatal("fenced source reached review", calls.Load(), source.jobsReleased)
 			}
 		})
+	}
+}
+
+func TestPollingOwnedSourcePrunesWhileIdle(t *testing.T) {
+	old, f, calls := pollControllerFixture(t, nil)
+	options := old.options
+	// Retain an actual expired terminal job, with no worker or pending writes.
+	mustCapture(t, options.Store, nil, controlTime.Add(2*time.Minute))
+	if options.Store.RecordRequest(context.Background(), alphaScope(), f.remote.Request, true) != nil {
+		t.Fatal("retained request fixture")
+	}
+	evidence, err := options.Capture(context.Background(), f.remote.Snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := options.Store.Admit(context.Background(), alphaScope(), f.remote.Request.ID, options.Release, evidence.Packet(), controlTime.Add(3*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := options.Store.update(context.Background(), func(d *DurableState) error { d.Jobs[job.ID].State = "cancelled"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(40 * 24 * time.Hour)
+	if old.Close(context.Background()) != nil {
+		t.Fatal("old controller close")
+	}
+	source := &pollingOwnedSource{options: options, pending: map[*SnapshotEvidence]bool{}, active: map[*JobEvidence]bool{}}
+	options.Source, options.Capture, options.Restore = source, nil, nil
+	f.mu.Lock()
+	f.scopes = nil
+	f.remote.Open = false
+	f.mu.Unlock()
+	c, err := OpenPollingController(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close(context.Background())
+	for i := 0; i < 2; i++ {
+		if result, err := pollOnce(t, c); err != nil || result.Active {
+			t.Fatal("idle poll", result, err)
+		}
+		f.clock.Advance(time.Second)
+	}
+	state, err := options.Store.Snapshot(context.Background())
+	if err != nil || len(state.Jobs) != 0 {
+		t.Fatal("idle retention did not prune expired job", err)
+	}
+	source.mu.Lock()
+	defer source.mu.Unlock()
+	if source.prunes != 2 || source.capturesReleased != 0 || source.jobsReleased != 0 || calls.Load() != 0 {
+		t.Fatal("idle source retention did not run without work", source.prunes, calls.Load())
+	}
+}
+
+func TestPollingOldReleaseQualificationPrecedesRestore(t *testing.T) {
+	c, _, _ := pollControllerFixture(t, nil)
+	if result, err := pollOnce(t, c); err != nil || !result.Active {
+		t.Fatal(result, err)
+	}
+	awaitPollWorker(t, c)
+	state, err := c.options.Store.Snapshot(context.Background())
+	if err != nil || len(state.Jobs) != 1 {
+		t.Fatal("durable job fixture", err)
+	}
+	var job Job
+	for _, stored := range state.Jobs {
+		job = stored.Job
+	}
+	c.options.Release = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	oldChecks, restores := 0, 0
+	c.options.Check = func(_ context.Context, _ Enrollment, release string) error {
+		if release == job.Release {
+			oldChecks++
+			return errors.New("old release revoked")
+		}
+		return nil
+	}
+	c.options.Restore = func(context.Context, Job) (*JobEvidence, error) {
+		restores++
+		return nil, errors.New("unexpected restore")
+	}
+	work := &pollWork{scope: alphaScope(), request: 1, generation: job.Generation, snapshot: job.Snapshot, job: job.ID}
+	if bound, _, err := c.beforeWork(context.Background(), work); bound != nil || !errors.Is(err, ErrLiveBlocked) || oldChecks != 1 || restores != 0 {
+		t.Fatal("old release source exposed before qualification", bound, err, oldChecks, restores)
 	}
 }
