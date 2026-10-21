@@ -14,6 +14,7 @@ import (
 )
 
 type claudeBackend struct {
+	output      any
 	mode        string
 	mu          sync.Mutex
 	s           r.Session
@@ -104,6 +105,9 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		name = "StructuredOutput"
 		toolID = "sfl_fixture_report_1"
 		input = sourceReport(b.s)
+		if b.output != nil {
+			input = b.output
+		}
 	}
 	if b.mode == "guarded-bash" {
 		name = "Bash"

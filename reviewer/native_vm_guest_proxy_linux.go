@@ -132,7 +132,13 @@ func nativeGuestInvocation(q nativeVMRequest, base string) (Invocation, error) {
 	if err != nil {
 		return Invocation{}, ErrVMBoot
 	}
-	inv, err := (Adapter{Provider: q.Session.Identity.Provider, AuthDirectory: "/profile/" + string(q.Session.Identity.Provider), Reader: reader, SourceBridge: &SourceBridge{Program: "/sourceproxy", Directory: nativeVMSourceRoot, ReaderUID: nativeVMReaderUID}}).Invocation(q.Session, nil)
+	adapter := Adapter{Provider: q.Session.Identity.Provider, AuthDirectory: "/profile/" + string(q.Session.Identity.Provider), Reader: reader, SourceBridge: &SourceBridge{Program: "/sourceproxy", Directory: nativeVMSourceRoot, ReaderUID: nativeVMReaderUID}}
+	var inv Invocation
+	if q.Control != nil {
+		inv, err = adapter.ControlInvocation(*q.Control, nil)
+	} else {
+		inv, err = adapter.Invocation(q.Session, nil)
+	}
 	if err != nil {
 		return Invocation{}, ErrVMBoot
 	}

@@ -251,7 +251,8 @@ func claudeSourceExchange(ctx context.Context, worker Worker, inv Invocation, s 
 	if scan.Err() != nil || len(terminal) == 0 {
 		return nil, workerInvalid()
 	}
-	return normalizeNativeResult(s, terminal, worker.Wait())
+	data, err, _ := normalizeNativeTaskResult(s, inv.Control, terminal, worker.Wait())
+	return data, err
 }
 
 func claudeSourceTool(name string) bool {

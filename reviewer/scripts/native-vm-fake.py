@@ -66,7 +66,7 @@ def main():
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--provider", choices=["codex", "claude", "both"], required=True)
-    parser.add_argument("--case", choices=["source", "forbidden", "adversarial", "refresh", "refresh-uncertain", "cancel-provider", "cancel-reader", "cancel-refresh"], required=True)
+    parser.add_argument("--case", choices=["source", "forbidden", "adversarial", "self-critique", "refresh", "refresh-uncertain", "cancel-provider", "cancel-reader", "cancel-refresh"], required=True)
     parser.add_argument("--peer-rounds", type=int, choices=[1, 2], default=1)
     parser.add_argument("--go", required=True)
     parser.add_argument("--module-cache", type=Path, required=True)
@@ -110,7 +110,7 @@ def main():
     # Short private state paths preserve sockaddr_un bounds. Existing roots are
     # refused by the runner. Retain journals if stop/auth recovery is uncertain.
     state = Path("/tmp")/("sfl-nvm-"+secrets.token_hex(8))
-    config = {"Version": 1, "Purpose": "native-fake-only", "ImageSourceHead": manifest["source_commit"],
+    config = {"Version": 1, "Purpose": "native-control-fake-only" if args.case == "self-critique" else "native-fake-only", "ImageSourceHead": manifest["source_commit"],
               "Root": str(state), "Provider": "" if args.provider == "both" else args.provider,
               "Negative": args.case == "forbidden", "Refresh": args.case == "refresh", "UncertainRefresh": args.case == "refresh-uncertain",
               "Cancellation": args.case.removeprefix("cancel-") if args.case.startswith("cancel-") else "",
@@ -134,7 +134,7 @@ def main():
         try:
             result = subprocess.run([str(program), "--run-fake-only", str(configuration)],
                                     env=environment, stdout=log, stderr=subprocess.STDOUT,
-                                    timeout=225 if args.case == "refresh" else 125 if args.case != "adversarial" else 2*(1+args.peer_rounds)*100+25)
+                                    timeout=425 if args.case == "self-critique" else 225 if args.case == "refresh" else 125 if args.case != "adversarial" else 2*(1+args.peer_rounds)*100+25)
             exit_code = result.returncode
         except subprocess.TimeoutExpired:
             timed_out = True

@@ -14,6 +14,7 @@ import (
 )
 
 type codexBackend struct {
+	output                                           any
 	metadataRoutes                                   map[string]int
 	logHTTP                                          func(any)
 	mu                                               sync.Mutex
@@ -288,7 +289,10 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		}
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "custom_tool_call", "call_id": id, "namespace": "functions", "name": "exec", "input": program}})
 	} else {
-		report := sourceReport(b.session)
+		var report any = sourceReport(b.session)
+		if b.output != nil {
+			report = b.output
+		}
 		data, _ := json.Marshal(report)
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "message", "role": "assistant", "id": "msg_fixture", "content": []map[string]string{{"type": "output_text", "text": string(data)}}}})
 	}

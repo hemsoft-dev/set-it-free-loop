@@ -23,6 +23,9 @@ import (
 )
 
 func (c config) validCase() bool {
+	if c.Purpose == "native-control-fake-only" {
+		return c.Provider.Valid() && !c.Negative && !c.Refresh && !c.UncertainRefresh && c.Cancellation == "" && c.ProtocolRounds == 0
+	}
 	if c.ProtocolRounds == 0 {
 		modes := 0
 		for _, enabled := range []bool{c.Refresh, c.Negative, c.UncertainRefresh, c.Cancellation != ""} {
