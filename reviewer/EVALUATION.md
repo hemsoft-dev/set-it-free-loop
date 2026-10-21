@@ -2,12 +2,16 @@
 
 The score harness and self-critique control are offline code for
 [#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177).
-No live benchmark or pilot has run. Candidate selection predates evaluation and
-contains 20 historical PR head/base snapshots. The
-[retained source audit](testdata/evaluation/README.md) now supports 14 clean and 6 defect labels, with none unlabeled. The corpus
-remains a draft because candidate #156 exceeds the reader inventory cap.
-Selection alone was not ground truth or proof that ten cases were clean.
-Synthetic tests check arithmetic and failure behavior only.
+No live benchmark or pilot has run. The [retained source audit](testdata/evaluation/README.md)
+supports 14 clean and 6 defect labels for the original twenty candidates, with
+none unlabeled. A separately frozen twenty-case benchmark retains nineteen of
+those labels and adds independently researched #148; oversized #156 keeps its
+clean label outside evaluation. `selection.json` records the decision. The
+selected corpus has 14 clean controls and 6 defect cases, with immutable packets,
+source-object retention and reproducible hash/restoration checks. Historical
+model exposure is unknown; tooling qualification and normal PR reviews can
+expose these cases. Synthetic tests and fixture validation are not model-quality
+results. The plan, live comparative evaluation and pilot remain separate gates.
 
 Agents may create and revise corpus labels and post-run actionability labels.
 Every label records its actual agent, provider, model, session, timestamp,

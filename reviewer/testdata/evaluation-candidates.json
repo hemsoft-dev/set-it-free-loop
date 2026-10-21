@@ -1,5 +1,5 @@
 {
-  "status": "evidence-labeled-v2-corpus-unfrozen",
+  "status": "original-set-labeled-bounded-benchmark-frozen",
   "repository_id": 1169772257,
   "selected_at": "2026-10-19T05:57:49.029947+00:00",
   "selection": "20 merged pre-alpha PRs retained from the original seed manifest, in its existing order; selection was made before alpha provider runs or tuning and was not a complete merge-chronological sample",
@@ -1418,5 +1418,8 @@
   ],
   "labelled_at": "2026-10-21T00:26:50.955189+00:00",
   "labels": "evaluation/labels.json",
-  "freeze_blocker": "Candidate #156 changes 335 paths, exceeding the unchanged 128-path trusted reader limit. labels.json is a draft EvaluationCorpus with empty packet hashes, not a frozen/scorable corpus."
+  "original_set_freeze_blocker": "Candidate #156 changes 335 paths, exceeding the unchanged 128-path trusted reader limit. labels.json is a draft EvaluationCorpus with empty packet hashes, not a frozen/scorable corpus.",
+  "bounded_corpus": "evaluation/frozen/corpus.json",
+  "evaluation_selection": "evaluation/selection.json",
+  "supplemental_labels": "evaluation/replacement-148.json"
 }

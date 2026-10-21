@@ -1,4 +1,46 @@
-# Evidence-backed historical labels
+# Evidence-backed historical labels and frozen corpus
+
+The selected benchmark corpus is frozen in `frozen/corpus.json`, with 20 exact
+Git-produced packets and the existing `EvaluationCorpus.Hash()` receipt in
+`frozen/corpus.sha256`:
+
+```text
+807196990ee0adda9c8a2f87b0c9b6a5819baf886fa4196b58f6b102d7ea4910
+```
+
+| Record | Clean | Defect | Unlabeled |
+| --- | ---: | ---: | ---: |
+| Original twenty candidates | 14 | 6 | 0 |
+| Supplemental candidate #148 | 1 | 0 | 0 |
+| All twenty-one labels | 15 | 6 | 0 |
+| Selected twenty-case benchmark | 14 | 6 | 0 |
+
+`selection.json` records every selected PR and the eligibility decision. Original
+[#156](https://github.com/hemsoft-dev/set-it-free-loop/pull/156) keeps its clean
+label outside the benchmark because its 335 changed paths exceed the unchanged
+128-path cap. The replacement is [#148](https://github.com/hemsoft-dev/set-it-free-loop/pull/148),
+the first omitted merged pre-alpha PR by descending actual merge chronology
+whose complete inventory fits that cap. This choice preceded its label research.
+It has 86 paths and a 37,417-byte packet with 85 explicit omissions. Independent
+source inspection supports its observationally clean label, retained in
+`replacement-148.json` and `replacement-source-audit.json`. Root independently
+verified fourteen unchanged helper functions against the source cutoff.
+
+All original twenty labels and immutable snapshots remain in `labels.json` and
+the seed manifest. The frozen selection contains nineteen unchanged original
+labels plus the supplemental label. No count was forced and no cap was raised.
+The corpus was first captured with source `c43606f`, then reproduced byte-for-byte
+with merged, reviewed source `11f11c7`. Frozen timestamps and hashes are retained.
+This qualifies packet integrity and source restoration; no benchmark inference,
+evaluation plan, trusted-release promotion, App activation or pilot result exists.
+
+Selection predates alpha provider runs and model/prompt tuning. Historical model
+and maintainer exposure is unknown, and normal reviews of these fixture changes
+can expose the cases and labels to reviewers. Source was inspected to qualify
+tooling. The correlated legacy gate changes and limited runtime exposure weaken
+any later quality inference. Report these limits alongside future results.
+
+## Original labels and independent source evidence
 
 These 20 candidates have **14 clean labels, 6 defect labels, and 0 unlabeled
 cases**. Labels were recorded October 20, 2026 at 8:26 PM EDT by `/root`, OpenAI
@@ -20,20 +62,20 @@ label evidence. Source that handles reviews was inspected as code. Its fake
 regressions are independent behavioral evidence. A review may have motivated a
 later fix; the labels cite the actual corrective source and reproduced behavior.
 
-## Corpus status
+## Original seed status
 
-`labels.json` is a **draft** `EvaluationCorpus` v2. Its labels pass
-`ValidateLabels`; packet hashes remain empty and packet sizes zero. It is not
+`labels.json` retains the original set as a **draft** `EvaluationCorpus` v2.
+Its labels pass `ValidateLabels`; packet hashes remain empty and packet sizes zero. It is not
 scorable and has no corpus hash or frozen plan. The `FrozenAt` field supplies the
 label-validation cutoff only until successful materialization. The full corpus
 validator continues to reject it.
 
 The real evidence producer cannot currently materialize candidate
 [#156](https://github.com/hemsoft-dev/set-it-free-loop/pull/156): its 335 changed
-paths exceed the existing 128-path inventory cap. No candidate was dropped or
-replaced, and no limit was increased. Complete corpus freeze still requires a
-supported case-selection or bounded-reader solution. This packet limitation
-leaves no case *unlabeled*. It leaves the evaluation corpus unfrozen.
+paths exceed the existing 128-path inventory cap. All original labels are
+retained. This original-only draft remains unmaterialized; the separately
+frozen bounded selection above addresses that packet limit. The limit does
+not leave any original case unlabeled.
 
 The freeze attempt also reproduced a packet-budget bug on
 [#171](https://github.com/hemsoft-dev/set-it-free-loop/pull/171): late omission
@@ -124,41 +166,59 @@ They are source-behavior evidence, not reviewer quality measurements.
 
 ## Reproduce validation and the freeze attempt
 
-Prerequisites are the declared Go toolchain, Python 3, Node.js, and Git 2.46+
-with `--no-lazy-fetch` support for replay and Git-backed packet capture. This
+Prerequisites are the declared Go toolchain, Python 3, a full local clone
+containing base commit `5dc0aa4`, and Git 2.46+ with `--no-lazy-fetch` support.
+Node.js is also required for the separate defect-source probes. The no-fetch
 flag is part of [Git 2.46's primary documentation](https://github.com/git/git/blob/v2.46.0/Documentation/git.txt).
-Replay checks support before reading aliases or Git objects and exits with an
-explicit requirement on an older build. It never drops the flag or falls back
-to an older Git's possibly ignored environment-only no-fetch setting. The
-qualified local run uses Git 2.53.0. A normal full-history clone still needs
-that declared Git capability.
+Replay checks the capability before object reads and fails clearly on an older
+build. It never drops the flag. Qualified local runs use Git 2.53.0.
 
 From the repository root:
 
 ```sh
 python3 reviewer/testdata/evaluation/test-replay-preflight.py
 python3 reviewer/testdata/evaluation/replay-defects.py
-go -C reviewer test -run 'TestRetainedEvaluationLabels|TestAgent|TestSnapshotEvidenceBudgetsCoverage' ./...
+go -C reviewer test -race -count=1 -run 'TestFrozenEvaluation|TestRetainedEvaluationLabels|TestAgent' .
 git_dir=$(git rev-parse --path-format=absolute --git-common-dir)
 output_parent=$(mktemp -d)
-go -C reviewer run ./testdata/evaluation/freeze "$git_dir" testdata/evaluation/labels.json "$output_parent/corpus"
+python3 reviewer/testdata/evaluation/prepare-source.py --source-git-dir "$git_dir" --output-dir "$output_parent/source.git"
+go -C reviewer run ./testdata/evaluation/verify "$output_parent/source.git" testdata/evaluation
+go -C reviewer run ./testdata/evaluation/freeze "$output_parent/source.git" testdata/evaluation/frozen/corpus.json "$output_parent/recaptured"
 ```
 
-The final command uses `CaptureSnapshotEvidence` against existing immutable Git
-objects, with no checkout, hooks, external diff/textconv, fetch, credentials or
-model execution. It currently fails at `pr-156` with the inventory-limit error.
-It creates no output directory until **every** case materializes and the entire
-corpus validates. After supported materialization, it writes exact packet bytes,
-`corpus.json`, and `corpus.sha256` from the existing `EvaluationCorpus.Hash()`.
-A new output directory prevents overwriting frozen artifacts. Original PR
-head objects must already be present in that trusted store; a normal clone
-of main may lack them. This command never fetches or changes the original
-snapshots. If those objects are missing, it fails before the local inventory
-limit described above. Qualified object acquisition is a separate prerequisite.
+Source preparation verifies the 219,921-byte bundle's SHA-256, its exact declared
+21 heads and the local base prerequisite. It creates a new private bare store,
+imports base history from the explicitly trusted local Git directory, then
+imports the local bundle. Only file transport is enabled; submodule recursion
+and hooks are disabled. It never changes the supplied source or contacts a
+network remote. `source-objects.json` binds refs to retained label provenance.
+The original heads and their ancestor objects are retained so garbage collection
+or a normal main-only clone cannot erase the fixture's source prerequisite.
+A full-history clone missing the original 21 heads reproduced all 22 frozen files
+after this offline import. The reader/verifier itself performs no fetch.
 
-Before a real freeze, recheck held-out eligibility and update the draft's cutoff
-time after all labels. Freeze that complete corpus first, then freeze a separate
-`EvaluationPlan` with its corpus hash, trusted release/config and later creation
-time. Any revised label or owner override retains its prior label and creates
-a new hash and plan. No plan, provider run, trusted-release promotion, App
-installation or activation is supplied by these labels.
+The Go verifier checks the corpus and packet hashes, restores each admitted
+packet to its bounded Git-backed source capability, preserves every original
+omission, and reproduces exact packet bytes using `CaptureSnapshotEvidence`.
+It neither admits the representative job nor runs providers. Tests also corrupt
+the source bundle and prove rejection before an output store is created.
+
+The original-only draft still reproduces its inventory refusal when pointed
+at that provisioned store:
+
+```sh
+go -C reviewer run ./testdata/evaluation/freeze "$output_parent/source.git" testdata/evaluation/labels.json "$output_parent/original-only"
+```
+
+That command fails at `pr-156` and creates no corpus output directory. The
+selected corpus does not weaken the original 20-case, ten-clean, material-defect,
+64 KiB packet or 128-path requirements. A new output directory prevents overwriting
+frozen artifacts. Corpus digests use the existing Go serialization contract,
+not the SHA-256 of pretty-printed JSON bytes.
+
+Freeze a separate `EvaluationPlan` only after the corpus, with this corpus hash,
+a separately qualified trusted release/config and later creation time. Every
+label revision or Franz override retains its earlier label and changes the hash
+and plan. Applicable provider/account, installation, isolation and explicit
+activation gates still precede live evaluation. No comparative score or pilot
+completion can be inferred from fixture validation.

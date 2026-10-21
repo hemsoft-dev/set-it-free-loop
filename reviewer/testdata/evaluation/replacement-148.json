@@ -1,0 +1,83 @@
+{
+  "PacketHash": "",
+  "SerializedPacketBytes": 0,
+  "ID": "pr-148",
+  "Snapshot": {
+    "repository_id": 1169772257,
+    "head_repository_id": 1169772257,
+    "pr": 148,
+    "head": "a35ecf858a2945f3538d25c023efcf2c2464961d",
+    "base": "197e0d2d7af1b60647e80148a9cfd75f81c95c16",
+    "merge_base": "197e0d2d7af1b60647e80148a9cfd75f81c95c16"
+  },
+  "MergedAt": "2026-10-08T04:40:52Z",
+  "Label": {
+    "Clean": true,
+    "Rationale": "No later corrective Git change to the candidate introduced validator behavior found in seven-calendar-day history or through immutable cutoff. Fourteen introduced/modified helper functions remain text-identical; later central validator changes introduce separate wider-pilot qualification or preserve historical evidence during intentional retirement. This is bounded negative Git evidence, not proof of absence of defects or complete receipt audit.",
+    "Provenance": {
+      "Labeler": {
+        "Kind": "agent",
+        "Agent": "/root",
+        "Provider": "OpenAI",
+        "Model": "gpt-6.1-sol",
+        "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+        "HumanID": 0
+      },
+      "At": "2026-10-21T00:50:43.620931+00:00",
+      "Evidence": [
+        {
+          "Kind": "history",
+          "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+          "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+          "Description": "No later corrective Git change to the candidate introduced validator behavior found in seven-calendar-day history or through immutable cutoff. Fourteen introduced/modified helper functions remain text-identical; later central validator changes introduce separate wider-pilot qualification or preserve historical evidence during intentional retirement. This is bounded negative Git evidence, not proof of absence of defects or complete receipt audit.",
+          "At": "2026-10-20T19:59:18-04:00",
+          "Lines": [
+            {
+              "Revision": "a35ecf858a2945f3538d25c023efcf2c2464961d",
+              "Path": "deployment/scripts/validate-org-rollout.py",
+              "Start": 460,
+              "End": 502
+            },
+            {
+              "Revision": "a35ecf858a2945f3538d25c023efcf2c2464961d",
+              "Path": "deployment/scripts/validate-org-rollout.py",
+              "Start": 513,
+              "End": 545
+            },
+            {
+              "Revision": "a35ecf858a2945f3538d25c023efcf2c2464961d",
+              "Path": "deployment/scripts/validate-org-rollout.py",
+              "Start": 548,
+              "End": 578
+            },
+            {
+              "Revision": "a35ecf858a2945f3538d25c023efcf2c2464961d",
+              "Path": "deployment/scripts/validate-org-rollout.py",
+              "Start": 1666,
+              "End": 1743
+            }
+          ]
+        }
+      ],
+      "Supersedes": "",
+      "OwnerOverride": false
+    },
+    "Survival": [
+      {
+        "Days": 7,
+        "From": "2026-10-08T04:40:52Z",
+        "Through": "2026-10-15T04:40:52+00:00",
+        "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+        "Searches": [
+          "Choose first omitted pre-alpha PR by descending merge chronology with complete inventory <=128 paths, before inspecting its label outcome",
+          "git diff 197e0d2d7af1b60647e80148a9cfd75f81c95c16 a35ecf858a2945f3538d25c023efcf2c2464961d; inspect changed executable validators and synthetic tests; enumerate all86changed paths",
+          "git log --first-parent 6f631ec574f87f126f8b02030f180055fb4023ed..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all86changedpaths>; inspect causal corrections within7days and throughcutoff; independently compare introduced functions with immutable cutoff",
+          "Complete retained issue-metadata catalog74issues: number/title/date/labels only, no matching later validator regression; exclude bodies, comments and review fields"
+        ],
+        "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases. Large historical receipt blobs excluded from label evidence because they may embed reviewer outputs. Actual source packet has85explicit omissions; no full-diff visibility is claimed."
+      }
+    ],
+    "Defects": []
+  },
+  "LabelHistory": []
+}
