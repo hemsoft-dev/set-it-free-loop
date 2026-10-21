@@ -590,3 +590,55 @@ func TestGitHubInstallationJournalCaseAliasCannotRetireUnknownState(t *testing.T
 		t.Fatal("ambiguous state field escaped the durable latch", f.calls)
 	}
 }
+
+func TestGitHubInstallationJournalRetentionRefusesMismatchedRowIdentity(t *testing.T) {
+	j, store, _ := installationJournalFixture(t)
+	tx, err := store.db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	records := []GitHubInstallationAttempt{}
+	for i := 1; i <= 3; i++ {
+		record := GitHubInstallationAttempt{Version: 1, ID: fmt.Sprintf("%032x", i), Enrollment: alphaEnrollment(), Role: GitHubReader, State: "qualified", StartedAt: controlTime, UpdatedAt: controlTime, MintAttempted: true, Receipt: &GitHubInstallationReceipt{alphaEnrollment(), GitHubReader, controlTime, controlTime.Add(time.Hour)}}
+		if i == 1 {
+			record.State = "unknown"
+			record.Receipt = nil
+		}
+		if err := j.write(context.Background(), tx, record, true); err != nil {
+			tx.Rollback()
+			t.Fatal(err)
+		}
+		records = append(records, record)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	// A malformed terminal row points at a different unresolved attempt. Its
+	// JSON identity must never choose the row deleted by retention.
+	corrupt := records[1]
+	corrupt.ID = records[0].ID
+	raw, err := json.Marshal(corrupt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec("UPDATE github_installation_attempts SET record=? WHERE attempt=?", raw, records[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	later := controlTime.Add(8 * 24 * time.Hour)
+	j.now = func() time.Time { return later }
+	f, o := installationHTTPFixture(t, GitHubReader)
+	f.mutate = func(path string, doc map[string]any) {
+		if strings.HasSuffix(path, "/access_tokens") {
+			doc["expires_at"] = later.Add(time.Hour)
+		}
+	}
+	got, err := j.Acquire(context.Background(), o)
+	if got != nil {
+		got.Close()
+	}
+	var preserved int
+	readErr := store.db.QueryRow("SELECT count(*) FROM github_installation_attempts WHERE attempt=?", records[0].ID).Scan(&preserved)
+	if got != nil || !errors.Is(err, ErrGitHubInstallationRecovery) || f.calls != 0 || readErr != nil || preserved != 1 {
+		t.Fatal("mismatched terminal row retired unresolved evidence", f.calls, preserved)
+	}
+}

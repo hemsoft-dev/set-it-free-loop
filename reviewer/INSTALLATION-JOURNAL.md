@@ -66,7 +66,8 @@ at most 4 KiB; reads enforce the same bound before materializing a stored value.
 
 At most 1,024 records are retained. A new attempt prunes terminal history older
 than seven days, keeping each role's latest record and every unresolved attempt.
-A full or malformed journal refuses new HTTP work. These records live in a
+Retention validates every record against its stored row role and attempt ID
+before selecting deletions. A full or malformed journal refuses new HTTP work. These records live in a
 separate table, so ordinary legacy `Store` state writes cannot erase them.
 
 ## Offline evidence and remaining integration

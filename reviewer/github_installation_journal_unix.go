@@ -259,7 +259,7 @@ func (j *GitHubInstallationJournal) write(ctx context.Context, tx *sql.Tx, recor
 // Retain at least seven days of terminal history, every unresolved attempt and
 // the latest record for each role. Excess attempts fail before any HTTP work.
 func (j *GitHubInstallationJournal) prune(ctx context.Context, tx *sql.Tx, now time.Time) error {
-	rows, err := tx.QueryContext(ctx, "SELECT CASE WHEN length(record)<=4096 THEN record ELSE NULL END FROM github_installation_attempts ORDER BY sequence DESC LIMIT 1025")
+	rows, err := tx.QueryContext(ctx, "SELECT role,attempt,CASE WHEN length(record)<=4096 THEN record ELSE NULL END FROM github_installation_attempts ORDER BY sequence DESC LIMIT 1025")
 	if err != nil {
 		return ErrGitHubInstallationRecovery
 	}
@@ -269,12 +269,14 @@ func (j *GitHubInstallationJournal) prune(ctx context.Context, tx *sql.Tx, now t
 	for rows.Next() {
 		count++
 		var raw []byte
-		if rows.Scan(&raw) != nil {
+		var role GitHubCredentialRole
+		var id string
+		if rows.Scan(&role, &id, &raw) != nil {
 			rows.Close()
 			return ErrGitHubInstallationRecovery
 		}
 		record, err := decodeGitHubInstallationAttempt(raw)
-		if err != nil || !record.valid(j.enrollment, record.Role) {
+		if err != nil || record.ID != id || !record.valid(j.enrollment, role) {
 			rows.Close()
 			return ErrGitHubInstallationRecovery
 		}
