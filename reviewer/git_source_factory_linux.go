@@ -193,7 +193,7 @@ func (f *gitSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*Sna
 		return nil, errGitUnit
 	}
 	defer f.leave()
-	if f.closed || !f.ready || f.checkRoot() != nil || snapshot.Validate() != nil || snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
+	if f.closed || !f.ready || f.checkRoot() != nil || snapshot.Validate() != nil || snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID || f.credentials.Ready(ctx) != nil {
 		return nil, errGitUnit
 	}
 	var nonce [16]byte
@@ -259,7 +259,7 @@ func (f *gitSourceFactory) Restore(ctx context.Context, job Job) (*JobEvidence, 
 	binding := f.bindings[attempt]
 	// Revalidate the durable physical-stop journal before using retained source.
 	// There is no network, recapture, Git parser or earlier-label fallback here.
-	if f.unit.stop(ctx, binding) != nil {
+	if f.unit.confirmFactoryStop(ctx, binding) != nil {
 		return nil, ErrFenced
 	}
 	m := f.materialized[attempt]

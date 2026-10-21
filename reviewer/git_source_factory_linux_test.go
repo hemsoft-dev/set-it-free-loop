@@ -38,8 +38,27 @@ func TestGitSourceFactoryStartupPrecedesCredentialWork(t *testing.T) {
 	if r.stop(context.Background()) != nil || r.close() != nil {
 		t.Fatal("prepared fixture cleanup")
 	}
-	if evidence, err := factory.Capture(context.Background(), testSnapshot()); err == nil || evidence != nil {
-		t.Fatal("unready credentials created source")
+	f.owner.enter(context.Background())
+	before, beforeErr := f.owner.records()
+	f.owner.leave()
+	if beforeErr != nil {
+		t.Fatal(beforeErr)
+	}
+	beforePaths, pathErr := os.ReadDir(factory.directory)
+	if pathErr != nil {
+		t.Fatal(pathErr)
+	}
+	for i := 0; i < 130; i++ {
+		if evidence, err := factory.Capture(context.Background(), testSnapshot()); err == nil || evidence != nil {
+			t.Fatal("unready credentials created source")
+		}
+	}
+	f.owner.enter(context.Background())
+	after, afterErr := f.owner.records()
+	f.owner.leave()
+	afterPaths, pathErr := os.ReadDir(factory.directory)
+	if afterErr != nil || pathErr != nil || len(before) != len(after) || len(beforePaths) != len(afterPaths) {
+		t.Fatalf("unready captures consumed durable slots/directories: %d/%d -> %d/%d", len(before), len(beforePaths), len(after), len(afterPaths))
 	}
 	if signs.Load() != 0 || f.manager.starts != 0 {
 		t.Fatal("unready capture refreshed credentials or launched a unit")
@@ -104,6 +123,14 @@ func TestGitSourceFactoryRestoresAdmittedPacketWithoutHostGit(t *testing.T) {
 	if err != nil {
 		t.Fatal("new startup owner", err)
 	}
+	// A durable terminal receipt survives collection of the transient unit and
+	// its old cgroup. Restart and later Restore must not require them again.
+	f.manager.mu.Lock()
+	f.manager.observeErr = errors.New("fake NoSuchUnit after collection")
+	f.manager.mu.Unlock()
+	f.manager.kernel.mu.Lock()
+	f.manager.kernel.changed = true
+	f.manager.kernel.mu.Unlock()
 	owner, _, _, _, signs := credentialOwnerFixture(t)
 	factory, err := newGitSourceFactory(context.Background(), owner, reopened, r.archive, runtime, helper, r.manifest, testJob().Release, r.binding.ReleaseHash, gitFactoryWorkRoot(t))
 	if err != nil {

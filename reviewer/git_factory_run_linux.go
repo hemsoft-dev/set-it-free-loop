@@ -406,7 +406,7 @@ func (r *gitFactoryRun) stop(ctx context.Context) error {
 	// there was no broker work to retain; a missing return never does.
 	brokerStopped := brokerDone == nil || r.brokerAudit.Version == 1 && (r.brokerAudit.Stopped || r.brokerAudit.Connections == 0 && r.brokerAudit.Requests == 0)
 	r.mu.Unlock()
-	if !brokerStopped || r.unit.stop(ctx, r.binding) != nil || ctx.Err() != nil {
+	if !brokerStopped || r.unit.confirmFactoryStop(ctx, r.binding) != nil || ctx.Err() != nil {
 		return errGitUnit
 	}
 	r.mu.Lock()

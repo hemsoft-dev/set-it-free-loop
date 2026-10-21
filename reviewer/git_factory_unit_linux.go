@@ -13,6 +13,29 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// A canonical protected stopped receipt is permanent: start and grant cannot
+// re-arm that nonce. Reopening must not require systemd's collected unit or its
+// old cgroup to still exist. Nonterminal records still need the full live stop.
+func (o *gitUnitOwner) confirmFactoryStop(ctx context.Context, binding gitMaterializationBinding) error {
+	if ctx == nil || !binding.valid() || !o.enter(ctx) {
+		return errGitUnit
+	}
+	if o.closed || ctx.Err() != nil {
+		o.leave()
+		return errGitUnit
+	}
+	r, err := o.read(binding.Attempt)
+	terminal := err == nil && r.Binding == binding && r.Stopped && r.Revoked && ctx.Err() == nil
+	o.leave()
+	if terminal {
+		return nil
+	}
+	if err != nil {
+		return errGitUnit
+	}
+	return o.stop(ctx, binding)
+}
+
 // Keep these checks under the unit owner's operation lock. They confer no
 // serialized qualification and do not arm or replay a grant after recovery.
 func (o *gitUnitOwner) factoryUnit(ctx context.Context, binding gitMaterializationBinding) (gitUnitRecord, error) {

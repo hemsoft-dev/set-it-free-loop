@@ -14,7 +14,7 @@ import (
 // removing the bounded payload, so interruption never makes a missing archive
 // record look like permission to recapture the spent attempt.
 func (a *gitExportArchive) discardStoppedIntake(ctx context.Context, unit *gitUnitOwner, binding gitMaterializationBinding) error {
-	if ctx == nil || unit == nil || !binding.valid() || unit.stop(ctx, binding) != nil {
+	if ctx == nil || unit == nil || !binding.valid() || unit.confirmFactoryStop(ctx, binding) != nil {
 		return errGitExportArchive
 	}
 	if !a.enter(ctx) {
@@ -82,7 +82,7 @@ func recoverGitFactory(ctx context.Context, unit *gitUnitOwner, archive *gitExpo
 	}
 	byAttempt := map[string]gitUnitRecord{}
 	for _, record := range records {
-		if unit.stop(ctx, record.Binding) != nil {
+		if unit.confirmFactoryStop(ctx, record.Binding) != nil {
 			return nil, errGitUnit
 		}
 		byAttempt[record.Binding.Attempt] = record
