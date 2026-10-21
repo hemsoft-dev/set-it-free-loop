@@ -18,11 +18,13 @@ import (
 const gitMountInfoBytes = 64 << 10
 
 type gitMountRow struct {
-	ID, Parent     uint64
-	Device         uint64
-	Root, Point    string
-	Filesystem     string
-	Options, Super map[string]bool
+	ID, Parent                uint64
+	Device                    uint64
+	Root, Point               string
+	Filesystem                string
+	Options, Super            map[string]bool
+	Shared, Master, Propagate uint64
+	Unbindable                bool
 }
 
 func gitMountPath(raw string) (string, error) {
@@ -77,7 +79,7 @@ func parseGitMountTable(raw []byte) (map[string]gitMountRow, error) {
 	for _, line := range strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n") {
 		left, right, found := strings.Cut(line, " - ")
 		a, b := strings.Fields(left), strings.Fields(right)
-		if !found || len(a) < 6 || len(a) > 7 || len(b) != 3 || len(rows) >= 32 || len(a) == 7 && a[6] != "unbindable" {
+		if !found || len(a) < 6 || len(a) > 10 || len(b) != 3 || len(rows) >= 32 {
 			return nil, errGitUnit
 		}
 		id, e1 := strconv.ParseUint(a[0], 10, 64)
@@ -95,7 +97,37 @@ func parseGitMountTable(raw []byte) (map[string]gitMountRow, error) {
 		if e1 != nil || e2 != nil || e3 != nil || e4 != nil || e5 != nil || e6 != nil || rows[point].ID != 0 || b[0] == "" {
 			return nil, errGitUnit
 		}
-		rows[point] = gitMountRow{id, parent, unix.Mkdev(uint32(major), uint32(minor)), root, point, b[0], options, super}
+		row := gitMountRow{ID: id, Parent: parent, Device: unix.Mkdev(uint32(major), uint32(minor)), Root: root, Point: point, Filesystem: b[0], Options: options, Super: super}
+		seen := map[string]bool{}
+		for _, field := range a[6:] {
+			key, value, found := strings.Cut(field, ":")
+			if seen[key] {
+				return nil, errGitUnit
+			}
+			seen[key] = true
+			if key == "unbindable" && !found {
+				row.Unbindable = true
+				continue
+			}
+			valueID, err := strconv.ParseUint(value, 10, 64)
+			if !found || err != nil || valueID == 0 {
+				return nil, errGitUnit
+			}
+			switch key {
+			case "shared":
+				row.Shared = valueID
+			case "master":
+				row.Master = valueID
+			case "propagate_from":
+				row.Propagate = valueID
+			default:
+				return nil, errGitUnit
+			}
+		}
+		if row.Unbindable && (row.Shared != 0 || row.Master != 0 || row.Propagate != 0) || row.Propagate != 0 && row.Master == 0 {
+			return nil, errGitUnit
+		}
+		rows[point] = row
 		ids[id] = true
 	}
 	return rows, nil
@@ -108,7 +140,7 @@ func validateGitMountLayout(rows map[string]gitMountRow, binding gitMaterializat
 	root := rows["/"]
 	wanted := map[string]bool{"/": true, "/broker": true, "/work": true, "/tmp": true, "/proc": true, "/dev/null": true, "/dev/urandom": true}
 	for point, row := range rows {
-		if !wanted[point] || point != "/" && row.Parent != root.ID {
+		if !wanted[point] || point != "/" && row.Parent != root.ID || row.Shared != 0 {
 			return errGitUnit
 		}
 		if point == "/" || point == "/broker" || point == "/proc" || point == "/dev/urandom" {

@@ -3,12 +3,17 @@
 package reviewer
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -34,7 +39,12 @@ func TestGitMountTableFixedLayoutAndRefusals(t *testing.T) {
 	if err != nil || len(rows) != 7 || validateGitMountLayout(rows, binding) != nil || rows["/work"].Device != unix.Mkdev(0, 42) {
 		t.Fatal("fixed mount policy", err)
 	}
-	for _, kind := range []string{"extra", "missing", "duplicate-point", "duplicate-id", "propagation", "root-writable", "broker-writable", "proc-writable", "wrong-proc", "random-writable", "wrong-parent", "different-alias", "different-device", "noexec", "nosuid", "nodev", "noswap", "fake-noswap", "duplicate-option", "conflicting-flags", "bad-escape", "trailing", "nul", "bounds"} {
+	slave := strings.Replace(raw, "ro,relatime -", "ro,relatime master:9 propagate_from:8 -", 1)
+	rows, err = parseGitMountTable([]byte(slave))
+	if err != nil || rows["/"].Master != 9 || rows["/"].Propagate != 8 || validateGitMountLayout(rows, binding) != nil {
+		t.Fatal("kernel slave propagation fields were confused with shared propagation", err)
+	}
+	for _, kind := range []string{"extra", "missing", "duplicate-point", "duplicate-id", "propagation", "duplicate-master", "unknown-propagation", "invalid-propagation", "root-writable", "broker-writable", "proc-writable", "wrong-proc", "random-writable", "wrong-parent", "different-alias", "different-device", "noexec", "nosuid", "nodev", "noswap", "fake-noswap", "duplicate-option", "conflicting-flags", "bad-escape", "trailing", "nul", "bounds"} {
 		t.Run(kind, func(t *testing.T) {
 			bad := raw
 			switch kind {
@@ -48,6 +58,12 @@ func TestGitMountTableFixedLayoutAndRefusals(t *testing.T) {
 				bad = strings.Replace(raw, "103 100", "102 100", 1)
 			case "propagation":
 				bad = strings.Replace(raw, "ro,relatime -", "ro,relatime shared:9 -", 1)
+			case "duplicate-master":
+				bad = strings.Replace(raw, "ro,relatime -", "ro,relatime master:9 master:8 -", 1)
+			case "unknown-propagation":
+				bad = strings.Replace(raw, "ro,relatime -", "ro,relatime unknown:9 -", 1)
+			case "invalid-propagation":
+				bad = strings.Replace(raw, "ro,relatime -", "ro,relatime propagate_from:9 -", 1)
 			case "root-writable":
 				bad = strings.Replace(raw, "/ ro,relatime", "/ rw,relatime", 1)
 			case "broker-writable":
@@ -152,4 +168,209 @@ func TestGitMountReadUsesOriginalLivePIDFD(t *testing.T) {
 	if raw, err := gitReadMountInfo(context.Background(), identity, int(pidfd.Fd())); err == nil || raw != nil {
 		t.Fatal("dead original process retained mount authority")
 	}
+}
+
+func TestGitMountNamespaceChild(t *testing.T) {
+	if os.Getenv("SFL_GIT_MOUNT_CHILD") != "1" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	conn, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{Name: "/broker/worker.sock", Net: "unixpacket"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0) != nil || writeGitControlPacket(ctx, conn, []byte("ready"), nil) != nil {
+		t.Fatal("inert mount readiness")
+	}
+	packet, files, err := readGitControlPacket(ctx, conn, 0)
+	closeVMFiles(files)
+	if err != nil || string(packet) != "finish" {
+		t.Fatal("inert mount completion", err)
+	}
+	os.Exit(0)
+}
+
+func gitMountInertRuntime(t *testing.T, ctx context.Context) (*os.File, *os.File, GitRuntimePins) {
+	t.Helper()
+	build := actualGitRuntime(t)
+	var manifest gitRuntimeManifest
+	if json.Unmarshal(build.Manifest, &manifest) != nil {
+		t.Fatal("runtime manifest")
+	}
+	prepared, err := prepareGitRuntime(ctx, nativeRuntimePrivateParent(t), bytes.NewReader(build.Artifact), build.Pins, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bodies := map[string][]byte{}
+	for _, file := range manifest.Files {
+		bodies[file.Path], err = prepared.root.ReadFile(file.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if prepared.Close() != nil {
+		t.Fatal("original runtime disposal")
+	}
+	image, err := os.ReadFile(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Git = VMAssetPin{gitRawHash(image), int64(len(image))}
+	manifest.HTTP = manifest.Git
+	for i := range manifest.Files {
+		if manifest.Files[i].Path == gitRuntimeProgram || manifest.Files[i].Path == gitRuntimeHTTP {
+			manifest.Files[i].SHA256, manifest.Files[i].Bytes = manifest.Git.SHA256, manifest.Git.Bytes
+			bodies[manifest.Files[i].Path] = image
+		}
+	}
+	artifact, pins := gitRuntimeFrame(t, manifest, bodies)
+	root, err := prepareGitRuntime(ctx, nativeRuntimePrivateParent(t), bytes.NewReader(artifact), pins, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { root.Close() })
+	fd, err := root.directoryFD()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { fd.Close() })
+	exe, err := root.root.Open(gitRuntimeProgram)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { exe.Close() })
+	return fd, exe, pins
+}
+
+func TestGitMountActualPrivateViewRefusesUnqualifiedWorkspace(t *testing.T) {
+	if os.Getenv("SFL_GIT_BOOTSTRAP_NAMESPACE") != "1" {
+		t.Skip("explicit inert private-namespace mount observation")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	root, exe, pins := gitMountInertRuntime(t, ctx)
+	listener, _, directory := gitSupervisorListener(t)
+	gitSocket := filepath.Join(directory, "git.sock")
+	unusedBroker, err := net.ListenUnix("unix", &net.UnixAddr{Name: gitSocket, Net: "unix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unusedBroker.Close()
+	if os.Chmod(gitSocket, 0600) != nil || os.WriteFile(filepath.Join(directory, "git-read.used"), []byte("sfl-git-read-broker-1\n"), 0600) != nil {
+		t.Fatal("inert broker directory")
+	}
+	broker, err := os.Open(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer broker.Close()
+	// This trusted empty fixture deliberately uses an unqualified host
+	// directory. It must NEVER pass the production workspace policy.
+	workspace := t.TempDir()
+	if os.Chmod(workspace, 0700) != nil {
+		t.Fatal("private empty workspace fixture")
+	}
+	work, err := os.Open(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer work.Close()
+	alias, err := duplicateGitControlFile(work)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer alias.Close()
+	filter, err := retainGitPayloadSeccomp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer filter.Close()
+	helperBytes, err := os.ReadFile("/usr/bin/bwrap")
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, err := retainNativeBootstrap(ctx, VMBootAsset{Path: "/usr/bin/bwrap", SHA256: gitRawHash(helperBytes), Bytes: int64(len(helperBytes))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer helper.Close()
+	args := []string{"--unshare-all", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--cap-drop", "ALL", "--clearenv", "--setenv", "SFL_GIT_MOUNT_CHILD", "1", "--ro-bind-fd", "3", "/", "--ro-bind-fd", "4", "/broker", "--bind-fd", "6", "/work", "--bind-fd", "7", "/tmp", "--proc", "/proc", "--remount-ro", "/proc", "--dev-bind", "/dev/null", "/dev/null", "--dev-bind", "/dev/urandom", "/dev/urandom", "--remount-ro", "/dev/urandom", "--chdir", "/", "--seccomp", "5", "--", "/usr/bin/git", "-test.run=^TestGitMountNamespaceChild$"}
+	command := exec.CommandContext(ctx, fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), helper.Fd()), args...)
+	command.Env = []string{}
+	command.ExtraFiles = []*os.File{root, broker, filter, work, alias}
+	var output bytes.Buffer
+	command.Stdout, command.Stderr = &output, &output
+	if command.Start() != nil {
+		t.Fatal("inert mount namespace launch")
+	}
+	waited := false
+	defer func() {
+		if !waited {
+			command.Process.Kill()
+			command.Wait()
+		}
+		if t.Failed() {
+			t.Log("inert mount fixture:", output.String())
+		}
+	}()
+	listener.SetDeadline(time.Now().Add(8 * time.Second))
+	conn, err := listener.AcceptUnix()
+	if err != nil {
+		t.Fatal("inert namespace control", err)
+	}
+	defer conn.Close()
+	packet, files, err := readGitControlPacket(ctx, conn, 0)
+	closeVMFiles(files)
+	if err != nil || string(packet) != "ready" {
+		t.Fatal("inert namespace readiness", err)
+	}
+	peer, err := gitBrokerPeer(conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer peer.kernel.Close()
+	identity, original, err := retainGitBrokerPeer(peer, strings.Repeat("b", 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unix.Close(original)
+	raw, err := gitReadMountInfo(ctx, identity, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := parseGitMountTable(raw)
+	if err != nil || len(rows) != 7 {
+		t.Fatalf("actual fixed mount structure: %v\n%s", err, raw)
+	}
+	for _, point := range []string{"/", "/broker", "/work", "/tmp", "/proc", "/dev/null", "/dev/urandom"} {
+		if rows[point].ID == 0 {
+			t.Fatal("expected actual private mount missing", point)
+		}
+	}
+	view, err := os.OpenRoot(fmt.Sprintf("/proc/%d/root", identity.PID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Close()
+	insideWork, err := view.Stat("work")
+	insideTmp, aliasErr := view.Stat("tmp")
+	outside, outsideErr := work.Stat()
+	if err != nil || aliasErr != nil || outsideErr != nil || !os.SameFile(insideWork, insideTmp) || !os.SameFile(insideWork, outside) {
+		t.Fatal("original worker root did not expose its actual mounted aliases", err, aliasErr, outsideErr)
+	}
+	boundary, err := retainGitProcessBoundary(ctx, identity, original, root, exe, pins.Git, pins)
+	if err != nil {
+		t.Fatal("actual process boundary", err)
+	}
+	defer boundary.Close()
+	binding, _ := gitMountTableFixture(t)
+	if checkGitMountBoundary(ctx, boundary, broker, binding) == nil {
+		t.Fatal("unqualified host workspace became a source admission proof")
+	}
+	if writeGitControlPacket(ctx, conn, []byte("finish"), nil) != nil || command.Wait() != nil {
+		t.Fatal("inert namespace completion")
+	}
+	waited = true
 }
