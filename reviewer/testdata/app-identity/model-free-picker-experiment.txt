@@ -1,0 +1,6 @@
+Model-free native GitHub App reviewer identity experiment.
+App: hemsoft-sfl-reviewer (5406096).
+Target: hemsoft-dev/set-it-free-loop (1169772257).
+Authorized by Franz on October 20, 2026 at 20:28 Eastern.
+This throwaway pull request must be closed unmerged after the experiment.
+No model inference, provider login, reviewer deployment or paid usage.
