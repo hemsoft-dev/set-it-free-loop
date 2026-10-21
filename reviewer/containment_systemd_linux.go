@@ -327,6 +327,29 @@ func fixedVMUnitProperties(unit, stub string, args []string, description string,
 func fixedNativeVMUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
 	return fixedPayloadUnitProperties(unit, stub, args, description, imageFD, "SFL native VM containment ")
 }
+
+// Git acquisition is a distinct payload, with no provider/auth binding.
+// These typed values are the transient-unit wire form, not unit-file text.
+type gitUnitTemporaryFS struct{ Path, Options string }
+type gitUnitAddressFamilies struct {
+	Allow    bool
+	Families []string
+}
+
+const gitUnitDescriptionPrefix = "SFL Git acquisition "
+const gitUnitTmpfsOptions = "size=268435456,nr_inodes=65536,noswap,nosuid,nodev,noexec,mode=0700"
+
+func fixedGitUnitProperties(unit, stub string, args []string, description string, imageFD int) ([]unitProperty, error) {
+	properties, err := fixedPayloadUnitProperties(unit, stub, args, description, imageFD, gitUnitDescriptionPrefix)
+	if err != nil {
+		return nil, err
+	}
+	return append(properties,
+		prop("TemporaryFileSystem", []gitUnitTemporaryFS{{"/tmp", gitUnitTmpfsOptions}}),
+		prop("RestrictAddressFamilies", gitUnitAddressFamilies{true, []string{"AF_UNIX"}}),
+		prop("SystemCallArchitectures", []string{"native"}),
+	), nil
+}
 func fixedPayloadUnitProperties(unit, stub string, args []string, description string, imageFD int, prefix string) ([]unitProperty, error) {
 	if imageFD < 0 || stub != retainedStubExec || !validContainmentUnit(unit) || !path.IsAbs(stub) || path.Clean(stub) != stub || len(args) != 5 || args[0] != stub || len(description) != len(prefix)+64 || !strings.HasPrefix(description, prefix) || !validAuthHash(strings.TrimPrefix(description, prefix)) {
 		return nil, ErrAuthRecoveryRequired
@@ -355,7 +378,9 @@ func fixedPayloadUnitProperties(unit, stub string, args []string, description st
 func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string, imageFD int) (string, error) {
 	var properties []unitProperty
 	var err error
-	if strings.HasPrefix(description, "SFL native VM containment ") {
+	if strings.HasPrefix(description, gitUnitDescriptionPrefix) {
+		properties, err = fixedGitUnitProperties(unit, stub, args, description, imageFD)
+	} else if strings.HasPrefix(description, "SFL native VM containment ") {
 		properties, err = fixedNativeVMUnitProperties(unit, stub, args, description, imageFD)
 	} else if strings.HasPrefix(description, "SFL sealed VM containment ") {
 		properties, err = fixedVMUnitProperties(unit, stub, args, description, imageFD)
