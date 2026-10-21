@@ -2,26 +2,64 @@
 
 The score harness and self-critique control are offline code for
 [#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177).
-No live benchmark or pilot has run. The candidate manifest contains 20 actual
-historical PR head/base snapshots, with all human labels unset. It is a selection
-record, not a frozen ground-truth corpus, and does not establish ten clean cases.
-Tests generate synthetic labels only to check arithmetic and failure behavior.
+No live benchmark or pilot has run. Candidate selection predates evaluation and
+contains 20 historical PR head/base snapshots. Selection alone is not ground
+truth or proof that ten cases are clean. Synthetic tests check arithmetic and
+failure behavior only.
 
-Before tuning or collecting results, Franz must confirm held-out eligibility,
-identify at least ten clean controls and assign evidence-backed defect labels
-for the remaining cases. Record his immutable human ID, rationale, source
-evidence and label provenance in `EvaluationCorpus`. Model outputs cannot create
-or revise these labels. The alpha accepts owner labels only. Additional named
-human labelers require an explicit policy change. Preserve disagreements as
-label evidence; do not quietly resolve them in favor of evaluated output.
+Agents may create and revise corpus labels and post-run actionability labels.
+Every label records its actual agent, provider, model, session, timestamp,
+rationale and independent primary evidence. An agent can use the same model as
+an evaluated reviewer, but must inspect independent source evidence. The
+reviewers' own outputs on these PRs, including Codex or Claude findings,
+comments and paraphrases of those findings, are never label evidence. A later
+fix is admissible only through independently inspected source changes or a
+linked bug/regression issue, even if a review originally prompted the fix.
+
+A defect cites a concrete **later** fix/revert commit or PR, or a linked
+bug/regression issue, with its source event time and affected candidate lines.
+The lines identify the candidate head, or its base for removed lines. Explain
+how the subsequent change corrects the candidate behavior. A later edit in the
+same file or intentional retirement alone does not establish a defect.
+
+A clean label states its checked postmerge window and duration in days, the
+immutable history revision, the exact searches and coverage limits. Search
+later fixes, reverts and regressions touching the changed lines/behavior, plus
+bug-report metadata as available. State when runtime exposure ended. A clean
+label means no matching defect was found within that search; it is not proof
+of defect absence. Do not shorten a window or relabel a demonstrated defect to
+reach ten controls. Leave unsupported cases unlabeled and report why.
+
+`EvaluationCorpus` version 2 requires these records. `EvaluationCase.Label`
+contains the current label and `LabelHistory` retains all earlier revisions,
+oldest first. Each revision's `Supersedes` is `Digest(previousLabel)`, with a
+later timestamp. Each defect records the containing label's actor and time
+and its own later evidence. Franz can override any label using kind `owner`,
+his immutable human ID, and `OwnerOverride: true` on a revision. Agent revisions
+use kind `agent`, zero human ID, and never claim owner override. Owner labels
+use provider `human`, model `none` and an identified manual session. Retain
+superseded labels and disagreements. Finding assessments use the same actor,
+time, evidence and revision rules, and must occur after their run completes.
+
+Validation checks record structure, chronology, primary-source URL forms and
+revision chains. It rejects review/comment URLs and evidence kinds. It does
+not query GitHub or prove that a description is true, that a fix is causal or
+that a line is in the candidate diff. Before freezing, audit those claims
+against retained primary source and record the commands/results. Never present
+schema validation as that audit.
 
 Each case uses repository ID 1169772257, immutable head/base/merge-base and a
 fixed evidence packet/source capability. Keep tuning cases separate. Historical
 PRs may already have been seen by models or maintainers; record that limitation
 when approving a held-out set. Candidate selection predates any live evaluation.
 
-Freeze the corpus first, then freeze `EvaluationPlan` with its corpus hash,
-trusted release, pinned config and creation time. One repeat is the default;
+Freeze the complete labeled corpus first, then freeze `EvaluationPlan` with its corpus hash,
+trusted release, pinned config and creation time. Any label revision changes the corpus hash and requires a newly frozen plan.
+The existing minimum of 20 cases, ten clean controls and one material defect
+still applies. If supported labels fall short, retain a draft and report the
+real counts rather than forcing labels or relaxing the gate.
+
+One repeat is the default;
 preselect at most three. The plan rotates six arms by case index and repeat:
 
 | Arm | Sessions | Protocol |
@@ -51,12 +89,12 @@ not a production credential-bearing launcher.
 
 Retain sanitized results with corpus/plan hashes, immutable snapshot, arm,
 repeat, start time, provider schedule, consumed sessions, report digest, outcome,
-latency, queue duration, usage availability and ledger counts. A named human
-assesses every reported finding after the run, with rationale and explicit
+latency, queue duration, usage availability and ledger counts. An identified agent or Franz
+assesses every reported finding after the run against independent source, with rationale and explicit
 matches to frozen defects. One defect gets recall credit once per run. Mark
 duplicate or unsupported findings non-actionable rather than counting repeated
 matches as extra precision. A clean control with any allegation fails its clean
-criterion even when the human rejects that allegation.
+criterion even when its assessor rejects that allegation.
 
 The scorer accepts only complete required schedules for successful runs. Failed
 runs cannot contain partial findings. Missing, failed and quota-wait cases stay
@@ -67,7 +105,7 @@ precision/recall/clean numerators and denominators, Wilson intervals, latency an
 queue p50/p95, failures, quota waits, missing cases, concessions and disputes.
 Repeated/correlated cases weaken interval interpretation.
 
-After human labels and retained sanitized artifacts exist:
+After evidence-backed labels and retained sanitized artifacts exist:
 
 ```sh
 go -C reviewer run ./cmd/evalscore /absolute/corpus.json /absolute/plan.json /absolute/results.json
@@ -88,7 +126,7 @@ rollout; it does not silently change Franz's requested default.
 Live evaluation still requires applicable public-target subscription support,
 account/billing evidence, qualified official workers/source isolation, durable
 GitHub transport qualification and explicit activation. Do not treat a successful
-model response as provider permission. Do not invent human labels or use APIs,
+model response as provider permission. Do not invent labels or use APIs,
 paid overflow, a machine-user trigger or a private mirror as an inferred fallback.
 
 After all gates pass, promote a separately pinned trusted release with recorded

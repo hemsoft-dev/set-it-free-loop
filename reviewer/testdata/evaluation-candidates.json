@@ -3,7 +3,7 @@
   "repository_id": 1169772257,
   "selected_at": "2026-10-19T05:57:49.029947+00:00",
   "selection": "20 most recent merged PRs before alpha mission; no provider runs or tuning against these candidates",
-  "required_human_work": "Confirm held-out eligibility, assign evidence-backed material defects and at least 10 clean controls, then freeze an EvaluationCorpus. These candidates are not ground truth.",
+  "required_label_work": "Inspect independent later evidence, record agent/provider/model/session/time and revisions or owner overrides, report supported clean/defect/unlabeled counts, then freeze a qualifying EvaluationCorpus. Never use evaluated review outputs as evidence or force ten clean controls. These candidates are not ground truth.",
   "candidates": [
     {
       "baseRefOid": "fd3a5a2d407aa830f64db0a8fa413f3e293f6152",
@@ -12,7 +12,7 @@
       "number": 171,
       "title": "Freeze SFL and remove active repository automation",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/171",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "8cf5f3fb1b31adca5b36ad12c3f9a0ff742ac9cd",
@@ -21,7 +21,7 @@
       "number": 170,
       "title": "Retire source SFL deployment and record central pilot delivery",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/170",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "7a1596417b9efce35fcc485d04b4cd16eb16e71e",
@@ -30,7 +30,7 @@
       "number": 169,
       "title": "Add central organization App reviewer for the hs-buddy pilot",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/169",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "f07ab8ca3d58a7a5a6bbf88ff1bc8e3a359b6e53",
@@ -39,7 +39,7 @@
       "number": 168,
       "title": "fix: use canonical organization GitHub destinations",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/168",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3",
@@ -48,7 +48,7 @@
       "number": 165,
       "title": "fix: preserve invalidation across chained retargets",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/165",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "05e71cfb6d433a95764e4bf695db9c09c3779bc3",
@@ -57,7 +57,7 @@
       "number": 164,
       "title": "fix: verify registry-free review request intent",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/164",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "b42d3fdfcdb9a07741630a249757b80aaaa05757",
@@ -66,7 +66,7 @@
       "number": 163,
       "title": "fix: invalidate published gates when verification errors",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/163",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "4447b3eff8a797ba77a9a9f16120829b9af424e6",
@@ -75,7 +75,7 @@
       "number": 162,
       "title": "fix: revalidate required status repairs and reject empty request history",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/162",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "8c53c43a860a0471308f11501352a9f2b43c7efd",
@@ -84,7 +84,7 @@
       "number": 161,
       "title": "fix: serialize review requests while their registry materializes",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/161",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "3821a54140b2e1149fac20ca5e247aec8c2efae4",
@@ -93,7 +93,7 @@
       "number": 160,
       "title": "fix: bind review invalidations to registered comment lifecycle",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/160",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "73607a1b28beb31e794be6498e0d244866b45ab5",
@@ -102,7 +102,7 @@
       "number": 159,
       "title": "fix: revalidate complete request history before publishing review gates",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/159",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "ef807fc3ac3cb734efa70435a6a3970223680476",
@@ -111,7 +111,7 @@
       "number": 158,
       "title": "fix: preserve registered review history across edits and cutovers",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/158",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "89425320ace3127a829d86e3b642fe2b31fd979e",
@@ -120,7 +120,7 @@
       "number": 157,
       "title": "fix: keep overlapping Codex review requests from skipping their predecessor",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/157",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "afdf3bca1631b98ad87b9aa96ed87d455917e63b",
@@ -129,7 +129,7 @@
       "number": 156,
       "title": "docs: record executed organization transfers and remaining gates",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/156",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "292336619aaf8a484e45590bb8897902c7ce7fce",
@@ -138,7 +138,7 @@
       "number": 155,
       "title": "fix: reject native reviews with ambiguous base provenance",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/155",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "cec6674eda48526d9564163973ba619cc3cb4273",
@@ -147,7 +147,7 @@
       "number": 154,
       "title": "fix: block overlapping registered review results",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/154",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "2dd6ffd08c7d8a12cb97d5f8247219fe16478b45",
@@ -156,7 +156,7 @@
       "number": 153,
       "title": "fix: preserve consumer-owned workflows during full sync",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/153",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "ee75f09992d7b54b5f9f89dc4ab59caa055e0f05",
@@ -165,7 +165,7 @@
       "number": 152,
       "title": "fix: qualify the existing full deployment as wider pilot",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/152",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "6f631ec574f87f126f8b02030f180055fb4023ed",
@@ -174,7 +174,7 @@
       "number": 151,
       "title": "feat: verify organization App coverage without exporting credentials",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/151",
-      "human_label": null
+      "label": null
     },
     {
       "baseRefOid": "21b4fbc9228cb4e444f6a68fbce66e804bff156d",
@@ -183,7 +183,7 @@
       "number": 150,
       "title": "fix: clarify review recovery after base advances",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/150",
-      "human_label": null
+      "label": null
     }
   ]
 }

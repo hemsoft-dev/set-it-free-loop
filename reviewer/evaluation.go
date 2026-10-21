@@ -12,44 +12,29 @@ import (
 
 var digestPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-type DefectLabel struct {
-	ID, Rationale, Evidence string
-	Material                bool
-}
-
 const EvaluationPacketBytes = 64 << 10
 const EvaluationOutputBytes = 32 << 10
 
-type EvaluationCase struct {
-	PacketHash            string
-	SerializedPacketBytes int
-	ID                    string
-	Snapshot              Snapshot
-	Clean                 bool
-	HumanID               int64
-	Rationale, Evidence   string
-	Defects               []DefectLabel
-}
+// Version 2 replaces the owner-only label format. The corpus and plan hashes
+// still bind the complete serialized artifacts, including all label revisions.
 type EvaluationCorpus struct {
 	Version       int
 	RepositoryID  int64
 	FrozenAt      time.Time
-	HumanID       int64
 	LabelEvidence string
 	Cases         []EvaluationCase
 }
 
 func (c EvaluationCorpus) Hash() string { return Digest(c) }
 func (c EvaluationCorpus) Validate() error {
-	if c.Version != 1 || c.RepositoryID != RepositoryID || c.FrozenAt.IsZero() || c.HumanID != OwnerID || strings.TrimSpace(c.LabelEvidence) == "" || len(c.Cases) < 20 || len(c.Cases) > 100 {
-		return errors.New("requires an owner-labeled frozen corpus of 20 to 100 cases")
+	if c.Version != 2 || c.RepositoryID != RepositoryID || c.FrozenAt.IsZero() || strings.TrimSpace(c.LabelEvidence) == "" || len(c.Cases) < 20 || len(c.Cases) > 100 {
+		return errors.New("requires an evidence-labeled frozen v2 corpus of 20 to 100 cases")
 	}
 	clean, material := 0, 0
-	seen := map[string]bool{}
-	snapshots := map[string]bool{}
+	seen, snapshots := map[string]bool{}, map[string]bool{}
 	for _, test := range c.Cases {
-		if test.ID == "" || seen[test.ID] || test.HumanID != OwnerID || strings.TrimSpace(test.Rationale) == "" || strings.TrimSpace(test.Evidence) == "" {
-			return errors.New("missing/duplicate case or human label provenance")
+		if test.ID == "" || seen[test.ID] {
+			return errors.New("missing/duplicate case")
 		}
 		seen[test.ID] = true
 		if snapshots[Digest(test.Snapshot)] || !digestPattern.MatchString(test.PacketHash) || test.SerializedPacketBytes <= 0 || test.SerializedPacketBytes > EvaluationPacketBytes {
@@ -59,31 +44,23 @@ func (c EvaluationCorpus) Validate() error {
 		if err := test.Snapshot.Validate(); err != nil {
 			return err
 		}
-		if test.Clean {
-			clean++
-			if len(test.Defects) != 0 {
-				return errors.New("clean control has defect labels")
-			}
+		if err := test.ValidateLabels(c.FrozenAt); err != nil {
+			return fmt.Errorf("case %s: %w", test.ID, err)
 		}
-		labels := map[string]bool{}
-		for _, d := range test.Defects {
-			if d.ID == "" || labels[d.ID] || strings.TrimSpace(d.Rationale) == "" || strings.TrimSpace(d.Evidence) == "" {
-				return errors.New("invalid evidence-backed defect label")
-			}
-			labels[d.ID] = true
+		if test.Label.Clean {
+			clean++
+		}
+		for _, d := range test.Label.Defects {
 			if d.Material {
 				material++
 			}
-		}
-		if !test.Clean && len(test.Defects) == 0 {
-			return errors.New("non-clean case requires defect evidence")
 		}
 	}
 	if material == 0 {
 		return errors.New("requires at least one material-defect case")
 	}
 	if clean < 10 {
-		return errors.New("requires at least ten human-labeled clean controls")
+		return errors.New("requires at least ten evidence-labeled clean controls")
 	}
 	return nil
 }
@@ -168,12 +145,16 @@ func (p EvaluationPlan) Order(caseIndex, repeat int) []EvaluationArm {
 	return append(append([]EvaluationArm{}, arms[offset:]...), arms[:offset]...)
 }
 
-type FindingLabel struct {
-	FindingID  string
+type FindingAssessment struct {
 	Actionable bool
 	DefectIDs  []string
-	HumanID    int64
 	Rationale  string
+	Provenance LabelProvenance
+}
+type FindingLabel struct {
+	FindingID  string
+	Assessment FindingAssessment
+	History    []FindingAssessment
 }
 type EvaluationResult struct {
 	FindingStatuses                     map[string]string
@@ -270,10 +251,10 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 	material, clean := 0, 0
 	for _, test := range c.Cases {
 		cases[test.ID] = test
-		if test.Clean {
+		if test.Label.Clean {
 			clean++
 		}
-		for _, d := range test.Defects {
+		for _, d := range test.Label.Defects {
 			if d.Material {
 				material++
 			}
@@ -300,7 +281,7 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 		switch run.State {
 		case "complete":
 			if run.Sessions != run.Arm.Sessions() || !digestPattern.MatchString(run.ReportHash) || run.LabelledAt.Before(run.StartedAt.Add(run.Latency)) {
-				return score, errors.New("incomplete run or missing human assessment time")
+				return score, errors.New("incomplete run or missing label assessment time")
 			}
 		case "quota_wait", "auth_failed", "provider_unavailable", "invalid_output", "cancelled", "incomplete_expired":
 			if len(run.FindingIDs) != 0 || len(run.Labels) != 0 || run.Corroborated != 0 || run.Disputed != 0 || run.Concessions != 0 {
@@ -353,29 +334,32 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 			return score, errors.New("ledger counters differ from retained finding statuses")
 		}
 		if len(run.Labels) != len(ids) {
-			return score, errors.New("every reported finding requires human actionability judgment")
+			return score, errors.New("every reported finding requires evidence-backed actionability judgment")
 		}
 		labels := map[string]bool{}
 		matches := map[string]bool{}
 		known := map[string]bool{}
-		for _, d := range test.Defects {
+		for _, d := range test.Label.Defects {
 			known[d.ID] = true
 		}
 		for _, label := range run.Labels {
-			if !ids[label.FindingID] || labels[label.FindingID] || label.HumanID != OwnerID || strings.TrimSpace(label.Rationale) == "" {
-				return score, errors.New("invalid human actionability label")
+			if !ids[label.FindingID] || labels[label.FindingID] || strings.TrimSpace(label.Assessment.Rationale) == "" {
+				return score, errors.New("invalid actionability label")
+			}
+			if err := label.validateProvenance(run.StartedAt.Add(run.Latency), run.LabelledAt); err != nil {
+				return score, err
 			}
 			labels[label.FindingID] = true
-			if run.FindingStatuses[label.FindingID] == "retracted" && label.Actionable {
+			if run.FindingStatuses[label.FindingID] == "retracted" && label.Assessment.Actionable {
 				return score, errors.New("withdrawn allegation cannot count as an actionable prediction")
 			}
-			if label.Actionable && len(label.DefectIDs) == 0 {
+			if label.Assessment.Actionable && len(label.Assessment.DefectIDs) == 0 {
 				return score, errors.New("actionable finding requires ground-truth match")
 			}
-			if !label.Actionable && len(label.DefectIDs) > 0 {
+			if !label.Assessment.Actionable && len(label.Assessment.DefectIDs) > 0 {
 				return score, errors.New("non-actionable finding cannot claim recall credit")
 			}
-			for _, id := range label.DefectIDs {
+			for _, id := range label.Assessment.DefectIDs {
 				if !known[id] || matches[id] {
 					return score, errors.New("unknown or duplicate defect match")
 				}
@@ -425,20 +409,20 @@ func ScoreEvaluation(c EvaluationCorpus, p EvaluationPlan, results []EvaluationR
 					}
 				}
 				test := cases[run.CaseID]
-				if test.Clean && len(run.FindingIDs) == 0 {
+				if test.Label.Clean && len(run.FindingIDs) == 0 {
 					cleanOK++
 				}
 				materialIDs := map[string]bool{}
-				for _, d := range test.Defects {
+				for _, d := range test.Label.Defects {
 					if d.Material {
 						materialIDs[d.ID] = true
 					}
 				}
 				for _, label := range run.Labels {
-					if label.Actionable {
+					if label.Assessment.Actionable {
 						actionable++
 					}
-					for _, id := range label.DefectIDs {
+					for _, id := range label.Assessment.DefectIDs {
 						if materialIDs[id] {
 							recalled++
 						}

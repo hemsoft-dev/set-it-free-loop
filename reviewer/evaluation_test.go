@@ -14,16 +14,26 @@ import (
 	"time"
 )
 
-// These generated labels exercise the scoring arithmetic only. They are not
-// human labels or evaluation evidence for any real pull request.
+// These generated labels exercise scoring only, never real quality evidence.
+func syntheticLabelProvenance(at time.Time) LabelProvenance {
+	return LabelProvenance{Labeler: Labeler{Kind: "agent", Agent: "synthetic", Provider: "test", Model: "test", Session: "unit-test"}, At: at, Evidence: []EvaluationEvidence{{Kind: "history", URL: "https://github.com/hemsoft-dev/set-it-free-loop/commit/" + strings.Repeat("d", 40), Commit: strings.Repeat("d", 40), Description: "synthetic evidence only", At: at.Add(-time.Minute), Lines: []EvidenceLines{}}}}
+}
 func syntheticCorpus() EvaluationCorpus {
-	c := EvaluationCorpus{Version: 1, RepositoryID: RepositoryID, FrozenAt: controlTime, HumanID: OwnerID, LabelEvidence: "synthetic unit-test attestation only", Cases: []EvaluationCase{}}
+	c := EvaluationCorpus{Version: 2, RepositoryID: RepositoryID, FrozenAt: controlTime, LabelEvidence: "synthetic unit-test attestation only", Cases: []EvaluationCase{}}
 	for i := 0; i < 20; i++ {
 		snapshot := testSnapshot()
 		snapshot.PR = i + 1
-		test := EvaluationCase{PacketHash: Digest("synthetic immutable evidence"), SerializedPacketBytes: 30, ID: fmt.Sprintf("synthetic-%d", i), Snapshot: snapshot, Clean: i < 10, HumanID: OwnerID, Rationale: "synthetic unit-test label", Evidence: "synthetic evidence", Defects: []DefectLabel{}}
-		if !test.Clean {
-			test.Defects = append(test.Defects, DefectLabel{"d1", "synthetic defect", "synthetic source", true})
+		merged := controlTime.Add(-8 * 24 * time.Hour)
+		provenance := syntheticLabelProvenance(controlTime.Add(-time.Hour))
+		label := EvaluationCaseLabel{Clean: i < 10, Rationale: "synthetic label", Provenance: provenance, Survival: []SurvivalWindow{}, Defects: []DefectLabel{}}
+		test := EvaluationCase{PacketHash: Digest("synthetic immutable evidence"), SerializedPacketBytes: 30, ID: fmt.Sprintf("synthetic-%d", i), Snapshot: snapshot, MergedAt: merged, Label: label, LabelHistory: []EvaluationCaseLabel{}}
+		if label.Clean {
+			test.Label.Survival = []SurvivalWindow{{Days: 7, From: merged, Through: merged.Add(7 * 24 * time.Hour), HistoryRevision: strings.Repeat("d", 40), Searches: []string{"synthetic post-merge line and issue history"}, Limitations: "synthetic, no live evidence"}}
+		} else {
+			defectProvenance := syntheticLabelProvenance(provenance.At)
+			defectProvenance.Evidence[0].Kind = "fix"
+			defectProvenance.Evidence[0].Lines = []EvidenceLines{{Revision: snapshot.Head, Path: "file.go", Start: 1, End: 2}}
+			test.Label.Defects = append(test.Label.Defects, DefectLabel{ID: "d1", Rationale: "synthetic defect", Material: true, Provenance: defectProvenance})
 		}
 		c.Cases = append(c.Cases, test)
 	}
@@ -38,10 +48,10 @@ func syntheticResults(c EvaluationCorpus, p EvaluationPlan) []EvaluationResult {
 		for position, arm := range p.Order(caseIndex, 0) {
 			started := p.CreatedAt.Add(time.Duration(1+caseIndex*6+position) * 2 * time.Minute)
 			r := EvaluationResult{FindingStatuses: map[string]string{}, PacketHash: test.PacketHash, OutputBytesLimit: p.Config.Limits.OutputBytes, CaseID: test.ID, Arm: arm, CorpusHash: c.Hash(), PlanHash: p.Hash(), ReportHash: strings.Repeat("f", 64), Snapshot: test.Snapshot, StartedAt: started, State: "complete", Sessions: arm.Sessions(), Providers: arm.Schedule(), FindingIDs: []string{}, Labels: []FindingLabel{}, LabelledAt: started.Add(time.Hour), Latency: time.Minute, Queue: time.Second}
-			if !test.Clean {
+			if !test.Label.Clean {
 				r.FindingIDs = []string{"f1"}
 				r.FindingStatuses["f1"] = "unverified"
-				r.Labels = []FindingLabel{{"f1", true, []string{"d1"}, OwnerID, "synthetic actionability only"}}
+				r.Labels = []FindingLabel{{FindingID: "f1", Assessment: FindingAssessment{Actionable: true, DefectIDs: []string{"d1"}, Rationale: "synthetic actionability only", Provenance: syntheticLabelProvenance(r.LabelledAt)}, History: []FindingAssessment{}}}
 			}
 			results = append(results, r)
 		}
@@ -104,13 +114,15 @@ func TestEvaluationRejectsUnlabeledAndChangedEvidence(t *testing.T) {
 	p := syntheticPlan(c)
 	results := syntheticResults(c, p)
 	tests := []func(*EvaluationCorpus, *EvaluationPlan, []EvaluationResult){
-		func(c *EvaluationCorpus, p *EvaluationPlan, r []EvaluationResult) { c.HumanID = 0 },
+		func(c *EvaluationCorpus, p *EvaluationPlan, r []EvaluationResult) { c.Version = 1 },
 		func(c *EvaluationCorpus, p *EvaluationPlan, r []EvaluationResult) { p.CorpusHash = Digest("changed") },
 		func(c *EvaluationCorpus, p *EvaluationPlan, r []EvaluationResult) { r[0].StartedAt = p.CreatedAt },
 		func(c *EvaluationCorpus, p *EvaluationPlan, r []EvaluationResult) { r[0].Providers[0] = Claude },
-		func(c *EvaluationCorpus, p *EvaluationPlan, r []EvaluationResult) { r[60].Labels[0].HumanID = 44 },
 		func(c *EvaluationCorpus, p *EvaluationPlan, r []EvaluationResult) {
-			r[60].Labels[0].DefectIDs = []string{"d1", "d1"}
+			r[60].Labels[0].Assessment.Provenance.Labeler.HumanID = 44
+		},
+		func(c *EvaluationCorpus, p *EvaluationPlan, r []EvaluationResult) {
+			r[60].Labels[0].Assessment.DefectIDs = []string{"d1", "d1"}
 		},
 	}
 	for i, mutate := range tests {
@@ -250,8 +262,8 @@ func TestScoreCommandReadsRetainedFiles(t *testing.T) {
 func TestFrozenCorpusRejectsNoMaterialAndDuplicateSnapshots(t *testing.T) {
 	c := syntheticCorpus()
 	for i := range c.Cases {
-		for j := range c.Cases[i].Defects {
-			c.Cases[i].Defects[j].Material = false
+		for j := range c.Cases[i].Label.Defects {
+			c.Cases[i].Label.Defects[j].Material = false
 		}
 	}
 	if err := c.Validate(); err == nil {
@@ -377,8 +389,8 @@ func TestEvaluationCountersFollowLedgerAndRetainTurnUsage(t *testing.T) {
 		if runs[i].CaseID == "synthetic-10" && runs[i].Arm == ArmAdversarial {
 			runs[i].FindingStatuses["f1"] = "retracted"
 			runs[i].Concessions = 1
-			runs[i].Labels[0].Actionable = false
-			runs[i].Labels[0].DefectIDs = []string{}
+			runs[i].Labels[0].Assessment.Actionable = false
+			runs[i].Labels[0].Assessment.DefectIDs = []string{}
 		}
 	}
 	score, err = ScoreEvaluation(c, p, runs)
@@ -400,8 +412,8 @@ func TestR1OnlyArmsCannotFabricateCritiquesOrWithdrawals(t *testing.T) {
 						runs[i].Disputed = 1
 					} else {
 						runs[i].Concessions = 1
-						runs[i].Labels[0].Actionable = false
-						runs[i].Labels[0].DefectIDs = []string{}
+						runs[i].Labels[0].Assessment.Actionable = false
+						runs[i].Labels[0].Assessment.DefectIDs = []string{}
 					}
 				}
 			}
