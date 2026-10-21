@@ -34,7 +34,7 @@ func (t githubReadTransport) RoundTrip(q *http.Request) (*http.Response, error) 
 	}
 	return t.inner.RoundTrip(q)
 }
-func NewGitHubDiscoveryHTTP(e Enrollment, store *Store, transport http.RoundTripper) (*GitHubDiscoveryHTTP, error) {
+func newGitHubDiscoveryHTTP(e Enrollment, store *Store, transport http.RoundTripper) (*GitHubDiscoveryHTTP, error) {
 	if e.Validate() != nil || store == nil || store.db == nil || transport == nil {
 		return nil, ErrIgnored
 	}
@@ -43,15 +43,19 @@ func NewGitHubDiscoveryHTTP(e Enrollment, store *Store, transport http.RoundTrip
 }
 
 type githubPull struct {
-	Number int
-	State  string
-	Head   struct {
+	ID        int64
+	User      githubAuthor
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Number    int
+	State     string
+	Head      struct {
 		SHA  string
 		Repo struct{ ID int64 }
 	}
 	Base struct {
-		Ref  string
-		Repo struct{ ID int64 }
+		Ref, SHA string
+		Repo     struct{ ID int64 }
 	}
 }
 type githubNativeEvent struct {

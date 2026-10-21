@@ -41,7 +41,10 @@ func (e Enrollment) accepts(s Scope) bool {
 }
 func (s Scope) key() string { return fmt.Sprintf("%d/%d/%d", s.RepositoryID, s.InstallationID, s.PR) }
 
+// NativeRequest retains the legacy wire name. Origin distinguishes the new
+// comment/automatic requests; an absent Origin is legacy native history only.
 type NativeRequest struct {
+	Origin                 *RequestOrigin `json:",omitempty"`
 	ID, RequesterID, BotID int64
 	CreatedAt              time.Time
 	Snapshot               Snapshot
@@ -70,6 +73,7 @@ type CommandRecord struct {
 	WriteID   string
 }
 type PRRecord struct {
+	Triggers         *TriggerCursor `json:",omitempty"`
 	Scope            Scope
 	Generation       int64
 	Paused           bool
@@ -321,7 +325,12 @@ func (s *Store) CaptureCommands(ctx context.Context, scope Scope, events []Comma
 	// Stable original creation order, never caller/pagination order.
 	ordered := append([]CommandEvent{}, events...)
 	sortCommands(ordered)
-	return s.update(ctx, func(d *DurableState) error { return applyCommands(d, scope, ordered, through) })
+	return s.update(ctx, func(d *DurableState) error {
+		if pr := d.PRs[scope.key()]; pr != nil && pr.Triggers != nil {
+			return ErrLiveBlocked
+		}
+		return applyCommands(d, scope, ordered, through)
+	})
 }
 func applyCommands(d *DurableState, scope Scope, ordered []CommandEvent, through time.Time) error {
 	p, err := prRecord(d, scope)
@@ -389,7 +398,7 @@ func applyCommands(d *DurableState, scope Scope, ordered []CommandEvent, through
 			p.Generation++
 			p.CurrentRequest = 0
 		}
-		body := fmt.Sprintf("SFL %s accepted. Configuration version %d, hash %s. Configuration applies to the next native owner review request after this acknowledgment. No inference was started.", command.Action, version, next.Hash())
+		body := fmt.Sprintf("SFL %s accepted. Configuration version %d, hash %s. Configuration applies to the next authorized comment or automatic head review request after this acknowledgment. No inference was started.", command.Action, version, next.Hash())
 		if parseErr != nil {
 			body = "SFL command rejected: " + parseErr.Error() + ". Configuration is unchanged. No inference was started."
 		}
@@ -420,7 +429,12 @@ func (s *Store) RecordRequest(ctx context.Context, scope Scope, r NativeRequest,
 	if r.RequesterID != OwnerID {
 		return ErrIgnored
 	}
-	return s.update(ctx, func(d *DurableState) error { return applyRequest(d, scope, r) })
+	return s.update(ctx, func(d *DurableState) error {
+		if pr := d.PRs[scope.key()]; pr != nil && pr.Triggers != nil {
+			return ErrLiveBlocked
+		}
+		return applyRequest(d, scope, r)
+	})
 }
 func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
 	p, err := prRecord(d, scope)
@@ -428,6 +442,9 @@ func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
 		return err
 	}
 	defer func() { retireFencedJobs(d, p) }()
+	if r.Origin != nil && r.Origin.validate() != nil {
+		return ErrIgnored
+	}
 	if r.BotID != d.Enrollment.BotID || r.ID <= 0 || r.CreatedAt.IsZero() || r.Snapshot.PR != scope.PR || r.Snapshot.RepositoryID != scope.RepositoryID {
 		return errors.New("untrusted native request")
 	}
@@ -460,10 +477,15 @@ func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
 	p.Requests = append(p.Requests, r)
 	latest := r
 	for _, old := range p.Requests {
-		if old.CreatedAt.Equal(r.CreatedAt) && old.ID != r.ID {
+		// Automatic IDs are allocated by serialized local observations. A new
+		// observed head is causally later than the previous observation even
+		// when GitHub's Date header has the same second. This is not a claim
+		// that numeric remote event IDs order independent manual comments.
+		observedLater := r.Origin != nil && r.Origin.Kind != "comment" && old.ID < r.ID
+		if old.CreatedAt.Equal(r.CreatedAt) && old.ID != r.ID && !observedLater {
 			p.Paused = true
 		}
-		if old.CreatedAt.After(latest.CreatedAt) {
+		if old.CreatedAt.After(latest.CreatedAt) && !observedLater {
 			latest = old
 		}
 	}
@@ -520,6 +542,9 @@ func (s *Store) Admit(ctx context.Context, scope Scope, requestID int64, release
 			}
 		}
 		id := fmt.Sprintf("native-%d-%d", scope.PR, requestID)
+		if request.Origin != nil {
+			id = fmt.Sprintf("request-%d-%d", scope.PR, requestID)
+		}
 		if old := d.Jobs[id]; old != nil {
 			job = old.Job
 			return nil
@@ -532,7 +557,7 @@ func (s *Store) Admit(ctx context.Context, scope Scope, requestID int64, release
 				return ErrDeferred
 			}
 		}
-		job = Job{ID: id, RequesterID: OwnerID, Generation: p.Generation, Snapshot: request.Snapshot, Config: selected.Config, ConfigVersion: selected.Version, Release: release, Packet: packet}
+		job = Job{ID: id, RequesterID: OwnerID, Generation: p.Generation, Snapshot: request.Snapshot, Config: selected.Config, ConfigVersion: selected.Version, Release: release, Packet: packet, Origin: request.Origin}
 		if err := job.Validate(); err != nil {
 			return err
 		}
@@ -933,6 +958,7 @@ func chargedOn(j *DurableJob, day string) bool {
 // Discovery is normalized complete pagination from the qualified transport,
 // including removal/re-request history. Partial pages cannot advance a cutoff.
 type Discovery struct {
+	Triggers     *TriggerBatch
 	Scope        Scope
 	Commands     []CommandEvent
 	Requests     []NativeRequest
@@ -1005,6 +1031,12 @@ func (s *Store) Discover(ctx context.Context, batch Discovery) error {
 	ordered := append([]CommandEvent{}, batch.Commands...)
 	sortCommands(ordered)
 	return s.update(ctx, func(d *DurableState) error {
+		if batch.Triggers != nil {
+			return applyTriggers(d, batch)
+		}
+		if saved := d.PRs[batch.Scope.key()]; saved != nil && saved.Triggers != nil {
+			return ErrLiveBlocked
+		}
 		pr, err := prRecord(d, batch.Scope)
 		if err != nil {
 			return err

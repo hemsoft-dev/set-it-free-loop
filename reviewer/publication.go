@@ -382,6 +382,12 @@ func (p Publisher) markStale(ctx context.Context, w WriteIntent, current RemoteS
 			pr.CurrentRequest = current.Request.ID
 			pr.Generation++
 		}
+		if pr.Triggers != nil && current.Access && current.Open && current.Request.ID == pr.CurrentRequest && current.Request.Snapshot == current.Snapshot && pr.CurrentRequest != 0 && pr.CurrentRequest != w.RequestID {
+			// This ledger is independent of native pending state: stale publication
+			// A fences A, while known B may resume once A's write/annotation is
+			// reconciled. Do not require an unrelated third request to release B.
+			pr.PauseRequestID = w.RequestID
+		}
 		target := d.Writes[w.ID]
 		if target.State == "prepared" {
 			target.State = "stale"

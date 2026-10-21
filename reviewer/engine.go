@@ -10,17 +10,21 @@ import (
 )
 
 type Job struct {
-	ID            string   `json:"id"`
-	RequesterID   int64    `json:"requester_id"`
-	Generation    int64    `json:"generation"`
-	Snapshot      Snapshot `json:"snapshot"`
-	Config        Config   `json:"config"`
-	ConfigVersion int64    `json:"config_version"`
-	Release       string   `json:"trusted_release"`
-	Packet        string   `json:"packet"`
+	Origin        *RequestOrigin `json:"request_origin,omitempty"`
+	ID            string         `json:"id"`
+	RequesterID   int64          `json:"requester_id"`
+	Generation    int64          `json:"generation"`
+	Snapshot      Snapshot       `json:"snapshot"`
+	Config        Config         `json:"config"`
+	ConfigVersion int64          `json:"config_version"`
+	Release       string         `json:"trusted_release"`
+	Packet        string         `json:"packet"`
 }
 
 func (j Job) Validate() error {
+	if j.Origin != nil && j.Origin.validate() != nil {
+		return ErrIgnored
+	}
 	if j.RequesterID != OwnerID || j.Generation < 1 || j.ConfigVersion < 1 || !objectID.MatchString(j.Release) {
 		return errors.New("untrusted job admission or runtime provenance")
 	}

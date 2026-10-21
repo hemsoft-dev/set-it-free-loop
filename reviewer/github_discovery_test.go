@@ -19,6 +19,8 @@ type discoveryFixture struct {
 	failurePath, limitKind           string
 	failureStatus                    int
 	mu                               sync.Mutex
+	pullID, authorID                 int64
+	created, updated                 time.Time
 	snapshot                         Snapshot
 	through                          time.Time
 	open, pending                    bool
@@ -33,7 +35,7 @@ func nativeEvent(id int64, kind string, actor int64, at time.Time) map[string]an
 }
 func discoveryHTTPFixture(t *testing.T, store *Store) (*GitHubDiscoveryHTTP, *discoveryFixture) {
 	t.Helper()
-	f := &discoveryFixture{snapshot: testSnapshot(), through: controlTime.Add(20 * time.Minute), open: true, pending: true, events: []map[string]any{nativeEvent(1, "review_requested", OwnerID, controlTime.Add(time.Minute))}, comments: []map[string]any{}}
+	f := &discoveryFixture{pullID: 1234, authorID: OwnerID, created: controlTime.Add(time.Minute), updated: controlTime.Add(time.Minute), snapshot: testSnapshot(), through: controlTime.Add(20 * time.Minute), open: true, pending: true, events: []map[string]any{nativeEvent(1, "review_requested", OwnerID, controlTime.Add(time.Minute))}, comments: []map[string]any{}}
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -71,7 +73,7 @@ func discoveryHTTPFixture(t *testing.T, store *Store) (*GitHubDiscoveryHTTP, *di
 			if !f.open {
 				state = "closed"
 			}
-			value = map[string]any{"number": 1, "state": state, "head": map[string]any{"sha": f.snapshot.Head, "repo": map[string]any{"id": f.snapshot.HeadRepositoryID}}, "base": map[string]any{"ref": "main", "sha": strings.Repeat("f", 40), "repo": map[string]any{"id": RepositoryID}}}
+			value = map[string]any{"id": f.pullID, "user": map[string]any{"id": f.authorID}, "created_at": f.created, "updated_at": f.updated, "number": 1, "state": state, "head": map[string]any{"sha": f.snapshot.Head, "repo": map[string]any{"id": f.snapshot.HeadRepositoryID}}, "base": map[string]any{"ref": "main", "sha": strings.Repeat("f", 40), "repo": map[string]any{"id": RepositoryID}}}
 		case githubRepoPath + "/git/ref/heads/main":
 			f.refReads++
 			value = map[string]any{"ref": "refs/heads/main", "object": map[string]any{"type": "commit", "sha": f.snapshot.Base}}
@@ -124,7 +126,7 @@ func discoveryHTTPFixture(t *testing.T, store *Store) (*GitHubDiscoveryHTTP, *di
 	}))
 	t.Cleanup(server.Close)
 	base, _ := url.Parse(server.URL)
-	g, err := NewGitHubDiscoveryHTTP(alphaEnrollment(), store, githubFixtureRoute{base, server.Client().Transport, t})
+	g, err := newGitHubDiscoveryHTTP(alphaEnrollment(), store, githubFixtureRoute{base, server.Client().Transport, t})
 	if err != nil {
 		t.Fatal(err)
 	}

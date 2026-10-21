@@ -1,5 +1,7 @@
 # Native GitHub discovery
 
+The selected trigger adapter is now [comment and automatic polling discovery](GITHUB-TRIGGERS.md), following Franz's October21 decision. Native picker requests are not a trigger or activation prerequisite. The native-specific reader below is internal historical/reconciliation test support; its constructor is no longer exported. Generic bounded HTTP, pagination and base-tip helpers are reused by the selected adapter.
+
 `GitHubDiscoveryHTTP` implements the publisher's native `Current` and `History`
 reader. It is an explicitly constructed library with a bound SQLite Store and
 an explicit read-only HTTP transport. Tests use local TLS servers with synthetic
