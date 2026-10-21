@@ -1,0 +1,1101 @@
+{
+  "data": {
+    "repository": {
+      "issues": {
+        "pageInfo": {
+          "hasNextPage": false,
+          "endCursor": "Y3Vyc29yOnYyOpK0MjAyNi0wMy0wN1QwNDozNToxMVrO7tCosg=="
+        },
+        "nodes": [
+          {
+            "number": 173,
+            "title": "Prove public-target subscription support and native App eligibility",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/173",
+            "createdAt": "2026-10-19T04:28:49Z",
+            "updatedAt": "2026-10-20T11:11:02Z",
+            "closedAt": null,
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 174,
+            "title": "Build both subscription adapters and the isolated source reader",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/174",
+            "createdAt": "2026-10-19T04:28:51Z",
+            "updatedAt": "2026-10-20T04:02:06Z",
+            "closedAt": null,
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 177,
+            "title": "Evaluate dual review and run the contained self-review alpha",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/177",
+            "createdAt": "2026-10-19T04:28:59Z",
+            "updatedAt": "2026-10-19T09:04:26Z",
+            "closedAt": null,
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 176,
+            "title": "Build the durable alpha controller and scoped review publisher",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/176",
+            "createdAt": "2026-10-19T04:28:56Z",
+            "updatedAt": "2026-10-19T09:04:25Z",
+            "closedAt": null,
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 172,
+            "title": "Define the dual-subscription adversarial reviewer alpha",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/172",
+            "createdAt": "2026-10-19T04:28:46Z",
+            "updatedAt": "2026-10-19T09:04:19Z",
+            "closedAt": null,
+            "labels": {
+              "nodes": [
+                {
+                  "name": "documentation"
+                }
+              ]
+            }
+          },
+          {
+            "number": 175,
+            "title": "Implement adversarial rounds and typed per-PR configuration",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/175",
+            "createdAt": "2026-10-19T04:28:53Z",
+            "updatedAt": "2026-10-19T09:00:55Z",
+            "closedAt": "2026-10-19T09:00:55Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 138,
+            "title": "Transfer all repositories and SFL App ownership to the new organization",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/138",
+            "createdAt": "2026-10-06T21:13:25Z",
+            "updatedAt": "2026-10-10T01:59:31Z",
+            "closedAt": "2026-10-10T01:59:31Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 139,
+            "title": "Replace repository SFL deployments with an organization App and hs-buddy pilot",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/139",
+            "createdAt": "2026-10-06T21:13:27Z",
+            "updatedAt": "2026-10-09T23:02:58Z",
+            "closedAt": "2026-10-09T23:02:58Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "documentation"
+                },
+                {
+                  "name": "enhancement"
+                },
+                {
+                  "name": "risk:medium"
+                }
+              ]
+            }
+          },
+          {
+            "number": 167,
+            "title": "Replace remaining legacy GitHub source destinations",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/167",
+            "createdAt": "2026-10-09T07:55:59Z",
+            "updatedAt": "2026-10-09T15:35:11Z",
+            "closedAt": "2026-10-09T15:35:11Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "bug"
+                },
+                {
+                  "name": "agent:pause"
+                },
+                {
+                  "name": "risk:medium"
+                }
+              ]
+            }
+          },
+          {
+            "number": 136,
+            "title": "Make SFL deployment and release tooling support organization ownership",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/136",
+            "createdAt": "2026-10-06T21:13:21Z",
+            "updatedAt": "2026-10-08T04:22:38Z",
+            "closedAt": "2026-10-08T04:22:38Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 137,
+            "title": "Authorize organization users to request SFL PR reviews",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/137",
+            "createdAt": "2026-10-06T21:13:24Z",
+            "updatedAt": "2026-10-07T02:52:49Z",
+            "closedAt": "2026-10-07T02:52:49Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 135,
+            "title": "Create the HemSoft organization and record the migration inventory",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/135",
+            "createdAt": "2026-10-06T21:13:20Z",
+            "updatedAt": "2026-10-06T23:12:35Z",
+            "closedAt": "2026-10-06T22:30:10Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "documentation"
+                },
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 23,
+            "title": "[aw] Detection Runs",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/23",
+            "createdAt": "2026-08-02T02:57:16Z",
+            "updatedAt": "2026-10-06T21:12:13Z",
+            "closedAt": "2026-10-06T21:12:13Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 127,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/127",
+            "createdAt": "2026-08-19T04:21:19Z",
+            "updatedAt": "2026-08-20T00:34:40Z",
+            "closedAt": "2026-08-20T00:34:40Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 124,
+            "title": "[aw] SFL PR Review failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/124",
+            "createdAt": "2026-08-18T23:03:36Z",
+            "updatedAt": "2026-08-20T00:34:38Z",
+            "closedAt": "2026-08-20T00:34:37Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 123,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/123",
+            "createdAt": "2026-08-18T22:36:40Z",
+            "updatedAt": "2026-08-20T00:34:36Z",
+            "closedAt": "2026-08-20T00:34:36Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 122,
+            "title": "[aw] SFL PR Review reported incomplete result",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/122",
+            "createdAt": "2026-08-18T21:39:10Z",
+            "updatedAt": "2026-08-20T00:34:34Z",
+            "closedAt": "2026-08-20T00:34:34Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 108,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/108",
+            "createdAt": "2026-08-17T22:36:16Z",
+            "updatedAt": "2026-08-20T00:34:31Z",
+            "closedAt": "2026-08-20T00:34:31Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 100,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/100",
+            "createdAt": "2026-08-17T04:23:27Z",
+            "updatedAt": "2026-08-20T00:34:30Z",
+            "closedAt": "2026-08-20T00:34:30Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 95,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/95",
+            "createdAt": "2026-08-16T22:34:45Z",
+            "updatedAt": "2026-08-20T00:34:28Z",
+            "closedAt": "2026-08-20T00:34:28Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 93,
+            "title": "[aw] SFL PR Review produced no safe outputs",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/93",
+            "createdAt": "2026-08-16T15:13:17Z",
+            "updatedAt": "2026-08-20T00:34:26Z",
+            "closedAt": "2026-08-20T00:34:26Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 90,
+            "title": "[aw] SFL PR Review failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/90",
+            "createdAt": "2026-08-16T06:25:41Z",
+            "updatedAt": "2026-08-20T00:34:25Z",
+            "closedAt": "2026-08-20T00:34:25Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 87,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/87",
+            "createdAt": "2026-08-16T04:20:33Z",
+            "updatedAt": "2026-08-20T00:34:23Z",
+            "closedAt": "2026-08-20T00:34:23Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 84,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/84",
+            "createdAt": "2026-08-15T04:16:25Z",
+            "updatedAt": "2026-08-20T00:34:21Z",
+            "closedAt": "2026-08-20T00:34:21Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 76,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/76",
+            "createdAt": "2026-08-14T22:36:38Z",
+            "updatedAt": "2026-08-20T00:34:20Z",
+            "closedAt": "2026-08-20T00:34:20Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 62,
+            "title": "[aw] SFL PR Review failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/62",
+            "createdAt": "2026-08-13T11:34:27Z",
+            "updatedAt": "2026-08-20T00:34:18Z",
+            "closedAt": "2026-08-20T00:34:18Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 61,
+            "title": "[aw] SFL PR Review produced no safe outputs",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/61",
+            "createdAt": "2026-08-13T10:20:37Z",
+            "updatedAt": "2026-08-20T00:34:16Z",
+            "closedAt": "2026-08-20T00:34:16Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 48,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/48",
+            "createdAt": "2026-08-13T04:44:55Z",
+            "updatedAt": "2026-08-20T00:34:14Z",
+            "closedAt": "2026-08-20T00:34:14Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 42,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/42",
+            "createdAt": "2026-08-12T22:40:40Z",
+            "updatedAt": "2026-08-20T00:34:12Z",
+            "closedAt": "2026-08-20T00:34:12Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 39,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/39",
+            "createdAt": "2026-08-12T04:43:33Z",
+            "updatedAt": "2026-08-20T00:34:10Z",
+            "closedAt": "2026-08-20T00:34:10Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 120,
+            "title": "fix(recovery): retry after concurrency-cancelled successors",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/120",
+            "createdAt": "2026-08-18T21:27:54Z",
+            "updatedAt": "2026-08-20T00:04:10Z",
+            "closedAt": "2026-08-20T00:04:10Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 133,
+            "title": "fix(reviewer): make the required gate durable across synthetic merge regeneration",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/133",
+            "createdAt": "2026-08-19T22:47:03Z",
+            "updatedAt": "2026-08-19T23:17:15Z",
+            "closedAt": "2026-08-19T23:17:15Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 131,
+            "title": "fix(reviewer): publish required gate status on merge SHA",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/131",
+            "createdAt": "2026-08-19T21:52:07Z",
+            "updatedAt": "2026-08-19T22:08:11Z",
+            "closedAt": "2026-08-19T22:08:11Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 125,
+            "title": "Replace HemSoft OpenRouter PR reviews with subscription-backed Codex",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/125",
+            "createdAt": "2026-08-19T01:17:15Z",
+            "updatedAt": "2026-08-19T17:30:16Z",
+            "closedAt": "2026-08-19T17:30:16Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 38,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/38",
+            "createdAt": "2026-08-11T22:40:40Z",
+            "updatedAt": "2026-08-19T00:56:58Z",
+            "closedAt": "2026-08-19T00:56:58Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 118,
+            "title": "fix(reviewer): close remaining approval and recovery gaps",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/118",
+            "createdAt": "2026-08-18T20:17:25Z",
+            "updatedAt": "2026-08-18T20:41:12Z",
+            "closedAt": "2026-08-18T20:41:12Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 116,
+            "title": "SFL approval gate runs on unrelated label events",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/116",
+            "createdAt": "2026-08-18T19:41:44Z",
+            "updatedAt": "2026-08-18T20:11:38Z",
+            "closedAt": "2026-08-18T20:11:38Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "bug"
+                }
+              ]
+            }
+          },
+          {
+            "number": 114,
+            "title": "SFL v6.5.7 review fails label cleanup and hangs installing ripgrep",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/114",
+            "createdAt": "2026-08-18T17:29:30Z",
+            "updatedAt": "2026-08-18T19:19:49Z",
+            "closedAt": "2026-08-18T19:19:49Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "bug"
+                }
+              ]
+            }
+          },
+          {
+            "number": 37,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/37",
+            "createdAt": "2026-08-10T22:40:01Z",
+            "updatedAt": "2026-08-18T00:56:28Z",
+            "closedAt": "2026-08-18T00:56:28Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 36,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/36",
+            "createdAt": "2026-08-10T04:41:56Z",
+            "updatedAt": "2026-08-18T00:56:26Z",
+            "closedAt": "2026-08-18T00:56:26Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 105,
+            "title": "[aw] SFL PR Review failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/105",
+            "createdAt": "2026-08-17T20:42:19Z",
+            "updatedAt": "2026-08-17T21:34:55Z",
+            "closedAt": "2026-08-17T21:34:55Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 103,
+            "title": "Fix exact correlation and retry handling for @sfl-app review",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/103",
+            "createdAt": "2026-08-17T05:28:14Z",
+            "updatedAt": "2026-08-17T20:49:32Z",
+            "closedAt": "2026-08-17T20:49:32Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 101,
+            "title": "Prepare v2.1.0-rc.10 release metadata",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/101",
+            "createdAt": "2026-08-17T04:38:10Z",
+            "updatedAt": "2026-08-17T04:59:26Z",
+            "closedAt": "2026-08-17T04:59:26Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 98,
+            "title": "Add an @sfl-app review comment command",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/98",
+            "createdAt": "2026-08-17T03:03:49Z",
+            "updatedAt": "2026-08-17T04:36:04Z",
+            "closedAt": "2026-08-17T04:36:04Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 73,
+            "title": "Align the HemSoft CLI with the deployed reviewer gate",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/73",
+            "createdAt": "2026-08-13T16:08:22Z",
+            "updatedAt": "2026-08-17T03:01:48Z",
+            "closedAt": "2026-08-17T03:01:48Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 35,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/35",
+            "createdAt": "2026-08-09T22:39:21Z",
+            "updatedAt": "2026-08-17T00:57:03Z",
+            "closedAt": "2026-08-17T00:57:03Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 34,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/34",
+            "createdAt": "2026-08-09T04:36:01Z",
+            "updatedAt": "2026-08-17T00:57:02Z",
+            "closedAt": "2026-08-17T00:57:02Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 33,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/33",
+            "createdAt": "2026-08-08T22:38:40Z",
+            "updatedAt": "2026-08-16T00:56:46Z",
+            "closedAt": "2026-08-16T00:56:46Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 32,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/32",
+            "createdAt": "2026-08-08T04:32:00Z",
+            "updatedAt": "2026-08-16T00:56:44Z",
+            "closedAt": "2026-08-16T00:56:44Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 31,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/31",
+            "createdAt": "2026-08-07T00:25:15Z",
+            "updatedAt": "2026-08-14T00:57:46Z",
+            "closedAt": "2026-08-14T00:57:46Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 70,
+            "title": "Preflight reviewer rollout credentials and report distinct health failures",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/70",
+            "createdAt": "2026-08-13T13:39:47Z",
+            "updatedAt": "2026-08-13T16:03:29Z",
+            "closedAt": "2026-08-13T16:03:29Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 63,
+            "title": "Build and prove the private checksum-verified release pipeline",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/63",
+            "createdAt": "2026-08-13T11:42:54Z",
+            "updatedAt": "2026-08-13T13:37:56Z",
+            "closedAt": "2026-08-13T13:37:56Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 59,
+            "title": "Own and test HemSoft gh-sfl source without a Relias checkout",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/59",
+            "createdAt": "2026-08-13T07:08:28Z",
+            "updatedAt": "2026-08-13T11:41:00Z",
+            "closedAt": "2026-08-13T11:41:00Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 57,
+            "title": "Make reviewer contract comparisons line-ending independent",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/57",
+            "createdAt": "2026-08-13T06:59:10Z",
+            "updatedAt": "2026-08-13T07:18:54Z",
+            "closedAt": "2026-08-13T07:13:10Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "bug"
+                }
+              ]
+            }
+          },
+          {
+            "number": 55,
+            "title": "Separate HemSoft distribution and Relias reviewer release metadata",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/55",
+            "createdAt": "2026-08-13T06:16:05Z",
+            "updatedAt": "2026-08-13T06:58:00Z",
+            "closedAt": "2026-08-13T06:57:20Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 53,
+            "title": "Record and audit the Relias reviewer parity baseline",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/53",
+            "createdAt": "2026-08-13T05:57:42Z",
+            "updatedAt": "2026-08-13T06:14:46Z",
+            "closedAt": "2026-08-13T06:14:05Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "documentation"
+                },
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 51,
+            "title": "Repair auto-version syntax without prematurely publishing a stable release",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/51",
+            "createdAt": "2026-08-13T05:25:15Z",
+            "updatedAt": "2026-08-13T05:51:16Z",
+            "closedAt": "2026-08-13T05:51:16Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "bug"
+                }
+              ]
+            }
+          },
+          {
+            "number": 49,
+            "title": "Reuse successful exact-head reviews after delayed PR events",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/49",
+            "createdAt": "2026-08-13T04:53:10Z",
+            "updatedAt": "2026-08-13T05:48:40Z",
+            "closedAt": "2026-08-13T05:48:40Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "bug"
+                }
+              ]
+            }
+          },
+          {
+            "number": 46,
+            "title": "Allow the SFL dispatcher to consume pull-request review labels",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/46",
+            "createdAt": "2026-08-13T04:32:28Z",
+            "updatedAt": "2026-08-13T05:22:42Z",
+            "closedAt": "2026-08-13T05:22:42Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "bug"
+                }
+              ]
+            }
+          },
+          {
+            "number": 43,
+            "title": "Require GitHub-outdated state before resolving SFL review threads",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/43",
+            "createdAt": "2026-08-13T01:34:42Z",
+            "updatedAt": "2026-08-13T04:28:20Z",
+            "closedAt": "2026-08-13T04:28:20Z",
+            "labels": {
+              "nodes": []
+            }
+          },
+          {
+            "number": 21,
+            "title": "[aw] SFL Review - Full-Spectrum Pull Request Review has no AI credits pricing for model (moonshotai/kimi-k3)",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/21",
+            "createdAt": "2026-08-02T02:45:46Z",
+            "updatedAt": "2026-08-13T03:57:30Z",
+            "closedAt": "2026-08-13T03:57:30Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 30,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/30",
+            "createdAt": "2026-08-05T22:45:13Z",
+            "updatedAt": "2026-08-13T00:59:03Z",
+            "closedAt": "2026-08-13T00:59:03Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 29,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/29",
+            "createdAt": "2026-08-05T06:38:05Z",
+            "updatedAt": "2026-08-13T00:59:02Z",
+            "closedAt": "2026-08-13T00:59:02Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 40,
+            "title": "Bring the SFL PR reviewer to functional v6.5.7 parity",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/40",
+            "createdAt": "2026-08-12T17:58:14Z",
+            "updatedAt": "2026-08-12T21:19:04Z",
+            "closedAt": "2026-08-12T21:19:04Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "enhancement"
+                }
+              ]
+            }
+          },
+          {
+            "number": 28,
+            "title": "[aw] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/28",
+            "createdAt": "2026-08-04T06:37:41Z",
+            "updatedAt": "2026-08-12T00:58:08Z",
+            "closedAt": "2026-08-12T00:58:08Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 27,
+            "title": "[aw] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/27",
+            "createdAt": "2026-08-03T23:32:27Z",
+            "updatedAt": "2026-08-11T00:57:27Z",
+            "closedAt": "2026-08-11T00:57:27Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 16,
+            "title": "[aw] SFL Review - Full-Spectrum Pull Request Review failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/16",
+            "createdAt": "2026-08-02T02:13:31Z",
+            "updatedAt": "2026-08-10T00:57:39Z",
+            "closedAt": "2026-08-10T00:57:39Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 14,
+            "title": "[aw] SFL Review - Full-Spectrum Pull Request Review failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/14",
+            "createdAt": "2026-08-02T01:42:58Z",
+            "updatedAt": "2026-08-10T00:57:37Z",
+            "closedAt": "2026-08-10T00:57:37Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 6,
+            "title": "[agentics] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/6",
+            "createdAt": "2026-03-08T03:38:15Z",
+            "updatedAt": "2026-08-04T03:51:22Z",
+            "closedAt": "2026-08-04T03:51:22Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 5,
+            "title": "[agentics] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/5",
+            "createdAt": "2026-03-07T06:07:34Z",
+            "updatedAt": "2026-08-04T03:51:21Z",
+            "closedAt": "2026-08-04T03:51:21Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 4,
+            "title": "[agentics] Daily Simplisticate Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/4",
+            "createdAt": "2026-03-02T06:16:20Z",
+            "updatedAt": "2026-03-07T04:35:12Z",
+            "closedAt": "2026-03-07T04:35:12Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 3,
+            "title": "[agentics] Daily Repo Status failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/3",
+            "createdAt": "2026-03-02T03:42:49Z",
+            "updatedAt": "2026-03-07T04:35:12Z",
+            "closedAt": "2026-03-07T04:35:12Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 2,
+            "title": "[agentics] Repo Audit failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/2",
+            "createdAt": "2026-03-02T03:38:38Z",
+            "updatedAt": "2026-03-07T04:35:11Z",
+            "closedAt": "2026-03-07T04:35:11Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          },
+          {
+            "number": 1,
+            "title": "[agentics] SFL Auditor failed",
+            "url": "https://github.com/hemsoft-dev/set-it-free-loop/issues/1",
+            "createdAt": "2026-03-01T08:27:53Z",
+            "updatedAt": "2026-03-07T04:35:11Z",
+            "closedAt": "2026-03-07T04:35:11Z",
+            "labels": {
+              "nodes": [
+                {
+                  "name": "agentic-workflows"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "observedAt": "2026-10-21T00:21:29.981539+00:00",
+  "excludedFields": [
+    "body",
+    "comments",
+    "reviews",
+    "reviewThreads"
+  ]
+}

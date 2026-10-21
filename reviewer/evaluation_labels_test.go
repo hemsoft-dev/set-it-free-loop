@@ -2,6 +2,7 @@ package reviewer
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -129,5 +130,73 @@ func TestLaterBugIssueCanLabelAnUnfixedCandidate(t *testing.T) {
 	evidence.Commit = test.Snapshot.Head
 	if err := test.ValidateLabels(c.FrozenAt); err != nil {
 		t.Fatal("a later bug does not require an invented fix commit", err)
+	}
+}
+
+func TestRetainedEvaluationLabelsRemainAuditableAndUnfrozen(t *testing.T) {
+	raw, err := os.ReadFile("testdata/evaluation/labels.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := DecodeStrict[EvaluationCorpus](raw, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Cases) != 20 {
+		t.Fatal("candidate set changed")
+	}
+	clean, defects := 0, 0
+	for _, test := range c.Cases {
+		if err := test.ValidateLabels(c.FrozenAt); err != nil {
+			t.Fatal(test.ID, err)
+		}
+		if test.Label.Clean {
+			clean++
+		} else {
+			defects++
+		}
+		if test.PacketHash != "" || test.SerializedPacketBytes != 0 {
+			t.Fatal("draft claims materialized packet")
+		}
+	}
+	if clean != 14 || defects != 6 {
+		t.Fatal("retained label count changed without source audit")
+	}
+	if err := c.Validate(); err == nil {
+		t.Fatal("unmaterialized draft became scorable")
+	}
+}
+
+func TestRetainedEvaluationManifestMatchesLabels(t *testing.T) {
+	raw, err := os.ReadFile("testdata/evaluation-candidates.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Candidates []struct {
+			Number                 int
+			HeadRefOid, BaseRefOid string
+			Label                  EvaluationCaseLabel
+		}
+	}
+	if err = json.Unmarshal(raw, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile("testdata/evaluation/labels.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	corpus, err := DecodeStrict[EvaluationCorpus](raw, 16<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest.Candidates) != len(corpus.Cases) {
+		t.Fatal("selection and corpus differ")
+	}
+	for i, candidate := range manifest.Candidates {
+		test := corpus.Cases[i]
+		if candidate.Number != test.Snapshot.PR || candidate.HeadRefOid != test.Snapshot.Head || candidate.BaseRefOid != test.Snapshot.Base || Digest(candidate.Label) != Digest(test.Label) {
+			t.Fatal("manifest drift at", candidate.Number)
+		}
 	}
 }

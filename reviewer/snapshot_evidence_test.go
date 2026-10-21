@@ -483,3 +483,66 @@ func TestSnapshotEvidenceMissingPromisorBlobNeverFetches(t *testing.T) {
 		t.Fatal("missing source counted as clean", e.Coverage())
 	}
 }
+
+// Later omission records must not invalidate a packet whose early patch fit.
+func TestSnapshotEvidenceBudgetsCoverageAddedAfterEarlyPatch(t *testing.T) {
+	f := newSnapshotGitFixture(t)
+	f.write(t, "!000-early.go", strings.Repeat("x", 60000)+"\n")
+	for i := 0; i < 60; i++ {
+		f.write(t, "zzz-binary-"+strconv.Itoa(i), "omitted\x00source")
+	}
+	f.run(t, "add", "--all")
+	f.run(t, "commit", "--quiet", "-m", "omission inventory")
+	f.snapshot.Head = f.run(t, "rev-parse", "HEAD")
+	files, err := snapshotInventory(context.Background(), f.store(), f.snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	patch, err := f.store().command(context.Background(), snapshotObjectBytes, "diff", "--no-ext-diff", "--no-textconv", "--no-renames", "--no-color", "--no-prefix", "--text", "--diff-algorithm=myers", "--no-indent-heuristic", "--unified=3", f.snapshot.MergeBase, f.snapshot.Head, "--", "!000-early.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files[0].Path != "!000-early.go" {
+		t.Fatal("fixture order")
+	}
+	files[0].Patch = string(patch)
+	encoded, err := json.Marshal(snapshotPacket{Version: "sfl-snapshot-evidence-1", Snapshot: f.snapshot, Files: files, Coverage: []Coverage{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Admit the early patch with 100 bytes spare before the later omissions.
+	contentBytes := 60000 + snapshotPacketBytes - len(encoded) - 100
+	if contentBytes < 1 {
+		t.Fatal("fixture budget")
+	}
+	f.write(t, "!000-early.go", strings.Repeat("x", contentBytes)+"\n")
+	f.run(t, "add", "--all")
+	f.run(t, "commit", "--quiet", "-m", "fill early packet budget")
+	f.snapshot.Head = f.run(t, "rev-parse", "HEAD")
+	evidence, err := CaptureSnapshotEvidence(context.Background(), f.store(), f.snapshot)
+	if err != nil {
+		t.Fatal("late coverage discarded the complete capture", err)
+	}
+	if len(evidence.Packet()) > snapshotPacketBytes || len(evidence.Paths()) != len(files) {
+		t.Fatal("lost inventory or exceeded cap")
+	}
+	omitted := map[string]string{}
+	for _, coverage := range evidence.Coverage() {
+		omitted[coverage.Path] = coverage.Reason
+	}
+	if omitted["!000-early.go"] != "patch omitted by evidence packet byte limit" || len(evidence.lines["!000-early.go"]) != 0 {
+		t.Fatal("omitted early patch retained inline anchors")
+	}
+	for i := 0; i < 60; i++ {
+		if omitted["zzz-binary-"+strconv.Itoa(i)] != "binary or non-UTF-8 diff omitted" {
+			t.Fatal("lost late omission")
+		}
+	}
+	job := testJob()
+	job.Snapshot = f.snapshot
+	job.Packet = evidence.Packet()
+	restored, err := RestoreSnapshotEvidence(context.Background(), f.store(), job)
+	if err != nil || len(restored.diffLines()["!000-early.go"]) != 0 {
+		t.Fatal("capture cannot restore with the same omissions", err)
+	}
+}

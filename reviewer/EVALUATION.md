@@ -3,9 +3,11 @@
 The score harness and self-critique control are offline code for
 [#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177).
 No live benchmark or pilot has run. Candidate selection predates evaluation and
-contains 20 historical PR head/base snapshots. Selection alone is not ground
-truth or proof that ten cases are clean. Synthetic tests check arithmetic and
-failure behavior only.
+contains 20 historical PR head/base snapshots. The
+[retained source audit](testdata/evaluation/README.md) now supports 14 clean and 6 defect labels, with none unlabeled. The corpus
+remains a draft because candidate #156 exceeds the reader inventory cap.
+Selection alone was not ground truth or proof that ten cases were clean.
+Synthetic tests check arithmetic and failure behavior only.
 
 Agents may create and revise corpus labels and post-run actionability labels.
 Every label records its actual agent, provider, model, session, timestamp,

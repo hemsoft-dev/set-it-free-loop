@@ -1,9 +1,9 @@
 {
-  "status": "candidate-only-unlabeled",
+  "status": "evidence-labeled-v2-corpus-unfrozen",
   "repository_id": 1169772257,
   "selected_at": "2026-10-19T05:57:49.029947+00:00",
   "selection": "20 most recent merged PRs before alpha mission; no provider runs or tuning against these candidates",
-  "required_label_work": "Inspect independent later evidence, record agent/provider/model/session/time and revisions or owner overrides, report supported clean/defect/unlabeled counts, then freeze a qualifying EvaluationCorpus. Never use evaluated review outputs as evidence or force ten clean controls. These candidates are not ground truth.",
+  "required_label_work": "Audit retained independent sources and preserve label revision history. Any revision requires a new corpus hash and evaluation plan. Provider eligibility, activation, corpus freeze and hash gates remain separate.",
   "candidates": [
     {
       "baseRefOid": "fd3a5a2d407aa830f64db0a8fa413f3e293f6152",
@@ -12,7 +12,61 @@
       "number": 171,
       "title": "Freeze SFL and remove active repository automation",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/171",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "The candidate removes active automation, records the owner freeze, and redirects historical credential-workflow validation to its inert fixture. No changed path was modified during the seven-day window. The only later matching commit is #180 on October 19, which adds a new explicit offline owner exception above the preserved freeze. That is a new instruction, not a correction to the freeze.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "The candidate removes active automation, records the owner freeze, and redirects historical credential-workflow validation to its inert fixture. No changed path was modified during the seven-day window. The only later matching commit is #180 on October 19, which adds a new explicit offline owner exception above the preserved freeze. That is a new instruction, not a correction to the freeze.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "859446e55ceda9ce0157ccb55c6f9137b47ade91",
+                  "Path": "AGENTS.md",
+                  "Start": 1,
+                  "End": 7
+                },
+                {
+                  "Revision": "859446e55ceda9ce0157ccb55c6f9137b47ade91",
+                  "Path": "deployment/scripts/validate-org-rollout.py",
+                  "Start": 415,
+                  "End": 419
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-10T02:28:54Z",
+            "Through": "2026-10-17T02:28:54+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only fd3a5a2d407aa830f64db0a8fa413f3e293f6152 859446e55ceda9ce0157ccb55c6f9137b47ade91; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 75759b6d3055d6d6dab7cf6ced0afb2ccff081d2..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "8cf5f3fb1b31adca5b36ad12c3f9a0ff742ac9cd",
@@ -21,7 +75,67 @@
       "number": 170,
       "title": "Retire source SFL deployment and record central pilot delivery",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/170",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "The candidate deliberately removes consumer automation, refuses local materialization before file/GitHub access, and pins historical deployed-workflow receipt paths. #171 subsequently expands the owner retirement decision to all remaining validation/publishing/credential workflows; it does not repair a failure in the newly added local refusal or immutable historical-path set. #180 adds the separate offline scope exception. No later causal correction to the changed behavior was found.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "The candidate deliberately removes consumer automation, refuses local materialization before file/GitHub access, and pins historical deployed-workflow receipt paths. #171 subsequently expands the owner retirement decision to all remaining validation/publishing/credential workflows; it does not repair a failure in the newly added local refusal or immutable historical-path set. #180 adds the separate offline scope exception. No later causal correction to the changed behavior was found.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "56af50e168f9b2595e9f782a4bfcd30a82d6939e",
+                  "Path": "deployment/scripts/deploy-workflow.ps1",
+                  "Start": 100,
+                  "End": 105
+                },
+                {
+                  "Revision": "56af50e168f9b2595e9f782a4bfcd30a82d6939e",
+                  "Path": "deployment/scripts/validate-org-rollout.py",
+                  "Start": 24,
+                  "End": 34
+                },
+                {
+                  "Revision": "56af50e168f9b2595e9f782a4bfcd30a82d6939e",
+                  "Path": "deployment/scripts/validate-org-rollout.py",
+                  "Start": 3458,
+                  "End": 3460
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-09T23:00:50Z",
+            "Through": "2026-10-16T23:00:50+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 8cf5f3fb1b31adca5b36ad12c3f9a0ff742ac9cd 56af50e168f9b2595e9f782a4bfcd30a82d6939e; inspect all changed paths and candidate production hunks",
+              "git log --first-parent fd3a5a2d407aa830f64db0a8fa413f3e293f6152..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "7a1596417b9efce35fcc485d04b4cd16eb16e71e",
@@ -30,7 +144,61 @@
       "number": 169,
       "title": "Add central organization App reviewer for the hs-buddy pilot",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/169",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "This is the central reviewer implementation. Later matching history only adds retirement banners (#170/#171), moves its active validation workflow into inactive fixtures (#171), and adds the offline owner exception to the root README (#180). The new central-reviewer production Go source itself has no later main correction through the cutoff. The brief pilot lifetime and retirement sharply limit the meaning of survival.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "This is the central reviewer implementation. Later matching history only adds retirement banners (#170/#171), moves its active validation workflow into inactive fixtures (#171), and adds the offline owner exception to the root README (#180). The new central-reviewer production Go source itself has no later main correction through the cutoff. The brief pilot lifetime and retirement sharply limit the meaning of survival.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "220e0576fee374ad08b4cf218d2298befbd3852c",
+                  "Path": "central-reviewer/main.go",
+                  "Start": 1,
+                  "End": 836
+                },
+                {
+                  "Revision": "220e0576fee374ad08b4cf218d2298befbd3852c",
+                  "Path": "central-reviewer/github.go",
+                  "Start": 1,
+                  "End": 347
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-09T22:04:43Z",
+            "Through": "2026-10-16T22:04:43+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 7a1596417b9efce35fcc485d04b4cd16eb16e71e 220e0576fee374ad08b4cf218d2298befbd3852c; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 8cf5f3fb1b31adca5b36ad12c3f9a0ff742ac9cd..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "f07ab8ca3d58a7a5a6bbf88ff1bc8e3a359b6e53",
@@ -39,7 +207,67 @@
       "number": 168,
       "title": "fix: use canonical organization GitHub destinations",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/168",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "The candidate changes repository-owner defaults and examples to the canonical hemsoft-dev organization while preserving the Git SSH identity. Later source retirement/README replacement and the new central reviewer feature do not reverse or correct these canonical destination changes. The gh-sfl destination defaults and release-protection destination remain unchanged through the cutoff.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "The candidate changes repository-owner defaults and examples to the canonical hemsoft-dev organization while preserving the Git SSH identity. Later source retirement/README replacement and the new central reviewer feature do not reverse or correct these canonical destination changes. The gh-sfl destination defaults and release-protection destination remain unchanged through the cutoff.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "8f4960525d05cf287b483af3a7526577fdfdd153",
+                  "Path": "gh-sfl/main.go",
+                  "Start": 15,
+                  "End": 16
+                },
+                {
+                  "Revision": "8f4960525d05cf287b483af3a7526577fdfdd153",
+                  "Path": "deployment/scripts/deploy-workflow.ps1",
+                  "Start": 92,
+                  "End": 96
+                },
+                {
+                  "Revision": "8f4960525d05cf287b483af3a7526577fdfdd153",
+                  "Path": "deployment/scripts/set-release-protection.ps1",
+                  "Start": 7,
+                  "End": 7
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-09T10:58:48Z",
+            "Through": "2026-10-16T10:58:48+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only f07ab8ca3d58a7a5a6bbf88ff1bc8e3a359b6e53 8f4960525d05cf287b483af3a7526577fdfdd153; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 7a1596417b9efce35fcc485d04b4cd16eb16e71e..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3",
@@ -48,7 +276,55 @@
       "number": 165,
       "title": "fix: preserve invalidation across chained retargets",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/165",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "The single production behavior change separates default-branch-related pull-context invalidations from off-default retargets in the concurrency key. Later matching commits are intentional retirement and freeze. The canonical deployment template line is unchanged through the cutoff. No later fix, revert, or committed regression affecting the changed key was found.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "The single production behavior change separates default-branch-related pull-context invalidations from off-default retargets in the concurrency key. Later matching commits are intentional retirement and freeze. The canonical deployment template line is unchanged through the cutoff. No later fix, revert, or committed regression affecting the changed key was found.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "2401917622af126307f766cc02e0509a7cefc5d8",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 1428,
+                  "End": 1428
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T20:41:02Z",
+            "Through": "2026-10-15T20:41:02+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3 2401917622af126307f766cc02e0509a7cefc5d8; inspect all changed paths and candidate production hunks",
+              "git log --first-parent f07ab8ca3d58a7a5a6bbf88ff1bc8e3a359b6e53..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "05e71cfb6d433a95764e4bf695db9c09c3779bc3",
@@ -57,7 +333,61 @@
       "number": 164,
       "title": "fix: verify registry-free review request intent",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/164",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "The candidate verifies registry-free marker intent with exact comment identity/body/current-context provenance and retains a verified request identity while its run remains active. #165 changes a pre-existing pull-context concurrency key at line 1428; it does not modify these newly added request-verification lines. Later changes retire the source workflow. No subsequent correction to the new verification/cache logic was found.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "The candidate verifies registry-free marker intent with exact comment identity/body/current-context provenance and retains a verified request identity while its run remains active. #165 changes a pre-existing pull-context concurrency key at line 1428; it does not modify these newly added request-verification lines. Later changes retire the source workflow. No subsequent correction to the new verification/cache logic was found.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "47cb10b5e3d271579ee37217ad8dba81cecab3ed",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 750,
+                  "End": 750
+                },
+                {
+                  "Revision": "47cb10b5e3d271579ee37217ad8dba81cecab3ed",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 793,
+                  "End": 830
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T18:31:48Z",
+            "Through": "2026-10-15T18:31:48+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 05e71cfb6d433a95764e4bf695db9c09c3779bc3 47cb10b5e3d271579ee37217ad8dba81cecab3ed; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "b42d3fdfcdb9a07741630a249757b80aaaa05757",
@@ -66,7 +396,67 @@
       "number": 163,
       "title": "fix: invalidate published gates when verification errors",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/163",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "The candidate invalidates published success if status publication or final state verification fails, retries new-check visibility, and attempts both status/check invalidations. #164 modifies the separate pre-existing active invalidation discovery; #165 modifies a separate pre-existing concurrency key. Neither changes the publication logic added here. Source workflow retirement is intentional. No later causal correction to these added publication paths was found.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "The candidate invalidates published success if status publication or final state verification fails, retries new-check visibility, and attempts both status/check invalidations. #164 modifies the separate pre-existing active invalidation discovery; #165 modifies a separate pre-existing concurrency key. Neither changes the publication logic added here. Source workflow retirement is intentional. No later causal correction to these added publication paths was found.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "cd0b91a4d0f671c4f7d8dca93f47d8a5dbad3cc9",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 1271,
+                  "End": 1282
+                },
+                {
+                  "Revision": "cd0b91a4d0f671c4f7d8dca93f47d8a5dbad3cc9",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 1285,
+                  "End": 1321
+                },
+                {
+                  "Revision": "cd0b91a4d0f671c4f7d8dca93f47d8a5dbad3cc9",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 1338,
+                  "End": 1389
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T17:39:10Z",
+            "Through": "2026-10-15T17:39:10+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only b42d3fdfcdb9a07741630a249757b80aaaa05757 cd0b91a4d0f671c4f7d8dca93f47d8a5dbad3cc9; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 05e71cfb6d433a95764e4bf695db9c09c3779bc3..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "4447b3eff8a797ba77a9a9f16120829b9af424e6",
@@ -75,7 +465,67 @@
       "number": 162,
       "title": "fix: revalidate required status repairs and reject empty request history",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/162",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "The candidate rejects empty/padded historical context tokens and revalidates the existing-check required-status repair branch. #163 adds failure handling to the distinct normal new-check publication branch that already existed before this candidate; that is not a correction to the repair branch or request-token changes added by #162. #164 and #165 likewise alter other pre-existing paths. No later fix, revert, or committed regression touching the changed behavior was found.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "The candidate rejects empty/padded historical context tokens and revalidates the existing-check required-status repair branch. #163 adds failure handling to the distinct normal new-check publication branch that already existed before this candidate; that is not a correction to the repair branch or request-token changes added by #162. #164 and #165 likewise alter other pre-existing paths. No later fix, revert, or committed regression touching the changed behavior was found.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "08be54ed0670d6eee1e4ce06e66acce716ad54f9",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 642,
+                  "End": 643
+                },
+                {
+                  "Revision": "08be54ed0670d6eee1e4ce06e66acce716ad54f9",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 656,
+                  "End": 656
+                },
+                {
+                  "Revision": "08be54ed0670d6eee1e4ce06e66acce716ad54f9",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 1171,
+                  "End": 1227
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T17:13:43Z",
+            "Through": "2026-10-15T17:13:43+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 4447b3eff8a797ba77a9a9f16120829b9af424e6 08be54ed0670d6eee1e4ce06e66acce716ad54f9; inspect all changed paths and candidate production hunks",
+              "git log --first-parent b42d3fdfcdb9a07741630a249757b80aaaa05757..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "8c53c43a860a0471308f11501352a9f2b43c7efd",
@@ -84,7 +534,90 @@
       "number": 161,
       "title": "fix: serialize review requests while their registry materializes",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/161",
-      "label": null
+      "label": {
+        "Clean": false,
+        "Rationale": "The new materializing-request branch trusts a workflow run title containing marker intent plus current writer permission, even when the comment merely quotes a request or carries trailing prose, stale head/base, or unbound context. The run-name logic uses substring presence, so such ordinary writer comments can be treated as active invalidations and block publication. Later #164 replaces this title-only acceptance with exact current comment identity/body/context verification. This is directly introduced in candidate lines 795\u2013800, not inferred from an unrelated same-file change.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "fix",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3",
+              "Commit": "104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3",
+              "Description": "Title-only materializing request admission introduced in lines795\u2013800 accepts quoted or malformed marker comments. Later primary regression quoted marker fails against exact candidate head and passes fixed source.",
+              "At": "2026-10-08T14:31:47-04:00",
+              "Lines": [
+                {
+                  "Revision": "31482a869638604a8d6bb52e2c9c24e9d9d51589",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 795,
+                  "End": 800
+                },
+                {
+                  "Revision": "31482a869638604a8d6bb52e2c9c24e9d9d51589",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 6,
+                  "End": 11
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [],
+        "Defects": [
+          {
+            "ID": "pr161-d1",
+            "Rationale": "The new materializing-request branch trusts a workflow run title containing marker intent plus current writer permission, even when the comment merely quotes a request or carries trailing prose, stale head/base, or unbound context. The run-name logic uses substring presence, so such ordinary writer comments can be treated as active invalidations and block publication. Later #164 replaces this title-only acceptance with exact current comment identity/body/context verification. This is directly introduced in candidate lines 795\u2013800, not inferred from an unrelated same-file change.",
+            "Material": true,
+            "Provenance": {
+              "Labeler": {
+                "Kind": "agent",
+                "Agent": "/root",
+                "Provider": "OpenAI",
+                "Model": "gpt-6.1-sol",
+                "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+                "HumanID": 0
+              },
+              "At": "2026-10-21T00:26:50.955189+00:00",
+              "Evidence": [
+                {
+                  "Kind": "fix",
+                  "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3",
+                  "Commit": "104648b0a9f2709c15d2cfb6c9b7d9dc49e171b3",
+                  "Description": "Title-only materializing request admission introduced in lines795\u2013800 accepts quoted or malformed marker comments. Later primary regression quoted marker fails against exact candidate head and passes fixed source.",
+                  "At": "2026-10-08T14:31:47-04:00",
+                  "Lines": [
+                    {
+                      "Revision": "31482a869638604a8d6bb52e2c9c24e9d9d51589",
+                      "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                      "Start": 795,
+                      "End": 800
+                    },
+                    {
+                      "Revision": "31482a869638604a8d6bb52e2c9c24e9d9d51589",
+                      "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                      "Start": 6,
+                      "End": 11
+                    }
+                  ]
+                }
+              ],
+              "Supersedes": "",
+              "OwnerOverride": false
+            }
+          }
+        ]
+      }
     },
     {
       "baseRefOid": "3821a54140b2e1149fac20ca5e247aec8c2efae4",
@@ -93,7 +626,78 @@
       "number": 160,
       "title": "fix: bind review invalidations to registered comment lifecycle",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/160",
-      "label": null
+      "label": {
+        "Clean": false,
+        "Rationale": "The new comment-ID-aware active-invalidation path only accepts a comment run once a matching registry commit-status is visible. A genuine writer request can already have an active invalidation workflow while its CLI registry POST has not appeared; the new branch drops that run, allowing publication without waiting for the pending request. Later #161 explicitly adds a materializing-request path for this interval. The candidate introduced the registry-only admission at lines 777\u2013787, replacing the earlier actor-authorized wait.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "fix",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/afdf3bca1631b98ad87b9aa96ed87d455917e63b",
+              "Commit": "afdf3bca1631b98ad87b9aa96ed87d455917e63b",
+              "Description": "Registry-only admission introduced in lines777\u2013787 drops a valid writer request while its registry POST is not yet visible. Later primary regression writer request before registry visibility fails against exact candidate head and passes fixed source.",
+              "At": "2026-10-08T12:28:42-04:00",
+              "Lines": [
+                {
+                  "Revision": "a293479a7615e7379e4ccc67d95bcabd43b0d802",
+                  "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                  "Start": 777,
+                  "End": 787
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [],
+        "Defects": [
+          {
+            "ID": "pr160-d1",
+            "Rationale": "The new comment-ID-aware active-invalidation path only accepts a comment run once a matching registry commit-status is visible. A genuine writer request can already have an active invalidation workflow while its CLI registry POST has not appeared; the new branch drops that run, allowing publication without waiting for the pending request. Later #161 explicitly adds a materializing-request path for this interval. The candidate introduced the registry-only admission at lines 777\u2013787, replacing the earlier actor-authorized wait.",
+            "Material": true,
+            "Provenance": {
+              "Labeler": {
+                "Kind": "agent",
+                "Agent": "/root",
+                "Provider": "OpenAI",
+                "Model": "gpt-6.1-sol",
+                "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+                "HumanID": 0
+              },
+              "At": "2026-10-21T00:26:50.955189+00:00",
+              "Evidence": [
+                {
+                  "Kind": "fix",
+                  "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/afdf3bca1631b98ad87b9aa96ed87d455917e63b",
+                  "Commit": "afdf3bca1631b98ad87b9aa96ed87d455917e63b",
+                  "Description": "Registry-only admission introduced in lines777\u2013787 drops a valid writer request while its registry POST is not yet visible. Later primary regression writer request before registry visibility fails against exact candidate head and passes fixed source.",
+                  "At": "2026-10-08T12:28:42-04:00",
+                  "Lines": [
+                    {
+                      "Revision": "a293479a7615e7379e4ccc67d95bcabd43b0d802",
+                      "Path": "deployment/infrastructure/sfl-pr-review-auto.yml",
+                      "Start": 777,
+                      "End": 787
+                    }
+                  ]
+                }
+              ],
+              "Supersedes": "",
+              "OwnerOverride": false
+            }
+          }
+        ]
+      }
     },
     {
       "baseRefOid": "73607a1b28beb31e794be6498e0d244866b45ab5",
@@ -102,7 +706,78 @@
       "number": 159,
       "title": "fix: revalidate complete request history before publishing review gates",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/159",
-      "label": null
+      "label": {
+        "Clean": false,
+        "Rationale": "The new run-name treats ordinary PR comments as review requests. Existing active-invalidation classification then counts an unrelated administrator comment, falsely blocking publication. Later #160 binds the title to a registered comment ID; its actual focused regression fails at this candidate and passes after the fix.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "fix",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/8c53c43a860a0471308f11501352a9f2b43c7efd",
+              "Commit": "8c53c43a860a0471308f11501352a9f2b43c7efd",
+              "Description": "Bind active invalidation run to its registered comment ID; ordinary administrator comment no longer blocks.",
+              "At": "2026-10-08T11:52:47-04:00",
+              "Lines": [
+                {
+                  "Revision": "73607a1b28beb31e794be6498e0d244866b45ab5",
+                  "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                  "Start": 7,
+                  "End": 7
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [],
+        "Defects": [
+          {
+            "ID": "pr159-d1",
+            "Rationale": "The new run-name treats ordinary PR comments as review requests. Existing active-invalidation classification then counts an unrelated administrator comment, falsely blocking publication. Later #160 binds the title to a registered comment ID; its actual focused regression fails at this candidate and passes after the fix.",
+            "Material": true,
+            "Provenance": {
+              "Labeler": {
+                "Kind": "agent",
+                "Agent": "/root",
+                "Provider": "OpenAI",
+                "Model": "gpt-6.1-sol",
+                "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+                "HumanID": 0
+              },
+              "At": "2026-10-21T00:26:50.955189+00:00",
+              "Evidence": [
+                {
+                  "Kind": "fix",
+                  "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/8c53c43a860a0471308f11501352a9f2b43c7efd",
+                  "Commit": "8c53c43a860a0471308f11501352a9f2b43c7efd",
+                  "Description": "Bind active invalidation run to its registered comment ID; ordinary administrator comment no longer blocks.",
+                  "At": "2026-10-08T11:52:47-04:00",
+                  "Lines": [
+                    {
+                      "Revision": "73607a1b28beb31e794be6498e0d244866b45ab5",
+                      "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                      "Start": 7,
+                      "End": 7
+                    }
+                  ]
+                }
+              ],
+              "Supersedes": "",
+              "OwnerOverride": false
+            }
+          }
+        ]
+      }
     },
     {
       "baseRefOid": "ef807fc3ac3cb734efa70435a6a3970223680476",
@@ -111,7 +786,78 @@
       "number": 158,
       "title": "fix: preserve registered review history across edits and cutovers",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/158",
-      "label": null
+      "label": {
+        "Clean": false,
+        "Rationale": "The newly admitted baseChanged condition includes release-a to release-b, although neither base is the supported default branch. Later #160 narrows admission to departure from default and adds a regression that fails at this candidate and passes after correction.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "fix",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/8c53c43a860a0471308f11501352a9f2b43c7efd",
+              "Commit": "8c53c43a860a0471308f11501352a9f2b43c7efd",
+              "Description": "Reject nondefault-to-nondefault retargets; admit only current default or a departure from default.",
+              "At": "2026-10-08T11:52:47-04:00",
+              "Lines": [
+                {
+                  "Revision": "d20858e5416974992544ad6fe4ed11c36daf3eea",
+                  "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                  "Start": 1273,
+                  "End": 1276
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [],
+        "Defects": [
+          {
+            "ID": "pr158-d1",
+            "Rationale": "The newly admitted baseChanged condition includes release-a to release-b, although neither base is the supported default branch. Later #160 narrows admission to departure from default and adds a regression that fails at this candidate and passes after correction.",
+            "Material": true,
+            "Provenance": {
+              "Labeler": {
+                "Kind": "agent",
+                "Agent": "/root",
+                "Provider": "OpenAI",
+                "Model": "gpt-6.1-sol",
+                "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+                "HumanID": 0
+              },
+              "At": "2026-10-21T00:26:50.955189+00:00",
+              "Evidence": [
+                {
+                  "Kind": "fix",
+                  "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/8c53c43a860a0471308f11501352a9f2b43c7efd",
+                  "Commit": "8c53c43a860a0471308f11501352a9f2b43c7efd",
+                  "Description": "Reject nondefault-to-nondefault retargets; admit only current default or a departure from default.",
+                  "At": "2026-10-08T11:52:47-04:00",
+                  "Lines": [
+                    {
+                      "Revision": "d20858e5416974992544ad6fe4ed11c36daf3eea",
+                      "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                      "Start": 1273,
+                      "End": 1276
+                    }
+                  ]
+                }
+              ],
+              "Supersedes": "",
+              "OwnerOverride": false
+            }
+          }
+        ]
+      }
     },
     {
       "baseRefOid": "89425320ace3127a829d86e3b642fe2b31fd979e",
@@ -120,7 +866,78 @@
       "number": 157,
       "title": "fix: keep overlapping Codex review requests from skipping their predecessor",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/157",
-      "label": null
+      "label": {
+        "Clean": false,
+        "Rationale": "The newly introduced nondefault-base early return skips invalidation when a same-repository PR leaves main for release. Later #158 admits base-change departures; an extracted-source probe fails at this candidate and passes after correction.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "fix",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/73607a1b28beb31e794be6498e0d244866b45ab5",
+              "Commit": "73607a1b28beb31e794be6498e0d244866b45ab5",
+              "Description": "Admit departure from default branch so the previous review context is invalidated.",
+              "At": "2026-10-08T10:27:22-04:00",
+              "Lines": [
+                {
+                  "Revision": "8fba49c1b67d0d2c80e5bf9d2e5a4c549823d084",
+                  "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                  "Start": 1247,
+                  "End": 1253
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [],
+        "Defects": [
+          {
+            "ID": "pr157-d1",
+            "Rationale": "The newly introduced nondefault-base early return skips invalidation when a same-repository PR leaves main for release. Later #158 admits base-change departures; an extracted-source probe fails at this candidate and passes after correction.",
+            "Material": true,
+            "Provenance": {
+              "Labeler": {
+                "Kind": "agent",
+                "Agent": "/root",
+                "Provider": "OpenAI",
+                "Model": "gpt-6.1-sol",
+                "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+                "HumanID": 0
+              },
+              "At": "2026-10-21T00:26:50.955189+00:00",
+              "Evidence": [
+                {
+                  "Kind": "fix",
+                  "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/73607a1b28beb31e794be6498e0d244866b45ab5",
+                  "Commit": "73607a1b28beb31e794be6498e0d244866b45ab5",
+                  "Description": "Admit departure from default branch so the previous review context is invalidated.",
+                  "At": "2026-10-08T10:27:22-04:00",
+                  "Lines": [
+                    {
+                      "Revision": "8fba49c1b67d0d2c80e5bf9d2e5a4c549823d084",
+                      "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                      "Start": 1247,
+                      "End": 1253
+                    }
+                  ]
+                }
+              ],
+              "Supersedes": "",
+              "OwnerOverride": false
+            }
+          }
+        ]
+      }
     },
     {
       "baseRefOid": "afdf3bca1631b98ad87b9aa96ed87d455917e63b",
@@ -129,7 +946,67 @@
       "number": 156,
       "title": "docs: record executed organization transfers and remaining gates",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/156",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "No later corrective Git change to the candidate executable changes was found in the seven-day window or through the observation cutoff. Retained-record checker, executed-transfer validator, corruption tests and Go onboarding contract source stay identical. Release-helper differences are intentional retirement path relocation; embedded historical receipt blobs were excluded from label evidence.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "No later corrective Git change to the candidate executable changes was found in the seven-day window or through the observation cutoff. Retained-record checker, executed-transfer validator, corruption tests and Go onboarding contract source stay identical. Release-helper differences are intentional retirement path relocation; embedded historical receipt blobs were excluded from label evidence.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "35c2c9258b2fd3cf73f1d64a5f2685dfccdead0a",
+                  "Path": "deployment/scripts/check-executed-validation-record.py",
+                  "Start": 1,
+                  "End": 35
+                },
+                {
+                  "Revision": "35c2c9258b2fd3cf73f1d64a5f2685dfccdead0a",
+                  "Path": "deployment/scripts/validate-executed-transfers.py",
+                  "Start": 1,
+                  "End": 843
+                },
+                {
+                  "Revision": "35c2c9258b2fd3cf73f1d64a5f2685dfccdead0a",
+                  "Path": "deployment/scripts/set-release-version.ps1",
+                  "Start": 33,
+                  "End": 42
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T16:36:22Z",
+            "Through": "2026-10-15T16:36:22+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only afdf3bca1631b98ad87b9aa96ed87d455917e63b 35c2c9258b2fd3cf73f1d64a5f2685dfccdead0a; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 4447b3eff8a797ba77a9a9f16120829b9af424e6..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "292336619aaf8a484e45590bb8897902c7ce7fce",
@@ -138,7 +1015,67 @@
       "number": 155,
       "title": "fix: reject native reviews with ambiguous base provenance",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/155",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "No causal later fix to the newly added artifact base-provenance validation was found. Its artifact reviewContextUnambiguous function remains text-identical at cutoff. Later requester-path and overlap corrections address inherited sibling code rather than this added artifact validation.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "No causal later fix to the newly added artifact base-provenance validation was found. Its artifact reviewContextUnambiguous function remains text-identical at cutoff. Later requester-path and overlap corrections address inherited sibling code rather than this added artifact validation.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "ef3891a0395e7772f4601da64e39e38366c63d68",
+                  "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                  "Start": 774,
+                  "End": 797
+                },
+                {
+                  "Revision": "ef3891a0395e7772f4601da64e39e38366c63d68",
+                  "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                  "Start": 811,
+                  "End": 814
+                },
+                {
+                  "Revision": "ef3891a0395e7772f4601da64e39e38366c63d68",
+                  "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                  "Start": 1317,
+                  "End": 1322
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T09:10:43Z",
+            "Through": "2026-10-15T09:10:43+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 292336619aaf8a484e45590bb8897902c7ce7fce ef3891a0395e7772f4601da64e39e38366c63d68; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 89425320ace3127a829d86e3b642fe2b31fd979e..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "cec6674eda48526d9564163973ba619cc3cb4273",
@@ -147,7 +1084,78 @@
       "number": 154,
       "title": "fix: block overlapping registered review results",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/154",
-      "label": null
+      "label": {
+        "Clean": false,
+        "Rationale": "The newly added hasNewerRegisteredRequest filters through exact unedited requestCandidates, so editing a newer registered request erases its supersession and can permit an ambiguous older result. Later #158 preserves raw historical registrations; an extracted-source probe fails at this candidate and passes at that fix.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "fix",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/73607a1b28beb31e794be6498e0d244866b45ab5",
+              "Commit": "73607a1b28beb31e794be6498e0d244866b45ab5",
+              "Description": "Keep edited or erased newer registered comments visible to supersession.",
+              "At": "2026-10-08T10:27:22-04:00",
+              "Lines": [
+                {
+                  "Revision": "3614b31b5f9f27c2580c024925bb30a5829bdc0a",
+                  "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                  "Start": 634,
+                  "End": 642
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [],
+        "Defects": [
+          {
+            "ID": "pr154-d1",
+            "Rationale": "The newly added hasNewerRegisteredRequest filters through exact unedited requestCandidates, so editing a newer registered request erases its supersession and can permit an ambiguous older result. Later #158 preserves raw historical registrations; an extracted-source probe fails at this candidate and passes at that fix.",
+            "Material": true,
+            "Provenance": {
+              "Labeler": {
+                "Kind": "agent",
+                "Agent": "/root",
+                "Provider": "OpenAI",
+                "Model": "gpt-6.1-sol",
+                "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+                "HumanID": 0
+              },
+              "At": "2026-10-21T00:26:50.955189+00:00",
+              "Evidence": [
+                {
+                  "Kind": "fix",
+                  "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/73607a1b28beb31e794be6498e0d244866b45ab5",
+                  "Commit": "73607a1b28beb31e794be6498e0d244866b45ab5",
+                  "Description": "Keep edited or erased newer registered comments visible to supersession.",
+                  "At": "2026-10-08T10:27:22-04:00",
+                  "Lines": [
+                    {
+                      "Revision": "3614b31b5f9f27c2580c024925bb30a5829bdc0a",
+                      "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                      "Start": 634,
+                      "End": 642
+                    }
+                  ]
+                }
+              ],
+              "Supersedes": "",
+              "OwnerOverride": false
+            }
+          }
+        ]
+      }
     },
     {
       "baseRefOid": "2dd6ffd08c7d8a12cb97d5f8247219fe16478b45",
@@ -156,7 +1164,67 @@
       "number": 153,
       "title": "fix: preserve consumer-owned workflows during full sync",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/153",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "No later implementation correction found in the seven-day window or through cutoff. github.go, sync.go, sync_policy.go and sync_policy_test.go stay byte-identical, preserving immutable consumer-policy capture and workflow exclusions. Later shared metadata/onboarding changes do not correct these functions.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "No later implementation correction found in the seven-day window or through cutoff. github.go, sync.go, sync_policy.go and sync_policy_test.go stay byte-identical, preserving immutable consumer-policy capture and workflow exclusions. Later shared metadata/onboarding changes do not correct these functions.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "f46fb2fef9eff3db5b7925f7515e920a4b4450ed",
+                  "Path": "gh-sfl/sync_policy.go",
+                  "Start": 1,
+                  "End": 144
+                },
+                {
+                  "Revision": "f46fb2fef9eff3db5b7925f7515e920a4b4450ed",
+                  "Path": "gh-sfl/sync.go",
+                  "Start": 105,
+                  "End": 135
+                },
+                {
+                  "Revision": "f46fb2fef9eff3db5b7925f7515e920a4b4450ed",
+                  "Path": "gh-sfl/github.go",
+                  "Start": 554,
+                  "End": 583
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T06:44:35Z",
+            "Through": "2026-10-15T06:44:35+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 2dd6ffd08c7d8a12cb97d5f8247219fe16478b45 f46fb2fef9eff3db5b7925f7515e920a4b4450ed; inspect all changed paths and candidate production hunks",
+              "git log --first-parent cec6674eda48526d9564163973ba619cc3cb4273..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "ee75f09992d7b54b5f9f89dc4ab59caa055e0f05",
@@ -165,7 +1233,67 @@
       "number": 152,
       "title": "fix: qualify the existing full deployment as wider pilot",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/152",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "No later correction to newly added existing wider-pilot eligibility or ordering found in the seven-day window or through cutoff. Both new validator functions remain text-identical. Later validator edits affect distinct artifact provenance, snapshots and retirement history.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "No later correction to newly added existing wider-pilot eligibility or ordering found in the seven-day window or through cutoff. Both new validator functions remain text-identical. Later validator edits affect distinct artifact provenance, snapshots and retirement history.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "3af36739bef1368917c349161c6c1f4487e24daa",
+                  "Path": "deployment/scripts/validate-org-rollout.py",
+                  "Start": 1110,
+                  "End": 1137
+                },
+                {
+                  "Revision": "3af36739bef1368917c349161c6c1f4487e24daa",
+                  "Path": "deployment/scripts/validate-org-rollout.py",
+                  "Start": 3284,
+                  "End": 3287
+                },
+                {
+                  "Revision": "3af36739bef1368917c349161c6c1f4487e24daa",
+                  "Path": "deployment/scripts/validate-org-rollout.py",
+                  "Start": 3802,
+                  "End": 3804
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T05:26:36Z",
+            "Through": "2026-10-15T05:26:36+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only ee75f09992d7b54b5f9f89dc4ab59caa055e0f05 3af36739bef1368917c349161c6c1f4487e24daa; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 2dd6ffd08c7d8a12cb97d5f8247219fe16478b45..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "6f631ec574f87f126f8b02030f180055fb4023ed",
@@ -174,7 +1302,55 @@
       "number": 151,
       "title": "feat: verify organization App coverage without exporting credentials",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/151",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "No later correction found in the seven-day window or through cutoff. The scoped organization-coverage module and synthetic tests stay byte-identical, and the verifier workflow is preserved byte-identically in the retired-workflow fixture. Retirement is intentional deactivation, not defect evidence.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "No later correction found in the seven-day window or through cutoff. The scoped organization-coverage module and synthetic tests stay byte-identical, and the verifier workflow is preserved byte-identically in the retired-workflow fixture. Retirement is intentional deactivation, not defect evidence.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "dff831f8154d34b1f348ca11014d3f7beab289c3",
+                  "Path": "deployment/scripts/SflOrganizationCoverage.psm1",
+                  "Start": 1,
+                  "End": 196
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T05:13:39Z",
+            "Through": "2026-10-15T05:13:39+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 6f631ec574f87f126f8b02030f180055fb4023ed dff831f8154d34b1f348ca11014d3f7beab289c3; inspect all changed paths and candidate production hunks",
+              "git log --first-parent ee75f09992d7b54b5f9f89dc4ab59caa055e0f05..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     },
     {
       "baseRefOid": "21b4fbc9228cb4e444f6a68fbce66e804bff156d",
@@ -183,7 +1359,64 @@
       "number": 150,
       "title": "fix: clarify review recovery after base advances",
       "url": "https://github.com/hemsoft-dev/set-it-free-loop/pull/150",
-      "label": null
+      "label": {
+        "Clean": true,
+        "Rationale": "No later correction to the added base-advance recovery message or associated tests found in the seven-day window or through cutoff. Exact instruction to advance the PR branch to a new head before requesting review remains in the canonical preserved observer. Later #155 changes separate retarget/reopen guidance.",
+        "Provenance": {
+          "Labeler": {
+            "Kind": "agent",
+            "Agent": "/root",
+            "Provider": "OpenAI",
+            "Model": "gpt-6.1-sol",
+            "Session": "01a15233-b165-7fd3-9ba7-2caea2632bde",
+            "HumanID": 0
+          },
+          "At": "2026-10-21T00:26:50.955189+00:00",
+          "Evidence": [
+            {
+              "Kind": "history",
+              "URL": "https://github.com/hemsoft-dev/set-it-free-loop/commit/5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Commit": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+              "Description": "No later correction to the added base-advance recovery message or associated tests found in the seven-day window or through cutoff. Exact instruction to advance the PR branch to a new head before requesting review remains in the canonical preserved observer. Later #155 changes separate retarget/reopen guidance.",
+              "At": "2026-10-20T19:59:18-04:00",
+              "Lines": [
+                {
+                  "Revision": "ad56496436cc5cd53fecbd8eb00ad60134b33504",
+                  "Path": ".github/workflows/sfl-pr-review-auto.yml",
+                  "Start": 1386,
+                  "End": 1386
+                },
+                {
+                  "Revision": "ad56496436cc5cd53fecbd8eb00ad60134b33504",
+                  "Path": "deployment/tests/test-sfl-pr-review.ps1",
+                  "Start": 539,
+                  "End": 545
+                }
+              ]
+            }
+          ],
+          "Supersedes": "",
+          "OwnerOverride": false
+        },
+        "Survival": [
+          {
+            "Days": 7,
+            "From": "2026-10-08T04:29:12Z",
+            "Through": "2026-10-15T04:29:12+00:00",
+            "HistoryRevision": "5dc0aa4d4bd1764ccc4882507f4600bce00d59ff",
+            "Searches": [
+              "git diff --name-only 21b4fbc9228cb4e444f6a68fbce66e804bff156d ad56496436cc5cd53fecbd8eb00ad60134b33504; inspect all changed paths and candidate production hunks",
+              "git log --first-parent 197e0d2d7af1b60647e80148a9cfd75f81c95c16..5dc0aa4d4bd1764ccc4882507f4600bce00d59ff -- <all changed paths>; inspect later patches for causal fixes/reverts/regressions, including after the seven-day window",
+              "Complete GitHub issue metadata catalog: 74 issues, number/title/dates/labels only; examine bug/regression candidates, no bodies or review/comment fields"
+            ],
+            "Limitations": "Committed-source observation only; retired automation had at most about two days of runtime exposure. No issue-body/comment/review search; metadata titles/labels/dates only. No provider output evidence. Prior model/maintainer exposure unknown; selected before alpha tuning, not a claim of model-unseen cases."
+          }
+        ],
+        "Defects": []
+      }
     }
-  ]
+  ],
+  "labelled_at": "2026-10-21T00:26:50.955189+00:00",
+  "labels": "evaluation/labels.json",
+  "freeze_blocker": "Candidate #156 changes 335 paths, exceeding the unchanged 128-path trusted reader limit. labels.json is a draft EvaluationCorpus with empty packet hashes, not a frozen/scorable corpus."
 }

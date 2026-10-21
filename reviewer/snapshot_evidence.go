@@ -181,7 +181,21 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 		}
 		e.lines[file.Path] = lines
 	}
+	// Coverage for later files can push an earlier admitted patch over budget.
+	// Keep the complete inventory and omissions, and retire whole patches with
+	// their inline anchors until the final serialized packet fits. Never trim a
+	// patch or discard an omission to meet the cap.
 	encoded, err := json.Marshal(p)
+	for i := len(p.Files) - 1; err == nil && len(encoded) > snapshotPacketBytes && i >= 0; i-- {
+		file := &p.Files[i]
+		if file.Patch == "" {
+			continue
+		}
+		file.Patch = ""
+		delete(e.lines, file.Path)
+		p.Coverage = append(p.Coverage, Coverage{file.Path, "patch omitted by evidence packet byte limit"})
+		encoded, err = json.Marshal(p)
+	}
 	if err != nil || len(encoded) > snapshotPacketBytes {
 		return nil, errors.New("complete evidence inventory and coverage exceed packet limit")
 	}
