@@ -166,7 +166,10 @@ func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, con
 			input := *control
 			input.Step = i + 1
 			input.History = control.History[:i]
-			if verifyControlSource(ctx, input, prior, reader) != nil {
+			// Replaying a frozen phase gets that phase's bounded verifier.
+			// Neither other history nor current output spends its allowance.
+			historyReader, historyErr := NewReader(store, s.Snapshot, paths, s.Limits)
+			if historyErr != nil || verifyControlSource(ctx, input, prior, historyReader) != nil {
 				return nativeVMTaskReport{}, nil, nil, adapterValidation(ErrSourceService, true)
 			}
 		}

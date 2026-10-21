@@ -17,6 +17,9 @@ exactly `Step-1` prior reports and the common frozen evaluation byte limits.
 `ValidateControlReport` applies the same reducer checks used by the control
 loop. Native entry validates before eligibility, assets or auth. The trusted
 host verifies prior source quotes against the immutable reader before boot.
+Each frozen report uses its own bounded verifier with the same snapshot,
+allowlist and per-session limits. Historical verification does not consume
+another prior report's allowance or the current output's reader budget.
 
 `ControlCapabilitySession` derives an R1 capability with job ID
 `control_` plus the digest of the full control input. It preserves the original

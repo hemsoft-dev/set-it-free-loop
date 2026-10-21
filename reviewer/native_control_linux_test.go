@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -244,5 +245,66 @@ func TestNativeControlInvalidOutputStillRequiresStoppedAuthReturn(t *testing.T) 
 				t.Fatal("stopped invalid output lost matching auth", manager.stops, phase.authReturned)
 			}
 		})
+	}
+}
+
+type controlCountingStore struct {
+	store ObjectStore
+	reads int
+}
+
+func (s *controlCountingStore) Read(ctx context.Context, revision, path string, limit int) (Object, error) {
+	s.reads++
+	return s.store.Read(ctx, revision, path, limit)
+}
+func TestNativeControlHistoryHasPerReportVerificationBudget(t *testing.T) {
+	input := controlInputFixture(Codex)
+	files := map[string]Object{}
+	paths := []string{}
+	active := []Finding{}
+	for step := 1; step <= 3; step++ {
+		report := ControlReport{InputHash: Digest(input), JobHash: Digest(input.Job), Step: step, Findings: []Finding{}, Judgments: []Judgment{}, Retractions: []string{}, Coverage: []Coverage{}, Usage: Usage{Turns: 1}}
+		for _, prior := range active {
+			report.Judgments = append(report.Judgments, Judgment{FindingID: prior.ID, Verdict: "confirm", Reason: "fixed evidence", Evidence: []Anchor{prior.Anchor}})
+		}
+		for n := 0; n < 30; n++ {
+			id := strconv.Itoa(len(active) + n)
+			path := "object" + id + ".go"
+			finding := Finding{ID: "codex:f" + id, Title: "Synthetic", Body: "Synthetic evidence only", Severity: 2, Anchor: Anchor{Path: path, Line: 1, Quote: "x", Revision: input.Job.Snapshot.Head}}
+			report.Findings = append(report.Findings, finding)
+			files[path] = Object{Mode: "100644", Data: []byte("x\n")}
+			paths = append(paths, path)
+		}
+		if err := ValidateControlReport(report, input); err != nil {
+			t.Fatal("invalid bounded history fixture", step, err)
+		}
+		active = append(active, report.Findings...)
+		input.History = append(input.History, report)
+		input.Step++
+	}
+	store := &controlCountingStore{store: &fixtureStore{files: files}}
+	reader, err := NewReader(store, input.Job.Snapshot, paths, input.Limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := egressTestPolicy(Codex)
+	policy.ResponsePolicy = CodexSourceResponses
+	checks := 0
+	worker, err := NewNativeVMControlReviewer(NativeVMOptions{Provider: Codex, Root: "/unopened/native-root", Stub: "/unopened/stub", StubHash: strings.Repeat("a", 64), Auth: &AuthStore{provider: Codex, directory: "/unopened/auth"}, Reader: reader, Policy: policy, Transport: egressRoundTrip(func(*http.Request) (*http.Response, error) {
+		t.Fatal("history check reached HTTP")
+		return nil, ErrLiveBlocked
+	}), Check: func(context.Context, Session) error { checks++; return nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err = worker.CritiqueAudited(context.Background(), input)
+	// Missing boot assets stop this no-auth test after source preflight. The
+	// actual store must see 30+60+90 reads, each prior phase within its own 128.
+	if err == nil || checks != 1 || store.reads != 180 {
+		t.Fatal("valid history exhausted a shared reader budget", checks, store.reads, err)
+	}
+	reads, _ := reader.Evidence()
+	if len(reads) != 0 {
+		t.Fatal("preflight consumed the caller's reader")
 	}
 }
