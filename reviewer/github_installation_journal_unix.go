@@ -47,19 +47,58 @@ type GitHubInstallationAttempt struct {
 // Durable metadata has optional receipt/recovery pointers, unlike model-output
 // schemas that reject every null. Keep bounded, duplicate/unknown/trailing-key
 // rejection and explicitly require every nonoptional field before semantics.
+func installationJournalObject(raw []byte, required, optional []string) (map[string]json.RawMessage, error) {
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) != nil {
+		return nil, ErrGitHubInstallationRecovery
+	}
+	allowed := map[string]bool{}
+	for _, name := range required {
+		allowed[name] = true
+		value, ok := fields[name]
+		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			return nil, ErrGitHubInstallationRecovery
+		}
+	}
+	for _, name := range optional {
+		allowed[name] = true
+	}
+	for name := range fields {
+		if !allowed[name] {
+			return nil, ErrGitHubInstallationRecovery
+		}
+	}
+	return fields, nil
+}
+
 func decodeGitHubInstallationAttempt(raw []byte) (GitHubInstallationAttempt, error) {
 	var out GitHubInstallationAttempt
 	if len(raw) == 0 || len(raw) > 4096 || uniqueJSONKeys(json.NewDecoder(bytes.NewReader(raw)), 0) != nil {
 		return out, ErrGitHubInstallationRecovery
 	}
-	var fields map[string]json.RawMessage
-	if json.Unmarshal(raw, &fields) != nil {
-		return out, ErrGitHubInstallationRecovery
+	fields, err := installationJournalObject(raw, []string{"Version", "ID", "Enrollment", "Role", "State", "StartedAt", "UpdatedAt", "MintAttempted"}, []string{"Receipt", "Recovery"})
+	if err != nil {
+		return out, err
 	}
-	for _, name := range []string{"Version", "ID", "Enrollment", "Role", "State", "StartedAt", "UpdatedAt", "MintAttempted"} {
-		value, ok := fields[name]
-		if !ok || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			return out, ErrGitHubInstallationRecovery
+	enrollmentFields := []string{"RepositoryID", "InstallationID", "AppID", "BotID", "OwnerID"}
+	if _, err := installationJournalObject(fields["Enrollment"], enrollmentFields, nil); err != nil {
+		return out, err
+	}
+	for _, name := range []string{"Receipt", "Recovery"} {
+		value := fields[name]
+		if len(value) == 0 || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			continue
+		}
+		if name == "Receipt" {
+			receipt, err := installationJournalObject(value, []string{"Enrollment", "Role", "CheckedAt", "ExpiresAt"}, nil)
+			if err != nil {
+				return out, err
+			}
+			if _, err := installationJournalObject(receipt["Enrollment"], enrollmentFields, nil); err != nil {
+				return out, err
+			}
+		} else if _, err := installationJournalObject(value, []string{"AttemptID", "OwnerID", "At", "EvidenceHash"}, nil); err != nil {
+			return out, err
 		}
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -140,7 +179,7 @@ func NewGitHubInstallationJournal(ctx context.Context, store *Store, now func() 
 			return nil, ErrGitHubInstallationRecovery
 		}
 	}
-	if _, err = store.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS github_installation_attempts (sequence INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL, attempt TEXT NOT NULL UNIQUE, record BLOB NOT NULL)`); err != nil {
+	if _, err = store.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS github_installation_attempts (sequence INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT NOT NULL CHECK(role IN ('reader','publisher')), attempt TEXT NOT NULL UNIQUE, record BLOB NOT NULL CHECK(length(record)<=4096))`); err != nil {
 		return nil, ErrGitHubInstallationRecovery
 	}
 	return &GitHubInstallationJournal{store, state.Enrollment, directory, now}, nil
@@ -168,7 +207,8 @@ type installationRowReader interface {
 
 func (j *GitHubInstallationJournal) latest(ctx context.Context, db installationRowReader, role GitHubCredentialRole) (GitHubInstallationAttempt, error) {
 	var raw []byte
-	err := db.QueryRowContext(ctx, "SELECT record FROM github_installation_attempts WHERE role=? ORDER BY sequence DESC LIMIT 1", string(role)).Scan(&raw)
+	var id string
+	err := db.QueryRowContext(ctx, "SELECT attempt,CASE WHEN length(record)<=4096 THEN record ELSE NULL END FROM github_installation_attempts WHERE role=? ORDER BY sequence DESC LIMIT 1", string(role)).Scan(&id, &raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return GitHubInstallationAttempt{}, nil
 	}
@@ -176,7 +216,7 @@ func (j *GitHubInstallationJournal) latest(ctx context.Context, db installationR
 		return GitHubInstallationAttempt{}, ErrGitHubInstallationRecovery
 	}
 	record, err := decodeGitHubInstallationAttempt(raw)
-	if err != nil || !record.valid(j.enrollment, role) {
+	if err != nil || record.ID != id || !record.valid(j.enrollment, role) {
 		return GitHubInstallationAttempt{}, ErrGitHubInstallationRecovery
 	}
 	return record, nil
@@ -219,7 +259,7 @@ func (j *GitHubInstallationJournal) write(ctx context.Context, tx *sql.Tx, recor
 // Retain at least seven days of terminal history, every unresolved attempt and
 // the latest record for each role. Excess attempts fail before any HTTP work.
 func (j *GitHubInstallationJournal) prune(ctx context.Context, tx *sql.Tx, now time.Time) error {
-	rows, err := tx.QueryContext(ctx, "SELECT record FROM github_installation_attempts ORDER BY sequence DESC LIMIT 1025")
+	rows, err := tx.QueryContext(ctx, "SELECT CASE WHEN length(record)<=4096 THEN record ELSE NULL END FROM github_installation_attempts ORDER BY sequence DESC LIMIT 1025")
 	if err != nil {
 		return ErrGitHubInstallationRecovery
 	}

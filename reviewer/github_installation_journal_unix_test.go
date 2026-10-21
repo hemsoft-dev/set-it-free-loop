@@ -3,6 +3,7 @@
 package reviewer
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
@@ -44,8 +45,19 @@ func installationJournalReopen(t *testing.T, path string) *GitHubInstallationJou
 	}
 	return journal
 }
-func assertJournalContainsNoCredentials(t *testing.T, j *GitHubInstallationJournal) {
+func assertJournalContainsNoCredentials(t *testing.T, j *GitHubInstallationJournal, credentials ...[]byte) {
 	t.Helper()
+	containsCredential := func(raw []byte) bool {
+		if strings.Contains(string(raw), "synthetic-app-jwt") || strings.Contains(string(raw), "synthetic-installation-") {
+			return true
+		}
+		for _, credential := range credentials {
+			if len(credential) > 0 && bytes.Contains(raw, credential) {
+				return true
+			}
+		}
+		return false
+	}
 	rows, err := j.store.db.Query("SELECT record FROM github_installation_attempts")
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +67,7 @@ func assertJournalContainsNoCredentials(t *testing.T, j *GitHubInstallationJourn
 		if rows.Scan(&raw) != nil {
 			t.Fatal("journal read failed")
 		}
-		if strings.Contains(string(raw), "synthetic-app-jwt") || strings.Contains(string(raw), "synthetic-installation-") {
+		if containsCredential(raw) {
 			t.Fatal("credential persisted in journal")
 		}
 	}
@@ -69,7 +81,7 @@ func assertJournalContainsNoCredentials(t *testing.T, j *GitHubInstallationJourn
 		if err != nil && !os.IsNotExist(err) {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(raw), "synthetic-app-jwt") || strings.Contains(string(raw), "synthetic-installation-") {
+		if containsCredential(raw) {
 			t.Fatal("credential persisted in SQLite bytes")
 		}
 	}
@@ -88,8 +100,23 @@ func assertJournalContainsNoCredentials(t *testing.T, j *GitHubInstallationJourn
 
 func TestGitHubInstallationJournalTLSWriteAheadBothRolesAndRestart(t *testing.T) {
 	j, _, path := installationJournalFixture(t)
+	before, err := j.store.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := appJWTTestKey(t)
+	signer, err := NewGitHubAppJWTSigner(alphaEnrollment(), key, func() time.Time { return controlTime })
+	if err != nil {
+		t.Fatal(err)
+	}
+	jwt, err := signer.Sign(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clear(jwt)
+	verifyAppJWT(t, jwt, &key.PublicKey, controlTime)
 	for _, role := range []GitHubCredentialRole{GitHubReader, GitHubPublisher} {
-		f, o := installationHTTPFixture(t, role)
+		f, o := installationHTTPFixture(t, role, string(jwt))
 		observed := false
 		f.mutate = func(p string, _ map[string]any) {
 			if strings.HasSuffix(p, "/access_tokens") {
@@ -115,7 +142,11 @@ func TestGitHubInstallationJournalTLSWriteAheadBothRolesAndRestart(t *testing.T)
 			t.Fatal("restart changed metadata or minted credentials")
 		}
 	}
-	assertJournalContainsNoCredentials(t, j)
+	assertJournalContainsNoCredentials(t, j, jwt)
+	after, err := j.store.Snapshot(context.Background())
+	if err != nil || Digest(before) != Digest(after) {
+		t.Fatal("credential qualification changed review state or budgets")
+	}
 }
 
 func TestGitHubInstallationJournalUnknownAndPostMintRefusalNeverReplay(t *testing.T) {
@@ -368,8 +399,18 @@ func TestGitHubInstallationJournalKilledOwnerRetainsUnknownAcrossRestart(t *test
 				t.Fatal(err)
 			}
 			waited := make(chan error, 1)
-			go func() { waited <- cmd.Wait() }()
-			t.Cleanup(func() { cmd.Process.Kill() })
+			var waitComplete atomic.Bool
+			go func() { err := cmd.Wait(); waitComplete.Store(true); waited <- err }()
+			t.Cleanup(func() {
+				if !waitComplete.Load() {
+					_ = cmd.Process.Kill()
+					select {
+					case <-waited:
+					case <-time.After(3 * time.Second):
+						t.Error("fixture child not reaped")
+					}
+				}
+			})
 			select {
 			case <-accepted:
 			case err := <-waited:
@@ -523,5 +564,29 @@ func TestGitHubInstallationJournalRefusesSymlinkNamespace(t *testing.T) {
 	entries, err := os.ReadDir(outside)
 	if err != nil || len(entries) != 0 {
 		t.Fatal("symlink target mutated")
+	}
+}
+
+func TestGitHubInstallationJournalCaseAliasCannotRetireUnknownState(t *testing.T) {
+	j, store, _ := installationJournalFixture(t)
+	attempt, err := j.begin(context.Background(), GitHubReader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(attempt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = bytes.Replace(raw, []byte(`"State":"pre_mint"`), []byte(`"State":"unknown","state":"pre_mint_failed"`), 1)
+	if _, err := store.db.Exec("UPDATE github_installation_attempts SET record=? WHERE attempt=?", raw, attempt.ID); err != nil {
+		t.Fatal(err)
+	}
+	f, o := installationHTTPFixture(t, GitHubReader)
+	got, err := j.Acquire(context.Background(), o)
+	if got != nil {
+		got.Close()
+	}
+	if got != nil || !errors.Is(err, ErrGitHubInstallationRecovery) || f.calls != 0 {
+		t.Fatal("ambiguous state field escaped the durable latch", f.calls)
 	}
 }
