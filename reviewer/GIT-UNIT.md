@@ -192,3 +192,12 @@ actual controller child after a durable uncertain start; reopening refuses a
 restart and recovers the separately retained inert root. No production systemd
 Git unit, namespace/resource pressure qualification, actual Git worker binary,
 credential, App or provider inference is exercised by these tests.
+
+Retained receipts may name an older worker image after an upgrade. The current
+sealed launch image remains independently verified. Reading or updating an old
+receipt additionally hashes its existing private content-addressed worker copy,
+using the same owner, link, mode and size checks as image retention. Missing or
+changed old bytes refuse recovery; no pathname is imported from a receipt and
+no missing image is recreated. A fresh start must use the configured current
+worker hash, so authenticating an old receipt never re-arms its execution. Keep
+old image copies until their dependent durable records have retired.

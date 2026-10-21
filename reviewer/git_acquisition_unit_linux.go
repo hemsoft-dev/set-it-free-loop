@@ -235,9 +235,9 @@ func (o *gitUnitOwner) read(attempt string) (gitUnitRecord, error) {
 		return gitUnitRecord{}, errGitUnit
 	}
 	canonical, err := json.Marshal(r)
-	// The expected image is hashed from the retained descriptor, never inferred
-	// from the untrusted record itself.
-	hash, errHash := o.imageHash()
+	// Recovery authenticates a previous worker against its retained bytes;
+	// the current launch image need not be the one that made this receipt.
+	hash, errHash := o.recordImageHash(r.StubHash)
 	if err != nil || errHash != nil || !bytes.Equal(canonical, raw) || !r.valid(attempt, hash) {
 		return gitUnitRecord{}, errGitUnit
 	}
@@ -248,6 +248,28 @@ func (o *gitUnitOwner) imageHash() (string, error) {
 		return "", errGitUnit
 	}
 	return o.stubHash, nil
+}
+
+func (o *gitUnitOwner) recordImageHash(hash string) (string, error) {
+	current, err := o.imageHash()
+	if err != nil || !validAuthHash(hash) {
+		return "", errGitUnit
+	}
+	if hash == current {
+		return current, nil
+	}
+	// Only an existing content-addressed private copy can authenticate an old
+	// record. Never import a pathname from that record or recreate a missing
+	// image. Hash the actual bytes, with the existing owner/link/mode/size checks.
+	directory := filepath.Join(o.root.Name(), "executables")
+	if privateDirectory(directory) != nil {
+		return "", errGitUnit
+	}
+	raw, err := readPinnedStub(filepath.Join(directory, hash), hash, true)
+	if err != nil {
+		return "", errGitUnit
+	}
+	return gitRawHash(raw), nil
 }
 func (o *gitUnitOwner) enter(ctx context.Context) bool {
 	if ctx == nil {
@@ -266,7 +288,7 @@ func (o *gitUnitOwner) enter(ctx context.Context) bool {
 }
 func (o *gitUnitOwner) leave() { o.operation <- struct{}{} }
 func (o *gitUnitOwner) write(r gitUnitRecord) error {
-	hash, err := o.imageHash()
+	hash, err := o.recordImageHash(r.StubHash)
 	if err != nil || !r.valid(r.Binding.Attempt, hash) {
 		return errGitUnit
 	}
@@ -403,7 +425,7 @@ func (o *gitUnitOwner) start(ctx context.Context, binding gitMaterializationBind
 		return errGitUnit
 	}
 	r, err := o.read(binding.Attempt)
-	if err != nil || r.Binding != binding || r.Started || r.Revoked || r.Stopped || r.ManagerOwner != o.manager.Owner() {
+	if err != nil || r.Binding != binding || r.StubHash != o.stubHash || r.Started || r.Revoked || r.Stopped || r.ManagerOwner != o.manager.Owner() {
 		return errGitUnit
 	}
 	boot, err := o.kernel.BootID()
