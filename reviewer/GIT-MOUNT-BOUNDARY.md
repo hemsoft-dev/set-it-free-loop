@@ -1,10 +1,10 @@
 # Git worker mount observation
 
-The private mount observer adds a kernel check for the unfinished acquisition
+The private mount observer adds a kernel check for the private acquisition
 factory. It returns no Git source capability, token, worker grant or publication
-authority. The factory still has to compose exact unit/cgroup ownership,
+authority. Full admission also requires exact unit/cgroup ownership,
 descriptor and installed-filter checks, authenticated export, broker drain and
-physical stop. A caller's serialized mount table cannot qualify any of these.
+physical stop, composed by the private [factory](GIT-FACTORY.md). A caller's serialized mount table cannot qualify any of these.
 
 The observer starts from an already retained process boundary and its original
 pidfd. It rechecks that worker before and after the operation. It reads bounded

@@ -259,15 +259,28 @@ func RestoreSnapshotEvidence(ctx context.Context, git GitStore, job Job) (*JobEv
 // bytes. The caller owns inventory/source qualification. It preserves every
 // admitted omission and never recaptures a packet during recovery.
 func restoreSnapshotEvidencePacket(ctx context.Context, store ObjectStore, job Job, inventory []snapshotFile, blob func(string, *int) ([]byte, error)) (*JobEvidence, error) {
-	if job.Validate() != nil || len(job.Packet) > snapshotPacketBytes || store == nil || blob == nil {
+	if job.Validate() != nil {
+		return nil, ErrFenced
+	}
+	evidence, err := restoreSnapshotPacket(ctx, store, job.Snapshot, job.Packet, inventory, blob)
+	if err != nil {
+		return nil, err
+	}
+	return evidence.Bind(job)
+}
+
+// Reconstruct packet anchors from verified plain blobs before admission as well
+// as after restart. Capture must not invent a job to perform this validation.
+func restoreSnapshotPacket(ctx context.Context, store ObjectStore, snapshot Snapshot, packet string, inventory []snapshotFile, blob func(string, *int) ([]byte, error)) (*SnapshotEvidence, error) {
+	if ctx == nil || ctx.Err() != nil || snapshot.Validate() != nil || len(packet) > snapshotPacketBytes || store == nil || blob == nil {
 		return nil, ErrFenced
 	}
 	var p snapshotPacket
-	if json.Unmarshal([]byte(job.Packet), &p) != nil {
+	if json.Unmarshal([]byte(packet), &p) != nil {
 		return nil, ErrFenced
 	}
 	canonical, err := json.Marshal(p)
-	if err != nil || string(canonical) != job.Packet || p.Version != "sfl-snapshot-evidence-1" || p.Snapshot != job.Snapshot || len(p.Files) != len(inventory) {
+	if err != nil || string(canonical) != packet || p.Version != "sfl-snapshot-evidence-1" || p.Snapshot != snapshot || len(p.Files) != len(inventory) {
 		return nil, ErrFenced
 	}
 	omissions := map[string]string{}
@@ -282,7 +295,7 @@ func restoreSnapshotEvidencePacket(ctx context.Context, store ObjectStore, job J
 		}
 		omissions[c.Path] = c.Reason
 	}
-	e := &SnapshotEvidence{store: store, snapshot: job.Snapshot, packet: job.Packet, coverage: append([]Coverage(nil), p.Coverage...), lines: map[string]map[int]bool{}}
+	e := &SnapshotEvidence{store: store, snapshot: snapshot, packet: packet, coverage: append([]Coverage(nil), p.Coverage...), lines: map[string]map[int]bool{}}
 	remaining := snapshotObjectBytes
 	for i, file := range p.Files {
 		identity := file
@@ -326,7 +339,7 @@ func restoreSnapshotEvidencePacket(ctx context.Context, store ObjectStore, job J
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return e.Bind(job)
+	return e, nil
 }
 
 func snapshotBlob(ctx context.Context, git GitStore, id string, remaining *int) ([]byte, error) {

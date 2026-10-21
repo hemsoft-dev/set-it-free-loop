@@ -37,7 +37,7 @@ func (r gitExportRecord) valid() bool {
 		return false
 	}
 	switch r.State {
-	case "receiving":
+	case "receiving", "discarded":
 		return r.Bytes == 0 && r.WireHash == "" && r.PacketHash == ""
 	case "staged":
 		return r.Bytes > 0 && r.Bytes <= gitExportWireBytes && validAuthHash(r.WireHash) && validAuthHash(r.PacketHash)
@@ -313,7 +313,7 @@ func (a *gitExportArchive) stage(ctx context.Context, binding gitMaterialization
 		return nil, errGitExportArchive
 	}
 	for _, record := range records {
-		if record.State != "staged" || record.Binding.Attempt == binding.Attempt {
+		if record.State != "staged" && record.State != "discarded" || record.Binding.Attempt == binding.Attempt {
 			return nil, errGitExportArchive
 		}
 	}
@@ -446,12 +446,11 @@ func (a *gitExportArchive) Close(ctx context.Context) error {
 	}
 	// No intake/reader is active while this operation token is held. A timeout
 	// acquiring it retains descriptors/flock for an explicit close retry.
-	if err := a.lock.Close(); err != nil {
-		return errGitExportArchive
-	}
-	if err := a.root.Close(); err != nil {
-		return errGitExportArchive
-	}
+	lockErr := a.lock.Close()
+	rootErr := a.root.Close()
 	a.closed = true
+	if lockErr != nil || rootErr != nil {
+		return errGitExportArchive
+	}
 	return nil
 }

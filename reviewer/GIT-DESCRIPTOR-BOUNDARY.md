@@ -1,7 +1,7 @@
 # Git worker descriptor observation
 
 The private descriptor observer supplements process and mount checks before the
-unfinished factory grants work. It returns no source or reusable admission
+private [factory](GIT-FACTORY.md) grants work. It returns no source or reusable admission
 capability. The caller retains the original worker pidfd and rechecks its
 identity before and after observation.
 

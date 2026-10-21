@@ -93,3 +93,18 @@ qualification, physical-stop/recovery authority, generation leases, controller
 composition and live activation remain independent work. See
 [GIT-MATERIALIZATION.md](GIT-MATERIALIZATION.md), [GIT-UNIT.md](GIT-UNIT.md) and
 [GIT-RUNTIME.md](GIT-RUNTIME.md).
+
+## Factory recovery integration
+
+The private [factory](GIT-FACTORY.md) now binds staged exports to the exact
+unit journal and bootstrap/worker grants before restored source can escape.
+An incomplete receiving intake may become terminal `discarded` only after
+the concrete owner independently proves physical whole-unit stop. That receipt
+is fsynced before removing the bounded owned payload; a restart can complete
+cleanup. The nonce stays spent and discarded intake cannot reopen as source.
+A different nonce may stage after that recovery. Complete staged source is
+retained. This is no public force-delete or arbitrary retry interface.
+
+Close disposes both lock and root descriptors once intake has joined, records
+terminal state even if disposal reports an error, and reports that initial
+error. A timeout acquiring the operation token still retains actual ownership.

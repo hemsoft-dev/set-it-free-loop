@@ -1,0 +1,273 @@
+//go:build linux
+
+package reviewer
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"os"
+	"path/filepath"
+	"sort"
+)
+
+// Internal service composition, never a model capability or serialized gate.
+// Only Capture/Restore callbacks are handed to the polling controller. The
+// trusted service retains this owner until controller work has joined.
+type gitSourceFactory struct {
+	operation                       chan struct{}
+	credentials                     *GitHubCredentialOwner
+	unit                            *gitUnitOwner
+	archive                         *gitExportArchive
+	runtime                         *gitRuntimeRoot
+	helper                          *os.File
+	manifest                        gitGrantManifest
+	release, releaseHash, directory string
+	root                            *os.Root
+	identity                        os.FileInfo
+	runs                            map[string]*gitFactoryRun
+	bindings                        map[string]gitMaterializationBinding
+	packets                         map[string]string
+	materialized                    map[string]*gitMaterialization
+	closed                          bool
+}
+
+// Opening performs startup recovery before asking the credential owner for any
+// ready generation. Caller transfers exclusive lifecycle ownership of unit,
+// archive and prepared runtime; credentials remain shared with the publisher.
+// Call this before credential Refresh. No refresh, App install or HTTP occurs.
+func newGitSourceFactory(ctx context.Context, credentials *GitHubCredentialOwner, unit *gitUnitOwner, archive *gitExportArchive, runtime *gitRuntimeRoot, helper *os.File, m gitGrantManifest, release, releaseHash, directory string) (_ *gitSourceFactory, result error) {
+	if ctx == nil || ctx.Err() != nil || credentials == nil || credentials.state == nil || unit == nil || archive == nil || runtime == nil || helper == nil || !objectID.MatchString(release) || !validAuthHash(releaseHash) || !filepath.IsAbs(directory) || filepath.Clean(directory) != directory || len(directory) > 33 || privateDirectory(directory) != nil {
+		return nil, errGitUnit
+	}
+	resolved, err := filepath.EvalSymlinks(directory)
+	if err != nil || resolved != directory {
+		return nil, errGitUnit
+	}
+	credentials.state.mu.Lock()
+	busy := len(credentials.state.acquisitions) != 0
+	credentials.state.mu.Unlock()
+	if busy {
+		return nil, errGitUnit
+	}
+	if !m.validAssets() || m.Worker.SHA256 != unit.stubHash || verifyNativeBootstrap(ctx, helper, m.NamespaceHelper) != nil {
+		return nil, errGitUnit
+	}
+	runtimeFD, err := runtime.directoryFD()
+	if err != nil {
+		return nil, errGitUnit
+	}
+	_, runtimeErr := verifyGitRuntimeDirectory(ctx, runtimeFD, m.Runtime)
+	runtimeFD.Close()
+	if runtimeErr != nil {
+		return nil, errGitUnit
+	}
+	// Recovery is startup-only. A live owner that has already started work is
+	// not interchangeable with a newly opened, cross-process-locked owner.
+	if !unit.enter(ctx) {
+		return nil, errGitUnit
+	}
+	active := len(unit.rootPIDFDs) != 0 || len(unit.grantEligible) != 0 || len(unit.grantFailed) != 0
+	unit.leave()
+	if active {
+		return nil, errGitUnit
+	}
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return nil, errGitUnit
+	}
+	f := &gitSourceFactory{operation: make(chan struct{}, 1), credentials: credentials, unit: unit, archive: archive, runtime: runtime, manifest: m, release: release, releaseHash: releaseHash, directory: directory, root: root, runs: map[string]*gitFactoryRun{}, packets: map[string]string{}, materialized: map[string]*gitMaterialization{}}
+	f.operation <- struct{}{}
+	defer func() {
+		if result != nil {
+			if f.helper != nil {
+				f.helper.Close()
+			}
+			root.Close()
+		}
+	}()
+	f.identity, err = root.Stat(".")
+	if err != nil {
+		return nil, errGitUnit
+	}
+	f.helper, err = duplicateGitControlFile(helper)
+	if err != nil {
+		return nil, errGitUnit
+	}
+	f.bindings, err = recoverGitFactory(ctx, unit, archive)
+	if err != nil {
+		return nil, errGitUnit
+	}
+	if !archive.enter(ctx) {
+		return nil, errGitUnit
+	}
+	exports, err := archive.records()
+	archive.leave()
+	if err != nil {
+		return nil, errGitUnit
+	}
+	for _, record := range exports {
+		if record.State == "staged" {
+			f.packets[record.Binding.Attempt] = record.PacketHash
+		}
+	}
+	return f, nil
+}
+
+func (f *gitSourceFactory) enter(ctx context.Context) bool {
+	if f == nil || ctx == nil {
+		return false
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-f.operation:
+		return true
+	}
+}
+func (f *gitSourceFactory) leave() { f.operation <- struct{}{} }
+
+func (f *gitSourceFactory) checkRoot() error {
+	anchored, err := f.root.Stat(".")
+	path, pathErr := os.Lstat(f.directory)
+	if err != nil || pathErr != nil || !path.IsDir() || path.Mode().Perm() != 0700 || !os.SameFile(f.identity, anchored) || !os.SameFile(f.identity, path) {
+		return errGitUnit
+	}
+	return nil
+}
+
+func (f *gitSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*SnapshotEvidence, error) {
+	if !f.enter(ctx) {
+		return nil, errGitUnit
+	}
+	defer f.leave()
+	if f.closed || f.checkRoot() != nil || snapshot.Validate() != nil || snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
+		return nil, errGitUnit
+	}
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, errGitUnit
+	}
+	binding := gitMaterializationBinding{hex.EncodeToString(nonce[:]), f.releaseHash, Digest(f.manifest), snapshot}
+	name := "run-" + binding.Attempt
+	if f.root.Mkdir(name, 0700) != nil || syncAuthDirectory(f.root) != nil {
+		return nil, errGitUnit
+	}
+	runtime, err := f.runtime.directoryFD()
+	if err != nil {
+		return nil, errGitUnit
+	}
+	defer runtime.Close()
+	run, err := newGitFactoryRun(ctx, f.unit, f.archive, binding, f.manifest, runtime, f.helper, filepath.Join(f.directory, name))
+	if err != nil {
+		return nil, errGitUnit
+	}
+	f.runs[binding.Attempt] = run
+	m, err := runGitFactoryAcquisition(ctx, f.credentials, binding, run)
+	if err != nil {
+		return nil, errGitUnit
+	}
+	evidence, err := captureGitMaterializationEvidence(ctx, m)
+	if err != nil {
+		m.Close()
+		return nil, errGitUnit
+	}
+	f.bindings[binding.Attempt] = binding
+	f.packets[binding.Attempt] = Digest(m.packet)
+	f.materialized[binding.Attempt] = m
+	return evidence, nil
+}
+
+func (f *gitSourceFactory) Restore(ctx context.Context, job Job) (*JobEvidence, error) {
+	if !f.enter(ctx) {
+		return nil, errGitUnit
+	}
+	defer f.leave()
+	if f.closed || f.checkRoot() != nil || job.Validate() != nil || job.Release != f.release || job.Snapshot.RepositoryID != f.credentials.state.options.Journal.enrollment.RepositoryID {
+		return nil, ErrFenced
+	}
+	attempts := []string{}
+	for attempt, binding := range f.bindings {
+		if binding.Snapshot == job.Snapshot && binding.ReleaseHash == f.releaseHash && binding.RuntimeHash == Digest(f.manifest) && f.packets[attempt] == Digest(job.Packet) {
+			attempts = append(attempts, attempt)
+		}
+	}
+	sort.Strings(attempts)
+	if len(attempts) == 0 {
+		return nil, ErrFenced
+	}
+	attempt := attempts[0]
+	binding := f.bindings[attempt]
+	// Revalidate the durable physical-stop journal before using retained source.
+	// There is no network, recapture, Git parser or earlier-label fallback here.
+	if f.unit.stop(ctx, binding) != nil {
+		return nil, ErrFenced
+	}
+	m := f.materialized[attempt]
+	if m == nil {
+		var err error
+		m, err = f.archive.reopen(ctx, binding)
+		if err != nil {
+			return nil, ErrFenced
+		}
+		f.materialized[attempt] = m
+	}
+	return restoreGitMaterialization(ctx, m, job)
+}
+
+func (f *gitSourceFactory) Close(ctx context.Context) error {
+	if !f.enter(ctx) {
+		return errGitUnit
+	}
+	defer f.leave()
+	if f.closed {
+		return nil
+	}
+	for _, run := range f.runs {
+		run.mu.Lock()
+		generation := run.generation
+		run.mu.Unlock()
+		if generation != nil {
+			if generation.stop(ctx) != nil {
+				return errGitUnit
+			}
+		} else if run.stop(ctx) != nil {
+			return errGitUnit
+		}
+		if run.close() != nil {
+			return errGitUnit
+		}
+	}
+	// A failed physical stop returns above with every shared root and service
+	// lock retained. Runtime cleanup cannot race an unknown live acquisition.
+	if f.unit.Close() != nil {
+		return errGitUnit
+	}
+	if f.archive.Close(ctx) != nil {
+		return errGitUnit
+	}
+	if f.runtime.Close() != nil {
+		return errGitUnit
+	}
+	failed := false
+	for attempt, m := range f.materialized {
+		if m.Close() != nil {
+			failed = true
+		}
+		delete(f.materialized, attempt)
+	}
+	if f.helper.Close() != nil {
+		failed = true
+	}
+	if f.root.Close() != nil {
+		failed = true
+	}
+	f.closed = true
+	if failed {
+		return errGitUnit
+	}
+	return nil
+}
+
+// Compile-time guarantee that production uses the concrete fixed driver.
+var _ gitFactoryAcquisition = (*gitFactoryRun)(nil)
