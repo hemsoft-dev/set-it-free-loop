@@ -115,19 +115,28 @@ from the old root. A missing unknown unit alone does not prove termination. A
 changed kernel boot can prove the prior boot's processes dead without contacting
 another manager's unit.
 
-An accepted start can fail before a live root is captured. If that exact unit
-still exists, a separate early-stop path requires the original manager and boot,
-all fixed unit properties, no pending job, no MainPID, and a terminal state. It
-captures the actual cgroup and its hierarchy, requires it empty, then repeats
-the manager and emptiness observations before persisting a distinct `EarlyStop`
-receipt. Invocation, unit object path and cgroup must stay unchanged. The receipt
+An accepted start can fail before a live root is captured. The fresh start
+persists a `Birth` record after the accepted start-job reply and before waiting
+for that job. It binds the accepted job to the observed invocation, unit object
+path and actual cgroup/hierarchy, with stable manager, boot, fixed properties
+and repeated observations. A pending job must be that same accepted job. A
+missing or failed birth write never arms a grant or repeats the start.
+
+If that bound unit later fails, a separate early-stop path requires the original
+manager and boot, all fixed unit properties, no pending job, no MainPID, and a
+terminal state. It uses the original recorded cgroup, requires it empty, then
+repeats manager and emptiness observations before persisting a distinct
+`EarlyStop` receipt. Recovery never creates a missing birth record by adopting
+whichever terminal unit exists then. Invocation, object path and original
+cgroup identity must match the durable birth record. The terminal receipt
 does not fabricate a root identity or original pidfd. It is valid only for a
 revoked, stopped attempt that never captured a root or consumed either grant.
 
 A reopened early-stop receipt rechecks its original cgroup hierarchy and exact
 terminal invocation rather than recapturing a replacement group. The original
 kernel hierarchy may prove that its previously captured group was removed.
-Before the first capture, a missing unit or cgroup remains uncertainty. Changed
+Without that birth record, including a lost accepted-start reply, terminal
+recovery remains uncertain even when a matching terminal unit is visible. Changed
 properties, repopulation, a new invocation, manager/boot change during proof or
 cancellation cannot release ownership. A real kernel reboot retains its existing
 separate old-boot recovery rule. This path makes an early failure recoverable

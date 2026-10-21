@@ -33,6 +33,7 @@ type gitUnitRecord struct {
 	WorkerGrantHash                                   string                `json:",omitempty"`
 	WorkerIdentity                                    GateIdentity          `json:",omitzero"`
 	EarlyStop                                         *gitEarlyStopEvidence `json:",omitempty"`
+	Birth                                             *gitUnitBirthEvidence `json:",omitempty"`
 }
 type gitUnitManager interface {
 	containmentManager
@@ -197,7 +198,10 @@ func (r gitUnitRecord) valid(attempt, hash string) bool {
 	} else if r.Identity != (GateIdentity{}) || r.Cgroup != (cgroupBinding{}) {
 		return false
 	}
-	if r.EarlyStop != nil && (!r.Started || !r.StartSettled || !r.Revoked || !r.Stopped || r.Captured || r.BootstrapGrantHash != "" || r.WorkerGrantHash != "" || !r.EarlyStop.valid(r.Unit)) {
+	if r.Birth != nil && (!r.Started || !r.Birth.valid(r) || r.Captured && (r.Birth.Unit.InvocationID != r.Identity.InvocationID || r.Birth.Unit.Cgroup != r.Cgroup)) {
+		return false
+	}
+	if r.EarlyStop != nil && (!r.Started || !r.StartSettled || !r.Revoked || !r.Stopped || r.Captured || r.BootstrapGrantHash != "" || r.WorkerGrantHash != "" || !r.EarlyStop.valid(r.Unit) || r.Birth == nil || *r.EarlyStop != r.Birth.Unit) {
 		return false
 	}
 	if r.BootstrapGrantHash != "" && (!r.Captured || r.BootstrapGrantHash != Digest(gitUnitGrantPacket{1, gitBootstrapGrant, r.Binding, r.Identity, r.Binding.RuntimeHash})) {
@@ -323,6 +327,9 @@ func (o *gitUnitOwner) capture(ctx context.Context, r gitUnitRecord) (gitUnitRec
 	if err != nil || !expectedGitUnit(r, observed) || observed.MainPID == 0 {
 		return r, errGitUnit
 	}
+	if r.Birth != nil && (r.Birth.Unit.InvocationID != observed.InvocationID || r.Birth.Unit.UnitPath != observed.Path || r.Birth.Unit.Cgroup.Path != observed.ControlGroup) {
+		return r, errGitUnit
+	}
 	fd, err := unix.PidfdOpen(int(observed.MainPID), 0)
 	if err != nil {
 		return r, errGitUnit
@@ -348,7 +355,7 @@ func (o *gitUnitOwner) capture(ctx context.Context, r gitUnitRecord) (gitUnitRec
 		return r, errGitUnit
 	}
 	group, err := o.kernel.Capture(observed.ControlGroup, r.Unit)
-	if err != nil {
+	if err != nil || r.Birth != nil && r.Birth.Unit.Cgroup != group {
 		return r, errGitUnit
 	}
 	if r.Captured && (r.Identity != identity || r.Cgroup != group) {
@@ -424,7 +431,13 @@ func (o *gitUnitOwner) start(ctx context.Context, binding gitMaterializationBind
 		return errGitUnit
 	}
 	r.StartJob = job
-	if o.write(r) != nil || o.manager.WaitJob(bounded, job, r.Unit) != nil {
+	if o.write(r) != nil {
+		return errGitUnit
+	}
+	// Only this fresh accepted start may bind a pre-root identity. Recovery
+	// never creates a missing birth record from whichever unit exists later.
+	r, err = o.captureBirth(bounded, r)
+	if err != nil || o.write(r) != nil || o.manager.WaitJob(bounded, job, r.Unit) != nil {
 		return errGitUnit
 	}
 	r.StartSettled = true
