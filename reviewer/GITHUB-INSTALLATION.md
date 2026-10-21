@@ -21,7 +21,7 @@ The issuer is the enrolled numeric App ID. It backdates `iat` by sixty seconds
 and expires nine minutes after the captured clock. It independently verifies the
 returned PKCS#1 v1.5 SHA-256 signature with the captured public key. A changed key,
 wrong padding, private signer error, cancelled context, backwards clock or result
-with less than sixty seconds left in its nominal lifetime is refused. Signing
+with sixty seconds or less left in its nominal lifetime is refused. Signing
 is never retried. `crypto.Signer` has no cancellation method, so cancellation is
 checked around its call and cannot interrupt an uncooperative signing capability.
 
