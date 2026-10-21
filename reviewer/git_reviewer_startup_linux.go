@@ -125,7 +125,9 @@ func openGitReviewerService(ctx context.Context, o GitReviewerServiceOptions, op
 		}
 	}
 	current, ok := releases[o.Current]
-	if !ok {
+	// Every configured alpha mode must be available for newly admitted PRs.
+	// Older retained releases may still serve explicit single-provider jobs.
+	if !ok || len(current.Providers) != 2 {
 		return nil, ErrLiveBlocked
 	}
 	e := o.Credentials.Journal.enrollment

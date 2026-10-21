@@ -24,7 +24,10 @@ hints. Those capabilities are supplied separately through
 representations are redacted.
 
 Supply one to eight explicit releases, a current revision, and exactly matching
-provider-host entries. The package identity fixes the model, client and auth
+provider-host entries. The current release must contain both Codex and Claude
+to serve the default adversarial review and every per-PR mode. An older retained
+release may contain one provider for its original single-provider jobs.
+The package identity fixes the model, client and auth
 mode. Each native session must match that identity and pass the host's local
 check. Its stub byte count and hash are measured before auth; the native VM
 path still verifies its other assets and containment before exporting auth.

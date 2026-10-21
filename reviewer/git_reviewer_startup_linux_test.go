@@ -112,6 +112,29 @@ func TestGitReviewerStartupPublicDenialPrecedesResourceOpening(t *testing.T) {
 	}
 }
 
+func TestGitReviewerStartupCurrentPackageRequiresBothConfigurableProviders(t *testing.T) {
+	for _, missing := range []Provider{Codex, Claude} {
+		t.Run(string(missing), func(t *testing.T) {
+			o, _, opener, signs := gitReviewerStartupFixture(t)
+			release := o.Releases[o.Current]
+			delete(release.Providers, missing)
+			delete(o.Providers[o.Current], missing)
+			o.Releases[o.Current] = release
+			checks := 0
+			o.Check = func(context.Context, Enrollment, string, string) error { checks++; return nil }
+			s, err := openGitReviewerService(context.Background(), o, opener)
+			if s != nil {
+				if closeErr := s.Close(context.Background()); closeErr != nil {
+					t.Fatal(closeErr)
+				}
+			}
+			if err == nil || checks != 0 || signs.Load() != 0 {
+				t.Fatal("current package cannot serve every configurable alpha mode", err, checks)
+			}
+		})
+	}
+}
+
 func TestGitReviewerStartupPersistsEpochAcrossRestartAndRefusesChange(t *testing.T) {
 	o, _, opener, signs := gitReviewerStartupFixture(t)
 	s, err := openGitReviewerService(context.Background(), o, opener)
@@ -326,6 +349,30 @@ func TestGitReviewerStartupOlderPackageRemainsBoundAndCanBeRevoked(t *testing.T)
 	allowed = false
 	if engine, err := s.inner.options.Runtime(context.Background(), job, bound); err == nil || len(engine.Reviewers) != 0 || signs.Load() != 0 {
 		t.Fatal("revoked package admitted work")
+	}
+}
+
+func TestGitReviewerStartupRetainsOlderSingleProviderJob(t *testing.T) {
+	o, _, opener, signs := gitReviewerStartupFixture(t)
+	old := o.Releases[o.Current]
+	old.Revision = strings.Repeat("e", 40)
+	old.Providers = map[Provider]GitReviewerProviderRelease{Codex: old.Providers[Codex]}
+	o.Releases[old.Revision] = old
+	o.Providers[old.Revision] = map[Provider]GitReviewerProviderHost{Codex: o.Providers[o.Current][Codex]}
+	s, err := openGitReviewerService(context.Background(), o, opener)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(context.Background())
+	job, evidence, _ := gitServiceRuntimeJob(t)
+	job.Release, job.Config.Mode = old.Revision, CodexOnly
+	bound, err := evidence.Bind(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := s.inner.options.Runtime(context.Background(), job, bound)
+	if err != nil || len(engine.Reviewers) != 1 || engine.Reviewers[Codex] == nil || signs.Load() != 0 {
+		t.Fatal("current dual-provider requirement broke the original older single-provider job", err)
 	}
 }
 
