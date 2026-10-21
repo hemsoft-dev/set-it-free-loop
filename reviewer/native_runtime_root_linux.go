@@ -22,6 +22,7 @@ import (
 // belongs after the owned process has stopped, not to a model/tool callback.
 type nativeRuntimeRoot struct {
 	parent, root  *os.Root
+	directory     string
 	identity      os.FileInfo
 	directories   map[string]bool
 	files         []nativeRuntimeFile
@@ -119,11 +120,17 @@ func prepareNativeRuntimeOwned(parentPath string, input io.Reader, program VMAss
 	return prepared, nil
 }
 
+func (r *nativeRuntimeRoot) directoryName() string {
+	if r.directory == "" {
+		return nativeRuntimeDirectory
+	}
+	return r.directory
+}
 func (r *nativeRuntimeRoot) verify() error {
 	if r == nil || r.closed || !r.ready {
 		return fmt.Errorf("%w: not ready", ErrNativeRuntime)
 	}
-	current, err := r.parent.Lstat(nativeRuntimeDirectory)
+	current, err := r.parent.Lstat(r.directoryName())
 	if err != nil || !os.SameFile(current, r.identity) {
 		return fmt.Errorf("%w: root identity", ErrNativeRuntime)
 	}
@@ -200,7 +207,7 @@ func (r *nativeRuntimeRoot) Close() error {
 	r.closed = true
 	defer r.parent.Close()
 	defer r.root.Close()
-	current, err := r.parent.Lstat(nativeRuntimeDirectory)
+	current, err := r.parent.Lstat(r.directoryName())
 	if err != nil || !os.SameFile(current, r.identity) {
 		return ErrNativeRuntime
 	}
@@ -215,7 +222,7 @@ func (r *nativeRuntimeRoot) Close() error {
 			return ErrNativeRuntime
 		}
 	}
-	if r.parent.RemoveAll(nativeRuntimeDirectory) != nil {
+	if r.parent.RemoveAll(r.directoryName()) != nil {
 		return ErrNativeRuntime
 	}
 	return nil
