@@ -42,6 +42,29 @@ func TestGitDescriptorNonancestorLauncher(t *testing.T) {
 
 func gitAssertNonancestorInspector(t *testing.T, identity GateIdentity, original int) {
 	t.Helper()
+	status, err := os.ReadFile("/proc/self/status")
+	if err != nil || os.Geteuid() == 0 {
+		t.Fatal("nonancestor fixture requires an unprivileged inspector", err)
+	}
+	capabilities := map[string]bool{"CapPrm:": false, "CapEff:": false, "CapAmb:": false}
+	for _, line := range strings.Split(string(status), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		if _, selected := capabilities[fields[0]]; selected {
+			value, err := strconv.ParseUint(fields[1], 16, 64)
+			if err != nil || value != 0 {
+				t.Fatal("inspector has host capabilities", fields[0], err)
+			}
+			capabilities[fields[0]] = true
+		}
+	}
+	for name, seen := range capabilities {
+		if !seen {
+			t.Fatal("missing host capability evidence", name)
+		}
+	}
 	if gitCheckProcessPIDFD(identity, original) != nil {
 		t.Fatal("original detached worker identity")
 	}
@@ -116,7 +139,7 @@ func gitAssertNonancestorInspector(t *testing.T, identity GateIdentity, original
 	if !parentOwned {
 		t.Fatal("target user namespace is not a descendant owned by inspector")
 	}
-	t.Logf("inspector=%d nonancestor worker chain=%v target user namespace owner=%d", os.Getpid(), chain, owner)
+	t.Logf("inspector=%d host permitted/effective/ambient capabilities=0 nonancestor worker chain=%v target user namespace owner=%d", os.Getpid(), chain, owner)
 }
 
 func TestGitDescriptorActualNonancestorNondumpableWorker(t *testing.T) {
