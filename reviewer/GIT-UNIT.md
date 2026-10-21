@@ -119,8 +119,12 @@ An accepted start can fail before a live root is captured. The fresh start
 persists a `Birth` record after the accepted start-job reply and before waiting
 for that job. It binds the accepted job to the observed invocation, unit object
 path and actual cgroup/hierarchy, with stable manager, boot, fixed properties
-and repeated observations. A pending job must be that same accepted job. A
-missing or failed birth write never arms a grant or repeats the start.
+and repeated observations. The first nonzero invocation must be observed while
+that same accepted job is attached. Observing only empty properties before the
+job disappears cannot bind a later invocation, even at the same unit path.
+If the job completes before that correlation is observed, the attempt remains
+uncertain. It cannot grant, replay or adopt a later invocation. A missing or
+failed birth write never arms a grant or repeats the start.
 
 The accepted start is asynchronous. Birth capture waits within the existing
 manager/caller deadline for that job's initially empty invocation or cgroup to
@@ -129,10 +133,18 @@ Only the same accepted pending job and an absent cgroup directory permit a
 bounded observation retry. Fixed-property, permission and identity failures
 refuse immediately. Once observed, its object path, nonzero invocation and
 cgroup path cannot change while waiting. No observation retry resends StartGit.
+If the original cgroup was captured before a fast terminal failure removed its
+directory, the original hierarchy's emptiness proof and repeated identical
+terminal observations preserve that binding. Permission errors, a live root,
+repopulation and replacement hierarchies still refuse.
 
 If that bound unit later fails, a separate early-stop path requires the original
 manager and boot, all fixed unit properties, no pending job, no MainPID, and a
-terminal state. It uses the original recorded cgroup, requires it empty, then
+terminal state. A successful exited root may still be active because the fixed
+unit uses `RemainAfterExit`. With no root PID and the original empty cgroup,
+recovery stops that bound unit, persists the stop job and requires its successful
+completion followed by terminal observations. It uses the original recorded
+cgroup, requires it empty, then
 repeats manager and emptiness observations before persisting a distinct
 `EarlyStop` receipt. Recovery never creates a missing birth record by adopting
 whichever terminal unit exists then. Invocation, object path and original

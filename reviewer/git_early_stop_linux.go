@@ -80,6 +80,12 @@ func (o *gitUnitOwner) captureBirth(ctx context.Context, r gitUnitRecord) (gitUn
 			return r, errGitUnit
 		}
 		if !missingInvocation {
+			// A stable unit name/object path survives restarts. The first
+			// invocation must be observed with our accepted job still attached;
+			// a later job-free invocation cannot establish that correlation.
+			if invocation == "" && before.Job.ID == 0 {
+				return r, errGitUnit
+			}
 			invocation = before.InvocationID
 		}
 		if !missingGroup {
@@ -119,7 +125,17 @@ func (o *gitUnitOwner) captureBirth(ctx context.Context, r gitUnitRecord) (gitUn
 		return r, errGitUnit
 	}
 	current, err := o.kernel.Capture(after.ControlGroup, r.Unit)
-	if err != nil || current != group {
+	if err != nil {
+		// A fast failure can remove the directory between captures. Only the
+		// original hierarchy can prove removal; never capture a replacement.
+		if !os.IsNotExist(err) || !expectedGitUnit(r, after) || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed") || o.kernel.Empty(group) != nil {
+			return r, errGitUnit
+		}
+		confirmed, observeErr := o.manager.Observe(ctx, r.Unit)
+		if observeErr != nil || confirmed != after || o.kernel.Empty(group) != nil {
+			return r, errGitUnit
+		}
+	} else if current != group {
 		return r, errGitUnit
 	}
 	boot, err := o.kernel.BootID()
@@ -153,7 +169,7 @@ func (o *gitUnitOwner) stopBeforeCapture(ctx context.Context, r gitUnitRecord) (
 		}
 		return r, false, nil
 	}
-	if before.ActiveState != "inactive" && before.ActiveState != "failed" {
+	if before.ActiveState != "inactive" && before.ActiveState != "failed" && before.ActiveState != "active" {
 		return r, true, errGitUnit
 	}
 	if r.Birth == nil || !r.Birth.valid(r) {
@@ -165,6 +181,23 @@ func (o *gitUnitOwner) stopBeforeCapture(ctx context.Context, r gitUnitRecord) (
 	}
 	if !proof.valid(r.Unit) || o.kernel.Empty(proof.Cgroup) != nil {
 		return r, true, errGitUnit
+	}
+	// RemainAfterExit keeps a successful, already exited root active. Stop
+	// only after the durable birth and original empty group both match.
+	if before.ActiveState == "active" {
+		job, err := o.manager.Stop(ctx, r.Unit)
+		if err != nil {
+			return r, true, errGitUnit
+		}
+		r.StopJob = job
+		if o.write(r) != nil || o.manager.WaitJob(ctx, job, r.Unit) != nil {
+			return r, true, errGitUnit
+		}
+		after, err := o.manager.Observe(ctx, r.Unit)
+		if err != nil || !expectedGitUnit(r, after) || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed") || after.InvocationID != proof.InvocationID || after.Path != proof.UnitPath || after.ControlGroup != proof.Cgroup.Path || o.kernel.Empty(proof.Cgroup) != nil {
+			return r, true, errGitUnit
+		}
+		before = after
 	}
 	after, err := o.manager.Observe(ctx, r.Unit)
 	if err != nil || after != before || o.kernel.Empty(proof.Cgroup) != nil {

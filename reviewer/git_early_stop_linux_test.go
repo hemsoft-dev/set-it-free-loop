@@ -306,6 +306,65 @@ type gitBirthDelayedCgroup struct {
 	reads     int
 }
 
+type gitBirthDisappearingCgroup struct {
+	containmentKernel
+	manager *fakeContainmentManager
+	reads   int
+	missing error
+}
+
+func (k *gitBirthDisappearingCgroup) Capture(group, unit string) (cgroupBinding, error) {
+	k.reads++
+	if k.reads > 1 {
+		return cgroupBinding{}, k.missing
+	}
+	value, err := k.containmentKernel.Capture(group, unit)
+	k.manager.observation.MainPID = 0
+	k.manager.observation.ActiveState = "failed"
+	k.manager.observation.Job = unitJob{}
+	return value, err
+}
+
+func TestGitBirthRetainsOriginalGroupWhenTerminalDirectoryDisappears(t *testing.T) {
+	for _, kind := range []string{"removed", "permission", "populated", "replaced"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newGitUnitFixture(t)
+			if f.owner.prepare(context.Background(), f.binding) != nil {
+				t.Fatal("prepare")
+			}
+			r, err := f.owner.read(f.binding.Attempt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.Started = true
+			r.StartJob = "/org/freedesktop/systemd1/job/1"
+			f.manager.observation.Description = gitUnitDescriptionPrefix + Digest(f.binding)
+			f.manager.observation.Job = unitJob{1, "/org/freedesktop/systemd1/job/1"}
+			kernel := &gitBirthDisappearingCgroup{containmentKernel: f.manager.kernel, manager: f.manager, missing: os.ErrNotExist}
+			if kind == "permission" {
+				kernel.missing = os.ErrPermission
+			}
+			if kind == "populated" {
+				f.manager.kernel.populated = true
+			}
+			// Replacement is introduced after the first capture, so the
+			// original binding must be checked again by Empty.
+			if kind == "replaced" {
+				f.owner.manager = &gitEarlyStopChangingManager{gitUnitManager: f.manager, change: func(*unitObservation) { f.manager.kernel.changed = true }}
+			}
+			f.owner.kernel = kernel
+			got, err := f.owner.captureBirth(context.Background(), r)
+			if kind == "removed" {
+				if err != nil || got.Birth == nil || got.Birth.Unit.Cgroup != f.manager.kernel.group || got.Captured || got.Stopped {
+					t.Fatal("original removed group was discarded or termination fabricated", got, err)
+				}
+			} else if err == nil || got.Birth != nil {
+				t.Fatal("uncertain group accepted", got, err)
+			}
+		})
+	}
+}
+
 func (k *gitBirthDelayedCgroup) Capture(group, unit string) (cgroupBinding, error) {
 	k.reads++
 	if k.remaining > 0 {
@@ -401,8 +460,34 @@ func TestGitBirthPendingInitializationRejectsChangedInvocation(t *testing.T) {
 	}
 }
 
+func TestGitBirthRejectsSettledJobBeforeAnyInvocationWasCorrelated(t *testing.T) {
+	for _, phase := range []string{"first-observation", "after-empty-properties"} {
+		t.Run(phase, func(t *testing.T) {
+			f := newGitUnitFixture(t)
+			if f.owner.prepare(context.Background(), f.binding) != nil {
+				t.Fatal("prepare")
+			}
+			r, err := f.owner.read(f.binding.Attempt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.Started = true
+			r.StartJob = "/org/freedesktop/systemd1/job/1"
+			f.manager.observation.Description = gitUnitDescriptionPrefix + Digest(f.binding)
+			f.manager.observation.InvocationID = strings.Repeat("d", 32)
+			if phase == "after-empty-properties" {
+				f.owner.manager = &gitBirthInitializingManager{gitUnitManager: f.manager, remaining: 1}
+			}
+			got, err := f.owner.captureBirth(context.Background(), r)
+			if err == nil || got.Birth != nil || got.Captured || f.owner.grantEligible[f.binding.Attempt] {
+				t.Fatal("settled replacement invocation adopted as original", got, err)
+			}
+		})
+	}
+}
+
 func TestGitEarlyStopRefusesIncompleteTerminalEvidence(t *testing.T) {
-	for _, kind := range []string{"missing-unit", "manager", "description", "invocation", "pending-job", "active", "populated", "changed-group", "missing-group", "limits", "replacement-before-recovery"} {
+	for _, kind := range []string{"missing-unit", "manager", "description", "invocation", "pending-job", "activating", "populated", "changed-group", "missing-group", "limits", "replacement-before-recovery"} {
 		t.Run(kind, func(t *testing.T) {
 			f := gitEarlyStopFixture(t)
 			switch kind {
@@ -416,8 +501,8 @@ func TestGitEarlyStopRefusesIncompleteTerminalEvidence(t *testing.T) {
 				f.manager.observation.InvocationID = ""
 			case "pending-job":
 				f.manager.observation.Job.ID = 9
-			case "active":
-				f.manager.observation.ActiveState = "active"
+			case "activating":
+				f.manager.observation.ActiveState = "activating"
 			case "populated":
 				f.manager.kernel.populated = true
 			case "changed-group":
@@ -442,6 +527,57 @@ func TestGitEarlyStopRefusesIncompleteTerminalEvidence(t *testing.T) {
 			f.manager.kernel.boot = strings.Repeat("c", 32)
 			if f.owner.stop(context.Background(), f.binding) != nil || f.owner.Close() != nil {
 				t.Fatal("changed boot could not retire the old attempt")
+			}
+		})
+	}
+}
+
+func TestGitEarlyStopRecoversActiveExitedBoundUnit(t *testing.T) {
+	f := gitEarlyStopFixture(t)
+	f.manager.observation.ActiveState = "active"
+	f.manager.waitErr = nil
+	f.manager.afterWait = nil
+	if err := f.owner.stop(context.Background(), f.binding); err != nil {
+		t.Fatal("active-exited original unit could not be stopped", err)
+	}
+	r, err := f.owner.read(f.binding.Attempt)
+	if err != nil || !r.Stopped || r.EarlyStop == nil || r.Captured || r.StopJob != "/org/freedesktop/systemd1/job/2" || f.manager.stops != 1 || f.owner.Close() != nil {
+		t.Fatal("active-exited recovery lost terminal proof", r, err, f.manager.stops)
+	}
+}
+
+func TestGitEarlyStopActiveExitedRefusesReplacementOrNonemptyGroup(t *testing.T) {
+	for _, kind := range []string{"invocation", "group", "populated", "post-stop-invocation", "stop-job-failure"} {
+		t.Run(kind, func(t *testing.T) {
+			f := gitEarlyStopFixture(t)
+			f.manager.observation.ActiveState = "active"
+			f.manager.waitErr = nil
+			f.manager.afterWait = nil
+			wantStops := 0
+			switch kind {
+			case "invocation":
+				f.manager.observation.InvocationID = strings.Repeat("d", 32)
+			case "group":
+				f.manager.kernel.changed = true
+			case "populated":
+				f.manager.kernel.populated = true
+			case "post-stop-invocation":
+				f.manager.changedInvocation = true
+				wantStops = 1
+			case "stop-job-failure":
+				f.manager.waitErr = errors.New("synthetic stop job failed")
+				wantStops = 1
+			}
+			if f.owner.stop(context.Background(), f.binding) == nil || f.owner.Close() == nil {
+				t.Fatal("uncertain active-exited unit released")
+			}
+			r, err := f.owner.read(f.binding.Attempt)
+			if err != nil || r.Stopped || r.EarlyStop != nil || f.manager.stops != wantStops {
+				t.Fatal("failed recovery fabricated proof or stopped replacement", r, err, f.manager.stops)
+			}
+			f.manager.kernel.boot = "changed-boot-for-active-exited-fixture"
+			if f.owner.stop(context.Background(), f.binding) != nil || f.owner.Close() != nil {
+				t.Fatal("fixture recovery")
 			}
 		})
 	}

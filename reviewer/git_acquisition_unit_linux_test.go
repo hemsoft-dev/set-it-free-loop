@@ -609,7 +609,25 @@ func (m *fakeContainmentManager) StartGit(ctx context.Context, unit, stub string
 	if _, err := fixedGitUnitProperties(unit, stub, args, description, imageFD, supervisorFD); err != nil {
 		return "", err
 	}
-	return m.Start(ctx, unit, stub, args, description, imageFD)
+	job, err := m.Start(ctx, unit, stub, args, description, imageFD)
+	if err != nil {
+		return job, err
+	}
+	// Model the accepted start job as pending until WaitJob. A completed job
+	// alone cannot identify whichever invocation currently occupies the name.
+	if m.observation.Job.ID == 0 {
+		m.observation.Job = unitJob{1, "/org/freedesktop/systemd1/job/1"}
+	}
+	afterWait := m.afterWait
+	m.afterWait = func() {
+		if m.observation.Job.ID == 1 {
+			m.observation.Job = unitJob{}
+		}
+		if afterWait != nil {
+			afterWait()
+		}
+	}
+	return job, nil
 }
 
 func TestGitAcquisitionRefusesSubstitutedBirthSupervisorBeforeStartIntent(t *testing.T) {
