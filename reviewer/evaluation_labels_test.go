@@ -281,3 +281,18 @@ func TestFindingAssessmentHistoryValidatesEachJudgment(t *testing.T) {
 		t.Fatal("valid withdrawal revision rejected", err)
 	}
 }
+
+func TestBlobEvidenceRejectsNonRepositoryPaths(t *testing.T) {
+	for _, suffix := range []string{"../../pull/1", "a/./b", "a/../b", "a//b", ".", "a/.git/config"} {
+		test := copyEvaluationCase(t, syntheticCorpus().Cases[0])
+		test.Label.Provenance.Evidence[0].URL = "https://github.com/hemsoft-dev/set-it-free-loop/blob/" + strings.Repeat("d", 40) + "/" + suffix + "#L1"
+		if err := test.ValidateLabels(controlTime); err == nil {
+			t.Fatal("nonrepository blob suffix accepted", suffix)
+		}
+	}
+	test := copyEvaluationCase(t, syntheticCorpus().Cases[0])
+	test.Label.Provenance.Evidence[0].URL = "https://github.com/hemsoft-dev/set-it-free-loop/blob/" + strings.Repeat("d", 40) + "/reviewer/evaluation.go#L1"
+	if err := test.ValidateLabels(controlTime); err != nil {
+		t.Fatal("valid blob source rejected", err)
+	}
+}

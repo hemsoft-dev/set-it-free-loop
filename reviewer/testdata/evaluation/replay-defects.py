@@ -20,13 +20,28 @@ CASES = [
 ]
 
 
+def git_env():
+    return {'PATH': os.environ['PATH'], 'GIT_CONFIG_NOSYSTEM': '1',
+            'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1',
+            'GIT_NO_LAZY_FETCH': '1', 'LC_ALL': 'C'}
+
+
+def require_supported_git():
+    message = ('Replay requires Git 2.46+ with --no-lazy-fetch support; '
+               'unsupported Git cannot run this no-fetch replay.')
+    try:
+        result = subprocess.run(['git', '--no-replace-objects', '--no-lazy-fetch', '--version'],
+                                env=git_env(), capture_output=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        sys.exit(message)
+    if result.returncode != 0:
+        sys.exit(message)
+
+
 def git_bytes(*args):
-    env = {'PATH': os.environ['PATH'], 'GIT_CONFIG_NOSYSTEM': '1',
-           'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1',
-           'GIT_NO_LAZY_FETCH': '1', 'LC_ALL': 'C'}
     return subprocess.check_output(
         ['git', '--no-replace-objects', '--no-lazy-fetch', '-C', str(ROOT),
-         *args], env=env)
+         *args], env=git_env(), timeout=30)
 
 
 def git_source(revision, path):
@@ -46,6 +61,7 @@ def reachable_candidate(number, original_head, aliases):
 
 
 def main():
+    require_supported_git()
     results = []
     aliases = {x['candidate']: x for x in json.loads(Path(__file__).with_name('replay-sources.json').read_text())}
     with tempfile.TemporaryDirectory(prefix='sfl-source-label-probes-') as temp:

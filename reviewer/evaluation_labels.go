@@ -108,6 +108,9 @@ func (p LabelProvenance) validate(earliest, latest time.Time) error {
 		}
 		// A commit/blob link must agree with the captured immutable revision.
 		parts := strings.Split(u.Path, "/")
+		if parts[3] == "blob" && !validPath(strings.Join(parts[5:], "/")) {
+			return errors.New("blob evidence must name a normalized repository path without traversal")
+		}
 		if (parts[3] == "commit" || parts[3] == "blob") && parts[4] != e.Commit {
 			return errors.New("evidence link revision differs from captured revision")
 		}

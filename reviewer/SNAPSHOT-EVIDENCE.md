@@ -28,7 +28,9 @@ deadline. A complete inventory and its coverage must fit; otherwise capture
 fails. Patch omission can leave room for later small files. An omitted patch
 never supplies inline anchors.
 
-Fixed Git flags disable external diff drivers, text conversion, rename
+The trusted Git binary must support `--no-lazy-fetch`, as Git 2.46+ does.
+Unsupported builds fail closed instead of relying on an ignored environment
+variable. Fixed Git flags disable external diff drivers, text conversion, rename
 detection, color, replacement objects and lazy fetch. `--ignore-submodules=none` overrides candidate `.gitmodules` and repository ignore settings. Git receives no inherited
 user environment or global/system configuration. The explicitly selected Git
 binary and object repository configuration remain trusted. Their provisioning

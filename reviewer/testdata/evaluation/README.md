@@ -124,9 +124,19 @@ They are source-behavior evidence, not reviewer quality measurements.
 
 ## Reproduce validation and the freeze attempt
 
-From the repository root, using the declared Go toolchain:
+Prerequisites are the declared Go toolchain, Python 3, Node.js, and Git 2.46+
+with `--no-lazy-fetch` support for replay and Git-backed packet capture. This
+flag is part of [Git 2.46's primary documentation](https://github.com/git/git/blob/v2.46.0/Documentation/git.txt).
+Replay checks support before reading aliases or Git objects and exits with an
+explicit requirement on an older build. It never drops the flag or falls back
+to an older Git's possibly ignored environment-only no-fetch setting. The
+qualified local run uses Git 2.53.0. A normal full-history clone still needs
+that declared Git capability.
+
+From the repository root:
 
 ```sh
+python3 reviewer/testdata/evaluation/test-replay-preflight.py
 python3 reviewer/testdata/evaluation/replay-defects.py
 go -C reviewer test -run 'TestRetainedEvaluationLabels|TestAgent|TestSnapshotEvidenceBudgetsCoverage' ./...
 git_dir=$(git rev-parse --path-format=absolute --git-common-dir)
