@@ -290,7 +290,7 @@
     }
   ],
   "inference_requests": 0,
-  "replacement_trigger_selected": false,
+  "replacement_trigger_selected": true,
   "credential_values_in_evidence": false,
   "cleanup": "Throwaway PR closed unmerged and its feature branch deleted after preserving a private ref/bundle. New App/installation and supplied key files remain as provided; no alpha service deployed.",
   "identity_and_scope_recheck": {
@@ -341,5 +341,6 @@
     "machine_user": false,
     "live_activation_authorized": false,
     "implementation_status": "offline implementation authorized; pending"
-  }
+  },
+  "replacement_trigger_enabled": false
 }
