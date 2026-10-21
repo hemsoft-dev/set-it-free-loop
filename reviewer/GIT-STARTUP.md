@@ -66,6 +66,11 @@ epoch, different enrollment, malformed record or insecure file refuses instead
 of rewriting the policy. The record may already exist after a failed startup.
 Changing it needs a separately specified migration, not a retry that resets the
 epoch. Persistence of this record supplies no activation authority.
+An epoch outside JSON's supported year range refuses before a policy file is
+installed. Atomic writes use the metadata lock's existing reserved replacement
+filenames. After a crash before rename, the next lock acquisition validates and
+removes the abandoned temporary without changing the committed policy or
+unrelated entries.
 
 ## Work, close and failed construction
 

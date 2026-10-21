@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -535,5 +536,111 @@ func TestGitReviewerStartupFailedConstructionRetainsRetryableRuntime(t *testing.
 	}
 	if s.Close(context.Background()) != nil || !s.closed || s.runtime != runtime {
 		t.Fatal("constructor cleanup retry could not finish the same runtime")
+	}
+}
+
+func TestGitReviewerPolicyRejectsUnencodableEpochWithoutPoisoningRestart(t *testing.T) {
+	for _, year := range []int{-1, 10000} {
+		t.Run(strconv.Itoa(year), func(t *testing.T) {
+			o, _, opener, signs := gitReviewerStartupFixture(t)
+			valid := o.Triggers
+			o.Triggers.EnabledAt = time.Date(year, 1, 1, 0, 0, 0, 0, time.UTC)
+			handle, err := openGitReviewerService(context.Background(), o, opener)
+			if handle != nil {
+				defer handle.Close(context.Background())
+			}
+			if err == nil || signs.Load() != 0 {
+				t.Fatal("unencodable epoch was admitted", err)
+			}
+			path := filepath.Join(o.Credentials.Journal.directory, "reviewer-trigger-policy.json")
+			if _, err = os.Lstat(path); !os.IsNotExist(err) {
+				t.Fatal("unencodable epoch installed a durable record", err)
+			}
+			if handle != nil && handle.Close(context.Background()) != nil {
+				t.Fatal("refused startup kept owners")
+			}
+			o.Triggers = valid
+			handle, err = openGitReviewerService(context.Background(), o, opener)
+			if err != nil || handle == nil {
+				t.Fatal("valid retry was poisoned", err)
+			}
+			if err = handle.Close(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+type gitPolicyCrashContext struct {
+	context.Context
+	checks int
+}
+
+func (c *gitPolicyCrashContext) Err() error {
+	c.checks++
+	if c.checks == 2 {
+		os.Exit(88)
+	}
+	return nil
+}
+func TestGitReviewerPolicyCrashWriterChild(t *testing.T) {
+	directory := os.Getenv("SFL_GIT_POLICY_CRASH_DIRECTORY")
+	if directory == "" {
+		return
+	}
+	held, err := (&AuthStore{directory: directory}).lock(context.Background())
+	if err != nil {
+		os.Exit(89)
+	}
+	defer held.close()
+	ctx := &gitPolicyCrashContext{Context: context.Background()}
+	gitReviewerPersistPolicy(ctx, directory, alphaEnrollment(), TriggerPolicy{EnabledAt: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)})
+	os.Exit(90)
+}
+func TestGitReviewerPolicyCrashTempRecoveredByStartupLock(t *testing.T) {
+	o, _, opener, signs := gitReviewerStartupFixture(t)
+	o.Triggers.EnabledAt = time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	unknown := filepath.Join(o.Credentials.Journal.directory, ".replace-unknown")
+	if err := os.WriteFile(unknown, []byte("unowned retained evidence"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(os.Args[0], "-test.run=^TestGitReviewerPolicyCrashWriterChild$")
+	child.Env = []string{"SFL_GIT_POLICY_CRASH_DIRECTORY=" + o.Credentials.Journal.directory}
+	err := child.Run()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 88 {
+		t.Fatal("crash fixture did not reach durable temp before rename", err)
+	}
+	entries, err := os.ReadDir(o.Credentials.Journal.directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	crashed := []string{}
+	for _, entry := range entries {
+		if (strings.HasPrefix(entry.Name(), ".replace-") || strings.HasPrefix(entry.Name(), ".policy-")) && entry.Name() != ".replace-unknown" {
+			crashed = append(crashed, entry.Name())
+		}
+	}
+	if len(crashed) != 1 {
+		t.Fatal("crash fixture did not leave exactly one temporary", crashed)
+	}
+	if _, err = os.Lstat(filepath.Join(o.Credentials.Journal.directory, "reviewer-trigger-policy.json")); !os.IsNotExist(err) {
+		t.Fatal("crash fixture passed rename boundary", err)
+	}
+	handle, err := openGitReviewerService(context.Background(), o, opener)
+	if err != nil {
+		t.Fatal("restart could not recover writer", err)
+	}
+	defer handle.Close(context.Background())
+	if signs.Load() != 0 {
+		t.Fatal("recovery signed credentials")
+	}
+	for _, name := range crashed {
+		if _, err = os.Lstat(filepath.Join(o.Credentials.Journal.directory, name)); !os.IsNotExist(err) {
+			t.Fatal("abandoned policy temp survived startup lock recovery", name, err)
+		}
+	}
+	if raw, err := os.ReadFile(unknown); err != nil || string(raw) != "unowned retained evidence" {
+		t.Fatal("unknown evidence removed", err)
 	}
 }

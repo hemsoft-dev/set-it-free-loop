@@ -276,7 +276,10 @@ func gitReviewerPersistPolicy(ctx context.Context, directory string, e Enrollmen
 		Enrollment Enrollment
 		Triggers   TriggerPolicy
 	}{1, e, p}
-	raw, _ := json.Marshal(value)
+	raw, err := json.Marshal(value)
+	if err != nil || len(raw) > 4096 {
+		return ErrLiveBlocked
+	}
 	const name = "reviewer-trigger-policy.json"
 	f, err := root.OpenFile(name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err == nil {
@@ -297,7 +300,9 @@ func gitReviewerPersistPolicy(ctx context.Context, directory string, e Enrollmen
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return ErrLiveBlocked
 	}
-	tmp := ".policy-" + hex.EncodeToString(nonce[:])
+	// The caller holds the startup flock. Use its existing exact, validated
+	// replacement namespace so the next lock acquisition removes a crash fragment.
+	tmp := ".replace-" + hex.EncodeToString(nonce[:])
 	f, err = root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0600)
 	if err != nil {
 		return ErrLiveBlocked
