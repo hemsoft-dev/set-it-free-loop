@@ -18,7 +18,7 @@ import (
 )
 
 // nativeRuntimeRoot is a single-owner prepared filesystem. Its descriptor may
-// be consumed by the namespace helper; it must never survive into QEMU. Close
+// be consumed by the namespace helper; it must never survive into QEMU or Git. Close
 // belongs after the owned process has stopped, not to a model/tool callback.
 type nativeRuntimeRoot struct {
 	parent, root  *os.Root

@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func gitRuntimeFrame(t *testing.T, m gitRuntimeManifest, bodies map[string][]byte) ([]byte, GitRuntimePins) {
@@ -79,7 +80,8 @@ func TestGitRuntimeActualELFProducerAndPinnedReadOnlyRoot(t *testing.T) {
 	if json.Unmarshal(build.Manifest, &manifest) != nil || !manifest.valid(build.Pins) || len(manifest.Files) < 8 {
 		t.Fatal("missing transitive dependencies")
 	}
-	root, err := prepareGitRuntime(context.Background(), nativeRuntimePrivateParent(t), bytes.NewReader(build.Artifact), build.Pins, nil)
+	parent := nativeRuntimePrivateParent(t)
+	root, err := prepareGitRuntime(context.Background(), parent, bytes.NewReader(build.Artifact), build.Pins, nil)
 	if err != nil {
 		t.Fatal("actual artifact consumer", err)
 	}
@@ -103,7 +105,7 @@ func TestGitRuntimeActualELFProducerAndPinnedReadOnlyRoot(t *testing.T) {
 	if err := root.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := root.parent.Stat(gitRuntimeDirectory); err == nil {
+	if _, err := os.Lstat(filepath.Join(parent, gitRuntimeDirectory)); !os.IsNotExist(err) {
 		t.Fatal("closed prepared root retained")
 	}
 }
@@ -125,13 +127,16 @@ func TestGitRuntimeActualProgramsInsidePrivateRoot(t *testing.T) {
 		} else {
 			args = append(args, "/usr/lib/git-core/git-remote-http")
 		}
-		command := exec.Command("/usr/bin/bwrap", args...)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		command := exec.CommandContext(ctx, "/usr/bin/bwrap", args...)
 		command.Env = []string{"PATH=/usr/bin:/bin"}
 		raw, err := command.CombinedOutput()
+		cancel()
 		if program == "git" && (err != nil || !strings.HasPrefix(string(raw), "git version ")) {
 			t.Fatal("measured Git namespace", string(raw), err)
 		}
-		if program == "http" && (err == nil || !strings.Contains(string(raw), "usage: git remote-http")) {
+		exit, exited := err.(*exec.ExitError)
+		if program == "http" && (!exited || exit.ExitCode() != 1 || string(raw) != "error: remote-curl: usage: git remote-curl <remote> [<url>]\n") {
 			t.Fatal("measured HTTP helper namespace", string(raw), err)
 		}
 	}
