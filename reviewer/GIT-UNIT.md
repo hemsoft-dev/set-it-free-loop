@@ -4,7 +4,9 @@ The private `gitUnitOwner` supplies durable process ownership for the future
 acquisition factory. It uses a separate nonsecret Git binding and journal, never
 a fabricated provider/auth binding. Opening it does not launch a unit or read a
 provider profile. Only the explicit private start method contacts the manager.
-The public production factory, measured Git runtime, authenticated grant/export
+The offline [measured runtime builder](GIT-RUNTIME.md) and namespace startup
+check are available; they do not qualify aggregate acquisition. The public
+production factory, authenticated grant/export
 channel, namespace inspection, concrete helper admission and broker/result
 orchestration remain unfinished.
 
