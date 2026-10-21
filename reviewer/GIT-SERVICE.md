@@ -2,9 +2,11 @@
 
 The private Linux service owner joins the concrete Git source factory,
 credential owner, polling controller and scoped GitHub publisher. This is an
-internal assembly for the trusted startup layer. It provides no installed
-daemon, public startup command, credential import or activation authority.
-The existing owner gates still apply.
+internal assembly for the [public trusted startup API](GIT-STARTUP.md).
+`OpenGitReviewerService` supplies measured release packages and retains the
+outer startup resources around this owner. Neither layer installs a daemon,
+imports credentials or grants activation authority. The existing owner gates
+still apply.
 
 ## Startup and ownership
 
@@ -82,7 +84,8 @@ polling run with both caller and service shutdown. Native session tests use
 closed gates before unopened asset/auth paths. No model is invoked.
 
 This assembly does not qualify a deployment. The public trusted operator entry
-point, release packaging/promotion/rollback, native control tasks and durable
+point and canonical release package are described in [GIT-STARTUP.md](GIT-STARTUP.md).
+Trusted release promotion/rollback, native control tasks and the durable
 evaluation runner remain source work. Complete host containment qualification,
 provider policy/entitlement and quota evidence, final App/trigger evidence and
 explicit owner activation remain separate gates tracked in
