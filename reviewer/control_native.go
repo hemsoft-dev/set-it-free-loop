@@ -206,6 +206,8 @@ func mergeControlCoverage(s ControlSession, r ControlReport, coverage []Coverage
 		return ControlReport{}, err
 	}
 	r.Coverage = initial.Coverage
+	// ValidateControlReport marshals the merged report and passes those bytes
+	// through DecodeStrict with OutputBytes, including the final control step.
 	return r, ValidateControlReport(r, s)
 }
 

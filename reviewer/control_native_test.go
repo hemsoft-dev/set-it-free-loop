@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -155,5 +156,60 @@ func TestControlSharedReducerPreservesDisputeAndRetraction(t *testing.T) {
 	}), engine.Reader)
 	if err != nil || out.State != "complete" || out.Ledger[0].Status != "retracted" || len(out.Ledger[0].History) != 2 {
 		t.Fatal(out, err)
+	}
+}
+
+func TestControlMergedCoverageEnforcesEncodedOutputCapAtEveryStep(t *testing.T) {
+	for target := 1; target <= 4; target++ {
+		t.Run(strconv.Itoa(target), func(t *testing.T) {
+			input := controlInputFixture(Codex)
+			input.Job.Config.Limits.OutputBytes = 4096
+			input.Limits = input.Job.Config.Limits
+			workerCalls, readerCalls := 0, 0
+			worker := controlFunc(func(_ context.Context, s ControlSession) (ControlReport, error) {
+				workerCalls++
+				report := fakeControl(s)
+				if s.Step == target {
+					if s.Step == 1 {
+						report.Findings[0].Body = ""
+					} else {
+						report.Judgments[0].Reason = ""
+					}
+					raw, _ := json.Marshal(report)
+					padding := strings.Repeat("x", s.Limits.OutputBytes-len(raw)-16)
+					if s.Step == 1 {
+						report.Findings[0].Body = padding
+					} else {
+						report.Judgments[0].Reason = padding
+					}
+					raw, _ = json.Marshal(report)
+					if len(raw) != s.Limits.OutputBytes-16 || ValidateControlReport(report, s) != nil {
+						t.Fatal("invalid near-bound fixture", len(raw))
+					}
+					// No reader is needed to demonstrate the same check for source-access
+					// coverage. Validation already rejects the merged encoded bytes.
+					merged, err := mergeControlCoverage(s, report, []Coverage{{Reason: strings.Repeat("o", 64)}}, nil)
+					encoded, _ := json.Marshal(merged)
+					if err == nil || len(encoded) <= s.Limits.OutputBytes {
+						t.Fatal("source-access coverage did not cross/reject bound", len(encoded), err)
+					}
+				}
+				return report, nil
+			})
+			source := func(snapshot Snapshot) (*Reader, error) {
+				readerCalls++
+				reader, err := testEngine(t, nil).Reader(snapshot)
+				if err == nil && readerCalls == target {
+					if _, readErr := reader.Read(context.Background(), snapshot.Head, "outside-allowlist.go"); readErr == nil {
+						t.Fatal("omission fixture did not fail")
+					}
+				}
+				return reader, err
+			}
+			outcome, err := RunSelfCritique(context.Background(), input.Job, input.Provider, worker, source)
+			if err == nil || outcome.State != "invalid_output" || workerCalls != target || outcome.ConsumedSessions != target || len(outcome.Reports) != target-1 || len(outcome.Ledger) != 0 {
+				t.Fatal("oversized reader coverage escaped or froze into later history", target, outcome.State, workerCalls, len(outcome.Reports), err)
+			}
+		})
 	}
 }
