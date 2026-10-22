@@ -494,3 +494,152 @@ func TestGitVMReadAggregateInputBudgetStopsBeforeFifthUpload(t *testing.T) {
 		t.Fatal("aggregate input count differed", calls.Load(), result)
 	}
 }
+
+func TestGitVMReadClientTimeoutCancelsHostBorrow(t *testing.T) {
+	body := &gitVMReadBlockedBody{make(chan struct{}), make(chan struct{}), make(chan struct{}), sync.Once{}}
+	client, cancelHost, done := startGitVMReadTest(t, gitExchangeFunc(func(context.Context, GitHubGitReadRequest) (io.ReadCloser, error) { return body, nil }), admitGitVMReadTest)
+	defer cancelHost()
+	var retired sync.Once
+	retire := func() { retired.Do(func() { close(body.retire) }) }
+	defer retire()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	returned := make(chan error, 1)
+	go func() {
+		_, err := client.Exchange(ctx, GitHubGitReadRequest{Operation: GitHubGitAdvertisement})
+		returned <- err
+	}()
+	select {
+	case <-body.entered:
+	case <-time.After(time.Second):
+		t.Fatal("upstream read did not start")
+	}
+	select {
+	case err := <-returned:
+		if err == nil {
+			t.Fatal("timed-out client succeeded")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("client deadline did not return")
+	}
+	select {
+	case <-body.closed:
+	case <-time.After(time.Second):
+		t.Fatal("client timeout retained host upstream borrow")
+	}
+	select {
+	case result := <-done:
+		t.Fatal("released host before upstream Read drained", result)
+	case <-time.After(20 * time.Millisecond):
+	}
+	retire()
+	if result := finishGitVMReadTest(t, done); result.err == nil {
+		t.Fatal("peer cancellation accepted as success")
+	}
+}
+
+func TestGitVMReadPrefetchIsBoundedAndCancelsUpstream(t *testing.T) {
+	host, guest := net.Pipe()
+	defer guest.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	body := &gitVMReadBlockedBody{make(chan struct{}), make(chan struct{}), make(chan struct{}), sync.Once{}}
+	var retired sync.Once
+	retire := func() { retired.Do(func() { close(body.retire) }) }
+	defer retire()
+	var calls atomic.Int32
+	done := make(chan gitVMReadTestResult, 1)
+	go func() {
+		a, err := serveGitVMRead(ctx, host, gitVMReadTestBinding(), gitExchangeFunc(func(context.Context, GitHubGitReadRequest) (io.ReadCloser, error) {
+			calls.Add(1)
+			return body, nil
+		}), admitGitVMReadTest)
+		done <- gitVMReadTestResult{a, err}
+	}()
+	request := gitVMReadRequest{1, Digest(gitVMReadTestBinding()), 1, GitHubGitAdvertisement, 0, nil}
+	if writeVMRecord(guest, request, gitVMReadRequestFrame) != nil {
+		t.Fatal("first request")
+	}
+	select {
+	case <-body.entered:
+	case <-time.After(time.Second):
+		t.Fatal("upstream read missing")
+	}
+	for _, sequence := range []int{2, 3} {
+		request.Sequence = sequence
+		if writeVMRecord(guest, request, gitVMReadRequestFrame) != nil {
+			t.Fatal("prefetch request")
+		}
+	}
+	select {
+	case <-body.closed:
+	case <-time.After(time.Second):
+		t.Fatal("overfull prefetch did not cancel upstream")
+	}
+	retire()
+	result := finishGitVMReadTest(t, done)
+	if result.err == nil || calls.Load() != 1 {
+		t.Fatal("prefetch dispatched or succeeded", result, calls.Load())
+	}
+}
+
+type gitVMReadInputSpy struct {
+	reads, closed atomic.Int32
+}
+
+func (s *gitVMReadInputSpy) Read(p []byte) (int, error) {
+	s.reads.Add(1)
+	return copy(p, "queued"), io.EOF
+}
+func (s *gitVMReadInputSpy) Close() error { s.closed.Add(1); return nil }
+
+func TestGitVMReadQueuedUploadDoesNotAllocateInput(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	client, _, done := startGitVMReadTest(t, gitExchangeFunc(func(context.Context, GitHubGitReadRequest) (io.ReadCloser, error) {
+		close(entered)
+		<-release
+		return io.NopCloser(strings.NewReader("ok")), nil
+	}), admitGitVMReadTest)
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	first := make(chan error, 1)
+	go func() {
+		r, err := client.Exchange(context.Background(), GitHubGitReadRequest{Operation: GitHubGitAdvertisement})
+		if r != nil {
+			r.Close()
+		}
+		first <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("first operation did not start")
+	}
+	body := &gitVMReadInputSpy{}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if r, err := client.Exchange(ctx, GitHubGitReadRequest{Operation: GitHubGitUploadPack, Body: body}); r != nil || err == nil {
+		t.Fatal("queued cancellation succeeded")
+	}
+	if body.reads.Load() != 0 || body.closed.Load() != 1 {
+		t.Fatalf("queued input read/closed %d/%d", body.reads.Load(), body.closed.Load())
+	}
+	close(release)
+	select {
+	case err := <-first:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("active operation stuck")
+	}
+	client.Close()
+	if result := finishGitVMReadTest(t, done); result.err != nil {
+		t.Fatal(result)
+	}
+}

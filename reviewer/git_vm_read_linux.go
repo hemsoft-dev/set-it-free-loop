@@ -94,10 +94,47 @@ func serveGitVMRead(ctx context.Context, channel io.ReadWriteCloser, binding git
 	defer cancel()
 	join := gitBrokerAfterFunc(phase, func() { _ = channel.Close() })
 	defer join()
+	// Keep reading the duplex channel while upstream work owns a response
+	// body. Peer closure must cancel that borrow immediately, rather than
+	// waiting for the channel-wide deadline. One prefetched request is allowed;
+	// further pipelining refuses the channel instead of growing a queue.
+	incoming := make(chan gitVMReadRequest, 1)
+	ended := make(chan error, 1)
+	readerDone := make(chan struct{})
+	go func() {
+		var result error
+		defer func() { ended <- result; cancel(); close(readerDone) }()
+		for {
+			q, err := readVMRecord[gitVMReadRequest](channel, gitVMReadRequestFrame)
+			if err != nil {
+				result = err
+				return
+			}
+			select {
+			case incoming <- q:
+			default:
+				result = errGitVMRead
+				return
+			}
+		}
+	}()
+	defer func() { cancel(); _ = channel.Close(); <-readerDone }()
+	deadline, _ := phase.Deadline()
 	hash := Digest(binding)
 	for sequence := 1; ; sequence++ {
-		q, err := readVMRecord[gitVMReadRequest](channel, gitVMReadRequestFrame)
-		if err == io.EOF && phase.Err() == nil {
+		var q gitVMReadRequest
+		var err error
+		select {
+		case q = <-incoming:
+		case err = <-ended:
+		case <-phase.Done():
+			select {
+			case err = <-ended:
+			default:
+				err = errGitVMRead
+			}
+		}
+		if err == io.EOF && ctx.Err() == nil && time.Now().Before(deadline) && len(incoming) == 0 {
 			return audit, nil
 		}
 		if err != nil || !q.valid(hash, sequence) || sequence > gitVMReadRequests || phase.Err() != nil || audit.RequestBytes+int64(len(q.Body)) > gitVMReadInputBytes {
@@ -262,13 +299,14 @@ func (c *gitVMReadClient) Exchange(ctx context.Context, request GitHubGitReadReq
 	}
 	phase, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	data, err := gitVMReadInput(phase, request)
-	if err != nil {
-		return nil, errGitVMRead
+	closePendingInput := func() {
+		if request.Body != nil {
+			_ = request.Body.Close()
+		}
 	}
-	defer clear(data)
 	select {
 	case <-phase.Done():
+		closePendingInput()
 		return nil, errGitVMRead
 	case <-c.operation:
 	}
@@ -277,9 +315,22 @@ func (c *gitVMReadClient) Exchange(ctx context.Context, request GitHubGitReadReq
 	closed := c.closed
 	c.mu.Unlock()
 	if closed || phase.Err() != nil {
+		closePendingInput()
 		return nil, errGitVMRead
 	}
-	if c.sequence >= gitVMReadRequests || c.input+int64(len(data)) > gitVMReadInputBytes {
+	if c.sequence >= gitVMReadRequests || request.Operation == GitHubGitUploadPack && c.input >= gitVMReadInputBytes {
+		closePendingInput()
+		_ = c.Close()
+		return nil, errGitVMRead
+	}
+	// Serialize intake as well as exchange. Queued callers retain their own
+	// deadlines and close unread inputs without allocating another body buffer.
+	data, err := gitVMReadInput(phase, request)
+	if err != nil {
+		return nil, errGitVMRead
+	}
+	defer clear(data)
+	if c.input+int64(len(data)) > gitVMReadInputBytes {
 		_ = c.Close()
 		return nil, errGitVMRead
 	}

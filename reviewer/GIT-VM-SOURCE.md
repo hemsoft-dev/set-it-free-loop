@@ -76,6 +76,14 @@ buffers one bounded opaque response until its terminal success record. Lost,
 stale, oversized or failed replies spend the channel without returning partial
 data or replaying a request.
 
+A bounded host intake reader remains active during upstream work. Guest peer
+closure cancels the host context and closes its upstream body, while ownership
+remains held until Read and Close finish. One prefetched request is allowed;
+further pipelining cancels the channel. Guest input intake is serialized with
+exchange, so queued uploads do not allocate body buffers before their turn.
+Queued cancellation closes that caller's unread body and leaves the active
+exchange alone.
+
 The component allows at most 32 exchanges, 16 MiB total decoded request bytes
 and 128 MiB total response bytes per channel. Individual requests retain the
 existing 4 MiB limit; responses retain the 4 MiB advertisement and 64 MiB
