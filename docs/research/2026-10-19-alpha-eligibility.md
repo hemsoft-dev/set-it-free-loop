@@ -1,6 +1,8 @@
 # Adversarial alpha eligibility evidence
 October 21 update: the separately authorized new-App experiment is recorded in the [dated model-free report](2026-10-21-model-free-app-eligibility.md). App COMMENT publication passed; native request creation failed in the checked UI and API routes. The earlier observations below remain a dated snapshot. Provider/account and live-activation gates remain separate.
 
+The [October 21 activation checklist and updated provider questions](2026-10-21-alpha-activation-checklist.md) reflect the selected comment and automatic polling triggers. The original question and observations below remain historical; they do not authorize a native-request workflow or provider contact.
+
 Checked October 19, 2026 EDT for [issue #173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173). This report records documentary and read-only account checks. No App was registered or installed, credentials generated, billing settings changed or inference prototype run.
 
 The owner's merge-mission invocation authorizes offline implementation and guarded merges. It does not supply missing provider permission, billing evidence or separate live activation authority. Keep the [alpha contract](https://github.com/hemsoft-dev/set-it-free-loop/issues/172) intact.

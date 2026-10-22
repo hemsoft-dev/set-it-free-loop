@@ -119,6 +119,11 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
+The [dated activation checklist](../docs/research/2026-10-21-alpha-activation-checklist.md)
+records current source versus qualification evidence and prepared provider
+questions for these selected triggers. It preserves failed host prerequisites
+and the owner's separate activation boundary.
+
 Before live activation, the following remain separate requirements:
 
 - Applicable public-target/unattended subscription permission for both pinned
