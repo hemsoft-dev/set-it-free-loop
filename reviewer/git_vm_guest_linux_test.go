@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"testing"
@@ -90,4 +91,35 @@ func TestGitVMGuestExportWriterBounds(t *testing.T) {
 	if n, err := w.Write([]byte("xyz")); n != 2 || !errors.Is(err, io.ErrShortWrite) || w.bytes != 2 || w.remaining != 7 {
 		t.Fatal("short write accounting failed")
 	}
+}
+
+func TestGitVMGuestExplicitSupervisorCredentials(t *testing.T) {
+	listener, path, _ := gitSupervisorListener(t)
+	left, err := net.DialUnix("unixpacket", nil, &net.UnixAddr{Name: path, Net: "unixpacket"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer left.Close()
+	right, err := listener.AcceptUnix()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer right.Close()
+	expected := gitTestPIDFD(t, os.Getpid())
+	uid, gid := uint32(os.Geteuid()), uint32(os.Getegid())
+	for _, ids := range [][2]uint32{{uid + 1, gid}, {uid, gid + 1}} {
+		before := gitPacketFDCount(t)
+		peer, err := authenticateGitSupervisorIDs(context.Background(), left, expected, ids[0], ids[1])
+		if peer != nil {
+			peer.Close()
+		}
+		if err == nil || gitPacketFDCount(t) != before {
+			t.Fatal("wrong explicit credentials accepted or descriptor leaked")
+		}
+	}
+	peer, err := authenticateGitSupervisorIDs(context.Background(), left, expected, uid, gid)
+	if err != nil {
+		t.Fatal("matching kernel credentials refused", err)
+	}
+	peer.Close()
 }
