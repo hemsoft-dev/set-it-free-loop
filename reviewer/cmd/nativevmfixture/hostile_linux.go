@@ -237,8 +237,10 @@ func runNativeHostile(c config) error {
 		slices.Sort(reads)
 		checks["every-call-reached-broker"] = access != nil && access.ToolCalls == f.HostileSourceCalls()
 		checks["only-allowed-reads"] = slices.Equal(reads, []string{s.Snapshot.Head + ":inject.md", s.Snapshot.Head + ":source.go"})
+		// The host verifies report anchors through the same store after stop.
 		sorted := slices.Clone(requests)
 		slices.Sort(sorted)
+		sorted = slices.Compact(sorted)
 		checks["store-saw-only-allowlisted"] = slices.Equal(sorted, []string{s.Snapshot.Head + ":inject.md", s.Snapshot.Head + ":link.go", s.Snapshot.Head + ":source.go"})
 	case f.HostileProbe:
 		checks["complete-report"] = reviewErr == nil && len(report.Findings) == 1 && evidence != nil && !evidence.Access.Failed && audit.Complete
