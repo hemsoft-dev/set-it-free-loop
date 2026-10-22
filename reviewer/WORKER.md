@@ -36,8 +36,10 @@ Cancellation closes the transport pipes, cancels source calls and invokes
 confirm termination and reaping of the whole worker, including descendants.
 `Wait` or a valid report alone is insufficient. The launcher must persist its own
 job-to-worker recovery identity before launching, return a worker handle whenever
-a process may exist, and honor launch/inspect contexts. No production supervisor
-or official-client wrapper is supplied in this change.
+a process may exist, and honor launch/inspect contexts. This worker-transport
+component does not supply that assembly. The separate [native VM path](NATIVE-VM.md)
+implements the pinned client, private transport and stopped-unit composition;
+complete production qualification remains open.
 
 If stop confirmation fails or times out, `ErrWorkerStopPending` prevents output
 acceptance, stopped-worker audit writes, refunds and durable lease release.

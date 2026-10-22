@@ -10,7 +10,10 @@ and an explicit publisher HTTP transport. The caller must separately attest
 that transport's credential as the enrolled selected-repository installation,
 with only the required repository permissions. Passing integers to construction
 is not proof of token identity, installation selection or native picker support.
-No production credential factory is supplied. Models never receive this object.
+This HTTP adapter does not mint credentials. The separate
+[credential owner](CREDENTIAL-OWNER.md) composes explicit reader/publisher roles;
+actual key custody and installation qualification remain operator gates. Models
+never receive this object.
 
 The adapter fixes the API origin and canonical repository path. Every public
 operation rejects wrong repository/installation/PR scope before HTTP or delegated

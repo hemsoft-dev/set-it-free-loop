@@ -80,12 +80,13 @@ addresses are denied. There is no fallback to another authority, proxy or IP.
 
 The optional `NewProviderEgressServer` supplies HTTP intake deadlines and a16KiB
 header limit. It does not listen, authenticate peers or bound accepted connections.
-A production supervisor must supply the private, peer-checked listener and
-connection limits, keep the bridge outside the provider process and enforce that
-the worker has no other network route. The worker must not reach host home,
-systemd, SSH/Docker sockets, private networks, other jobs or publisher credentials.
-This module does not implement that OS packaging or the client-side TLS/proxy
-configuration. Choosing a custom transport transfers its network and retry
+The [native VM assembly](NATIVE-VM.md) supplies the private provider stream,
+bounded guest proxy, separate guest roles and captured policy/launch checks.
+Its source includes client-side TLS/proxy configuration and a QEMU launch with
+no NIC or host share. This HTTP component alone supplies none of that OS
+packaging. The complete deployed assembly must still pass physical qualification
+that the worker has no alternate route or access to host home, systemd, SSH/Docker
+sockets, private networks, other jobs or publisher credentials. Choosing a custom transport transfers its network and retry
 guarantees to trusted supervisor code; the production transport above is tested
 separately from the fake transport used by most bridge tests.
 
@@ -111,10 +112,11 @@ Audit fields contain counts, hashes and status only. Do not store or publish raw
 headers, auth, request bodies, responses or backend errors. Preserve the private
 receipt even on failure and never refund possible provider work based on a
 network error. [Private provider evidence](PROVIDER-AUDIT.md) now connects the audit to engine
-artifacts, exact durable attempt recovery and publication checks. The concrete
-qualified worker still must implement that channel and its durable launch
-binding, credential transfer, exclusive routing and whole-containment recovery.
-Live eligibility and activation remain separate gates.
+artifacts, exact durable attempt recovery and publication checks. The native
+assembly implements the channel, durable launch binding and protected auth
+transfer. Fake-backend tests exercise those paths; complete exclusive-routing,
+resource and arbitrary-crash qualification remain unproved. Live eligibility
+and activation remain separate gates.
 
 Validate with the module's vet/full race commands. Focused tests can use:
 

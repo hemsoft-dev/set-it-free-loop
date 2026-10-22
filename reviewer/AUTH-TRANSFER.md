@@ -10,8 +10,9 @@ local Unix sockets. No interactive profile, actual account or provider is read.
 The export gate is a required `AuthExportVerifier`. It must reopen the exact
 durable launch binding and establish that the restricted private credential
 channel is ready before export reads the staged seed. A model, client report or
-unverified socket cannot supply this authorization. There is no production gate
-implementation or automatic launcher here. The staging store stays private to
+unverified socket cannot supply this authorization. The separate
+[native VM assembly](NATIVE-VM.md) implements the captured export gate and private
+channel. This transfer component starts no launcher. The staging store stays private to
 the supervisor and must never be mounted into a worker.
 
 ## Record and ownership

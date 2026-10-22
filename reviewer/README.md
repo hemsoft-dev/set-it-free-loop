@@ -3,7 +3,8 @@
 This separate Go module implements the new alpha contracts from
 [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
 The retired modules are reference material. No workflow, daemon, App installation
-or credential-bearing launcher is included.
+or credential-bearing activation command is included. Explicit service/native
+source APIs require independently supplied local gates and credentials.
 
 ## Validate locally
 
@@ -87,11 +88,15 @@ credentials or qualify production credential transfer and OS containment.
 [Provider HTTP egress](PROVIDER-EGRESS.md) supplies exact route guards, separate
 inference/refresh request budgets, bounded payloads and private completion audits.
 Its concrete transport rejects private destinations and hidden connection retries.
-No listener, provider policy or network route is activated. The isolated launcher
-must still enforce exclusive egress and qualify the pinned clients. The
-[private provider evidence path](PROVIDER-AUDIT.md) carries required receipts
-through execution, charged attempt storage, recovery and the pre-POST gate.
-It selects no production worker or credentials.
+The [native VM assembly](NATIVE-VM.md) implements the bounded private provider
+stream, guest proxy, separate roles and captured policy/launch checks. Its source
+and fake-backend runs do not qualify complete physical egress/resource/crash
+containment. No listener, provider policy or network route is activated by these
+libraries. The [private provider evidence path](PROVIDER-AUDIT.md) carries
+required receipts through execution, charged attempt storage, recovery and the
+pre-POST gate. That receipt component selects no worker or credentials; the
+[service assembly](GIT-SERVICE.md) selects explicitly supplied, independently
+gated native releases.
 
 ## Remaining live gates
 

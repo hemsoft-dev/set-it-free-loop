@@ -62,8 +62,11 @@ settings or candidate instructions and that external tool/egress restrictions
 hold. Only leased credential files may come from protected auth storage; the
 client config/home and execution state must be disposable for each invocation.
 The whole persistent auth directory must not become a source-enabled client home. A manifest is only a requirement. It is not proof those conditions hold,
-and no production launcher is supplied. The default no-source invocation retains
-safe mode and live drivers remain blocked by default.
+and this configuration component supplies no launcher. The separate
+[native VM assembly](NATIVE-VM.md) implements guest profile, role and transport
+wiring. Broader physical capability/resource qualification remains open. The
+default no-source invocation retains safe mode and live drivers remain blocked
+by default.
 
 Claude's documented EndConversation control can remain when MCP tools are
 present. It is not a source operation. Do not claim the tool flags prove an empty
