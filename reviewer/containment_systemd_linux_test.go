@@ -39,7 +39,7 @@ func TestSystemdFixedStartWireAndNoShell(t *testing.T) {
 			}
 			values[p.Name] = p.Value.Value()
 		}
-		for k, want := range map[string]any{"Type": "exec", "Restart": "no", "RemainAfterExit": true, "CollectMode": "inactive", "AddRef": true, "KillMode": "control-group", "NoNewPrivileges": true, "MemoryMax": uint64(1 << 30), "TasksMax": uint64(64), "MemorySwapMax": uint64(0), "CPUQuotaPerSecUSec": uint64(1000000)} {
+		for k, want := range map[string]any{"Type": "exec", "Restart": "no", "ExitType": "cgroup", "RemainAfterExit": false, "CollectMode": "inactive-or-failed", "AddRef": true, "KillMode": "control-group", "NoNewPrivileges": true, "MemoryMax": uint64(1 << 30), "TasksMax": uint64(64), "MemorySwapMax": uint64(0), "CPUQuotaPerSecUSec": uint64(1000000)} {
 			if values[k] != want {
 				t.Fatal("changed fixed restriction", k, values[k])
 			}
@@ -110,7 +110,7 @@ func TestSystemdJobResultBeforeReplyAndUnknownFailures(t *testing.T) {
 func TestSystemdObserveRequiresTypedIdentityAndPIDFDWire(t *testing.T) {
 	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
 	p := dbus.ObjectPath("/org/freedesktop/systemd1/unit/fake")
-	props := map[string]dbus.Variant{"InvocationID": dbus.MakeVariant(make([]byte, 16)), "ControlGroup": dbus.MakeVariant("/user.slice/" + unit), "ActiveState": dbus.MakeVariant("active"), "Job": dbus.MakeVariant(unitJob{0, "/"}), "Description": dbus.MakeVariant("fixed"), "Transient": dbus.MakeVariant(true), "CollectMode": dbus.MakeVariant("inactive"), "MainPID": dbus.MakeVariant(uint32(1)), "MemoryMax": dbus.MakeVariant(uint64(1 << 30)), "MemorySwapMax": dbus.MakeVariant(uint64(0)), "TasksMax": dbus.MakeVariant(uint64(64)), "CPUQuotaPerSecUSec": dbus.MakeVariant(uint64(1000000)), "KillMode": dbus.MakeVariant("control-group"), "Restart": dbus.MakeVariant("no"), "RemainAfterExit": dbus.MakeVariant(true), "NoNewPrivileges": dbus.MakeVariant(true)}
+	props := map[string]dbus.Variant{"InvocationID": dbus.MakeVariant(make([]byte, 16)), "ControlGroup": dbus.MakeVariant("/user.slice/" + unit), "ActiveState": dbus.MakeVariant("active"), "Job": dbus.MakeVariant(unitJob{0, "/"}), "Description": dbus.MakeVariant("fixed"), "Transient": dbus.MakeVariant(true), "CollectMode": dbus.MakeVariant("inactive-or-failed"), "MainPID": dbus.MakeVariant(uint32(1)), "MemoryMax": dbus.MakeVariant(uint64(1 << 30)), "MemorySwapMax": dbus.MakeVariant(uint64(0)), "TasksMax": dbus.MakeVariant(uint64(64)), "CPUQuotaPerSecUSec": dbus.MakeVariant(uint64(1000000)), "KillMode": dbus.MakeVariant("control-group"), "Restart": dbus.MakeVariant("no"), "ExitType": dbus.MakeVariant("cgroup"), "RemainAfterExit": dbus.MakeVariant(false), "NoNewPrivileges": dbus.MakeVariant(true)}
 	m := &dbusContainmentManager{calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, method string, a ...any) ([]any, error) {
 		switch method {
 		case systemdManagerInterface + ".GetUnit":
@@ -139,7 +139,7 @@ func TestSystemdObserveRequiresTypedIdentityAndPIDFDWire(t *testing.T) {
 	}
 }
 
-func TestSystemdUnrelatedJobsDoNotPoisonFutureStartOrStop(t *testing.T) {
+func TestSystemdUnrelatedJobsDoNotPoisonFutureStarts(t *testing.T) {
 	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
 	jobs := &systemdJobs{owner: ":1.2", completed: map[string]jobResult{}, changed: make(chan struct{})}
 	flood := func() {
@@ -165,35 +165,95 @@ func TestSystemdUnrelatedJobsDoNotPoisonFutureStartOrStop(t *testing.T) {
 		t.Fatal("unrelated traffic poisoned start", err)
 	}
 	flood()
-	job, err = manager.Stop(context.Background(), unit)
+	unit = "sfl-alpha-" + strings.Repeat("c", 32) + ".service"
+	job, err = manager.Start(context.Background(), unit, retainedStubExec, args, "SFL fake containment "+Digest(authTestBinding()), 17)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = manager.WaitJob(context.Background(), job, unit); err != nil || len(jobs.completed) != 0 || len(jobs.pending) != 0 || len(jobs.waiting) != 0 {
-		t.Fatal("unrelated traffic poisoned stop or leaked tracker", err)
+		t.Fatal("unrelated traffic poisoned next start or leaked tracker", err)
 	}
 }
 
-func TestSystemdAbandonedStartResultDoesNotPreventRecoveryStop(t *testing.T) {
+func TestSystemdAbandonedStartTrackingCanBeRetiredWithoutStoppingByName(t *testing.T) {
 	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
 	jobs := &systemdJobs{owner: ":1.2", completed: map[string]jobResult{}, changed: make(chan struct{})}
-	n := 0
-	manager := &dbusContainmentManager{jobs: jobs, calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, _ string, _ ...any) ([]any, error) {
-		n++
-		p := fmt.Sprintf("/org/freedesktop/systemd1/job/%d", n)
-		jobs.DeliverSignal(systemdManagerInterface, "JobRemoved", jobSignal(":1.2", p, unit, "done"))
-		return []any{dbus.ObjectPath(p)}, nil
+	// This tests the job cache only, without starting or mutating any unit.
+	if jobs.begin(unit) != nil || jobs.bind(unit, "/org/freedesktop/systemd1/job/1") != nil {
+		t.Fatal("initial tracking")
+	}
+	jobs.DeliverSignal(systemdManagerInterface, "JobRemoved", jobSignal(":1.2", "/org/freedesktop/systemd1/job/1", unit, "done"))
+	// A caller that abandoned its wait can retire that cache before a fresh
+	// trusted observation. No recovery path needs a name-targeted stop call.
+	if jobs.begin(unit) != nil {
+		t.Fatal("abandoned tracking poisoned later observation")
+	}
+	jobs.end(unit)
+	if len(jobs.completed) != 0 || len(jobs.waiting) != 0 || len(jobs.pending) != 0 {
+		t.Fatal("abandoned tracking retained")
+	}
+}
+
+func TestSystemdUnitReferenceDoesNotRetryUnknownReplies(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(fmt.Sprint(failed), func(t *testing.T) {
+			calls := 0
+			m := &dbusContainmentManager{calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, method string, _ ...any) ([]any, error) {
+				if method != systemdManagerInterface+".RefUnit" {
+					t.Fatal("unexpected operation", method)
+				}
+				calls++
+				if failed {
+					return nil, errors.New("synthetic lost reply after accepted reference")
+				}
+				return nil, nil
+			})}
+			unit := "sfl-alpha-" + strings.Repeat("a", 32) + ".service"
+			for n := 0; n < 30; n++ {
+				if err := m.referenceUnit(context.Background(), unit); (err != nil) != failed {
+					t.Fatal("reference outcome changed", err)
+				}
+			}
+			if calls != 1 {
+				t.Fatal("reference reacquired", calls)
+			}
+		})
+	}
+}
+
+func TestSystemdReferenceWaiterCancellationDoesNotWaitForOtherPoll(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	m := &dbusContainmentManager{calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, _ string, _ ...any) ([]any, error) {
+		close(entered)
+		<-release
+		return nil, nil
 	})}
-	args := []string{retainedStubExec, "endpoint", "binding", "manifest", "123"}
-	if _, err := manager.Start(context.Background(), unit, retainedStubExec, args, "SFL fake containment "+Digest(authTestBinding()), 17); err != nil {
+	unit := "sfl-alpha-0123456789abcdef0123456789abcdef.service"
+	owner := make(chan error, 1)
+	go func() { owner <- m.referenceUnit(context.Background(), unit) }()
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	waiter := make(chan error, 1)
+	go func() { waiter <- m.referenceUnit(ctx, unit) }()
+	var got error
+	blocked := false
+	select {
+	case got = <-waiter:
+	case <-time.After(200 * time.Millisecond):
+		blocked = true
+	}
+	close(release)
+	if err := <-owner; err != nil {
 		t.Fatal(err)
 	}
-	// Simulate cancellation/storage failure before the caller waits on its start.
-	p, err := manager.Stop(context.Background(), unit)
-	if err != nil {
-		t.Fatal("abandoned start prevented stop", err)
+	if blocked {
+		got = <-waiter
 	}
-	if err = manager.WaitJob(context.Background(), p, unit); err != nil || len(jobs.completed) != 0 || len(jobs.waiting) != 0 {
-		t.Fatal("recovery stop or tracker retirement failed", err)
+	if err := m.referenceUnit(context.Background(), unit); err != nil {
+		t.Fatal("waiter cancellation poisoned owner result", err)
+	}
+	if blocked || got != context.DeadlineExceeded {
+		t.Fatalf("canceled waiter blocked=%v outcome=%v", blocked, got)
 	}
 }

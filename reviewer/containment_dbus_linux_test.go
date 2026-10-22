@@ -22,21 +22,36 @@ import (
 )
 
 type fakeWireManager struct {
-	conn                        *dbus.Conn
-	mu                          sync.Mutex
-	unit                        string
-	invocation                  []byte
-	starts, stops, refs, pidfds int
+	conn                                *dbus.Conn
+	mu                                  sync.Mutex
+	unit                                string
+	refOwners                           map[dbus.Sender]int
+	invocation                          []byte
+	starts, stops, refs, unrefs, pidfds int
 }
 
 func (m *fakeWireManager) Subscribe() *dbus.Error { return nil }
-func (m *fakeWireManager) RefUnit(unit string) *dbus.Error {
+func (m *fakeWireManager) RefUnit(sender dbus.Sender, unit string) *dbus.Error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if unit != m.unit {
 		return dbus.MakeFailedError(fmt.Errorf("wrong unit"))
 	}
 	m.refs++
+	if m.refOwners == nil {
+		m.refOwners = map[dbus.Sender]int{}
+	}
+	m.refOwners[sender]++
+	return nil
+}
+func (m *fakeWireManager) UnrefUnit(sender dbus.Sender, unit string) *dbus.Error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if unit != m.unit {
+		return dbus.MakeFailedError(fmt.Errorf("wrong unit"))
+	}
+	m.unrefs++
+	m.refOwners[sender]--
 	return nil
 }
 func (m *fakeWireManager) GetUnit(unit string) (dbus.ObjectPath, *dbus.Error) {
@@ -45,7 +60,7 @@ func (m *fakeWireManager) GetUnit(unit string) (dbus.ObjectPath, *dbus.Error) {
 	}
 	return "/org/freedesktop/systemd1/unit/fake", nil
 }
-func (m *fakeWireManager) StartTransientUnit(unit, mode string, properties []unitProperty, aux []auxiliaryUnit) (dbus.ObjectPath, *dbus.Error) {
+func (m *fakeWireManager) StartTransientUnit(sender dbus.Sender, unit, mode string, properties []unitProperty, aux []auxiliaryUnit) (dbus.ObjectPath, *dbus.Error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if unit != m.unit || mode != "fail" || len(aux) != 0 {
@@ -71,6 +86,10 @@ func (m *fakeWireManager) StartTransientUnit(unit, mode string, properties []uni
 			found = true
 		}
 	}
+	if m.refOwners == nil {
+		m.refOwners = map[dbus.Sender]int{}
+	}
+	m.refOwners[sender]++ // The fixed AddRef=true creation-time reference.
 	if !found {
 		return "", dbus.MakeFailedError(fmt.Errorf("missing command"))
 	}
@@ -112,10 +131,16 @@ func (p fakeWireProperties) GetAll(iface string) (map[string]dbus.Variant, *dbus
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if iface == "org.freedesktop.systemd1.Unit" {
-		return map[string]dbus.Variant{"InvocationID": dbus.MakeVariant(m.invocation), "ActiveState": dbus.MakeVariant("active"), "Job": dbus.MakeVariant(unitJob{0, "/"}), "Description": dbus.MakeVariant("SFL fake containment " + Digest(authTestBinding())), "Transient": dbus.MakeVariant(true), "CollectMode": dbus.MakeVariant("inactive")}, nil
+		refs := []string{}
+		for sender, count := range m.refOwners {
+			for n := 0; n < count; n++ {
+				refs = append(refs, string(sender))
+			}
+		}
+		return map[string]dbus.Variant{"Refs": dbus.MakeVariant(refs), "InvocationID": dbus.MakeVariant(m.invocation), "ActiveState": dbus.MakeVariant("active"), "Job": dbus.MakeVariant(unitJob{0, "/"}), "Description": dbus.MakeVariant("SFL fake containment " + Digest(authTestBinding())), "Transient": dbus.MakeVariant(true), "CollectMode": dbus.MakeVariant("inactive-or-failed")}, nil
 	}
 	if iface == "org.freedesktop.systemd1.Service" {
-		return map[string]dbus.Variant{"ControlGroup": dbus.MakeVariant("/user.slice/" + m.unit), "MainPID": dbus.MakeVariant(uint32(os.Getpid())), "MemoryMax": dbus.MakeVariant(uint64(1 << 30)), "MemorySwapMax": dbus.MakeVariant(uint64(0)), "TasksMax": dbus.MakeVariant(uint64(64)), "CPUQuotaPerSecUSec": dbus.MakeVariant(uint64(1000000)), "KillMode": dbus.MakeVariant("control-group"), "Restart": dbus.MakeVariant("no"), "RemainAfterExit": dbus.MakeVariant(true), "NoNewPrivileges": dbus.MakeVariant(true)}, nil
+		return map[string]dbus.Variant{"ControlGroup": dbus.MakeVariant("/user.slice/" + m.unit), "MainPID": dbus.MakeVariant(uint32(os.Getpid())), "MemoryMax": dbus.MakeVariant(uint64(1 << 30)), "MemorySwapMax": dbus.MakeVariant(uint64(0)), "TasksMax": dbus.MakeVariant(uint64(64)), "CPUQuotaPerSecUSec": dbus.MakeVariant(uint64(1000000)), "KillMode": dbus.MakeVariant("control-group"), "Restart": dbus.MakeVariant("no"), "ExitType": dbus.MakeVariant("cgroup"), "RemainAfterExit": dbus.MakeVariant(false), "NoNewPrivileges": dbus.MakeVariant(true)}, nil
 	}
 	return nil, dbus.MakeFailedError(fmt.Errorf("unknown interface"))
 }
@@ -201,6 +226,22 @@ func TestSystemdActualDBusTransportAgainstPrivateFakeManager(t *testing.T) {
 	if err != nil || o.Job.ID != 0 || o.TasksMax != 64 || o.InvocationID != strings.Repeat("d", 32) {
 		t.Fatal(o, err)
 	}
+	// Concurrent shutdown polls must retain one unit reference, not one
+	// reference for each observation. Exercise the real D-Bus adapter.
+	var polls sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		polls.Add(1)
+		go func() {
+			defer polls.Done()
+			for n := 0; n < 12; n++ {
+				if _, err := manager.Observe(ctx, fake.unit); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	polls.Wait()
 	fd, err := unix.PidfdOpen(os.Getpid(), 0)
 	if err != nil {
 		t.Fatal(err)
@@ -209,16 +250,15 @@ func TestSystemdActualDBusTransportAgainstPrivateFakeManager(t *testing.T) {
 	if unit, inv, err := manager.UnitForPIDFD(ctx, fd); err != nil || unit != fake.unit || inv != strings.Repeat("d", 32) {
 		t.Fatal(unit, inv, err)
 	}
-	job, err = manager.Stop(ctx, fake.unit)
-	if err != nil {
-		t.Fatal(err)
+	if manager.RetireUnit(ctx, fake.unit) != nil || manager.RetireUnit(ctx, fake.unit) != nil {
+		t.Fatal("owned reference retirement failed")
 	}
-	if err = manager.WaitJob(ctx, job, fake.unit); err != nil {
-		t.Fatal(err)
+	if _, err := manager.Observe(ctx, fake.unit); err == nil {
+		t.Fatal("retired reference rearmed")
 	}
 	fake.mu.Lock()
-	if fake.starts != 1 || fake.stops != 1 || fake.refs != 1 || fake.pidfds != 1 {
-		t.Fatal("wire counts", fake.starts, fake.stops, fake.refs, fake.pidfds)
+	if fake.starts != 1 || fake.stops != 0 || fake.refs != 1 || fake.unrefs != 2 || fake.pidfds != 1 {
+		t.Fatal("wire counts", fake.starts, fake.stops, fake.refs, fake.unrefs, fake.pidfds)
 	}
 	fake.mu.Unlock()
 	// Drain the address pipe without leaving an owned helper blocked on output.

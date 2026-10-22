@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -30,12 +31,14 @@ type result struct {
 	Unit                                                string        `json:"unit"`
 	StubSHA256                                          string        `json:"stub_sha256"`
 	Started, Granted, Stopped, AuthCompleted, Recovered bool
-	EscapedChildPID                                     int             `json:"escaped_child_pid"`
-	OriginalPathReplaced                                bool            `json:"original_path_replaced"`
-	EscapedChildStopped                                 bool            `json:"escaped_child_stopped"`
-	Journal                                             json.RawMessage `json:"private_unit_journal,omitempty"`
-	Error                                               string          `json:"error,omitempty"`
-	FallbackCleanup                                     bool            `json:"fallback_cleanup"`
+	EscapedChildPID                                     int               `json:"escaped_child_pid"`
+	StopObservation                                     map[string]string `json:"stop_observation,omitempty"`
+	ManagerUnitCollected                                bool              `json:"manager_unit_collected"`
+	OriginalPathReplaced                                bool              `json:"original_path_replaced"`
+	EscapedChildStopped                                 bool              `json:"escaped_child_stopped"`
+	Journal                                             json.RawMessage   `json:"private_unit_journal,omitempty"`
+	Error                                               string            `json:"error,omitempty"`
+	FallbackCleanup                                     bool              `json:"fallback_cleanup"`
 }
 
 func (receipt *result) cleanupFailed(stage string) {
@@ -127,7 +130,7 @@ func exercise(root, stub, hash string) (receipt result) {
 		finish(&receipt,
 			func(cleanup context.Context) error { return supervisor.AbortAndWait(cleanup, receipt.Binding) },
 			func(fallback context.Context) error {
-				return exec.CommandContext(fallback, "/usr/bin/systemctl", "--user", "stop", receipt.Unit).Run()
+				return supervisor.AbortAndWait(fallback, receipt.Binding)
 			}, supervisor.Close)
 		retainJournal(&receipt, filepath.Join(gates, receipt.Binding.LaunchID, "unit.json"))
 	}()
@@ -197,6 +200,15 @@ func exercise(root, stub, hash string) (receipt result) {
 	}
 	receipt.EscapedChildPID = child.PID
 	if err = supervisor.AbortAndWait(ctx, receipt.Binding); err != nil {
+		output, _ := exec.CommandContext(ctx, "/usr/bin/systemctl", "--user", "show", receipt.Unit, "--property=LoadState,InvocationID,MainPID,ActiveState,SubState,ControlGroup,CollectMode,ExitType,RemainAfterExit").Output()
+		if len(output) <= 8192 {
+			receipt.StopObservation = map[string]string{}
+			for _, line := range strings.Split(string(output), "\n") {
+				if key, value, ok := strings.Cut(line, "="); ok {
+					receipt.StopObservation[key] = value
+				}
+			}
+		}
 		receipt.Error = "stop: " + err.Error()
 		return
 	}
@@ -207,6 +219,21 @@ func exercise(root, stub, hash string) (receipt result) {
 		return
 	}
 	receipt.EscapedChildStopped = true
+	// Collection must not require closing this manager or issuing a named
+	// stop/reset. The durable stop record exists before its reference is dropped.
+	deadline = time.Now().Add(time.Second)
+	for {
+		output, showErr := exec.CommandContext(ctx, "/usr/bin/systemctl", "--user", "show", receipt.Unit, "--property=LoadState,MainPID,ActiveState").Output()
+		if showErr == nil && strings.Contains(string(output), "LoadState=not-found") && strings.Contains(string(output), "MainPID=0") {
+			receipt.ManagerUnitCollected = true
+			break
+		}
+		if time.Now().After(deadline) || ctx.Err() != nil {
+			receipt.Error = "stopped unit metadata was not collected"
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	if err = supervisor.Close(); err != nil {
 		receipt.Error = "close stopped transport: " + err.Error()
 		return

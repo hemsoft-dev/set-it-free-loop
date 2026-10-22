@@ -18,14 +18,18 @@ It captures the bus ID and systemd's unique owner, then targets that owner.
 JobRemoved subscription precedes start. Only a pending owned unit or its bound
 job path can enter the bounded result cache. Unrelated job traffic is ignored.
 Early signals are retained until the method reply binds the exact job; consumed
-or superseded results are removed. An abandoned start result cannot prevent a
-recovery stop. Malformed, failed or unknown results cannot become successful
-launch evidence. Recovery takes a unit reference to prevent GC during stop
-observation.
+or superseded results are removed. Recovery termination does not depend on
+consuming an abandoned start result. Malformed, failed or unknown results cannot
+become successful launch evidence. Recovery takes one unit reference to prevent
+GC during stop observation.
+Concurrent and repeated polls reuse its independent, bounded acquisition lifetime;
+each caller, including its creator, keeps its own cancellation deadline. Manager
+close cancels and joins these metadata requests. Unknown acquisition replies stay
+cached without retry.
 
 Unit properties use a fixed argv array and `Type=exec`, `Restart=no`,
-`RemainAfterExit=yes`, `CollectMode=inactive`, `AddRef=true`, control-group
-killing, SIGKILL escalation and no-new-privileges. Memory is 1 GiB, swap zero,
+`ExitType=cgroup`, `RemainAfterExit=no`, `CollectMode=inactive-or-failed`,
+`AddRef=true`, control-group killing, SIGKILL escalation and no-new-privileges. Memory is 1 GiB, swap zero,
 tasks 64, CPU one core, runtime 120 seconds and stop timeout five seconds.
 Protocol operations have a ten-second local context ceiling and honor earlier
 caller deadlines. No model chooses these properties or the executable.
@@ -69,12 +73,38 @@ Post-start journal writes may outlive caller cancellation to retain an accepted
 launch, but use a separate one-second recovery deadline. A held flock cannot
 make those writes wait forever.
 
-Stopping requires the captured manager, invocation and cgroup identity. The
-supervisor waits for the exact stop job, independently checks that the captured
-cgroup inode has no populated subtree, and checks the unit's final identity,
-job, main PID and inactive/failed state before recording stop. It never kills
-a numeric PID or a reused cgroup path. A changed host boot can prove the old
-kernel processes dead after permanent grant revocation. The journal also binds
+Stopping requires the captured manager, invocation and cgroup identity. After
+permanent revocation, the supervisor reopens the original cgroup-v2 hierarchy,
+checks its captured directory inode, and opens `cgroup.kill` relative to that
+original directory descriptor. The kernel recursively terminates that instance.
+A replacement between observation and action cannot redirect the descriptor.
+No `StopUnit` or other name-targeted stop API remains in the manager adapter.
+
+A successful write is only a termination request. systemd can clear its
+ControlGroup property after successful exit. The retained invocation must still
+match, and a fresh kernel check must prove the captured original group empty.
+Within a finite deadline, the supervisor independently checks that the original cgroup has no populated
+subtree, then checks the unit's original identity, no job and no main PID before
+recording stop. Revoked recovery may accept a previously captured legacy
+`RemainAfterExit=yes`/`CollectMode=inactive` unit after physical shutdown; that
+pair can never qualify a fresh grant. This does not deactivate a legacy name.
+Changed identity, permissions, hierarchy or uncertain kernel/manager observations keep recovery
+required. Historical `StopJob` journal fields remain readable but are never
+replayed. It never kills a numeric PID or a reused cgroup path.
+
+Only after the stopped journal is durable does `RetireUnit` remove the original
+start's local job tracking and drop this authenticated connection's counted unit
+references, including the creation-time AddRef. Other clients' references remain
+untouched. It creates no manager job and does not stop/reset a name. Repeated calls reuse the same
+bounded release result, including unknown replies, and cannot acquire a new
+reference for the spent unit.
+
+`ExitType=cgroup` keeps an original escaped child within the active service
+lifecycle when its main process exits. With `RemainAfterExit=no`, new units can
+be collected after normal or failed whole-group exit. A closed connection has
+already released its references. Recovery of a durable stopped record rechecks original kernel evidence, without requiring
+metadata that has legitimately been collected. A changed host boot can prove the
+old kernel processes dead after permanent grant revocation. The journal also binds
 the cgroup-v2 hierarchy root device/inode and mount/cgroup namespace identities.
 A missing child counts as removed only after reopening that same verified
 hierarchy. An absent mount, ordinary directory, changed hierarchy or namespace
@@ -106,15 +136,41 @@ The explicitly invoked `cmd/systemdfixture` uses the existing host manager,
 fresh private gate/auth directories and synthetic bytes. It checks actual
 atomic replacement of the original executable path, start/grant through the
 retained image, kernel limits, a live escaped child, physical stop, restart recovery
-and synthetic auth completion. Any fixture-only fallback cleanup keeps the
+and synthetic auth completion. It also requires the stopped unit's metadata to
+be collected while the original manager connection is still open, without a
+name-targeted stop/reset. Any fixture-only fallback cleanup keeps the
 qualification failed, even after the main exercise tentatively passed. Deferred
 close failure also fails the receipt, including the reopened supervisor. The
-reopened handle is closed before the tentative pass. Fallback stop gets a fresh
-ten-second deadline after the supervisor stop context ends. The final journal
+reopened handle is closed before the tentative pass. Fallback cleanup retries the same bound supervisor proof with a fresh
+ten-second deadline after the first stop context ends; it never stops a unit by name. The final journal
 must be retained with its exact binding and captured/aborted/stopped evidence.
 A missing, malformed or mismatched journal fails qualification. Receipt-write
 failure also fails the command. An earlier exercise error is preserved.
 Normal tests never start a host unit.
+
+From `reviewer/`, the opt-in model-free test is:
+
+```sh
+SFL_TEST_ORIGINAL_CGROUP=1 go test -run '^TestContainmentKernelOriginalCgroupTermination$' -v -count=1 .
+```
+
+It starts two fresh inert user services in succession under one nonce-bound name. It exercises
+the actual Linux termination implementation, verifies original main/descendant
+pidfd death and subtree emptiness, then proves that the retained old kill
+descriptor returns `ENODEV` and the old captured binding refuses the replacement.
+Both replacement processes remain alive until their own original binding is
+terminated. Units have finite runtime, memory, swap, task and CPU limits. Cleanup
+uses only retained original descriptors. This is model-free host qualification,
+not an alpha activation or full hostile/host-crash qualification.
+
+The [October 22 mini capture](testdata/containment-stop/mini-2026-10-22.json)
+records both actual kernel cases and the actual supervisor/synthetic-auth fixture.
+The same-name replacement had a different invocation and cgroup inode; its
+processes survived use of the old descriptor and old binding. The supervisor
+fixture completed escaped-child shutdown and recovery with no fallback cleanup.
+The report includes source hashes and raw producer observations. These bounded
+cases do not close the broader containment acceptance criteria.
+
 
 The first host fixture exposed a ControlGroup interface mismatch. The corrected
 adapter reads that property from Service; the private fake-bus regression uses

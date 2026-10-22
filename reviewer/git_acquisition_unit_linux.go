@@ -335,7 +335,7 @@ func (o *gitUnitOwner) prepare(ctx context.Context, binding gitMaterializationBi
 	return o.write(gitUnitRecord{Version: 1, Binding: binding, Unit: "sfl-alpha-" + binding.Attempt + ".service", BootID: boot, ManagerOwner: o.manager.Owner(), StubHash: hash})
 }
 func expectedGitUnit(r gitUnitRecord, v unitObservation) bool {
-	return v.Unit == r.Unit && v.Path.IsValid() && gitQuarantineHex(v.InvocationID, 32) && v.Description == gitUnitDescriptionPrefix+Digest(r.Binding) && v.Transient && v.Job.ID == 0 && v.MemoryMax == 1<<30 && v.MemorySwapMax == 0 && v.TasksMax == 64 && v.CPUQuotaPerSecUSec == 1000000 && v.KillMode == "control-group" && v.Restart == "no" && v.CollectMode == "inactive" && v.RemainAfterExit && v.NoNewPrivileges
+	return v.Unit == r.Unit && v.Path.IsValid() && gitQuarantineHex(v.InvocationID, 32) && v.Description == gitUnitDescriptionPrefix+Digest(r.Binding) && v.Transient && v.Job.ID == 0 && v.MemoryMax == 1<<30 && v.MemorySwapMax == 0 && v.TasksMax == 64 && v.CPUQuotaPerSecUSec == 1000000 && v.KillMode == "control-group" && v.Restart == "no" && expectedUnitLifecycle(v, r.Revoked) && v.NoNewPrivileges
 }
 func (o *gitUnitOwner) capture(ctx context.Context, r gitUnitRecord) (gitUnitRecord, error) {
 	if r.ManagerOwner != o.manager.Owner() || ctx.Err() != nil {
@@ -545,42 +545,56 @@ func (o *gitUnitOwner) stop(ctx context.Context, binding gitMaterializationBindi
 	}
 	bounded, cancel := boundedManagerContext(ctx)
 	defer cancel()
+	if r.Stopped {
+		group := r.Cgroup
+		if !r.Captured {
+			if r.EarlyStop == nil || !r.EarlyStop.valid(r.Unit) {
+				return errGitUnit
+			}
+			group = r.EarlyStop.Cgroup
+		}
+		if o.kernel.Empty(group) != nil || r.Captured && o.rootDead(r) != nil {
+			return errGitUnit
+		}
+		return o.manager.RetireUnit(bounded, r.Unit)
+	}
 	if !r.Captured {
 		terminal, handled, terminalErr := o.stopBeforeCapture(bounded, r)
 		if terminalErr != nil {
 			return terminalErr
 		}
 		if handled {
-			return o.write(terminal)
+			if o.write(terminal) != nil {
+				return errGitUnit
+			}
+			return o.manager.RetireUnit(bounded, r.Unit)
 		}
 		r, err = o.captureStarted(bounded, r)
 		if err != nil || o.write(r) != nil {
 			return errGitUnit
 		}
 	}
+	before, err := o.manager.Observe(bounded, r.Unit)
+	if err != nil || !expectedGitUnit(r, before) || before.InvocationID != r.Identity.InvocationID {
+		return errGitUnit
+	}
 	if !r.Stopped {
-		before, err := o.manager.Observe(bounded, r.Unit)
-		if err != nil || !expectedGitUnit(r, before) || before.InvocationID != r.Identity.InvocationID {
-			return errGitUnit
-		}
-		job, err := o.manager.Stop(bounded, r.Unit)
-		if err != nil {
-			return errGitUnit
-		}
-		r.StopJob = job
-		if o.write(r) != nil || o.manager.WaitJob(bounded, job, r.Unit) != nil {
+		if o.kernel.Terminate(bounded, r.Cgroup) != nil {
 			return errGitUnit
 		}
 	}
 	if o.kernel.Empty(r.Cgroup) != nil || o.rootDead(r) != nil {
 		return errGitUnit
 	}
-	after, err := o.manager.Observe(bounded, r.Unit)
-	if err != nil || !expectedGitUnit(r, after) || after.InvocationID != r.Identity.InvocationID || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed") {
+	after, err := waitForOriginalUnitStop(bounded, o.manager, o.kernel, before, r.Cgroup)
+	if err != nil || !expectedGitUnit(r, after) || after.InvocationID != r.Identity.InvocationID || after.ControlGroup != r.Cgroup.Path && after.ControlGroup != "" || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed" && after.ActiveState != "active") {
 		return errGitUnit
 	}
 	r.Stopped = true
-	return o.write(r)
+	if o.write(r) != nil {
+		return errGitUnit
+	}
+	return o.manager.RetireUnit(bounded, r.Unit)
 }
 
 // Close retains the process lock and pinned image if any owned attempt lacks a

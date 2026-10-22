@@ -603,7 +603,7 @@ type gitEarlyStopReplacementManager struct {
 func (m *gitEarlyStopReplacementManager) Stop(ctx context.Context, unit string) (string, error) {
 	m.stops++
 	m.onStop()
-	return m.gitUnitManager.Stop(ctx, unit)
+	return "", errGitUnit
 }
 func TestGitEarlyStopNeverDispatchesStopToReplacement(t *testing.T) {
 	f := gitEarlyStopFixture(t)
