@@ -311,8 +311,17 @@ func (j *gitVMOwnerJournal) Close(ctx context.Context) error {
 	return j.held.close()
 }
 
-// read returns the complete verified journal under the retained lock.
+// read returns the complete verified journal under the retained lock and
+// the operation token.
 func (j *gitVMOwnerJournal) read() (gitVMUnitJournal, error) {
+	if j == nil {
+		return gitVMUnitJournal{}, errGitVMOwner
+	}
+	<-j.operation
+	defer j.leave()
+	return j.readHeld()
+}
+func (j *gitVMOwnerJournal) readHeld() (gitVMUnitJournal, error) {
 	if j.verify() != nil {
 		return gitVMUnitJournal{}, errGitVMOwner
 	}
@@ -334,7 +343,12 @@ func (v gitVMUnitJournal) record(attempt string) (gitVMUnitRecord, bool) {
 // replace persists one changed record. Attempt identity and its request are
 // immutable once prepared; only lifecycle fields can change here.
 func (j *gitVMOwnerJournal) replace(r gitVMUnitRecord) error {
-	value, err := j.read()
+	if j == nil {
+		return errGitVMOwner
+	}
+	<-j.operation
+	defer j.leave()
+	value, err := j.readHeld()
 	if err != nil {
 		return err
 	}
@@ -346,7 +360,7 @@ func (j *gitVMOwnerJournal) replace(r gitVMUnitRecord) error {
 			return errGitVMOwner
 		}
 		value.Records[index] = r
-		return j.write(value)
+		return j.writeHeld(value)
 	}
 	return errGitVMOwner
 }

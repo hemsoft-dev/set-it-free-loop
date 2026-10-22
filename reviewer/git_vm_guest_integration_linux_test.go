@@ -7,12 +7,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -136,17 +134,11 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 	serialDone := make(chan struct{})
 	go func() { defer close(serialDone); _, _ = io.Copy(os.Stdout, io.LimitReader(serial, 64<<10)) }()
 	defer func() { serial.Close(); <-serialDone }()
-	args := []string{"-no-user-config", "-nodefaults", "-machine", "q35,dump-guest-core=off,mem-merge=off", "-add-fd", "fd=6,set=1,opaque=sfl-kvm", "-accel", "kvm,device=/dev/fdset/1", "-cpu", "host", "-m", "1536M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none", "-no-reboot", "-L", "/firmware", "-bios", "/proc/self/fd/10", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5", "-append", "console=ttyS0 loglevel=3 initramfs_options=size=1024m,nr_inodes=4096 rdinit=/source-init panic=1 sfl-source=" + Digest(q), "-chardev", "socket,id=sflbootdiag,fd=13", "-serial", "chardev:sflbootdiag", "-device", "virtio-serial-pci,id=sflserial"}
-	for i, name := range []string{"source-control", "source-read", "source-export"} {
-		id := "sfl" + strconv.Itoa(i)
-		args = append(args, "-chardev", fmt.Sprintf("socket,id=%s,fd=%d", id, i+7), "-device", "virtserialport,bus=sflserial.0,chardev="+id+",name=sfl."+name)
-	}
-	args = append(args, "-sandbox", "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny")
-	cmd := exec.CommandContext(ctx, "/proc/self/fd/12", nativeRuntimeNamespaceArgs(args)...)
+	cmd := exec.CommandContext(ctx, "/proc/self/fd/12", nativeRuntimeNamespaceArgs(gitVMSourceQEMUArgs(q))...)
 	cmd.Args[0] = "sfl-source-fixture-bootstrap"
 	cmd.Env = []string{"LANG=C", "LC_ALL=C"}
 	cmd.Dir = "/"
-	cmd.ExtraFiles = []*os.File{boot[0], boot[1], boot[2], kvm, peers[0], peers[1], peers[2], boot[3], boot[4], boot[5], serialChild, runtimeRoot}
+	cmd.ExtraFiles = gitVMLaunchFiles([]*os.File{boot[0], boot[1], boot[2], kvm, boot[3], boot[4], boot[5], runtimeRoot}, peers, serialChild)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = os.Stderr
 	cmd.WaitDelay = 2 * time.Second
