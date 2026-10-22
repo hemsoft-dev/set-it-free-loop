@@ -155,6 +155,22 @@ func TestGitVMAssetsActualSourceImageProducer(t *testing.T) {
 	if directory == "" {
 		t.Skip("explicit model-free source image required")
 	}
+	spec, q, release := gitVMActualImageFixture(t, directory)
+	a, err := openGitVMAssets(context.Background(), spec)
+	if err != nil {
+		t.Fatal("actual producer assets refused", err)
+	}
+	defer a.Close()
+	files, err := a.duplicate(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeVMFiles(files)
+	t.Logf("retained %d actual source-purpose boot descriptors from source guest producer %s; no VM or auth qualification", len(files), release.SourceHead)
+}
+
+func gitVMActualImageFixture(t *testing.T, directory string) (gitVMAssetSpec, gitVMRequest, gitVMGuestRelease) {
+	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(directory, "manifest.json"))
 	if err != nil || len(raw) > 1<<20 {
 		t.Fatal("bounded image metadata required", err)
@@ -176,7 +192,7 @@ func TestGitVMAssetsActualSourceImageProducer(t *testing.T) {
 	asset := func(name string, pin VMAssetPin) VMBootAsset {
 		return VMBootAsset{filepath.Join(directory, name), pin.SHA256, pin.Bytes}
 	}
-	spec := gitVMAssetSpec{QEMU: VMBootAsset{"/usr/bin/qemu-system-x86_64", image.Host.Manifest.Program.SHA256, image.Host.Manifest.Program.Bytes}, Kernel: asset("vmlinuz", image.Kernel), Initrd: asset("source.cpio.gz", image.Initrd), BIOS: asset("bios.bin", image.BIOS), QEMURuntime: asset("host-runtime/native-qemu-runtime.bin", image.Host.Artifact), NamespaceHelper: image.Host.Helper, BootstrapLibraries: image.Host.Libraries}
+	spec := gitVMAssetSpec{QEMU: asset("qemu-program.bin", image.Host.Manifest.Program), Kernel: asset("vmlinuz", image.Kernel), Initrd: asset("source.cpio.gz", image.Initrd), BIOS: asset("bios.bin", image.BIOS), QEMURuntime: asset("host-runtime/native-qemu-runtime.bin", image.Host.Artifact), NamespaceHelper: image.Host.Helper, BootstrapLibraries: image.Host.Libraries}
 	q := gitVMGuestTestRequest(t).Source
 	spec.Manifest = q.Manifest
 	spec.Manifest.QEMU = gitVMAssetPin(spec.QEMU)
@@ -193,15 +209,5 @@ func TestGitVMAssetsActualSourceImageProducer(t *testing.T) {
 	if !spec.valid() {
 		t.Fatal("actual source image spec invalid")
 	}
-	a, err := openGitVMAssets(context.Background(), spec)
-	if err != nil {
-		t.Fatal("actual producer assets refused", err)
-	}
-	defer a.Close()
-	files, err := a.duplicate(context.Background(), q)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeVMFiles(files)
-	t.Logf("retained %d actual source-purpose boot descriptors from source guest producer %s; no VM or auth qualification", len(files), image.Release.SourceHead)
+	return spec, q, image.Release
 }

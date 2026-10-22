@@ -7,15 +7,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -39,45 +40,28 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 	default:
 		t.Fatal("unknown fixture case")
 	}
-	raw, err := os.ReadFile(filepath.Join(directory, "manifest.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var image struct {
-		Purpose              string            `json:"purpose"`
-		Release              gitVMGuestRelease `json:"release"`
-		Kernel, Initrd, BIOS VMAssetPin
-		Host                 struct {
-			Manifest struct{ Program VMAssetPin }
-			Artifact VMAssetPin
-		} `json:"host_runtime"`
-	}
-	if json.Unmarshal(raw, &image) != nil || image.Purpose != "source-vm-image" || !image.Release.valid() {
-		t.Fatal("invalid actual image metadata")
-	}
-	for name, pin := range map[string]VMAssetPin{"vmlinuz": image.Kernel, "source.cpio.gz": image.Initrd, "bios.bin": image.BIOS} {
-		data, err := os.ReadFile(filepath.Join(directory, name))
-		if err != nil || int64(len(data)) != pin.Bytes || gitRawHash(data) != pin.SHA256 {
-			t.Fatalf("image asset changed: %s", name)
-		}
-	}
+	spec, source, release := gitVMActualImageFixture(t, directory)
 	store, snapshot := gitQuarantineFixture(t)
-	q := gitVMGuestTestRequest(t)
-	m := &q.Source.Manifest
-	m.Kernel = image.Kernel
-	m.Initrd = image.Initrd
-	m.BIOS = image.BIOS
-	m.QEMU = image.Host.Manifest.Program
-	m.QEMURuntime = image.Host.Artifact
-	m.Worker = image.Release.Worker
-	m.NamespaceHelper = image.Release.NamespaceHelper
-	m.Runtime = image.Release.Runtime
-	m.BootstrapLibraries = image.Release.BootstrapLibraries
-	q.Source.Binding.Snapshot = snapshot
-	q.Source.Binding.RuntimeHash = Digest(*m)
-	q.Read.Source = q.Source.Binding
-	if !q.valid() || !image.Release.matches(q) {
+	if fixtureCase == "export-close" {
+		f := newSnapshotGitFixture(t)
+		f.write(t, "large.go", strings.Repeat("synthetic source line\n", 80000))
+		f.run(t, "add", "large.go")
+		f.run(t, "commit", "--quiet", "-m", "bounded export backpressure fixture")
+		f.snapshot.Head = f.run(t, "rev-parse", "HEAD")
+		store, snapshot = gitQuarantineFromFixture(t, f, "sha1")
+	}
+	source.Binding.Snapshot = snapshot
+	readBinding := gitVMReadTestBinding()
+	readBinding.Source = source.Binding
+	q := gitVMGuestRequest{1, gitVMGuestPurpose, source, readBinding}
+	if !q.valid() || !release.matches(q) {
 		t.Fatal("image/request mismatch")
+	}
+	if fixtureCase == "export-close" {
+		counter := &gitVMGuestExportWriter{ctx: context.Background(), target: io.Discard, remaining: gitExportWireBytes + gitVMRecordBytes + 4}
+		if err := writeGitVMExport(context.Background(), counter, store, q.Source); err != nil || counter.bytes <= 1<<20 {
+			t.Fatal("large actual export required", err, counter.bytes)
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
@@ -87,6 +71,14 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 		pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 		if err != nil {
 			t.Fatal(err)
+		}
+
+		if fixtureCase == "export-close" && i == 2 {
+			if unix.SetsockoptInt(pair[1], unix.SOL_SOCKET, unix.SO_SNDBUF, 4096) != nil {
+				unix.Close(pair[0])
+				unix.Close(pair[1])
+				t.Fatal("export backpressure buffer")
+			}
 		}
 		host := os.NewFile(uintptr(pair[0]), "fixture-host")
 		conn, err := net.FileConn(host)
@@ -104,21 +96,65 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 		}
 		closeVMFiles(peers)
 	}()
-	args := []string{"-no-user-config", "-nodefaults", "-machine", "q35,dump-guest-core=off,mem-merge=off", "-accel", "kvm", "-cpu", "host", "-m", "1536M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none", "-no-reboot", "-bios", filepath.Join(directory, "bios.bin"), "-kernel", filepath.Join(directory, "vmlinuz"), "-initrd", filepath.Join(directory, "source.cpio.gz"), "-append", "console=ttyS0 loglevel=3 initramfs_options=size=1024m,nr_inodes=4096 rdinit=/source-init panic=1 sfl-source=" + Digest(q), "-serial", "stdio", "-device", "virtio-serial-pci,id=sflserial"}
+	assets, err := openGitVMAssets(ctx, spec)
+	if err != nil {
+		t.Fatal("source assets", err)
+	}
+	defer assets.Close()
+	boot, err := assets.duplicate(ctx, q.Source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeVMFiles(boot)
+	kvm, err := openVMKVM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kvm.Close()
+	parent := os.Getenv("SFL_SOURCE_GUEST_RUN_DIR")
+	if !sourcePath(parent) || privateDirectory(parent) != nil {
+		t.Fatal("private fixture runtime parent required")
+	}
+	prepared, err := prepareNativeRuntime(parent, io.NewSectionReader(boot[4], 0, spec.Manifest.QEMURuntime.Bytes), spec.Manifest.QEMU, io.NewSectionReader(boot[0], 0, spec.Manifest.QEMU.Bytes+1))
+	if err != nil {
+		t.Fatal("captured QEMU runtime", err)
+	}
+	// Keep the measured files as local evidence. Only close management handles;
+	// the outer runner separately proves whole-unit shutdown before disposal.
+	defer prepared.root.Close()
+	defer prepared.parent.Close()
+	runtimeRoot, err := prepared.directoryFD()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtimeRoot.Close()
+	serial, serialChild, err := nativeBootDiagnosticChannel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serialChild.Close()
+	serialDone := make(chan struct{})
+	go func() { defer close(serialDone); _, _ = io.Copy(os.Stdout, io.LimitReader(serial, 64<<10)) }()
+	defer func() { serial.Close(); <-serialDone }()
+	args := []string{"-no-user-config", "-nodefaults", "-machine", "q35,dump-guest-core=off,mem-merge=off", "-add-fd", "fd=6,set=1,opaque=sfl-kvm", "-accel", "kvm,device=/dev/fdset/1", "-cpu", "host", "-m", "1536M", "-smp", "1", "-display", "none", "-monitor", "none", "-nic", "none", "-no-reboot", "-L", "/firmware", "-bios", "/proc/self/fd/10", "-kernel", "/proc/self/fd/4", "-initrd", "/proc/self/fd/5", "-append", "console=ttyS0 loglevel=3 initramfs_options=size=1024m,nr_inodes=4096 rdinit=/source-init panic=1 sfl-source=" + Digest(q), "-chardev", "socket,id=sflbootdiag,fd=13", "-serial", "chardev:sflbootdiag", "-device", "virtio-serial-pci,id=sflserial"}
 	for i, name := range []string{"source-control", "source-read", "source-export"} {
 		id := "sfl" + strconv.Itoa(i)
-		args = append(args, "-chardev", fmt.Sprintf("socket,id=%s,fd=%d", id, i+3), "-device", "virtserialport,bus=sflserial.0,chardev="+id+",name=sfl."+name)
+		args = append(args, "-chardev", fmt.Sprintf("socket,id=%s,fd=%d", id, i+7), "-device", "virtserialport,bus=sflserial.0,chardev="+id+",name=sfl."+name)
 	}
 	args = append(args, "-sandbox", "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny")
-	cmd := exec.CommandContext(ctx, "/usr/bin/qemu-system-x86_64", args...)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8"}
-	cmd.ExtraFiles = peers
-	cmd.Stdout = os.Stdout
+	cmd := exec.CommandContext(ctx, "/proc/self/fd/12", nativeRuntimeNamespaceArgs(args)...)
+	cmd.Args[0] = "sfl-source-fixture-bootstrap"
+	cmd.Env = []string{"LANG=C", "LC_ALL=C"}
+	cmd.Dir = "/"
+	cmd.ExtraFiles = []*os.File{boot[0], boot[1], boot[2], kvm, peers[0], peers[1], peers[2], boot[3], boot[4], boot[5], serialChild, runtimeRoot}
+	cmd.Stdout = io.Discard
 	cmd.Stderr = os.Stderr
+	cmd.WaitDelay = 2 * time.Second
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	closeVMFiles(peers)
+	closeVMFiles(cmd.ExtraFiles)
 	peers = nil
 	exited := false
 	done := make(chan error, 1)
@@ -140,6 +176,8 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 		}
 	})
 	defer stop()
+	readActive := make(chan struct{})
+	readClosed := make(chan struct{})
 	var upstreamCalls atomic.Int32
 	readDone := make(chan error, 1)
 	go func() {
@@ -165,6 +203,9 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 			}
 			if r.Operation == GitHubGitAdvertisement && r.Protocol != 2 {
 				data = append([]byte("001e# service=git-upload-pack\n0000"), data...)
+			}
+			if fixtureCase == "read-close" {
+				return &gitVMGuestBlockedReply{ctx: ctx, active: readActive, closed: readClosed, done: make(chan struct{})}, nil
 			}
 			return io.NopCloser(bytes.NewReader(data)), nil
 		}), func(context.Context, gitVMReadBinding) error { return nil })
@@ -216,23 +257,44 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 		waitRefusal()
 		return
 	}
-	if fixtureCase == "export-close" {
-		channels[2].Close()
-	}
-	if fixtureCase == "read-close" {
-		channels[1].Close()
-	}
 	if err := writeVMRecord(channels[0], gitVMGuestPhase{1, gitVMGuestPurpose, Digest(q), "host-grant"}, gitVMRecordBytes); err != nil {
 		t.Fatal(err)
 	}
 
+	if fixtureCase == "read-close" {
+		select {
+		case <-readActive:
+		case <-time.After(8 * time.Second):
+			t.Fatal("upstream response Read never became active")
+		}
+		channels[1].Close()
+	}
+	if fixtureCase == "export-close" {
+		_ = channels[2].SetReadDeadline(time.Now().Add(8 * time.Second))
+		var first [1]byte
+		if _, err := io.ReadFull(channels[2], first[:]); err != nil {
+			t.Fatal("export never became active", err)
+		}
+		if upstreamCalls.Load() == 0 {
+			t.Fatal("export began without Git read work")
+		}
+		channels[2].Close()
+	}
 	if fixtureCase != "normal" {
 		_ = channels[0].SetReadDeadline(time.Now().Add(8 * time.Second))
 		record, err := readVMRecord[gitVMGuestFinished](channels[0], gitVMRecordBytes)
 		if err == nil && record.valid(q) {
 			t.Fatal("lost channel reported successful acquisition")
 		}
+
 		waitRefusal()
+		if fixtureCase == "read-close" {
+			select {
+			case <-readClosed:
+			case <-time.After(2 * time.Second):
+				t.Fatal("active upstream response was not closed")
+			}
+		}
 		return
 	}
 	digest := sha256.New()
@@ -266,4 +328,26 @@ func (r *gitVMGuestFixtureReader) Read(p []byte) (int, error) {
 	r.bytes += int64(n)
 	_, _ = r.digest.Write(p[:n])
 	return n, err
+}
+
+// A real accepted upstream response borrow is held in Read until disconnect.
+// Close unblocks that read and records disposal; no provider/credential exists.
+type gitVMGuestBlockedReply struct {
+	ctx                  context.Context
+	active, closed, done chan struct{}
+	readOnce, closeOnce  sync.Once
+}
+
+func (r *gitVMGuestBlockedReply) Read([]byte) (int, error) {
+	r.readOnce.Do(func() { close(r.active) })
+	select {
+	case <-r.ctx.Done():
+		return 0, r.ctx.Err()
+	case <-r.done:
+		return 0, io.ErrClosedPipe
+	}
+}
+func (r *gitVMGuestBlockedReply) Close() error {
+	r.closeOnce.Do(func() { close(r.done); close(r.closed) })
+	return nil
 }

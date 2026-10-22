@@ -64,12 +64,15 @@ def main():
     runtime = "/run/user/"+str(os.getuid())
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "HOME": str(Path.home()),
                    "XDG_RUNTIME_DIR": runtime, "DBUS_SESSION_BUS_ADDRESS": "unix:path="+runtime+"/bus"}
+    runtime_directory = output/"runtime"
+    runtime_directory.mkdir(mode=0o700)
     nonce = secrets.token_hex(8)
     unit_name = "sfl-source-guest-fixture-"+nonce+".service"
     unit = lifecycle.FixtureUnit(unit_name, "SFL credential-free source guest fixture "+nonce, output, environment)
     command = ["/usr/bin/systemd-run", "--user", "--wait", "--pipe", "--collect", "--unit="+unit_name,
                "--property=MemoryMax=2G", "--property=MemorySwapMax=0", "--property=TasksMax=96",
                "--property=CPUQuota=100%", "--property=RuntimeMaxSec=140", "--setenv=SFL_SOURCE_GUEST_IMAGE="+str(image),
+               "--setenv=SFL_SOURCE_GUEST_RUN_DIR="+str(runtime_directory),
                "--setenv=SFL_SOURCE_GUEST_CASE="+args.case, "--", str(binary), "-test.run=^TestGitVMGuestContainedActualGit$", "-test.v", "-test.timeout=130s"]
     code, stopped = None, False
     try:

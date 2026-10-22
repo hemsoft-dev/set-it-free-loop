@@ -24,6 +24,14 @@ def sibling(name):
     return module
 
 
+def source_kernel_config(raw):
+    sibling("native-vm-image").kernel_config(raw)
+    required = ["CONFIG_USER_NS", "CONFIG_UTS_NS", "CONFIG_SECCOMP", "CONFIG_SECCOMP_FILTER",
+                "CONFIG_CGROUP_SCHED", "CONFIG_FAIR_GROUP_SCHED", "CONFIG_CFS_BANDWIDTH"]
+    lines = set(raw.decode("ascii").splitlines())
+    if any(key+"=y" not in lines for key in required):
+        raise RuntimeError("source worker requires built-in namespace, filter and CPU facilities")
+
 def build(module, args, source, output, common):
     raw = subprocess.check_output(["git", "-C", str(module.parent), "archive", "--format=tar",
                                    source["source_commit"], "reviewer"], timeout=15)
@@ -59,14 +67,9 @@ def main():
     module = Path(__file__).resolve().parent.parent
     source = common.source_manifest(module)
     config = image_tools.pinned_bytes(args.kernel_config, args.kernel_config_sha256, 1 << 20)
-    image_tools.kernel_config(config)
-    required = ["CONFIG_USER_NS", "CONFIG_UTS_NS", "CONFIG_SECCOMP", "CONFIG_SECCOMP_FILTER",
-                "CONFIG_CGROUP_SCHED", "CONFIG_FAIR_GROUP_SCHED"]
-    lines = set(config.decode("ascii").splitlines())
-    if any(key+"=y" not in lines for key in required):
-        raise RuntimeError("source worker requires built-in namespace, filter and CPU facilities")
+    source_kernel_config(config)
     captured = {}
-    for name, maximum in [("kernel", 64 << 20), ("bios", 64 << 20),
+    for name, maximum in [("kernel", 64 << 20), ("bios", 64 << 20), ("qemu", 64 << 20),
                           ("namespace_helper", 64 << 20), ("git", 64 << 20), ("http_helper", 64 << 20)]:
         captured[name] = image_tools.pinned_bytes(getattr(args, name), getattr(args, name+"_sha256"), maximum)
     output = args.output.absolute()
@@ -112,7 +115,7 @@ def main():
     guest.entry("source-release.json", image_tools.canonical(release))
     archive_tools.archive(guest.entries, output/"source.cpio.gz", compresslevel=1)
     (output/"source.cpio.gz").chmod(0o444)
-    for name, data in [("vmlinuz", captured["kernel"]), ("bios.bin", captured["bios"]), ("kernel.config", config)]:
+    for name, data in [("vmlinuz", captured["kernel"]), ("bios.bin", captured["bios"]), ("kernel.config", config), ("qemu-program.bin", captured["qemu"])]:
         with (output/name).open("xb") as stream:
             stream.write(data)
         (output/name).chmod(0o444)

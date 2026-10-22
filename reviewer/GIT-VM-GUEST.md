@@ -4,7 +4,11 @@ The source VM guest has a separate purpose, release and request contract. It
 contains the source guest entry, measured Git runtime and namespace helper. It
 contains no subscription client or credential loader. The image builder builds
 committed source offline and takes explicit kernel, firmware, Git and helper
-pins. Its output remains an unqualified candidate.
+pins. It emits a read-only host QEMU program snapshot and initrd. The host
+asset owner seals named boot inputs, verifies the complete QEMU dependency frame
+and retains the original root-owned helper and pinned bootstrap libraries.
+Opening that owner starts no VM and grants no admission. Build output remains
+an unqualified candidate.
 
 Guest PID1 runs as root and owns three private virtio channels named
 `sfl.source-control`, `sfl.source-read` and `sfl.source-export`. It verifies the
@@ -34,7 +38,8 @@ VM, drain all host borrows, journal unknown outcomes and retain private staging
 until those independent checks complete.
 
 The root has a 110-second request deadline. The worker cgroup limits memory to
-384 MiB, disables swap and limits tasks to 64 and CPU to one core. Work space is
+384 MiB, disables swap and limits tasks to 64 and CPU to one core. The image
+requires built-in CFS bandwidth support because the guest enforces `cpu.max`. Work space is
 256 MiB with 65,536 inodes and nosuid/nodev/noexec/noswap. The captured runtime
 parent permits traversal for namespace-helper setup without permitting writes.
 The worker standard streams are `/dev/null`; fixed root stage diagnostics carry
@@ -62,7 +67,10 @@ python3 -B reviewer/scripts/git-source-vm-fixture.py \
 Use `--case export-close`, `--case control-close`, `--case read-close` or
 `--case foreign-request` for the hostile channel/request cases. Each must refuse
 success and power off promptly. The control-close and foreign-request cases
-also require zero upstream Git calls. Export-copy failure cancels the guest
+also require zero upstream Git calls. Read loss waits for an actual upstream
+response borrow blocked in Read, then requires its Close. Export loss waits for
+an actual export byte after the grant and uses a large bounded fixture with
+backpressure. Export-copy failure cancels the guest
 immediately before stopping the original worker cgroup. A root-owned watcher
 retains duplicate original port descriptors and independently cancels on
 virtio HUP/ERR, including while a protocol write is blocked. It joins before
@@ -72,14 +80,19 @@ The runner requires the image's exact clean source revision, builds the fixture
 from an immutable archive and uses one captured original diagnostic unit. It
 bounds memory to 2 GiB, swap to zero, tasks to 96, CPU to one core and unit
 lifetime to 140 seconds. QEMU uses KVM, one vCPU, 1,536 MiB, no NIC, no host
-share and no monitor. Only trusted synthetic Git objects are parsed on the host
+share and no monitor. It executes the pinned QEMU snapshot and captured
+libraries/firmware inside the verified read-only runtime root. The fixture
+retains that runtime directory as local evidence and closes its management
+handles without deleting possibly live files. Only trusted synthetic Git objects are parsed on the host
 to implement the fake upload-pack backend. Real Git acquisition and export run
 inside the guest. The test compares source bytes and the host-observed export
 count/hash with the guest record. Cleanup uses the original captured cgroup,
 never a reusable unit name.
 
-The first passing inert run on October 22, 2026 at 08:14 EDT used source
-`7007ce5` and measured two broker requests and a 10,109-byte export. Earlier
+An early inert run on October 22, 2026 at 08:14 EDT used source `7007ce5` and
+measured two broker requests and a 10,109-byte export using installed QEMU. It
+demonstrated the guest protocol but did not qualify the captured QEMU runtime.
+The current fixture launches the captured runtime and verifies its pins. Earlier
 failures remain local evidence: wrong outer UID mapping, missing PID1 launch,
 inaccessible runtime parent, a host-only final broker recheck and the refused
 temporary diagnostic stderr pipe. The production stream contract keeps that
