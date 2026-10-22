@@ -93,12 +93,20 @@ type fakeContainmentManager struct {
 	childDone                        chan struct{}
 	output                           bytes.Buffer
 	holdPopulated, changedInvocation bool
+	clearStoppedGroup                bool
 	terminalState                    string
 	spawn                            bool
 	afterStart                       func()
+	retireHook                       func(string) error
 	afterWait                        func()
 }
 
+func (m *fakeContainmentManager) RetireUnit(_ context.Context, unit string) error {
+	if m.retireHook != nil {
+		return m.retireHook(unit)
+	}
+	return nil
+}
 func (m *fakeContainmentManager) Owner() string { return m.owner }
 func (m *fakeContainmentManager) Close() error  { return nil }
 func (m *fakeContainmentManager) Start(ctx context.Context, unit, stub string, args []string, description string, imageFD int) (string, error) {
@@ -170,6 +178,9 @@ func (m *fakeContainmentManager) terminateOriginal() error {
 		<-m.childDone
 	}
 	m.observation.MainPID = 0
+	if m.clearStoppedGroup {
+		m.observation.ControlGroup = ""
+	}
 	m.observation.ActiveState = "inactive"
 	if m.terminalState != "" {
 		m.observation.ActiveState = m.terminalState
@@ -214,7 +225,7 @@ func systemdSupervisorFixture(t *testing.T) (*SystemdSupervisor, *fakeContainmen
 	unit := "sfl-alpha-" + binding.LaunchID + ".service"
 	boot, _ := currentBootID()
 	kernel := &fakeContainmentKernel{boot: boot, group: cgroupBinding{Path: "/user.slice/user-1000.slice/" + unit, Inode: 17}, populated: true}
-	manager := &fakeContainmentManager{owner: "fake-bus/:1.2", kernel: kernel, observation: unitObservation{Unit: unit, Path: dbus.ObjectPath("/org/freedesktop/systemd1/unit/fake"), InvocationID: strings.Repeat("d", 32), MainPID: uint32(os.Getpid()), ControlGroup: kernel.group.Path, ActiveState: "active", Job: unitJob{0, "/"}, MemoryMax: 1 << 30, MemorySwapMax: 0, TasksMax: 64, CPUQuotaPerSecUSec: 1000000, KillMode: "control-group", Restart: "no", CollectMode: "inactive", RemainAfterExit: true, NoNewPrivileges: true, Transient: true, Description: "SFL fake containment " + Digest(binding)}}
+	manager := &fakeContainmentManager{owner: "fake-bus/:1.2", kernel: kernel, observation: unitObservation{Unit: unit, Path: dbus.ObjectPath("/org/freedesktop/systemd1/unit/fake"), InvocationID: strings.Repeat("d", 32), MainPID: uint32(os.Getpid()), ControlGroup: kernel.group.Path, ActiveState: "active", Job: unitJob{0, "/"}, MemoryMax: 1 << 30, MemorySwapMax: 0, TasksMax: 64, CPUQuotaPerSecUSec: 1000000, KillMode: "control-group", Restart: "no", CollectMode: "inactive-or-failed", ExitType: "cgroup", RemainAfterExit: false, NoNewPrivileges: true, Transient: true, Description: "SFL fake containment " + Digest(binding)}}
 	kernel.terminate = manager.terminateOriginal
 	supervisor := newSystemdSupervisor(root, stub, hex.EncodeToString(hash[:]), manager, kernel)
 	t.Cleanup(func() {

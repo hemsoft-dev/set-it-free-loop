@@ -69,7 +69,7 @@ func (k linuxContainmentKernel) Terminate(ctx context.Context, binding cgroupBin
 
 // The kernel can finish killing before systemd reaps its original main PID.
 // Wait only for that same invocation's metadata to settle. Never mutate its name.
-func waitForOriginalUnitStop(ctx context.Context, manager containmentManager, before unitObservation, group cgroupBinding) (unitObservation, error) {
+func waitForOriginalUnitStop(ctx context.Context, manager containmentManager, kernel containmentKernel, before unitObservation, group cgroupBinding) (unitObservation, error) {
 	timer := time.NewTicker(10 * time.Millisecond)
 	defer timer.Stop()
 	for {
@@ -77,10 +77,15 @@ func waitForOriginalUnitStop(ctx context.Context, manager containmentManager, be
 			return unitObservation{}, ErrAuthRecoveryRequired
 		}
 		current, err := manager.Observe(ctx, before.Unit)
-		if err != nil || current.Unit != before.Unit || current.Path != before.Path || current.InvocationID != before.InvocationID || current.Description != before.Description || current.ControlGroup != group.Path {
+		if err != nil || current.Unit != before.Unit || current.Path != before.Path || current.InvocationID != before.InvocationID || current.Description != before.Description || current.ControlGroup != group.Path && current.ControlGroup != "" {
 			return unitObservation{}, ErrAuthRecoveryRequired
 		}
 		if current.Job.ID == 0 && current.MainPID == 0 && (current.ActiveState == "inactive" || current.ActiveState == "failed" || current.ActiveState == "active") {
+			// systemd clears ControlGroup after successful whole-group exit. The
+			// retained invocation plus a fresh original kernel proof still applies.
+			if kernel.Empty(group) != nil {
+				return unitObservation{}, ErrAuthRecoveryRequired
+			}
 			return current, nil
 		}
 		select {

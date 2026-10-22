@@ -383,7 +383,7 @@ func expectedPayloadObservation(r unitJournal, o unitObservation) bool {
 	}
 	return (r.PayloadKind == "" || r.PayloadKind == "vm-fixture" || r.PayloadKind == "native-vm") && o.Unit == r.Unit && o.Path.IsValid() && o.InvocationID != "" && o.Description == payloadDescription(r.PayloadKind, r.Binding) &&
 		o.Transient && o.Job.ID == 0 && o.MemoryMax == memory && o.MemorySwapMax == 0 && o.TasksMax == tasks && o.CPUQuotaPerSecUSec == 1000000 &&
-		o.KillMode == "control-group" && o.Restart == "no" && o.CollectMode == "inactive" && o.RemainAfterExit && o.NoNewPrivileges
+		o.KillMode == "control-group" && o.Restart == "no" && expectedUnitLifecycle(o, r.Aborted) && o.NoNewPrivileges
 }
 func (s *SystemdSupervisor) captureUnit(ctx context.Context, r unitJournal) (unitJournal, error) {
 	if r.ManagerOwner != s.manager.Owner() {
@@ -600,7 +600,10 @@ func (s *SystemdSupervisor) AbortAndWait(ctx context.Context, binding AuthBindin
 		r = captured
 	}
 	if r.Stopped {
-		return s.kernel.Empty(r.Cgroup)
+		if s.kernel.Empty(r.Cgroup) != nil {
+			return ErrAuthRecoveryRequired
+		}
+		return s.manager.RetireUnit(ctx, r.Unit)
 	}
 	before, err := s.manager.Observe(ctx, r.Unit)
 	if err != nil || before.InvocationID != r.Identity.InvocationID || before.Unit != r.Unit || before.Description != payloadDescription(r.PayloadKind, binding) {
@@ -615,11 +618,14 @@ func (s *SystemdSupervisor) AbortAndWait(ctx context.Context, binding AuthBindin
 	if err = s.kernel.Empty(r.Cgroup); err != nil {
 		return ErrAuthRecoveryRequired
 	}
-	after, err := waitForOriginalUnitStop(ctx, s.manager, before, r.Cgroup)
-	if err != nil || after.InvocationID != r.Identity.InvocationID || after.Unit != r.Unit || after.Description != payloadDescription(r.PayloadKind, binding) || after.ControlGroup != r.Cgroup.Path || after.Job.ID != 0 || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed" && after.ActiveState != "active") {
+	after, err := waitForOriginalUnitStop(ctx, s.manager, s.kernel, before, r.Cgroup)
+	if err != nil || after.InvocationID != r.Identity.InvocationID || after.Unit != r.Unit || after.Description != payloadDescription(r.PayloadKind, binding) || after.ControlGroup != r.Cgroup.Path && after.ControlGroup != "" || after.Job.ID != 0 || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed" && after.ActiveState != "active") {
 		return ErrAuthRecoveryRequired
 	}
-	return s.updateUnit(ctx, binding, func(r *unitJournal) error { r.Stopped = true; return nil })
+	if err := s.updateUnit(ctx, binding, func(r *unitJournal) error { r.Stopped = true; return nil }); err != nil {
+		return err
+	}
+	return s.manager.RetireUnit(ctx, r.Unit)
 }
 
 // ConfirmAuthStopped reopens the durable binding and rechecks physical stop.

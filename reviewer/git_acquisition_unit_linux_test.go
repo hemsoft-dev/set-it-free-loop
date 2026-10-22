@@ -190,7 +190,7 @@ func newGitUnitFixture(t *testing.T, grantEndpoint ...string) gitUnitFixture {
 		t.Fatal(err)
 	}
 	kernel := &fakeContainmentKernel{boot: boot, group: cgroupBinding{Path: "/user.slice/" + unit, Inode: 91, Hierarchy: cgroupHierarchy{Device: 1, Inode: 2, MountNamespace: 3, CgroupNamespace: 4}}}
-	manager := &fakeContainmentManager{owner: "synthetic-bus/:1.77", kernel: kernel, child: child, childDone: done, observation: unitObservation{Unit: unit, Path: "/org/freedesktop/systemd1/unit/synthetic", InvocationID: strings.Repeat("b", 32), MainPID: uint32(child.Process.Pid), ControlGroup: kernel.group.Path, ActiveState: "active", MemoryMax: 1 << 30, TasksMax: 64, CPUQuotaPerSecUSec: 1000000, KillMode: "control-group", Restart: "no", CollectMode: "inactive", RemainAfterExit: true, NoNewPrivileges: true, Transient: true}}
+	manager := &fakeContainmentManager{owner: "synthetic-bus/:1.77", kernel: kernel, child: child, childDone: done, observation: unitObservation{Unit: unit, Path: "/org/freedesktop/systemd1/unit/synthetic", InvocationID: strings.Repeat("b", 32), MainPID: uint32(child.Process.Pid), ControlGroup: kernel.group.Path, ActiveState: "active", MemoryMax: 1 << 30, TasksMax: 64, CPUQuotaPerSecUSec: 1000000, KillMode: "control-group", Restart: "no", CollectMode: "inactive-or-failed", ExitType: "cgroup", RemainAfterExit: false, NoNewPrivileges: true, Transient: true}}
 	kernel.terminate = manager.terminateOriginal
 	hash := gitRawHash(stubBytes)
 	owner, err := newGitUnitOwner(context.Background(), root, stub, hash, manager, kernel)

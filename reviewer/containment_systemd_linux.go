@@ -48,9 +48,16 @@ type unitObservation struct {
 	ActiveState                                            string
 	Job                                                    unitJob
 	MemoryMax, MemorySwapMax, TasksMax, CPUQuotaPerSecUSec uint64
-	KillMode, Restart, CollectMode                         string
+	KillMode, Restart, CollectMode, ExitType               string
 	RemainAfterExit, NoNewPrivileges, Transient            bool
 	Description                                            string
+}
+
+// New launches collect both successful and failed services after references
+// are released. The old active-exited policy is admitted only for revoked
+// recovery; it can never qualify a fresh grant.
+func expectedUnitLifecycle(o unitObservation, recovery bool) bool {
+	return o.CollectMode == "inactive-or-failed" && !o.RemainAfterExit && o.ExitType == "cgroup" || recovery && o.CollectMode == "inactive" && o.RemainAfterExit && o.ExitType == "main"
 }
 
 type containmentManager interface {
@@ -59,6 +66,7 @@ type containmentManager interface {
 	WaitJob(context.Context, string, string) error
 	Observe(context.Context, string) (unitObservation, error)
 	UnitForPIDFD(context.Context, int) (string, string, error)
+	RetireUnit(context.Context, string) error
 	Close() error
 }
 
@@ -232,25 +240,59 @@ func (j *systemdJobs) wait(ctx context.Context, p, unit string) error {
 }
 
 type systemdUnitReference struct {
-	done chan struct{}
-	err  error
+	done        chan struct{}
+	err         error
+	retired     bool
+	releaseDone chan struct{}
+	releaseErr  error
 }
 
 type dbusContainmentManager struct {
-	referenceMu sync.Mutex
-	references  map[string]*systemdUnitReference
-	calls       systemdCalls
-	owner       string
-	jobs        *systemdJobs
-	close       func() error
+	referenceMu      sync.Mutex
+	referenceContext context.Context
+	referenceCancel  context.CancelFunc
+	referenceClosed  bool
+	closeOnce        sync.Once
+	closeErr         error
+	references       map[string]*systemdUnitReference
+	calls            systemdCalls
+	client           string
+	owner            string
+	jobs             *systemdJobs
+	close            func() error
 }
 
 func (m *dbusContainmentManager) Owner() string { return m.owner }
 func (m *dbusContainmentManager) Close() error {
-	if m.close != nil {
-		return m.close()
-	}
-	return nil
+	m.closeOnce.Do(func() {
+		m.referenceMu.Lock()
+		m.referenceClosed = true
+		if m.referenceCancel != nil {
+			m.referenceCancel()
+		}
+		var pending []<-chan struct{}
+		for _, reference := range m.references {
+			pending = append(pending, reference.done)
+			if reference.releaseDone != nil {
+				pending = append(pending, reference.releaseDone)
+			}
+		}
+		m.referenceMu.Unlock()
+		if m.close != nil {
+			m.closeErr = m.close()
+		}
+		ctx, cancel := boundedManagerContext(context.Background())
+		defer cancel()
+		for _, done := range pending {
+			select {
+			case <-done:
+			case <-ctx.Done():
+				m.closeErr = errors.Join(m.closeErr, ErrAuthRecoveryRequired)
+				return
+			}
+		}
+	})
+	return m.closeErr
 }
 
 // openUserContainmentManager uses a fixed local user bus and EXTERNAL UID only.
@@ -311,8 +353,15 @@ func openContainmentManagerAt(ctx context.Context, socket string) (*dbusContainm
 	if _, err = calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".Subscribe"); err != nil {
 		return nil, ErrAuthRecoveryRequired
 	}
+	// godbus documents Names()[0] as this connection's unique name. The
+	// NameAcquired signal may also list that same name among the aliases.
+	names := conn.Names()
+	if len(names) == 0 || !strings.HasPrefix(names[0], ":") {
+		return nil, ErrAuthRecoveryRequired
+	}
+	client := names[0]
 	closeOnFailure = false
-	return &dbusContainmentManager{calls: calls, owner: busID + "/" + owner, jobs: jobs, close: conn.Close}, nil
+	return &dbusContainmentManager{calls: calls, owner: busID + "/" + owner, client: client, jobs: jobs, close: conn.Close}, nil
 }
 
 func validContainmentUnit(unit string) bool {
@@ -392,7 +441,7 @@ func fixedPayloadUnitProperties(unit, stub string, args []string, description st
 	}
 	return []unitProperty{
 		prop("Description", description), prop("ExtraFileDescriptors", []namedUnitFD{{dbus.UnixFD(imageFD), "sfl-unitstub"}}), prop("Type", "exec"), prop("ExecStart", []unitExec{{bootstrap, bootstrapArgs, false}}),
-		prop("Restart", "no"), prop("RemainAfterExit", true), prop("CollectMode", "inactive"), prop("AddRef", true),
+		prop("Restart", "no"), prop("ExitType", "cgroup"), prop("RemainAfterExit", false), prop("CollectMode", "inactive-or-failed"), prop("AddRef", true),
 		prop("KillMode", "control-group"), prop("SendSIGKILL", true), prop("NoNewPrivileges", true),
 		prop("MemoryAccounting", true), prop("MemoryMax", memory), prop("MemorySwapMax", uint64(0)),
 		prop("TasksAccounting", true), prop("TasksMax", tasks), prop("CPUAccounting", true), prop("CPUQuotaPerSecUSec", uint64(1000000)),
@@ -431,6 +480,12 @@ func (m *dbusContainmentManager) StartGit(ctx context.Context, unit, stub string
 }
 
 func (m *dbusContainmentManager) startProperties(ctx context.Context, unit string, properties []unitProperty) (string, error) {
+	m.referenceMu.Lock()
+	spent := m.referenceClosed || m.references[unit] != nil && m.references[unit].retired
+	m.referenceMu.Unlock()
+	if spent {
+		return "", ErrAuthRecoveryRequired
+	}
 	if m.jobs == nil || m.jobs.begin(unit) != nil {
 		return "", ErrAuthRecoveryRequired
 	}
@@ -489,28 +544,126 @@ func (m *dbusContainmentManager) referenceUnit(ctx context.Context, unit string)
 		return ctx.Err()
 	}
 	m.referenceMu.Lock()
+	if m.referenceClosed {
+		m.referenceMu.Unlock()
+		return ErrAuthRecoveryRequired
+	}
 	if m.references == nil {
 		m.references = map[string]*systemdUnitReference{}
 	}
+	if m.referenceContext == nil {
+		m.referenceContext, m.referenceCancel = context.WithCancel(context.Background())
+	}
 	reference, seen := m.references[unit]
+	if seen && reference.retired {
+		m.referenceMu.Unlock()
+		return ErrAuthRecoveryRequired
+	}
 	if !seen {
 		reference = &systemdUnitReference{done: make(chan struct{})}
 		m.references[unit] = reference
+		lifetime, cancel := boundedManagerContext(m.referenceContext)
+		go func() {
+			defer cancel()
+			_, reference.err = m.calls.Call(lifetime, systemdManagerPath, systemdManagerInterface+".RefUnit", unit)
+			close(reference.done)
+		}()
 	}
 	m.referenceMu.Unlock()
-	if !seen {
-		// Only the creator sends RefUnit. The closed channel publishes its result.
-		_, reference.err = m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".RefUnit", unit)
-		close(reference.done)
-	}
-	// Each concurrent observer keeps its own deadline; cancellation of a waiter
-	// does not cancel or poison another observer's in-flight reference.
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-reference.done:
 		return reference.err
 	}
+}
+
+// Call only after durable physical-stop proof. This retires this connection's
+// local job tracking and reference, never a unit stop/reset or a new job.
+func (m *dbusContainmentManager) RetireUnit(ctx context.Context, unit string) error {
+	if !validContainmentUnit(unit) || ctx == nil || ctx.Err() != nil || m.jobs == nil {
+		return ErrAuthRecoveryRequired
+	}
+	m.jobs.end(unit)
+	m.referenceMu.Lock()
+	if m.referenceClosed {
+		m.referenceMu.Unlock()
+		// A successful connection close has already dropped its references.
+		return m.Close()
+	}
+	reference := m.references[unit]
+	if reference == nil {
+		m.referenceMu.Unlock()
+		return nil
+	}
+	reference.retired = true
+	if reference.releaseDone == nil {
+		reference.releaseDone = make(chan struct{})
+		lifetime, cancel := boundedManagerContext(m.referenceContext)
+		go func() {
+			defer cancel()
+			select {
+			case <-reference.done:
+			case <-lifetime.Done():
+				reference.releaseErr = lifetime.Err()
+				close(reference.releaseDone)
+				return
+			}
+			count, err := m.ownedUnitReferences(lifetime, unit)
+			if err != nil {
+				reference.releaseErr = err
+			} else {
+				for n := 0; n < count; n++ {
+					if _, err := m.calls.Call(lifetime, systemdManagerPath, systemdManagerInterface+".UnrefUnit", unit); err != nil {
+						reference.releaseErr = err
+						break
+					}
+				}
+			}
+			close(reference.releaseDone)
+		}()
+	}
+	done := reference.releaseDone
+	m.referenceMu.Unlock()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return reference.releaseErr
+	}
+}
+
+// AddRef at birth and one recovery RefUnit are separately counted by systemd.
+// Count only this authenticated connection's references; other clients' refs
+// are never released. Retirement prevents new refs or a reused-name start.
+func (m *dbusContainmentManager) ownedUnitReferences(ctx context.Context, unit string) (int, error) {
+	if !strings.HasPrefix(m.client, ":") {
+		return 0, ErrAuthRecoveryRequired
+	}
+	body, err := m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".GetUnit", unit)
+	var path dbus.ObjectPath
+	if err != nil || dbus.Store(body, &path) != nil || !path.IsValid() {
+		return 0, ErrAuthRecoveryRequired
+	}
+	properties, err := m.properties(ctx, path, "org.freedesktop.systemd1.Unit")
+	if err != nil {
+		return 0, ErrAuthRecoveryRequired
+	}
+	value, ok := properties["Refs"]
+	var refs []string
+	if !ok || dbus.Store([]any{value.Value()}, &refs) != nil || len(refs) > 128 {
+		return 0, ErrAuthRecoveryRequired
+	}
+	count := 0
+	for _, client := range refs {
+		if client == m.client {
+			count++
+		}
+	}
+	if count > 2 {
+		return 0, ErrAuthRecoveryRequired
+	}
+	return count, nil
 }
 
 func (m *dbusContainmentManager) Observe(ctx context.Context, unit string) (unitObservation, error) {
@@ -544,7 +697,7 @@ func (m *dbusContainmentManager) Observe(ctx context.Context, unit string) (unit
 	}{
 		{u, "InvocationID", &invocation}, {s, "ControlGroup", &o.ControlGroup}, {u, "ActiveState", &o.ActiveState}, {u, "Job", &o.Job}, {u, "Description", &o.Description}, {u, "Transient", &o.Transient}, {u, "CollectMode", &o.CollectMode},
 		{s, "MainPID", &o.MainPID}, {s, "MemoryMax", &o.MemoryMax}, {s, "MemorySwapMax", &o.MemorySwapMax}, {s, "TasksMax", &o.TasksMax}, {s, "CPUQuotaPerSecUSec", &o.CPUQuotaPerSecUSec},
-		{s, "KillMode", &o.KillMode}, {s, "Restart", &o.Restart}, {s, "RemainAfterExit", &o.RemainAfterExit}, {s, "NoNewPrivileges", &o.NoNewPrivileges},
+		{s, "ExitType", &o.ExitType}, {s, "KillMode", &o.KillMode}, {s, "Restart", &o.Restart}, {s, "RemainAfterExit", &o.RemainAfterExit}, {s, "NoNewPrivileges", &o.NoNewPrivileges},
 	}
 	for _, r := range reads {
 		v, ok := r.m[r.key]

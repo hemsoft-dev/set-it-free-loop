@@ -99,7 +99,7 @@ while True:signal.pause()
 	}
 	for index := 0; index < 2; index++ {
 		record := filepath.Join(t.TempDir(), "owned-child.pid")
-		args := []string{"--user", "--unit=" + unit, "--property=RuntimeMaxSec=10", "--property=TimeoutStopSec=1", "--property=KillMode=control-group", "--property=Restart=no", "--property=RemainAfterExit=yes", "--property=CollectMode=inactive-or-failed", "--property=NoNewPrivileges=yes", "--property=TasksMax=64", "--property=MemoryMax=1G", "--property=MemorySwapMax=0", "--property=CPUQuota=100%", python, "-I", "-S", "-B", "-c", code, record}
+		args := []string{"--user", "--unit=" + unit, "--property=RuntimeMaxSec=10", "--property=TimeoutStopSec=1", "--property=KillMode=control-group", "--property=Restart=no", "--property=ExitType=cgroup", "--property=RemainAfterExit=no", "--property=CollectMode=inactive-or-failed", "--property=NoNewPrivileges=yes", "--property=TasksMax=64", "--property=MemoryMax=1G", "--property=MemorySwapMax=0", "--property=CPUQuota=100%", python, "-I", "-S", "-B", "-c", code, record}
 		if output, err := exec.CommandContext(ctx, "/usr/bin/systemd-run", args...).CombinedOutput(); err != nil {
 			t.Fatalf("inert start: %s: %v", output, err)
 		}

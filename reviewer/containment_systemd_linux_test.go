@@ -39,7 +39,7 @@ func TestSystemdFixedStartWireAndNoShell(t *testing.T) {
 			}
 			values[p.Name] = p.Value.Value()
 		}
-		for k, want := range map[string]any{"Type": "exec", "Restart": "no", "RemainAfterExit": true, "CollectMode": "inactive", "AddRef": true, "KillMode": "control-group", "NoNewPrivileges": true, "MemoryMax": uint64(1 << 30), "TasksMax": uint64(64), "MemorySwapMax": uint64(0), "CPUQuotaPerSecUSec": uint64(1000000)} {
+		for k, want := range map[string]any{"Type": "exec", "Restart": "no", "ExitType": "cgroup", "RemainAfterExit": false, "CollectMode": "inactive-or-failed", "AddRef": true, "KillMode": "control-group", "NoNewPrivileges": true, "MemoryMax": uint64(1 << 30), "TasksMax": uint64(64), "MemorySwapMax": uint64(0), "CPUQuotaPerSecUSec": uint64(1000000)} {
 			if values[k] != want {
 				t.Fatal("changed fixed restriction", k, values[k])
 			}
@@ -110,7 +110,7 @@ func TestSystemdJobResultBeforeReplyAndUnknownFailures(t *testing.T) {
 func TestSystemdObserveRequiresTypedIdentityAndPIDFDWire(t *testing.T) {
 	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
 	p := dbus.ObjectPath("/org/freedesktop/systemd1/unit/fake")
-	props := map[string]dbus.Variant{"InvocationID": dbus.MakeVariant(make([]byte, 16)), "ControlGroup": dbus.MakeVariant("/user.slice/" + unit), "ActiveState": dbus.MakeVariant("active"), "Job": dbus.MakeVariant(unitJob{0, "/"}), "Description": dbus.MakeVariant("fixed"), "Transient": dbus.MakeVariant(true), "CollectMode": dbus.MakeVariant("inactive"), "MainPID": dbus.MakeVariant(uint32(1)), "MemoryMax": dbus.MakeVariant(uint64(1 << 30)), "MemorySwapMax": dbus.MakeVariant(uint64(0)), "TasksMax": dbus.MakeVariant(uint64(64)), "CPUQuotaPerSecUSec": dbus.MakeVariant(uint64(1000000)), "KillMode": dbus.MakeVariant("control-group"), "Restart": dbus.MakeVariant("no"), "RemainAfterExit": dbus.MakeVariant(true), "NoNewPrivileges": dbus.MakeVariant(true)}
+	props := map[string]dbus.Variant{"InvocationID": dbus.MakeVariant(make([]byte, 16)), "ControlGroup": dbus.MakeVariant("/user.slice/" + unit), "ActiveState": dbus.MakeVariant("active"), "Job": dbus.MakeVariant(unitJob{0, "/"}), "Description": dbus.MakeVariant("fixed"), "Transient": dbus.MakeVariant(true), "CollectMode": dbus.MakeVariant("inactive-or-failed"), "MainPID": dbus.MakeVariant(uint32(1)), "MemoryMax": dbus.MakeVariant(uint64(1 << 30)), "MemorySwapMax": dbus.MakeVariant(uint64(0)), "TasksMax": dbus.MakeVariant(uint64(64)), "CPUQuotaPerSecUSec": dbus.MakeVariant(uint64(1000000)), "KillMode": dbus.MakeVariant("control-group"), "Restart": dbus.MakeVariant("no"), "ExitType": dbus.MakeVariant("cgroup"), "RemainAfterExit": dbus.MakeVariant(false), "NoNewPrivileges": dbus.MakeVariant(true)}
 	m := &dbusContainmentManager{calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, method string, a ...any) ([]any, error) {
 		switch method {
 		case systemdManagerInterface + ".GetUnit":
