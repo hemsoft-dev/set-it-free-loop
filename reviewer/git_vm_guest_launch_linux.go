@@ -216,6 +216,8 @@ func (w *gitVMGuestWorker) qualify(ctx context.Context, q gitVMGuestRequest) err
 	if w == nil || w.process == nil || ctx == nil || ctx.Err() != nil {
 		return ErrVMBoot
 	}
+	stage := "accept"
+	defer func() { _, _ = os.Stderr.WriteString("SFL_SOURCE_QUALIFY_STAGE " + stage + "\n") }()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	go func() {
@@ -232,6 +234,7 @@ func (w *gitVMGuestWorker) qualify(ctx context.Context, q gitVMGuestRequest) err
 		return ErrVMBoot
 	}
 	w.control = conn
+	stage = "peer"
 	pid, uid, fd, err := gatePeer(conn)
 	if fd >= 0 {
 		defer unix.Close(fd)
@@ -242,10 +245,12 @@ func (w *gitVMGuestWorker) qualify(ctx context.Context, q gitVMGuestRequest) err
 	// The all-zero manager coordinate is a private kernel-helper placeholder,
 	// as in gitBrokerPeerCapability. No guest systemd invocation is invented or
 	// serialized, and this cannot qualify a host manager or provider auth lease.
+	stage = "identity"
 	identity, err := processGateIdentity(pid, "00000000000000000000000000000000")
 	if err != nil {
 		return ErrVMBoot
 	}
+	stage = "ready"
 	raw, files, err := readGitControlPacket(ctx, conn, 0)
 	closeVMFiles(files)
 	ready, decodeErr := DecodeStrict[gitVMGuestPhase](raw, gitVMRecordBytes)
@@ -253,13 +258,22 @@ func (w *gitVMGuestWorker) qualify(ctx context.Context, q gitVMGuestRequest) err
 	if err != nil || decodeErr != nil || !bytes.Equal(raw, canonical) || !ready.valid(q, "worker-ready") {
 		return ErrVMBoot
 	}
+	stage = "boundary"
 	w.boundary, err = retainGitProcessBoundaryIDs(ctx, identity, fd, w.runtime, w.image, q.Source.Manifest.Worker, q.Source.Manifest.Runtime, gitVMGuestUID, gitVMGuestGID)
-	if err != nil || w.boundary.cgroup != "/source-worker" || checkGitMountBoundaryIDs(ctx, w.boundary, w.broker, q.Source.Binding, 0, 0555) != nil ||
-		checkGitDescriptorBoundary(ctx, w.boundary, w.process.out, w.supervisor, conn) != nil {
+	if err != nil || w.boundary.cgroup != "/source-worker" {
+		return ErrVMBoot
+	}
+	stage = "mount"
+	if checkGitMountBoundaryIDs(ctx, w.boundary, w.broker, q.Source.Binding, 0, 0555) != nil {
+		return ErrVMBoot
+	}
+	stage = "descriptors"
+	if checkGitDescriptorBoundary(ctx, w.boundary, w.process.out, w.supervisor, conn) != nil {
 		return ErrVMBoot
 	}
 	// The accepted process must be PID1 in its private namespace, never a
 	// sibling or a restarted trusted binary in the same acquisition cgroup.
+	stage = "pid1"
 	status, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/status")
 	if err != nil || !gitVMGuestPID1(status) {
 		return ErrVMBoot
