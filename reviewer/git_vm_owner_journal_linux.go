@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/godbus/dbus/v5"
 	"golang.org/x/sys/unix"
@@ -21,6 +22,10 @@ var errGitVMOwner = errors.New("source VM ownership requires recovery")
 
 const gitVMOwnerPurpose = "source-vm-unit-owner"
 const gitVMOwnerRecords = 64
+
+// A full journal of bound requests exceeds the 64 KiB auth-file reader, so
+// the journal has its own reader with the same private-file checks.
+const gitVMOwnerJournalBytes = 1 << 20
 
 type gitVMBirth struct {
 	StartJob, InvocationID string
@@ -111,16 +116,34 @@ type gitVMOwnerJournal struct {
 	closed    bool
 }
 
+func readGitVMOwnerFile(root *os.Root, optional bool) ([]byte, error) {
+	file, err := root.OpenFile("source-vm-units.json", os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if optional && os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, errGitVMOwner
+	}
+	defer file.Close()
+	if privateAuthFile(file) != nil {
+		return nil, errGitVMOwner
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, gitVMOwnerJournalBytes+1))
+	if err != nil || len(raw) == 0 || len(raw) > gitVMOwnerJournalBytes {
+		return nil, errGitVMOwner
+	}
+	return raw, nil
+}
 func readGitVMUnitJournal(root *os.Root, optional bool) (gitVMUnitJournal, error) {
 	empty := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{}}
-	raw, err := readAuth(root, "source-vm-units.json", optional)
+	raw, err := readGitVMOwnerFile(root, optional)
 	if err != nil {
 		return empty, errGitVMOwner
 	}
 	if raw == nil {
 		return empty, nil
 	}
-	j, err := DecodeStrict[gitVMUnitJournal](raw, 1<<20)
+	j, err := DecodeStrict[gitVMUnitJournal](raw, gitVMOwnerJournalBytes)
 	canonical, marshalErr := json.Marshal(j)
 	if err != nil || marshalErr != nil || !j.valid() || !bytes.Equal(raw, canonical) {
 		return empty, errGitVMOwner
@@ -192,7 +215,7 @@ func openGitVMOwnerJournal(ctx context.Context, directory string) (_ *gitVMOwner
 	if err != nil {
 		return nil, err
 	}
-	if raw, err := readAuth(root, "source-vm-units.json", true); err != nil {
+	if raw, err := readGitVMOwnerFile(root, true); err != nil {
 		return nil, errGitVMOwner
 	} else if raw == nil {
 		if j.write(value) != nil {
@@ -221,7 +244,7 @@ func (j *gitVMOwnerJournal) write(value gitVMUnitJournal) error {
 		return errGitVMOwner
 	}
 	raw, err := json.Marshal(value)
-	if err != nil || len(raw) > 1<<20 || writeAuth(j.held.root, "source-vm-units.json", raw) != nil || j.verify() != nil {
+	if err != nil || len(raw) > gitVMOwnerJournalBytes || writeAuth(j.held.root, "source-vm-units.json", raw) != nil || j.verify() != nil {
 		return errGitVMOwner
 	}
 	return nil

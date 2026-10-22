@@ -5,6 +5,7 @@ package reviewer
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -184,5 +185,45 @@ func TestGitVMOwnerJournalRetainsBornAttemptAcrossReopen(t *testing.T) {
 	if j, err := openGitVMOwnerJournal(context.Background(), directory); err == nil {
 		j.Close(context.Background())
 		t.Fatal("null field accepted")
+	}
+}
+
+// The full record bound must survive reopen; a journal the owner can write
+// but not read back would wedge every later source attempt.
+func TestGitVMOwnerJournalFullBoundRoundTrips(t *testing.T) {
+	directory := gitVMOwnerJournalFixture(t)
+	value := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{}}
+	for i := 0; i < gitVMOwnerRecords; i++ {
+		r := gitVMStoppedRecordFixture(t)
+		r.Request.Source.Binding.Attempt = fmt.Sprintf("%032x", i+1)
+		r.Request.Read.Source.Attempt = r.Request.Source.Binding.Attempt
+		r.RequestHash, r.Unit = Digest(r.Request), "sfl-alpha-"+r.Request.Source.Binding.Attempt+".service"
+		r.Birth.Cgroup.Path = "/user.slice/user-1000.slice/user@1000.service/" + r.Unit
+		r.Cgroup = r.Birth.Cgroup
+		value.Records = append(value.Records, r)
+	}
+	if !value.valid() {
+		t.Fatal("full journal invalid")
+	}
+	j, err := openGitVMOwnerJournal(context.Background(), directory)
+	if err != nil || j.write(value) != nil || j.Close(context.Background()) != nil {
+		t.Fatal("full journal persistence", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(directory, "source-vm-units.json"))
+	if err != nil || len(raw) <= 65536 || len(raw) > gitVMOwnerJournalBytes {
+		t.Fatal("full journal size outside the tested range", len(raw), err)
+	}
+	j, err = openGitVMOwnerJournal(context.Background(), directory)
+	if err != nil {
+		t.Fatal("full journal reopen", err)
+	}
+	defer j.Close(context.Background())
+	got, err := readGitVMUnitJournal(j.held.root, false)
+	if err != nil || Digest(got) != Digest(value) {
+		t.Fatal("full journal not recovered", err)
+	}
+	value.Records = append(value.Records, value.Records[0])
+	if j.write(value) == nil {
+		t.Fatal("record bound exceeded")
 	}
 }
