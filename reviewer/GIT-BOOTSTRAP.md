@@ -126,7 +126,9 @@ live handshake deadline.
 
 The existing separate opt-in sealed bubblewrap probe still fails with EACCES;
 the fixed systemd tmpfs probe failed before payload exec. Neither is waived.
-A complete launch, native resource-pressure test, physical helper/library/
-namespace/route/mount/FD admission, authenticated stopped archive, recovery and
-controller run remain to implement or qualify. No credential, real GitHub
-transport, model inference, promotion, paid use or activation is exercised here.
+The [source factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md)
+implement admission, stopped export/recovery and controller composition. Their
+fake tests do not qualify a complete protected launch, native resource pressure,
+physical helper/library/namespace/route/mount/FD admission, host-crash recovery
+or a live controller run. No credential, real GitHub transport, model inference,
+promotion, paid use or activation is exercised here.

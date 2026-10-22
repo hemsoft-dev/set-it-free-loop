@@ -1,10 +1,11 @@
 # Git acquisition descriptor grants
 
 These private Linux helpers supply the one-use descriptor handoff for the
-unfinished acquisition factory. They start no service, read no credentials and
-grant no provider or publisher capability. The fixed executable and bootstrap receiver now exist; aggregate physical
-qualification, full helper admission and controller composition remain
-unfinished. See [bootstrap and entry points](GIT-BOOTSTRAP.md). See the
+[concrete acquisition factory](GIT-FACTORY.md). They start no service, read no
+credentials and grant no provider or publisher capability. The fixed executable,
+bootstrap receiver, helper admission and [controller composition](GIT-SERVICE.md)
+have source implementations. Aggregate physical qualification remains incomplete.
+See [bootstrap and entry points](GIT-BOOTSTRAP.md). See the
 [unit owner](GIT-UNIT.md) and [descriptor design research](GIT-WORKER-FD-HANDOFF.md).
 
 ## Transport and fixed roles

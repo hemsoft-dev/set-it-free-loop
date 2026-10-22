@@ -76,13 +76,15 @@ libraries. It is a startup/linker check, not an aggregate fetch/confinement or
 resource-pressure qualification. The fixed usage assertion was corrected to the
 actual pinned helper's output; fsck/object-validation checks were not relaxed.
 
-The concrete acquisition worker/factory must still authenticate its private
-channels and helper peers, inspect actual namespaces/mounts/resource limits,
-perform all Git parsing/materialization inside the measured unit, revoke/drain
-the broker and prove whole-unit termination before publication. Private
-[plain-export retention/reopening](GIT-EXPORT-ARCHIVE.md) is available but still
-needs factory/recovery authority. Uncertain-attempt recovery, credential-generation leases and
-release/controller composition remain open. See [unit ownership](GIT-UNIT.md),
+The [concrete source factory](GIT-FACTORY.md) implements private-channel/helper
+admission, namespace/mount/resource checks, in-unit parsing/materialization,
+broker drain and stopped export publication. It joins
+[plain-export retention/reopening](GIT-EXPORT-ARCHIVE.md), uncertain-attempt
+recovery and credential-generation leases through the
+[service assembly](GIT-SERVICE.md) and [trusted startup](GIT-STARTUP.md).
+These source mechanisms still require aggregate physical qualification,
+including the known failed mount and sealed-exec prerequisites.
+See [unit ownership](GIT-UNIT.md),
 [broker](GIT-BROKER.md), [quarantine checks](GIT-QUARANTINE.md) and
 [bounded materialization](GIT-MATERIALIZATION.md). No live inference or deployment
 was used for the builder, smoke or namespace startup check.

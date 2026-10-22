@@ -59,6 +59,9 @@ descriptor number without reviving the revoked handle.
 
 Other cases cover chunked, gzip, 100-continue and binary payloads; malformed/ambiguous framing, wrong routes, caller credentials and peer refusal before dispatch; gzip expansion/truncation; active-handler capacity; used roots and foreign path preservation; and cancellation during SOCKS, headers, input, exchange and output. An aggregate-overflow regression first delivered 24 MiB of the second response with a successful HTTP EOF. Chunked response framing now makes that same overflow an HTTP transfer failure.
 
-No candidate source is checked out or executed. Production acquisition still needs protected peer policy, measured immutable Git/helper/library inputs, enforced aggregate resources, fresh quarantine, exact full-parent-graph/object/merge-base verification, retained immutable store publication and complete supervised shutdown. Controller/credential-owner composition, App eligibility, provider/account support and owner activation remain separate gates. No real credential/profile/key, live GitHub/provider backend, paid inference or retired automation was used or enabled.
+No candidate source is checked out or executed. Production acquisition still needs protected peer policy, measured immutable Git/helper/library inputs, enforced aggregate resources, fresh quarantine, exact full-parent-graph/object/merge-base verification, retained immutable store publication and complete supervised shutdown. The [source factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md) provide the source composition. Aggregate physical qualification, App eligibility, provider/account support and owner activation remain separate gates. No real credential/profile/key, live GitHub/provider backend, paid inference or retired automation was used or enabled.
 
-The internal [quarantine verifier](GIT-QUARANTINE.md) now has synthetic algorithm tests. Its production factory, in-unit capture/export and safe retained-store composition remain unfinished.
+The internal [quarantine verifier](GIT-QUARANTINE.md), in-unit capture/export
+and retained-store composition have source implementations in the factory.
+Synthetic algorithm and fake-owner tests do not qualify the complete protected
+production acquisition path.

@@ -85,8 +85,9 @@ closed gates before unopened asset/auth paths. No model is invoked.
 
 This assembly does not qualify a deployment. The public trusted operator entry
 point and canonical release package are described in [GIT-STARTUP.md](GIT-STARTUP.md).
-Trusted release promotion/rollback, native control tasks and the durable
-evaluation runner remain source work. Complete host containment qualification,
+[Explicit release decisions](RELEASE-PROMOTION.md), [native control tasks](NATIVE-CONTROLS.md)
+and the [durable evaluation runner](EVALUATION-RUNNER.md) are implemented.
+Complete host containment qualification,
 provider policy/entitlement and quota evidence, final App/trigger evidence and
 explicit owner activation remain separate gates tracked in
 [issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176).

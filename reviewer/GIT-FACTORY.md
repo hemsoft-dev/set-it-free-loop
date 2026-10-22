@@ -185,8 +185,11 @@ required systemd noswap tmpfs fails before payload execution with
 qualification was added. Successful inert namespace checks do not waive these
 failures. See [launch constraints](GIT-LAUNCH-CONSTRAINTS.md).
 
-Trusted service/release packaging and promotion, controller startup wiring,
-provider public-target/account/auth/billing evidence, native-control evaluation,
+[Service composition](GIT-SERVICE.md), [trusted startup packages](GIT-STARTUP.md),
+[release decisions](RELEASE-PROMOTION.md), [native controls](NATIVE-CONTROLS.md)
+and the [durable evaluation runner](EVALUATION-RUNNER.md) have source
+implementations. Actual trusted promotion, provider public-target/account/auth/
+billing evidence, aggregate containment/recovery and comparative evaluation,
 rendered GitHub evidence and explicit owner authorization for live inference
 and activation remain separate gates in #172, #173, #174, #176 and #177. This is
 offline source implementation; it changes no App configuration or live service.

@@ -88,4 +88,4 @@ an unreturned stop capability, expiry during the eligibility check, backward
 time and revoked eligibility. These tests qualify ownership behavior with a
 test stop capability, not a complete protected cgroup or broker shutdown path.
 
-Typed-nil transport and backward-clock regressions failed before their checks were added. These tests establish local fake-transport behavior. They do not establish native worker shutdown, host-crash recovery, production key custody, provider support, App eligibility or a comparative review result. Broader controller composition and those qualifications remain open in #176 and its related issues.
+Typed-nil transport and backward-clock regressions failed before their checks were added. These tests establish local fake-transport behavior. They do not establish native worker shutdown, host-crash recovery, production key custody, provider support, App eligibility or a comparative review result. The [service assembly](GIT-SERVICE.md) supplies controller composition. Those physical and live qualifications remain open in #176 and its related issues.
