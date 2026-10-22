@@ -289,7 +289,8 @@ live-gated.
   The measured runner at `a911dc5` adds the host-side `response_denials`
   counter and the extra audio probes. The guest image did not change.
 - These results do not establish resource, crash, live-account or provider
-  eligibility. Claude passing every case does not activate Claude.
+  eligibility. Resource-exhaustion cases are recorded separately in
+  [EXHAUSTION-FIXTURES.md](EXHAUSTION-FIXTURES.md). Claude passing every case does not activate Claude.
 
 ## Reproduce
 
