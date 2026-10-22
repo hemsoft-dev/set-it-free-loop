@@ -1,0 +1,165 @@
+//go:build linux
+
+package main
+
+import (
+	"encoding/json"
+	"slices"
+	"strings"
+	"time"
+
+	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
+	f "github.com/hemsoft-dev/set-it-free-loop/reviewer/internal/nativefixture"
+)
+
+// codeHostAudit is the nonsecret part of the guest's private code-host record.
+type codeHostAudit struct {
+	Failed, Stopped, RelayComplete bool
+	InputBytes, OutputBytes        int64
+	Stage                          string
+}
+
+// exhaustionInput is everything one exhaustion verdict depends on. It is
+// assembled after the unit is stopped and never holds credential bytes.
+type exhaustionInput struct {
+	Name          string
+	Err           error
+	Report        r.Report
+	Source        *r.SourceAccess
+	Provider      *r.ProviderAccess
+	Policy        r.EgressLimits
+	Limits        r.Limits
+	AuditComplete bool
+	CodeHost      json.RawMessage
+	Counts        f.Counts
+	Observation   f.HostileObservation
+	Elapsed       time.Duration
+	StoreRequests []string
+}
+
+// typedFailure accepts only a normalized failure: an empty report, an
+// incomplete audit and a reviewer error class other than "other". Fenced auth
+// is typed too; an unproven stop never is.
+func (in exhaustionInput) typedFailure() bool {
+	class := errorClass(in.Err)
+	typed := strings.HasPrefix(class, "phase-") || class == "deadline-or-cancel" || class == "auth-recovery"
+	return in.Err != nil && typed && r.Digest(in.Report) == r.Digest(r.Report{}) && !in.AuditComplete
+}
+
+func coverageHas(coverage []r.Coverage, reason string) bool {
+	for _, c := range coverage {
+		if strings.Contains(c.Reason, reason) {
+			return true
+		}
+	}
+	return false
+}
+
+// honestPartial accepts a complete report only when its authoritative
+// coverage records an omission matching want. Otherwise it must be a typed
+// failure.
+func (in exhaustionInput) honestPartial(want func(r.Coverage) bool) bool {
+	if in.Err != nil {
+		return in.typedFailure()
+	}
+	if !in.AuditComplete {
+		return false
+	}
+	for _, c := range in.Report.Coverage {
+		if want(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// noSource means no source tool call reached the broker. When a deadline
+// loses the guest's source audit, the host store must have seen nothing.
+func (in exhaustionInput) noSource() bool {
+	if in.Source == nil {
+		return in.Err != nil && len(in.StoreRequests) == 0
+	}
+	return in.Source.ToolCalls == 0 && len(in.Source.Reads) == 0
+}
+
+func exhaustionChecks(in exhaustionInput) map[string]bool {
+	checks := map[string]bool{}
+	pa := in.Provider
+	// Usage is never claimed for failed work. The provider receipt is HTTP
+	// evidence only; a forwarded request without an accepted response marks
+	// upstream work that may have been consumed but was not delivered.
+	checks["usage-not-claimed"] = in.Err == nil || !in.Report.Usage.Known && in.Report.Usage.Turns == 0
+	checks["provider-bounds-held"] = pa != nil && pa.Stopped && pa.InferenceRequests <= in.Policy.InferenceRequests && pa.Requests <= in.Policy.Requests && pa.RequestBytes+pa.ResponseBytes <= in.Policy.TotalBytes+2
+	switch in.Name {
+	case "claude-response-flood", "codex-response-flood":
+		checks["typed-failure"] = in.typedFailure()
+		checks["flood-passed-bound"] = in.Observation.FloodBytes > in.Policy.ResponseBytes
+		checks["egress-exhausted"] = pa != nil && pa.Failed && pa.Exhausted && pa.InferenceRequests == 1 && pa.Forwarded == pa.Responses+1 && pa.ResponseBytes > in.Policy.ResponseBytes
+		checks["single-inference"] = in.Counts.Inference == 1
+		checks["no-source-access"] = in.noSource()
+	case "claude-stall", "codex-stall":
+		checks["typed-failure"] = in.typedFailure()
+		checks["guard-cancelled-stall"] = in.Observation.Results["stall"] == "cancelled-by-guard"
+		checks["unaccepted-upstream-recorded"] = pa != nil && pa.Failed && pa.InferenceRequests == 1 && pa.Forwarded == pa.Responses+1
+		// The phase deadline, not a client or fixture timer, ends the stall,
+		// and cleanup is bounded after it.
+		checks["deadline-bounded"] = in.Elapsed >= in.Limits.Timeout-time.Second && in.Elapsed <= in.Limits.Timeout+30*time.Second
+		checks["single-inference"] = in.Counts.Inference == 1
+		checks["no-source-access"] = in.noSource()
+	case "claude-turn-flood", "codex-turn-flood":
+		limit := in.Policy.InferenceRequests
+		checks["typed-failure"] = in.typedFailure()
+		// Either the client's own turn limit or the host inference bound must
+		// end the session at the bound, and every turn's tool really ran.
+		// Claude stops itself at --max-turns, equal to the bound; Codex has no
+		// turn limit and the guard must refuse the next inference.
+		checks["turn-bound-reached"] = pa != nil && in.Counts.Inference == limit && pa.InferenceRequests == limit && (pa.Exhausted || !pa.Failed)
+		checks["every-turn-used-source"] = in.Observation.SourceResults >= in.Counts.Inference-1 && in.Source != nil && in.Source.ToolCalls >= in.Counts.Inference-1
+	case "codex-source-flood":
+		calls := in.Limits.ReaderCalls
+		checks["tool-call-bound"] = in.Source != nil && in.Source.ToolCalls == calls && in.Source.Exhausted && coverageHas(in.Source.Coverage, "source tool-call limit exhausted")
+		checks["client-saw-bound"] = in.Observation.Probe["ok"] == itoa(calls) && in.Observation.Probe["err"] == itoa(f.SourceFloodCalls-calls)
+		checks["honest-outcome"] = in.honestPartial(func(c r.Coverage) bool { return strings.Contains(c.Reason, "source tool-call limit exhausted") })
+	case "claude-source-oversize", "codex-source-oversize":
+		second := in.Observation.Results["second-read"]
+		first := in.Observation.Results["first-read"]
+		if strings.HasPrefix(in.Name, "codex-") {
+			first, second = in.Observation.Probe["first-read"], in.Observation.Probe["second-read"]
+			checks["first-read-delivered"] = strings.HasPrefix(first, "ok:"+itoa(f.BigObjectBytes)+":")
+			checks["second-read-denied"] = strings.HasPrefix(second, "error:") && strings.Contains(second, "Source request denied")
+		} else {
+			checks["first-read-delivered"] = first != "" && first != "missing" && first != "denied" && !strings.HasPrefix(first, "error-other") && first != "canary-disclosed"
+			checks["second-read-denied"] = second == "denied"
+		}
+		bigReads := 0
+		if in.Source != nil {
+			for _, read := range in.Source.Reads {
+				if read.Path == "big.go" {
+					bigReads++
+				}
+			}
+		}
+		// The byte bound must hold: one big read served and counted, the
+		// second refused and listed as an omission of big.go. The recorded
+		// reason is not asserted; see HOSTILE-FIXTURES.md.
+		omitted := func(c r.Coverage) bool { return c.Path == "big.go" }
+		checks["byte-bound"] = in.Source != nil && bigReads == 1 && in.Source.Bytes == f.BigObjectBytes && in.Source.Bytes <= in.Limits.ReaderBytes && slices.ContainsFunc(in.Source.Coverage, omitted)
+		checks["honest-outcome"] = in.honestPartial(omitted)
+	case "codex-code-memory", "codex-code-output-flood", "codex-code-spin":
+		var host codeHostAudit
+		decoded := len(in.CodeHost) != 0 && json.Unmarshal(in.CodeHost, &host) == nil
+		checks["typed-failure"] = in.typedFailure()
+		// A lost finished record carries no code-host receipt; the refusal is
+		// then the typed failure itself, never an accepted exchange.
+		checks["code-host-not-accepted"] = len(in.CodeHost) == 0 || string(in.CodeHost) == "null" || decoded && host.Stopped && (host.Failed || !host.RelayComplete)
+		checks["no-source-access"] = in.noSource()
+	default:
+		checks["known-exhaustion-case"] = false
+	}
+	return checks
+}
+
+func itoa(n int) string {
+	raw, _ := json.Marshal(n)
+	return string(raw)
+}

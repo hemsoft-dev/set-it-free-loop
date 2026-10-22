@@ -96,10 +96,10 @@ func sourceReport(s r.Session) r.Report {
 }
 func (b *Backend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	if len(b.secrets) != 0 {
-		raw, err := io.ReadAll(io.LimitReader(q.Body, (2<<20)+1))
+		raw, err := io.ReadAll(io.LimitReader(q.Body, fakeRequestCap+1))
 		_ = q.Body.Close()
 		b.scan(q, raw)
-		if err != nil || len(raw) > 2<<20 {
+		if err != nil || len(raw) > fakeRequestCap {
 			http.Error(w, "request cap", 413)
 			return
 		}

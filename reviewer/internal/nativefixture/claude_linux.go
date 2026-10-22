@@ -29,14 +29,14 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.requests++
-	raw, readErr := io.ReadAll(io.LimitReader(q.Body, (2<<20)+1))
+	raw, readErr := io.ReadAll(io.LimitReader(q.Body, fakeRequestCap+1))
 	_ = q.Body.Close()
 	headers := []string{}
 	for h := range q.Header {
 		headers = append(headers, h)
 	}
 
-	if readErr != nil || len(raw) > 2<<20 {
+	if readErr != nil || len(raw) > fakeRequestCap {
 		b.failures++
 		http.Error(w, "request cap", 413)
 		return
@@ -51,7 +51,14 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	b.calls++
-	if b.calls > 6 && (b.hostile == nil || b.calls > HostileSourceCalls()+1) {
+	limit := 6
+	if b.hostile != nil {
+		limit = HostileSourceCalls() + 1
+		if b.hostile.c.Kind == HostileExhaust {
+			limit = exhaustionInferenceCap(b.hostile.c.Name)
+		}
+	}
+	if b.calls > limit {
 		b.failures++
 		http.Error(w, "fixture request cap", 429)
 		return
@@ -87,6 +94,12 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		b.failures++
 
 		http.Error(w, "source/structured tools missing", 500)
+		return
+	}
+	if b.hostile != nil && b.hostile.c.Kind == HostileExhaust {
+		b.hostile.obs.Turns = b.calls
+		b.hostile.obs.Inventory = claudeInventory(body)
+		b.exhaustionTurn(w, q, body)
 		return
 	}
 	if b.hostile != nil {

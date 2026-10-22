@@ -97,6 +97,19 @@ class HostileMatrixTests(unittest.TestCase):
         partial = result("codex-metadata", 1, Passed=False, Checks={"inventory-fixed": False})
         self.assertEqual(module.verdict("codex-metadata", partial), "fail")
 
+    def test_exhaustion_list_matches_the_go_fixture(self):
+        source = (Path(__file__).resolve().parent.parent/"internal"/"nativefixture"/"exhaustion_linux.go").read_text()
+        declared = re.findall(r'\{"((?:claude|codex)-[a-z-]+)", r\.(Claude|Codex), HostileExhaust\}', source)
+        self.assertEqual([(provider.lower(), name) for name, provider in declared], module.EXHAUSTION)
+        self.assertEqual(module.cases("exhaustion"), module.EXHAUSTION)
+        self.assertFalse(set(module.EXHAUSTION) & set(module.cases()))
+
+    def test_memory_peak_is_the_last_accounting_line(self):
+        log = ("Started x.\nx.service: Consumed 4.790s CPU time over 5.090s wall clock time, 1.1G memory peak.\n"
+               "x.service: Consumed 1.000s CPU time, 812.5M memory peak.\n")
+        self.assertEqual(module.parse_peak(log), "812.5M")
+        self.assertIsNone(module.parse_peak("Started x.\n"))
+
     def test_only_complete_contained_results_pass(self):
         self.assertEqual(module.verdict("codex-shell", result("codex-shell")), "pass")
         for bad in [result("codex-shell", Passed=False), result("codex-shell", HostContained=False),

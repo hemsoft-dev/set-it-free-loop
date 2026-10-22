@@ -45,6 +45,8 @@ type hostileReceipt struct {
 	Source                                                       *r.SourceAccess
 	ProviderAccess                                               *r.ProviderAccess
 	CodeHost                                                     json.RawMessage
+	ReportCoverage                                               []r.Coverage `json:",omitempty"`
+	UsageKnown                                                   bool
 }
 
 func errorClass(err error) string {
@@ -248,7 +250,11 @@ func runNativeHostile(c config) error {
 		return err
 	}
 	objects := f.NewHostileStore(canaries)
-	reader, err := r.NewReader(objects, snapshot, f.HostilePaths(), limits)
+	paths := f.HostilePaths()
+	if hc.Kind == f.HostileExhaust {
+		paths = f.ExhaustionPaths()
+	}
+	reader, err := r.NewReader(objects, snapshot, paths, limits)
 	if err != nil {
 		return err
 	}
@@ -285,11 +291,11 @@ func runNativeHostile(c config) error {
 		returned = syntheticTokensReturned(c.Provider, current)
 		return current, nil
 	})
-	paths, globErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "unit.json"))
+	units, globErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "unit.json"))
 	var unit cancellationUnitReceipt
 	var audit hostileAudit
-	unitRead := globErr == nil && len(paths) == 1 && readProtocolJSON(paths[0], &unit) == nil && readProtocolJSON(filepath.Join(filepath.Dir(paths[0]), "native-audit.json"), &audit) == nil
-	bound := unitRead && unit.Binding.SessionHash == r.Digest(s) && unit.Binding.LaunchID == filepath.Base(filepath.Dir(paths[0])) && audit.Binding == unit.Binding
+	unitRead := globErr == nil && len(units) == 1 && readProtocolJSON(units[0], &unit) == nil && readProtocolJSON(filepath.Join(filepath.Dir(units[0]), "native-audit.json"), &audit) == nil
+	bound := unitRead && unit.Binding.SessionHash == r.Digest(s) && unit.Binding.LaunchID == filepath.Base(filepath.Dir(units[0])) && audit.Binding == unit.Binding
 	roots, rootErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "qemu-runtime"))
 	reportRaw, _ := json.Marshal(report)
 	requests := objects.Requests()
@@ -345,6 +351,26 @@ func runNativeHostile(c config) error {
 		checks["planned-inferences"] = counts.Inference == 2 && counts.Failures == 0
 		checks["code-host-contained"] = probeContained(obs.Probe) && obs.MediaInputs == 0
 		checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
+	case f.HostileExhaust:
+		// A deadline may leave auth fenced for recovery instead of returned.
+		// Either is accepted only when it agrees with the audit, the error and
+		// a reopened store.
+		delete(checks, "auth-returned")
+		pending, hash, valid := authDisposition(store)
+		reopened, openErr := r.NewAuthStore(c.Provider, filepath.Join(c.Root, "auth"))
+		consistent := false
+		if openErr == nil {
+			otherPending, otherHash, otherValid := authDisposition(reopened)
+			consistent = otherValid && otherPending == pending && otherHash == hash
+		}
+		checks["auth-returned-or-fenced"] = valid && consistent && audit.AuthExported && audit.AuthReturned != pending && pending == errors.Is(reviewErr, r.ErrAuthRecoveryRequired)
+		in := exhaustionInput{Name: hc.Name, Err: reviewErr, Report: report, Source: access, Policy: policy.Limits, Limits: limits, AuditComplete: audit.Complete, CodeHost: audit.CodeHost, Counts: counts, Observation: obs, Elapsed: time.Duration(elapsed) * time.Millisecond, StoreRequests: requests}
+		if evidence != nil {
+			in.Provider = &evidence.Access
+		}
+		for name, ok := range exhaustionChecks(in) {
+			checks[name] = ok
+		}
 	case f.HostileMetadata:
 		// The injected response must actually have reached the client;
 		// otherwise "no effect" would prove nothing.
@@ -376,6 +402,9 @@ func runNativeHostile(c config) error {
 	receipt := hostileReceipt{Version: 1, Purpose: "native-fake-hostile", RunnerSourceHead: sourceHead, RunnerSourceTree: sourceTree, ImageSourceHead: c.ImageSourceHead, Case: hc.Name, Kind: hc.Kind, Provider: c.Provider, FakeOnly: true, Checks: checks, State: state, ErrorClass: errorClass(reviewErr), ErrorText: errorText(reviewErr), Stage: audit.Stage, GuestStage: audit.GuestStage, Failure: audit.Failure, ElapsedMS: elapsed, Counts: counts, Observation: obs, StoreRequests: requests, DeniedDestinations: denied.Load(), Source: access, CodeHost: audit.CodeHost}
 	if evidence != nil {
 		receipt.ProviderAccess = &evidence.Access
+	}
+	if hc.Kind == f.HostileExhaust {
+		receipt.ReportCoverage, receipt.UsageKnown = report.Coverage, report.Usage.Known
 	}
 	receipt.CanaryHits = hostileCanaryHits{backend.CanaryRequestHits(), f.CanaryHits(reportRaw, secrets), fileCanaryHits(c.Root, secrets), 0}
 	receipt.Passed, receipt.HostContained = passed, contained

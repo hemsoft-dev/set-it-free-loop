@@ -11,6 +11,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import time
@@ -30,6 +31,16 @@ HOSTILE = [
 ]
 # Existing denial cases: Claude Bash write and Codex apply_patch write.
 BASELINE = [("claude", "forbidden"), ("codex", "forbidden")]
+# Resource-exhaustion cases, in the order of internal/nativefixture
+# exhaustionCases. Selected with --matrix exhaustion; no baseline is added.
+EXHAUSTION = [
+    ("claude", "claude-response-flood"), ("claude", "claude-turn-flood"), ("claude", "claude-stall"),
+    ("claude", "claude-source-oversize"),
+    ("codex", "codex-response-flood"), ("codex", "codex-turn-flood"), ("codex", "codex-stall"),
+    ("codex", "codex-source-flood"), ("codex", "codex-source-oversize"), ("codex", "codex-code-memory"),
+    ("codex", "codex-code-output-flood"), ("codex", "codex-code-spin"),
+]
+PEAK = re.compile(r"Consumed .*?, ([0-9.]+[KMGT]?) memory peak")
 # A pinned client that re-advertises a forbidden tool is a recorded client
 # failure even when every host layer contains it. It never becomes a pass.
 CLIENT_FAILURE_CHECKS = {"inventory-fixed", "no-backend-problem"}
@@ -57,7 +68,9 @@ CASE_KINDS = {name: "source-reader" if name.endswith("-source-mcp") else "code-h
               for _, name in HOSTILE}
 
 
-def cases():
+def cases(matrix="hostile"):
+    if matrix == "exhaustion":
+        return list(EXHAUSTION)
     return [(provider, name) for provider, name in HOSTILE + BASELINE]
 
 
@@ -101,6 +114,23 @@ def unit_stopped(unit, props, anchor=Path("/sys/fs/cgroup")):
         return "populated 0" in (group/"cgroup.events").read_text() and not (group/"cgroup.procs").read_text().strip()
     except FileNotFoundError:
         return True
+
+
+def memory_peak(unit):
+    """The user manager's own accounting line for the stopped unit, if any.
+    It covers the whole unit cgroup: QEMU, its guest RAM and the stub."""
+    try:
+        raw = subprocess.run(["journalctl", "--user", "-u", unit, "-o", "cat", "--no-pager"],
+                             capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return parse_peak(raw)
+
+
+def parse_peak(text):
+    """Last 'memory peak' value systemd logged for a unit, or None."""
+    found = PEAK.findall(text)
+    return found[-1] if found else None
 
 
 def manager_properties(name):
@@ -281,9 +311,11 @@ def run_case(script, args, provider, name, output):
                 "exit_code": returncode, "result": "malformed", "runner_head": receipt.get("source_commit"),
                 "unit_stopped_independently": stop_new_units(before, owned()), "abort": True}
     stopped = False
+    peak = None
     if unit is not None:
         try:
             stopped = unit_stopped(unit, manager_properties(unit["Unit"])) and not (units[0].parent/"qemu-runtime").exists()
+            peak = memory_peak(unit["Unit"])
         except (KeyError, TypeError, AttributeError, subprocess.SubprocessError):
             stopped = False
     if not stopped:
@@ -305,6 +337,7 @@ def run_case(script, args, provider, name, output):
             "state": result.get("State"), "error_class": result.get("ErrorClass"),
             "guest_stage": result.get("GuestStage"), "failed_checks": sorted(k for k, v in (result.get("Checks") or {}).items() if v is not True),
             "elapsed_seconds": receipt["elapsed_seconds"], "unit_stopped_independently": stopped,
+            "runner_elapsed_ms": result.get("ElapsedMS"), "unit_memory_peak": peak,
             "result": str(result_path),
             "result_sha256": hashlib.sha256(result_path.read_bytes()).hexdigest() if result_path.exists() else None}
 
@@ -326,11 +359,12 @@ def main():
     parser.add_argument("--go", required=True)
     parser.add_argument("--module-cache", type=Path, required=True)
     parser.add_argument("--only", action="append", default=[])
+    parser.add_argument("--matrix", choices=["hostile", "exhaustion"], default="hostile")
     args = parser.parse_args()
-    unknown = sorted(set(args.only) - {name for _, name in cases()})
+    unknown = sorted(set(args.only) - {name for _, name in cases(args.matrix)})
     if unknown:
         parser.error("unknown case: " + ", ".join(unknown))
-    selected = [c for c in cases() if not args.only or c[1] in args.only]
+    selected = [c for c in cases(args.matrix) if not args.only or c[1] in args.only]
     if not selected:
         parser.error("no matching case")
     args.output.mkdir(mode=0o700, parents=False, exist_ok=False)

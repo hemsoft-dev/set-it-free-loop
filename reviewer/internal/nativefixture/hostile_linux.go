@@ -58,7 +58,7 @@ var hostileCases = []HostileCase{
 func HostileCases() []HostileCase { return slices.Clone(hostileCases) }
 
 func LookupHostile(name string, provider r.Provider) (HostileCase, bool) {
-	for _, c := range hostileCases {
+	for _, c := range append(slices.Clone(hostileCases), exhaustionCases...) {
 		if c.Name == name && c.Provider == provider {
 			return c, true
 		}
@@ -173,6 +173,9 @@ func (s *HostileStore) Read(_ context.Context, revision, path string, limit int)
 		object.Data = []byte(hostileInjection)
 	case revision == head && path == "link.go":
 		object = r.Object{Mode: "120000", Data: []byte("../../profile/" + s.canaries.Symlink)}
+	case revision == head && path == "big.go":
+		// Deliberately ignores limit: the reader and object stream own it.
+		return r.Object{Mode: "100644", Data: bigObject()}, nil
 	case revision == strings.Repeat("b", 40) || revision == strings.Repeat("c", 40):
 		return r.Object{}, errors.New("fake object denied")
 	case revision != head:
@@ -233,6 +236,10 @@ type HostileObservation struct {
 	InjectedSettings int
 	MediaInputs      int
 	Problems         []string
+	// Exhaustion cases: bytes the fake model wrote into a flood response and
+	// valid source results the client returned during a turn flood.
+	FloodBytes    int
+	SourceResults int
 }
 
 type hostileState struct {
@@ -263,6 +270,11 @@ func NewHostile(s r.Session, name string, c Canaries) (*Backend, r.EgressPolicy,
 	if hc.Kind == HostileSource && hc.Provider == r.Claude {
 		policy.Limits.InferenceRequests = len(hostileSourceCalls()) + 1
 		policy.Limits.Requests = policy.Limits.InferenceRequests
+	}
+	if hc.Name == "claude-turn-flood" {
+		// Measure the production turn bound, not the three-turn fixture cap.
+		policy.Limits.InferenceRequests = s.Limits.MaxTurns
+		policy.Limits.Requests = s.Limits.MaxTurns
 	}
 	b.hostile = state
 	b.secrets = state.secrets
