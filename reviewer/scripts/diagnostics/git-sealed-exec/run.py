@@ -11,10 +11,13 @@ import json
 import os
 from pathlib import Path
 import secrets
+import runpy
 import shutil
 import struct
 import subprocess
 import time
+
+FixtureUnit = runpy.run_path(str(Path(__file__).resolve().parents[2]/"fixture-unit.py"))["FixtureUnit"]
 
 PARENT = r'''
 import fcntl,json,os,pathlib,subprocess,sys
@@ -162,8 +165,11 @@ def main():
     command = ['/usr/bin/systemd-run', '--user', '--quiet', '--wait', '--pipe', '--collect',
                '--unit='+unit]+['--property='+value for value in properties]
     command += ['--', '/usr/bin/python3', '-I', '-S', '-c', PARENT, str(output), args.bwrap]
+    owner = FixtureUnit(unit, 'SFL inert sealed-exec diagnostic '+unit, output, environment)
     try:
-        result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=20)
+        process = owner.start(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate(timeout=20)
+        result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
         if len(result.stdout) > 65536 or len(result.stderr) > 4096:
             raise RuntimeError('unit diagnostic output exceeds bound')
         report.update(unit_exit=result.returncode, unit_stderr=result.stderr)
@@ -192,15 +198,15 @@ def main():
                       and cell['method'] in ['proc', 'direct']]
             report['exec_compatible'] = len(actual) == 2 and all(reached_target(cell) for cell in actual)
     finally:
-        stopped = subprocess.run(['/usr/bin/systemctl', '--user', 'stop', unit],
-                                 env=environment, capture_output=True, text=True, timeout=8)
-        status = subprocess.run(['/usr/bin/systemctl', '--user', 'show', unit,
-                                 '--property=LoadState,ActiveState,SubState,MainPID'],
-                                env=environment, capture_output=True, text=True, timeout=8)
-        report.update(stop_exit=stopped.returncode, final_status=status.stdout,
-                      status_stderr=status.stderr, finished_at=time.time())
-        report['settled'] = 'ActiveState=inactive' in status.stdout and 'MainPID=0' in status.stdout
-        artifact(output, 'result.json', report)
+        try:
+            owner.stop()
+            if owner.process is not None:
+                owner.process.communicate(timeout=5)
+            report.update(settled=True, original_unit_stop_receipt=str(output/'unit-stopped.json'),
+                          final_status=owner.observe(), finished_at=time.time())
+        finally:
+            owner.close()
+            artifact(output, 'result.json', report)
     print(json.dumps({key: report.get(key) for key in ['comparison_collected', 'exec_compatible',
                      'settled', 'qualified', 'noswap_qualified', 'unit']}))
     if not report['comparison_collected'] or not report['settled']:

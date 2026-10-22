@@ -21,8 +21,12 @@ The driver and C source have their own hashes, including during an unpublished
 source qualification. Output directories are never reused.
 
 One inert user unit has a ten-second runtime, 256 MiB memory, zero swap and
-32-task limits. The script records intent before starting it and stops the
-exact unit on success or failure. These diagnostic limits are not the complete
+32-task limits. The script records intent, pauses its trusted bootstrap before
+payload exec and captures the original invocation, cgroup and PID descriptors.
+Cleanup kills only that captured cgroup and proves it empty with the original
+root dead. It never stops a reusable unit name. A missing capture leaves stop
+unknown. The bounded birth, capture and stop records stay in the private output.
+These diagnostic limits are not the complete
 production unit. In particular, its temporary workspace does not qualify the
 required bounded `noswap` acquisition mount.
 

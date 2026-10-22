@@ -9,10 +9,13 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import secrets
 import stat
 import subprocess
 import time
+
+FixtureUnit = runpy.run_path(str(Path(__file__).with_name("fixture-unit.py")))["FixtureUnit"]
 
 FIXTURE_FILES = {"source.go": b"original source\n", "worker.go": b"worker-only evidence\n"}
 
@@ -183,9 +186,10 @@ def run_fixture(output, manifest, kernel, image, sealed_boot=None):
     process = None
     failure = None
     final = None
+    owner = FixtureUnit(unit, description, output, manager_env)
     try:
         with (output / "unit.log").open("xb") as log:
-            process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, env=manager_env)
+            process = owner.start(command, stdout=log, stderr=subprocess.STDOUT)
             deadline = time.monotonic()+130
             while process.poll() is None:
                 if time.monotonic() >= deadline:
@@ -234,29 +238,13 @@ def run_fixture(output, manifest, kernel, image, sealed_boot=None):
         failure = error
     cleanup_error = None
     try:
-        # Ownership is the fresh unit nonce and fixed description. Never stop a
-        # unit whose live description differs, even if a stale name was reused.
-        observed = subprocess.run(["/usr/bin/systemctl", "--user", "show", unit, "--property=Description,InvocationID,ActiveState,LoadState"],
-                                  env=manager_env, capture_output=True, timeout=3)
-        state = dict(line.split("=", 1) for line in observed.stdout.decode().splitlines() if "=" in line)
-        if state.get("Description") == description:
-            if properties and state.get("InvocationID") and state["InvocationID"] != properties["InvocationID"]:
-                raise RuntimeError("unit invocation changed; cleanup ownership uncertain")
-            stopped = subprocess.run(["/usr/bin/systemctl", "--user", "stop", unit], env=manager_env, capture_output=True, timeout=10)
-            if stopped.returncode != 0:
-                raise RuntimeError("owned fixture unit could not be stopped")
-        elif state.get("LoadState") != "not-found" and state.get("ActiveState") != "inactive":
-            raise RuntimeError("fixture unit ownership changed; no unrelated unit stopped")
-        if process is not None and process.poll() is None:
-            process.terminate()
-            process.wait(timeout=5)
-        observed = subprocess.run(["/usr/bin/systemctl", "--user", "show", unit, "--property=ActiveState,LoadState"],
-                                  env=manager_env, capture_output=True, timeout=3)
-        state = dict(line.split("=", 1) for line in observed.stdout.decode().splitlines() if "=" in line)
-        if state.get("LoadState") != "not-found" and state.get("ActiveState") != "inactive":
-            raise RuntimeError("fixture unit termination not established")
+        owner.stop()
+        if owner.process is not None:
+            owner.process.wait(timeout=5)
     except Exception as error:
         cleanup_error = error
+    finally:
+        owner.close()
     if failure is not None:
         if cleanup_error is not None:
             failure.add_note("Fixture cleanup also failed: "+str(cleanup_error))
@@ -264,6 +252,7 @@ def run_fixture(output, manifest, kernel, image, sealed_boot=None):
     if cleanup_error is not None:
         raise cleanup_error
     final["host_unit_stopped"] = True
+    final["original_unit_stop_receipt"] = str(output/"unit-stopped.json")
     write_json(output / "result.json", final)
     print(json.dumps({"result": str(output / "result.json"), "state": "passed"}))
 
