@@ -173,8 +173,14 @@ prior report hashes, verifies real source read/search exchanges against fake
 TLS, and checks auth recovery. Each private unit must record completion, auth
 return and whole-unit stop. A completed engine checkpoint must resume without
 another VM or a changed ledger. The canned findings and peer judgments test
-transport and protocol, not review quality. Interrupted refresh/crash recovery and hostile
-capability qualification remain separate requirements.
+transport and protocol, not review quality. Interrupted refresh/crash recovery
+remains a separate requirement.
+
+`--case hostile --hostile NAME` drives both pinned clients with forbidden tool,
+hostile source, code-mode and metadata turns. Canaries are scanned throughout.
+[HOSTILE-FIXTURES.md](HOSTILE-FIXTURES.md) records the measured matrix and the
+per-client capability matrix. It also records a contained Codex client failure
+that blocks live Codex use, and the code-mode owner decision.
 
 The captured host runtime includes the ancillary Linux boot ROM selected by the
 [x86 loader in QEMU 10.2.1](https://raw.githubusercontent.com/qemu/qemu/v10.2.1/hw/i386/x86-common.c).

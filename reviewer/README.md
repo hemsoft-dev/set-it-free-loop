@@ -43,7 +43,9 @@ Its tests launch fake wrapper executables. `NativeDriver` also handles native
 client framing and Claude's source-enabled preprompt initialization guard.
 The [native VM host and guest](NATIVE-VM.md) connect the pinned clients to a
 separate reader, private provider transport and one-use auth transfer. Both
-clients have completed opt-in KVM reviews against fake TLS. Full runtime
+clients have completed opt-in KVM reviews against fake TLS. The
+[hostile capability fixtures](HOSTILE-FIXTURES.md) record measured refusals.
+Live Codex use is blocked by a contained client capability failure. Full runtime
 qualification and live execution still require passing gates and activation
 authority. Substituting a fake is not production isolation proof. Optional
 trusted `SourceBridge` configuration binds each session to
