@@ -193,3 +193,67 @@ func TestSystemdAbandonedStartTrackingCanBeRetiredWithoutStoppingByName(t *testi
 		t.Fatal("abandoned tracking retained")
 	}
 }
+
+func TestSystemdUnitReferenceDoesNotRetryUnknownReplies(t *testing.T) {
+	for _, failed := range []bool{false, true} {
+		t.Run(fmt.Sprint(failed), func(t *testing.T) {
+			calls := 0
+			m := &dbusContainmentManager{calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, method string, _ ...any) ([]any, error) {
+				if method != systemdManagerInterface+".RefUnit" {
+					t.Fatal("unexpected operation", method)
+				}
+				calls++
+				if failed {
+					return nil, errors.New("synthetic lost reply after accepted reference")
+				}
+				return nil, nil
+			})}
+			unit := "sfl-alpha-" + strings.Repeat("a", 32) + ".service"
+			for n := 0; n < 30; n++ {
+				if err := m.referenceUnit(context.Background(), unit); (err != nil) != failed {
+					t.Fatal("reference outcome changed", err)
+				}
+			}
+			if calls != 1 {
+				t.Fatal("reference reacquired", calls)
+			}
+		})
+	}
+}
+
+func TestSystemdReferenceWaiterCancellationDoesNotWaitForOtherPoll(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	m := &dbusContainmentManager{calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, _ string, _ ...any) ([]any, error) {
+		close(entered)
+		<-release
+		return nil, nil
+	})}
+	unit := "sfl-alpha-0123456789abcdef0123456789abcdef.service"
+	owner := make(chan error, 1)
+	go func() { owner <- m.referenceUnit(context.Background(), unit) }()
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	waiter := make(chan error, 1)
+	go func() { waiter <- m.referenceUnit(ctx, unit) }()
+	var got error
+	blocked := false
+	select {
+	case got = <-waiter:
+	case <-time.After(200 * time.Millisecond):
+		blocked = true
+	}
+	close(release)
+	if err := <-owner; err != nil {
+		t.Fatal(err)
+	}
+	if blocked {
+		got = <-waiter
+	}
+	if err := m.referenceUnit(context.Background(), unit); err != nil {
+		t.Fatal("waiter cancellation poisoned owner result", err)
+	}
+	if blocked || got != context.DeadlineExceeded {
+		t.Fatalf("canceled waiter blocked=%v outcome=%v", blocked, got)
+	}
+}

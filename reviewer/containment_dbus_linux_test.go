@@ -201,6 +201,22 @@ func TestSystemdActualDBusTransportAgainstPrivateFakeManager(t *testing.T) {
 	if err != nil || o.Job.ID != 0 || o.TasksMax != 64 || o.InvocationID != strings.Repeat("d", 32) {
 		t.Fatal(o, err)
 	}
+	// Concurrent shutdown polls must retain one unit reference, not one
+	// reference for each observation. Exercise the real D-Bus adapter.
+	var polls sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		polls.Add(1)
+		go func() {
+			defer polls.Done()
+			for n := 0; n < 12; n++ {
+				if _, err := manager.Observe(ctx, fake.unit); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	polls.Wait()
 	fd, err := unix.PidfdOpen(os.Getpid(), 0)
 	if err != nil {
 		t.Fatal(err)

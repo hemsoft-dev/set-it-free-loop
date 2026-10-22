@@ -231,11 +231,18 @@ func (j *systemdJobs) wait(ctx context.Context, p, unit string) error {
 	}
 }
 
+type systemdUnitReference struct {
+	done chan struct{}
+	err  error
+}
+
 type dbusContainmentManager struct {
-	calls systemdCalls
-	owner string
-	jobs  *systemdJobs
-	close func() error
+	referenceMu sync.Mutex
+	references  map[string]*systemdUnitReference
+	calls       systemdCalls
+	owner       string
+	jobs        *systemdJobs
+	close       func() error
 }
 
 func (m *dbusContainmentManager) Owner() string { return m.owner }
@@ -470,6 +477,42 @@ func (m *dbusContainmentManager) properties(ctx context.Context, p dbus.ObjectPa
 	}
 	return values, nil
 }
+
+// One reference per owned unit and manager connection keeps final metadata
+// available throughout polling. Closing the connection releases its references.
+// An uncertain RefUnit reply is retained too: retrying could add another ref.
+func (m *dbusContainmentManager) referenceUnit(ctx context.Context, unit string) error {
+	if !validContainmentUnit(unit) {
+		return ErrAuthRecoveryRequired
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	m.referenceMu.Lock()
+	if m.references == nil {
+		m.references = map[string]*systemdUnitReference{}
+	}
+	reference, seen := m.references[unit]
+	if !seen {
+		reference = &systemdUnitReference{done: make(chan struct{})}
+		m.references[unit] = reference
+	}
+	m.referenceMu.Unlock()
+	if !seen {
+		// Only the creator sends RefUnit. The closed channel publishes its result.
+		_, reference.err = m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".RefUnit", unit)
+		close(reference.done)
+	}
+	// Each concurrent observer keeps its own deadline; cancellation of a waiter
+	// does not cancel or poison another observer's in-flight reference.
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-reference.done:
+		return reference.err
+	}
+}
+
 func (m *dbusContainmentManager) Observe(ctx context.Context, unit string) (unitObservation, error) {
 	var o unitObservation
 	o.Unit = unit
@@ -480,9 +523,9 @@ func (m *dbusContainmentManager) Observe(ctx context.Context, unit string) (unit
 	if err != nil || dbus.Store(body, &o.Path) != nil || !o.Path.IsValid() {
 		return o, ErrAuthRecoveryRequired
 	}
-	// Recovery acquires its own reference before stop so GC cannot erase the
-	// exact unit's final identity between JobRemoved and post-stop observation.
-	if _, err = m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".RefUnit", unit); err != nil {
+	// Recovery retains the unit once so GC cannot erase final identity.
+	// Later polls reuse the same connection-owned reference.
+	if err = m.referenceUnit(ctx, unit); err != nil {
 		return o, ErrAuthRecoveryRequired
 	}
 	u, err := m.properties(ctx, o.Path, "org.freedesktop.systemd1.Unit")

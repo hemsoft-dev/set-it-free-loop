@@ -20,8 +20,10 @@ job path can enter the bounded result cache. Unrelated job traffic is ignored.
 Early signals are retained until the method reply binds the exact job; consumed
 or superseded results are removed. Recovery termination does not depend on
 consuming an abandoned start result. Malformed, failed or unknown results cannot become successful
-launch evidence. Recovery takes a unit reference to prevent GC during stop
-observation.
+launch evidence. Recovery takes one unit reference per manager connection to prevent GC during
+stop observation. Concurrent and repeated polls reuse it; an uncertain reference
+reply is retained without retry. Each observer keeps its own cancellation deadline
+while the original request settles. Closing the connection releases its references.
 
 Unit properties use a fixed argv array and `Type=exec`, `Restart=no`,
 `RemainAfterExit=yes`, `CollectMode=inactive`, `AddRef=true`, control-group
