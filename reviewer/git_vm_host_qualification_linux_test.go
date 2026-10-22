@@ -215,7 +215,7 @@ func TestGitVMRunProductionHostActualGit(t *testing.T) {
 	}
 	r := value.Records[0]
 	if !r.Stopped || !r.Revoked || !r.Captured || r.StopBoot != "" || !validAuthHash(r.GrantHash) {
-		t.Fatal("original instance not proved stopped at stage", owner.stopFailure, r)
+		t.Fatal("original instance not proved stopped at stage", owner.lastStopFailure(), r)
 	}
 	observed, observeErr := owner.manager.Observe(ctx, r.Unit)
 	if observeErr == nil && observed.InvocationID == r.Identity.InvocationID && observed.MainPID != 0 {
@@ -225,6 +225,11 @@ func TestGitVMRunProductionHostActualGit(t *testing.T) {
 		if err == nil {
 			materialized.Close()
 			t.Fatal("failed acquisition returned source", fixtureCase)
+		}
+		// These cases qualify specific refusals: the guest must have read
+		// upstream and failed while exporting, not at launch or grant.
+		if (fixtureCase == "exhaust" || fixtureCase == "upstream-fail") && (run.failure() != "export" || calls.Load() < 2) {
+			t.Fatal("refusal reached the wrong stage", fixtureCase, run.failure(), calls.Load())
 		}
 		t.Logf("source VM %s refused after %s with original unit stopped; upstream calls %d", fixtureCase, elapsed, calls.Load())
 		return
@@ -240,12 +245,19 @@ func TestGitVMRunProductionHostActualGit(t *testing.T) {
 	}
 	// The fixture's symlink, binary and submodule entries keep exactly the
 	// host store's plain semantics; the job reader applies its own refusals.
+	modes := map[string]string{}
 	for _, path := range []string{"link", "binary", "submodule", "removed.go"} {
 		got, gotErr := materialized.Read(ctx, snapshot.Head, path, snapshotObjectBytes)
 		want, wantErr := store.Read(ctx, snapshot.Head, path, snapshotObjectBytes)
-		if (gotErr == nil) != (wantErr == nil) || gotErr == nil && !bytes.Equal(got.Data, want.Data) {
+		if (gotErr == nil) != (wantErr == nil) || gotErr == nil && (got.Mode != want.Mode || !bytes.Equal(got.Data, want.Data)) {
 			t.Fatal("hostile path semantics changed through the VM", path, gotErr, wantErr)
 		}
+		modes[path] = got.Mode
+	}
+	// The comparison is not vacuous: the symlink and gitlink both resolve,
+	// with distinct modes that the VM preserved.
+	if modes["link"] == "" || modes["submodule"] == "" || modes["link"] == modes["submodule"] {
+		t.Fatal("hostile fixture entries did not resolve with distinct modes", modes)
 	}
 	t.Logf("production host source VM acquisition passed in %s through %d upstream calls; unit %s invocation %s stopped", elapsed, calls.Load(), r.Unit, r.Identity.InvocationID)
 }

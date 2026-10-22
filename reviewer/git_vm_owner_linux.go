@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -46,6 +47,7 @@ type gitVMUnitOwner struct {
 	grantEligible map[string]bool
 	closed        bool
 	// stopFailure is the fixed stage of the latest refused stop, if any.
+	stageMu     sync.Mutex
 	stopFailure string
 }
 
@@ -582,26 +584,30 @@ func (o *gitVMUnitOwner) stopBeforeCapture(ctx context.Context, r gitVMUnitRecor
 // It never stops a unit by name: that call has no invocation precondition.
 // The composing run must already have joined its channels and grant.
 func (o *gitVMUnitOwner) stop(ctx context.Context, attempt string) error {
+	o.setStopFailure("")
 	if !o.enter(ctx) {
-		return errGitVMOwner
+		return o.refuseStop("enter")
 	}
 	defer o.leave()
 	r, err := o.read(attempt)
 	if err != nil {
-		return errGitVMOwner
+		return o.refuseStop("read")
 	}
 	r.Revoked = true
 	delete(o.grantEligible, attempt)
 	if o.write(r) != nil {
-		return errGitVMOwner
+		return o.refuseStop("revoke")
 	}
 	boot, err := o.kernel.BootID()
 	if err != nil || boot == "" {
-		return errGitVMOwner
+		return o.refuseStop("boot")
 	}
 	if !r.StartIntent {
 		r.Stopped = true
-		return o.write(r)
+		if o.write(r) != nil {
+			return o.refuseStop("receipt")
+		}
+		return nil
 	}
 	if boot != r.BootID {
 		// A new boot proves every original process gone, born or not.
@@ -611,10 +617,13 @@ func (o *gitVMUnitOwner) stop(ctx context.Context, attempt string) error {
 				r.StopBoot = boot
 			}
 		}
-		return o.write(r)
+		if o.write(r) != nil {
+			return o.refuseStop("receipt")
+		}
+		return nil
 	}
 	if r.ManagerOwner != o.manager.Owner() {
-		return errGitVMOwner
+		return o.refuseStop("manager-owner")
 	}
 	bounded, cancel := boundedManagerContext(ctx)
 	defer cancel()
@@ -622,29 +631,35 @@ func (o *gitVMUnitOwner) stop(ctx context.Context, attempt string) error {
 		group := r.Cgroup
 		if !r.Captured {
 			if !r.born() {
-				return errGitVMOwner
+				return o.refuseStop("unborn")
 			}
 			group = r.Birth.Cgroup
 		}
 		if o.kernel.Empty(group) != nil || r.Captured && o.rootDead(r) != nil {
-			return errGitVMOwner
+			return o.refuseStop("stopped-empty")
 		}
-		return o.manager.RetireUnit(bounded, r.Unit)
+		if o.manager.RetireUnit(bounded, r.Unit) != nil {
+			return o.refuseStop("retire")
+		}
+		return nil
 	}
 	if !r.Captured {
 		terminal, handled, terminalErr := o.stopBeforeCapture(bounded, r)
 		if terminalErr != nil {
-			return terminalErr
+			return o.refuseStop("before-capture")
 		}
 		if handled {
 			if o.write(terminal) != nil {
-				return errGitVMOwner
+				return o.refuseStop("receipt")
 			}
-			return o.manager.RetireUnit(bounded, r.Unit)
+			if o.manager.RetireUnit(bounded, r.Unit) != nil {
+				return o.refuseStop("retire")
+			}
+			return nil
 		}
 		r, err = o.captureStarted(bounded, r)
 		if err != nil || o.write(r) != nil {
-			return errGitVMOwner
+			return o.refuseStop("capture")
 		}
 	}
 	before, err := o.settledOriginal(bounded, r)
@@ -665,7 +680,10 @@ func (o *gitVMUnitOwner) stop(ctx context.Context, attempt string) error {
 	if o.write(r) != nil {
 		return o.refuseStop("receipt")
 	}
-	return o.manager.RetireUnit(bounded, r.Unit)
+	if o.manager.RetireUnit(bounded, r.Unit) != nil {
+		return o.refuseStop("retire")
+	}
+	return nil
 }
 
 // settledOriginal observes the captured original invocation before stop. An
@@ -697,10 +715,19 @@ func (o *gitVMUnitOwner) settledOriginal(ctx context.Context, r gitVMUnitRecord)
 }
 
 // refuseStop records a fixed, non-secret stage for the latest stop refusal.
-// Caller holds the owner token.
 func (o *gitVMUnitOwner) refuseStop(stage string) error {
-	o.stopFailure = stage
+	o.setStopFailure(stage)
 	return errGitVMOwner
+}
+func (o *gitVMUnitOwner) setStopFailure(stage string) {
+	o.stageMu.Lock()
+	o.stopFailure = stage
+	o.stageMu.Unlock()
+}
+func (o *gitVMUnitOwner) lastStopFailure() string {
+	o.stageMu.Lock()
+	defer o.stageMu.Unlock()
+	return o.stopFailure
 }
 
 // recover stops every unstopped attempt left by an earlier process. Each

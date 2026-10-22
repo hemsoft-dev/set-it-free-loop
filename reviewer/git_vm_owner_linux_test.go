@@ -495,3 +495,31 @@ func TestGitVMOwnerStopWaitsForOriginalPendingJob(t *testing.T) {
 		}
 	}
 }
+
+// Every stop refusal names its stage, and a later attempt clears it.
+func TestGitVMOwnerStopRecordsEveryRefusalStage(t *testing.T) {
+	f := newGitVMOwnerFixture(t)
+	if f.owner.stop(context.Background(), f.attempt()) == nil || f.owner.lastStopFailure() != "read" {
+		t.Fatal("unknown attempt stage", f.owner.lastStopFailure())
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if f.owner.stop(cancelled, f.attempt()) == nil || f.owner.lastStopFailure() != "enter" {
+		t.Fatal("entry refusal stage", f.owner.lastStopFailure())
+	}
+	if f.owner.prepare(context.Background(), f.request) != nil || f.owner.start(context.Background(), f.attempt(), "/private/source-vm-gate.sock") != nil {
+		t.Fatal("start")
+	}
+	f.manager.mu.Lock()
+	f.manager.owner = "replacement-bus/:1.99"
+	f.manager.mu.Unlock()
+	if f.owner.stop(context.Background(), f.attempt()) == nil || f.owner.lastStopFailure() != "manager-owner" {
+		t.Fatal("manager owner stage", f.owner.lastStopFailure())
+	}
+	f.manager.mu.Lock()
+	f.manager.owner = "synthetic-bus/:1.88"
+	f.manager.mu.Unlock()
+	if f.owner.stop(context.Background(), f.attempt()) != nil || f.owner.lastStopFailure() != "" {
+		t.Fatal("successful stop kept a stale stage", f.owner.lastStopFailure())
+	}
+}
