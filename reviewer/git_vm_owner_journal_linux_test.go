@@ -227,3 +227,67 @@ func TestGitVMOwnerJournalFullBoundRoundTrips(t *testing.T) {
 		t.Fatal("record bound exceeded")
 	}
 }
+
+// A retained lock proves initialization; a missing journal must not be
+// recreated empty, which would forget every owned attempt.
+func TestGitVMOwnerJournalRefusesMissingStateAfterInitialization(t *testing.T) {
+	directory := gitVMOwnerJournalFixture(t)
+	j, err := openGitVMOwnerJournal(context.Background(), directory)
+	if err != nil || j.write(gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{gitVMUnitRecordFixture(t)}}) != nil || j.Close(context.Background()) != nil {
+		t.Fatal("owned journal", err)
+	}
+	if os.Remove(filepath.Join(directory, "source-vm-units.json")) != nil {
+		t.Fatal("lose journal")
+	}
+	if j, err := openGitVMOwnerJournal(context.Background(), directory); err == nil {
+		j.Close(context.Background())
+		t.Fatal("lost journal recreated empty")
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "source-vm-units.json")); !os.IsNotExist(err) {
+		t.Fatal("refused open wrote a journal")
+	}
+}
+
+// Writes on one handle take the operation token: an in-progress operation
+// blocks them, and none can succeed after Close.
+func TestGitVMOwnerJournalSerializesWritesWithClose(t *testing.T) {
+	j, err := openGitVMOwnerJournal(context.Background(), gitVMOwnerJournalFixture(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{gitVMUnitRecordFixture(t)}}
+	<-j.operation
+	done := make(chan error, 1)
+	go func() { done <- j.write(value) }()
+	select {
+	case <-done:
+		t.Fatal("write bypassed the operation token")
+	case <-time.After(50 * time.Millisecond):
+	}
+	j.leave()
+	if err := <-done; err != nil {
+		t.Fatal("serialized write", err)
+	}
+	if j.Close(context.Background()) != nil {
+		t.Fatal("close")
+	}
+	if j.write(value) == nil {
+		t.Fatal("write after close accepted")
+	}
+}
+
+// Record and file bounds agree: 64 maximum-sized records fit, and a record
+// beyond the per-record bound is invalid before it can reach the file.
+func TestGitVMOwnerJournalRecordAndFileBoundsAgree(t *testing.T) {
+	full := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{}}
+	envelope, _ := json.Marshal(full)
+	if len(envelope)+gitVMOwnerRecords*(gitVMOwnerRecordBytes+1) > gitVMOwnerJournalBytes {
+		t.Fatal("file bound cannot hold 64 maximum-sized records")
+	}
+	r := gitVMStoppedRecordFixture(t)
+	r.Birth.Cgroup.Path = "/user.slice/" + strings.Repeat("x", gitVMOwnerRecordBytes) + "/" + r.Unit
+	r.Cgroup = r.Birth.Cgroup
+	if r.valid() {
+		t.Fatal("oversized record accepted")
+	}
+}

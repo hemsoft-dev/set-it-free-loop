@@ -110,9 +110,15 @@ Lifecycle flags must appear in order: start intent, start job, original birth
 (job, invocation ID, unit object path and captured cgroup), settled start,
 captured kernel identity, grant hash, revocation and stop. An unborn record
 stores the zero birth rather than JSON `null`, so the strict decoder accepts the
-canonical bytes it wrote. A single retained lock serializes writers; foreign
-purposes, unknown fields, nulls, duplicate attempts and a replaced root fail
-closed without mutation.
+canonical bytes it wrote. Each record is bounded by the 16 KiB guest request
+frame plus 4 KiB of metadata, and the file bound admits all 64 maximum-sized
+records through the journal's own private reader. A retained lock excludes
+other handles and the operation token serializes writes on one handle, so a
+stale snapshot cannot overwrite a newer one or race `Close`. Once the lock
+exists, a missing journal is refused rather than recreated empty, because that
+would forget owned attempts. Foreign purposes, unknown fields, nulls, duplicate
+attempts, oversized records and a replaced root also fail closed without
+mutation.
 
 The journal is metadata only. It cannot stop a unit, admit a channel or release
 staging, and it holds no provider, auth binding or credential bytes. The source

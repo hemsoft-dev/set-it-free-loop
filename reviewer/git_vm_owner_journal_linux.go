@@ -23,9 +23,12 @@ var errGitVMOwner = errors.New("source VM ownership requires recovery")
 const gitVMOwnerPurpose = "source-vm-unit-owner"
 const gitVMOwnerRecords = 64
 
-// A full journal of bound requests exceeds the 64 KiB auth-file reader, so
-// the journal has its own reader with the same private-file checks.
-const gitVMOwnerJournalBytes = 1 << 20
+// Each record holds one guest request, itself bounded by the 16 KiB guest
+// frame, plus bounded ownership metadata. The file bound admits all 64
+// maximum-sized records, which exceeds the 64 KiB auth-file reader, so the
+// journal has its own reader with the same private-file checks.
+const gitVMOwnerRecordBytes = gitVMRecordBytes + 4096
+const gitVMOwnerJournalBytes = gitVMOwnerRecords*(gitVMOwnerRecordBytes+1) + 4096
 
 type gitVMBirth struct {
 	StartJob, InvocationID string
@@ -60,6 +63,11 @@ type gitVMUnitRecord struct {
 func (r gitVMUnitRecord) born() bool { return r.Birth != (gitVMBirth{}) }
 
 func (r gitVMUnitRecord) valid() bool {
+	request, requestErr := json.Marshal(r.Request)
+	record, recordErr := json.Marshal(r)
+	if requestErr != nil || recordErr != nil || len(request) > gitVMRecordBytes || len(record) > gitVMOwnerRecordBytes {
+		return false
+	}
 	if !r.Request.valid() || r.RequestHash != Digest(r.Request) || r.Unit != "sfl-alpha-"+r.Request.Source.Binding.Attempt+".service" || !validContainmentUnit(r.Unit) || r.BootID == "" || len(r.BootID) > 64 || r.ManagerOwner == "" || len(r.ManagerOwner) > 256 || !validAuthHash(r.StubHash) {
 		return false
 	}
@@ -195,6 +203,14 @@ func openGitVMOwnerJournal(ctx context.Context, directory string) (_ *gitVMOwner
 		root.Close()
 		return nil, errGitVMOwner
 	}
+	// A retained lock proves this store was initialized. Its journal must
+	// never be recreated empty: that would forget every owned attempt.
+	_, lockErr := root.Lstat("source-vm-owner.lock")
+	initialized := lockErr == nil
+	if lockErr != nil && !os.IsNotExist(lockErr) {
+		root.Close()
+		return nil, errGitVMOwner
+	}
 	lock, err := lockGitVMArchiveRoot(ctx, root, "source-vm-owner.lock")
 	if err != nil {
 		root.Close()
@@ -218,7 +234,7 @@ func openGitVMOwnerJournal(ctx context.Context, directory string) (_ *gitVMOwner
 	if raw, err := readGitVMOwnerFile(root, true); err != nil {
 		return nil, errGitVMOwner
 	} else if raw == nil {
-		if j.write(value) != nil {
+		if initialized || j.write(value) != nil {
 			return nil, errGitVMOwner
 		}
 	}
@@ -239,7 +255,18 @@ func (j *gitVMOwnerJournal) verify() error {
 	}
 	return nil
 }
+
+// write takes the operation token, so concurrent updates on one handle commit
+// in order and Close cannot release the root or lock during a write.
 func (j *gitVMOwnerJournal) write(value gitVMUnitJournal) error {
+	if j == nil {
+		return errGitVMOwner
+	}
+	<-j.operation
+	defer j.leave()
+	return j.writeHeld(value)
+}
+func (j *gitVMOwnerJournal) writeHeld(value gitVMUnitJournal) error {
 	if j.verify() != nil || !value.valid() {
 		return errGitVMOwner
 	}
