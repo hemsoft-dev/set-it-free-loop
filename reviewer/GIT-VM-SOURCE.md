@@ -32,9 +32,36 @@ read/search interface without keeping a Git parser alive through model sessions.
 A VM implementation can reuse this export and its verification rather than
 introducing live guest RPC into every model read.
 
+## Source protocol implemented
+
+The private `gitVMManifest` and `gitVMRequest` define purpose
+`isolated-git-source-vm`, separately from provider and host acquisition manifests.
+Named pins bind QEMU, kernel, initrd, BIOS, QEMU runtime, original host namespace
+helper and bootstrap libraries, Git runtime, sealed worker and fixed payload
+filter. The materialization binding's runtime hash is the complete source
+manifest hash. Release, attempt and immutable snapshot remain independently
+bound. There is no provider, auth lease, credential, URL, command or host path
+selector in the request. Bootstrap library names are fixed trusted pin metadata.
+
+`writeGitVMExport` prefixes the existing bounded plain materialization with a
+canonical request-bound source header. Its Git parsing belongs inside the future
+protected source guest. `receiveGitVMExport` validates the header and complete
+materialization, closes intake on cancellation including during the header,
+and requires exact EOF. It returns only private staging. A valid header does
+not authenticate a guest or prove shutdown, broker drain or source eligibility.
+Neither the existing host receiver nor provider result decoder accepts this
+source envelope. No existing host journal or release changes mechanism.
+
+Tests use the actual installed Git producer against small synthetic SHA-1 and
+SHA-256 repositories, then read sealed exported blobs. They reject request,
+release, snapshot, purpose and pin mismatches, provider-shaped records, bare host
+exports, oversized/truncated frames, unknown fields and trailing bytes. These
+are protocol tests on the host, with synthetic asset pins. They establish no
+guest execution, measured pin provenance, credential handling or isolation.
+
 ## Source work still required
 
-Implement a distinct source VM purpose and stop-proof type. A source receipt
+Connect the distinct source VM purpose to a launcher and stop-proof type. A source receipt
 must never qualify a provider worker or release a provider auth lease. Preserve
 the existing host path and journals; do not reinterpret them as VM evidence.
 
