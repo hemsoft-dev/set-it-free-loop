@@ -426,6 +426,38 @@ func fixedGitUnitProperties(unit, stub string, args []string, description string
 		prop("SystemCallErrorNumber", int32(unix.EPERM)),
 	), nil
 }
+
+// Source VM acquisition is a third distinct payload. It has no provider or auth
+// binding and inherits its original supervisor pidfd from birth, like host Git.
+const gitVMUnitDescriptionPrefix = "SFL source VM acquisition "
+const gitVMUnitMemory, gitVMUnitTasks, gitVMUnitRuntime = uint64(2 << 30), uint64(96), uint64(180000000)
+
+func fixedGitVMUnitProperties(unit, stub string, args []string, description string, imageFD, supervisorFD int) ([]unitProperty, error) {
+	properties, err := fixedPayloadUnitProperties(unit, stub, args, description, imageFD, gitVMUnitDescriptionPrefix)
+	if err != nil {
+		return nil, errGitVMOwner
+	}
+	if imageFD == supervisorFD || supervisorFD < 0 || args[4] != strconv.Itoa(os.Getpid()) {
+		return nil, errGitVMOwner
+	}
+	identity, identityErr := processGateIdentity(os.Getpid(), strings.Repeat("0", 32))
+	if identityErr != nil || gitCheckProcessPIDFD(identity, supervisorFD) != nil {
+		return nil, errGitVMOwner
+	}
+	for index := range properties {
+		if properties[index].Name == "ExtraFileDescriptors" {
+			properties[index] = prop("ExtraFileDescriptors", []namedUnitFD{{dbus.UnixFD(imageFD), "sfl-unitstub"}, {dbus.UnixFD(supervisorFD), "sfl-source-vm-supervisor"}})
+		}
+	}
+	// The pinned namespace helper initializes loopback in its new network
+	// namespace through netlink. QEMU receives only inherited AF_UNIX ports.
+	return append(properties,
+		prop("RestrictAddressFamilies", gitUnitAddressFamilies{true, []string{"AF_UNIX", "AF_NETLINK"}}),
+		prop("SystemCallArchitectures", []string{"native"}),
+		prop("SystemCallFilter", gitUnitSyscallFilter{false, []string{"io_uring_setup", "io_uring_enter", "io_uring_register"}}),
+		prop("SystemCallErrorNumber", int32(unix.EPERM)),
+	), nil
+}
 func fixedPayloadUnitProperties(unit, stub string, args []string, description string, imageFD int, prefix string) ([]unitProperty, error) {
 	if imageFD < 0 || stub != retainedStubExec || !validContainmentUnit(unit) || !path.IsAbs(stub) || path.Clean(stub) != stub || len(args) != 5 || args[0] != stub || len(description) != len(prefix)+64 || !strings.HasPrefix(description, prefix) || !validAuthHash(strings.TrimPrefix(description, prefix)) {
 		return nil, ErrAuthRecoveryRequired
@@ -438,6 +470,8 @@ func fixedPayloadUnitProperties(unit, stub string, args []string, description st
 	memory, tasks, runtime := uint64(1<<30), uint64(64), uint64(120000000)
 	if prefix == "SFL native VM containment " {
 		memory, tasks, runtime = 3<<30, 128, 420000000
+	} else if prefix == gitVMUnitDescriptionPrefix {
+		memory, tasks, runtime = gitVMUnitMemory, gitVMUnitTasks, gitVMUnitRuntime
 	}
 	return []unitProperty{
 		prop("Description", description), prop("ExtraFileDescriptors", []namedUnitFD{{dbus.UnixFD(imageFD), "sfl-unitstub"}}), prop("Type", "exec"), prop("ExecStart", []unitExec{{bootstrap, bootstrapArgs, false}}),
@@ -458,6 +492,8 @@ func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, a
 		// Git must inherit its original supervisor pidfd from birth. The
 		// generic single-image path cannot launch that payload.
 		return "", errGitUnit
+	} else if strings.HasPrefix(description, gitVMUnitDescriptionPrefix) {
+		return "", errGitVMOwner
 	} else if strings.HasPrefix(description, "SFL native VM containment ") {
 		properties, err = fixedNativeVMUnitProperties(unit, stub, args, description, imageFD)
 	} else if strings.HasPrefix(description, "SFL sealed VM containment ") {
@@ -473,6 +509,14 @@ func (m *dbusContainmentManager) Start(ctx context.Context, unit, stub string, a
 
 func (m *dbusContainmentManager) StartGit(ctx context.Context, unit, stub string, args []string, description string, imageFD, supervisorFD int) (string, error) {
 	properties, err := fixedGitUnitProperties(unit, stub, args, description, imageFD, supervisorFD)
+	if err != nil {
+		return "", err
+	}
+	return m.startProperties(ctx, unit, properties)
+}
+
+func (m *dbusContainmentManager) StartGitVM(ctx context.Context, unit, stub string, args []string, description string, imageFD, supervisorFD int) (string, error) {
+	properties, err := fixedGitVMUnitProperties(unit, stub, args, description, imageFD, supervisorFD)
 	if err != nil {
 		return "", err
 	}

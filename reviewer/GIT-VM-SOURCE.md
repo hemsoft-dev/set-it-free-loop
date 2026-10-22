@@ -125,6 +125,41 @@ staging, and it holds no provider, auth binding or credential bytes. The source
 supervisor must still capture and stop the original kernel instance before it
 records a terminal state.
 
+## Source VM unit owner implemented
+
+The private [unit owner](git_vm_owner_linux.go) is the original-instance
+lifecycle for source VM units. It is a third distinct payload, with description
+prefix `SFL source VM acquisition ` followed by the request hash. Neither the
+generic single-image start nor the host Git start accepts that prefix, and the
+source VM start accepts neither of theirs. The transient unit inherits the
+sealed stub image and the original supervisor pidfd, permits only `AF_UNIX`
+and `AF_NETLINK` sockets (the pinned namespace helper configures loopback),
+denies io_uring and is limited to 2 GiB with no swap, 96 tasks, one CPU and
+180 seconds. The matching kernel capture checks those cgroup limits.
+
+The owner stores lifecycle metadata in the ownership journal before each
+manager call and never retries an uncertain start. A fresh start binds the
+original invocation and cgroup while its accepted job is still attached, waits
+for the job, then captures the stub's pidfd, process identity and executable.
+Only that fresh start becomes grant eligible; reopening never re-arms it.
+
+Stop durably revokes first. It terminates the captured cgroup, requires that
+cgroup empty and the retained root pidfd dead, and waits for the same
+invocation to settle without stopping any unit by name. A born instance that
+exited before capture is proved by its unchanged birth and repeated original
+cgroup emptiness. A started instance with no birth stays owned and blocks new
+work until a changed boot ID proves it gone, which is recorded as `StopBoot`.
+A replacement invocation, cgroup or description under the same unit name is
+refused without a receipt. One live attempt at a time, at most 64 journal
+records, and only stopped records can be forgotten.
+
+The [owner tests](git_vm_owner_linux_test.go) use a fake manager and kernel
+with an inert real child process. They check the exact transient-unit wire,
+descriptor roles and payload separation, durable capture and whole stop, lost
+start replies, reopen recovery without grant re-arming, replacement refusal,
+early-exit and populated-group cases, reboot proof and journal bounds. They do
+not run systemd, QEMU or the stub, and grant no source authority.
+
 ## Remaining host composition and qualification
 
 Connect the distinct source VM purpose to a production host launcher and

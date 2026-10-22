@@ -57,6 +57,9 @@ type gitVMUnitRecord struct {
 	Identity                                              GateIdentity
 	Cgroup                                                cgroupBinding
 	GrantHash                                             string
+	// StopBoot is the later boot ID whose observation alone proved that an
+	// uncaptured started instance no longer exists. It is empty otherwise.
+	StopBoot string
 }
 
 // The zero birth means the start job has not reported its original unit.
@@ -71,7 +74,12 @@ func (r gitVMUnitRecord) valid() bool {
 	if !r.Request.valid() || r.RequestHash != Digest(r.Request) || r.Unit != "sfl-alpha-"+r.Request.Source.Binding.Attempt+".service" || !validContainmentUnit(r.Unit) || r.BootID == "" || len(r.BootID) > 64 || r.ManagerOwner == "" || len(r.ManagerOwner) > 256 || !validAuthHash(r.StubHash) {
 		return false
 	}
-	if r.StartJob != "" && !gitVMJob(r.StartJob) || r.StartSettled && (!r.StartIntent || r.StartJob == "" || !r.born()) || r.Captured && !r.StartSettled || r.Stopped && (!r.Revoked || r.StartIntent && !r.born()) {
+	if r.StartJob != "" && !gitVMJob(r.StartJob) || r.StartSettled && (!r.StartIntent || r.StartJob == "" || !r.born()) || r.Captured && !r.StartSettled || r.Stopped && !r.Revoked {
+		return false
+	}
+	// Only a changed boot can end a started instance that was never born or
+	// captured here; an original-cgroup proof needs the recorded birth.
+	if r.StopBoot != "" && (!r.Stopped || !r.StartIntent || r.StopBoot == r.BootID || len(r.StopBoot) > 64) || r.Stopped && r.StartIntent && !r.born() && r.StopBoot == "" {
 		return false
 	}
 	if !r.StartIntent && (r.StartJob != "" || r.born() || r.StartSettled || r.Captured) {
@@ -301,4 +309,44 @@ func (j *gitVMOwnerJournal) Close(ctx context.Context) error {
 	}
 	j.closed = true
 	return j.held.close()
+}
+
+// read returns the complete verified journal under the retained lock.
+func (j *gitVMOwnerJournal) read() (gitVMUnitJournal, error) {
+	if j.verify() != nil {
+		return gitVMUnitJournal{}, errGitVMOwner
+	}
+	value, err := readGitVMUnitJournal(j.held.root, false)
+	if err != nil || j.verify() != nil {
+		return gitVMUnitJournal{}, errGitVMOwner
+	}
+	return value, nil
+}
+func (v gitVMUnitJournal) record(attempt string) (gitVMUnitRecord, bool) {
+	for _, r := range v.Records {
+		if r.Request.Source.Binding.Attempt == attempt {
+			return r, true
+		}
+	}
+	return gitVMUnitRecord{}, false
+}
+
+// replace persists one changed record. Attempt identity and its request are
+// immutable once prepared; only lifecycle fields can change here.
+func (j *gitVMOwnerJournal) replace(r gitVMUnitRecord) error {
+	value, err := j.read()
+	if err != nil {
+		return err
+	}
+	for index, old := range value.Records {
+		if old.Request.Source.Binding.Attempt != r.Request.Source.Binding.Attempt {
+			continue
+		}
+		if old.RequestHash != r.RequestHash || old.Unit != r.Unit || old.BootID != r.BootID || old.ManagerOwner != r.ManagerOwner || old.StubHash != r.StubHash {
+			return errGitVMOwner
+		}
+		value.Records[index] = r
+		return j.write(value)
+	}
+	return errGitVMOwner
 }

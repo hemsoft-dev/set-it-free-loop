@@ -82,12 +82,22 @@ func TestGitVMOwnerJournalRejectsUnboundLifecycleStates(t *testing.T) {
 		func(r *gitVMUnitRecord) { r.StartIntent = true; r.Revoked = true; r.Stopped = true },
 		func(r *gitVMUnitRecord) { r.GrantHash = Digest("ungranted") },
 		func(r *gitVMUnitRecord) { r.StartJob = "/org/freedesktop/systemd1/job/1" },
+		func(r *gitVMUnitRecord) { r.StopBoot = "synthetic-next-boot" },
+		func(r *gitVMUnitRecord) { r.Revoked, r.Stopped, r.StopBoot = true, true, "synthetic-next-boot" },
+		func(r *gitVMUnitRecord) {
+			r.StartIntent, r.Revoked, r.Stopped, r.StopBoot = true, true, true, r.BootID
+		},
 	} {
 		bad := valid
 		mutate(&bad)
 		if bad.valid() {
 			t.Fatal("unbound lifecycle state accepted")
 		}
+	}
+	rebooted := valid
+	rebooted.StartIntent, rebooted.Revoked, rebooted.Stopped, rebooted.StopBoot = true, true, true, "synthetic-next-boot"
+	if !rebooted.valid() {
+		t.Fatal("reboot proof for an unborn started attempt rejected")
 	}
 	journal := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{valid, valid}}
 	if journal.valid() {
