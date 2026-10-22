@@ -22,6 +22,35 @@
 #define MFD_EXEC 0x0010U
 #endif
 
+static int comma_token(const char *options, const char *wanted) {
+    size_t length = strlen(wanted);
+    for (const char *at = options; *at;) {
+        const char *end = strchr(at, ',');
+        size_t size = end ? (size_t)(end-at) : strlen(at);
+        if (size == length && !memcmp(at, wanted, length)) return 1;
+        if (!end) break;
+        at = end+1;
+    }
+    return 0;
+}
+
+static int work_mount_noswap(const char *row) {
+    char copy[8192], *left_state = NULL, *right_state = NULL;
+    if (strlen(row) >= sizeof(copy)) return 0;
+    strcpy(copy, row);
+    char *separator = strstr(copy, " - ");
+    if (!separator) return 0;
+    *separator = 0;
+    char *field = strtok_r(copy, " ", &left_state);
+    for (int index = 0; field && index < 4; index++) field = strtok_r(NULL, " ", &left_state);
+    if (!field || strcmp(field, "/work")) return 0;
+    char *type = strtok_r(separator+3, " \r\n", &right_state);
+    char *source = strtok_r(NULL, " \r\n", &right_state);
+    char *options = strtok_r(NULL, " \r\n", &right_state);
+    return type && source && options && !strcmp(type, "tmpfs") &&
+        !strtok_r(NULL, " \r\n", &right_state) && comma_token(options, "noswap");
+}
+
 static int zero_capabilities(void) {
     FILE *f = fopen("/proc/self/status", "r");
     char line[256]; int effective = 0, bounding = 0;
@@ -83,6 +112,9 @@ int main(int argc, char **argv) {
         if (getpid() != 1 || getuid() != 1203 || geteuid() != 1203 ||
             prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0) != 1 || !zero_capabilities()) return 41;
         if (prctl(PR_SET_DUMPABLE, 0, 0, 0, 0)) return 42;
+        int writable = open("/work/prerequisite-write", O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0600);
+        if (writable < 0 || write(writable, "x", 1) != 1 || fsync(writable) || close(writable) ||
+            unlink("/work/prerequisite-write")) return 44;
         return write(STDOUT_FILENO, "SEALED-PAYLOAD-OK\n", 17) == 17 ? 0 : 43;
     }
     /* Privileged calls are reachable only in this fresh credential-free VM. */
@@ -104,12 +136,14 @@ int main(int argc, char **argv) {
     int mounted = mount("tmpfs", "/work", "tmpfs", MS_NOSUID | MS_NODEV | MS_NOEXEC,
         "size=268435456,nr_inodes=65536,noswap,mode=0700") == 0;
     int mount_errno = mounted ? 0 : errno;
+    if (mounted && chown("/work", 1203, 1203)) return 13;
     struct statfs fs = {0}; int fs_ok = mounted && statfs("/work", &fs) == 0;
+    struct stat work = {0}; int metadata_ok = mounted && lstat("/work", &work) == 0 && S_ISDIR(work.st_mode);
     int noswap_reported = 0; char mount_line[8192];
     FILE *mounts = fopen("/proc/self/mountinfo", "r");
     if (mounts) {
         while (fgets(mount_line, sizeof(mount_line), mounts))
-            if (strstr(mount_line, " /work ") && strstr(mount_line, "noswap")) noswap_reported = 1;
+            if (work_mount_noswap(mount_line)) noswap_reported = 1;
         fclose(mounts);
     }
     int image = syscall(SYS_memfd_create, "sfl-git-vm-probe", MFD_CLOEXEC | MFD_ALLOW_SEALING | MFD_EXEC);
@@ -126,11 +160,13 @@ int main(int argc, char **argv) {
     close(image);
     struct utsname name; if (uname(&name)) return 10;
     for (char *c = name.release; *c; c++) if (!((*c >= '0' && *c <= '9') || (*c >= 'a' && *c <= 'z') || *c == '.' || *c == '-' || *c == '+')) return 11;
-    printf("SFL_GIT_VM_PREREQ_%s {\"version\":1,\"nonce\":\"%s\",\"kernel\":\"%s\",\"mount_succeeded\":%s,\"mount_errno\":%d,\"filesystem_type\":%ld,\"size_bytes\":%llu,\"inode_limit\":%llu,\"mount_flags\":%lu,\"noswap_reported\":%s,\"sealed_proc_exec\":%s,\"sealed_execveat\":%s,\"fake_only\":true,\"production_qualified\":false}\n",
+    printf("SFL_GIT_VM_PREREQ_%s {\"version\":2,\"nonce\":\"%s\",\"kernel\":\"%s\",\"mount_succeeded\":%s,\"mount_errno\":%d,\"filesystem_type\":%ld,\"size_bytes\":%llu,\"inode_limit\":%llu,\"mount_flags\":%lu,\"noswap_reported\":%s,\"work_mode\":%u,\"work_uid\":%u,\"work_gid\":%u,\"work_writable\":%s,\"sealed_proc_exec\":%s,\"sealed_execveat\":%s,\"fake_only\":true,\"production_qualified\":false}\n",
         nonce, nonce, name.release, mounted ? "true" : "false", mount_errno, fs_ok ? fs.f_type : 0,
         fs_ok ? (unsigned long long)fs.f_blocks*fs.f_bsize : 0,
         fs_ok ? (unsigned long long)fs.f_files : 0, fs_ok ? fs.f_flags : 0,
         noswap_reported ? "true" : "false",
+        metadata_ok ? work.st_mode & 07777 : 0, metadata_ok ? work.st_uid : 0, metadata_ok ? work.st_gid : 0,
+        proc_exec && direct_exec ? "true" : "false",
         proc_exec ? "true" : "false", direct_exec ? "true" : "false");
     fflush(NULL); sync(); reboot(RB_POWER_OFF); return 12;
 }

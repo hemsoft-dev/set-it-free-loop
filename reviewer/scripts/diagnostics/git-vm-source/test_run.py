@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import struct
+from unittest import mock
 import unittest
 
 DIRECTORY = Path(__file__).resolve().parent
@@ -42,10 +44,13 @@ class GuestRecordTests(unittest.TestCase):
         return ("SFL_GIT_VM_PREREQ_"+NONCE+" "+json.dumps(value)+"\n").encode()
 
     def test_actual_pinned_producer_record(self):
-        self.assertEqual(hashlib.sha256((DIRECTORY/"probe.c").read_bytes()).hexdigest(),
-                         "32535a29ad3bcc9227ca53cc1633e8c7eac9404422fb0ea9227bb95353c33902")
-        self.assertEqual(hashlib.sha256(base64.b64decode((DIRECTORY/"testdata/actual-guest-result.b64").read_bytes().strip(), validate=True)).hexdigest(),
-                         "42bd090440c0adbb8db6e74d3bb347b385dca8dde19103a3214983dd8c215085")
+        host = json.loads((DIRECTORY/"testdata/actual-host-receipt.json").read_bytes())
+        self.assertEqual(hashlib.sha256((DIRECTORY/"probe.c").read_bytes()).hexdigest(), host["guest_probe_source_sha256"])
+        self.assertEqual(host["nonce"], NONCE)
+        self.assertTrue(host["unit_stopped"] and host["original_cgroup_empty"])
+        self.assertEqual(host["final_unit"]["MainPID"], "0")
+        self.assertRegex(host["observed"]["InvocationID"], r"^[0-9a-f]{32}$")
+        self.assertEqual(hashlib.sha256(base64.b64decode((DIRECTORY/"testdata/actual-guest-result.b64").read_bytes().strip(), validate=True)).hexdigest(), host["guest_wire_sha256"])
         value = self.actual()
         self.assertTrue(probe.prerequisites_passed(value))
         self.assertEqual(value["kernel"], "7.0.0-38-generic")
@@ -54,8 +59,8 @@ class GuestRecordTests(unittest.TestCase):
     def test_schema_framing_and_provenance_refuse(self):
         actual = base64.b64decode((DIRECTORY/"testdata/actual-guest-result.b64").read_bytes().strip(), validate=True)
         malformed = [actual+actual, b"x"*(4*1024*1024+1), actual.replace(NONCE.encode(), b"0"*32),
-                     actual.replace(b'"version":1', b'"version":1,"version":1'), actual.rstrip()+b" {}\n"]
-        for change in [{"version": 2}, {"size_bytes": True}, {"sealed_proc_exec": 1},
+                     actual.replace(b'"version":2', b'"version":2,"version":2'), actual.rstrip()+b" {}\n"]
+        for change in [{"version": 1}, {"size_bytes": True}, {"sealed_proc_exec": 1},
                        {"production_qualified": True}, {"unexpected": True}]:
             malformed.append(self.frame(dict(self.actual(), **change)))
         missing = self.actual()
@@ -69,7 +74,8 @@ class GuestRecordTests(unittest.TestCase):
     def test_observed_prerequisite_failures_never_pass(self):
         for change in [{"mount_succeeded": False}, {"mount_errno": 1}, {"noswap_reported": False},
                        {"size_bytes": 268431360}, {"inode_limit": 65535}, {"filesystem_type": 0},
-                       {"mount_flags": 0}, {"sealed_proc_exec": False}, {"sealed_execveat": False}]:
+                       {"mount_flags": 0}, {"mount_flags": 15}, {"work_mode": 0o755}, {"work_uid": 0},
+                       {"work_gid": 0}, {"work_writable": False}, {"sealed_proc_exec": False}, {"sealed_execveat": False}]:
             with self.subTest(change=change):
                 value = probe.decode_guest_result(self.frame(dict(self.actual(), **change)), NONCE)
                 self.assertFalse(probe.prerequisites_passed(value))
@@ -91,3 +97,78 @@ class GuestRecordTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LaunchBoundaryTests(unittest.TestCase):
+    def test_runtime_frame_from_actual_encoder_and_mutations(self):
+        path = DIRECTORY.parents[1]/"native-vm-runtime.py"
+        spec = importlib.util.spec_from_file_location("runtime_producer", path)
+        producer = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(producer)
+        bodies = {name: name.encode() for name in ["lib64/ld-linux-x86-64.so.2", "usr/lib/x86_64-linux-gnu/libc.so.6",
+                  "firmware/kvmvapic.bin", "firmware/linuxboot.bin", "firmware/linuxboot_dma.bin"]}
+        program = {"SHA256": hashlib.sha256(b"qemu").hexdigest(), "Bytes": 4}
+        _, frame = producer.encode(program, bodies)
+        self.assertEqual(probe.decode_runtime(frame, program), bodies)
+        for raw in [frame+b"x", frame[:-1], frame.replace(b"libc.so.6", b"libx.so.6"),
+                    frame.replace(b'"Version":1', b'"Version":2'),
+                    frame[:len(producer.MAGIC)]+struct.pack(">I", 32769)+frame[len(producer.MAGIC)+4:]]:
+            with self.subTest(raw=raw[:100]):
+                with self.assertRaises((RuntimeError, ValueError)):
+                    probe.decode_runtime(raw, program)
+        with self.assertRaises(RuntimeError):
+            probe.decode_runtime(frame, dict(program, Bytes=5))
+
+    def test_runtime_copies_do_not_follow_replaced_input(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-git-vm-copy-") as temporary:
+            directory = Path(temporary)
+            source = directory/"source"
+            source.write_bytes(b"original")
+            root = directory/"runtime"
+            identity = probe.prepare_runtime(root, {"kernel": probe.read_bounded(source, 64)})
+            source.unlink()
+            source.symlink_to("/does-not-exist")
+            probe.verify_runtime(root, identity)
+            self.assertEqual((root/"kernel").read_bytes(), b"original")
+            (root/"kernel").chmod(0o600)
+            with self.assertRaises(RuntimeError):
+                probe.verify_runtime(root, identity)
+            (root/"kernel").chmod(0o444)
+            root.chmod(0o700)
+            (root/"kernel").unlink()
+            (root/"kernel").symlink_to(source)
+            root.chmod(0o555)
+            with self.assertRaises(RuntimeError):
+                probe.verify_runtime(root, identity)
+            root.chmod(0o700)
+
+    def test_unknown_and_replacement_units_are_never_stopped(self):
+        description = "inert test"
+        original = {"Description": description, "InvocationID": "a"*32, "MainPID": "123", "ActiveState": "active"}
+        self.assertEqual(probe.cleanup_action(original, original, description), "stop-original")
+        for observed, current in [(None, original), ({}, original), (original, dict(original, InvocationID="b"*32)),
+                                  (original, dict(original, Description="other")), (original, dict(original, InvocationID=""))]:
+            with self.subTest(observed=observed, current=current):
+                with self.assertRaises(RuntimeError):
+                    probe.cleanup_action(current, observed, description)
+        self.assertEqual(probe.cleanup_action({"MainPID": "0", "ActiveState": "inactive"}, None, description), "already-stopped")
+
+    def test_owned_unit_entry_refuses_host_before_opening_inputs(self):
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(probe, "read_bounded") as read:
+            with self.assertRaises(RuntimeError):
+                probe.owned_unit("/not-opened/unit.json")
+            read.assert_not_called()
+
+    def test_mount_options_use_superblock_exact_tokens(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-git-vm-mountinfo-") as temporary:
+            root = Path(temporary)
+            harness = root/"test.c"
+            harness.write_text('#define main guest_main\n#include "'+str(DIRECTORY/"probe.c")+'"\n#undef main\n'
+                'int main(int argc, char **argv) { return argc == 2 && work_mount_noswap(argv[1]) ? 0 : 1; }\n')
+            binary = root/"test"
+            subprocess.run(["/usr/bin/cc", "-O2", "-Wall", "-Wextra", "-Werror", "-o", str(binary), str(harness)], check=True, timeout=30)
+            valid = "23 1 0:2 / /work rw,nosuid,nodev,noexec - tmpfs tmpfs rw,size=262144k,nr_inodes=65536,noswap"
+            self.assertEqual(subprocess.run([str(binary), valid], timeout=3).returncode, 0)
+            for row in [valid.replace(",noswap", ",noswap=1"), valid.replace("tmpfs rw,size", "noswap rw,size").replace(",noswap", ""),
+                        valid.replace("/work", "/other"), valid.replace("- tmpfs", "- ext4"), valid+" extra"]:
+                self.assertEqual(subprocess.run([str(binary), row], timeout=3).returncode, 1)
