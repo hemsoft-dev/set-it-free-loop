@@ -74,7 +74,7 @@ func TestGitReviewerStartupComposesPinnedPackageWithoutSigning(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close(context.Background())
-	if checked != 1 || signs.Load() != 0 || s.inner == nil || s.inner.source == nil || !s.inner.source.ready || s.inner.source.releaseHash != expected {
+	if checked != 1 || signs.Load() != 0 || s.inner == nil || s.inner.source == nil || !s.inner.source.(*gitSourceFactory).ready || s.inner.source.(*gitSourceFactory).releaseHash != expected {
 		t.Fatal("startup skipped recovery, changed package or signed")
 	}
 	container := filepath.Join(o.RuntimeDirectory, s.container)
@@ -443,7 +443,7 @@ func TestGitReviewerStartupActualGitPackageProducer(t *testing.T) {
 	if err != nil {
 		t.Fatal("actual BuildGitRuntime artifact refused", err)
 	}
-	if s.inner.source.manifest.Runtime != build.Pins || signs.Load() != 0 || s.Close(context.Background()) != nil {
+	if s.inner.source.(*gitSourceFactory).manifest.Runtime != build.Pins || signs.Load() != 0 || s.Close(context.Background()) != nil {
 		t.Fatal("producer pins changed or startup signed")
 	}
 }

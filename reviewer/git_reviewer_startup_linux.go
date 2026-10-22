@@ -63,6 +63,9 @@ type GitReviewerService struct {
 	inner     *gitReviewerService
 	unit      *gitUnitOwner
 	archive   *gitExportArchive
+	vmOwner   *gitVMUnitOwner
+	vmArchive *gitVMExportArchive
+	vmAssets  *gitVMAssets
 	runtime   *gitRuntimeRoot
 	helper    *os.File
 	lock      *authLock
@@ -83,9 +86,15 @@ func OpenGitReviewerService(ctx context.Context, o GitReviewerServiceOptions) (*
 	return openGitReviewerService(ctx, o, openGitUnitOwner)
 }
 
-// The unit opener is private and used only for fake manager/kernel tests.
-func openGitReviewerService(ctx context.Context, o GitReviewerServiceOptions, openUnit func(context.Context, string, string, string) (*gitUnitOwner, error)) (_ *GitReviewerService, result error) {
-	if ctx == nil || ctx.Err() != nil || !o.Credentials.Journal.valid() || o.Credentials.JWT == nil || o.Credentials.Check == nil || nilGitHubCredentialTransport(o.Credentials.ReaderTransport) || nilGitHubCredentialTransport(o.Credentials.PublisherTransport) || o.Check == nil || openUnit == nil || o.Triggers.validate() != nil || !objectID.MatchString(o.Current) || len(o.Releases) < 1 || len(o.Releases) > 8 || len(o.Providers) != len(o.Releases) || o.Interval < time.Second || o.Interval > 5*time.Minute || o.MaxBackoff < o.Interval || o.MaxBackoff > time.Hour || o.TickTimeout < time.Second || o.TickTimeout > 5*time.Minute {
+// The unit openers are private and used only for fake manager/kernel tests.
+func openGitReviewerService(ctx context.Context, o GitReviewerServiceOptions, openUnit func(context.Context, string, string, string) (*gitUnitOwner, error)) (*GitReviewerService, error) {
+	return openGitReviewerServiceUnits(ctx, o, openUnit, openGitVMUnitOwner)
+}
+
+// The current release's version selects which opener runs; options carry no
+// mechanism selector of their own.
+func openGitReviewerServiceUnits(ctx context.Context, o GitReviewerServiceOptions, openUnit func(context.Context, string, string, string) (*gitUnitOwner, error), openVMUnit func(context.Context, string, string, string) (*gitVMUnitOwner, error)) (_ *GitReviewerService, result error) {
+	if ctx == nil || ctx.Err() != nil || !o.Credentials.Journal.valid() || o.Credentials.JWT == nil || o.Credentials.Check == nil || nilGitHubCredentialTransport(o.Credentials.ReaderTransport) || nilGitHubCredentialTransport(o.Credentials.PublisherTransport) || o.Check == nil || openUnit == nil || openVMUnit == nil || o.Triggers.validate() != nil || !objectID.MatchString(o.Current) || len(o.Releases) < 1 || len(o.Releases) > 8 || len(o.Providers) != len(o.Releases) || o.Interval < time.Second || o.Interval > 5*time.Minute || o.MaxBackoff < o.Interval || o.MaxBackoff > time.Hour || o.TickTimeout < time.Second || o.TickTimeout > 5*time.Minute {
 		return nil, ErrLiveBlocked
 	}
 	phase, cancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -141,7 +150,14 @@ func openGitReviewerService(ctx context.Context, o GitReviewerServiceOptions, op
 	if o.Credentials.Check(phase, e) != nil || gate(phase, e, o.Current) != nil || phase.Err() != nil {
 		return nil, ErrLiveBlocked
 	}
-	if !gitReviewerDirectories(o.UnitDirectory, o.ExportDirectory, o.RuntimeDirectory, o.WorkDirectory) || !gitFactoryRunPaths(filepath.Join(o.WorkDirectory, "run-"+strings.Repeat("a", 32))) {
+	sourceVM := current.Version == 2
+	if sourceVM {
+		// The source VM prepares no host Git runtime; a runtime directory
+		// would be an unused, unowned selector.
+		if o.RuntimeDirectory != "" || !gitReviewerDirectories(o.UnitDirectory, o.ExportDirectory, o.WorkDirectory) || !gitVMRunPath(filepath.Join(o.WorkDirectory, "run-"+strings.Repeat("a", 32))) {
+			return nil, ErrLiveBlocked
+		}
+	} else if !gitReviewerDirectories(o.UnitDirectory, o.ExportDirectory, o.RuntimeDirectory, o.WorkDirectory) || !gitFactoryRunPaths(filepath.Join(o.WorkDirectory, "run-"+strings.Repeat("a", 32))) {
 		return nil, ErrLiveBlocked
 	}
 	s := &GitReviewerService{operation: make(chan struct{}, 1)}
@@ -165,6 +181,9 @@ func openGitReviewerService(ctx context.Context, o GitReviewerServiceOptions, op
 	policy.EnabledAt = policy.EnabledAt.UTC()
 	if err := gitReviewerPersistPolicy(phase, o.Credentials.Journal.directory, e, policy); err != nil {
 		return s, err
+	}
+	if sourceVM {
+		return s, s.openSourceVM(phase, o, current, hashes[o.Current], policy, native, gate, openVMUnit)
 	}
 	artifact, err := sealVMAsset(phase, current.GitArtifact, false)
 	if err != nil {
@@ -204,6 +223,33 @@ func openGitReviewerService(ctx context.Context, o GitReviewerServiceOptions, op
 		return s, err
 	}
 	return s, nil
+}
+
+// openSourceVM composes the version 2 mechanism. Owner, archive and assets
+// stay retained by this handle until the service factory takes them.
+func (s *GitReviewerService) openSourceVM(ctx context.Context, o GitReviewerServiceOptions, current GitReviewerRelease, hash string, policy TriggerPolicy, native map[string]map[Provider]NativeVMOptions, gate func(context.Context, Enrollment, string) error, openVMUnit func(context.Context, string, string, string) (*gitVMUnitOwner, error)) error {
+	spec, err := current.SourceVM.assetSpec()
+	if err != nil {
+		return err
+	}
+	s.vmArchive, err = openGitVMExportArchive(ctx, o.ExportDirectory)
+	if err != nil {
+		return err
+	}
+	s.vmAssets, err = openGitVMAssets(ctx, spec)
+	if err != nil {
+		return err
+	}
+	s.vmOwner, err = openVMUnit(ctx, o.UnitDirectory, current.SourceVM.Stub.Path, current.SourceVM.Stub.SHA256)
+	if err != nil {
+		return err
+	}
+	info, err := s.vmOwner.image.file.Stat()
+	if err != nil || info.Size() != current.SourceVM.Stub.Bytes {
+		return ErrLiveBlocked
+	}
+	s.inner, err = newGitReviewerService(ctx, gitReviewerServiceOptions{Credentials: o.Credentials, SourceVM: &gitVMServiceSource{s.vmOwner, s.vmArchive, s.vmAssets, spec.Manifest}, Triggers: policy, Release: o.Current, ReleaseHash: hash, Directory: o.WorkDirectory, NativeReleases: native, Check: gate, Interval: o.Interval, MaxBackoff: o.MaxBackoff, TickTimeout: o.TickTimeout})
+	return err
 }
 
 func gitReviewerDirectories(paths ...string) bool {
@@ -383,6 +429,25 @@ func (s *GitReviewerService) Close(ctx context.Context) error {
 	}
 	if s.archive != nil {
 		if err := s.archive.Close(ctx); err != nil {
+			return err
+		}
+	}
+	// An untransferred source VM owner proves every attempt stopped first.
+	if s.vmOwner != nil && !s.vmOwner.closed {
+		if err := s.vmOwner.recover(ctx); err != nil {
+			return err
+		}
+		if err := s.vmOwner.Close(); err != nil {
+			return err
+		}
+	}
+	if s.vmArchive != nil {
+		if err := s.vmArchive.Close(ctx); err != nil {
+			return err
+		}
+	}
+	if s.vmAssets != nil {
+		if err := s.vmAssets.Close(); err != nil {
 			return err
 		}
 	}

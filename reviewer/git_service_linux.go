@@ -23,12 +23,55 @@ type gitReviewerServiceOptions struct {
 	Manifest                        gitGrantManifest
 	Triggers                        TriggerPolicy
 	Release, ReleaseHash, Directory string
-	NativeReleases                  map[string]map[Provider]NativeVMOptions
+	// SourceVM selects the measured source VM mechanism. It is exclusive with
+	// the host acquisition owners above and comes from a version 2 release.
+	SourceVM       *gitVMServiceSource
+	NativeReleases map[string]map[Provider]NativeVMOptions
 	// Runtime is an explicit trusted fixture/alternate runtime seam. Supplying
 	// it together with the concrete native release catalog is rejected.
 	Runtime                           func(context.Context, Job, *JobEvidence) (Engine, error)
 	Check                             func(context.Context, Enrollment, string) error
 	Interval, MaxBackoff, TickTimeout time.Duration
+}
+
+// gitVMServiceSource transfers to the source VM factory only when it returns
+// a nonnil handle, like the host owners.
+type gitVMServiceSource struct {
+	Owner    *gitVMUnitOwner
+	Archive  *gitVMExportArchive
+	Assets   *gitVMAssets
+	Manifest gitVMManifest
+}
+
+// gitServiceSource is the private seam between the service and either source
+// factory. holdReady runs fn under the factory's operation token only while
+// the factory is ready, so Capture cannot interleave with credential refresh.
+type gitServiceSource interface {
+	PollSource
+	Recover(context.Context) error
+	Close(context.Context) error
+	holdReady(context.Context, func() error) error
+}
+
+func (f *gitSourceFactory) holdReady(ctx context.Context, fn func() error) error {
+	if !f.enter(ctx) {
+		return ErrLiveBlocked
+	}
+	defer f.leave()
+	if f.closed || !f.ready || f.checkRoot() != nil {
+		return ErrLiveBlocked
+	}
+	return fn()
+}
+func (f *gitVMSourceFactory) holdReady(ctx context.Context, fn func() error) error {
+	if !f.enter(ctx) {
+		return ErrLiveBlocked
+	}
+	defer f.leave()
+	if f.closed || !f.ready || f.checkRoot() != nil {
+		return ErrLiveBlocked
+	}
+	return fn()
 }
 
 // This owner never installs credentials, chooses an account or starts work at
@@ -37,7 +80,7 @@ type gitReviewerServiceOptions struct {
 type gitReviewerService struct {
 	options     gitReviewerServiceOptions
 	credentials *GitHubCredentialOwner
-	source      *gitSourceFactory
+	source      gitServiceSource
 	controller  *PollingController
 	operation   chan struct{}
 	mu          sync.Mutex
@@ -57,7 +100,10 @@ func (*gitReviewerService) MarshalJSON() ([]byte, error) {
 }
 
 func newGitReviewerService(ctx context.Context, o gitReviewerServiceOptions) (*gitReviewerService, error) {
-	if ctx == nil || ctx.Err() != nil || !o.Credentials.Journal.valid() || o.Credentials.Check == nil || o.Unit == nil || o.Archive == nil || o.RuntimeRoot == nil || o.Helper == nil || o.Triggers.validate() != nil || !objectID.MatchString(o.Release) || !validAuthHash(o.ReleaseHash) || (o.Runtime == nil) == (o.NativeReleases == nil) || o.Check == nil || o.Interval < time.Second || o.Interval > 5*time.Minute || o.MaxBackoff < o.Interval || o.MaxBackoff > time.Hour || o.TickTimeout < time.Second || o.TickTimeout > 5*time.Minute {
+	host := o.Unit != nil && o.Archive != nil && o.RuntimeRoot != nil && o.Helper != nil
+	noHost := o.Unit == nil && o.Archive == nil && o.RuntimeRoot == nil && o.Helper == nil
+	vm := o.SourceVM != nil && o.SourceVM.Owner != nil && o.SourceVM.Archive != nil && o.SourceVM.Assets != nil
+	if ctx == nil || ctx.Err() != nil || !o.Credentials.Journal.valid() || o.Credentials.Check == nil || !(host && o.SourceVM == nil || noHost && vm) || o.Triggers.validate() != nil || !objectID.MatchString(o.Release) || !validAuthHash(o.ReleaseHash) || (o.Runtime == nil) == (o.NativeReleases == nil) || o.Check == nil || o.Interval < time.Second || o.Interval > 5*time.Minute || o.MaxBackoff < o.Interval || o.MaxBackoff > time.Hour || o.TickTimeout < time.Second || o.TickTimeout > 5*time.Minute {
 		return nil, ErrLiveBlocked
 	}
 	s := &gitReviewerService{options: o, operation: make(chan struct{}, 1)}
@@ -81,7 +127,19 @@ func newGitReviewerService(ctx context.Context, o gitReviewerServiceOptions) (*g
 	if err != nil {
 		return nil, err
 	}
-	s.source, err = newGitSourceFactory(ctx, s.credentials, o.Unit, o.Archive, o.RuntimeRoot, o.Helper, o.Manifest, o.Release, o.ReleaseHash, o.Directory)
+	if o.SourceVM != nil {
+		factory, factoryErr := newGitVMSourceFactory(ctx, s.credentials, o.SourceVM.Owner, o.SourceVM.Archive, o.SourceVM.Assets, o.SourceVM.Manifest, o.ReleaseHash, o.Directory)
+		err = factoryErr
+		if factory != nil {
+			s.source = factory
+		}
+	} else {
+		factory, factoryErr := newGitSourceFactory(ctx, s.credentials, o.Unit, o.Archive, o.RuntimeRoot, o.Helper, o.Manifest, o.Release, o.ReleaseHash, o.Directory)
+		err = factoryErr
+		if factory != nil {
+			s.source = factory
+		}
+	}
 	if s.source == nil {
 		// No factory ownership transferred, and this unexposed credential owner
 		// has never refreshed or admitted work. Dispose only that local owner.
@@ -223,14 +281,15 @@ func (s *gitReviewerService) Refresh(ctx context.Context) error {
 		return err
 	}
 	defer finish()
-	if s.source == nil || !s.source.enter(phase) {
+	if s.source == nil {
 		return ErrLiveBlocked
 	}
-	defer s.source.leave()
-	if s.source.closed || !s.source.ready || s.source.checkRoot() != nil || s.check(phase, s.options.Credentials.Journal.enrollment, s.options.Release) != nil {
-		return ErrLiveBlocked
-	}
-	return s.credentials.Refresh(phase)
+	return s.source.holdReady(phase, func() error {
+		if s.check(phase, s.options.Credentials.Journal.enrollment, s.options.Release) != nil {
+			return ErrLiveBlocked
+		}
+		return s.credentials.Refresh(phase)
+	})
 }
 
 // Run never refreshes. The caller must explicitly qualify credentials first.
