@@ -208,6 +208,19 @@ def cleanup_action(current, observed, description):
     return "stop-original"
 
 
+
+def verify_bootstrap(asset):
+    path = Path(asset["Path"])
+    require(path.is_absolute() and runtime_path(str(path).lstrip("/")) and not str(path).startswith("/firmware/"), "named host bootstrap dependency required")
+    # Package aliases are expected here. Their resolved root-owned bytes remain
+    # trusted host prerequisites, unlike the private captured QEMU payload.
+    resolved = path.resolve(strict=True)
+    with regular_input(resolved, 64 << 20) as stream:
+        info = os.fstat(stream.fileno())
+        require(info.st_uid == 0 and info.st_nlink == 1 and not info.st_mode & 0o022, "root-owned bootstrap dependency required")
+        pin_bytes(stream.read((64 << 20)+1), {key: asset[key] for key in ["SHA256", "Bytes"]})
+
+
 def owned_unit(config_path):
     # This entry has no arbitrary command or provider inputs. Refuse ordinary
     # host invocation before touching a runtime, helper or KVM descriptor.
@@ -247,7 +260,7 @@ def owned_unit(config_path):
                 and info.st_size <= 64 << 20, "trusted namespace helper required")
         pin_bytes(stream.read((64 << 20)+1), {key: helper[key] for key in ["SHA256", "Bytes"]})
     for asset in config["bootstrap_dependencies"]:
-        pin_bytes(read_bounded(Path(asset["Path"]), 64 << 20), {key: asset[key] for key in ["SHA256", "Bytes"]})
+        verify_bootstrap(asset)
     kvm_fd = os.open("/dev/kvm", os.O_RDWR)
     os.set_inheritable(kvm_fd, True)
     os.set_inheritable(root_fd, True)
@@ -414,6 +427,10 @@ def run(args):
             require(removed or directory.stat().st_ino == observed["cgroup_inode"] and not (directory/"cgroup.procs").read_text().strip()
                     and "populated 0" in (directory/"cgroup.events").read_text(), "inert VM prerequisite proof refused")
             verify_runtime(root/"runtime", runtime_identity)
+            require(read_bounded(root/"unit.used", 32).decode() == observed["InvocationID"], "owned bootstrap invocation differs")
+            for asset in runtime_metadata["bootstrap_dependencies"]:
+                verify_bootstrap(asset)
+            require(digest(Path(runtime_metadata["namespace_helper"]["Path"])) == runtime_metadata["namespace_helper"]["SHA256"], "host helper changed")
             receipt.update({"unit_stopped": True, "final_unit": stopped, "original_cgroup_removed": removed,
                             "original_cgroup_empty": True, "runtime_verified_after_stop": True})
         except BaseException as error:
