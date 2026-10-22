@@ -189,7 +189,10 @@ class FixtureUnit:
         try:
             fd = self.control("cgroup.events", os.O_RDONLY)
         except FileNotFoundError:
-            return os.fstat(self.group).st_nlink == 0
+            # kernfs retains st_nlink=2 even after cgroup removal. Require the
+            # kernel's deleted mark on this retained directory, not its path
+            # being absent or now naming a different group.
+            return os.readlink("/proc/self/fd/"+str(self.group)).endswith(" (deleted)")
         try:
             raw = os.read(fd, 4097)
             return len(raw) <= 4096 and b"populated 0" in raw.splitlines()

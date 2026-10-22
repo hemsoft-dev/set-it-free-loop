@@ -93,6 +93,19 @@ class OriginalUnitTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 owner.stop(timeout=.03)
 
+    def test_missing_events_without_deleted_original_is_unknown(self):
+        owner, old, _ = self.owner(False)
+        (old/"cgroup.events").unlink()
+        self.assertFalse(owner.empty())
+
+    def test_removed_original_is_proved_from_retained_descriptor(self):
+        owner, old, _ = self.owner(False)
+        (old/"cgroup.events").unlink()
+        (old/"cgroup.kill").unlink()
+        old.rmdir()
+        owner.stop()
+        self.assertTrue(owner.stopped)
+
     def test_birth_validation_precedes_manager_queries(self):
         owner = FixtureUnit("sfl-routing-test.service", "owned test", self.root, {})
         birth = {"pid": os.getpid(), "start": 1, "invocation": "a"*32,
