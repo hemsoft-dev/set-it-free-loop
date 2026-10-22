@@ -227,11 +227,13 @@ The [source VM factory](git_vm_source_factory_linux.go) is the `PollSource`
 for this mechanism, with the same controller contract as the host factory.
 Opening it requires an owner with no process-local start or grant authority,
 assets that pin the factory's exact manifest, an idle credential owner and a
-private run directory distinct from the owner and archive roots. It then runs
+private run directory that neither contains nor sits inside the owner or
+archive root. It then runs
 startup recovery before any capture:
 
 - Every unstopped attempt must first be proved gone by the owner, and every
-  export must match an owner record before any export is retired.
+  export, including an interrupted `retiring` one, must match an owner record
+  before any retirement runs or resumes.
 - Interrupted archive retirements are completed.
 - A staged export survives only with a matching stopped owner record that also
   holds a grant hash; its packet hash comes from the retained archive record.

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -236,5 +237,68 @@ func TestGitVMSourceFactoryAbandonedCaptureLeavesNoRecords(t *testing.T) {
 	exports, _, _ := factory.archive.records(context.Background())
 	if len(owned.Records) != 0 || len(exports) != 0 || !factory.ready {
 		t.Fatal("abandoned capture left records", len(owned.Records), exports)
+	}
+}
+
+// An interrupted retirement is validated against the owner journal before it
+// is resumed; an unowned retiring export refuses with its bytes intact.
+func TestGitVMSourceFactoryRecoveryValidatesRetiringExports(t *testing.T) {
+	f := newGitVMFactoryRecoveryFixture(t)
+	_, unowned := f.attempt(t, 1, true)
+	f.stage(t, unowned, false)
+	j, err := f.archive.journal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	j.Records[0].State = "retiring"
+	if f.archive.writeJournal(j) != nil {
+		t.Fatal("mark retiring")
+	}
+	if factory, err := f.open(t); err == nil || factory == nil || factory.ready {
+		t.Fatal("unowned retiring export recovered")
+	}
+	if _, err := os.Lstat(filepath.Join(f.archive.directory, "materialization", gitExportDirectory(unowned.Binding.Attempt))); err != nil {
+		t.Fatal("refused recovery deleted unowned source", err)
+	}
+	if exports, _, _ := f.archive.records(context.Background()); len(exports) != 1 {
+		t.Fatal("refused recovery changed the archive journal", exports)
+	}
+}
+
+// The run directory may not contain, or sit inside, the owner or archive root.
+// Here the live owner root is named like run residue inside the work
+// directory; recovery must refuse rather than delete the live journal.
+func TestGitVMSourceFactoryRejectsNestedRoots(t *testing.T) {
+	f := newGitVMFactoryRecoveryFixture(t)
+	work, err := os.MkdirTemp("/tmp", "sfl-vmn-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(work)
+	nested := filepath.Join(work, "run-"+strings.Repeat("b", 32))
+	if os.Mkdir(nested, 0700) != nil || f.owner.owner.Close() != nil {
+		t.Fatal("nested owner setup")
+	}
+	owner, err := newGitVMUnitOwner(context.Background(), nested, f.owner.stub, f.owner.stubHash, f.owner.manager, f.owner.kernel)
+	if err != nil {
+		t.Fatal("nested owner", err)
+	}
+	defer owner.Close()
+	factory, err := newGitVMSourceFactory(context.Background(), f.credentials, owner, f.archive, f.assets, f.manifest, Digest("source release"), work)
+	if err == nil || factory != nil {
+		if factory != nil {
+			factory.Close(context.Background())
+		}
+		t.Fatal("work directory containing the owner root accepted")
+	}
+	if _, err := os.Lstat(filepath.Join(nested, "journal", "source-vm-units.json")); err != nil {
+		t.Fatal("live owner journal removed", err)
+	}
+	inner := filepath.Join(nested, "journal")
+	if factory, err := newGitVMSourceFactory(context.Background(), f.credentials, owner, f.archive, f.assets, f.manifest, Digest("source release"), inner); err == nil || factory != nil {
+		t.Fatal("work directory inside the owner root accepted")
+	}
+	if !gitVMDisjointRoots("/a/b", "/a/bc") || gitVMDisjointRoots("/a/b", "/a/b/c") || gitVMDisjointRoots("/a/b/c", "/a/b") || gitVMDisjointRoots("/a", "/a") {
+		t.Fatal("disjoint root comparison")
 	}
 }

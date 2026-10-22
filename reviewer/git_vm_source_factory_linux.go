@@ -73,7 +73,7 @@ func newGitVMSourceFactory(ctx context.Context, credentials *GitHubCredentialOwn
 	identity, err := root.Stat(".")
 	ownerIdentity, ownerErr := owner.root.Stat(".")
 	archiveIdentity, archiveErr := archive.held.root.Stat(".")
-	if err != nil || ownerErr != nil || archiveErr != nil || os.SameFile(identity, ownerIdentity) || os.SameFile(identity, archiveIdentity) {
+	if err != nil || ownerErr != nil || archiveErr != nil || os.SameFile(identity, ownerIdentity) || os.SameFile(identity, archiveIdentity) || !gitVMDisjointRoots(directory, owner.root.Name(), archive.directory) {
 		root.Close()
 		return nil, errGitVMOwner
 	}
@@ -83,6 +83,22 @@ func newGitVMSourceFactory(ctx context.Context, credentials *GitHubCredentialOwn
 		return f, errGitVMOwner
 	}
 	return f, nil
+}
+
+// gitVMDisjointRoots rejects any ancestor or descendant relationship between
+// canonical roots: run-residue cleanup must never reach a live journal.
+func gitVMDisjointRoots(paths ...string) bool {
+	for i, a := range paths {
+		if !sourcePath(a) {
+			return false
+		}
+		for _, b := range paths[i+1:] {
+			if a == b || strings.HasPrefix(a+"/", b+"/") || strings.HasPrefix(b+"/", a+"/") {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (f *gitVMSourceFactory) enter(ctx context.Context) bool {
@@ -153,7 +169,7 @@ func (f *gitVMSourceFactory) Recover(ctx context.Context) error {
 	f.credentials.state.mu.Lock()
 	busy := len(f.credentials.state.acquisitions) != 0
 	f.credentials.state.mu.Unlock()
-	if busy || f.owner.recover(ctx) != nil || f.archive.resumeRetirements(ctx) != nil {
+	if busy || f.owner.recover(ctx) != nil {
 		return errGitVMOwner
 	}
 	owned, err := f.owner.journal.read()
@@ -167,20 +183,28 @@ func (f *gitVMSourceFactory) Recover(ctx context.Context) error {
 		}
 		units[r.Request.Source.Binding.Attempt] = r
 	}
-	exports, packets, err := f.archive.records(ctx)
+	// Validate every export's ownership, including interrupted retirements,
+	// before any retirement runs, so a cross-journal inconsistency refuses
+	// without changing the archive.
+	exports, _, err := f.archive.records(ctx)
 	if err != nil {
 		return errGitVMOwner
 	}
-	requests := map[string]gitVMRequest{}
-	retained := map[string]bool{}
-	// Validate every export's ownership before any retirement, so a
-	// cross-journal inconsistency refuses without changing the archive.
 	for _, export := range exports {
 		unit, ok := units[export.Binding.Attempt]
 		if !ok || unit.Request.Source.Binding != export.Binding || Digest(unit.Request.Source) != export.RequestHash {
 			return errGitVMOwner
 		}
 	}
+	if f.archive.resumeRetirements(ctx) != nil {
+		return errGitVMOwner
+	}
+	exports, packets, err := f.archive.records(ctx)
+	if err != nil {
+		return errGitVMOwner
+	}
+	requests := map[string]gitVMRequest{}
+	retained := map[string]bool{}
 	for _, export := range exports {
 		attempt := export.Binding.Attempt
 		unit := units[attempt]
