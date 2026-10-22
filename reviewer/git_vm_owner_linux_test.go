@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"golang.org/x/sys/unix"
@@ -453,5 +454,44 @@ func TestGitVMOwnerRootRefusesForeignState(t *testing.T) {
 				t.Fatal("foreign owner state accepted")
 			}
 		})
+	}
+}
+
+// An exiting original unit can briefly carry its own job. Stop waits for that
+// same invocation to settle; a replacement invocation still refuses.
+func TestGitVMOwnerStopWaitsForOriginalPendingJob(t *testing.T) {
+	for _, replaced := range []bool{false, true} {
+		f := newGitVMOwnerFixture(t)
+		if f.owner.prepare(context.Background(), f.request) != nil || f.owner.start(context.Background(), f.attempt(), "/private/source-vm-gate.sock") != nil {
+			t.Fatal("start")
+		}
+		f.manager.mu.Lock()
+		f.manager.observation.Job = unitJob{7, "/org/freedesktop/systemd1/job/7"}
+		f.manager.observation.ActiveState = "deactivating"
+		if replaced {
+			f.manager.observation.InvocationID = strings.Repeat("e", 32)
+		}
+		f.manager.mu.Unlock()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			time.Sleep(60 * time.Millisecond)
+			f.manager.mu.Lock()
+			f.manager.observation.Job = unitJob{}
+			f.manager.observation.ActiveState = "active"
+			f.manager.mu.Unlock()
+		}()
+		err := f.owner.stop(context.Background(), f.attempt())
+		<-done
+		r, _ := f.owner.read(f.attempt())
+		if replaced {
+			if err == nil || r.Stopped || f.manager.stops != 0 {
+				t.Fatal("replacement invocation with a pending job was stopped")
+			}
+			continue
+		}
+		if err != nil || !r.Stopped || f.manager.stops != 1 {
+			t.Fatal("pending original job refused stop", err)
+		}
 	}
 }

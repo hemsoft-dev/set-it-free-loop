@@ -215,7 +215,7 @@ func TestGitVMRunProductionHostActualGit(t *testing.T) {
 	}
 	r := value.Records[0]
 	if !r.Stopped || !r.Revoked || !r.Captured || r.StopBoot != "" || !validAuthHash(r.GrantHash) {
-		t.Fatal("original instance not proved stopped", r)
+		t.Fatal("original instance not proved stopped at stage", owner.stopFailure, r)
 	}
 	observed, observeErr := owner.manager.Observe(ctx, r.Unit)
 	if observeErr == nil && observed.InvocationID == r.Identity.InvocationID && observed.MainPID != 0 {

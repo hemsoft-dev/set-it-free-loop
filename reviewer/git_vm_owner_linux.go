@@ -45,6 +45,8 @@ type gitVMUnitOwner struct {
 	rootPIDFDs    map[string]int
 	grantEligible map[string]bool
 	closed        bool
+	// stopFailure is the fixed stage of the latest refused stop, if any.
+	stopFailure string
 }
 
 func openGitVMUnitOwner(ctx context.Context, root, stub, stubHash string) (*gitVMUnitOwner, error) {
@@ -645,22 +647,60 @@ func (o *gitVMUnitOwner) stop(ctx context.Context, attempt string) error {
 			return errGitVMOwner
 		}
 	}
-	before, err := o.manager.Observe(bounded, r.Unit)
-	if err != nil || !expectedGitVMUnit(r, before) || before.InvocationID != r.Identity.InvocationID {
-		return errGitVMOwner
+	before, err := o.settledOriginal(bounded, r)
+	if err != nil {
+		return o.refuseStop("original-observe")
 	}
-	if o.kernel.Terminate(bounded, r.Cgroup) != nil || o.kernel.Empty(r.Cgroup) != nil || o.rootDead(r) != nil {
-		return errGitVMOwner
+	if o.kernel.Terminate(bounded, r.Cgroup) != nil {
+		return o.refuseStop("terminate")
+	}
+	if o.kernel.Empty(r.Cgroup) != nil || o.rootDead(r) != nil {
+		return o.refuseStop("original-empty")
 	}
 	after, err := waitForOriginalUnitStop(bounded, o.manager, o.kernel, before, r.Cgroup)
 	if err != nil || !expectedGitVMUnit(r, after) || after.InvocationID != r.Identity.InvocationID || after.ControlGroup != r.Cgroup.Path && after.ControlGroup != "" || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed" && after.ActiveState != "active") {
-		return errGitVMOwner
+		return o.refuseStop("original-settle")
 	}
 	r.Stopped = true
 	if o.write(r) != nil {
-		return errGitVMOwner
+		return o.refuseStop("receipt")
 	}
 	return o.manager.RetireUnit(bounded, r.Unit)
+}
+
+// settledOriginal observes the captured original invocation before stop. An
+// exiting unit can briefly carry its own job; wait, bounded by ctx, for that
+// same invocation to settle rather than refusing. Any other difference,
+// including a replacement invocation, still refuses.
+func (o *gitVMUnitOwner) settledOriginal(ctx context.Context, r gitVMUnitRecord) (unitObservation, error) {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		v, err := o.manager.Observe(ctx, r.Unit)
+		if err != nil || v.InvocationID != r.Identity.InvocationID {
+			return unitObservation{}, errGitVMOwner
+		}
+		if expectedGitVMUnit(r, v) {
+			return v, nil
+		}
+		pending := v
+		pending.Job = unitJob{}
+		if v.Job.ID == 0 || !expectedGitVMUnit(r, pending) {
+			return unitObservation{}, errGitVMOwner
+		}
+		select {
+		case <-ctx.Done():
+			return unitObservation{}, errGitVMOwner
+		case <-ticker.C:
+		}
+	}
+}
+
+// refuseStop records a fixed, non-secret stage for the latest stop refusal.
+// Caller holds the owner token.
+func (o *gitVMUnitOwner) refuseStop(stage string) error {
+	o.stopFailure = stage
+	return errGitVMOwner
 }
 
 // recover stops every unstopped attempt left by an earlier process. Each
