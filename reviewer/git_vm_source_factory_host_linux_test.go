@@ -110,6 +110,20 @@ func TestGitVMSourceFactoryProductionHost(t *testing.T) {
 		t.Fatal("restore", err)
 	}
 	readSafe(bound)
+	// The model-facing reader over VM-acquired source refuses the fixture's
+	// symlink, binary and submodule entries, exactly as for host acquisition.
+	reader, err := bound.Reader(snapshot)
+	if err != nil {
+		t.Fatal("job reader", err)
+	}
+	if value, err := reader.Read(ctx, snapshot.Head, "safe.go"); err != nil || value == "" {
+		t.Fatal("job reader safe path", err)
+	}
+	for _, path := range []string{"link", "binary", "submodule"} {
+		if _, err := reader.Read(ctx, snapshot.Head, path); err == nil {
+			t.Fatal("job reader granted a hostile path", path)
+		}
+	}
 	if factory.ReleaseJob(ctx, bound) != nil {
 		t.Fatal("release job")
 	}

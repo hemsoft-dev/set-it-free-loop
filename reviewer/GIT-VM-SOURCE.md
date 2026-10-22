@@ -297,10 +297,17 @@ Connect the factory through explicit trusted release and startup packages. No
 constructor installs credentials, promotes a build or runs work. No existing
 release silently changes its acquisition mechanism.
 
-Extend the production-host qualification to hostile repositories,
-storage/resource exhaustion, cross-job access and lost output before claiming
-this implementation complete. The host's old failed prerequisites remain
-failed even though the VM path now qualifies its own unit.
+The run qualification's standard fixture contains a symlink, a binary file and
+a submodule gitlink. Through the VM their plain semantics match the host store
+exactly, and the factory qualification's job reader refuses all three. The
+`exhaust` case commits one incompressible 40 MiB blob, beyond the 32 MiB object
+bound; the guest refuses it, the export never stages and the original unit is
+proved stopped. Lost output is covered by the guest's export-close and
+read-close cases and the run's `upstream-fail` case. Cross-job access has no
+channel: each attempt gets fresh socket pairs, a fresh unit and VM, and a read
+binding fixed to its own attempt, channel nonce and generation. The host's old
+failed prerequisites remain failed even though the VM path now qualifies its
+own unit.
 
 The separate [source guest and image producer](GIT-VM-GUEST.md) implement
 root-mediated Git reads and a sealed UID/GID 1203 worker. Guest completion does
