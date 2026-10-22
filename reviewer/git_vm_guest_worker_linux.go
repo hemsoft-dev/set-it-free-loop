@@ -22,6 +22,8 @@ func gitVMGuestWorkerMain(hash string) int {
 		os.Getgid() != gitVMGuestGID || os.Getegid() != gitVMGuestGID || !validAuthHash(hash) {
 		return 2
 	}
+	stage := "inherited"
+	defer func() { _, _ = os.Stderr.WriteString("SFL_SOURCE_WORKER_STAGE " + stage + "\n") }()
 	if gitProcessInheritedRolesLimit(true, gitVMRecordBytes) != nil {
 		return 2
 	}
@@ -29,6 +31,7 @@ func gitVMGuestWorkerMain(hash string) int {
 	defer cancel()
 	input := gitWorkerInput{Supervisor: os.NewFile(3, "root-supervisor"), Image: os.NewFile(4, "worker-image"), Manifest: os.NewFile(5, "source-request"), Export: os.NewFile(6, "source-export")}
 	defer closeVMFiles([]*os.File{input.Supervisor, input.Image, input.Manifest, input.Export})
+	stage = "manifest"
 	info, err := input.Manifest.Stat()
 	if err != nil || info.Size() <= 0 || info.Size() > gitVMRecordBytes {
 		return 2
@@ -63,6 +66,7 @@ func gitVMGuestWorkerMain(hash string) int {
 	output := os.NewFile(uintptr(duplicate), "source-export")
 	defer output.Close()
 	input.Export.Close()
+	stage = "connect"
 	var dialer net.Dialer
 	connected, err := dialer.DialContext(ctx, "unixpacket", "/broker/worker.sock")
 	if err != nil {
@@ -78,12 +82,14 @@ func gitVMGuestWorkerMain(hash string) int {
 	// Guest root is outside the worker user namespace. Its unmapped UID/GID
 	// is the fixed overflow identity verified by guest setup. The inherited
 	// original pidfd must also match SO_PEERPIDFD; overflow IDs alone prove nothing.
+	stage = "authenticate"
 	peer, err := authenticateGitSupervisorIDs(ctx, conn, input.Supervisor, 65534, 65534)
 	if err != nil {
 		return 2
 	}
 	defer peer.Close()
 	input.Supervisor.Close()
+	stage = "policy"
 	if unix.Prctl(unix.PR_SET_DUMPABLE, 0, 0, 0, 0) != nil {
 		return 2
 	}
@@ -99,6 +105,7 @@ func gitVMGuestWorkerMain(hash string) int {
 			return 2
 		}
 	}
+	stage = "ready"
 	ready, _ := json.Marshal(gitVMGuestPhase{1, gitVMGuestPurpose, hash, "worker-ready"})
 	if writeGitControlPacket(ctx, conn, ready, nil) != nil {
 		return 2
@@ -110,6 +117,7 @@ func gitVMGuestWorkerMain(hash string) int {
 	if err != nil || decodeErr != nil || marshalErr != nil || !bytes.Equal(grant, canonical) || !p.valid(q, "worker-grant") || gitAuditInheritedFDs(2) != nil {
 		return 2
 	}
+	stage = "acquire"
 	store, err := acquireGitQuarantine(ctx, "/usr/bin/git", "/work", GitReadEndpoint{"/broker/git.sock", gitReadLocalURL}, q.Source.Binding, DefaultGitAcquisitionBounds())
 	if err != nil || writeGitVMExport(ctx, output, store, q.Source) != nil || output.Close() != nil {
 		return 2

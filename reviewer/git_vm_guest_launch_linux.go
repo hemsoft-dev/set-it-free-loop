@@ -182,7 +182,7 @@ func (w *gitVMGuestWorker) start(ctx context.Context, q gitVMGuestRequest) error
 	cmd.Dir = "/"
 	cmd.Stdin = devNull
 	cmd.Stdout = devNull
-	cmd.Stderr = devNull
+	cmd.Stderr = &gitVMGuestDiagnostic{}
 	cmd.ExtraFiles = []*os.File{w.supervisor, w.image, w.request, write, sealedFilter, w.runtime, w.broker, w.work, alias}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: gitVMGuestUID, Gid: gitVMGuestGID, Groups: []uint32{}}, UseCgroupFD: true, CgroupFD: int(groupFD.Fd()), Pdeathsig: syscall.SIGKILL}
 	if unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != nil {
@@ -285,4 +285,35 @@ func (w *gitVMGuestWorker) closeFiles() {
 		w.process.out.Close()
 	}
 	_ = closeVMFiles([]*os.File{w.image, w.request, w.runtime, w.broker, w.work, w.supervisor})
+}
+
+// Child output never passes through to serial. Only a fixed trusted stage
+// record is emitted; unknown helper/Git output becomes one constant marker.
+type gitVMGuestDiagnostic struct {
+	raw     []byte
+	emitted bool
+}
+
+func (d *gitVMGuestDiagnostic) Write(raw []byte) (int, error) {
+	n := len(raw)
+	if d.emitted {
+		return n, nil
+	}
+	if len(d.raw)+len(raw) > 128 {
+		d.emitted = true
+		_, _ = os.Stderr.WriteString("SFL_SOURCE_WORKER_STAGE helper-error\n")
+		return n, nil
+	}
+	d.raw = append(d.raw, raw...)
+	if bytes.Contains(d.raw, []byte{'\n'}) {
+		d.emitted = true
+		for _, stage := range []string{"inherited", "manifest", "connect", "authenticate", "policy", "ready", "acquire"} {
+			if string(d.raw) == "SFL_SOURCE_WORKER_STAGE "+stage+"\n" {
+				_, _ = os.Stderr.Write(d.raw)
+				return n, nil
+			}
+		}
+		_, _ = os.Stderr.WriteString("SFL_SOURCE_WORKER_STAGE helper-error\n")
+	}
+	return n, nil
 }
