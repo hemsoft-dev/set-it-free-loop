@@ -111,6 +111,7 @@ def main():
                "Runtime": runtime["pins"], "BootstrapLibraries": libraries, "Modules": []}
     guest.entry("source-release.json", image_tools.canonical(release))
     archive_tools.archive(guest.entries, output/"source.cpio.gz", compresslevel=1)
+    (output/"source.cpio.gz").chmod(0o444)
     for name, data in [("vmlinuz", captured["kernel"]), ("bios.bin", captured["bios"]), ("kernel.config", config)]:
         with (output/name).open("xb") as stream:
             stream.write(data)
