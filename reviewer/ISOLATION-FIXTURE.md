@@ -72,3 +72,13 @@ the related implementation issue.
 References: [QEMU security policy](https://github.com/qemu/qemu/blob/v10.2.1/docs/system/security.rst),
 [Linux initramfs](https://www.kernel.org/doc/html/latest/filesystems/ramfs-rootfs-initramfs.html),
 [cgroup v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html).
+# Diagnostic cleanup
+
+The diagnostic wrapper pauses its trusted child before payload exec and captures
+the unit's original invocation, boot, cgroup hierarchy and root PID descriptor.
+Cleanup uses that retained cgroup descriptor for kill and empty-state checks,
+then requires original-root death. Reusing the old unit name cannot redirect
+termination. A missing birth capture leaves cleanup unknown; there is no
+name-based stop fallback. The private output contains bounded birth, capture
+and stop records. These records apply only to the inert diagnostic and cannot
+release a provider auth lease or qualify a production worker.
