@@ -28,7 +28,7 @@ func gitVMGuestWorkerArgs(q gitVMGuestRequest) ([]string, error) {
 	if !q.valid() {
 		return nil, ErrVMBoot
 	}
-	return []string{"--unshare-all", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--uid", "1203", "--gid", "1203", "--cap-drop", "ALL", "--clearenv",
+	return []string{"--unshare-all", "--as-pid-1", "--unshare-user", "--disable-userns", "--die-with-parent", "--new-session", "--uid", "1203", "--gid", "1203", "--cap-drop", "ALL", "--clearenv",
 		"--ro-bind-fd", "8", "/", "--ro-bind-fd", "9", "/broker", "--bind-fd", "10", "/work", "--bind-fd", "11", "/tmp",
 		"--proc", "/proc", "--remount-ro", "/proc", "--dev-bind", "/dev/null", "/dev/null", "--dev-bind", "/dev/urandom", "/dev/urandom", "--remount-ro", "/dev/urandom",
 		"--chdir", "/work", "--seccomp", "7", "--argv0", "sfl-source-worker", "--", "/proc/self/fd/4", "--source-worker", Digest(q)}, nil
