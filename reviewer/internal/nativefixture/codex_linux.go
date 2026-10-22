@@ -24,6 +24,7 @@ type codexBackend struct {
 	negativeOutput                                   string
 	accessToken                                      string
 	runtimeInventory                                 []string
+	hostile                                          *hostileState
 }
 
 func outputFor(value any, id string) (any, bool) {
@@ -217,6 +218,9 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if b.hostile != nil && b.hostile.c.Kind == HostileMetadata && b.hostile.metadata(w, q.URL.Path, b.session.Identity.Model) {
+			return
+		}
 		switch q.URL.Path {
 		case "/v1/models":
 			_, _ = io.WriteString(w, `{"models":[]}`)
@@ -243,7 +247,15 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	var body map[string]any
-	if json.Unmarshal(raw, &body) != nil || body["model"] != b.session.Identity.Model || !advertised(body) {
+	if json.Unmarshal(raw, &body) != nil || body["model"] != b.session.Identity.Model {
+		deny("model or advertised tools differ")
+		return
+	}
+	if b.hostile != nil {
+		b.hostileTurn(w, body)
+		return
+	}
+	if !advertised(body) {
 		deny("model or advertised tools differ")
 		return
 	}

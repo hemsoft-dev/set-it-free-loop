@@ -24,7 +24,11 @@ import (
 
 func (c config) validCase() bool {
 	if c.Purpose == "native-control-fake-only" {
-		return c.Provider.Valid() && !c.Negative && !c.Refresh && !c.UncertainRefresh && c.Cancellation == "" && c.ProtocolRounds == 0
+		return c.Provider.Valid() && !c.Negative && !c.Refresh && !c.UncertainRefresh && c.Cancellation == "" && c.Hostile == "" && c.ProtocolRounds == 0
+	}
+	if c.Hostile != "" {
+		_, known := f.LookupHostile(c.Hostile, c.Provider)
+		return known && c.ProtocolRounds == 0 && !c.Negative && !c.Refresh && !c.UncertainRefresh && c.Cancellation == ""
 	}
 	if c.ProtocolRounds == 0 {
 		modes := 0
@@ -35,7 +39,7 @@ func (c config) validCase() bool {
 		}
 		return c.Provider.Valid() && modes <= 1 && (c.Cancellation == "" || c.Cancellation == "provider" || c.Cancellation == "reader" || c.Cancellation == "refresh")
 	}
-	return c.Provider == "" && !c.Negative && !c.Refresh && !c.UncertainRefresh && c.Cancellation == "" && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
+	return c.Provider == "" && c.Hostile == "" && !c.Negative && !c.Refresh && !c.UncertainRefresh && c.Cancellation == "" && (c.ProtocolRounds == 1 || c.ProtocolRounds == 2)
 }
 
 type protocolPhase struct {
