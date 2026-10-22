@@ -221,6 +221,56 @@ durable stop receipt. No real credential, provider, App or network destination
 participates.
 
 
+## Source VM factory and archive retirement implemented
+
+The [source VM factory](git_vm_source_factory_linux.go) is the `PollSource`
+for this mechanism, with the same controller contract as the host factory.
+Opening it requires an owner with no process-local start or grant authority,
+assets that pin the factory's exact manifest, an idle credential owner and a
+private run directory that neither contains nor sits inside the owner or
+archive root. It then runs
+startup recovery before any capture:
+
+- Every unstopped attempt must first be proved gone by the owner, and every
+  export, including an interrupted `retiring` one, must match an owner record
+  before any retirement runs or resumes.
+- Interrupted archive retirements are completed.
+- A staged export survives only with a matching stopped owner record that also
+  holds a grant hash; its packet hash comes from the retained archive record.
+- Every other export, including incomplete `receiving` intake and staged bytes
+  without a grant, is retired. An export without a matching owner record
+  refuses recovery and leaves the archive unchanged.
+- Owner records that were not retained are forgotten, and stopped attempts'
+  run directories are removed, including a crashed run's read-only runtime.
+
+`Capture` uses a fresh random attempt and channel nonce, runs the acquisition
+through the generation seam, and on failure retires the intake and records
+only after the run's proved stop; an unknown stop keeps everything owned and
+fences the factory. `Restore` revalidates the owner's durable stop receipt
+(same boot: original cgroup empty and root dead; later boot: proved by the
+boot change) before reopening retained bytes, with no fetch or fallback.
+If a completed acquisition's evidence cannot be built, its records are
+retired at once under an uncancelled bound, or the factory is fenced for
+recovery. `PruneSource` retires attempts no longer referenced by pending
+captures, active jobs or controller jobs: archive bytes first, then the owner
+record. Archive retirement is idempotent once complete, so an interrupted
+prune finishes on retry; any failed step fences the factory until recovery.
+
+[Archive retirement](git_vm_archive_retire_linux.go) marks a record
+`retiring` durably, renames the attempt directory out of the raw archive into a
+sibling `retired` directory in one step, removes it through the anchored root
+and drops the record. A crash at any point resumes; a retiring attempt can
+never be reopened; and only residue of a retiring record is accepted under
+`retired`. Like host retirement this ends the attempt's records, and the
+factory never reissues an attempt.
+
+`TestGitVMSourceFactoryProductionHost` is the opt-in factory qualification,
+with the same image and stub inputs as the run qualification. It captures and
+restores through real source VM units, closes and reopens every component to
+restore from retained bytes without refetching, discards a failed capture
+without residue, and prunes back to empty journals.
+
+
 ## Remaining host composition and qualification
 
 A source receipt must never qualify a provider worker or release a provider
@@ -242,15 +292,10 @@ and the live original host VM invocation.
 
 Do not accept staged materialization until the read channel is joined and fresh
 whole-VM stop is proved; the run's generation stop capability enforces that
-order. A failed intake currently leaves its source archive record `receiving`,
-which blocks later staging; the source factory must discard it after the
-owner's stop receipt, and retire stopped owner and archive records within their
-bounds. Recovery reopens original unit, channel, generation and archive
-records without replay; unknown work remains owned and unavailable. Connect the
-run through a `PollSource` source factory with that durable recovery, then
-through explicit trusted release and startup packages. No constructor installs
-credentials, promotes a build or runs work. No existing release silently
-changes its acquisition mechanism.
+order, and the factory's recovery and restore recheck the durable receipt.
+Connect the factory through explicit trusted release and startup packages. No
+constructor installs credentials, promotes a build or runs work. No existing
+release silently changes its acquisition mechanism.
 
 Extend the production-host qualification to hostile repositories,
 storage/resource exhaustion, cross-job access and lost output before claiming

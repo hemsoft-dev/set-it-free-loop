@@ -43,7 +43,7 @@ func preflightGitVMArchive(root *os.Root) error {
 	}
 	for _, entry := range entries {
 		name := entry.Name()
-		if name == "refresh.lock" || raw != nil && (name == "source-vm.json" || name == "materialization") {
+		if name == "refresh.lock" || raw != nil && (name == "source-vm.json" || name == "materialization" || name == "retired" && entry.IsDir()) {
 			continue
 		}
 		if strings.HasPrefix(name, ".replace-") && gitQuarantineHex(strings.TrimPrefix(name, ".replace-"), 32) && entry.Type().IsRegular() {
