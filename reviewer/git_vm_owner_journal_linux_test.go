@@ -130,3 +130,59 @@ func TestGitVMOwnerJournalCanonicalFramingAndRootReplacement(t *testing.T) {
 		t.Fatal("extended journal accepted")
 	}
 }
+func gitVMStoppedRecordFixture(t *testing.T) gitVMUnitRecord {
+	r := gitVMUnitRecordFixture(t)
+	job := "/org/freedesktop/systemd1/job/41"
+	group := cgroupBinding{"/user.slice/user-1000.slice/user@1000.service/" + r.Unit, 7, cgroupHierarchy{1, 2, 3, 4}}
+	invocation := strings.Repeat("d", 32)
+	r.StartIntent, r.StartJob, r.StartSettled, r.Captured, r.Revoked, r.Stopped = true, job, true, true, true, true
+	r.Birth = gitVMBirth{job, invocation, "/org/freedesktop/systemd1/unit/sfl_2dalpha", group}
+	r.Identity = GateIdentity{InvocationID: invocation, BootID: r.BootID, PID: 4242, StartTicks: 99}
+	r.Cgroup, r.GrantHash = group, Digest("one-use source grant")
+	return r
+}
+
+// A born record must round-trip the strict decoder; an absent birth is the
+// zero value, never JSON null.
+func TestGitVMOwnerJournalRetainsBornAttemptAcrossReopen(t *testing.T) {
+	directory := gitVMOwnerJournalFixture(t)
+	stopped := gitVMStoppedRecordFixture(t)
+	if !stopped.valid() {
+		t.Fatal("stopped fixture invalid")
+	}
+	prepared := gitVMUnitRecordFixture(t)
+	prepared.Request.Source.Binding.Attempt = strings.Repeat("e", 32)
+	prepared.Request.Read.Source.Attempt = prepared.Request.Source.Binding.Attempt
+	prepared.RequestHash, prepared.Unit = Digest(prepared.Request), "sfl-alpha-"+prepared.Request.Source.Binding.Attempt+".service"
+	value := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{stopped, prepared}}
+	if !value.valid() {
+		t.Fatal("mixed journal invalid")
+	}
+	j, err := openGitVMOwnerJournal(context.Background(), directory)
+	if err != nil || j.write(value) != nil || j.Close(context.Background()) != nil {
+		t.Fatal("born journal persistence", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(directory, "source-vm-units.json"))
+	if err != nil || strings.Contains(string(raw), "null") {
+		t.Fatal("journal framing contains null", err)
+	}
+	j, err = openGitVMOwnerJournal(context.Background(), directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := readGitVMUnitJournal(j.held.root, false)
+	if err != nil || Digest(got) != Digest(value) {
+		t.Fatal("born attempt not recovered", err)
+	}
+	if j.Close(context.Background()) != nil {
+		t.Fatal("close")
+	}
+	nulled := strings.Replace(string(raw), `"GrantHash":""`, `"GrantHash":null`, 1)
+	if nulled == string(raw) || os.WriteFile(filepath.Join(directory, "source-vm-units.json"), []byte(nulled), 0600) != nil {
+		t.Fatal("null mutation setup")
+	}
+	if j, err := openGitVMOwnerJournal(context.Background(), directory); err == nil {
+		j.Close(context.Background())
+		t.Fatal("null field accepted")
+	}
+}

@@ -100,6 +100,25 @@ not prove a measured guest, helper ancestry or original host VM admission.
 The transport is not yet connected to a source factory or trusted startup.
 
 
+## Source VM ownership journal implemented
+
+The private [ownership journal](git_vm_owner_journal_linux.go) retains purpose
+`source-vm-unit-owner` lifecycle metadata for at most 64 source attempts. Each
+record binds the complete guest request and its hash, the derived
+`sfl-alpha-<attempt>.service` unit, boot ID, manager owner and host stub hash.
+Lifecycle flags must appear in order: start intent, start job, original birth
+(job, invocation ID, unit object path and captured cgroup), settled start,
+captured kernel identity, grant hash, revocation and stop. An unborn record
+stores the zero birth rather than JSON `null`, so the strict decoder accepts the
+canonical bytes it wrote. A single retained lock serializes writers; foreign
+purposes, unknown fields, nulls, duplicate attempts and a replaced root fail
+closed without mutation.
+
+The journal is metadata only. It cannot stop a unit, admit a channel or release
+staging, and it holds no provider, auth binding or credential bytes. The source
+supervisor must still capture and stop the original kernel instance before it
+records a terminal state.
+
 ## Remaining host composition and qualification
 
 Connect the distinct source VM purpose to a production host launcher and

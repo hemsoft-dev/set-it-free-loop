@@ -45,27 +45,30 @@ type gitVMUnitRecord struct {
 	RequestHash, Unit, BootID, ManagerOwner, StubHash     string
 	StartIntent, StartSettled, Captured, Revoked, Stopped bool
 	StartJob                                              string
-	Birth                                                 *gitVMBirth
+	Birth                                                 gitVMBirth
 	Identity                                              GateIdentity
 	Cgroup                                                cgroupBinding
 	GrantHash                                             string
 }
 
+// The zero birth means the start job has not reported its original unit.
+func (r gitVMUnitRecord) born() bool { return r.Birth != (gitVMBirth{}) }
+
 func (r gitVMUnitRecord) valid() bool {
 	if !r.Request.valid() || r.RequestHash != Digest(r.Request) || r.Unit != "sfl-alpha-"+r.Request.Source.Binding.Attempt+".service" || !validContainmentUnit(r.Unit) || r.BootID == "" || len(r.BootID) > 64 || r.ManagerOwner == "" || len(r.ManagerOwner) > 256 || !validAuthHash(r.StubHash) {
 		return false
 	}
-	if r.StartJob != "" && !gitVMJob(r.StartJob) || r.StartSettled && (!r.StartIntent || r.StartJob == "" || r.Birth == nil) || r.Captured && !r.StartSettled || r.Stopped && (!r.Revoked || r.StartIntent && r.Birth == nil) {
+	if r.StartJob != "" && !gitVMJob(r.StartJob) || r.StartSettled && (!r.StartIntent || r.StartJob == "" || !r.born()) || r.Captured && !r.StartSettled || r.Stopped && (!r.Revoked || r.StartIntent && !r.born()) {
 		return false
 	}
-	if !r.StartIntent && (r.StartJob != "" || r.Birth != nil || r.StartSettled || r.Captured) {
+	if !r.StartIntent && (r.StartJob != "" || r.born() || r.StartSettled || r.Captured) {
 		return false
 	}
-	if r.Birth != nil && (!r.StartIntent || !r.Birth.valid(r.Unit, r.StartJob)) {
+	if r.born() && (!r.StartIntent || !r.Birth.valid(r.Unit, r.StartJob)) {
 		return false
 	}
 	if r.Captured {
-		if r.Birth == nil || r.Identity.PID <= 0 || r.Identity.StartTicks == 0 || r.Identity.BootID != r.BootID || r.Identity.InvocationID != r.Birth.InvocationID || r.Cgroup != r.Birth.Cgroup {
+		if !r.born() || r.Identity.PID <= 0 || r.Identity.StartTicks == 0 || r.Identity.BootID != r.BootID || r.Identity.InvocationID != r.Birth.InvocationID || r.Cgroup != r.Birth.Cgroup {
 			return false
 		}
 	} else if r.Identity != (GateIdentity{}) || r.Cgroup != (cgroupBinding{}) {
