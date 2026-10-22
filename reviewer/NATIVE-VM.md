@@ -259,6 +259,15 @@ runs now return stopped auth without implying a valid source report. A separate
 process fixture verifies cancellation before the deadline and retains the
 physical-stop enforcement.
 
+Guest role shutdown opens `cgroup.kill` and bounded `cgroup.events` reads through
+the original cgroup directory descriptor retained at process birth. Replacing
+its former pathname cannot redirect termination or supply another group's empty
+state. Symlinked control files and closed descriptors keep stop pending. A
+successful kill write alone remains insufficient; the original process must
+finish and its original group must be observed empty. Routing regressions use
+controlled temporary directories, and do not claim a guest or whole-host
+qualification.
+
 The client supervisor's private readiness pipe remains available for one bound
 failure classification after Ready. Only fixed enums travel there, with launch
 and request hashes. The pipe is CLOEXEC before any client/version exec. A status
