@@ -201,6 +201,15 @@ func (w *gitVMGuestWorker) qualify(ctx context.Context, q gitVMGuestRequest) err
 	if w == nil || w.process == nil || ctx == nil || ctx.Err() != nil {
 		return ErrVMBoot
 	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go func() {
+		select {
+		case <-w.process.done:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	join := gitBrokerAfterFunc(ctx, func() { w.listener.Close() })
 	defer join()
 	conn, err := w.listener.AcceptUnix()

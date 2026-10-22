@@ -39,10 +39,13 @@ type gitVMGuestSetupResult struct {
 }
 
 func runGitVMGuest() int {
+	stage := "setup"
+	defer func() { _, _ = os.Stderr.WriteString("SFL_SOURCE_GUEST_STAGE " + stage + "\n") }()
 	release, hash, err := gitVMGuestSetup()
 	if err != nil {
 		return 2
 	}
+	stage = "ports"
 	control, err := gitVMGuestPort("source-control")
 	if err != nil {
 		return 2
@@ -62,6 +65,7 @@ func runGitVMGuest() int {
 	defer cancel()
 	join := gitBrokerAfterFunc(ctx, func() { control.Close(); read.Close(); export.Close() })
 	defer join()
+	stage = "request"
 	q, err := readVMRecord[gitVMGuestRequest](control, gitVMRecordBytes)
 	if err != nil || !q.valid() || Digest(q) != hash || !release.matches(q) {
 		return 2
@@ -101,6 +105,7 @@ func runGitVMGuest() int {
 	}()
 	// Setup always reports ownership, even if it fails while cancellation races
 	// with process creation. Join it rather than abandoning an unknown child.
+	stage = "worker-start"
 	prepared := <-setup
 	w := prepared.worker
 	var stopped atomic.Bool
@@ -120,11 +125,13 @@ func runGitVMGuest() int {
 		<-brokerDone
 		return 2
 	}
+	stage = "worker-qualify"
 	if w.qualify(ctx, q) != nil {
 		brokerCancel()
 		<-brokerDone
 		return 2
 	}
+	stage = "host-grant"
 	admitted.Store(w.boundary)
 	if writeVMRecord(control, gitVMGuestPhase{1, gitVMGuestPurpose, hash, "guest-ready"}, gitVMRecordBytes) != nil {
 		brokerCancel()
@@ -137,6 +144,7 @@ func runGitVMGuest() int {
 		<-brokerDone
 		return 2
 	}
+	stage = "export"
 	return finishGitVMGuest(ctx, cancel, q, w, control, export, client, brokerCancel, brokerDone, &stopped)
 }
 
