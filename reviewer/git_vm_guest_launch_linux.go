@@ -265,6 +265,10 @@ func (w *gitVMGuestWorker) qualify(ctx context.Context, q gitVMGuestRequest) err
 	}
 	stage = "mount"
 	if checkGitMountBoundaryIDs(ctx, w.boundary, w.broker, q.Source.Binding, 0, 0555) != nil {
+		// Temporary bounded inert-image mount diagnostic; remove before PR.
+		if raw, err := gitReadMountInfo(ctx, identity, fd); err == nil {
+			_, _ = os.Stderr.WriteString("SFL_SOURCE_MOUNT_DIAGNOSTIC " + strconv.QuoteToASCII(string(raw)) + "\n")
+		}
 		return ErrVMBoot
 	}
 	stage = "descriptors"
