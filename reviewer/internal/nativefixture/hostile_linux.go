@@ -254,12 +254,13 @@ func (b *Backend) Hostile() HostileObservation {
 	if b.hostile == nil {
 		return HostileObservation{}
 	}
-	lock := &b.Claude.mu
 	if b.Codex != nil {
-		lock = &b.Codex.mu
+		b.Codex.mu.Lock()
+		defer b.Codex.mu.Unlock()
+	} else {
+		b.Claude.mu.Lock()
+		defer b.Claude.mu.Unlock()
 	}
-	lock.Lock()
-	defer lock.Unlock()
 	o := b.hostile.obs
 	o.Inventory = slices.Clone(o.Inventory)
 	o.Problems = slices.Clone(o.Problems)
