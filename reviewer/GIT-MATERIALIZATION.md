@@ -52,13 +52,14 @@ Each provider reader still gets its own original call/byte budget. Closing the
 materialization fences later reads and releases its descriptors.
 
 `SnapshotEvidence` now holds `ObjectStore` privately. Trusted offline fixture
-helpers keep their Git-backed behavior; the eventual acquisition factory must
-choose the materialized path for downloaded source. The private receiver and
-restore functions are plumbing, not production stop enforcement. Sealed memfds
-are process-local. The private [export archive](GIT-EXPORT-ARCHIVE.md) now retains
-and reopens the exact plain export across controller processes. It remains
-staging; authenticated producer/stop evidence, recovery ownership and controller
-selection are still factory work. Losing source must not cause an automatic
+helpers keep their Git-backed behavior; the [concrete factory](GIT-FACTORY.md)
+selects the materialized path for downloaded source. The receiver and restore
+functions alone provide no stop authority. Sealed memfds are process-local; the
+[export archive](GIT-EXPORT-ARCHIVE.md) retains and reopens the exact plain export
+across controller processes. The factory implements producer/stop binding and
+recovery ownership, and the [service assembly](GIT-SERVICE.md) selects that source.
+Complete protected-launch and aggregate physical/recovery qualification remain
+unproved. Losing source must not cause an automatic
 re-fetch or recapture of an admitted job.
 
 Tests use actual Git-produced SHA-1 and SHA-256 packs, capture the packet, delete
@@ -72,6 +73,7 @@ inventoried descendant paths to keep each patch bound to its exact blob pair.
 No credentials, live provider inference or App activation are part of this work.
 
 [Git unit ownership](GIT-UNIT.md) now provides a separate durable start/stop
-journal and retained root pidfd. The composing acquisition factory still needs
-to authenticate the export channel, join the broker and bind this unit's stop
-proof before exposing materialized evidence.
+journal and retained root pidfd. The [concrete factory](GIT-FACTORY.md)
+authenticates the export channel, joins the broker and binds this unit's stop
+record before exposing materialized evidence. Its source and fake-owner tests
+do not qualify aggregate physical shutdown or arbitrary host-crash recovery.

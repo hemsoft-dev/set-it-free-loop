@@ -98,6 +98,9 @@ jobs without recapture. Modified inventories, patch text, coverage, versions and
 unavailable included blobs are refused.
 
 This is a library prerequisite for #176. The private polling library uses
-restoration for admitted jobs. Qualified object acquisition, token attestation,
-native runtime composition and packaging remain required. It does not install an App, enable Actions, activate the retired
+restoration for admitted jobs. The [source factory](GIT-FACTORY.md),
+[credential owner](CREDENTIAL-OWNER.md), [native runtime](NATIVE-VM.md) and
+[trusted startup](GIT-STARTUP.md) provide their source composition. Qualified
+aggregate acquisition, actual token/account evidence and activation remain
+required. This component does not install an App, enable Actions, activate the retired
 controller or qualify live subscription use.

@@ -158,4 +158,6 @@ proof of the stopped pre-work failure calls `RefundStoppedBeforeWork` using that
 nonce/provider/round, then `ReleaseStopped` with the original failure state.
 Never release or start a replacement worker while the refund remains unresolved.
 Duplicate refunds and a different phase are rejected. Unknown provider work is
-still charged. No real worker supervisor or automatic repair is supplied.
+still charged. This controller component supplies no supervisor or automatic repair. The
+[native VM assembly](NATIVE-VM.md) and [service](GIT-SERVICE.md) compose explicit
+workers; their complete physical qualification remains open.

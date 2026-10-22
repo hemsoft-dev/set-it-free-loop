@@ -10,8 +10,9 @@ local Unix sockets. No interactive profile, actual account or provider is read.
 The export gate is a required `AuthExportVerifier`. It must reopen the exact
 durable launch binding and establish that the restricted private credential
 channel is ready before export reads the staged seed. A model, client report or
-unverified socket cannot supply this authorization. There is no production gate
-implementation or automatic launcher here. The staging store stays private to
+unverified socket cannot supply this authorization. The separate
+[native VM assembly](NATIVE-VM.md) implements the captured export gate and private
+channel. This transfer component starts no launcher. The staging store stays private to
 the supervisor and must never be mounted into a worker.
 
 ## Record and ownership
@@ -95,8 +96,10 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-The native VM launcher, authenticated/deadline-enforced channels, guest identity
-separation and actual-client refresh/return still require integration and
-qualification. The host code-host experiment and synthetic stop callbacks cannot
-supply that proof. No App, daemon, real auth import, live inference or paid usage
+The [native VM host/guest](NATIVE-VM.md) implements authenticated bounded
+channels, separate guest identities and protected auth export/return. Pinned
+clients have refreshed synthetic auth and reused the returned state in fresh
+VMs. Complete physical/crash recovery and real-account qualification remain
+open; the host code-host experiment and synthetic stop callbacks cannot supply
+that proof. No App, daemon, real auth import, live inference or paid usage
 is activated by this library.

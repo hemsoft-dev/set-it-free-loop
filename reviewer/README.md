@@ -3,7 +3,8 @@
 This separate Go module implements the new alpha contracts from
 [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
 The retired modules are reference material. No workflow, daemon, App installation
-or credential-bearing launcher is included.
+or credential-bearing activation command is included. Explicit service/native
+source APIs require independently supplied local gates and credentials.
 
 ## Validate locally
 
@@ -87,11 +88,15 @@ credentials or qualify production credential transfer and OS containment.
 [Provider HTTP egress](PROVIDER-EGRESS.md) supplies exact route guards, separate
 inference/refresh request budgets, bounded payloads and private completion audits.
 Its concrete transport rejects private destinations and hidden connection retries.
-No listener, provider policy or network route is activated. The isolated launcher
-must still enforce exclusive egress and qualify the pinned clients. The
-[private provider evidence path](PROVIDER-AUDIT.md) carries required receipts
-through execution, charged attempt storage, recovery and the pre-POST gate.
-It selects no production worker or credentials.
+The [native VM assembly](NATIVE-VM.md) implements the bounded private provider
+stream, guest proxy, separate roles and captured policy/launch checks. Its source
+and fake-backend runs do not qualify complete physical egress/resource/crash
+containment. No listener, provider policy or network route is activated by these
+libraries. The [private provider evidence path](PROVIDER-AUDIT.md) carries
+required receipts through execution, charged attempt storage, recovery and the
+pre-POST gate. That receipt component selects no worker or credentials; the
+[service assembly](GIT-SERVICE.md) selects explicitly supplied, independently
+gated native releases.
 
 ## Remaining live gates
 
@@ -116,8 +121,12 @@ explicit host fixture uses an inert escaped child and synthetic auth bytes.
 
 [Sealed VM boot assets](VM-BOOT.md) retain pinned QEMU/kernel/initramfs bytes in
 sealed descriptors. The explicit fake-only KVM boot fixture checks the live
-executable and independent guest/host receipts. Native VM payload/grant, client,
-code-host, auth and egress composition remain source work; this is not a worker
-activation path or production isolation qualification.
+executable and independent guest/host receipts. The [native VM composition](NATIVE-VM.md) connects payload/grant, clients,
+code-host isolation, auth and egress. The [durable evaluation runner](EVALUATION-RUNNER.md)
+adds natural six-arm scheduling and stopped native recovery. Their model-free
+fixtures do not qualify aggregate acquisition/reader/provider/publisher
+containment or authorize activation. The
+[dated activation checklist](../docs/research/2026-10-21-alpha-activation-checklist.md)
+records the remaining evidence, including known host launch failures.
 
 The selected [polling triggers](GITHUB-TRIGGERS.md) are authorized `@sfl review` comments plus automatic PR-open/head observations. The [model-free App report](../docs/research/2026-10-21-model-free-app-eligibility.md) records the native-picker experiment and Franz's replacement decision. No daemon or inference was activated.

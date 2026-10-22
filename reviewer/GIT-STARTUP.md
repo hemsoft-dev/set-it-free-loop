@@ -114,10 +114,12 @@ packaging and ownership behavior, with no model inference. Public denied-gate
 tests return before opening a real manager. They do not qualify whole-unit
 physical containment or a live subscription.
 
-Trusted promotion/rollback decisions, provider policy/entitlement and quota
-evidence, complete containment/resource/recovery qualification, native control
-and evaluation work, final GitHub rendering evidence and explicit owner
-activation remain tracked in
+The [release decision registry](RELEASE-PROMOTION.md),
+[native controls](NATIVE-CONTROLS.md) and [evaluation runner](EVALUATION-RUNNER.md)
+provide their source mechanisms. Actual trusted approval, provider
+policy/entitlement and quota evidence, complete containment/resource/recovery
+qualification, comparative model evaluation, final GitHub rendering evidence
+and explicit owner activation remain tracked in
 [#176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176) and
 [#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177).
 The existing failed physical qualifications remain failed. No activation,

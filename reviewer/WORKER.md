@@ -14,8 +14,9 @@ selector from the worker. Source errors return a generic denial; the trusted
 broker retains the actual coverage limitation.
 
 This is a wrapper protocol, not either official CLI's native protocol or MCP.
-`WorkerLauncher` is the trusted integration boundary for a future OS supervisor
-and official-client wrapper. Its wrapper must normalize official-client output with `NormalizeCLIOutput`,
+`WorkerLauncher` is the trusted integration boundary for a separate OS
+supervisor and official-client wrapper. The [native VM assembly](NATIVE-VM.md)
+provides its source path; complete physical qualification remains open. Its wrapper must normalize official-client output with `NormalizeCLIOutput`,
 including client metadata rather than model-reported usage. Its `Inspect` must
 verify real pinned subscription,
 client and model identity. The driver checks it again after execution; worker
@@ -36,8 +37,10 @@ Cancellation closes the transport pipes, cancels source calls and invokes
 confirm termination and reaping of the whole worker, including descendants.
 `Wait` or a valid report alone is insufficient. The launcher must persist its own
 job-to-worker recovery identity before launching, return a worker handle whenever
-a process may exist, and honor launch/inspect contexts. No production supervisor
-or official-client wrapper is supplied in this change.
+a process may exist, and honor launch/inspect contexts. This worker-transport
+component does not supply that assembly. The separate [native VM path](NATIVE-VM.md)
+implements the pinned client, private transport and stopped-unit composition;
+complete production qualification remains open.
 
 If stop confirmation fails or times out, `ErrWorkerStopPending` prevents output
 acceptance, stopped-worker audit writes, refunds and durable lease release.

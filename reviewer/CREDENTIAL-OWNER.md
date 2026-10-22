@@ -29,7 +29,8 @@ stop capability before admission. That capability must revoke and join the
 broker and prove the exact owned acquisition unit stopped. No model, serialized
 receipt, caller boolean or token value can provide it. Construction starts no
 process and performs no signing or acquisition. This is lifecycle plumbing;
-the production factory still needs to supply and qualify the actual stop path.
+the [concrete source factory](GIT-FACTORY.md) supplies the stop path. Its complete
+physical qualification remains unproved.
 
 The lease's private borrow returns only the pinned reader, a context tied to
 the acquisition, and an exactly-once completion function. The typed Git exchange
@@ -88,4 +89,4 @@ an unreturned stop capability, expiry during the eligibility check, backward
 time and revoked eligibility. These tests qualify ownership behavior with a
 test stop capability, not a complete protected cgroup or broker shutdown path.
 
-Typed-nil transport and backward-clock regressions failed before their checks were added. These tests establish local fake-transport behavior. They do not establish native worker shutdown, host-crash recovery, production key custody, provider support, App eligibility or a comparative review result. Broader controller composition and those qualifications remain open in #176 and its related issues.
+Typed-nil transport and backward-clock regressions failed before their checks were added. These tests establish local fake-transport behavior. They do not establish native worker shutdown, host-crash recovery, production key custody, provider support, App eligibility or a comparative review result. The [service assembly](GIT-SERVICE.md) supplies controller composition. Those physical and live qualifications remain open in #176 and its related issues.

@@ -2,9 +2,10 @@
 
 October 21, 2026 EDT. `cmd/gitacquire` is an offline-buildable, credential-free
 payload. Building or testing it does not deploy a reviewer or activate source
-access. The production acquisition factory, physical boundary/helper admission,
-archive publication, credential-generation lease and controller composition
-remain unfinished. Mini's actual fixed tmpfs and inner sealed exec still fail
+access. The [concrete factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md)
+implement boundary/helper admission, archive publication, credential-generation
+leases and controller composition. Complete physical qualification remains
+unproved. Mini's actual fixed tmpfs and inner sealed exec still fail
 as documented in [launch constraints](GIT-LAUNCH-CONSTRAINTS.md).
 
 ## Process entry points
@@ -126,7 +127,9 @@ live handshake deadline.
 
 The existing separate opt-in sealed bubblewrap probe still fails with EACCES;
 the fixed systemd tmpfs probe failed before payload exec. Neither is waived.
-A complete launch, native resource-pressure test, physical helper/library/
-namespace/route/mount/FD admission, authenticated stopped archive, recovery and
-controller run remain to implement or qualify. No credential, real GitHub
-transport, model inference, promotion, paid use or activation is exercised here.
+The [source factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md)
+implement admission, stopped export/recovery and controller composition. Their
+fake tests do not qualify a complete protected launch, native resource pressure,
+physical helper/library/namespace/route/mount/FD admission, host-crash recovery
+or a live controller run. No credential, real GitHub transport, model inference,
+promotion, paid use or activation is exercised here.

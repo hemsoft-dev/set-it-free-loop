@@ -1,9 +1,11 @@
 # Private Git acquisition worker
 
-October 21, 2026 EDT. This is worker-side source plumbing, not a production
-launcher, qualified factory or live source capability. The [fixed executable and bootstrap layout](GIT-BOOTSTRAP.md) now exist.
-Independent runtime/mount/helper inspection and the aggregate source
-publication/controller path remain unfinished. On mini, the requested
+October 21, 2026 EDT. This worker-side component belongs to the
+[concrete source factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md).
+Its source does not qualify a production launch or live source capability.
+The [fixed executable and bootstrap layout](GIT-BOOTSTRAP.md) and independent
+inspection code exist; aggregate physical qualification remains incomplete.
+On mini, the requested
 systemd tmpfs and sealed inner bubblewrap exec currently fail. See
 [GIT-LAUNCH-CONSTRAINTS.md](GIT-LAUNCH-CONSTRAINTS.md). No credential, App access,
 model inference or host policy change is involved in these tests.

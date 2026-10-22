@@ -5,10 +5,11 @@ The private `gitExportArchive` retains the exact bounded plain export emitted by
 files without restoring host Git parsing or automatically repeating acquisition.
 It is staging infrastructure, not source qualification or an activation command.
 
-The real acquisition factory must still authenticate the measured producer and
-its grant/export channel, revoke and join the Git broker, prove termination of
-the whole acquisition unit, and bind those independent stop/eligibility records
-to the admitted job before restoring or publishing retained source. An archive
+The [concrete acquisition factory](GIT-FACTORY.md) authenticates producer and
+grant/export bindings, revokes and joins the broker, checks whole-unit stop and
+binds those records to retained source. [Service composition](GIT-SERVICE.md)
+adds credential/release eligibility. Complete physical and host-crash
+qualification of that assembly remains unproved. An archive
 record, payload hash or successful reopen supplies none of that authority.
 There is no public constructor that accepts metadata or a caller's stopped flag.
 
@@ -88,10 +89,10 @@ cannot qualify source or authorize a new capture.
 go -C reviewer test -race -count=1 -run '^TestGitExportArchive|^TestGitMaterialization' ./
 ```
 
-These are storage, process-lifetime and bounded-parser proofs. Concrete factory
-integration, authenticated producer/peer policy, actual unit resource/egress
-qualification, physical-stop/recovery authority, generation leases, controller
-composition and live activation remain independent work. See
+These are storage, process-lifetime and bounded-parser proofs. The [concrete factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md)
+implement producer/peer binding, stopped recovery ownership, generation leases
+and controller selection. Actual aggregate resource/egress/physical-crash
+qualification and live activation remain unproved. See
 [GIT-MATERIALIZATION.md](GIT-MATERIALIZATION.md), [GIT-UNIT.md](GIT-UNIT.md) and
 [GIT-RUNTIME.md](GIT-RUNTIME.md).
 

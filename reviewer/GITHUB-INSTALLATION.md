@@ -71,8 +71,8 @@ It does not establish native reviewer-picker support or authorize activation.
 | `GitHubReader` | metadata read, contents read, pull requests read | GET within this repository |
 | `GitHubPublisher` | metadata read, pull requests write | Repository GET, POST review/PR comment, PUT existing review |
 
-Only the publisher receives write credentials. Discovery and future immutable
-object acquisition receive the reader. Neither object may enter a provider
+Only the publisher receives write credentials. Discovery and the
+[concrete source factory](GIT-FACTORY.md) receive the reader. Neither object may enter a provider
 worker, source reader or model prompt. The publication adapter still constructs
 advisory COMMENT bodies, verifies trusted snapshots and reconciles uncertain
 writes. The transport restricts destinations and methods; it does not replace
@@ -101,9 +101,10 @@ transport must not log or retain them. Caller-owned JWT bytes remain the caller'
 responsibility. There is no on-disk credential cache here.
 
 New requests fail one minute before token expiry. No background renewal or
-ambient credential fallback exists. The future runtime must explicitly acquire
-and swap newly qualified role transports, close old handles and treat failed
-qualification as a phase gate. A receipt cannot stand in for provider eligibility,
+ambient credential fallback exists. The [credential owner](CREDENTIAL-OWNER.md)
+implements explicit `Refresh`, role qualification, atomic transport handover and
+old-generation drain/disposal. [Service startup](GIT-SERVICE.md) composes that
+owner without automatic refresh; a failed qualification remains a phase gate. A receipt cannot stand in for provider eligibility,
 isolation, billing or owner activation evidence.
 
 ## Protocol sources and offline validation
@@ -131,7 +132,8 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-Trusted key-source injection/storage, role refresh composition, qualified
-immutable object acquisition, packaged runtime startup and actual installation
-qualification still need integration. The explicit signer adds no key loading
+The [explicit signer](github_app_jwt.go),
+[credential owner](CREDENTIAL-OWNER.md), [source factory](GIT-FACTORY.md) and
+[trusted startup](GIT-STARTUP.md) provide source composition. Actual key custody,
+installation/account and aggregate acquisition qualification remain open. The explicit signer adds no key loading
 or activation path. No live GitHub App token was obtained during these tests.

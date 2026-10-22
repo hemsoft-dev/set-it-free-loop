@@ -8,7 +8,9 @@ The fake marker remains data; it never becomes a command selector.
 This is a credential-free VM payload integration for #174. It deliberately does
 not implement `WorkerLauncher` or `AuthStopVerifier`. It supplies no native
 provider process, protected auth transfer, source/code-host role separation or
-provider route. Those integrations and their qualification remain required.
+provider route. The separate [native VM path](NATIVE-VM.md) implements those
+roles and transfers for pinned native clients. Neither this synthetic component
+nor the native fake-backend fixtures qualify the complete production boundary.
 
 The VM manifest contains only a fixed purpose, binding and three asset hashes
 and byte counts. It contains no paths, commands, environment, profile or network

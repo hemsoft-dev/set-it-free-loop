@@ -36,8 +36,10 @@ The supervisor calls `Complete` only with an `AuthStopVerifier` that checks the
 exact durable containment binding, confirms all descendants stopped and confirms
 all profile mounts detached. A client exit code alone cannot supply this proof.
 The [path-free auth transfer](AUTH-TRANSFER.md) supplies a bounded one-file
-record and journaled return path. No concrete production launch/channel verifier
-is supplied, and the VM worker must still provide the actual private transport.
+record and journaled return path. The [native VM host/guest](NATIVE-VM.md)
+implements the private transport and captured stopped-unit verifier. Its
+synthetic auth fixtures do not qualify production account use or aggregate
+physical/crash recovery.
 
 After shutdown, `Complete` reads the returned file without following its final
 symlink, rejects non-regular files, hard links, other owners, public modes, empty

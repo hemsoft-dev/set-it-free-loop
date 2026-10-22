@@ -62,8 +62,11 @@ settings or candidate instructions and that external tool/egress restrictions
 hold. Only leased credential files may come from protected auth storage; the
 client config/home and execution state must be disposable for each invocation.
 The whole persistent auth directory must not become a source-enabled client home. A manifest is only a requirement. It is not proof those conditions hold,
-and no production launcher is supplied. The default no-source invocation retains
-safe mode and live drivers remain blocked by default.
+and this configuration component supplies no launcher. The separate
+[native VM assembly](NATIVE-VM.md) implements guest profile, role and transport
+wiring. Broader physical capability/resource qualification remains open. The
+default no-source invocation retains safe mode and live drivers remain blocked
+by default.
 
 Claude's documented EndConversation control can remain when MCP tools are
 present. It is not a source operation. Do not claim the tool flags prove an empty
@@ -113,12 +116,12 @@ symlink/missing endpoints, malformed flags, typed per-session configuration and
 profile controls. These are fake-client and transport tests, not provider
 inference, account entitlement, official-client tool inventory or OS isolation.
 
-Continue private reader service binding, official-client wrapper execution and
-OS supervisor packaging under
+The [bounded reader program](READER-SERVICE.md) implements protected socket
+binding and a separate launch-bound audit channel. The
+[native VM assembly](NATIVE-VM.md) composes separate reader/client roles, wrapper
+execution and host supervisor packaging. Actual aggregate physical isolation,
+resource/crash and live-account qualification remain unproved under
 [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
-The [bounded reader program](READER-SERVICE.md) now implements protected socket
-binding and a separate launch-bound audit channel. Supervisor integration and
-actual isolation qualification remain separate work.
 The freeze still forbids credential acquisition, App installation, live inference
 or deployment without their separate gates and explicit owner authority.
 

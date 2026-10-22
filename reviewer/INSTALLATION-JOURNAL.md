@@ -92,9 +92,10 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-Atomic reader/publisher generation handover, admitted-request cancellation/drain,
-role refresh ownership, qualified object acquisition and packaged runtime
-composition still need integration. This journal is not a live qualification,
+The [credential owner](CREDENTIAL-OWNER.md), [source factory](GIT-FACTORY.md) and
+[trusted startup](GIT-STARTUP.md) implement generation handover, request drain,
+role refresh and packaged composition. Actual installation/account and aggregate
+physical acquisition qualification remain open. This journal is not a live qualification,
 credential import, remote revocation or activation grant. Both
 [installation authentication](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-an-installation-access-token)
 and [token revocation](https://docs.github.com/en/rest/apps/installations#revoke-an-installation-access-token)

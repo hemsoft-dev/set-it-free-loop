@@ -41,8 +41,10 @@ Failure classification waits for valid EOF. Duplicate JSON keys, contradictory
 terminal events or data after a Codex failure remain invalid output. A later
 duplicate Claude discriminator cannot turn an error into a successful report.
 
-`NativeDriver` selects no host executable, credentials, endpoint or launcher. A
-nil launcher blocks execution. A future qualified launcher must supply exact
+`NativeDriver` selects no host executable, credentials, endpoint or launcher. A nil launcher blocks execution. The separate [native VM assembly](NATIVE-VM.md)
+implements the host/guest client, role and private-channel wiring. Its source and
+fake-backend runs do not qualify the complete production boundary. A qualified
+launcher must establish exact
 pinned clients and subscription identity, a pristine disposable filesystem,
 separate protected auth and reader identities, the session-bound source endpoint,
 resource and internal request budgets, restricted egress, and termination of the

@@ -8,8 +8,9 @@ an explicit read-only HTTP transport. Tests use local TLS servers with synthetic
 credentials. Construction does not find credentials, register an App, poll,
 launch providers or activate the retired controller.
 
-The eventual runtime must separately verify the selected-repository installation
-and its permissions. Enrollment integers do not attest the transport credential.
+The [credential owner](CREDENTIAL-OWNER.md) and [service assembly](GIT-SERVICE.md)
+compose explicit selected-installation and role checks. Actual final installation
+qualification remains open; enrollment integers do not attest the credential.
 The adapter rejects write methods before forwarding to that transport. The
 publisher uses a separate transport. Neither transport belongs in a model,
 provider environment or source-reader worker.
@@ -146,9 +147,12 @@ changes during collection. Failed batches leave SQLite untouched. Throttling
 leaves postcheck_pending intact and subsequent recovery confirms the original
 review without a duplicate POST or supersession annotation.
 
-Polling/backoff, source packet/diff collection, credential attestation, native
-App consistency qualification and runtime packaging remain [issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176)
-work. No live deployment or product-completion claim follows from these tests.
+[Polling/backoff](POLLING.md), [snapshot collection](SNAPSHOT-EVIDENCE.md),
+[credential qualification](GITHUB-INSTALLATION.md) and
+[trusted runtime packaging](GIT-STARTUP.md) have source implementations. Actual
+selected-App/installation consistency and aggregate physical/runtime
+qualification remain open under
+[issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176). No live deployment or product-completion claim follows from these tests.
 
 Protocol sources checked October 20, 2026: GitHub's [issue events](https://docs.github.com/en/rest/issues/events#list-issue-events),
 [native event fields](https://docs.github.com/en/rest/using-the-rest-api/issue-event-types#review_requested),

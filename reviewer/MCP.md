@@ -47,10 +47,10 @@ oversized frames, canonical ID reuse, client cancellation, blocked connection
 deadlines, metadata floods, output caps and private backend-error redaction.
 These tests run no official client or inference.
 
-This implements the source wire protocol. Official-client wrapper configuration,
-launching the reader under its separate credential-free OS identity, private IPC
-binding, process containment and actual pinned-client compatibility still need
-implementation and qualification under
+This implements the source wire protocol. [Client configuration](SOURCE-CLIENTS.md)
+and the [native VM assembly](NATIVE-VM.md) implement the separate reader identity,
+private IPC and pinned-client wiring, exercised against local fake backends.
+Complete physical containment and live-account compatibility remain unqualified under
 [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
 Neither a protocol test nor tool annotations establish those boundaries. The
 existing freeze and explicit activation gates still apply.

@@ -95,7 +95,9 @@ final parser boundary. No socket permission is widened after payload start.
 The transient unit does not request `PrivateNetwork` or `PrivateUsers`; mandatory
 bubblewrap creation and independently inspected kernel namespaces supply those
 boundaries. A start failure or an unverifiable namespace withholds admission.
-The host probe is no substitute for those checks in the unfinished factory.
+The host probe is no substitute for the [concrete factory](GIT-FACTORY.md)
+checks or their still-unproved aggregate physical qualification. This status
+update changes none of the dated probe observations above.
 
 Use these typed transient values. These are D-Bus values, not unit-file strings:
 
