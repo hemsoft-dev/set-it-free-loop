@@ -104,8 +104,12 @@ later complete scan confirms exactly the original write.
 
 [Native request/history HTTP collection](GITHUB-DISCOVERY.md) is now supplied as
 an explicitly constructed reader, with actual App consistency still unqualified.
-Selected-installation credential attestation and private polling/runtime packaging remain [issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176) work. The
-injected read interface does not infer an owner request from a pending username.
+[Installation qualification](GITHUB-INSTALLATION.md),
+[credential ownership](CREDENTIAL-OWNER.md), [polling](POLLING.md) and
+[trusted runtime packages](GIT-STARTUP.md) have source implementations. Actual
+selected-installation and complete physical runtime qualification remain open
+under [issue #176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176).
+The injected read interface does not infer an owner request from a pending username.
 Selected App identity/token scope, new-trigger discovery, GitHub rendering and
 non-atomic publication race qualification remain separate live gates. Native picker
 eligibility is superseded by the [explicit trigger decision](GITHUB-TRIGGERS.md). Owner-disabled Actions and all

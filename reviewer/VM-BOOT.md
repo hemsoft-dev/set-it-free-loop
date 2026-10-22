@@ -1,10 +1,11 @@
 # Sealed VM boot assets
 
-`OpenVMBootImages` prepares an explicit trusted boot specification for a later
+`OpenVMBootImages` prepares an explicit trusted boot specification for a separate
 VM supervisor. It starts no process or service and reads no auth profile. Pins,
 paths and binding must come from the promoted release/controller, never PR or
-model content. The production native VM launcher and guest roles remain
-unfinished [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174) work.
+model content. The separate [native VM assembly](NATIVE-VM.md) implements its host launcher
+and guest roles. Complete physical/resource/crash and live-account qualification
+remain open under [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
 
 The specification binds a session, launch nonce and containment hash to QEMU,
 kernel and initramfs file sizes and SHA256 hashes. Each source must be a regular,

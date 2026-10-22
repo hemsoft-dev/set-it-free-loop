@@ -56,6 +56,7 @@ SFL_GIT_BOOTSTRAP_NAMESPACE=1 go -C reviewer test -race -count=1 -run '^TestGitM
 No successful aggregate mount admission is established on mini. The required
 full-unit noswap tmpfs and sealed inner-worker execution still fail independently.
 This fixture uses ordinary files and unqualified storage; it does not waive
-either prerequisite. Full factory, descriptor/filter qualification, durable
-source publication/recovery, credentials and live activation remain separate
-work in #176 and its related issues.
+either prerequisite. The [concrete factory](GIT-FACTORY.md) implements descriptor/filter checks and
+durable stopped-source publication/recovery. Complete physical qualification,
+actual credential/account evidence and live activation remain open in #176 and
+its related issues.

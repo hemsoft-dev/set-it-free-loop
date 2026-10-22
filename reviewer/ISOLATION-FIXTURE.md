@@ -64,8 +64,10 @@ of production client packaging, credential transfer or egress. This command neve
 credentials, App identity or live inference, and its result explicitly records
 production_boundary_qualified=false. Production needs a separately qualified
 KVM/host boundary, protected auth/profile packaging, provider request/egress
-limits, durable OS recovery and exact-client qualification. Those remain source
-or qualification work under the related implementation issue.
+limits, durable OS recovery and exact-client qualification. The separate [native VM assembly](NATIVE-VM.md) implements those source
+mechanisms and runs pinned-client fake-backend fixtures. Complete physical
+resource/crash, capability and live-account qualification remain unproved under
+the related implementation issue.
 
 References: [QEMU security policy](https://github.com/qemu/qemu/blob/v10.2.1/docs/system/security.rst),
 [Linux initramfs](https://www.kernel.org/doc/html/latest/filesystems/ramfs-rootfs-initramfs.html),

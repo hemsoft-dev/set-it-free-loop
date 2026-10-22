@@ -69,10 +69,12 @@ provider output, credential or backend diagnostic.
 A stopped audit is not physical termination proof. The supervisor must reap the
 reader and provider containment before accepting its receipt or releasing a
 durable lease. Cancellation or a broken audit pipe can prevent a complete audit;
-the launcher must retain uncertainty for recovery. The current adapter's
-in-process broker is not automatically replaced by this external receipt. Wiring
-the separate reader into a qualified launcher and durable audit channel remains
-implementation work under
+the launcher must retain uncertainty for recovery. The adapter's in-process broker is not
+automatically replaced by an external receipt. The separate
+[native VM assembly](NATIVE-VM.md) implements reader/worker role separation,
+private object/audit channels and captured receipt validation. Complete physical
+containment, actual-account compatibility and arbitrary-crash qualification
+remain unproved under
 [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
 
 Build without installation or launch:

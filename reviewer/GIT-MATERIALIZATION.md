@@ -52,13 +52,14 @@ Each provider reader still gets its own original call/byte budget. Closing the
 materialization fences later reads and releases its descriptors.
 
 `SnapshotEvidence` now holds `ObjectStore` privately. Trusted offline fixture
-helpers keep their Git-backed behavior; the eventual acquisition factory must
-choose the materialized path for downloaded source. The private receiver and
-restore functions are plumbing, not production stop enforcement. Sealed memfds
-are process-local. The private [export archive](GIT-EXPORT-ARCHIVE.md) now retains
-and reopens the exact plain export across controller processes. It remains
-staging; authenticated producer/stop evidence, recovery ownership and controller
-selection are still factory work. Losing source must not cause an automatic
+helpers keep their Git-backed behavior; the [concrete factory](GIT-FACTORY.md)
+selects the materialized path for downloaded source. The receiver and restore
+functions alone provide no stop authority. Sealed memfds are process-local; the
+[export archive](GIT-EXPORT-ARCHIVE.md) retains and reopens the exact plain export
+across controller processes. The factory implements producer/stop binding and
+recovery ownership, and the [service assembly](GIT-SERVICE.md) selects that source.
+Complete protected-launch and aggregate physical/recovery qualification remain
+unproved. Losing source must not cause an automatic
 re-fetch or recapture of an admitted job.
 
 Tests use actual Git-produced SHA-1 and SHA-256 packs, capture the packet, delete

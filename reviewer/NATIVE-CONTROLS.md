@@ -94,10 +94,12 @@ owned QEMU runtime directories were removed. These are synthetic producer and
 native lifecycle observations, not model-quality, account or whole-host Git
 acquisition qualifications. Private receipts and synthetic auth remain local.
 
-This source does not run or score the frozen corpus. A durable six-arm runner,
-private attempt reservations, no-replay restart accounting, independent
-assessments and a new explicitly frozen release plan remain work under
-[#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177).
+This control component does not run or score the frozen corpus. The separate
+[durable evaluation runner](EVALUATION-RUNNER.md) implements six-arm execution,
+private attempt reservations, no-replay restart accounting and post-run
+independent assessment. Actual comparative model outputs and judgments, a
+qualified frozen release/plan and the owner-authorized pilot remain unproved
+under [#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177).
 The corpus and its labels, packet hashes and freeze receipts are unchanged.
 
 Unit tests use fake workers, fake kernel/unit evidence and Unix protocol

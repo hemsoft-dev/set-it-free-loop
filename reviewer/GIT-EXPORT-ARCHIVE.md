@@ -89,10 +89,10 @@ cannot qualify source or authorize a new capture.
 go -C reviewer test -race -count=1 -run '^TestGitExportArchive|^TestGitMaterialization' ./
 ```
 
-These are storage, process-lifetime and bounded-parser proofs. Concrete factory
-integration, authenticated producer/peer policy, actual unit resource/egress
-qualification, physical-stop/recovery authority, generation leases, controller
-composition and live activation remain independent work. See
+These are storage, process-lifetime and bounded-parser proofs. The [concrete factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md)
+implement producer/peer binding, stopped recovery ownership, generation leases
+and controller selection. Actual aggregate resource/egress/physical-crash
+qualification and live activation remain unproved. See
 [GIT-MATERIALIZATION.md](GIT-MATERIALIZATION.md), [GIT-UNIT.md](GIT-UNIT.md) and
 [GIT-RUNTIME.md](GIT-RUNTIME.md).
 
