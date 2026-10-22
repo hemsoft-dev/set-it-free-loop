@@ -105,3 +105,45 @@ func TestCrashTransportUsesOnlyOwnedLoopbackTLS(t *testing.T) {
 		t.Fatal("local TLS positive failed")
 	}
 }
+
+// This is the actual native-unit producer JSON from the first synthetic
+// supervisor-loss run at8d78dc5, not a hand-built copy of consumer fields.
+func TestUnitIdentityDecodesActualNativeProducer(t *testing.T) {
+	raw, err := os.ReadFile("testdata/actual-native-unit.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	dir := filepath.Join(root, "launches", "135983a22d31751fb89b31ff3e7259f3")
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "unit.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	record, err := readUnit(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Identity.InvocationID != "1c651bc3829344ffb92b6a7c84d2dc0f" || !capturedUnitBound(record, record.Binding.SessionHash) {
+		t.Fatal("lost actual invocation identity", record.Identity)
+	}
+}
+
+func TestCapturedUnitRequiresCompleteOriginalIdentity(t *testing.T) {
+	raw, err := os.ReadFile("testdata/actual-native-unit.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record unitRecord
+	if err = json.Unmarshal(raw, &record); err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*unitRecord){func(u *unitRecord) { u.Identity.InvocationID = "" }, func(u *unitRecord) { u.Identity.BootID = "" }, func(u *unitRecord) { u.Identity.PID = 0 }, func(u *unitRecord) { u.Identity.StartTicks = 0 }, func(u *unitRecord) { u.Captured = false }, func(u *unitRecord) { u.Unit = "other.service" }, func(u *unitRecord) { u.PayloadKind = "fake" }, func(u *unitRecord) { u.ManifestHash = "" }} {
+		bad := record
+		mutate(&bad)
+		if capturedUnitBound(bad, record.Binding.SessionHash) {
+			t.Fatal("substituted or missing unit identity accepted")
+		}
+	}
+}

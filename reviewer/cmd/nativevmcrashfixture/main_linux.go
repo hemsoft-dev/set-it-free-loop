@@ -49,7 +49,7 @@ type unitRecord struct {
 	Binding                         r.AuthBinding
 	Captured, Stopped, Aborted      bool
 	PayloadKind, Unit, ManifestHash string
-	Identity                        struct{ InvocationID string }
+	Identity                        r.GateIdentity
 }
 
 func hash(raw []byte) string { s := sha256.Sum256(raw); return hex.EncodeToString(s[:]) }
@@ -268,7 +268,7 @@ func pointValid(c config, p crashPoint) bool {
 }
 func stopOriginal(c config, sessionHash string) (unitRecord, error) {
 	record, err := readUnit(c.Root)
-	if err != nil || !record.Captured || record.PayloadKind != "native-vm" || record.Binding.SessionHash != sessionHash || len(record.Binding.LaunchID) != 32 {
+	if err != nil || !capturedUnitBound(record, sessionHash) {
 		return record, errors.New("original native capture required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -331,7 +331,7 @@ func runParent(c config, configuration string) (err error) {
 		return errors.New("wrong crash point")
 	}
 	before, err := readUnit(c.Root)
-	if err != nil || before.Binding.SessionHash != point.SessionHash || !before.Captured || before.Stopped {
+	if err != nil || !capturedUnitBound(before, point.SessionHash) || before.Stopped {
 		return errors.New("live captured unit required")
 	}
 	killedAt := time.Now()
@@ -453,4 +453,9 @@ func retainedSeedMatches(c config, expected string) bool {
 	raw, err := os.ReadFile(filepath.Join(c.Root, "auth", string(c.Provider), "state.json"))
 	defer clear(raw)
 	return err == nil && len(raw) > 0 && len(raw) <= 100<<10 && hash(raw) == expected
+}
+
+func capturedUnitBound(record unitRecord, sessionHash string) bool {
+	id := record.Identity
+	return record.Captured && record.PayloadKind == "native-vm" && record.Binding.SessionHash == sessionHash && len(record.Binding.LaunchID) == 32 && record.Unit == "sfl-alpha-"+record.Binding.LaunchID+".service" && len(record.ManifestHash) == 64 && len(id.InvocationID) == 32 && len(id.BootID) == 36 && id.PID > 0 && id.StartTicks > 0
 }
