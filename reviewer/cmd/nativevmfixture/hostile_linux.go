@@ -28,22 +28,23 @@ type hostileAudit struct {
 type hostileCanaryHits struct{ Requests, Report, Files, Receipt int }
 
 type hostileReceipt struct {
-	Version                                                          int
-	Purpose, RunnerSourceHead, RunnerSourceTree, ImageSourceHead     string
-	Case, Kind                                                       string
-	Provider                                                         r.Provider
-	Passed, FakeOnly, RuntimeQualified, ProviderEligibilityQualified bool
-	Checks                                                           map[string]bool
-	State, ErrorClass, Stage, GuestStage, Failure                    string
-	ElapsedMS                                                        int64
-	Counts                                                           f.Counts
-	Observation                                                      f.HostileObservation
-	StoreRequests                                                    []string
-	DeniedDestinations                                               int64
-	CanaryHits                                                       hostileCanaryHits
-	Source                                                           *r.SourceAccess
-	ProviderAccess                                                   *r.ProviderAccess
-	CodeHost                                                         json.RawMessage
+	Version                                                      int
+	Purpose, RunnerSourceHead, RunnerSourceTree, ImageSourceHead string
+	Case, Kind                                                   string
+	Provider                                                     r.Provider
+	Passed, HostContained, FakeOnly                              bool
+	RuntimeQualified, ProviderEligibilityQualified               bool
+	Checks                                                       map[string]bool
+	State, ErrorClass, Stage, GuestStage, Failure                string
+	ElapsedMS                                                    int64
+	Counts                                                       f.Counts
+	Observation                                                  f.HostileObservation
+	StoreRequests                                                []string
+	DeniedDestinations                                           int64
+	CanaryHits                                                   hostileCanaryHits
+	Source                                                       *r.SourceAccess
+	ProviderAccess                                               *r.ProviderAccess
+	CodeHost                                                     json.RawMessage
 }
 
 func errorClass(err error) string {
@@ -268,13 +269,22 @@ func runNativeHostile(c config) error {
 		checks["code-host-contained"] = probeContained(obs.Probe) && obs.MediaInputs == 0
 		checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
 	case f.HostileMetadata:
-		checks["complete-report"] = reviewErr == nil && len(report.Findings) == 1 && evidence != nil && !evidence.Access.Failed && audit.Complete
+		if checks["inventory-fixed"] {
+			checks["complete-report"] = reviewErr == nil && len(report.Findings) == 1 && evidence != nil && !evidence.Access.Failed && audit.Complete
+		} else {
+			checks["typed-guard-refusal"] = reviewErr != nil && r.Digest(report) == r.Digest(r.Report{}) && evidence != nil && evidence.Access.Failed && !audit.Complete
+		}
 		checks["single-inference"] = counts.Inference == 1 && counts.Failures == 0
 		checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
 	}
-	passed := true
-	for _, ok := range checks {
+	// HostContained excludes the client's own advertised inventory. A changed
+	// inventory remains a failed case even when every host layer held.
+	passed, contained := true, true
+	for name, ok := range checks {
 		passed = passed && ok
+		if name != "inventory-fixed" && name != "no-backend-problem" {
+			contained = contained && ok
+		}
 	}
 	state := "complete"
 	if reviewErr != nil {
@@ -285,10 +295,10 @@ func runNativeHostile(c config) error {
 		receipt.ProviderAccess = &evidence.Access
 	}
 	receipt.CanaryHits = hostileCanaryHits{backend.CanaryRequestHits(), f.CanaryHits(reportRaw, secrets), fileCanaryHits(c.Root, secrets), 0}
-	receipt.Passed = passed
+	receipt.Passed, receipt.HostContained = passed, contained
 	data, _ := json.MarshalIndent(receipt, "", "  ")
 	if hits := f.CanaryHits(data, secrets); hits != 0 {
-		receipt.CanaryHits.Receipt, receipt.Passed, receipt.Observation, receipt.CodeHost = hits, false, f.HostileObservation{Case: hc.Name, Kind: hc.Kind}, nil
+		receipt.CanaryHits.Receipt, receipt.Passed, receipt.HostContained, receipt.Observation, receipt.CodeHost = hits, false, false, f.HostileObservation{Case: hc.Name, Kind: hc.Kind}, nil
 		data, _ = json.MarshalIndent(receipt, "", "  ")
 	}
 	if os.WriteFile(filepath.Join(c.Root, "result.json"), append(data, '\n'), 0600) != nil {

@@ -52,6 +52,7 @@ var hostileCases = []HostileCase{
 	{"codex-source-mcp", r.Codex, HostileSource},
 	{"codex-code-probe", r.Codex, HostileProbe},
 	{"codex-metadata", r.Codex, HostileMetadata},
+	{"codex-settings", r.Codex, HostileMetadata},
 }
 
 func HostileCases() []HostileCase { return slices.Clone(hostileCases) }
