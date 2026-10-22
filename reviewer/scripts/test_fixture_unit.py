@@ -74,6 +74,12 @@ class OriginalUnitTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "never captured"):
                 owner.stop()
 
+    def test_closed_capture_never_reuses_stale_handles(self):
+        owner, _, _ = self.owner(False)
+        owner.close()
+        with self.assertRaisesRegex(RuntimeError, "never captured"):
+            owner.stop()
+
     def test_dead_root_alone_does_not_override_populated_original(self):
         owner, _, _ = self.owner(True)
         self.assertTrue(owner.root_dead())

@@ -164,6 +164,8 @@ class FixtureUnit:
                 os.close(fd)
                 raise
             self.group_identity = os.fstat(self.group)
+            if self.group_identity.st_dev != self.hierarchy_identity.st_dev:
+                raise RuntimeError("fixture cgroup crossed its captured hierarchy")
             self.pidfd = os.pidfd_open(birth["pid"], 0)
             after = self.observe()
             if (process_start(birth["pid"]) != birth["start"]
@@ -238,6 +240,7 @@ class FixtureUnit:
                   "diagnostic_only": True})
 
     def close(self):
+        self.captured = False
         for name in ["pidfd", "group", "hierarchy"]:
             fd = getattr(self, name)
             if fd is not None:
