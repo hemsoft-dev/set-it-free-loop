@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -189,7 +188,7 @@ func (w *gitVMGuestWorker) start(ctx context.Context, q gitVMGuestRequest) error
 	cmd.Dir = "/"
 	cmd.Stdin = devNull
 	cmd.Stdout = devNull
-	cmd.Stderr = &gitVMGuestDiagnostic{}
+	cmd.Stderr = devNull
 	cmd.ExtraFiles = []*os.File{w.supervisor, w.image, w.request, write, sealedFilter, w.runtime, w.broker, w.work, alias}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: gitVMGuestUID, Gid: gitVMGuestGID, Groups: []uint32{}}, UseCgroupFD: true, CgroupFD: int(groupFD.Fd()), Pdeathsig: syscall.SIGKILL}
 	runtime.LockOSThread()
@@ -265,10 +264,6 @@ func (w *gitVMGuestWorker) qualify(ctx context.Context, q gitVMGuestRequest) err
 	}
 	stage = "mount"
 	if checkGitMountBoundaryIDs(ctx, w.boundary, w.broker, q.Source.Binding, 0, 0555) != nil {
-		// Temporary bounded inert-image mount diagnostic; remove before PR.
-		if raw, err := gitReadMountInfo(ctx, identity, fd); err == nil {
-			_, _ = os.Stderr.WriteString("SFL_SOURCE_MOUNT_DIAGNOSTIC " + strconv.QuoteToASCII(string(raw)) + "\n")
-		}
 		return ErrVMBoot
 	}
 	stage = "descriptors"
@@ -312,50 +307,4 @@ func (w *gitVMGuestWorker) closeFiles() {
 		w.process.out.Close()
 	}
 	_ = closeVMFiles([]*os.File{w.image, w.request, w.runtime, w.broker, w.work, w.supervisor})
-}
-
-// Child output never passes through to serial. Only a fixed trusted stage
-// record is emitted; unknown helper/Git output becomes one constant marker.
-type gitVMGuestDiagnostic struct {
-	raw     []byte
-	emitted bool
-}
-
-func (d *gitVMGuestDiagnostic) Write(raw []byte) (int, error) {
-	n := len(raw)
-	if d.emitted {
-		return n, nil
-	}
-	if len(d.raw)+len(raw) > 128 {
-		d.emitted = true
-		_, _ = os.Stderr.WriteString("SFL_SOURCE_WORKER_STAGE helper-error\n")
-		return n, nil
-	}
-	d.raw = append(d.raw, raw...)
-	if bytes.Contains(d.raw, []byte{'\n'}) {
-		d.emitted = true
-		for _, stage := range []string{"inherited", "manifest", "connect", "authenticate", "policy", "ready", "acquire"} {
-			if string(d.raw) == "SFL_SOURCE_WORKER_STAGE "+stage+"\n" {
-				_, _ = os.Stderr.Write(d.raw)
-				return n, nil
-			}
-		}
-
-		kind := "helper-error"
-		text := string(d.raw)
-		for _, item := range []struct{ needle, kind string }{
-			{"new namespace", "helper-namespace"}, {"uid map", "helper-uid-map"},
-			{"mount", "helper-mount"}, {"execvp", "helper-exec"},
-			{"Permission denied", "helper-permission"}, {"Operation not permitted", "helper-permission"},
-		} {
-			if strings.Contains(text, item.needle) {
-				kind = item.kind
-				break
-			}
-		}
-		_, _ = os.Stderr.WriteString("SFL_SOURCE_WORKER_STAGE " + kind + "\n")
-		// Temporary credential-free image diagnostic; remove before PR.
-		_, _ = os.Stderr.WriteString("SFL_SOURCE_HELPER_DIAGNOSTIC " + strconv.QuoteToASCII(text) + "\n")
-	}
-	return n, nil
 }
