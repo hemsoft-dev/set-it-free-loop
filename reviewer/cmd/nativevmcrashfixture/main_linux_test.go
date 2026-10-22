@@ -64,7 +64,7 @@ func TestCrashPointBindsSourcePolicySessionAndOriginalRoot(t *testing.T) {
 		if !pointValid(c, p) {
 			t.Fatal("valid private point rejected")
 		}
-		for _, mutate := range []func(*crashPoint){func(p *crashPoint) { p.SessionHash = strings.Repeat("e", 64) }, func(p *crashPoint) { p.PolicyHash = strings.Repeat("e", 64) }, func(p *crashPoint) { p.RootInode++ }, func(p *crashPoint) { p.RootDevice++ }, func(p *crashPoint) { p.Counts.Refreshes = 0 }, func(p *crashPoint) { p.Counts.Inference = 2 }, func(p *crashPoint) { p.Counts.Failures++ }, func(p *crashPoint) { p.ImageSourceHead = strings.Repeat("e", 40) }, func(p *crashPoint) { p.RunnerSourceTree = strings.Repeat("e", 40) }} {
+		for _, mutate := range []func(*crashPoint){func(p *crashPoint) { p.SessionHash = strings.Repeat("e", 64) }, func(p *crashPoint) { p.PolicyHash = strings.Repeat("e", 64) }, func(p *crashPoint) { p.RootInode++ }, func(p *crashPoint) { p.RootDevice++ }, func(p *crashPoint) { p.Counts.Refreshes = 0 }, func(p *crashPoint) { p.Counts.Inference = 2 }, func(p *crashPoint) { p.Counts.Failures++ }, func(p *crashPoint) { p.Counts.Negotiation++ }, func(p *crashPoint) { p.ImageSourceHead = strings.Repeat("e", 40) }, func(p *crashPoint) { p.RunnerSourceTree = strings.Repeat("e", 40) }} {
 			bad := p
 			mutate(&bad)
 			if pointValid(c, bad) {

@@ -273,7 +273,7 @@ func pointValid(c config, p crashPoint) bool {
 		return false
 	}
 	dev, ino, err := rootIdentity(c.Root)
-	return err == nil && verifyOwnedRoot(c) == nil && p.Version == 1 && p.RunnerSourceHead == sourceHead && p.RunnerSourceTree == sourceTree && p.ImageSourceHead == c.ImageSourceHead && p.SessionHash == r.Digest(session) && p.PolicyHash == r.Digest(policy) && len(p.SeedHash) == 64 && dev == p.RootDevice && ino == p.RootInode && p.Counts.Inference == 1 && p.Counts.Refreshes == 1 && p.Counts.Failures == 0 && p.Counts.RefreshFailures == 0 && p.Counts.Telemetry == 0
+	return err == nil && verifyOwnedRoot(c) == nil && p.Version == 1 && p.RunnerSourceHead == sourceHead && p.RunnerSourceTree == sourceTree && p.ImageSourceHead == c.ImageSourceHead && p.SessionHash == r.Digest(session) && p.PolicyHash == r.Digest(policy) && len(p.SeedHash) == 64 && dev == p.RootDevice && ino == p.RootInode && p.Counts.Inference == 1 && p.Counts.Refreshes == 1 && p.Counts.Failures == 0 && p.Counts.RefreshFailures == 0 && p.Counts.Telemetry == 0 && p.Counts.Negotiation == 0
 }
 
 type stoppedSupervisor interface {

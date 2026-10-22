@@ -11,7 +11,8 @@ normal native reviewer, source reader and protected auth store. After the actual
 canned producer validates the first inference request using refreshed synthetic
 auth, it withholds the successful SSE response. No response bytes reach the
 client. A bounded private pipe record binds the source/image, session/policy,
-original root identity, seed hash and actual fake-backend counts. The producer
+original root identity, seed hash and actual fake-backend counts. Forwarded
+negotiation, telemetry or rejected requests refuse the crash point. The producer
 closes that pipe after its one canonical newline-terminated record; trailing
 bytes, additional records or a missing EOF refuse qualification.
 
@@ -62,8 +63,10 @@ it intentionally leaves those synthetic auth journals for inspection.
 
 An ordinary timeout always fails qualification, even if cleanup succeeds. Only
 the explicitly selected forced-timeout case can pass after observing its exact
-fault point and independently bound cleanup. Unproven group or unit cleanup
-is recorded as unknown and retains the state directory. The fixed local
+fault point, a live driver immediately before an accepted group SIGKILL, its
+observed SIGKILL exit, and independently bound cleanup. A driver that exits
+before that signal cannot qualify, even when cleanup succeeds. Unproven group
+or unit cleanup is recorded as unknown and retains the state directory. The fixed local
 transport never dials a public provider. Existing roots, malformed/private-point
 substitutions and mixed or unsupported providers refuse. Ordinary tests exercise
 framing, source/session/policy/root binding, no existing-root adoption and actual

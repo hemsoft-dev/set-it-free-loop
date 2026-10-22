@@ -43,20 +43,25 @@ def group_running(group):
 
 
 def kill_owned_group(process):
+    observed = {"stopped": False, "driver_alive_before_signal": process.poll() is None,
+                "signal_sent": False, "driver_sigkill_observed": False}
     try:
         os.killpg(process.pid, signal.SIGKILL)
+        observed["signal_sent"] = True
     except ProcessLookupError:
         pass
     try:
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
-        return False
+        return observed
+    observed["driver_sigkill_observed"] = process.returncode == -signal.SIGKILL
     deadline = time.monotonic()+5
     while time.monotonic() < deadline:
         if not group_running(process.pid):
-            return True
+            observed["stopped"] = True
+            return observed
         time.sleep(0.02)
-    return False
+    return observed
 
 
 def run_owned(program, configuration, environment, log, timeout=190, force_point=None):
@@ -83,9 +88,10 @@ def run_owned(program, configuration, environment, log, timeout=190, force_point
         except subprocess.TimeoutExpired:
             continue
     try:
-        group_stopped = kill_owned_group(process)
+        killed = kill_owned_group(process)
     except (OSError, RuntimeError, ValueError):
-        group_stopped = False
+        killed = {}
+    group_stopped = killed.get("stopped") is True
     record = {"Status": "unknown"}
     recovery = None
     try:
@@ -105,7 +111,25 @@ def run_owned(program, configuration, environment, log, timeout=190, force_point
     return process.returncode, trigger != "driver-error", {
             "status": "known" if known else "unknown", "trigger": trigger,
             "owned_process_group_stopped": group_stopped,
+            "driver_alive_before_signal": killed.get("driver_alive_before_signal") is True,
+            "kill_signal_sent": killed.get("signal_sent") is True,
+            "driver_sigkill_observed": killed.get("driver_sigkill_observed") is True,
             "forced_point_observed": observed_point, "recovery": record}
+
+
+def forced_loss_passed(source, code, timed_out, cleanup):
+    recovery = cleanup.get("recovery", {})
+    return (code == -signal.SIGKILL and timed_out and cleanup.get("status") == "known"
+            and cleanup.get("trigger") == "forced-timeout-point"
+            and cleanup.get("forced_point_observed") is True
+            and all(cleanup.get(key) is True for key in
+                ["owned_process_group_stopped", "driver_alive_before_signal",
+                 "kill_signal_sent", "driver_sigkill_observed"])
+            and recovery.get("Status") == "stopped-owned-unit"
+            and recovery.get("SourceHead") == source["source_commit"]
+            and recovery.get("SourceTree") == source["source_tree"]
+            and all(recovery.get(key) is True for key in
+                ["OriginalRootVerified", "PhysicalStop", "RuntimeRemoved", "AuthRecoveryFenced", "AuthUnchanged"]))
 
 
 def main():
@@ -170,14 +194,7 @@ def main():
     with (output/"runner.log").open("xb") as log:
         code, timed_out, cleanup = run_owned(program, configuration, environment, log,
                     force_point=state/"driver-timeout-point.json" if args.force_driver_timeout else None)
-    recovery = cleanup.get("recovery", {})
-    forced_passed = (args.force_driver_timeout and timed_out and cleanup.get("status") == "known"
-                     and cleanup.get("forced_point_observed") is True
-                     and recovery.get("Status") == "stopped-owned-unit"
-                     and recovery.get("SourceHead") == source["source_commit"]
-                     and recovery.get("SourceTree") == source["source_tree"]
-                     and all(recovery.get(key) is True for key in
-                       ["OriginalRootVerified", "PhysicalStop", "RuntimeRemoved", "AuthRecoveryFenced", "AuthUnchanged"]))
+    forced_passed = args.force_driver_timeout and forced_loss_passed(source, code, timed_out, cleanup)
     receipt = {**source, "image_source_commit": manifest["source_commit"], "state_directory": str(state),
                "program_sha256": common.digest(program), "exit_code": code, "timed_out": timed_out,
                "elapsed_seconds": round(time.monotonic()-start, 3), "fake_only": True,
