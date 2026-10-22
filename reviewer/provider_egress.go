@@ -86,6 +86,9 @@ type ProviderAccess struct {
 	Failed               bool   `json:"failed"`
 	Exhausted            bool   `json:"exhausted"`
 	Stopped              bool   `json:"stopped"`
+	// RouteDenials counts requests refused at ingress before any transport.
+	// It is omitted when zero, so existing receipts keep their bytes.
+	RouteDenials int `json:"route_denials,omitempty"`
 }
 
 // ValidateCompleted is required before accepting a model report. A successful
@@ -432,6 +435,9 @@ func (b *ProviderEgress) finishIntake() {
 func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	route, ok := b.route(r)
 	if !ok {
+		b.mu.Lock()
+		b.audit.RouteDenials++
+		b.mu.Unlock()
 		b.fail(false)
 		http.Error(w, "provider route denied", http.StatusForbidden)
 		return

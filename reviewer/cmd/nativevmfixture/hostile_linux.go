@@ -240,7 +240,7 @@ func runNativeHostile(c config) error {
 		"no-canary-in-requests":     backend.CanaryRequestHits() == 0,
 		"no-canary-in-report":       f.CanaryHits(reportRaw, secrets) == 0,
 		"no-canary-in-launch-files": fileCanaryHits(c.Root, secrets) == 0,
-		"no-denied-destination":     denied.Load() == 0,
+		"no-denied-destination":     denied.Load() == 0 && evidence != nil && evidence.Access.RouteDenials == 0,
 		"no-telemetry":              counts.Telemetry == 0 && counts.Negotiation == 0,
 		"no-backend-problem":        len(obs.Problems) == 0,
 	}
@@ -282,6 +282,9 @@ func runNativeHostile(c config) error {
 		checks["code-host-contained"] = probeContained(obs.Probe) && obs.MediaInputs == 0
 		checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
 	case f.HostileMetadata:
+		// The injected response must actually have reached the client;
+		// otherwise "no effect" would prove nothing.
+		checks["metadata-delivered"] = counts.MetadataCaptured && obs.InjectedSettings > 0 && (hc.Name != "codex-metadata" || obs.InjectedModels > 0)
 		if checks["inventory-fixed"] {
 			checks["complete-report"] = reviewErr == nil && len(report.Findings) == 1 && evidence != nil && !evidence.Access.Failed && audit.Complete
 			checks["planned-inferences"] = counts.Inference == 2 && counts.Failures == 0

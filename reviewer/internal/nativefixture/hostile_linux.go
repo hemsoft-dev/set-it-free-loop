@@ -227,8 +227,12 @@ type HostileObservation struct {
 	Results      map[string]string
 	Probe        map[string]string
 	MetadataUsed bool
-	MediaInputs  int
-	Problems     []string
+	// InjectedModels and InjectedSettings count hostile metadata responses
+	// actually delivered to the client.
+	InjectedModels   int
+	InjectedSettings int
+	MediaInputs      int
+	Problems         []string
 }
 
 type hostileState struct {
@@ -294,8 +298,8 @@ func (b *Backend) Hostile() HostileObservation {
 	return o
 }
 
-// CanaryRequestHits counts secrets in received request bytes and in header
-// values other than the provider Authorization header.
+// CanaryRequestHits counts secrets in received request bytes and in every
+// header value except the exact expected synthetic bearer.
 func (b *Backend) CanaryRequestHits() int {
 	b.scanMu.Lock()
 	defer b.scanMu.Unlock()
@@ -305,10 +309,12 @@ func (b *Backend) CanaryRequestHits() int {
 func (b *Backend) scan(q *http.Request, body []byte) {
 	hits := CanaryHits(body, b.secrets) + CanaryHits([]byte(q.URL.String()), b.secrets)
 	for name, values := range q.Header {
-		if name == "Authorization" {
-			continue
-		}
 		for _, v := range values {
+			// Only the exact current synthetic bearer is expected; any other
+			// Authorization content, including refresh or ID tokens, is scanned.
+			if name == "Authorization" && (v == "Bearer sfl-fake-access" || v == "Bearer "+rotatedAccess) {
+				continue
+			}
 			hits += CanaryHits([]byte(v), b.secrets)
 		}
 	}

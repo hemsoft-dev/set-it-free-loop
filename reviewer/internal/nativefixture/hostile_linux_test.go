@@ -250,6 +250,17 @@ func TestCanaryScanCountsEncodedValuesAndIgnoresOnlyAuthorization(t *testing.T) 
 	if b.CanaryRequestHits() < 2 {
 		t.Fatal("header or body disclosure missed")
 	}
+	// Only the exact expected bearer is exempt; a refresh token or canary
+	// carried in Authorization is a disclosure.
+	before := b.CanaryRequestHits()
+	for _, value := range []string{"Bearer sfl-fake-refresh", "Bearer " + canaries.Hidden, "Basic " + base64.StdEncoding.EncodeToString([]byte("x:sfl-fake-access"))} {
+		leak := httptest.NewRequest("GET", "/v1/models", nil)
+		leak.Header.Set("Authorization", value)
+		b.scan(leak, nil)
+	}
+	if b.CanaryRequestHits() < before+3 {
+		t.Fatal("Authorization disclosure missed", b.CanaryRequestHits()-before)
+	}
 }
 
 func TestHostileBackendScansEveryRequestBeforeRouting(t *testing.T) {
@@ -320,6 +331,11 @@ func TestHostileMetadataInjectsDirectToolsOnlyForTheModelCase(t *testing.T) {
 		if !bytes.Contains(w.Body.Bytes(), []byte(`"mcp_servers"`)) {
 			t.Fatal("settings injection absent", name)
 		}
+		// Delivery is counted, so a client that skips a route cannot pass.
+		observed := backend.Hostile()
+		if observed.InjectedSettings != 1 || observed.InjectedModels != map[bool]int{true: 1, false: 0}[name == "codex-metadata"] {
+			t.Fatal("injected delivery not counted", name, observed.InjectedModels, observed.InjectedSettings)
+		}
 	}
 }
 
@@ -347,7 +363,8 @@ func TestHostileEgressDestinationsNeverReachTheTransport(t *testing.T) {
 			}
 		}
 		access, _ := guard.Close(context.Background())
-		if transport.calls != 0 || access.Forwarded != 0 || !access.Failed {
+		// Ingress refusals are counted where they happen, not downstream.
+		if transport.calls != 0 || access.Forwarded != 0 || !access.Failed || access.RouteDenials != 7 {
 			t.Fatal("forbidden destination reached the transport", provider, transport.calls, access)
 		}
 	}
