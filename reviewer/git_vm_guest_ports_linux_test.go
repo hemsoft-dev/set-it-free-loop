@@ -4,6 +4,7 @@ package reviewer
 
 import (
 	"context"
+	"golang.org/x/sys/unix"
 	"os"
 	"testing"
 	"time"
@@ -63,5 +64,44 @@ func TestGitVMGuestPortWatchPartialFailureRetainsNoDescriptors(t *testing.T) {
 	}
 	if gitPacketFDCount(t) != before {
 		t.Fatal("failed watch leaked retained descriptors")
+	}
+}
+
+func TestGitVMGuestPortWatchPreservesOriginalStatusFlags(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var readers, writers []*os.File
+	for i := 0; i < 3; i++ {
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		readers = append(readers, r)
+		writers = append(writers, w)
+	}
+	defer closeVMFiles(readers)
+	defer closeVMFiles(writers)
+	flags := func(file *os.File) int {
+		t.Helper()
+		fd, err := gitControlFileFD(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		value, err := unix.FcntlInt(uintptr(fd), unix.F_GETFL, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	before := []int{flags(readers[0]), flags(readers[1]), flags(readers[2])}
+	join, err := gitVMGuestWatchPorts(ctx, cancel, readers...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { cancel(); join() }()
+	for i, file := range readers {
+		if flags(file) != before[i] {
+			t.Fatal("port watch mutated original descriptor status flags")
+		}
 	}
 }

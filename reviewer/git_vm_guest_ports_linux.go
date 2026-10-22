@@ -23,12 +23,17 @@ func gitVMGuestWatchPorts(ctx context.Context, cancel context.CancelFunc, files 
 			closeVMFiles(held)
 			return nil, ErrVMBoot
 		}
-		fd, err := unix.FcntlInt(file.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+		duplicate, err := duplicateGitControlFile(file)
 		if err != nil {
 			closeVMFiles(held)
 			return nil, ErrVMBoot
 		}
-		held = append(held, os.NewFile(uintptr(fd), "source-port-monitor"))
+		held = append(held, duplicate)
+		fd, err := gitControlFileFD(duplicate)
+		if err != nil {
+			closeVMFiles(held)
+			return nil, ErrVMBoot
+		}
 		// HUP/ERR/NVAL are reported even with no requested readiness events.
 		polls = append(polls, unix.PollFd{Fd: int32(fd)})
 	}
