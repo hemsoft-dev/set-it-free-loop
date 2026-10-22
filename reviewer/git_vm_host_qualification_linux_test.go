@@ -5,6 +5,7 @@ package reviewer
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"io"
 	"net/http"
 	"os"
@@ -32,13 +33,29 @@ func TestGitVMRunProductionHostActualGit(t *testing.T) {
 	if fixtureCase == "" {
 		fixtureCase = "normal"
 	}
-	if fixtureCase != "normal" && fixtureCase != "upstream-fail" && fixtureCase != "cancel" && fixtureCase != "crash" {
+	if fixtureCase != "normal" && fixtureCase != "upstream-fail" && fixtureCase != "cancel" && fixtureCase != "crash" && fixtureCase != "exhaust" {
 		t.Fatal("unknown host qualification case")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 170*time.Second)
 	defer cancel()
 	spec, source, release := gitVMActualImageFixture(t, image)
 	store, snapshot := gitQuarantineFixture(t)
+	if fixtureCase == "exhaust" {
+		// One incompressible blob beyond the 32 MiB object bound: the guest's
+		// acquisition limits must refuse it inside the VM.
+		f := newSnapshotGitFixture(t)
+		blob := make([]byte, 40<<20)
+		if _, err := rand.Read(blob); err != nil {
+			t.Fatal(err)
+		}
+		if os.WriteFile(filepath.Join(f.dir, "oversized.bin"), blob, 0600) != nil {
+			t.Fatal("oversized fixture")
+		}
+		f.run(t, "add", "oversized.bin")
+		f.run(t, "commit", "--quiet", "-m", "resource exhaustion fixture")
+		f.snapshot.Head = f.run(t, "rev-parse", "HEAD")
+		store, snapshot = gitQuarantineFromFixture(t, f, "sha1")
+	}
 	source.Binding.Snapshot = snapshot
 	stubBytes, err := os.ReadFile(stub)
 	if err != nil {
@@ -198,7 +215,7 @@ func TestGitVMRunProductionHostActualGit(t *testing.T) {
 	}
 	r := value.Records[0]
 	if !r.Stopped || !r.Revoked || !r.Captured || r.StopBoot != "" || !validAuthHash(r.GrantHash) {
-		t.Fatal("original instance not proved stopped", r)
+		t.Fatal("original instance not proved stopped at stage", owner.lastStopFailure(), r)
 	}
 	observed, observeErr := owner.manager.Observe(ctx, r.Unit)
 	if observeErr == nil && observed.InvocationID == r.Identity.InvocationID && observed.MainPID != 0 {
@@ -208,6 +225,11 @@ func TestGitVMRunProductionHostActualGit(t *testing.T) {
 		if err == nil {
 			materialized.Close()
 			t.Fatal("failed acquisition returned source", fixtureCase)
+		}
+		// These cases qualify specific refusals: the guest must have read
+		// upstream and failed while exporting, not at launch or grant.
+		if (fixtureCase == "exhaust" || fixtureCase == "upstream-fail") && (run.failure() != "export" || calls.Load() < 2) {
+			t.Fatal("refusal reached the wrong stage", fixtureCase, run.failure(), calls.Load())
 		}
 		t.Logf("source VM %s refused after %s with original unit stopped; upstream calls %d", fixtureCase, elapsed, calls.Load())
 		return
@@ -220,6 +242,22 @@ func TestGitVMRunProductionHostActualGit(t *testing.T) {
 	want, wantErr := store.Read(ctx, snapshot.Head, "safe.go", snapshotObjectBytes)
 	if err != nil || wantErr != nil || !bytes.Equal(object.Data, want.Data) {
 		t.Fatal("source VM materialization differs", err, wantErr)
+	}
+	// The fixture's symlink, binary and submodule entries keep exactly the
+	// host store's plain semantics; the job reader applies its own refusals.
+	modes := map[string]string{}
+	for _, path := range []string{"link", "binary", "submodule", "removed.go"} {
+		got, gotErr := materialized.Read(ctx, snapshot.Head, path, snapshotObjectBytes)
+		want, wantErr := store.Read(ctx, snapshot.Head, path, snapshotObjectBytes)
+		if (gotErr == nil) != (wantErr == nil) || gotErr == nil && (got.Mode != want.Mode || !bytes.Equal(got.Data, want.Data)) {
+			t.Fatal("hostile path semantics changed through the VM", path, gotErr, wantErr)
+		}
+		modes[path] = got.Mode
+	}
+	// The comparison is not vacuous: the symlink and gitlink both resolve,
+	// with distinct modes that the VM preserved.
+	if modes["link"] == "" || modes["submodule"] == "" || modes["link"] == modes["submodule"] {
+		t.Fatal("hostile fixture entries did not resolve with distinct modes", modes)
 	}
 	t.Logf("production host source VM acquisition passed in %s through %d upstream calls; unit %s invocation %s stopped", elapsed, calls.Load(), r.Unit, r.Identity.InvocationID)
 }

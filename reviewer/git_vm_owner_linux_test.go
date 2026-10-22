@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"golang.org/x/sys/unix"
@@ -453,5 +454,90 @@ func TestGitVMOwnerRootRefusesForeignState(t *testing.T) {
 				t.Fatal("foreign owner state accepted")
 			}
 		})
+	}
+}
+
+// An exiting original unit can briefly carry its own job. Stop waits for that
+// same invocation to settle; a replacement invocation still refuses.
+func TestGitVMOwnerStopWaitsForOriginalPendingJob(t *testing.T) {
+	for _, replaced := range []bool{false, true} {
+		f := newGitVMOwnerFixture(t)
+		if f.owner.prepare(context.Background(), f.request) != nil || f.owner.start(context.Background(), f.attempt(), "/private/source-vm-gate.sock") != nil {
+			t.Fatal("start")
+		}
+		f.manager.mu.Lock()
+		f.manager.observation.Job = unitJob{7, "/org/freedesktop/systemd1/job/7"}
+		f.manager.observation.ActiveState = "deactivating"
+		if replaced {
+			f.manager.observation.InvocationID = strings.Repeat("e", 32)
+		}
+		f.manager.mu.Unlock()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			time.Sleep(60 * time.Millisecond)
+			f.manager.mu.Lock()
+			f.manager.observation.Job = unitJob{}
+			f.manager.observation.ActiveState = "active"
+			f.manager.mu.Unlock()
+		}()
+		err := f.owner.stop(context.Background(), f.attempt())
+		<-done
+		r, _ := f.owner.read(f.attempt())
+		if replaced {
+			if err == nil || r.Stopped || f.manager.stops != 0 {
+				t.Fatal("replacement invocation with a pending job was stopped")
+			}
+			continue
+		}
+		if err != nil || !r.Stopped || f.manager.stops != 1 {
+			t.Fatal("pending original job refused stop", err)
+		}
+	}
+}
+
+// Every stop refusal names its stage, and a later attempt clears it.
+func TestGitVMOwnerStopRecordsEveryRefusalStage(t *testing.T) {
+	f := newGitVMOwnerFixture(t)
+	if f.owner.stop(context.Background(), f.attempt()) == nil || f.owner.lastStopFailure() != "read" {
+		t.Fatal("unknown attempt stage", f.owner.lastStopFailure())
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if f.owner.stop(cancelled, f.attempt()) == nil || f.owner.lastStopFailure() != "enter" {
+		t.Fatal("entry refusal stage", f.owner.lastStopFailure())
+	}
+	if f.owner.prepare(context.Background(), f.request) != nil || f.owner.start(context.Background(), f.attempt(), "/private/source-vm-gate.sock") != nil {
+		t.Fatal("start")
+	}
+	f.manager.mu.Lock()
+	f.manager.owner = "replacement-bus/:1.99"
+	f.manager.mu.Unlock()
+	if f.owner.stop(context.Background(), f.attempt()) == nil || f.owner.lastStopFailure() != "manager-owner" {
+		t.Fatal("manager owner stage", f.owner.lastStopFailure())
+	}
+	f.manager.mu.Lock()
+	f.manager.owner = "synthetic-bus/:1.88"
+	f.manager.mu.Unlock()
+	if f.owner.stop(context.Background(), f.attempt()) != nil || f.owner.lastStopFailure() != "" {
+		t.Fatal("successful stop kept a stale stage", f.owner.lastStopFailure())
+	}
+}
+
+// A refusal recorded while a later stop waited for the owner token does not
+// survive that later stop's success.
+func TestGitVMOwnerStopClearsStageAfterSerialization(t *testing.T) {
+	f := newGitVMOwnerFixture(t)
+	if f.owner.prepare(context.Background(), f.request) != nil {
+		t.Fatal("prepare")
+	}
+	<-f.owner.operation
+	done := make(chan error, 1)
+	go func() { done <- f.owner.stop(context.Background(), f.attempt()) }()
+	time.Sleep(50 * time.Millisecond)
+	f.owner.setStopFailure("read")
+	f.owner.leave()
+	if err := <-done; err != nil || f.owner.lastStopFailure() != "" {
+		t.Fatal("stale stage survived a later successful stop", err, f.owner.lastStopFailure())
 	}
 }
