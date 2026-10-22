@@ -1,0 +1,132 @@
+//go:build linux
+
+package reviewer
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func gitVMOwnerJournalFixture(t *testing.T) string {
+	t.Helper()
+	directory := filepath.Join(t.TempDir(), "owner")
+	if os.Mkdir(directory, 0700) != nil {
+		t.Fatal("owner directory")
+	}
+	return directory
+}
+func gitVMUnitRecordFixture(t *testing.T) gitVMUnitRecord {
+	q := gitVMGuestTestRequest(t)
+	return gitVMUnitRecord{Request: q, RequestHash: Digest(q), Unit: "sfl-alpha-" + q.Source.Binding.Attempt + ".service", BootID: "synthetic-boot", ManagerOwner: ":1.10", StubHash: Digest("synthetic source host stub")}
+}
+func TestGitVMOwnerJournalRetainsPreparedAttemptAcrossReopen(t *testing.T) {
+	directory := gitVMOwnerJournalFixture(t)
+	j, err := openGitVMOwnerJournal(context.Background(), directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{gitVMUnitRecordFixture(t)}}
+	if j.write(value) != nil {
+		t.Fatal("prepared journal persistence")
+	}
+	if j.Close(context.Background()) != nil {
+		t.Fatal("journal close")
+	}
+	j, err = openGitVMOwnerJournal(context.Background(), directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer j.Close(context.Background())
+	got, err := readGitVMUnitJournal(j.held.root, false)
+	if err != nil || Digest(got) != Digest(value) {
+		t.Fatal("prepared attempt not recovered", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if other, err := openGitVMOwnerJournal(ctx, directory); err == nil {
+		other.Close(context.Background())
+		t.Fatal("second journal writer accepted")
+	}
+}
+func TestGitVMOwnerJournalRejectsForeignStateWithoutCreatingLock(t *testing.T) {
+	directory := gitVMOwnerJournalFixture(t)
+	foreign := []byte(`{"Version":1,"Purpose":"native-review","Records":[]}`)
+	if os.WriteFile(filepath.Join(directory, "source-vm-units.json"), foreign, 0600) != nil {
+		t.Fatal("foreign journal")
+	}
+	if j, err := openGitVMOwnerJournal(context.Background(), directory); err == nil {
+		j.Close(context.Background())
+		t.Fatal("foreign purpose accepted")
+	}
+	if _, err := os.Lstat(filepath.Join(directory, "source-vm-owner.lock")); !os.IsNotExist(err) {
+		t.Fatal("refused foreign journal was mutated")
+	}
+}
+func TestGitVMOwnerJournalRejectsUnboundLifecycleStates(t *testing.T) {
+	valid := gitVMUnitRecordFixture(t)
+	if !valid.valid() {
+		t.Fatal("prepared fixture invalid")
+	}
+	for _, mutate := range []func(*gitVMUnitRecord){
+		func(r *gitVMUnitRecord) { r.RequestHash = Digest("other request") },
+		func(r *gitVMUnitRecord) { r.Request.Purpose = "native-review"; r.RequestHash = Digest(r.Request) },
+		func(r *gitVMUnitRecord) { r.StartSettled = true },
+		func(r *gitVMUnitRecord) { r.Captured = true },
+		func(r *gitVMUnitRecord) { r.Stopped = true },
+		func(r *gitVMUnitRecord) { r.StartIntent = true; r.Revoked = true; r.Stopped = true },
+		func(r *gitVMUnitRecord) { r.GrantHash = Digest("ungranted") },
+		func(r *gitVMUnitRecord) { r.StartJob = "/org/freedesktop/systemd1/job/1" },
+	} {
+		bad := valid
+		mutate(&bad)
+		if bad.valid() {
+			t.Fatal("unbound lifecycle state accepted")
+		}
+	}
+	journal := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{valid, valid}}
+	if journal.valid() {
+		t.Fatal("duplicate attempt accepted")
+	}
+	journal.Records = nil
+	if journal.valid() {
+		t.Fatal("missing record array accepted")
+	}
+}
+func TestGitVMOwnerJournalCanonicalFramingAndRootReplacement(t *testing.T) {
+	directory := gitVMOwnerJournalFixture(t)
+	j, err := openGitVMOwnerJournal(context.Background(), directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := directory + ".original"
+	if os.Rename(directory, old) != nil || os.Mkdir(directory, 0700) != nil {
+		t.Fatal("replacement setup")
+	}
+	value := gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{gitVMUnitRecordFixture(t)}}
+	if j.write(value) == nil {
+		t.Fatal("replaced root accepted")
+	}
+	if _, err := os.Stat(filepath.Join(directory, "source-vm-units.json")); !os.IsNotExist(err) {
+		t.Fatal("replacement owner was mutated")
+	}
+	if os.Remove(directory) != nil || os.Rename(old, directory) != nil {
+		t.Fatal("restore original")
+	}
+	if j.Close(context.Background()) != nil {
+		t.Fatal("close restored journal")
+	}
+	raw, _ := json.Marshal(value)
+	raw = []byte(strings.Replace(string(raw), `"Version":1`, `"Version":1,"Unknown":true`, 1))
+	if os.WriteFile(filepath.Join(directory, "source-vm-units.json"), raw, 0600) != nil {
+		t.Fatal("extended journal")
+	}
+	if j, err := openGitVMOwnerJournal(context.Background(), directory); err == nil {
+		j.Close(context.Background())
+		t.Fatal("extended journal accepted")
+	}
+}
