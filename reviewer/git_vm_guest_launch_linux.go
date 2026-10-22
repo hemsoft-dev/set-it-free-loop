@@ -10,7 +10,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -185,6 +187,8 @@ func (w *gitVMGuestWorker) start(ctx context.Context, q gitVMGuestRequest) error
 	cmd.Stderr = &gitVMGuestDiagnostic{}
 	cmd.ExtraFiles = []*os.File{w.supervisor, w.image, w.request, write, sealedFilter, w.runtime, w.broker, w.work, alias}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: gitVMGuestUID, Gid: gitVMGuestGID, Groups: []uint32{}}, UseCgroupFD: true, CgroupFD: int(groupFD.Fd()), Pdeathsig: syscall.SIGKILL}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != nil {
 		groupFD.Close()
 		read.Close()
@@ -313,7 +317,20 @@ func (d *gitVMGuestDiagnostic) Write(raw []byte) (int, error) {
 				return n, nil
 			}
 		}
-		_, _ = os.Stderr.WriteString("SFL_SOURCE_WORKER_STAGE helper-error\n")
+
+		kind := "helper-error"
+		text := string(d.raw)
+		for _, item := range []struct{ needle, kind string }{
+			{"new namespace", "helper-namespace"}, {"uid map", "helper-uid-map"},
+			{"mount", "helper-mount"}, {"execvp", "helper-exec"},
+			{"Permission denied", "helper-permission"}, {"Operation not permitted", "helper-permission"},
+		} {
+			if strings.Contains(text, item.needle) {
+				kind = item.kind
+				break
+			}
+		}
+		_, _ = os.Stderr.WriteString("SFL_SOURCE_WORKER_STAGE " + kind + "\n")
 	}
 	return n, nil
 }
