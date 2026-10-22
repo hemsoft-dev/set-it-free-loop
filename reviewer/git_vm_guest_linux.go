@@ -65,6 +65,11 @@ func runGitVMGuest() int {
 	defer cancel()
 	join := gitBrokerAfterFunc(ctx, func() { control.Close(); read.Close(); export.Close() })
 	defer join()
+	joinPorts, err := gitVMGuestWatchPorts(ctx, cancel, control, read, export)
+	if err != nil {
+		return 2
+	}
+	defer joinPorts()
 	stage = "request"
 	q, err := readVMRecord[gitVMGuestRequest](control, gitVMRecordBytes)
 	if err != nil || !q.valid() || Digest(q) != hash || !release.matches(q) {

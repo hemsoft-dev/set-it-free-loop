@@ -44,8 +44,8 @@ bound. There is no provider, auth lease, credential, URL, command or host path
 selector in the request. Bootstrap library names are fixed trusted pin metadata.
 
 `writeGitVMExport` prefixes the existing bounded plain materialization with a
-canonical request-bound source header. Its Git parsing belongs inside the future
-protected source guest. `receiveGitVMExport` validates the header and complete
+canonical request-bound source header. Its Git parsing belongs inside the protected
+source guest. `receiveGitVMExport` validates the header and complete
 materialization, closes intake on cancellation including during the header,
 and requires exact EOF. It returns only private staging. A valid header does
 not authenticate a guest or prove shutdown, broker drain or source eligibility.
@@ -100,15 +100,16 @@ not prove a measured guest, helper ancestry or original host VM admission.
 The transport is not yet connected to a source factory or trusted startup.
 
 
-## Source work still required
+## Remaining host composition and qualification
 
-Connect the distinct source VM purpose to a launcher and stop-proof type. A source receipt
+Connect the distinct source VM purpose to a production host launcher and
+stop-proof type. A source receipt
 must never qualify a provider worker or release a provider auth lease. Preserve
 the existing host path and journals; do not reinterpret them as VM evidence.
 
-Keep all fetch, index-pack, graph/fsck/diff/tree/blob parsing inside the measured
-guest under the same finite acquisition bounds. Guest root prepares exact
-storage and immutable runtime, then starts a separate unprivileged source role.
+The source guest runs fetch, index-pack, graph/fsck/diff/tree/blob parsing under
+the finite acquisition bounds. Guest root prepares exact storage and immutable
+runtime, then starts a separate unprivileged source role.
 Models retain only the existing read/search capability. There is no new model
 shell or candidate-code execution contract.
 
@@ -116,8 +117,8 @@ The guest has no NIC, host filesystem share, provider profile or GitHub token.
 Its fixed HTTP helper reaches only a private, job-bound host read capability.
 The host credential owner keeps App signing and token generations; the broker
 retains exact repository/snapshot/request bounds, byte/call/time limits and
-revocation/draining. Authenticate the actual helper inside the guest and bind
-that evidence to the pinned guest and original host VM invocation.
+revocation/draining. The guest authenticates the actual helper. Production host composition must
+bind that evidence to the pinned guest and original host VM invocation.
 
 Do not accept staged materialization until broker revocation/draining and fresh
 whole-VM stop are proved. Persist acquisition/receipt/publication intent before
@@ -127,7 +128,7 @@ Connect the resulting `PollSource` adapter through explicit trusted release and
 startup packages. No constructor installs credentials, promotes a build or runs
 work. No existing release silently changes its acquisition mechanism.
 
-Qualify actual pinned Git against a local fake transport, hostile repositories,
+Extend the actual pinned-Git guest qualification to hostile repositories,
 storage/resource exhaustion, cross-job access, cancellation, lost output and
 process/restart recovery before claiming this implementation complete. Host
 unit confinement and kernel/guest/runtime pins need their own evidence; the

@@ -63,7 +63,10 @@ Use `--case export-close`, `--case control-close`, `--case read-close` or
 `--case foreign-request` for the hostile channel/request cases. Each must refuse
 success and power off promptly. The control-close and foreign-request cases
 also require zero upstream Git calls. Export-copy failure cancels the guest
-immediately before stopping the original worker cgroup.
+immediately before stopping the original worker cgroup. A root-owned watcher
+retains duplicate original port descriptors and independently cancels on
+virtio HUP/ERR, including while a protocol write is blocked. It joins before
+releasing its descriptors.
 
 The runner requires the image's exact clean source revision, builds the fixture
 from an immutable archive and uses one captured original diagnostic unit. It
