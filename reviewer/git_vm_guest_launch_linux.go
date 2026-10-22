@@ -87,6 +87,11 @@ func prepareGitVMGuestWorker(ctx context.Context, q gitVMGuestRequest) (_ *gitVM
 	if err != nil {
 		return nil, ErrVMBoot
 	}
+	// bwrap resolves bind-fd source paths before mounting. Permit traversal
+	// of this root-owned guest-only parent, without granting write access.
+	if os.Chmod("/run/source-runtime", 0711) != nil {
+		return nil, ErrVMBoot
+	}
 	w.work, err = openGitTmpfsWorkspace(q.Source.Binding)
 	if err != nil || unix.Fchown(int(w.work.Fd()), gitVMGuestUID, gitVMGuestGID) != nil {
 		return nil, ErrVMBoot
