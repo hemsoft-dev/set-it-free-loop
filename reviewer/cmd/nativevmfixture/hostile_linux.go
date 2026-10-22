@@ -74,9 +74,19 @@ func probeContained(probe map[string]string) bool {
 			return false
 		}
 	}
-	imports, fetches, toolsSeen := 0, 0, 0
+	imports, fetches, toolsSeen, media, loads := 0, 0, 0, 0, 0
 	for key, value := range probe {
 		switch {
+		case strings.HasPrefix(key, "image:"), strings.HasPrefix(key, "audio:"):
+			media++
+			if !strings.HasPrefix(value, "throw:") {
+				return false
+			}
+		case strings.HasPrefix(key, "load:"):
+			loads++
+			if value != "returned:undefined" {
+				return false
+			}
 		case strings.HasPrefix(key, "import:"):
 			imports++
 			if !strings.HasPrefix(value, "throw:") {
@@ -94,7 +104,7 @@ func probeContained(probe map[string]string) bool {
 			}
 		}
 	}
-	return imports == 7 && fetches == 3 && toolsSeen == 8
+	return imports == 7 && fetches == 3 && toolsSeen == 8 && media == 4 && loads == 2
 }
 
 // Without model source calls, only the host's post-stop anchor check may read.
@@ -255,7 +265,7 @@ func runNativeHostile(c config) error {
 	case f.HostileProbe:
 		checks["complete-report"] = reviewErr == nil && len(report.Findings) == 1 && evidence != nil && !evidence.Access.Failed && audit.Complete
 		checks["planned-inferences"] = counts.Inference == 2 && counts.Failures == 0
-		checks["code-host-contained"] = probeContained(obs.Probe)
+		checks["code-host-contained"] = probeContained(obs.Probe) && obs.MediaInputs == 0
 		checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
 	case f.HostileMetadata:
 		checks["complete-report"] = reviewErr == nil && len(report.Findings) == 1 && evidence != nil && !evidence.Access.Failed && audit.Complete
