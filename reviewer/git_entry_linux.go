@@ -78,6 +78,10 @@ func GitAcquisitionProcess(ctx context.Context, args []string, invocation string
 // invocation these slots might instead be Go's newly created epoll/eventfd.
 // Never close or change those while trying to reject a missing inheritance.
 func gitProcessInheritedRoles(worker bool) error {
+	return gitProcessInheritedRolesLimit(worker, gitGrantManifestBytes)
+}
+
+func gitProcessInheritedRolesLimit(worker bool, manifestLimit int64) error {
 	image, supervisor := 3, 4
 	if worker {
 		image, supervisor = 4, 3
@@ -98,7 +102,7 @@ func gitProcessInheritedRoles(worker bool) error {
 	last := 4
 	if worker {
 		seals, err := unix.FcntlInt(5, unix.F_GET_SEALS, 0)
-		if err != nil || seals&requiredStubSeals != requiredStubSeals || unix.Fstat(5, &stat) != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Mode&07777 != 0400 || stat.Size <= 0 || stat.Size > gitGrantManifestBytes {
+		if err != nil || seals&requiredStubSeals != requiredStubSeals || unix.Fstat(5, &stat) != nil || stat.Mode&unix.S_IFMT != unix.S_IFREG || stat.Mode&07777 != 0400 || stat.Size <= 0 || stat.Size > manifestLimit {
 			return errGitUnit
 		}
 		flags, err := unix.FcntlInt(6, unix.F_GETFL, 0)

@@ -52,7 +52,7 @@ func TestGitDescriptorPolicyRefusesExtraCapabilities(t *testing.T) {
 	if validateGitDescriptors(rows, export, supervisor, "/broker/worker.sock") != nil {
 		t.Fatal("fixed static descriptor policy")
 	}
-	for _, mode := range []string{"missing-standard", "stdio-socket", "stdio-read", "inheritable", "wrong-export", "export-read", "wrong-supervisor", "wrong-peer", "internet", "wrong-control-path", "unknown-anon", "extra-regular", "extra-directory", "extra-socket", "duplicate", "duplicate-control", "extra-eventfd", "extra-epoll", "replace-poller"} {
+	for _, mode := range []string{"missing-standard", "stdio-pipe", "stdio-socket", "stdio-read", "inheritable", "wrong-export", "export-read", "wrong-supervisor", "wrong-peer", "internet", "wrong-control-path", "unknown-anon", "extra-regular", "extra-directory", "extra-socket", "duplicate", "duplicate-control", "extra-eventfd", "extra-epoll", "replace-poller"} {
 		t.Run(mode, func(t *testing.T) {
 			bad := append([]gitDescriptorObservation(nil), rows...)
 			switch mode {
@@ -67,6 +67,8 @@ func TestGitDescriptorPolicyRefusesExtraCapabilities(t *testing.T) {
 				bad[6].Target = "anon_inode:[eventfd]"
 			case "missing-standard":
 				bad = bad[1:]
+			case "stdio-pipe":
+				bad[2].Mode = unix.S_IFIFO
 			case "stdio-socket":
 				bad[0].Mode = unix.S_IFSOCK
 			case "stdio-read":
