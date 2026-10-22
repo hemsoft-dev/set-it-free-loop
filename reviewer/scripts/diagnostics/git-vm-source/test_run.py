@@ -2,6 +2,7 @@ import base64
 import importlib.util
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -15,6 +16,25 @@ NONCE = "883c661671d20c825627c9d854192bae"
 
 
 class GuestRecordTests(unittest.TestCase):
+    def test_auxiliary_inputs_are_bounded_regular_files(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-git-vm-input-") as temporary:
+            root = Path(temporary)
+            source = root/"input"
+            source.write_bytes(b"data")
+            self.assertEqual(probe.read_bounded(source, 4), b"data")
+            self.assertEqual(probe.hash_file(source, 4), hashlib.sha256(b"data").hexdigest())
+            for operation in [probe.read_bounded, probe.hash_file]:
+                with self.assertRaises(RuntimeError):
+                    operation(source, 3)
+                link = root/("link-"+operation.__name__)
+                link.symlink_to(source)
+                with self.assertRaises(OSError):
+                    operation(link, 4)
+                fifo = root/("fifo-"+operation.__name__)
+                os.mkfifo(fifo)
+                with self.assertRaises(RuntimeError):
+                    operation(fifo, 4)
+
     def actual(self):
         return probe.decode_guest_result(base64.b64decode((DIRECTORY/"testdata/actual-guest-result.b64").read_bytes().strip(), validate=True), NONCE)
 

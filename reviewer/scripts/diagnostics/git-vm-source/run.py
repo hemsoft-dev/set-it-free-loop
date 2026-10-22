@@ -1,5 +1,6 @@
 """Inert VM prerequisite assessment, not production acquisition qualification."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import json
@@ -15,6 +16,34 @@ import time
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+@contextmanager
+def regular_input(path, limit):
+    descriptor = os.open(path, os.O_RDONLY | os.O_CLOEXEC | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_size <= limit, "bounded regular input required")
+        yield stream
+
+
+def read_bounded(path, limit):
+    with regular_input(path, limit) as stream:
+        raw = stream.read(limit+1)
+    require(len(raw) <= limit, "input grew beyond bound")
+    return raw
+
+
+def hash_file(path, limit=64 << 20):
+    checksum, total = hashlib.sha256(), 0
+    with regular_input(path, limit) as stream:
+        while True:
+            chunk = stream.read(min(1 << 20, limit+1-total))
+            if not chunk:
+                return checksum.hexdigest()
+            total += len(chunk)
+            require(total <= limit, "hashed input grew beyond bound")
+            checksum.update(chunk)
 
 
 def decode_guest_result(serial, nonce):
@@ -62,8 +91,7 @@ def run(args):
     tree = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"], text=True).strip()
     require(source.is_file() and not source.is_symlink() and source.stat().st_size <= 65536, "fixed regular guest source required")
     image = Path(args.image).absolute()
-    manifest_bytes = (image/"manifest.json").read_bytes()
-    require(len(manifest_bytes) <= 65536, "bounded measured image manifest required")
+    manifest_bytes = read_bounded(image/"manifest.json", 65536)
     manifest = json.loads(manifest_bytes)
     require(manifest.get("purpose") == "native-review" and manifest.get("state") == "built-only", "explicit measured native image required")
     nonce = secrets.token_hex(16)
@@ -75,7 +103,7 @@ def run(args):
 
 
     def digest(path):
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        return hash_file(path)
 
 
     def show():
@@ -101,7 +129,7 @@ def run(args):
     refusal = subprocess.run([str(program)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=3)
     require(refusal.returncode == 2 and not refusal.stdout and not refusal.stderr, "inert VM prerequisite proof refused")
     initrd = root/"probe.cpio.gz"
-    shared.archive({"init": (stat.S_IFREG | 0o500, program.read_bytes(), 0, 0),
+    shared.archive({"init": (stat.S_IFREG | 0o500, read_bounded(program, 4 << 20), 0, 0),
                     "dev": (stat.S_IFDIR | 0o555, b"", 0, 0),
                     "dev/console": (stat.S_IFCHR | 0o600, b"", 5, 1)}, initrd)
     qemu = Path(manifest["qemu"]["Path"])
@@ -168,7 +196,7 @@ def run(args):
         require(len(cpu) == 2 and all(part.isdigit() for part in cpu) and int(cpu[0]) == int(cpu[1]) > 0, "one CPU quota required")
         require(observed["RuntimeMaxUSec"] == "1min" and observed["NoNewPrivileges"] == "yes"
                 and observed["Restart"] == "no", "bounded nonprivileged host unit required")
-        guest = decode_guest_result(serial.read_bytes(), nonce)
+        guest = decode_guest_result(read_bounded(serial, 4 << 20), nonce)
         receipt["guest"] = guest
         receipt["candidate_prerequisites_passed"] = prerequisites_passed(guest)
     except BaseException as error:
