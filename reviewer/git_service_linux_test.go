@@ -54,7 +54,7 @@ func TestGitReviewerServiceConstructionBeforeExplicitRefresh(t *testing.T) {
 	defer s.Close(context.Background())
 	rCalls, rMints := credentialCounts(reader)
 	pCalls, pMints := credentialCounts(publisher)
-	if signs.Load() != 0 || rCalls != 0 || pCalls != 0 || rMints != 0 || pMints != 0 || !s.source.ready || s.controller.options.Source != s.source {
+	if signs.Load() != 0 || rCalls != 0 || pCalls != 0 || rMints != 0 || pMints != 0 || !s.source.(*gitSourceFactory).ready || s.controller.options.Source != s.source {
 		t.Fatal("construction acquired credentials or skipped concrete startup")
 	}
 	discovery, ok := s.controller.options.Discovery.(*GitHubTriggerDiscoveryHTTP)
@@ -91,7 +91,7 @@ func TestGitReviewerServiceConstructionBeforeExplicitRefresh(t *testing.T) {
 	if signs.Load() != 1 || pMints != 1 {
 		t.Fatal("publisher silently refreshed credentials")
 	}
-	if s.Close(context.Background()) != nil || !s.source.closed || !s.credentials.state.closed {
+	if s.Close(context.Background()) != nil || !s.source.(*gitSourceFactory).closed || !s.credentials.state.closed {
 		t.Fatal("successful shutdown lost an owner")
 	}
 	reopened, err := OpenGitHubCredentialOwner(context.Background(), o.Credentials)
@@ -153,7 +153,7 @@ func TestGitReviewerServiceUnknownStartupRetainsOwners(t *testing.T) {
 	}
 	f.manager.observeErr = errors.New("synthetic missing old unit")
 	s, err := newGitReviewerService(context.Background(), o)
-	if err == nil || s == nil || s.source == nil || s.source.ready || s.controller != nil {
+	if err == nil || s == nil || s.source == nil || s.source.(*gitSourceFactory).ready || s.controller != nil {
 		t.Fatal("uncertain startup abandoned ownership or started polling", err)
 	}
 	if s.Refresh(context.Background()) == nil || signs.Load() != 0 {
@@ -164,7 +164,7 @@ func TestGitReviewerServiceUnknownStartupRetainsOwners(t *testing.T) {
 	if other, err := OpenGitHubCredentialOwner(ctx, o.Credentials); err == nil || other != nil {
 		t.Fatal("failed startup released its credential owner lock")
 	}
-	if s.Close(context.Background()) == nil || s.source.unit.closed || s.credentials.state.closed {
+	if s.Close(context.Background()) == nil || s.source.(*gitSourceFactory).unit.closed || s.credentials.state.closed {
 		t.Fatal("uncertain close disposed later owners")
 	}
 	// Explicit fake changed-boot proof retires only this fixture's old record.
@@ -207,13 +207,13 @@ func TestGitReviewerServiceCloseCancelsRefreshButRetainsUnreturnedCallback(t *te
 		t.Fatal("signing callback not reached")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-	if s.source.enter(ctx) {
-		s.source.leave()
+	if s.source.(*gitSourceFactory).enter(ctx) {
+		s.source.(*gitSourceFactory).leave()
 		t.Fatal("refresh released factory fence before qualification")
 	}
 	cancel()
 	ctx, cancel = context.WithTimeout(context.Background(), 20*time.Millisecond)
-	if !errors.Is(s.Close(ctx), ErrWorkerStopPending) || s.source.closed || s.credentials.state.closed {
+	if !errors.Is(s.Close(ctx), ErrWorkerStopPending) || s.source.(*gitSourceFactory).closed || s.credentials.state.closed {
 		t.Fatal("unreturned callback lost source/credential ownership")
 	}
 	cancel()
@@ -315,7 +315,7 @@ func TestGitReviewerServiceModelFreeRunAndExplicitClose(t *testing.T) {
 			if err := <-result; !errors.Is(err, context.Canceled) {
 				t.Fatal("service run did not retain cancellation", err)
 			}
-			if s.source.closed != viaService || s.credentials.state.closed != viaService || signs.Load() != 1 || modelCalls.Load() != 0 {
+			if s.source.(*gitSourceFactory).closed != viaService || s.credentials.state.closed != viaService || signs.Load() != 1 || modelCalls.Load() != 0 {
 				t.Fatal("model-free Run renewed or discarded retained owners")
 			}
 			if s.Close(context.Background()) != nil || s.Run(context.Background()) == nil {

@@ -19,6 +19,17 @@ digest always covers the supplied bytes. Re-encoding is stable. The Git artifact
 by `BuildGitRuntime`; startup measures and seals its actual bytes before
 preparing the read-only runtime.
 
+The package version selects the acquisition mechanism, inside the digest.
+Version 1 packages use host Git acquisition through the fields above, and their
+canonical bytes are unchanged. Version 2 packages use the
+[measured source VM](GIT-VM-SOURCE.md) through `SourceVM`: the host stub, guest
+QEMU, kernel, initrd and BIOS, the host QEMU runtime artifact and namespace
+helper with its bootstrap libraries, and the guest worker and Git runtime pins.
+A version 2 package must leave the host acquisition fields zero, and a version
+1 package cannot carry `SourceVM`. Each version decodes against its own strict
+wire shape, so an existing package can never change mechanism without a new
+digest and a new approval.
+
 Package paths are trusted host configuration and participate in the digest.
 Packages contain no auth store, transport, signing callback or provider account
 hints. Those capabilities are supplied separately through
@@ -59,6 +70,18 @@ without a fallback. Creating the descriptor does not approve it for use.
    user-manager transport. A private opener seam exists only for fake tests.
 5. Finish source recovery before the internal service can qualify credentials
    or poll. Construction never calls `Refresh` or `Run`.
+
+For a version 2 current package, step 2 requires exactly three directories:
+the unit directory holds the source VM ownership journal and stub cache, the
+export directory holds the source VM archive, and the work directory holds run
+directories. `RuntimeDirectory` must be empty, because no host Git runtime is
+prepared. Step 4 instead opens the source VM archive, seals the guest boot
+assets, retains the source stub in the user-systemd source VM owner and
+composes the internal service with the source VM factory, whose startup
+recovery proves every earlier attempt stopped. No host Git runtime, archive or
+unit owner is opened. Retained source belongs to the mechanism that captured
+it: a job whose source was captured by the other mechanism is fenced at restore
+rather than served by a different acquisition path.
 
 The initial `Triggers.EnabledAt` is persisted as a UTC instant, together with
 the exact enrollment. It survives restarts and release changes. A different
