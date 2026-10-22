@@ -75,7 +75,14 @@ func (a *gitVMExportArchive) retire(ctx context.Context, binding gitMaterializat
 		}
 	}
 	if !found {
-		return errGitExportArchive
+		// An already completed retirement is idempotent: with no record, no
+		// raw attempt directory and no retired residue, nothing remains.
+		for _, name := range []string{"materialization/" + gitExportDirectory(binding.Attempt), "retired/" + binding.Attempt} {
+			if _, err := a.held.root.Lstat(name); !os.IsNotExist(err) {
+				return errGitExportArchive
+			}
+		}
+		return nil
 	}
 	return a.finishRetirement(ctx, binding.Attempt)
 }

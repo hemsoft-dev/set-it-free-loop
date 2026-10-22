@@ -173,12 +173,17 @@ func (f *gitVMSourceFactory) Recover(ctx context.Context) error {
 	}
 	requests := map[string]gitVMRequest{}
 	retained := map[string]bool{}
+	// Validate every export's ownership before any retirement, so a
+	// cross-journal inconsistency refuses without changing the archive.
 	for _, export := range exports {
-		attempt := export.Binding.Attempt
-		unit, ok := units[attempt]
+		unit, ok := units[export.Binding.Attempt]
 		if !ok || unit.Request.Source.Binding != export.Binding || Digest(unit.Request.Source) != export.RequestHash {
 			return errGitVMOwner
 		}
+	}
+	for _, export := range exports {
+		attempt := export.Binding.Attempt
+		unit := units[attempt]
 		if export.State == "staged" && validAuthHash(unit.GrantHash) && validAuthHash(packets[attempt]) {
 			requests[attempt] = unit.Request.Source
 			retained[attempt] = true
@@ -325,6 +330,7 @@ func (f *gitVMSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*S
 	evidence, err := captureGitMaterializationEvidence(ctx, m)
 	if err != nil {
 		m.Close()
+		f.abandonCaptured(ctx, binding)
 		return nil, errGitVMOwner
 	}
 	f.requests[attempt] = source
@@ -335,6 +341,17 @@ func (f *gitVMSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*S
 	}
 	f.pendingCaptures[evidence] = attempt
 	return evidence, nil
+}
+
+// abandonCaptured retires a stopped, granted, staged attempt whose evidence
+// could not be built. It uses an uncancelled bound; if that fails, it fences
+// the factory so recovery reconciles both journals. Caller holds the token.
+func (f *gitVMSourceFactory) abandonCaptured(ctx context.Context, binding gitMaterializationBinding) {
+	phase, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if f.archive.retire(phase, binding) != nil || f.owner.forget(phase, binding.Attempt) != nil {
+		f.ready = false
+	}
 }
 
 // retireFailedCapture runs only after a failed acquisition. It requires the
@@ -493,7 +510,10 @@ func (f *gitVMSourceFactory) PruneSource(ctx context.Context, store *Store, now 
 		if keep[attempt] {
 			continue
 		}
+		// Archive retirement is idempotent once complete, and any partial
+		// step fences the factory until recovery reconciles both journals.
 		if f.owner.confirmStopped(ctx, attempt) != nil || f.archive.retire(ctx, f.requests[attempt].Binding) != nil || f.owner.forget(ctx, attempt) != nil {
+			f.ready = false
 			return errGitVMOwner
 		}
 		delete(f.requests, attempt)

@@ -230,7 +230,8 @@ assets that pin the factory's exact manifest, an idle credential owner and a
 private run directory distinct from the owner and archive roots. It then runs
 startup recovery before any capture:
 
-- Every unstopped attempt must first be proved gone by the owner.
+- Every unstopped attempt must first be proved gone by the owner, and every
+  export must match an owner record before any export is retired.
 - Interrupted archive retirements are completed.
 - A staged export survives only with a matching stopped owner record that also
   holds a grant hash; its packet hash comes from the retained archive record.
@@ -246,8 +247,12 @@ only after the run's proved stop; an unknown stop keeps everything owned and
 fences the factory. `Restore` revalidates the owner's durable stop receipt
 (same boot: original cgroup empty and root dead; later boot: proved by the
 boot change) before reopening retained bytes, with no fetch or fallback.
-`PruneSource` retires attempts no longer referenced by pending captures,
-active jobs or controller jobs: archive bytes first, then the owner record.
+If a completed acquisition's evidence cannot be built, its records are
+retired at once under an uncancelled bound, or the factory is fenced for
+recovery. `PruneSource` retires attempts no longer referenced by pending
+captures, active jobs or controller jobs: archive bytes first, then the owner
+record. Archive retirement is idempotent once complete, so an interrupted
+prune finishes on retry; any failed step fences the factory until recovery.
 
 [Archive retirement](git_vm_archive_retire_linux.go) marks a record
 `retiring` durably, renames the attempt directory out of the raw archive into a

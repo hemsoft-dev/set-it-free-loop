@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type gitVMFactoryRecoveryFixture struct {
@@ -160,4 +161,80 @@ func TestGitVMSourceFactoryRefusesActiveOwnerAndForeignManifest(t *testing.T) {
 		t.Fatal("factory adopted an owner with live process-local authority")
 	}
 	delete(f.owner.owner.grantEligible, "synthetic")
+}
+
+// Recovery validates every export's owner before retiring any export.
+func TestGitVMSourceFactoryRecoveryValidatesBeforeRetiring(t *testing.T) {
+	f := newGitVMFactoryRecoveryFixture(t)
+	ungranted, ungrantedSource := f.attempt(t, 1, false)
+	_, unowned := f.attempt(t, 2, true)
+	if f.owner.owner.journal.write(gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{ungranted}}) != nil {
+		t.Fatal("owner journal")
+	}
+	f.stage(t, ungrantedSource, false)
+	f.stage(t, unowned, false)
+	if factory, err := f.open(t); err == nil || factory == nil || factory.ready {
+		t.Fatal("unowned export recovered")
+	}
+	if exports, _, _ := f.archive.records(context.Background()); len(exports) != 2 {
+		t.Fatal("refused recovery retired an export", exports)
+	}
+}
+
+func gitVMFactoryRetainedFixture(t *testing.T) (gitVMFactoryRecoveryFixture, *gitVMSourceFactory, gitVMRequest) {
+	t.Helper()
+	f := newGitVMFactoryRecoveryFixture(t)
+	keep, source := f.attempt(t, 1, true)
+	if f.owner.owner.journal.write(gitVMUnitJournal{1, gitVMOwnerPurpose, []gitVMUnitRecord{keep}}) != nil {
+		t.Fatal("owner journal")
+	}
+	f.stage(t, source, false)
+	factory, err := f.open(t)
+	if err != nil || len(factory.requests) != 1 {
+		t.Fatal("retained fixture", err)
+	}
+	// Synthetic records were never captured on this boot; the boot change
+	// is their stop proof for confirmStopped.
+	f.owner.kernel.boot = "synthetic-later-boot"
+	return f, factory, source
+}
+
+// A prune interrupted between archive and owner retirement finishes on retry.
+func TestGitVMSourceFactoryPruneFinishesPartialRetirement(t *testing.T) {
+	f, factory, source := gitVMFactoryRetainedFixture(t)
+	if f.archive.retire(context.Background(), source.Binding) != nil {
+		t.Fatal("simulated completed archive step")
+	}
+	storeDirectory := filepath.Join(t.TempDir(), "store")
+	if os.Mkdir(storeDirectory, 0700) != nil {
+		t.Fatal("store directory")
+	}
+	durable, err := OpenStore(filepath.Join(storeDirectory, "controller.db"), alphaEnrollment(), DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer durable.Close()
+	if err := factory.PruneSource(context.Background(), durable, time.Now()); err != nil {
+		t.Fatal("prune after partial retirement", err)
+	}
+	owned, _ := factory.owner.journal.read()
+	if len(owned.Records) != 0 || len(factory.requests) != 0 || !factory.ready {
+		t.Fatal("partial retirement not finished", len(owned.Records))
+	}
+}
+
+// Evidence failure after a completed acquisition retires its records.
+func TestGitVMSourceFactoryAbandonedCaptureLeavesNoRecords(t *testing.T) {
+	_, factory, source := gitVMFactoryRetainedFixture(t)
+	factory.requests, factory.packets = map[string]gitVMRequest{}, map[string]string{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	<-factory.operation
+	factory.abandonCaptured(ctx, source.Binding)
+	factory.leave()
+	owned, _ := factory.owner.journal.read()
+	exports, _, _ := factory.archive.records(context.Background())
+	if len(owned.Records) != 0 || len(exports) != 0 || !factory.ready {
+		t.Fatal("abandoned capture left records", len(owned.Records), exports)
+	}
 }
