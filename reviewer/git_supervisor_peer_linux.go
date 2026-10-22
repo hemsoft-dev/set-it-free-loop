@@ -43,6 +43,11 @@ func gitLivePIDFDIdentity(file *os.File) (gitPIDFDIdentity, error) {
 // worker; an inherited socketpair describes its creator, not a later writer.
 // This proves the supervisor process, not a unit, runtime or source grant.
 func authenticateGitSupervisor(ctx context.Context, conn *net.UnixConn, expected *os.File) (peer *os.File, result error) {
+	return authenticateGitSupervisorIDs(ctx, conn, expected, uint32(os.Geteuid()), uint32(os.Getegid()))
+}
+
+// Credentials are fixed by the trusted guest role, never supplied on its wire.
+func authenticateGitSupervisorIDs(ctx context.Context, conn *net.UnixConn, expected *os.File, uid, gid uint32) (peer *os.File, result error) {
 	if ctx == nil || ctx.Err() != nil || expected == nil || gitControlPacketSocket(conn) != nil {
 		return nil, errGitUnit
 	}
@@ -84,7 +89,7 @@ func authenticateGitSupervisor(ctx context.Context, conn *net.UnixConn, expected
 	}()
 	// A zero PID is expected for the outside supervisor in a private PIDns.
 	// The trusted pidfs identity, not that numeric field, proves the peer.
-	if err != nil || queryErr != nil || credentials == nil || credentials.Pid < 0 || credentials.Uid != uint32(os.Geteuid()) || credentials.Gid != uint32(os.Getegid()) || peer == nil {
+	if err != nil || queryErr != nil || credentials == nil || credentials.Pid < 0 || credentials.Uid != uid || credentials.Gid != gid || peer == nil {
 		return peer, errGitUnit
 	}
 	actual, err := gitLivePIDFDIdentity(peer)

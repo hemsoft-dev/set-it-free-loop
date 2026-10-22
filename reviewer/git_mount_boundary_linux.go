@@ -190,6 +190,10 @@ func gitBoundedWorkFilesystem(fs unix.Statfs_t) bool {
 // boundary. The factory must still bind the exact unit, peer, descriptors and
 // installed filter, and must never turn this private result into a caller flag.
 func checkGitMountBoundary(ctx context.Context, b *gitProcessBoundary, broker *os.File, binding gitMaterializationBinding) error {
+	return checkGitMountBoundaryIDs(ctx, b, broker, binding, uint32(os.Geteuid()), 0700)
+}
+
+func checkGitMountBoundaryIDs(ctx context.Context, b *gitProcessBoundary, broker *os.File, binding gitMaterializationBinding, brokerOwner uint32, brokerMode os.FileMode) error {
 	if ctx == nil || b == nil || broker == nil || !binding.valid() {
 		return errGitUnit
 	}
@@ -197,7 +201,7 @@ func checkGitMountBoundary(ctx context.Context, b *gitProcessBoundary, broker *o
 	defer cancel()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.checkWorker(ctx) != nil || verifyGitBrokerDirectory(broker) != nil {
+	if b.checkWorker(ctx) != nil || verifyGitBrokerDirectoryIDs(broker, brokerOwner, b.uid, brokerMode) != nil {
 		return errGitUnit
 	}
 	raw, err := gitReadMountInfo(ctx, b.worker, b.pidfd)
@@ -244,7 +248,7 @@ func checkGitMountBoundary(ctx context.Context, b *gitProcessBoundary, broker *o
 			return errGitUnit
 		}
 		if point == "/work" || point == "/tmp" {
-			if stat.Uid != uint32(os.Geteuid()) || stat.Mode&0777 != 0700 {
+			if stat.Uid != b.uid || stat.Mode&0777 != 0700 {
 				return errGitUnit
 			}
 			file, err := view.OpenFile(name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)

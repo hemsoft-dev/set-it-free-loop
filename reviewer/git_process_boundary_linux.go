@@ -27,10 +27,17 @@ type gitProcessBoundary struct {
 	cgroup                 string
 	maps                   map[gitKernelFileID]bool
 	closed                 bool
+	uid, gid               uint32
 }
 
 func retainGitProcessBoundary(ctx context.Context, worker GateIdentity, original int, root, image *os.File, workerPin VMAssetPin, pins GitRuntimePins) (_ *gitProcessBoundary, result error) {
-	b := &gitProcessBoundary{worker: worker, pidfd: -1, workerPin: workerPin, pins: pins, maps: map[gitKernelFileID]bool{}}
+	return retainGitProcessBoundaryIDs(ctx, worker, original, root, image, workerPin, pins, uint32(os.Geteuid()), uint32(os.Getegid()))
+}
+
+// The guest's trusted root observes its fixed unprivileged source UID. Host
+// callers retain their current-user policy through the original wrapper.
+func retainGitProcessBoundaryIDs(ctx context.Context, worker GateIdentity, original int, root, image *os.File, workerPin VMAssetPin, pins GitRuntimePins, uid, gid uint32) (_ *gitProcessBoundary, result error) {
+	b := &gitProcessBoundary{worker: worker, pidfd: -1, workerPin: workerPin, pins: pins, maps: map[gitKernelFileID]bool{}, uid: uid, gid: gid}
 	defer func() {
 		if result != nil {
 			b.Close()
@@ -106,12 +113,12 @@ func (b *gitProcessBoundary) checkPolicy(observation gitProcessObservation) erro
 		return errGitUnit
 	}
 	for _, id := range observation.UIDs {
-		if id != uint32(os.Geteuid()) {
+		if id != b.uid {
 			return errGitUnit
 		}
 	}
 	for _, id := range observation.GIDs {
-		if id != uint32(os.Getegid()) {
+		if id != b.gid {
 			return errGitUnit
 		}
 	}
@@ -167,7 +174,7 @@ func (b *gitProcessBoundary) checkHelper(ctx context.Context, peer GitReadPeer) 
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if ctx.Err() != nil || peer.UID != uint32(os.Geteuid()) || peer.GID != uint32(os.Getegid()) || b.checkWorker(ctx) != nil {
+	if ctx.Err() != nil || peer.UID != b.uid || peer.GID != b.gid || b.checkWorker(ctx) != nil {
 		return errGitUnit
 	}
 	identity, fd, err := retainGitBrokerPeer(peer, b.worker.InvocationID)

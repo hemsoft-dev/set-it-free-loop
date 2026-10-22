@@ -151,12 +151,16 @@ func verifyGitBootstrapGrant(ctx context.Context, binding gitMaterializationBind
 	return manifest, nil
 }
 func verifyGitBrokerDirectory(file *os.File) error {
+	return verifyGitBrokerDirectoryIDs(file, uint32(os.Geteuid()), uint32(os.Geteuid()), 0700)
+}
+
+func verifyGitBrokerDirectoryIDs(file *os.File, owner, worker uint32, mode os.FileMode) error {
 	info, err := file.Stat()
-	if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
+	if err != nil || !info.IsDir() || info.Mode().Perm() != mode {
 		return errGitUnit
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != uint32(os.Geteuid()) {
+	if !ok || stat.Uid != owner {
 		return errGitUnit
 	}
 	// Open a fresh directory description rather than consuming a caller's
@@ -178,7 +182,11 @@ func verifyGitBrokerDirectory(file *os.File) error {
 		}
 		delete(wanted, entry.Name())
 		var value unix.Stat_t
-		if unix.Fstatat(fd, entry.Name(), &value, unix.AT_SYMLINK_NOFOLLOW) != nil || value.Uid != uint32(os.Geteuid()) || value.Mode&0777 != 0600 {
+		wantOwner := worker
+		if entry.Name() == "git-read.used" {
+			wantOwner = owner
+		}
+		if unix.Fstatat(fd, entry.Name(), &value, unix.AT_SYMLINK_NOFOLLOW) != nil || value.Uid != wantOwner || value.Mode&0777 != 0600 {
 			return errGitUnit
 		}
 		if entry.Name() == "git-read.used" {
