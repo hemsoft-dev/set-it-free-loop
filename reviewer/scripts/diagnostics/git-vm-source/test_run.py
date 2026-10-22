@@ -182,3 +182,92 @@ class LaunchBoundaryTests(unittest.TestCase):
             for row in [valid.replace(",noswap", ",noswap=1"), valid.replace("tmpfs rw,size", "noswap rw,size").replace(",noswap", ""),
                         valid.replace("/work", "/other"), valid.replace("- tmpfs", "- ext4"), valid+" extra"]:
                 self.assertEqual(subprocess.run([str(binary), row], timeout=3).returncode, 1)
+
+
+class BootstrapEvidenceTests(unittest.TestCase):
+    def test_bootstrap_list_requires_exact_complete_sorted_pins(self):
+        loader = {"Path": "/lib64/ld-linux-x86-64.so.2", "SHA256": "a"*64, "Bytes": 1}
+        libc = {"Path": "/usr/lib/x86_64-linux-gnu/libc.so.6", "SHA256": "b"*64, "Bytes": 1}
+        probe.validate_bootstrap_pins([loader, libc])
+        for assets in [[], [loader], [libc, loader], [loader, loader], [loader, dict(libc, Bytes=True)],
+                       [loader, dict(libc, Bytes=0)], [loader, dict(libc, SHA256="invalid")],
+                       [loader, dict(libc, extra=True)], [loader, dict(libc, Path="/usr/lib/x86_64-linux-gnu/libother.so.1")],
+                       [loader, libc]*17, [dict(loader, Path="/firmware/linuxboot.bin"), libc],
+                       [dict(loader, Path="/usr/lib/x86_64-linux-gnu/libother.so.1"), libc],
+                       [loader, dict(libc, Path="usr/lib/x86_64-linux-gnu/libc.so.6")]]:
+            with self.subTest(assets=assets):
+                with self.assertRaises(RuntimeError):
+                    probe.validate_bootstrap_pins(assets)
+
+    def test_selected_image_runtime_survives_relocation_and_refuses_mutation(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-git-vm-relocated-") as temporary:
+            directory = Path(temporary)
+            old = directory/"old"
+            new = directory/"new"
+            runtime = old/"host-runtime/native-qemu-runtime.bin"
+            runtime.parent.mkdir(parents=True)
+            runtime.write_bytes(b"measured runtime")
+            asset = {"Path": str(runtime), "SHA256": hashlib.sha256(runtime.read_bytes()).hexdigest(), "Bytes": runtime.stat().st_size}
+            old.rename(new)
+            self.assertEqual(probe.image_runtime_bytes(new, asset), b"measured runtime")
+            old.mkdir()
+            (old/"host-runtime").mkdir()
+            runtime.write_bytes(b"different old artifact")
+            self.assertEqual(probe.image_runtime_bytes(new, asset), b"measured runtime")
+            selected = new/"host-runtime/native-qemu-runtime.bin"
+            selected.write_bytes(b"changed")
+            with self.assertRaises(RuntimeError):
+                probe.image_runtime_bytes(new, asset)
+            selected.unlink()
+            selected.symlink_to(runtime)
+            with self.assertRaises(OSError):
+                probe.image_runtime_bytes(new, asset)
+
+    def test_actual_isolated_python_bootstrap_and_changed_pin_refusal(self):
+        # Actual interpreter, mappings and stdlib producer. No manager/KVM opens.
+        code = "import importlib.util,json; s=importlib.util.spec_from_file_location('probe',"+repr(str(DIRECTORY/"run.py"))+"); p=importlib.util.module_from_spec(s); s.loader.exec_module(p); a=importlib.util.spec_from_file_location('inert_vm_archive',"+repr(str(DIRECTORY.parents[1]/"isolation-fixture.py"))+"); m=importlib.util.module_from_spec(a); a.loader.exec_module(m); v=p.capture_python_bootstrap(); p.verify_python_bootstrap(v); print(json.dumps(v))"
+        result = subprocess.run(["/usr/bin/python3", "-I", "-S", "-B", "-c", code], check=True,
+                                capture_output=True, timeout=10, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+        value = json.loads(result.stdout)
+        probe.validate_python_bootstrap(value)
+        changed = dict(value, Mapped=[])
+        with self.assertRaises(RuntimeError):
+            probe.validate_python_bootstrap(changed)
+        changed = json.loads(json.dumps(value))
+        changed["Program"]["SHA256"] = "0"*64
+        # A changed program is rejected from installed bytes, before comparing
+        # this unittest process's extra imported modules or opening a VM.
+        with self.assertRaises(RuntimeError):
+            probe.verify_python_bootstrap(changed)
+        for field in ["Mapped", "Modules"]:
+            changed = json.loads(json.dumps(value))
+            changed[field][0]["SHA256"] = "0"*64
+            with self.assertRaises(RuntimeError):
+                probe.verify_python_bootstrap(changed)
+
+
+    def test_nonisolated_cli_refuses_before_creating_output(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-git-vm-python-entry-") as temporary:
+            output = Path(temporary)/"not-created"
+            result = subprocess.run(["/usr/bin/python3", "-B", str(DIRECTORY/"run.py"), "--run-inert-only",
+                                     "--image", "/does-not-open-image", "--output", str(output)],
+                                    capture_output=True, timeout=3, env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"})
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn(b"isolated Python bootstrap required", result.stderr)
+            self.assertFalse(output.exists())
+
+
+    def test_python_mapping_checks_actual_device_and_inode(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-git-vm-mapping-") as temporary:
+            paths = [Path(temporary)/"one", Path(temporary)/"two"]
+            rows = []
+            for path in paths:
+                path.write_bytes(b"mapped input")
+                info = path.stat()
+                rows.append("1000-2000 r--p 00000000 %x:%x %d %s" % (os.major(info.st_dev), os.minor(info.st_dev), info.st_ino, path))
+            with mock.patch.object(probe, "read_bounded", return_value=("\n".join(rows)+"\n").encode()):
+                self.assertEqual(probe.python_mappings(), sorted(map(str, paths)))
+            for row in [rows[0]+" (deleted)", rows[0].replace(str(paths[0].stat().st_ino), "1", 1)]:
+                with mock.patch.object(probe, "read_bounded", return_value=(row+"\n"+rows[1]+"\n").encode()):
+                    with self.assertRaises(RuntimeError):
+                        probe.python_mappings()

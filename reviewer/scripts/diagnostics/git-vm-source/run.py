@@ -94,10 +94,14 @@ def unique_object(pairs):
     return value
 
 
-def pin_bytes(raw, pin):
-    require(set(pin) == {"SHA256", "Bytes"} and type(pin["Bytes"]) is int
-            and 0 < pin["Bytes"] <= 64 << 20
+def validate_pin(pin, allow_empty=False):
+    require(type(pin) is dict and set(pin) == {"SHA256", "Bytes"} and type(pin["Bytes"]) is int
+            and (0 if allow_empty else 1) <= pin["Bytes"] <= 64 << 20
             and isinstance(pin["SHA256"], str) and re.fullmatch(r"[0-9a-f]{64}", pin["SHA256"]), "bounded asset pin required")
+
+
+def pin_bytes(raw, pin):
+    validate_pin(pin)
     require(len(raw) == pin["Bytes"] and hashlib.sha256(raw).hexdigest() == pin["SHA256"], "asset differs from measured pin")
     return raw
 
@@ -106,6 +110,127 @@ def runtime_path(path):
     if path in ["lib64/ld-linux-x86-64.so.2", "firmware/kvmvapic.bin", "firmware/linuxboot.bin", "firmware/linuxboot_dma.bin"]:
         return True
     return isinstance(path, str) and re.fullmatch(r"(?:usr/)?lib/x86_64-linux-gnu/lib[A-Za-z0-9_+.-]+\.so(?:\.[A-Za-z0-9_-]+)*", path) is not None
+
+
+
+def validate_bootstrap_pins(assets):
+    require(type(assets) is list and 2 <= len(assets) <= 32, "bounded bootstrap dependency list required")
+    previous, paths = "", set()
+    for asset in assets:
+        require(type(asset) is dict and set(asset) == {"Path", "SHA256", "Bytes"}, "exact bootstrap asset required")
+        path = asset["Path"]
+        require(isinstance(path, str) and path.startswith("/") and path > previous
+                and runtime_path(path[1:]) and not path.startswith("/firmware/"), "sorted unique bootstrap library paths required")
+        validate_pin({key: asset[key] for key in ["SHA256", "Bytes"]})
+        paths.add(path)
+        previous = path
+    require("/lib64/ld-linux-x86-64.so.2" in paths and any(path in paths for path in
+            ["/lib/x86_64-linux-gnu/libc.so.6", "/usr/lib/x86_64-linux-gnu/libc.so.6"]), "bootstrap loader and libc required")
+
+
+def image_runtime_bytes(image, asset):
+    # The build-time absolute artifact path is provenance, never selection.
+    raw = read_bounded(image/"host-runtime/native-qemu-runtime.bin", (128 << 20)+(32 << 10)+64)
+    require(len(raw) == asset["Bytes"] and hashlib.sha256(raw).hexdigest() == asset["SHA256"], "captured runtime pin differs")
+    return raw
+
+
+def python_asset(path, allow_empty=False):
+    path = Path(path).resolve(strict=True)
+    with regular_input(path, 64 << 20) as stream:
+        info = os.fstat(stream.fileno())
+        require(info.st_uid == 0 and info.st_nlink == 1 and not info.st_mode & 0o022 and info.st_size >= (0 if allow_empty else 1),
+                "root-owned Python runtime asset required")
+        raw = stream.read((64 << 20)+1)
+    require(len(raw) == info.st_size, "Python runtime asset changed")
+    return {"Path": str(path), "SHA256": hashlib.sha256(raw).hexdigest(), "Bytes": len(raw)}
+
+
+def python_mappings():
+    paths = {}
+    for row in read_bounded(Path("/proc/self/maps"), 1 << 20).decode("ascii").splitlines():
+        fields = row.split(maxsplit=5)
+        if len(fields) != 6 or not fields[5].startswith("/"):
+            continue
+        path = fields[5]
+        require(not path.endswith(" (deleted)"), "deleted Python mapping refused")
+        info = Path(path).stat()
+        device = fields[3].split(":")
+        require(len(device) == 2 and os.major(info.st_dev) == int(device[0], 16)
+                and os.minor(info.st_dev) == int(device[1], 16) and info.st_ino == int(fields[4]), "Python mapped inode differs from pathname")
+        paths[str(Path(path).resolve(strict=True))] = True
+    require(2 <= len(paths) <= 64, "bounded Python mappings required")
+    return sorted(paths)
+
+
+def python_module_paths(stdlib):
+    paths = set()
+    for name, module in tuple(sys.modules.items()):
+        source = getattr(module, "__file__", None)
+        if not source or getattr(getattr(module, "__spec__", None), "origin", None) == "frozen":
+            continue
+        resolved = Path(source).resolve(strict=True)
+        if resolved == Path(__file__).resolve() or name == "inert_vm_archive":
+            continue
+        require(resolved.is_relative_to(stdlib), "Python module outside fixed stdlib")
+        paths.add(str(resolved))
+        cache = getattr(module, "__cached__", None)
+        if cache and Path(cache).exists():
+            cached = Path(cache).resolve(strict=True)
+            require(cached.is_relative_to(stdlib), "Python cache outside fixed stdlib")
+            paths.add(str(cached))
+    require(1 <= len(paths) <= 256, "bounded Python module files required")
+    return sorted(paths)
+
+
+def validate_python_bootstrap(value):
+    require(type(value) is dict and set(value) == {"Program", "Stdlib", "Mapped", "Modules"}, "exact Python bootstrap schema required")
+    program = value["Program"]
+    require(type(program) is dict and set(program) == {"Path", "SHA256", "Bytes"}
+            and isinstance(program["Path"], str) and re.fullmatch(r"/usr/bin/python3\.[0-9]+", program["Path"]), "fixed root Python interpreter required")
+    require(value["Stdlib"] == "/usr/lib/"+Path(program["Path"]).name, "Python stdlib/interpreter version differs")
+    validate_pin({key: program[key] for key in ["SHA256", "Bytes"]})
+    total = 0
+    for key, minimum, maximum in [("Mapped", 2, 64), ("Modules", 1, 256)]:
+        assets = value[key]
+        require(type(assets) is list and minimum <= len(assets) <= maximum, "bounded Python asset list required")
+        previous = ""
+        for asset in assets:
+            require(type(asset) is dict and set(asset) == {"Path", "SHA256", "Bytes"}, "exact Python asset required")
+            path = asset["Path"]
+            require(isinstance(path, str) and path > previous and str(Path(path)) == path and ".." not in Path(path).parts
+                    and (path == program["Path"] or path.startswith(("/usr/lib/", "/lib/", "/lib64/"))), "sorted root Python asset paths required")
+            if key == "Modules":
+                require(Path(path).is_relative_to(value["Stdlib"]), "Python module path outside stdlib")
+            validate_pin({name: asset[name] for name in ["SHA256", "Bytes"]}, allow_empty=key == "Modules")
+            previous = path
+            total += asset["Bytes"]
+    mapped = {asset["Path"] for asset in value["Mapped"]}
+    require(program["Path"] in mapped and any(Path(path).name == "libc.so.6" for path in mapped)
+            and any(Path(path).name == "ld-linux-x86-64.so.2" for path in mapped)
+            and total <= 256 << 20, "Python program, loader, libc and finite runtime required")
+
+
+def capture_python_bootstrap():
+    value = {"Program": python_asset(Path(sys.executable)),
+             "Stdlib": "/usr/lib/python"+str(sys.version_info.major)+"."+str(sys.version_info.minor),
+             "Mapped": [python_asset(path) for path in python_mappings()],
+             "Modules": []}
+    value["Modules"] = [python_asset(path, allow_empty=True) for path in python_module_paths(Path(value["Stdlib"]))]
+    validate_python_bootstrap(value)
+    return value
+
+
+def verify_python_bootstrap(value):
+    validate_python_bootstrap(value)
+    for asset in [value["Program"], *value["Mapped"], *value["Modules"]]:
+        require(python_asset(asset["Path"], allow_empty=asset["Bytes"] == 0) == asset, "Python runtime pin changed")
+    # Observe the actually executing interpreter and mapped inodes too. A
+    # replacement pathname must not attest an older mapped library or binary.
+    with open("/proc/self/exe", "rb") as executable:
+        pin_bytes(executable.read((64 << 20)+1), {key: value["Program"][key] for key in ["SHA256", "Bytes"]})
+    require(set(python_mappings()).issubset({asset["Path"] for asset in value["Mapped"]})
+            and set(python_module_paths(Path(value["Stdlib"]))).issubset({asset["Path"] for asset in value["Modules"]}), "unmeasured Python runtime loaded")
 
 
 def decode_runtime(raw, program):
@@ -222,6 +347,7 @@ def verify_bootstrap(asset):
 
 
 def owned_unit(config_path):
+    require(sys.flags.isolated and sys.flags.no_site and sys.dont_write_bytecode, "isolated Python bootstrap required")
     # This entry has no arbitrary command or provider inputs. Refuse ordinary
     # host invocation before touching a runtime, helper or KVM descriptor.
     invocation = os.environ.get("INVOCATION_ID", "")
@@ -235,7 +361,8 @@ def owned_unit(config_path):
     require(stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid() and info.st_nlink == 1
             and stat.S_IMODE(info.st_mode) == 0o600, "private unit configuration required")
     config = json.loads(read_bounded(config_path, 65536), object_pairs_hook=unique_object)
-    require(set(config) == {"nonce", "runtime", "runner_sha256", "helper", "bootstrap_dependencies"}, "exact inert unit schema required")
+    require(set(config) == {"nonce", "runtime", "runner_sha256", "helper", "bootstrap_dependencies", "python_bootstrap"}, "exact inert unit schema required")
+    validate_bootstrap_pins(config["bootstrap_dependencies"])
     nonce = config["nonce"]
     require(isinstance(nonce, str) and re.fullmatch(r"[0-9a-f]{32}", nonce), "unit nonce required")
     unit = "sfl-git-vm-probe-"+nonce+".service"
@@ -244,6 +371,7 @@ def owned_unit(config_path):
     require(len(groups) <= 8192 and len(groups.splitlines()) == 1
             and groups.startswith(b"0::/user.slice/") and groups.rstrip().endswith(("/"+unit).encode()), "current inert unit cgroup required")
     require(hash_file(Path(__file__), 65536) == config["runner_sha256"], "owned runner changed")
+    verify_python_bootstrap(config["python_bootstrap"])
     with (config_path.parent/"unit.used").open("xb") as marker:
         marker.write(invocation.encode())
     root = config_path.parent/"runtime"
@@ -280,6 +408,7 @@ def owned_unit(config_path):
 
 
 def run(args):
+    require(sys.flags.isolated and sys.flags.no_site and sys.dont_write_bytecode, "isolated Python bootstrap required")
     root = Path(args.output).absolute()
     root.mkdir(mode=0o700, parents=False, exist_ok=False)
     repo = Path(__file__).resolve().parents[4]
@@ -339,9 +468,11 @@ def run(args):
     require(digest(kernel) == manifest["kernel_sha256"], "inert VM prerequisite proof refused")
     require(digest(firmware) == manifest["bios_sha256"], "inert VM prerequisite proof refused")
     runtime_metadata = manifest["host_runtime"]
+    validate_bootstrap_pins(runtime_metadata["bootstrap_dependencies"])
+    for asset in runtime_metadata["bootstrap_dependencies"]:
+        verify_bootstrap(asset)
     artifact = runtime_metadata["artifact"]
-    raw = read_bounded(Path(artifact["Path"]), (128 << 20)+(32 << 10)+64)
-    require(len(raw) == artifact["Bytes"] and hashlib.sha256(raw).hexdigest() == artifact["SHA256"], "captured runtime pin differs")
+    raw = image_runtime_bytes(image, artifact)
     program_pin = {key: manifest["qemu"][key] for key in ["SHA256", "Bytes"]}
     bodies = decode_runtime(raw, program_pin)
     bodies.update({"qemu": pin_bytes(read_bounded(qemu, 64 << 20), program_pin),
@@ -351,20 +482,27 @@ def run(args):
     runtime_identity = prepare_runtime(root/"runtime", bodies)
     verify_runtime(root/"runtime", runtime_identity)
     runner_pin = snapshot_file(root/"runner.py", read_bounded(Path(__file__), 65536), 0o400)
+    python_bootstrap = capture_python_bootstrap()
+    verify_python_bootstrap(python_bootstrap)
+    snapshot_file(root/"python-bootstrap.json", (json.dumps(python_bootstrap, indent=2)+"\n").encode(), 0o400)
     config = {"nonce": nonce, "runtime": runtime_identity, "runner_sha256": runner_pin["SHA256"],
-              "helper": runtime_metadata["namespace_helper"], "bootstrap_dependencies": runtime_metadata["bootstrap_dependencies"]}
+              "helper": runtime_metadata["namespace_helper"], "bootstrap_dependencies": runtime_metadata["bootstrap_dependencies"],
+              "python_bootstrap": python_bootstrap}
     snapshot_file(root/"unit.json", (json.dumps(config, sort_keys=True)+"\n").encode(), 0o600)
     serial = root/"serial.log"
     command = ["systemd-run", "--user", "--unit="+unit, "--description="+description,
         "--collect", "--wait", "--pipe", "--service-type=exec",
+        "--setenv=LANG=C.UTF-8", "--setenv=LC_ALL=C.UTF-8",
+        "--property=UnsetEnvironment=LD_PRELOAD LD_LIBRARY_PATH LD_AUDIT PYTHONPATH PYTHONHOME PYTHONSTARTUP PYTHONINSPECT",
         "--property=MemoryMax=1G", "--property=MemorySwapMax=0", "--property=TasksMax=64",
         "--property=CPUQuota=100%", "--property=RuntimeMaxSec=60s", "--property=KillMode=control-group",
         "--property=TimeoutStopSec=5s", "--property=NoNewPrivileges=yes", "--property=Restart=no", "--",
-        "/usr/bin/python3", "-I", "-S", str(root/"runner.py"), "--owned-unit", str(root/"unit.json")]
+        python_bootstrap["Program"]["Path"], "-I", "-S", "-B", str(root/"runner.py"), "--owned-unit", str(root/"unit.json")]
     receipt = {"version": 2, "purpose": "inert-git-vm-prerequisites", "nonce": nonce,
         "unit": unit, "description": description, "command": command,
         "runtime": runtime_identity, "runtime_artifact_sha256": artifact["SHA256"],
         "namespace_helper": runtime_metadata["namespace_helper"],
+        "python_bootstrap": python_bootstrap, "selected_runtime_artifact": str(image/"host-runtime/native-qemu-runtime.bin"),
         "bootstrap_note": "Original helper and root-owned host interpreter/libraries remain trusted host prerequisites; VM payload uses private readonly captured bytes.",
         "host_source": head, "host_tree": tree,
         "compiler": {"path": str(compiler), "sha256": compiler_hash},
@@ -427,6 +565,7 @@ def run(args):
             require(removed or directory.stat().st_ino == observed["cgroup_inode"] and not (directory/"cgroup.procs").read_text().strip()
                     and "populated 0" in (directory/"cgroup.events").read_text(), "inert VM prerequisite proof refused")
             verify_runtime(root/"runtime", runtime_identity)
+            verify_python_bootstrap(python_bootstrap)
             require(read_bounded(root/"unit.used", 32).decode() == observed["InvocationID"], "owned bootstrap invocation differs")
             for asset in runtime_metadata["bootstrap_dependencies"]:
                 verify_bootstrap(asset)

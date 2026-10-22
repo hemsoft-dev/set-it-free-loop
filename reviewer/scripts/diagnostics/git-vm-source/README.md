@@ -33,7 +33,18 @@ opening the runtime/helper/KVM. Cleanup requires the captured invocation before
 stopping a live unit; missing or replacement identity is an unknown result.
 An already stopped unit still needs the original cgroup proof. The original
 namespace helper's host interpreter/libraries remain trusted bootstrap
-prerequisites, checked before launch and after stop. The diagnostic uses the
+prerequisites. Their list must contain 2-32 sorted, unique, complete pins,
+including the loader and libc, checked before launch and after stop.
+
+The diagnostic and unit require `-I -S -B`, suppressing site/profile imports
+and bytecode writes. The unit fixes the locale and removes preload/library
+and Python-path overrides. It also pins its resolved root-owned Python interpreter, all mapped
+runtime files and file-backed stdlib modules and caches. It verifies the
+actually executing interpreter and mapped device/inode identities before KVM
+work, then checks those pins again after stop. Missing, changed, deleted or
+unexpected runtime files refuse qualification. These remain trusted host
+bootstrap prerequisites, separate from the read-only QEMU payload. The
+diagnostic uses the
 same read-only runtime binding mechanism as the native VM path, but does not
 use the production source supervisor. Aggregate confinement and exhaustion
 still need independent qualification.
@@ -41,13 +52,15 @@ still need independent qualification.
 From a clean committed checkout on mini:
 
 ```text
-python3 -B reviewer/scripts/diagnostics/git-vm-source/run.py --run-inert-only \
+python3 -I -S -B reviewer/scripts/diagnostics/git-vm-source/run.py --run-inert-only \
   --image /absolute/measured-native-image \
   --output /absolute/new-private-output
 ```
 
 The measured image supplies pinned kernel/QEMU/firmware metadata and its
-captured QEMU runtime artifact.
+captured QEMU runtime artifact at `host-runtime/native-qemu-runtime.bin`
+inside the selected image directory. The recorded build-time absolute path is
+provenance and is not reopened, so a complete image can be relocated.
 No official model client or native image initrd runs. The diagnostic takes no
 credential, provider or GitHub transport. The compiler is the installed,
 root-owned `/usr/bin/cc` target, recorded with its hash. Retain `prepared.json`,
