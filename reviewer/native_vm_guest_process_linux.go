@@ -490,6 +490,19 @@ func (p *nativeGuestProcess) Input() io.WriteCloser { return p.in }
 func (p *nativeGuestProcess) Output() io.ReadCloser { return p.out }
 func (p *nativeGuestProcess) Audit() io.ReadCloser  { return p.out }
 func (p *nativeGuestProcess) Wait() error           { <-p.done; return p.waitErr }
+
+// Open only control files relative to the descriptor used at process birth.
+// Reusing the old directory pathname must never redirect kill or stop evidence.
+func nativeGuestCgroupOpen(group *os.File, name string, flags int) (*os.File, error) {
+	if group == nil || (name != "cgroup.kill" && name != "cgroup.events") {
+		return nil, ErrWorkerStopPending
+	}
+	fd, err := unix.Openat(int(group.Fd()), name, flags|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	return os.NewFile(uintptr(fd), name), nil
+}
 func (p *nativeGuestProcess) Stop(ctx context.Context) error {
 	p.stopOnce.Do(func() {
 		p.in.Close()
@@ -503,7 +516,14 @@ func (p *nativeGuestProcess) Stop(ctx context.Context) error {
 				}
 			}
 		}
-		if os.WriteFile(filepath.Join(p.group, "cgroup.kill"), []byte("1"), 0600) != nil {
+		kill, err := nativeGuestCgroupOpen(p.groupFD, "cgroup.kill", os.O_WRONLY)
+		if err != nil {
+			p.stopErr = ErrWorkerStopPending
+			return
+		}
+		n, writeErr := kill.Write([]byte("1"))
+		closeErr := kill.Close()
+		if writeErr != nil || n != 1 || closeErr != nil {
 			p.stopErr = ErrWorkerStopPending
 			return
 		}
@@ -514,8 +534,15 @@ func (p *nativeGuestProcess) Stop(ctx context.Context) error {
 			return
 		}
 		for {
-			events, err := os.ReadFile(filepath.Join(p.group, "cgroup.events"))
-			if err == nil && strings.Contains(string(events), "populated 0") {
+			eventsFile, err := nativeGuestCgroupOpen(p.groupFD, "cgroup.events", os.O_RDONLY)
+			var events []byte
+			if err == nil {
+				events, err = io.ReadAll(io.LimitReader(eventsFile, 4097))
+				if closeErr := eventsFile.Close(); err == nil {
+					err = closeErr
+				}
+			}
+			if err == nil && len(events) <= 4096 && strings.Contains(string(events), "populated 0") {
 				break
 			}
 			select {

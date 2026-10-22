@@ -67,7 +67,7 @@ func TestNativePrivateDescriptorCannotReachAnExecChild(t *testing.T) {
 
 func TestNativeReaderDrainPrecedesCgroupKill(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "reader")
-	if os.Mkdir(root, 0700) != nil || os.WriteFile(filepath.Join(root, "cgroup.events"), []byte("populated 0\n"), 0600) != nil {
+	if os.Mkdir(root, 0700) != nil || os.WriteFile(filepath.Join(root, "cgroup.events"), []byte("populated 0\n"), 0600) != nil || os.WriteFile(filepath.Join(root, "cgroup.kill"), []byte("0"), 0600) != nil {
 		t.Fatal("fake reader group setup failed")
 	}
 	group, err := os.Open(root)
@@ -87,10 +87,14 @@ func TestNativeReaderDrainPrecedesCgroupKill(t *testing.T) {
 	go func() { stopped <- p.Stop(ctx) }()
 	// A bounded reader audit can need more than the former 250 ms grace.
 	time.Sleep(350 * time.Millisecond)
-	_, premature := os.Stat(filepath.Join(root, "cgroup.kill"))
+	// Real cgroup controls already exist; inspect their write rather than
+	// depending on creation of an ordinary file by the old pathname helper.
+	before, readErr := os.ReadFile(filepath.Join(root, "cgroup.kill"))
 	close(p.done)
-	if err := <-stopped; err != nil || !os.IsNotExist(premature) {
-		t.Fatal("reader killed before drain or cleanup failed", premature, err)
+	err = <-stopped
+	after, finalErr := os.ReadFile(filepath.Join(root, "cgroup.kill"))
+	if err != nil || readErr != nil || finalErr != nil || string(before) != "0" || string(after) != "1" {
+		t.Fatal("reader killed before drain or cleanup failed", string(before), string(after), readErr, finalErr, err)
 	}
 }
 
