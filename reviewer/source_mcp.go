@@ -246,7 +246,15 @@ func ServeSourceMCP(ctx context.Context, inv Invocation, connection io.ReadWrite
 		case "tools/call":
 			toolCalls++
 			if toolCalls > inv.Limits.ReaderCalls {
-				return ErrSourceMCPProtocol
+				// Past the bound the call is denied without source access. The
+				// connection and receipt survive, so a model that over-reads
+				// leaves recorded exhaustion instead of a lost reader audit.
+				// The total request budget above still ends a flood.
+				if exhausted, ok := inv.Source.(interface{ recordToolCallExhaustion() }); ok {
+					exhausted.recordToolCallExhaustion()
+				}
+				_ = respond(request.ID, map[string]any{"content": []map[string]string{{"type": "text", "text": "Source request denied"}}, "isError": true}, 0, "")
+				continue
 			}
 			var p struct {
 				Name      string          `json:"name"`

@@ -105,7 +105,10 @@ type sourceBroker struct {
 	calls     int
 	sealed    bool
 	exhausted bool
-	denials   []Coverage
+	// transportDenied records that the MCP transport already denied a call
+	// past the bound, so the omission is listed once.
+	transportDenied bool
+	denials         []Coverage
 }
 
 // newSourceBroker forks a fresh read budget. Citation validation on the supplied
@@ -141,7 +144,7 @@ func (b *sourceBroker) begin(ctx context.Context) error {
 		return err
 	}
 	if b.calls >= b.session.Limits.ReaderCalls {
-		if !b.exhausted {
+		if !b.exhausted && !b.transportDenied {
 			b.denials = append(b.denials, Coverage{Reason: "source tool-call limit exhausted"})
 		}
 		b.exhausted = true
@@ -149,6 +152,23 @@ func (b *sourceBroker) begin(ctx context.Context) error {
 	}
 	b.calls++
 	return nil
+}
+
+// recordToolCallExhaustion is called by the MCP transport for a call it denied
+// past the tool-call bound. The omission is always recorded once. Exhausted is
+// claimed only when the broker itself served the full bound; calls that the
+// transport rejected as invalid never count toward it.
+func (b *sourceBroker) recordToolCallExhaustion() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.sealed || b.exhausted {
+		return
+	}
+	if !b.transportDenied {
+		b.denials = append(b.denials, Coverage{Reason: "source tool-call limit exhausted"})
+		b.transportDenied = true
+	}
+	b.exhausted = b.calls >= b.session.Limits.ReaderCalls
 }
 
 func (b *sourceBroker) Read(ctx context.Context, revision, path string) (string, error) {
