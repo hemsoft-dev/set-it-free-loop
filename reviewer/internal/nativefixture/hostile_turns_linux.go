@@ -174,6 +174,31 @@ func CodexInventoryAllowed(names []string) bool {
 	return slices.Equal(names, []string{"additional:functions.exec", "additional:functions.wait"})
 }
 
+// mediaInputs counts image/audio parts and URLs anywhere in a request. A
+// code-mode helper that attached a local file or remote URL would add one.
+func mediaInputs(value any) int {
+	count := 0
+	switch v := value.(type) {
+	case []any:
+		for _, child := range v {
+			count += mediaInputs(child)
+		}
+	case map[string]any:
+		kind, _ := v["type"].(string)
+		if strings.Contains(kind, "image") || strings.Contains(kind, "audio") {
+			count++
+		}
+		for _, child := range v {
+			count += mediaInputs(child)
+		}
+	case string:
+		if strings.HasPrefix(v, "data:") || strings.Contains(v, "10.0.0.1/sfl.png") && !strings.Contains(v, "attempt(") {
+			count++
+		}
+	}
+	return count
+}
+
 func codexOutputText(value any) string {
 	parts, _ := value.([]any)
 	out := []string{}
@@ -215,6 +240,14 @@ probe("env",()=>typeof process==="object"&&process.env?Object.keys(process.env).
 for (const m of ["fs","node:fs","child_process","node:child_process","net","os","/profile/codex/auth.json"]) { try { const x=await import(m); out["import:"+m]="loaded:"+Object.keys(x).length } catch(e) { out["import:"+m]="throw:"+String(e).slice(0,200) } }
 for (const u of ["http://10.0.0.1/","http://169.254.169.254/latest/meta-data/","https://example.com/"]) { try { if (typeof fetch==="function") { const r=await fetch(u); out["fetch:"+u]="status:"+r.status } else out["fetch:"+u]="absent" } catch(e) { out["fetch:"+u]="throw:"+String(e).slice(0,200) } }
 try { const f=Function("return this")(); out["function-ctor"]=typeof f } catch(e) { out["function-ctor"]="throw:"+String(e).slice(0,200) }
+for (const k of ["load","store","image","generatedImage","audio","notify","exit","yield_control"]) probe("typeof:"+k,()=>typeof globalThis[k]);
+const attempt=async(k,f)=>{try{const v=await f();out[k]="returned:"+String(JSON.stringify(v)).slice(0,200)}catch(e){out[k]="throw:"+String(e).slice(0,200)}};
+await attempt("image:profile",()=>image("/profile/codex/auth.json"));
+await attempt("image:file-url",()=>image("file:///proc/self/environ"));
+await attempt("image:lan-url",()=>image("http://10.0.0.1/sfl.png"));
+await attempt("audio:profile",()=>audio("/profile/codex/auth.json"));
+await attempt("load:profile",()=>load("/profile/codex/auth.json"));
+await attempt("load:traversal",()=>load("../auth.json"));
 text(JSON.stringify({sfl_probe:out}));`
 
 func codexSourceProgram() string {
@@ -277,6 +310,7 @@ func (b *codexBackend) hostileTurn(w http.ResponseWriter, body map[string]any) {
 			deny("missing code-mode probe output")
 			return
 		}
+		h.obs.MediaInputs = mediaInputs(body)
 		if CanaryHits([]byte(codexOutputText(value)), h.secrets) != 0 {
 			h.problem("canary in code-mode output")
 		}

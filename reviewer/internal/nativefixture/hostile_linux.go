@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -102,7 +103,24 @@ func (c Canaries) Secrets(provider r.Provider) []string {
 		_ = json.Unmarshal(Seed(r.Codex), &seed)
 		out = append(out, seed.Tokens["id_token"])
 	}
+	// File attachments are base64. Add each alignment's stable core so an
+	// encoded disclosure of a synthetic token or canary is still counted.
+	for _, secret := range slices.Clone(out) {
+		out = append(out, base64Cores(secret)...)
+	}
 	return out
+}
+
+func base64Cores(secret string) []string {
+	cores := []string{}
+	for shift := 0; shift < 3; shift++ {
+		encoded := base64.StdEncoding.EncodeToString(append(make([]byte, shift), secret...))
+		start, end := (shift*4+2)/3+1, len(encoded)-4
+		if end-start >= 12 {
+			cores = append(cores, encoded[start:end])
+		}
+	}
+	return cores
 }
 
 // CanaryHits counts secret occurrences. Callers pass bytes they own; values are
@@ -208,6 +226,7 @@ type HostileObservation struct {
 	Results      map[string]string
 	Probe        map[string]string
 	MetadataUsed bool
+	MediaInputs  int
 	Problems     []string
 }
 
