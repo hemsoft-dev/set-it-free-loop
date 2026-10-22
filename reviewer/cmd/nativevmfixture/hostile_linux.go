@@ -35,7 +35,7 @@ type hostileReceipt struct {
 	Passed, HostContained, FakeOnly                              bool
 	RuntimeQualified, ProviderEligibilityQualified               bool
 	Checks                                                       map[string]bool
-	State, ErrorClass, Stage, GuestStage, Failure                string
+	State, ErrorClass, ErrorText, Stage, GuestStage, Failure     string
 	ElapsedMS                                                    int64
 	Counts                                                       f.Counts
 	Observation                                                  f.HostileObservation
@@ -62,6 +62,19 @@ func errorClass(err error) string {
 		return "phase-" + phase.State
 	}
 	return "other"
+}
+
+// errorText keeps a bounded diagnostic of static reviewer error strings. The
+// whole receipt is canary-scanned before it is written.
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	text := strings.ReplaceAll(err.Error(), "\n", "; ")
+	if len(text) > 512 {
+		text = text[:512]
+	}
+	return text
 }
 
 // ProbeContained accepts code-mode facts only when no module, process,
@@ -292,7 +305,7 @@ func runNativeHostile(c config) error {
 	if reviewErr != nil {
 		state = "failed"
 	}
-	receipt := hostileReceipt{Version: 1, Purpose: "native-fake-hostile", RunnerSourceHead: sourceHead, RunnerSourceTree: sourceTree, ImageSourceHead: c.ImageSourceHead, Case: hc.Name, Kind: hc.Kind, Provider: c.Provider, FakeOnly: true, Checks: checks, State: state, ErrorClass: errorClass(reviewErr), Stage: audit.Stage, GuestStage: audit.GuestStage, Failure: audit.Failure, ElapsedMS: elapsed, Counts: counts, Observation: obs, StoreRequests: requests, DeniedDestinations: denied.Load(), Source: access, CodeHost: audit.CodeHost}
+	receipt := hostileReceipt{Version: 1, Purpose: "native-fake-hostile", RunnerSourceHead: sourceHead, RunnerSourceTree: sourceTree, ImageSourceHead: c.ImageSourceHead, Case: hc.Name, Kind: hc.Kind, Provider: c.Provider, FakeOnly: true, Checks: checks, State: state, ErrorClass: errorClass(reviewErr), ErrorText: errorText(reviewErr), Stage: audit.Stage, GuestStage: audit.GuestStage, Failure: audit.Failure, ElapsedMS: elapsed, Counts: counts, Observation: obs, StoreRequests: requests, DeniedDestinations: denied.Load(), Source: access, CodeHost: audit.CodeHost}
 	if evidence != nil {
 		receipt.ProviderAccess = &evidence.Access
 	}

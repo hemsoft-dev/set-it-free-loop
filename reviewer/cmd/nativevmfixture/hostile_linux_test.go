@@ -67,4 +67,7 @@ func TestHostileOutcomeHelpers(t *testing.T) {
 			t.Fatal("error class differs", err, got)
 		}
 	}
+	if errorText(nil) != "" || len(errorText(errors.New(strings.Repeat("x", 600)))) != 512 || errorText(errors.Join(errors.New("a"), errors.New("b"))) != "a; b" {
+		t.Fatal("error diagnostic not bounded")
+	}
 }

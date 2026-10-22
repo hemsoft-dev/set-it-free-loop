@@ -322,3 +322,33 @@ func TestHostileMetadataInjectsDirectToolsOnlyForTheModelCase(t *testing.T) {
 		}
 	}
 }
+
+// Forbidden egress through the captured fixture policy: private, link-local and
+// non-allowlisted public authorities are refused before any transport call.
+func TestHostileEgressDestinationsNeverReachTheTransport(t *testing.T) {
+	for _, provider := range []r.Provider{r.Claude, r.Codex} {
+		s := hostileSession(t, provider)
+		_, policy, err := New(s, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transport := &handlerTransport{handler: http.NotFoundHandler()}
+		guard, err := r.NewProviderEgress(context.Background(), s, policy, transport)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, host := range []string{"10.0.0.1", "192.168.1.1:443", "169.254.169.254", "[fd00::1]", "example.com", "fixture.provider.example.evil.test", "localhost"} {
+			q := inferenceRequest(s, "")
+			q.Host = host
+			w := httptest.NewRecorder()
+			guard.ServeHTTP(w, q)
+			if w.Code != http.StatusForbidden {
+				t.Fatal("forbidden destination admitted", provider, host, w.Code)
+			}
+		}
+		access, _ := guard.Close(context.Background())
+		if transport.calls != 0 || access.Forwarded != 0 || !access.Failed {
+			t.Fatal("forbidden destination reached the transport", provider, transport.calls, access)
+		}
+	}
+}
