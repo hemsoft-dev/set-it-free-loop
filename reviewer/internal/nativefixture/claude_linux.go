@@ -51,7 +51,7 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	b.calls++
-	if b.calls > 6 {
+	if b.calls > 6 && (b.hostile == nil || b.calls > HostileSourceCalls()+1) {
 		b.failures++
 		http.Error(w, "fixture request cap", 429)
 		return

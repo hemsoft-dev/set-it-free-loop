@@ -91,23 +91,24 @@ func (b *claudeBackend) hostileTurn(w http.ResponseWriter, body map[string]any) 
 	switch {
 	case h.c.Kind == HostileGuard && b.calls == 1:
 		claudeToolTurn(w, b.s.Identity.Model, b.calls, claudeGuardBlocks(h.c.Name))
-	case h.c.Kind == HostileSource && b.calls == 1:
-		blocks := []claudeBlock{}
-		for i, call := range hostileSourceCalls() {
-			blocks = append(blocks, claudeBlock{"tool_use", fmt.Sprintf("h_source_%d", i), "mcp__sfl-source__" + call.Tool, call.Input})
-		}
-		claudeToolTurn(w, b.s.Identity.Model, b.calls, blocks)
-	case h.c.Kind == HostileSource && b.calls == 2:
-		for i, call := range hostileSourceCalls() {
-			isError, text, ok := claudeToolResult(body, fmt.Sprintf("h_source_%d", i))
-			if !ok {
-				h.obs.Results[call.Label] = "missing"
-				continue
+	case h.c.Kind == HostileSource && b.calls <= len(hostileSourceCalls())+1:
+		// One source call per turn: the session MCP server refuses overlapping
+		// calls, so parallel blocks would not each reach the reader.
+		calls := hostileSourceCalls()
+		if b.calls > 1 {
+			call := calls[b.calls-2]
+			isError, text, ok := claudeToolResult(body, fmt.Sprintf("h_source_%d", b.calls-2))
+			h.obs.Results[call.Label] = "missing"
+			if ok {
+				h.obs.Results[call.Label] = classifySource(call, isError, text, h.secrets)
 			}
-			h.obs.Results[call.Label] = classifySource(call, isError, text, h.secrets)
 		}
-		var report any = sourceReport(b.s)
-		claudeToolTurn(w, b.s.Identity.Model, b.calls, []claudeBlock{{"tool_use", "sfl_fixture_report_1", "StructuredOutput", report}})
+		if b.calls <= len(calls) {
+			call := calls[b.calls-1]
+			claudeToolTurn(w, b.s.Identity.Model, b.calls, []claudeBlock{{"tool_use", fmt.Sprintf("h_source_%d", b.calls-1), "mcp__sfl-source__" + call.Tool, call.Input}})
+			return
+		}
+		claudeToolTurn(w, b.s.Identity.Model, b.calls, []claudeBlock{{"tool_use", "sfl_fixture_report_1", "StructuredOutput", sourceReport(b.s)}})
 	default:
 		fail("hostile turn reached the client beyond its plan")
 	}

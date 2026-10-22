@@ -236,6 +236,10 @@ func NewHostile(s r.Session, name string, c Canaries) (*Backend, r.EgressPolicy,
 		return nil, policy, err
 	}
 	state := &hostileState{c: hc, canaries: c, secrets: c.Secrets(s.Identity.Provider), obs: HostileObservation{Case: hc.Name, Kind: hc.Kind, Inventory: []string{}, Results: map[string]string{}, Probe: map[string]string{}, Problems: []string{}}}
+	if hc.Kind == HostileSource && hc.Provider == r.Claude {
+		policy.Limits.InferenceRequests = len(hostileSourceCalls()) + 1
+		policy.Limits.Requests = policy.Limits.InferenceRequests
+	}
 	b.hostile = state
 	b.secrets = state.secrets
 	if b.Codex != nil {
@@ -309,7 +313,10 @@ func classifySource(call hostileCall, isError bool, text string, secrets []strin
 	case isError && strings.Contains(text, "Source request denied"):
 		return "denied"
 	case isError:
-		return "error-other"
+		if len(text) > 96 {
+			text = text[:96]
+		}
+		return "error-other: " + text
 	}
 	return "not-denied"
 }
