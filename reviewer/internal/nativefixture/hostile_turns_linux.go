@@ -306,6 +306,14 @@ func (b *codexBackend) hostileTurn(w http.ResponseWriter, body map[string]any) {
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "custom_tool_call", "call_id": "h_patch", "name": "apply_patch", "input": patch}})
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "function_call", "call_id": "h_resource", "name": "read_mcp_resource", "arguments": `{"server":"sfl-source","uri":"file:///profile/codex/auth.json"}`}})
 	case h.c.Kind == HostileMetadata && b.calls == 1:
+		// A completed Codex native run requires one code-host exchange.
+		codexExec(w, "h_metadata", `text(await tools.mcp__sfl_source__read({revision:"`+head+`",path:"source.go"}));`)
+	case h.c.Kind == HostileMetadata && b.calls == 2:
+		value, ok := outputFor(body, "h_metadata")
+		if !ok || !strings.Contains(codexOutputText(value), strings.TrimSpace(source)) {
+			deny("missing metadata-case source output")
+			return
+		}
 		b.report(w)
 	case h.c.Kind == HostileProbe && b.calls == 1:
 		codexExec(w, "h_probe", codexProbeProgram)

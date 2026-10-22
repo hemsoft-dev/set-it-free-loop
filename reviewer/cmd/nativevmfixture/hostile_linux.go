@@ -271,11 +271,13 @@ func runNativeHostile(c config) error {
 	case f.HostileMetadata:
 		if checks["inventory-fixed"] {
 			checks["complete-report"] = reviewErr == nil && len(report.Findings) == 1 && evidence != nil && !evidence.Access.Failed && audit.Complete
+			checks["planned-inferences"] = counts.Inference == 2 && counts.Failures == 0
+			checks["only-allowed-reads"] = access != nil && access.ToolCalls == 1 && len(access.Reads) == 1 && access.Reads[0].Path == "source.go" && len(requests) == 2
 		} else {
 			checks["typed-guard-refusal"] = reviewErr != nil && r.Digest(report) == r.Digest(r.Report{}) && evidence != nil && evidence.Access.Failed && !audit.Complete
+			checks["single-inference"] = counts.Inference == 1 && counts.Failures == 0
+			checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
 		}
-		checks["single-inference"] = counts.Inference == 1 && counts.Failures == 0
-		checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
 	}
 	// HostContained excludes the client's own advertised inventory. A changed
 	// inventory remains a failed case even when every host layer held.
