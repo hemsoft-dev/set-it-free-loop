@@ -8,7 +8,9 @@ change those results or authorize a weaker host launch.
 A credential-free inert probe found an alternative environment. The measured
 `7.0.0-38-generic` guest created the exact 256 MiB, 65,536-inode noswap mount.
 The same sealed image executed through both proc and execveat as UID 1203 with
-zero capabilities in new namespaces. Its host unit stopped. See the
+zero capabilities in new namespaces and wrote to the work mount. Mode and
+ownership were observed. The paired host receipt proves that run's unit
+stopped and its original cgroup was removed. See the
 [reproducible diagnostic](scripts/diagnostics/git-vm-source/README.md) and
 [actual producer record](scripts/diagnostics/git-vm-source/testdata/README.md).
 This establishes feasibility of those guest prerequisites only. No Git objects,

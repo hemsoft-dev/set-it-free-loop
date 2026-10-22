@@ -14,7 +14,7 @@ DIRECTORY = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("git_vm_prerequisite", DIRECTORY/"run.py")
 probe = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(probe)
-NONCE = "883c661671d20c825627c9d854192bae"
+NONCE = "013821658b5b49d4845db4613b935413"
 
 
 class GuestRecordTests(unittest.TestCase):
@@ -47,14 +47,24 @@ class GuestRecordTests(unittest.TestCase):
         host = json.loads((DIRECTORY/"testdata/actual-host-receipt.json").read_bytes())
         self.assertEqual(hashlib.sha256((DIRECTORY/"probe.c").read_bytes()).hexdigest(), host["guest_probe_source_sha256"])
         self.assertEqual(host["nonce"], NONCE)
-        self.assertTrue(host["unit_stopped"] and host["original_cgroup_empty"])
+        self.assertTrue(host["unit_stopped"] and host["original_cgroup_empty"] and host["runtime_verified_after_stop"])
         self.assertEqual(host["final_unit"]["MainPID"], "0")
+        self.assertIn(host["final_unit"]["ActiveState"], ["inactive", "failed"])
+        self.assertTrue(host["observed"]["ControlGroup"].endswith("/sfl-git-vm-probe-"+NONCE+".service"))
+        self.assertEqual(host["observed"]["kernel_limits"], {"memory.max": "1073741824", "memory.swap.max": "0", "pids.max": "64", "cpu.max": "100000 100000"})
+        self.assertTrue(host["fake_only"] and not host["model_inference"] and not host["production_qualified"])
         self.assertRegex(host["observed"]["InvocationID"], r"^[0-9a-f]{32}$")
         self.assertEqual(hashlib.sha256(base64.b64decode((DIRECTORY/"testdata/actual-guest-result.b64").read_bytes().strip(), validate=True)).hexdigest(), host["guest_wire_sha256"])
         value = self.actual()
         self.assertTrue(probe.prerequisites_passed(value))
         self.assertEqual(value["kernel"], "7.0.0-38-generic")
         self.assertFalse(value["production_qualified"])
+
+    def test_legacy_record_lacks_writability_evidence(self):
+        legacy = base64.b64decode((DIRECTORY/"testdata/legacy-guest-result-v1.b64").read_bytes().strip(), validate=True)
+        self.assertEqual(hashlib.sha256(legacy).hexdigest(), "42bd090440c0adbb8db6e74d3bb347b385dca8dde19103a3214983dd8c215085")
+        with self.assertRaises(RuntimeError):
+            probe.decode_guest_result(legacy, "883c661671d20c825627c9d854192bae")
 
     def test_schema_framing_and_provenance_refuse(self):
         actual = base64.b64decode((DIRECTORY/"testdata/actual-guest-result.b64").read_bytes().strip(), validate=True)
