@@ -66,39 +66,46 @@ def run_owned(program, configuration, environment, log, timeout=190, force_point
     deadline = time.monotonic()+timeout
     observed_point = False
     while True:
+        if force_point is not None and force_point.is_file():
+            observed_point = True
+            trigger = "forced-timeout-point"
+            break
+        remaining = deadline-time.monotonic()
+        if remaining <= 0:
+            trigger = "deadline"
+            break
         try:
-            if force_point is not None and force_point.is_file():
-                observed_point = True
-                raise subprocess.TimeoutExpired(process.args, timeout)
-            remaining = deadline-time.monotonic()
-            if remaining <= 0:
-                raise subprocess.TimeoutExpired(process.args, timeout)
             process.wait(timeout=min(0.1, remaining))
-            return process.returncode, False, {"status": "not-needed"}
+            if process.returncode == 0:
+                return 0, False, {"status": "not-needed"}
+            trigger = "driver-error"
+            break
         except subprocess.TimeoutExpired:
-            if not observed_point and time.monotonic() < deadline:
-                continue
-            try:
-                group_stopped = kill_owned_group(process)
-            except (OSError, RuntimeError, ValueError):
-                group_stopped = False
-            recovery = subprocess.Popen([str(program), "--recover-owned", str(configuration)],
-                                        env=environment, stdout=subprocess.PIPE, stderr=log,
-                                        start_new_session=True)
-            record = {"Status": "unknown"}
-            try:
-                raw, _ = recovery.communicate(timeout=45)
-                if len(raw) <= 8192:
-                    decoded = json.loads(raw)
-                    if isinstance(decoded, dict):
-                        record = decoded
-            except (subprocess.TimeoutExpired, ValueError):
-                kill_owned_group(recovery)
-            known = (group_stopped and recovery.returncode == 0
-                     and record.get("Status") == "stopped-owned-unit")
-            return process.returncode, True, {"status": "known" if known else "unknown",
-                    "owned_process_group_stopped": group_stopped,
-                    "forced_point_observed": observed_point, "recovery": record}
+            continue
+    try:
+        group_stopped = kill_owned_group(process)
+    except (OSError, RuntimeError, ValueError):
+        group_stopped = False
+    record = {"Status": "unknown"}
+    recovery = None
+    try:
+        recovery = subprocess.Popen([str(program), "--recover-owned", str(configuration)],
+                                    env=environment, stdout=subprocess.PIPE, stderr=log,
+                                    start_new_session=True)
+        raw, _ = recovery.communicate(timeout=45)
+        if len(raw) <= 8192:
+            decoded = json.loads(raw)
+            if isinstance(decoded, dict):
+                record = decoded
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        if recovery is not None:
+            kill_owned_group(recovery)
+    known = (group_stopped and recovery is not None and recovery.returncode == 0
+             and record.get("Status") == "stopped-owned-unit")
+    return process.returncode, trigger != "driver-error", {
+            "status": "known" if known else "unknown", "trigger": trigger,
+            "owned_process_group_stopped": group_stopped,
+            "forced_point_observed": observed_point, "recovery": record}
 
 
 def main():

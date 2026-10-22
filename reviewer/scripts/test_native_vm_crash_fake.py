@@ -44,6 +44,21 @@ else:
             if child.exists():
                 self.assertEqual(child.read_text().split(')')[-1].split()[0], 'Z')
 
+    def test_deadline_preserves_unknown_recovery_as_failure(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-deadline-test-") as directory:
+            root = Path(directory)
+            program = root/"fixture"
+            program.write_text("#!/bin/sh\nif [ \"$1\" = --recover-owned ]; then echo '{\"Status\":\"unknown\"}'; exit 1; fi\nsleep 60\n")
+            program.chmod(0o500)
+            with (root/"log").open("wb") as log:
+                code, timed_out, cleanup = module.run_owned(program, root/"unused",
+                    {"PATH":"/usr/bin:/bin"}, log, timeout=0.1)
+            self.assertTrue(timed_out)
+            self.assertNotEqual(code, 0)
+            self.assertEqual(cleanup["trigger"], "deadline")
+            self.assertEqual(cleanup["status"], "unknown")
+            self.assertFalse(cleanup["forced_point_observed"])
+
     def test_success_does_not_invoke_recovery(self):
         with tempfile.TemporaryDirectory(prefix="sfl-normal-test-") as directory:
             root = Path(directory)

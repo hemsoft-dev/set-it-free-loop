@@ -275,18 +275,31 @@ func pointValid(c config, p crashPoint) bool {
 	dev, ino, err := rootIdentity(c.Root)
 	return err == nil && verifyOwnedRoot(c) == nil && p.Version == 1 && p.RunnerSourceHead == sourceHead && p.RunnerSourceTree == sourceTree && p.ImageSourceHead == c.ImageSourceHead && p.SessionHash == r.Digest(session) && p.PolicyHash == r.Digest(policy) && len(p.SeedHash) == 64 && dev == p.RootDevice && ino == p.RootInode && p.Counts.Inference == 1 && p.Counts.Refreshes == 1 && p.Counts.Failures == 0 && p.Counts.RefreshFailures == 0 && p.Counts.Telemetry == 0
 }
+
+type stoppedSupervisor interface {
+	ConfirmAuthStopped(context.Context, r.AuthBinding) error
+	CleanupRuntime(context.Context, r.AuthBinding) error
+	Close() error
+}
+type supervisorOpener func(context.Context, string, string, string) (stoppedSupervisor, error)
+
 func stopOriginal(c config, sessionHash string) (unitRecord, error) {
+	return stopOriginalWith(c, sessionHash, func(ctx context.Context, root, stub, pin string) (stoppedSupervisor, error) {
+		return r.OpenNativeVMSupervisor(ctx, root, stub, pin)
+	})
+}
+func stopOriginalWith(c config, sessionHash string, open supervisorOpener) (record unitRecord, result error) {
 	record, err := readUnit(c.Root)
 	if err != nil || !capturedUnitBound(record, sessionHash) {
 		return record, errors.New("original native capture required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	supervisor, err := r.OpenNativeVMSupervisor(ctx, filepath.Join(c.Root, "launches"), c.Stub.Path, c.Stub.SHA256)
+	supervisor, err := open(ctx, filepath.Join(c.Root, "launches"), c.Stub.Path, c.Stub.SHA256)
 	if err != nil {
 		return record, err
 	}
-	defer supervisor.Close()
+	defer func() { result = errors.Join(result, supervisor.Close()) }()
 	if err = supervisor.ConfirmAuthStopped(ctx, record.Binding); err != nil {
 		return record, err
 	}
@@ -390,7 +403,12 @@ func runParent(c config, configuration string) (err error) {
 	if err != nil {
 		return err
 	}
-	defer supervisor.Close()
+	supervisorClosed := false
+	defer func() {
+		if !supervisorClosed {
+			err = errors.Join(err, supervisor.Close())
+		}
+	}()
 	completeRefused := errors.Is(profile.Complete(ctx, supervisor), r.ErrAuthRecoveryRequired) && retainedSeedMatches(c, point.SeedHash)
 	if !blocked || !completeRefused {
 		return errors.New("lost return was accepted")
@@ -415,6 +433,10 @@ func runParent(c config, configuration string) (err error) {
 	if !persisted {
 		return errors.New("reopened recovery fence lost")
 	}
+	journalHash, journalErr := retainRecoveryJournal(c, before.Binding, point.SeedHash)
+	if journalErr != nil {
+		return journalErr
+	}
 	if err = profile.Retire(ctx, supervisor); err != nil {
 		return err
 	}
@@ -431,9 +453,15 @@ func runParent(c config, configuration string) (err error) {
 		return err
 	}
 	roots, _ := filepath.Glob(filepath.Join(c.Root, "launches", "*", "qemu-runtime"))
+	if closeErr := supervisor.Close(); closeErr != nil {
+		return closeErr
+	}
+	supervisorClosed = true
 	same := before.Binding == after.Binding && before.Unit == after.Unit && before.ManifestHash == after.ManifestHash && before.Identity == after.Identity
 	receipt := struct {
 		Version                                                                                                                                                           int
+		AuthJournalSnapshotSHA256                                                                                                                                         string
+		SupervisorClosed                                                                                                                                                  bool
 		Purpose, RunnerSourceHead, RunnerSourceTree, ImageSourceHead                                                                                                      string
 		Provider                                                                                                                                                          r.Provider
 		Passed, FakeOnly, RuntimeQualified, ProviderEligibilityQualified                                                                                                  bool
@@ -441,7 +469,11 @@ func runParent(c config, configuration string) (err error) {
 		RecoveryMS                                                                                                                                                        int64
 		Point                                                                                                                                                             crashPoint
 		Unit                                                                                                                                                              unitRecord
-	}{1, "native-process-loss-fake-only", sourceHead, sourceTree, c.ImageSourceHead, c.Provider, blocked && completeRefused && persisted && empty && len(roots) == 0 && same && stopped.Stopped && stopped.Aborted, true, false, false, true, blocked, completeRefused, persisted, empty, len(roots) == 0, same, time.Since(killedAt).Milliseconds(), point, after}
+	}{Version: 1, AuthJournalSnapshotSHA256: journalHash, SupervisorClosed: supervisorClosed,
+		Purpose: "native-process-loss-fake-only", RunnerSourceHead: sourceHead, RunnerSourceTree: sourceTree, ImageSourceHead: c.ImageSourceHead,
+		Provider: c.Provider, Passed: blocked && completeRefused && persisted && empty && len(roots) == 0 && same && stopped.Stopped && stopped.Aborted && supervisorClosed,
+		FakeOnly: true, SupervisorSIGKILL: true, AuthRecoveryBlocked: blocked, CompleteWithoutReturnRefused: completeRefused, ReopenedAuthFenced: persisted,
+		ExplicitSyntheticRetirement: empty, RuntimeRootsRemoved: len(roots) == 0, OriginalUnitPreserved: same, RecoveryMS: time.Since(killedAt).Milliseconds(), Point: point, Unit: after}
 	bytes, err := json.MarshalIndent(receipt, "", "  ")
 	if err != nil {
 		return err

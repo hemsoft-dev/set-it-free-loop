@@ -24,8 +24,12 @@ stop checks and recorded runtime ownership govern shutdown and runtime cleanup.
 The exported auth profile must remain fenced. Even after physical stop,
 `Complete` must refuse a lost return, and canonical state must still match the
 original synthetic seed hash. Reopening the auth store must preserve that fence.
-The fixture then explicitly retires only its synthetic state through the actual
-stopped verifier, and proves the old seed is gone. It does not seed a replacement.
+Before retirement, the fixture saves a bounded nonsecret copy of the original
+exported auth journal, bound to the provider, launch and seed hash. Its SHA-256
+enters the final result. A failed snapshot leaves the original recovery state
+intact. The fixture then explicitly retires only its synthetic state through
+the actual stopped verifier and proves the old seed is gone. It does not seed
+a replacement. Supervisor closure must succeed before a pass is written.
 
 The fresh root also records the exact driver source/tree, configuration digest binding a
 random fixture-instance nonce, and original directory identity before any auth
@@ -65,12 +69,15 @@ substitutions and mixed or unsupported providers refuse. Ordinary tests exercise
 framing, source/session/policy/root binding, no existing-root adoption and actual
 local TLS without opening a manager, KVM or native client.
 
-Retain the source/image/build receipt, crash point, original private unit and
-auth journals, physical-stop/runtime-cleanup evidence and final result. Failure
+Retain the source/image/build receipt, crash point, original private unit
+journal, retained auth metadata copy/hash for retired cases, original fenced
+auth journal for timeout cases, physical-stop/runtime-cleanup evidence and final
+result. Failure
 retains the state directory. A timeout is not proof of shutdown or permission to
 restart, discard unknown state or reseed auth.
 
-This is one controlled supervisor SIGKILL after refresh and before a response.
+These cases cover one controlled interruption point after refresh and before
+a response, with either the child supervisor or both host driver processes lost.
 It does not qualify host power loss/reboot, arbitrary interruption boundaries,
 resource pressure, real-account repair, aggregate protected Git acquisition,
 controller budget accounting, actual benchmark quality or a live pilot. The
