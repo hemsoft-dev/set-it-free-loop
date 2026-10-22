@@ -34,6 +34,12 @@ func gitVMGuestSetup() (gitVMGuestRelease, string, error) {
 	if nativeGuestMount("proc", "/proc", "proc", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", unix.Mount) != nil {
 		return r, "", ErrVMBoot
 	}
+	for _, name := range []string{"overflowuid", "overflowgid"} {
+		raw, err := os.ReadFile("/proc/sys/kernel/" + name)
+		if err != nil || string(bytes.TrimSpace(raw)) != "65534" {
+			return r, "", ErrVMBoot
+		}
+	}
 	line, err := os.ReadFile("/proc/cmdline")
 	if err != nil {
 		return r, "", ErrVMBoot

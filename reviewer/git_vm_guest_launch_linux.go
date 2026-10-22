@@ -178,7 +178,7 @@ func (w *gitVMGuestWorker) start(ctx context.Context, q gitVMGuestRequest) error
 	cmd.Stdout = devNull
 	cmd.Stderr = devNull
 	cmd.ExtraFiles = []*os.File{w.supervisor, w.image, w.request, write, sealedFilter, w.runtime, w.broker, w.work, alias}
-	cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(groupFD.Fd()), Pdeathsig: syscall.SIGKILL}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: gitVMGuestUID, Gid: gitVMGuestGID, Groups: []uint32{}}, UseCgroupFD: true, CgroupFD: int(groupFD.Fd()), Pdeathsig: syscall.SIGKILL}
 	if unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != nil {
 		groupFD.Close()
 		read.Close()

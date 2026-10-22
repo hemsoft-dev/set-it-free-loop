@@ -75,7 +75,10 @@ func gitVMGuestWorkerMain(hash string) int {
 	}
 	join := gitBrokerAfterFunc(ctx, func() { conn.Close(); output.Close() })
 	defer join()
-	peer, err := authenticateGitSupervisorIDs(ctx, conn, input.Supervisor, 0, 0)
+	// Guest root is outside the worker user namespace. Its unmapped UID/GID
+	// is the fixed overflow identity verified by guest setup. The inherited
+	// original pidfd must also match SO_PEERPIDFD; overflow IDs alone prove nothing.
+	peer, err := authenticateGitSupervisorIDs(ctx, conn, input.Supervisor, 65534, 65534)
 	if err != nil {
 		return 2
 	}
