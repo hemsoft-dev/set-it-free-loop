@@ -125,49 +125,143 @@ staging, and it holds no provider, auth binding or credential bytes. The source
 supervisor must still capture and stop the original kernel instance before it
 records a terminal state.
 
+## Source VM unit owner implemented
+
+The private [unit owner](git_vm_owner_linux.go) is the original-instance
+lifecycle for source VM units. It is a third distinct payload, with description
+prefix `SFL source VM acquisition ` followed by the request hash. Neither the
+generic single-image start nor the host Git start accepts that prefix, and the
+source VM start accepts neither of theirs. The transient unit inherits the
+sealed stub image and the original supervisor pidfd, permits only `AF_UNIX`
+and `AF_NETLINK` sockets (the pinned namespace helper configures loopback),
+denies io_uring and is limited to 2 GiB with no swap, 96 tasks, one CPU and
+180 seconds. The matching kernel capture checks those cgroup limits.
+
+The owner stores lifecycle metadata in the ownership journal before each
+manager call and never retries an uncertain start. A fresh start binds the
+original invocation and cgroup while its accepted job is still attached, waits
+for the job, then captures the stub's pidfd, process identity and executable.
+Only that fresh start becomes grant eligible; reopening never re-arms it.
+
+Stop durably revokes first. It terminates the captured cgroup, requires that
+cgroup empty and the retained root pidfd dead, and waits for the same
+invocation to settle without stopping any unit by name. A born instance that
+exited before capture is proved by its unchanged birth and repeated original
+cgroup emptiness. A started instance with no birth stays owned and blocks new
+work until a changed boot ID proves it gone, which is recorded as `StopBoot`.
+A replacement invocation, cgroup or description under the same unit name is
+refused without a receipt. One live attempt at a time, at most 64 journal
+records, and only stopped records can be forgotten.
+
+The [owner tests](git_vm_owner_linux_test.go) use a fake manager and kernel
+with an inert real child process. They check the exact transient-unit wire,
+descriptor roles and payload separation, durable capture and whole stop, lost
+start replies, reopen recovery without grant re-arming, replacement refusal,
+early-exit and populated-group cases, reboot proof and journal bounds. They do
+not run systemd, QEMU or the stub, and grant no source authority.
+
+## Source VM stub, grant and run implemented
+
+The unit runs only the fixed [source VM stub](git_vm_stub_linux.go), built from
+`cmd/gitsourcevmstub`. Its arguments are the stub endpoint, the canonical guest
+request JSON, that request's hash and the diagnostic supervisor PID. Before it
+dials anything, it checks its inherited sealed image and original supervisor
+pidfd, its own source unit cgroup and limits, and `NoNewPrivs`. It
+authenticates the supervisor through that pidfd, never the numeric PID, and
+sends its own identity.
+
+The [owner grant](git_vm_grant_linux.go) is one use, for the fresh start only.
+It verifies every boot input against the request's pinned manifest, then the
+stub's hello, kernel peer credentials, unit and invocation for the peer pidfd,
+executable image, unchanged unit and original cgroup. It records the grant hash
+durably before the only send. Eight boot descriptors (QEMU, kernel, initrd,
+KVM, BIOS, QEMU runtime artifact, namespace helper and the host-prepared
+read-only runtime root) travel in one packet. The three channel endpoints
+follow in a second packet bound to the first grant's hash. A lost send revokes
+the attempt and is never replayed. The stub writes nothing to disk, discards
+bounded boot diagnostics and never writes the guest control channel. It runs
+QEMU through the pinned helper with `gitVMSourceQEMUArgs`, the same argument
+and descriptor layout the measured guest fixture uses.
+
+The [run](git_vm_run_linux.go) implements the existing private acquisition seam,
+so the credential owner holds `run.stop` as the generation's stop capability.
+`acquire` builds the guest request with the retained generation number,
+prepares the attempt, prepares the read-only QEMU runtime root, starts the unit,
+grants the stub and drives the guest protocol. It serves the read channel with
+a check that requires the exact binding, an unrevoked run and the owner's live
+original-instance recheck before each upstream exchange and after each body
+closes. The export is staged through the source archive while the host measures
+the actual wire bytes; the guest's finished record must match that byte count
+and hash. `stop` revokes, closes the channels, joins acquisition and the read
+server, then requires the owner's original-instance stop. `close` removes the
+runtime root and listener only after that stop. Each refusal records a fixed,
+non-secret stage name.
+
+`TestGitVMRunProductionHostActualGit` is the opt-in production-host
+qualification. It needs a measured source image and a stub built from the
+exact head:
+
+```sh
+go -C reviewer build -o "$OUT/gitsourcevmstub" ./cmd/gitsourcevmstub
+chmod 0500 "$OUT/gitsourcevmstub"
+go -C reviewer test -c -o "$OUT/reviewer.test" .
+SFL_SOURCE_VM_HOST_IMAGE="$IMAGE" SFL_SOURCE_VM_HOST_STUB="$OUT/gitsourcevmstub" \
+SFL_SOURCE_VM_HOST_CASE=normal "$OUT/reviewer.test" \
+  -test.run '^TestGitVMRunProductionHostActualGit$' -test.v -test.timeout 220s
+```
+
+It starts a real transient unit in the caller's user manager, runs QEMU with
+KVM and serves Git from a local fixture through synthetic installation
+credentials. Cases are `normal`, `upstream-fail` (pack negotiation refused),
+`cancel` (cancelled mid-read) and `crash` (the controller loses its pidfds and
+journal lock while the guest is held mid-read; a reopened owner must find the
+original instance live, stop it from the durable capture alone, and only then
+may the reader generation release). Every case requires the original unit's
+durable stop receipt. No real credential, provider, App or network destination
+participates.
+
+
 ## Remaining host composition and qualification
 
-Connect the distinct source VM purpose to a production host launcher and
-stop-proof type. A source receipt
-must never qualify a provider worker or release a provider auth lease. Preserve
-the existing host path and journals; do not reinterpret them as VM evidence.
+A source receipt must never qualify a provider worker or release a provider
+auth lease. Preserve the existing host path and journals; do not reinterpret
+them as VM evidence.
 
 The source guest runs fetch, index-pack, graph/fsck/diff/tree/blob parsing under
 the finite acquisition bounds. Guest root prepares exact storage and immutable
-runtime, then starts a separate unprivileged source role.
-Models retain only the existing read/search capability. There is no new model
-shell or candidate-code execution contract.
+runtime, then starts a separate unprivileged source role. Models retain only
+the existing read/search capability. There is no new model shell or
+candidate-code execution contract.
 
 The guest has no NIC, host filesystem share, provider profile or GitHub token.
 Its fixed HTTP helper reaches only a private, job-bound host read capability.
-The host credential owner keeps App signing and token generations; the broker
-retains exact repository/snapshot/request bounds, byte/call/time limits and
-revocation/draining. The guest authenticates the actual helper. Production host composition must
-bind that evidence to the pinned guest and original host VM invocation.
+The host credential owner keeps App signing and token generations; the read
+channel retains exact repository/snapshot/request bounds, byte/call/time limits
+and revocation/draining. The run binds each read to the pinned guest request
+and the live original host VM invocation.
 
-Do not accept staged materialization until broker revocation/draining and fresh
-whole-VM stop are proved. Persist acquisition/receipt/publication intent before
-each irreversible handoff. Recovery reopens original unit, channel, generation
-and archive records without replay; unknown work remains owned and unavailable.
-Connect the resulting `PollSource` adapter through explicit trusted release and
-startup packages. No constructor installs credentials, promotes a build or runs
-work. No existing release silently changes its acquisition mechanism.
+Do not accept staged materialization until the read channel is joined and fresh
+whole-VM stop is proved; the run's generation stop capability enforces that
+order. A failed intake currently leaves its source archive record `receiving`,
+which blocks later staging; the source factory must discard it after the
+owner's stop receipt, and retire stopped owner and archive records within their
+bounds. Recovery reopens original unit, channel, generation and archive
+records without replay; unknown work remains owned and unavailable. Connect the
+run through a `PollSource` source factory with that durable recovery, then
+through explicit trusted release and startup packages. No constructor installs
+credentials, promotes a build or runs work. No existing release silently
+changes its acquisition mechanism.
 
-Extend the actual pinned-Git guest qualification to hostile repositories,
-storage/resource exhaustion, cross-job access, cancellation, lost output and
-process/restart recovery before claiming this implementation complete. Host
-unit confinement and kernel/guest/runtime pins need their own evidence; the
-inert diagnostic is not that proof. The host's old failed prerequisites remain
-failed even if a new VM implementation later qualifies.
+Extend the production-host qualification to hostile repositories,
+storage/resource exhaustion, cross-job access and lost output before claiming
+this implementation complete. The host's old failed prerequisites remain
+failed even though the VM path now qualifies its own unit.
+
+The separate [source guest and image producer](GIT-VM-GUEST.md) implement
+root-mediated Git reads and a sealed UID/GID 1203 worker. Guest completion does
+not authorize host staging publication or release an auth lease.
 
 Provider/account/paid-overflow evidence, actual comparative evaluation, final
 GitHub observations, trusted promotion and separate owner activation remain the
 [existing gates](../docs/research/2026-10-21-alpha-activation-checklist.md).
-This assessment and diagnostic grant none of them.
-
-The separate [source guest and image producer](GIT-VM-GUEST.md) now implement
-root-mediated Git reads and a sealed UID/GID 1203 worker. A contained,
-credential-free actual-Git test qualifies the guest data path. Production host
-VM ownership, durable stop/recovery, startup composition and aggregate
-qualification remain implementation work. Guest completion does not authorize
-host staging publication or release an auth lease.
+This implementation grants none of them.
