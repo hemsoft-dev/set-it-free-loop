@@ -5,6 +5,8 @@ package reviewer
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -99,6 +101,7 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 	}
 	args = append(args, "-sandbox", "on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny")
 	cmd := exec.CommandContext(ctx, "/usr/bin/qemu-system-x86_64", args...)
+	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8"}
 	cmd.ExtraFiles = peers
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -162,13 +165,15 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 	if err := writeVMRecord(channels[0], gitVMGuestPhase{1, gitVMGuestPurpose, Digest(q), "host-grant"}, gitVMRecordBytes); err != nil {
 		t.Fatal(err)
 	}
-	materialized, err := receiveGitVMExport(ctx, channels[2], q.Source)
+	digest := sha256.New()
+	measured := &gitVMGuestFixtureReader{ReadCloser: channels[2], digest: digest}
+	materialized, err := receiveGitVMExport(ctx, measured, q.Source)
 	if err != nil {
 		t.Fatal("guest export", err)
 	}
 	defer materialized.Close()
 	finished, err := readVMRecord[gitVMGuestFinished](channels[0], gitVMRecordBytes)
-	if err != nil || !finished.valid(q) {
+	if err != nil || !finished.valid(q) || finished.ExportBytes != measured.bytes || finished.ExportHash != hex.EncodeToString(digest.Sum(nil)) {
 		t.Fatalf("guest completion: %v %+v", err, finished)
 	}
 	object, err := materialized.Read(ctx, snapshot.Head, "safe.go", snapshotObjectBytes)
@@ -177,4 +182,18 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 		t.Fatalf("guest source differs: %v %v", err, wantErr)
 	}
 	t.Logf("actual source-only guest exported %d bytes through %d broker requests; host supervisor qualification remains separate", finished.ExportBytes, finished.Broker.Requests)
+}
+
+// Host observation of the actual wire is separate from guest-reported counts.
+type gitVMGuestFixtureReader struct {
+	io.ReadCloser
+	digest io.Writer
+	bytes  int64
+}
+
+func (r *gitVMGuestFixtureReader) Read(p []byte) (int, error) {
+	n, err := r.ReadCloser.Read(p)
+	r.bytes += int64(n)
+	_, _ = r.digest.Write(p[:n])
+	return n, err
 }

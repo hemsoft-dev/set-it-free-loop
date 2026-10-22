@@ -138,3 +138,10 @@ Provider/account/paid-overflow evidence, actual comparative evaluation, final
 GitHub observations, trusted promotion and separate owner activation remain the
 [existing gates](../docs/research/2026-10-21-alpha-activation-checklist.md).
 This assessment and diagnostic grant none of them.
+
+The separate [source guest and image producer](GIT-VM-GUEST.md) now implement
+root-mediated Git reads and a sealed UID/GID 1203 worker. A contained,
+credential-free actual-Git test qualifies the guest data path. Production host
+VM ownership, durable stop/recovery, startup composition and aggregate
+qualification remain implementation work. Guest completion does not authorize
+host staging publication or release an auth lease.
