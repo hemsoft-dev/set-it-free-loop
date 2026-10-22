@@ -47,18 +47,21 @@ unit, VM, official client, provider session or network backend.
 
 This component does not implement `AuthStopVerifier`. Its successful abort is
 an authorization-revocation receipt, never evidence to release an auth lease.
-The next manager adapter must bind the supplied invocation ID to the actual
-unit and cgroup, settle every asynchronous start and helper, prove the exact
-cgroup subtree empty, and prove profile mounts detached. A missing unit or a
+The separate [systemd supervisor](SYSTEMD-SUPERVISOR.md) supplies the manager
+assembly. Its stop verifier must bind the invocation to the actual unit and
+cgroup, settle asynchronous starts, establish an empty cgroup subtree and
+confirm profile mounts detached. A missing unit or a
 successful stop command alone cannot establish that proof. Unknown launches
 remain recovery work, and recovery never grants their old launch IDs again.
 
-The fixed QEMU payload, resource enforcement, native/source-reader role wiring,
-protected auth transfer and refresh/disposal, private provider bridge binding
-and whole-containment recovery still require implementation and qualification.
+The [native VM assembly](NATIVE-VM.md) implements QEMU assets, guest role
+separation, bounded source/provider channels, protected auth transfer/refresh
+and stopped ownership. Full resource-pressure, hostile capability and arbitrary
+host-crash qualification remain unproved.
 The fake-only gate does not enable reviewer activation or change any account,
 capability or production qualification flag.
 
 The [fake-only systemd supervisor](SYSTEMD-SUPERVISOR.md) now implements the
-manager/physical-stop component for its pinned inert payload. Native/VM payload
-and protected auth transfer remain separate work.
+manager/physical-stop component for its pinned inert payload. The separate
+native assembly has its own captured identity and auth-return checks; an inert
+marker receipt cannot qualify or release a native worker.

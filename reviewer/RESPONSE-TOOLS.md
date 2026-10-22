@@ -9,7 +9,7 @@ EgressPolicy.ResponsePolicy is trusted launch configuration. The predefined
 policies are codex-source-responses-v1 and claude-source-messages-v1. The private
 provider receipt's PolicyHash binds the selected policy. An empty field preserves
 legacy fake receipts and means unknown enforcement, never a qualified native
-fallback. The future native supervisor must require its captured policy.
+fallback. The [native VM supervisor](NATIVE-VM.md) requires its captured policy.
 
 The bridge already buffers bounded responses. For inference, it now validates
 the entire SSE or JSON response before writing status, headers or body. A denied
@@ -63,5 +63,6 @@ These are offline fixtures with fresh synthetic profiles and local fake TLS
 backends. A passing response filter does not qualify subscription entitlement,
 capability isolation or production containment. In particular, allowed Codex
 JavaScript still needs a physically separate code-host identity with no access
-to the auth-bearing client's profile. VM, auth and exclusive bridge integration
-remain separate implementation work; no live inference or activation is enabled.
+to the auth-bearing client's profile. The [native VM assembly](NATIVE-VM.md) implements those role, auth and private
+bridge bindings. Complete hostile/resource/crash qualification remains open;
+no live inference or activation is enabled.

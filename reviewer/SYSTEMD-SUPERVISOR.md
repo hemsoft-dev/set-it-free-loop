@@ -122,9 +122,11 @@ the same interface split. Failed receipts remain evidence, not passing results.
 
 ## Remaining integration
 
-The fixed QEMU payload, guest role identity/resource controls, native clients,
-protected auth transfer and refresh/disposal, exclusive provider bridge and
-AuditedReviewer composition still require implementation and qualification.
+The [native VM assembly](NATIVE-VM.md) implements fixed QEMU assets, separate
+guest roles, protected auth transfer/refresh/disposal, bounded private provider
+transport and `AuditedReviewer` composition. Full resource pressure, broader
+hostile capabilities and arbitrary host-crash recovery still need physical
+qualification.
 These tests do not grant actual subscription permission, capability-allowlist
 qualification, App installation, paid usage, deployment or activation.
 

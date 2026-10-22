@@ -131,7 +131,10 @@ prepared work, all-scope repository fences, recoverable pre-work factory deadlin
 joined server delays, and packet restoration after
 an omitted real Git blob becomes available. The loop itself is exercised with bounded cancellation.
 
-This supplies the polling lifecycle source for #176. A packaged activation
-entrypoint, actual installation-token attestation/acquisition, qualified object
-acquisition and the native runtime factory still require implementation and
-separate live evidence. No process or daemon is automatically enabled by this PR.
+This supplies the polling lifecycle source for #176. The
+[service assembly](GIT-SERVICE.md), [trusted startup packages](GIT-STARTUP.md),
+[credential owner](CREDENTIAL-OWNER.md), [source factory](GIT-FACTORY.md) and
+[native runtime](NATIVE-VM.md) implement their integration. Actual installation
+and account qualification, aggregate physical acquisition/recovery, trusted
+promotion and explicit activation remain open. No process or daemon is
+automatically enabled by these libraries.

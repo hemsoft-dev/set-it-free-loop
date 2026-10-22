@@ -1,6 +1,6 @@
 # Adversarial protocol and per-PR controls
 
-This implements the offline contract for [issue #175](https://github.com/hemsoft-dev/set-it-free-loop/issues/175). The module has no inference launcher or GitHub publisher. The separate live gates remain required.
+This implements the offline contract for [issue #175](https://github.com/hemsoft-dev/set-it-free-loop/issues/175). The protocol component does not launch inference or publish reviews. The module separately supplies [native VM](NATIVE-VM.md) and [controller/publication](CONTROLLER.md) composition. Their live qualification and activation gates remain required.
 
 `DefaultConfig` selects both pinned providers in adversarial mode, four maximum reviewer sessions, sequential execution, four reviews per day and a 24-hour maximum quota wait. Trusted defaults may tighten resource bounds. Explicit modes are adversarial, independent-pair, codex-only and claude-only. Independent-pair has two R1 sessions; a single-provider selection has one. Those selected modes complete successfully with unverified summary findings, never peer-supported inline allegations.
 

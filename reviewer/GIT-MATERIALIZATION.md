@@ -72,6 +72,7 @@ inventoried descendant paths to keep each patch bound to its exact blob pair.
 No credentials, live provider inference or App activation are part of this work.
 
 [Git unit ownership](GIT-UNIT.md) now provides a separate durable start/stop
-journal and retained root pidfd. The composing acquisition factory still needs
-to authenticate the export channel, join the broker and bind this unit's stop
-proof before exposing materialized evidence.
+journal and retained root pidfd. The [concrete factory](GIT-FACTORY.md)
+authenticates the export channel, joins the broker and binds this unit's stop
+record before exposing materialized evidence. Its source and fake-owner tests
+do not qualify aggregate physical shutdown or arbitrary host-crash recovery.

@@ -131,7 +131,8 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-Trusted key-source injection/storage, role refresh composition, qualified
-immutable object acquisition, packaged runtime startup and actual installation
-qualification still need integration. The explicit signer adds no key loading
+The [explicit signer](github_app_jwt.go),
+[credential owner](CREDENTIAL-OWNER.md), [source factory](GIT-FACTORY.md) and
+[trusted startup](GIT-STARTUP.md) provide source composition. Actual key custody,
+installation/account and aggregate acquisition qualification remain open. The explicit signer adds no key loading
 or activation path. No live GitHub App token was obtained during these tests.

@@ -95,8 +95,10 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-The native VM launcher, authenticated/deadline-enforced channels, guest identity
-separation and actual-client refresh/return still require integration and
-qualification. The host code-host experiment and synthetic stop callbacks cannot
-supply that proof. No App, daemon, real auth import, live inference or paid usage
+The [native VM host/guest](NATIVE-VM.md) implements authenticated bounded
+channels, separate guest identities and protected auth export/return. Pinned
+clients have refreshed synthetic auth and reused the returned state in fresh
+VMs. Complete physical/crash recovery and real-account qualification remain
+open; the host code-host experiment and synthetic stop callbacks cannot supply
+that proof. No App, daemon, real auth import, live inference or paid usage
 is activated by this library.

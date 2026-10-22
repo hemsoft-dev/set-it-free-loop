@@ -1,17 +1,18 @@
 # Git acquisition unit ownership
 
-The private `gitUnitOwner` supplies durable process ownership for the future
-acquisition factory. It uses a separate nonsecret Git binding and journal, never
+The private `gitUnitOwner` supplies durable process ownership for the
+[concrete acquisition factory](GIT-FACTORY.md). It uses a separate nonsecret Git binding and journal, never
 a fabricated provider/auth binding. Opening it does not launch a unit or read a
 provider profile. Only the explicit private start method requests a new unit.
 The offline [measured runtime builder](GIT-RUNTIME.md) and namespace startup
 check are available; they do not qualify aggregate acquisition. The private [worker phase](GIT-WORKER.md) now authenticates the supervisor,
 checks its running sealed image, waits for a matching worker grant and performs
 fetch/verify/plain export. Its process fixtures run outside bubblewrap. The [fixed worker executable/root bootstrap](GIT-BOOTSTRAP.md) also exists;
-actual full-unit inheritance and launch remain unqualified. The public
-production factory, aggregate grant/export
-orchestration, full mount/descriptor inspection, complete helper admission and broker/result
-orchestration remain unfinished.
+actual full-unit inheritance and launch remain unqualified. The concrete
+factory implements grant/export orchestration, mount/descriptor inspection,
+helper admission and broker/result ownership. [Trusted startup](GIT-STARTUP.md)
+provides the public service entry point. Their fake and subset fixtures do not
+qualify the complete protected production path.
 
 The private [process boundary](GIT-PROCESS-BOUNDARY.md) adds actual
 worker/helper runtime and executable-map checks, six private namespaces,
@@ -33,7 +34,7 @@ packs the selected array and clears CLOEXEC before exec. These fresh units
 request no socket activation or FD store. Physical two-FD
 bootstrap qualification remains outstanding because the full fixed unit fails
 before exec on mini. This source change does not qualify that path or permit
-numeric-PID reopening inside the future bootstrap.
+numeric-PID reopening inside the fixed bootstrap.
 
 One private service directory and cross-process flock own the pinned sealed
 worker image and at most 128 retained attempt records. Each fresh attempt is a
@@ -72,8 +73,8 @@ inner-worker execution independently failed with `EACCES`. The
 primary-source privilege constraints and separate reproduction commands.
 No Git capability was issued by either probe. No host policy was changed.
 
-These are requested properties, not proof that the future Git worker's mounts
-or resource pressure have been qualified. The worker still needs its fixed
+These are requested properties, not proof that the Git worker's mounts
+or resource pressure have been qualified. Admission requires its fixed
 namespace, immutable measured runtime, inherited syscall policy and actual
 kernel/mount inspection before any Git broker grant. Other payload descriptions
 cannot select these properties or be mistaken for this Git journal.
@@ -88,8 +89,9 @@ namespace to match the worker's. Caller descriptor closure cannot substitute
 another process. Exited workers, wrong namespace types, host peers and closed
 boundaries refuse. This helper does not authenticate the supplied invocation
 against systemd, prove ancestry, inspect routes or grant source access. The
-future factory must compose those checks and verify the final filter before
-using this observation. Actual inert bubblewrap tests independently open the
+[concrete factory](GIT-FACTORY.md) composes those checks and the measured fixed
+filter/launch provenance before using this observation. That source composition
+does not establish complete physical qualification. Actual inert bubblewrap tests independently open the
 private worker's namespace from the host; self-reported IDs are not accepted.
 
 Capture pins the manager owner, boot, invocation, actual root PID/start ticks

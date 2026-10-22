@@ -83,9 +83,10 @@ Run the module's vet and full race suite. Focused validation can use:
 go -C reviewer test -race -count=1 -run 'TestPrivate|TestRequiredProvider|TestAudited|TestPreparedReview|TestKnownAudited|TestStoppedProviderEvidence|TestProviderAttemptRecovery|TestModelReportCannot' .
 ```
 
-The concrete production OS supervisor still needs to implement this private
-channel, bind it to its durable launch identity and enforce exclusive egress,
-protected auth transfer and whole-containment shutdown. This module does not
-select that launcher or activate a provider. No actual account, credential import,
+The [native VM host](NATIVE-VM.md) implements the private provider channel,
+captured policy/launch binding, auth transfer and stopped-unit checks. The
+[service assembly](GIT-SERVICE.md) selects only explicitly supplied releases
+and local gates. Their source and fake-backend fixtures do not qualify aggregate
+containment or activate a provider. No actual account, credential import,
 App installation, inference, paid usage, deployment or production isolation
 qualification is established by these fake-provider tests.

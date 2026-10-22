@@ -20,9 +20,10 @@ capability alone is not a source grant.
 
 The private [process boundary](GIT-PROCESS-BOUNDARY.md) now checks actual
 worker/helper root, executable/maps, capabilities, six namespaces, cgroup,
-network tables and retained ancestry. It still requires factory composition
-with exact manager/unit ownership, mounts, descriptors, launch/filter proof
-and physical stop before any production broker admission.
+network tables and retained ancestry. The [factory](GIT-FACTORY.md) joins these
+checks with exact manager/unit ownership, mounts, descriptors, measured
+launch/filter provenance and stopped ownership. Complete physical qualification
+remains required before production admission.
 
 The kernel's [pidfd fdinfo implementation](https://github.com/torvalds/linux/blob/v6.17/fs/pidfs.c#L165-L250)
 reports `Pid` in the procfs instance's PID namespace, and its poll operation
@@ -59,7 +60,7 @@ descriptor number without reviving the revoked handle.
 
 Other cases cover chunked, gzip, 100-continue and binary payloads; malformed/ambiguous framing, wrong routes, caller credentials and peer refusal before dispatch; gzip expansion/truncation; active-handler capacity; used roots and foreign path preservation; and cancellation during SOCKS, headers, input, exchange and output. An aggregate-overflow regression first delivered 24 MiB of the second response with a successful HTTP EOF. Chunked response framing now makes that same overflow an HTTP transfer failure.
 
-No candidate source is checked out or executed. Production acquisition still needs protected peer policy, measured immutable Git/helper/library inputs, enforced aggregate resources, fresh quarantine, exact full-parent-graph/object/merge-base verification, retained immutable store publication and complete supervised shutdown. The [source factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md) provide the source composition. Aggregate physical qualification, App eligibility, provider/account support and owner activation remain separate gates. No real credential/profile/key, live GitHub/provider backend, paid inference or retired automation was used or enabled.
+No candidate source is checked out or executed. Production qualification still must establish that protected peer admission, immutable runtime pins, aggregate resources, fresh quarantine, full-history verification, retained-store publication and supervised shutdown work together in the measured unit. The [source factory](GIT-FACTORY.md) and [service assembly](GIT-SERVICE.md) provide the source composition. Aggregate physical qualification, App eligibility, provider/account support and owner activation remain separate gates. No real credential/profile/key, live GitHub/provider backend, paid inference or retired automation was used or enabled.
 
 The internal [quarantine verifier](GIT-QUARANTINE.md), in-unit capture/export
 and retained-store composition have source implementations in the factory.
