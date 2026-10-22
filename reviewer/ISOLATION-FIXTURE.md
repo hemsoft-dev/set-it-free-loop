@@ -72,7 +72,8 @@ the related implementation issue.
 References: [QEMU security policy](https://github.com/qemu/qemu/blob/v10.2.1/docs/system/security.rst),
 [Linux initramfs](https://www.kernel.org/doc/html/latest/filesystems/ramfs-rootfs-initramfs.html),
 [cgroup v2](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html).
-# Diagnostic cleanup
+
+## Diagnostic cleanup
 
 The diagnostic wrapper pauses its trusted child before payload exec and captures
 the unit's original invocation, boot, cgroup hierarchy and root PID descriptor.
