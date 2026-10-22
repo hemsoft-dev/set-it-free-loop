@@ -11,7 +11,9 @@ normal native reviewer, source reader and protected auth store. After the actual
 canned producer validates the first inference request using refreshed synthetic
 auth, it withholds the successful SSE response. No response bytes reach the
 client. A bounded private pipe record binds the source/image, session/policy,
-original root identity, seed hash and actual fake-backend counts.
+original root identity, seed hash and actual fake-backend counts. The producer
+closes that pipe after its one canonical newline-terminated record; trailing
+bytes, additional records or a missing EOF refuse qualification.
 
 Only after validating that record and the live captured native unit does the
 parent send SIGKILL to its own child and join its real signal exit. The child
@@ -24,6 +26,13 @@ The exported auth profile must remain fenced. Even after physical stop,
 original synthetic seed hash. Reopening the auth store must preserve that fence.
 The fixture then explicitly retires only its synthetic state through the actual
 stopped verifier, and proves the old seed is gone. It does not seed a replacement.
+
+The fresh root also records the exact driver source/tree, configuration digest binding a
+random fixture-instance nonce, and original directory identity before any auth
+store or launch is created. A separate `--recover-owned` command must verify
+that record before opening the original unit. It cannot start a review, complete
+a return, retire a credential or seed auth. Missing/substituted state remains
+unknown; a vanished root is not shutdown evidence.
 
 ## Run the opt-in fixture
 
@@ -38,7 +47,19 @@ python3 reviewer/scripts/native-vm-crash-fake.py --run-fake-only \
   --go /absolute/pinned-go --module-cache /absolute/offline-module-cache
 ```
 
-Repeat with `--provider claude` and another new output directory. The fixed local
+Repeat with `--provider claude` and another new output directory. Add
+`--force-driver-timeout` for a separate fresh run to kill both host driver
+processes after the validated crash point. The Python supervisor owns a new
+process group, kills and observes its members, then runs the same pinned binary
+in separately bounded recovery mode to stop the original systemd unit and
+remove its recorded runtime. Go also binds the child to parent death. This
+forced case must preserve the exported auth recovery fence and unchanged seed;
+it intentionally leaves those synthetic auth journals for inspection.
+
+An ordinary timeout always fails qualification, even if cleanup succeeds. Only
+the explicitly selected forced-timeout case can pass after observing its exact
+fault point and independently bound cleanup. Unproven group or unit cleanup
+is recorded as unknown and retains the state directory. The fixed local
 transport never dials a public provider. Existing roots, malformed/private-point
 substitutions and mixed or unsupported providers refuse. Ordinary tests exercise
 framing, source/session/policy/root binding, no existing-root adoption and actual

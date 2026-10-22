@@ -4,6 +4,8 @@ import argparse
 import importlib.util
 import io
 import json
+import os
+import signal
 from pathlib import Path
 import secrets
 import subprocess
@@ -20,6 +22,85 @@ def sibling(name):
     return module
 
 
+
+def group_running(group):
+    # Zombies cannot keep work or auth locks live. Bound observation rather than
+    # assuming killpg or a reaped parent proves that every child exited.
+    entries = list(Path("/proc").iterdir())
+    if len(entries) > 32768:
+        raise RuntimeError("process observation exceeds fixture bound")
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            raw = (entry/"stat").read_text()
+            fields = raw[raw.rfind(")")+2:].split()
+            if len(fields) >= 3 and int(fields[2]) == group and fields[0] not in ("Z", "X"):
+                return True
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+    return False
+
+
+def kill_owned_group(process):
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        return False
+    deadline = time.monotonic()+5
+    while time.monotonic() < deadline:
+        if not group_running(process.pid):
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def run_owned(program, configuration, environment, log, timeout=190, force_point=None):
+    process = subprocess.Popen([str(program), "--run-fake-only", str(configuration)],
+                               env=environment, stdout=log, stderr=subprocess.STDOUT,
+                               start_new_session=True)
+    deadline = time.monotonic()+timeout
+    observed_point = False
+    while True:
+        try:
+            if force_point is not None and force_point.is_file():
+                observed_point = True
+                raise subprocess.TimeoutExpired(process.args, timeout)
+            remaining = deadline-time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired(process.args, timeout)
+            process.wait(timeout=min(0.1, remaining))
+            return process.returncode, False, {"status": "not-needed"}
+        except subprocess.TimeoutExpired:
+            if not observed_point and time.monotonic() < deadline:
+                continue
+            try:
+                group_stopped = kill_owned_group(process)
+            except (OSError, RuntimeError, ValueError):
+                group_stopped = False
+            recovery = subprocess.Popen([str(program), "--recover-owned", str(configuration)],
+                                        env=environment, stdout=subprocess.PIPE, stderr=log,
+                                        start_new_session=True)
+            record = {"Status": "unknown"}
+            try:
+                raw, _ = recovery.communicate(timeout=45)
+                if len(raw) <= 8192:
+                    decoded = json.loads(raw)
+                    if isinstance(decoded, dict):
+                        record = decoded
+            except (subprocess.TimeoutExpired, ValueError):
+                kill_owned_group(recovery)
+            known = (group_stopped and recovery.returncode == 0
+                     and record.get("Status") == "stopped-owned-unit")
+            return process.returncode, True, {"status": "known" if known else "unknown",
+                    "owned_process_group_stopped": group_stopped,
+                    "forced_point_observed": observed_point, "recovery": record}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-fake-only", action="store_true", required=True)
@@ -28,6 +109,7 @@ def main():
     parser.add_argument("--provider", choices=["codex", "claude"], required=True)
     parser.add_argument("--go", required=True)
     parser.add_argument("--module-cache", type=Path, required=True)
+    parser.add_argument("--force-driver-timeout", action="store_true")
     args = parser.parse_args()
     common = sibling("claude-fixture")
     native = sibling("native-vm-fake")
@@ -64,6 +146,7 @@ def main():
         raise RuntimeError("source changed during build")
     state = Path("/tmp")/("sfl-nvc-"+secrets.token_hex(8))
     config = {"Version": 1, "Purpose": "native-process-loss-fake-only",
+              "InstanceNonce": secrets.token_hex(16), "ForceDriverTimeout": args.force_driver_timeout,
               "ImageSourceHead": manifest["source_commit"], "Root": str(state), "Provider": args.provider,
               "QEMU": native.asset(Path(manifest["qemu"]["Path"]), manifest["qemu"]["SHA256"]),
               "Firmware": native.asset(image/"bios.bin", manifest["bios_sha256"]),
@@ -77,22 +160,28 @@ def main():
     configuration.chmod(0o600)
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "SFL_NATIVE_VM_CRASH_FAKE_ONLY": "1"}
     start = time.monotonic()
-    timed_out, code = False, None
     with (output/"runner.log").open("xb") as log:
-        try:
-            code = subprocess.run([str(program), "--run-fake-only", str(configuration)],
-                                  env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=190).returncode
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        code, timed_out, cleanup = run_owned(program, configuration, environment, log,
+                    force_point=state/"driver-timeout-point.json" if args.force_driver_timeout else None)
+    recovery = cleanup.get("recovery", {})
+    forced_passed = (args.force_driver_timeout and timed_out and cleanup.get("status") == "known"
+                     and cleanup.get("forced_point_observed") is True
+                     and recovery.get("Status") == "stopped-owned-unit"
+                     and recovery.get("SourceHead") == source["source_commit"]
+                     and recovery.get("SourceTree") == source["source_tree"]
+                     and all(recovery.get(key) is True for key in
+                       ["OriginalRootVerified", "PhysicalStop", "RuntimeRemoved", "AuthRecoveryFenced", "AuthUnchanged"]))
     receipt = {**source, "image_source_commit": manifest["source_commit"], "state_directory": str(state),
                "program_sha256": common.digest(program), "exit_code": code, "timed_out": timed_out,
                "elapsed_seconds": round(time.monotonic()-start, 3), "fake_only": True,
-               "runtime_qualified": False, "provider_eligibility_qualified": False}
+               "runtime_qualified": False, "provider_eligibility_qualified": False,
+               "forced_driver_timeout": args.force_driver_timeout, "timeout_cleanup": cleanup,
+               "qualification_passed": forced_passed if args.force_driver_timeout else code == 0 and not timed_out}
     with (output/"receipt.json").open("x") as stream:
         json.dump(receipt, stream, indent=2)
         stream.write("\n")
     print(json.dumps(receipt))
-    raise SystemExit(code if code is not None else 1)
+    raise SystemExit(0 if receipt["qualification_passed"] else 1)
 
 
 if __name__ == "__main__":

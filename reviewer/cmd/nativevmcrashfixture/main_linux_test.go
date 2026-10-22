@@ -41,10 +41,13 @@ func TestPrivateCrashPointFramingAndMutations(t *testing.T) {
 }
 func TestCrashPointBindsSourcePolicySessionAndOriginalRoot(t *testing.T) {
 	sourceHead, sourceTree = strings.Repeat("a", 40), strings.Repeat("b", 40)
-	root := t.TempDir()
-	os.Chmod(root, 0700)
 	for _, provider := range []r.Provider{r.Codex, r.Claude} {
-		c := config{Version: 1, Purpose: "native-process-loss-fake-only", Root: root, ImageSourceHead: strings.Repeat("c", 40), Provider: provider}
+		root := t.TempDir()
+		os.Chmod(root, 0700)
+		c := config{InstanceNonce: strings.Repeat("1", 32), Version: 1, Purpose: "native-process-loss-fake-only", Root: root, ImageSourceHead: strings.Repeat("c", 40), Provider: provider}
+		if err := writeOwnedRoot(c); err != nil {
+			t.Fatal(err)
+		}
 		s, err := fixedSession(c)
 		if err != nil {
 			t.Fatal(err)
@@ -107,7 +110,7 @@ func TestCrashTransportUsesOnlyOwnedLoopbackTLS(t *testing.T) {
 }
 
 // This is the actual native-unit producer JSON from the first synthetic
-// supervisor-loss run at8d78dc5, not a hand-built copy of consumer fields.
+// supervisor-loss run at 8d78dc5, not a hand-built copy of consumer fields.
 func TestUnitIdentityDecodesActualNativeProducer(t *testing.T) {
 	raw, err := os.ReadFile("testdata/actual-native-unit.json")
 	if err != nil {
@@ -145,5 +148,82 @@ func TestCapturedUnitRequiresCompleteOriginalIdentity(t *testing.T) {
 		if capturedUnitBound(bad, record.Binding.SessionHash) {
 			t.Fatal("substituted or missing unit identity accepted")
 		}
+	}
+}
+
+func TestCrashPointRejectsAdditionalRecordsAndTrailingBytes(t *testing.T) {
+	raw, _ := json.Marshal(crashPoint{Version: 1})
+	raw = append(raw, '\n')
+	for _, tail := range []string{"{}\n", "garbage", "\n", " "} {
+		bad := append(append([]byte{}, raw...), []byte(tail)...)
+		if _, err := readCrashPoint(bytes.NewReader(bad)); err == nil {
+			t.Fatal("accepted bytes after one crash point", tail)
+		}
+	}
+}
+
+func TestOwnedRootRecoveryRefusesForeignOrReplacedState(t *testing.T) {
+	sourceHead, sourceTree = strings.Repeat("a", 40), strings.Repeat("b", 40)
+	c := config{InstanceNonce: strings.Repeat("1", 32), Version: 1, Purpose: "native-process-loss-fake-only", Provider: r.Codex, Root: t.TempDir(), ImageSourceHead: strings.Repeat("c", 40)}
+	os.Chmod(c.Root, 0700)
+	if err := writeOwnedRoot(c); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyOwnedRoot(c); err != nil {
+		t.Fatal(err)
+	}
+	foreign := c
+	foreign.InstanceNonce = strings.Repeat("2", 32)
+	if _, err := recoverOwned(foreign); err == nil {
+		t.Fatal("foreign fixture was adopted")
+	}
+	original := c.Root
+	c.Root = t.TempDir()
+	os.Chmod(c.Root, 0700)
+	if _, err := recoverOwned(c); err == nil {
+		t.Fatal("unmarked existing root adopted")
+	}
+	c.Root = original
+	if _, err := recoverOwned(c); err == nil {
+		t.Fatal("missing original unit claimed stopped")
+	}
+}
+func TestActualCrashPointProducerClosesItsPipe(t *testing.T) {
+	incoming, outgoing, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer incoming.Close()
+	want := crashPoint{Version: 1}
+	if err = sendCrashPoint(outgoing, want); err != nil {
+		t.Fatal(err)
+	}
+	got, err := readCrashPoint(incoming)
+	if err != nil || r.Digest(got) != r.Digest(want) {
+		t.Fatal("producer did not deliver exact EOF-bound record", err)
+	}
+}
+
+func TestFixtureRecordReadsBoundAllocationAndRejectLinks(t *testing.T) {
+	root := t.TempDir()
+	for _, limit := range []int64{16384, 65536, 100 << 10} {
+		file := filepath.Join(root, "record")
+		if err := os.WriteFile(file, bytes.Repeat([]byte("x"), int(limit)+1), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if raw, err := readBoundedFixture(file, limit); err == nil || len(raw) != 0 {
+			t.Fatal("oversized record was read")
+		}
+	}
+	canary := filepath.Join(root, "canary")
+	if err := os.WriteFile(canary, []byte("synthetic-canary"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(canary, link); err != nil {
+		t.Fatal(err)
+	}
+	if raw, err := readBoundedFixture(link, 100); err == nil || len(raw) != 0 {
+		t.Fatal("fixture followed a record link")
 	}
 }

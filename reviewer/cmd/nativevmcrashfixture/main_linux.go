@@ -5,7 +5,7 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -32,6 +32,8 @@ import (
 var sourceHead, sourceTree string
 
 type config struct {
+	InstanceNonce                        string
+	ForceDriverTimeout                   bool
 	Version                              int
 	Purpose, ImageSourceHead, Root       string
 	Provider                             r.Provider
@@ -60,13 +62,14 @@ func fixedSession(c config) (r.Session, error) {
 	return r.NewSession("native-fake-supervisor-loss", snapshot, r.Digest("synthetic-supervisor-loss"), c.Provider, 1, "immutable source evidence", nil, nil, limits)
 }
 func validConfig(c config) bool {
-	return c.Version == 1 && c.Purpose == "native-process-loss-fake-only" && (c.Provider == r.Codex || c.Provider == r.Claude) && filepath.IsAbs(c.Root) && filepath.Clean(c.Root) == c.Root && len(c.ImageSourceHead) == 40
+	_, nonceErr := hex.DecodeString(c.InstanceNonce)
+	return nonceErr == nil && len(c.InstanceNonce) == 32 && c.Version == 1 && c.Purpose == "native-process-loss-fake-only" && (c.Provider == r.Codex || c.Provider == r.Claude) && filepath.IsAbs(c.Root) && filepath.Clean(c.Root) == c.Root && len(c.ImageSourceHead) == 40
 }
 func main() {
-	if len(os.Args) != 3 || os.Getenv("SFL_NATIVE_VM_CRASH_FAKE_ONLY") != "1" || len(sourceHead) != 40 || len(sourceTree) != 40 || (os.Args[1] != "--run-fake-only" && os.Args[1] != "--owned-child") {
+	if len(os.Args) != 3 || os.Getenv("SFL_NATIVE_VM_CRASH_FAKE_ONLY") != "1" || len(sourceHead) != 40 || len(sourceTree) != 40 || (os.Args[1] != "--run-fake-only" && os.Args[1] != "--owned-child" && os.Args[1] != "--recover-owned") {
 		os.Exit(2)
 	}
-	raw, err := os.ReadFile(os.Args[2])
+	raw, err := readBoundedFixture(os.Args[2], 16384)
 	if err != nil || len(raw) > 16384 {
 		os.Exit(2)
 	}
@@ -74,7 +77,9 @@ func main() {
 	if err != nil || !validConfig(c) {
 		os.Exit(2)
 	}
-	if os.Args[1] == "--owned-child" {
+	if os.Args[1] == "--recover-owned" {
+		err = recoveryCommand(c)
+	} else if os.Args[1] == "--owned-child" {
 		err = runChild(c)
 	} else {
 		err = runParent(c, os.Args[2])
@@ -101,7 +106,8 @@ func sendCrashPoint(file *os.File, p crashPoint) error {
 		return errors.New("bounded point required")
 	}
 	_, err = file.Write(append(raw, '\n'))
-	return err
+	closeErr := file.Close()
+	return errors.Join(err, closeErr)
 }
 
 // All dialing is fixed to the one local TLS server. Proxy and ambient provider
@@ -150,6 +156,9 @@ func runChild(c config) error {
 	// state. An external invocation cannot adopt an existing auth directory.
 	if err := os.Mkdir(c.Root, 0700); err != nil {
 		return errors.New("fresh root required")
+	}
+	if err := writeOwnedRoot(c); err != nil {
+		return err
 	}
 	for _, name := range []string{"auth", "launches"} {
 		if err := os.Mkdir(filepath.Join(c.Root, name), 0700); err != nil {
@@ -246,7 +255,7 @@ func readUnit(root string) (unitRecord, error) {
 	if err != nil || len(paths) != 1 {
 		return unitRecord{}, errors.New("one original unit required")
 	}
-	raw, err := os.ReadFile(paths[0])
+	raw, err := readBoundedFixture(paths[0], 65536)
 	if err != nil || len(raw) > 65536 {
 		return unitRecord{}, errors.New("bounded unit required")
 	}
@@ -264,7 +273,7 @@ func pointValid(c config, p crashPoint) bool {
 		return false
 	}
 	dev, ino, err := rootIdentity(c.Root)
-	return err == nil && p.Version == 1 && p.RunnerSourceHead == sourceHead && p.RunnerSourceTree == sourceTree && p.ImageSourceHead == c.ImageSourceHead && p.SessionHash == r.Digest(session) && p.PolicyHash == r.Digest(policy) && len(p.SeedHash) == 64 && dev == p.RootDevice && ino == p.RootInode && p.Counts.Inference == 1 && p.Counts.Refreshes == 1 && p.Counts.Failures == 0 && p.Counts.RefreshFailures == 0 && p.Counts.Telemetry == 0
+	return err == nil && verifyOwnedRoot(c) == nil && p.Version == 1 && p.RunnerSourceHead == sourceHead && p.RunnerSourceTree == sourceTree && p.ImageSourceHead == c.ImageSourceHead && p.SessionHash == r.Digest(session) && p.PolicyHash == r.Digest(policy) && len(p.SeedHash) == 64 && dev == p.RootDevice && ino == p.RootInode && p.Counts.Inference == 1 && p.Counts.Refreshes == 1 && p.Counts.Failures == 0 && p.Counts.RefreshFailures == 0 && p.Counts.Telemetry == 0
 }
 func stopOriginal(c config, sessionHash string) (unitRecord, error) {
 	record, err := readUnit(c.Root)
@@ -303,6 +312,7 @@ func runParent(c config, configuration string) (err error) {
 	child := exec.Command(program, "--owned-child", configuration)
 	child.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8", "SFL_NATIVE_VM_CRASH_FAKE_ONLY=1"}
 	child.ExtraFiles = []*os.File{pipeWrite}
+	child.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	child.Stdout = os.Stdout
 	child.Stderr = os.Stderr
 	if err = child.Start(); err != nil {
@@ -333,6 +343,13 @@ func runParent(c config, configuration string) (err error) {
 	before, err := readUnit(c.Root)
 	if err != nil || !capturedUnitBound(before, point.SessionHash) || before.Stopped {
 		return errors.New("live captured unit required")
+	}
+	if c.ForceDriverTimeout {
+		if err = privateJSON(filepath.Join(c.Root, "driver-timeout-point.json"), point); err != nil {
+			return err
+		}
+		<-time.After(30 * time.Second)
+		return errors.New("external driver timeout was not observed")
 	}
 	killedAt := time.Now()
 	if err = child.Process.Kill(); err != nil {
@@ -441,16 +458,24 @@ func runParent(c config, configuration string) (err error) {
 // The child writes one bounded line. Partial pipe reads must not invalidate a
 // valid producer record or let trailing bytes qualify as another point.
 func readCrashPoint(reader io.Reader) (crashPoint, error) {
-	raw, err := bufio.NewReader(io.LimitReader(reader, 8193)).ReadBytes('\n')
-	if err != nil || len(raw) > 8192 {
+	raw, err := io.ReadAll(io.LimitReader(reader, 8193))
+	if err != nil || len(raw) == 0 || len(raw) > 8192 || raw[len(raw)-1] != '\n' || bytes.Count(raw, []byte{'\n'}) != 1 {
 		return crashPoint{}, errors.New("bounded complete crash point required")
 	}
-	return r.DecodeStrict[crashPoint](raw, 8192)
+	point, err := r.DecodeStrict[crashPoint](raw, 8192)
+	if err != nil {
+		return crashPoint{}, err
+	}
+	canonical, err := json.Marshal(point)
+	if err != nil || !bytes.Equal(raw, append(canonical, '\n')) {
+		return crashPoint{}, errors.New("canonical private point required")
+	}
+	return point, nil
 }
 
 // Compare only the fixture-created canonical state; auth bytes never enter a receipt.
 func retainedSeedMatches(c config, expected string) bool {
-	raw, err := os.ReadFile(filepath.Join(c.Root, "auth", string(c.Provider), "state.json"))
+	raw, err := readBoundedFixture(filepath.Join(c.Root, "auth", string(c.Provider), "state.json"), 100<<10)
 	defer clear(raw)
 	return err == nil && len(raw) > 0 && len(raw) <= 100<<10 && hash(raw) == expected
 }
