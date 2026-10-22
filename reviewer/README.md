@@ -116,8 +116,12 @@ explicit host fixture uses an inert escaped child and synthetic auth bytes.
 
 [Sealed VM boot assets](VM-BOOT.md) retain pinned QEMU/kernel/initramfs bytes in
 sealed descriptors. The explicit fake-only KVM boot fixture checks the live
-executable and independent guest/host receipts. Native VM payload/grant, client,
-code-host, auth and egress composition remain source work; this is not a worker
-activation path or production isolation qualification.
+executable and independent guest/host receipts. The [native VM composition](NATIVE-VM.md) connects payload/grant, clients,
+code-host isolation, auth and egress. The [durable evaluation runner](EVALUATION-RUNNER.md)
+adds natural six-arm scheduling and stopped native recovery. Their model-free
+fixtures do not qualify aggregate acquisition/reader/provider/publisher
+containment or authorize activation. The
+[dated activation checklist](../docs/research/2026-10-21-alpha-activation-checklist.md)
+records the remaining evidence, including known host launch failures.
 
 The selected [polling triggers](GITHUB-TRIGGERS.md) are authorized `@sfl review` comments plus automatic PR-open/head observations. The [model-free App report](../docs/research/2026-10-21-model-free-app-eligibility.md) records the native-picker experiment and Franz's replacement decision. No daemon or inference was activated.
