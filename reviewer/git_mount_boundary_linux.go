@@ -279,7 +279,7 @@ func checkGitMountBoundaryIDs(ctx context.Context, b *gitProcessBoundary, broker
 		return errGitUnit
 	}
 	after, err := gitReadMountInfo(ctx, b.worker, b.pidfd)
-	if err != nil || string(after) != string(raw) || verifyGitBrokerDirectory(broker) != nil || b.checkWorker(ctx) != nil {
+	if err != nil || string(after) != string(raw) || verifyGitBrokerDirectoryIDs(broker, brokerOwner, b.uid, brokerMode) != nil || b.checkWorker(ctx) != nil {
 		return errGitUnit
 	}
 	return nil
