@@ -32,11 +32,11 @@ type gitVMRun struct {
 	runtime       *nativeRuntimeRoot
 	generation    *githubReaderGeneration
 	request       gitVMGuestRequest
-	prepared      bool
 	spent         bool
 	revoked       bool
 	stopped       bool
 	closed        bool
+	closeFailed   bool
 	cancel        context.CancelFunc
 	acquireDone   chan struct{}
 	readDone      chan struct{}
@@ -143,9 +143,6 @@ func (r *gitVMRun) acquire(ctx context.Context, source *gitGenerationReader) (_ 
 	if !q.valid() || r.owner.prepare(phase, q) != nil {
 		return nil, r.fail("prepare")
 	}
-	r.mu.Lock()
-	r.prepared = true
-	r.mu.Unlock()
 	boot, err := r.launchInputs(phase)
 	if err != nil {
 		return nil, r.fail("launch-inputs")
@@ -281,9 +278,10 @@ func (r *gitVMRun) stop(ctx context.Context) error {
 	}
 	defer func() { r.stopOperation <- struct{}{} }()
 	r.mu.Lock()
+	// Revocation under the lock means an acquisition either already exposed
+	// acquireDone here or will refuse to start.
 	r.revoked = true
-	cancel, acquireDone, readDone, channels := r.cancel, r.acquireDone, r.readDone, r.channels
-	already, prepared, attempt := r.stopped, r.prepared, r.request.Source.Binding.Attempt
+	cancel, acquireDone, channels, already := r.cancel, r.acquireDone, r.channels, r.stopped
 	r.mu.Unlock()
 	if already {
 		return nil
@@ -294,22 +292,42 @@ func (r *gitVMRun) stop(ctx context.Context) error {
 	if channels != nil {
 		channels.Close()
 	}
-	for _, done := range []chan struct{}{acquireDone, readDone} {
-		if done == nil {
-			continue
-		}
+	if acquireDone != nil {
 		select {
 		case <-ctx.Done():
 			return errGitVMOwner
-		case <-done:
+		case <-acquireDone:
+		}
+	}
+	// Only after acquisition has joined are its channels, read server and
+	// attempt final; an earlier snapshot could miss a just-written record.
+	r.mu.Lock()
+	channels, readDone, attempt := r.channels, r.readDone, r.request.Source.Binding.Attempt
+	r.mu.Unlock()
+	if channels != nil {
+		channels.Close()
+	}
+	if readDone != nil {
+		select {
+		case <-ctx.Done():
+			return errGitVMOwner
+		case <-readDone:
 		}
 	}
 	r.mu.Lock()
 	// A read server that started must have returned its stopped audit.
 	readStopped := readDone == nil || r.readAudit.Stopped
 	r.mu.Unlock()
-	if !readStopped || prepared && r.owner.stop(ctx, attempt) != nil || ctx.Err() != nil {
+	if !readStopped || ctx.Err() != nil {
 		return errGitVMOwner
+	}
+	// The durable journal, not a local flag, decides whether owner stop is
+	// required: prepare can persist its record and still report failure.
+	if attempt != "" {
+		owned, err := r.owner.has(ctx, attempt)
+		if err != nil || owned && r.owner.stop(ctx, attempt) != nil || ctx.Err() != nil {
+			return errGitVMOwner
+		}
 	}
 	r.mu.Lock()
 	r.stopped = true
@@ -325,10 +343,10 @@ func (r *gitVMRun) close() error {
 	if r.closed {
 		return nil
 	}
-	if !r.stopped {
+	// A failed cleanup stays failed: its residue is not retried away silently.
+	if !r.stopped || r.closeFailed {
 		return errGitVMOwner
 	}
-	r.closed = true
 	failed := false
 	if r.listener != nil {
 		r.listener.Close()
@@ -346,7 +364,9 @@ func (r *gitVMRun) close() error {
 		failed = true
 	}
 	if failed {
+		r.closeFailed = true
 		return errGitVMOwner
 	}
+	r.closed = true
 	return nil
 }

@@ -101,3 +101,44 @@ func TestGitVMRunRefusesUnsafeConstruction(t *testing.T) {
 		t.Fatal("overlong endpoint accepted")
 	}
 }
+
+// stop decides owner cleanup from the durable journal after acquisition
+// joins: a record prepare wrote must be stopped even if the run never saw it.
+func TestGitVMRunStopFindsDurablyPreparedAttempt(t *testing.T) {
+	run, f, _ := gitVMRunFixture(t)
+	q := gitVMGuestRequest{1, gitVMGuestPurpose, run.source, gitVMReadBinding{1, "source-vm-git-read", run.source.Binding, run.channelID, 1}}
+	run.mu.Lock()
+	run.request = q
+	run.mu.Unlock()
+	if f.owner.prepare(context.Background(), q) != nil {
+		t.Fatal("prepare")
+	}
+	if err := run.stop(context.Background()); err != nil {
+		t.Fatal("stop", err)
+	}
+	r, err := f.owner.read(q.Source.Binding.Attempt)
+	if err != nil || !r.Stopped {
+		t.Fatal("durably prepared attempt left unstopped", r, err)
+	}
+	if run.close() != nil {
+		t.Fatal("close")
+	}
+}
+
+// A cleanup failure stays reported; a retry cannot hide the residue.
+func TestGitVMRunCloseFailureIsSticky(t *testing.T) {
+	run, _, directory := gitVMRunFixture(t)
+	if run.stop(context.Background()) != nil {
+		t.Fatal("stop")
+	}
+	socket := filepath.Join(directory, "stub.sock")
+	if os.Remove(socket) != nil || os.MkdirAll(filepath.Join(socket, "residue"), 0700) != nil {
+		t.Fatal("residue setup")
+	}
+	if run.close() == nil {
+		t.Fatal("failed cleanup reported success")
+	}
+	if run.close() == nil {
+		t.Fatal("retry hid the failed cleanup")
+	}
+}

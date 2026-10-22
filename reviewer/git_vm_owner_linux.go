@@ -716,3 +716,17 @@ func (o *gitVMUnitOwner) Close() error {
 	}
 	return errors.Join(o.journal.Close(context.Background()), o.supervisor.Close(), o.image.Close(), o.manager.Close(), o.root.Close())
 }
+
+// has reports whether the journal holds a record for attempt.
+func (o *gitVMUnitOwner) has(ctx context.Context, attempt string) (bool, error) {
+	if !o.enter(ctx) {
+		return false, errGitVMOwner
+	}
+	defer o.leave()
+	value, err := o.journal.read()
+	if err != nil {
+		return false, errGitVMOwner
+	}
+	_, ok := value.record(attempt)
+	return ok, nil
+}
