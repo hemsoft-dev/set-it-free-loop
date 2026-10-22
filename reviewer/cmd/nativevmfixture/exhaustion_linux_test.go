@@ -165,6 +165,25 @@ func TestOversizeAndCodeHostChecks(t *testing.T) {
 	if allPass(exhaustionChecks(code)) {
 		t.Fatal("complete code-host exchange accepted as exhaustion")
 	}
+	spin := exhaustionBase("codex-code-spin")
+	spin.Err, spin.AuditComplete, spin.Elapsed = nil, true, 36*time.Second
+	spin.Provider.Failed = false
+	spin.Observation.Results["exec-output"] = "61:Script running with cell ID 1 Wall time 31.0 seconds Output: "
+	spin.CodeHost, _ = json.Marshal(codeHostAudit{Stopped: true, RelayComplete: true, Stage: "complete"})
+	if !allPass(exhaustionChecks(spin)) {
+		t.Fatal("yielded spin rejected", exhaustionChecks(spin))
+	}
+	for _, mutate := range []func(*exhaustionInput){
+		func(in *exhaustionInput) { in.Elapsed = 80 * time.Second },
+		func(in *exhaustionInput) { in.Observation.Results = map[string]string{"exec-output": "missing"} },
+		func(in *exhaustionInput) { in.CodeHost, _ = json.Marshal(codeHostAudit{Stage: "exchange"}) },
+	} {
+		changed := spin
+		mutate(&changed)
+		if allPass(exhaustionChecks(changed)) {
+			t.Fatal("unbounded spin accepted", changed)
+		}
+	}
 	if checks := exhaustionChecks(exhaustionBase("codex-unknown")); allPass(checks) || checks["known-exhaustion-case"] {
 		t.Fatal("unknown case accepted")
 	}

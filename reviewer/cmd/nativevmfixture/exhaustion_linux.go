@@ -145,7 +145,19 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 		omitted := func(c r.Coverage) bool { return c.Path == "big.go" }
 		checks["byte-bound"] = in.Source != nil && bigReads == 1 && in.Source.Bytes == f.BigObjectBytes && in.Source.Bytes <= in.Limits.ReaderBytes && slices.ContainsFunc(in.Source.Coverage, omitted)
 		checks["honest-outcome"] = in.honestPartial(omitted)
-	case "codex-code-memory", "codex-code-output-flood", "codex-code-spin":
+	case "codex-code-spin":
+		// Measured: the pinned client yields a still-running cell after about
+		// 30 s and returns control to the model; teardown then stops the code
+		// host. The bound is the yield plus whole-session stop, not a failed
+		// exchange, so a host-validated report may complete.
+		var host codeHostAudit
+		decoded := len(in.CodeHost) != 0 && json.Unmarshal(in.CodeHost, &host) == nil
+		checks["cell-yielded"] = strings.Contains(in.Observation.Results["exec-output"], "Script running")
+		checks["code-host-stopped"] = decoded && host.Stopped
+		checks["ended-before-deadline"] = in.Elapsed < in.Limits.Timeout
+		checks["typed-or-validated"] = in.typedFailure() || in.Err == nil && in.AuditComplete
+		checks["no-source-access"] = in.noSource()
+	case "codex-code-memory", "codex-code-output-flood":
 		var host codeHostAudit
 		decoded := len(in.CodeHost) != 0 && json.Unmarshal(in.CodeHost, &host) == nil
 		checks["typed-failure"] = in.typedFailure()
