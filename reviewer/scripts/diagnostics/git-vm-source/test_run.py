@@ -105,8 +105,6 @@ class GuestRecordTests(unittest.TestCase):
                 self.assertEqual(result.stderr, b"")
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 class LaunchBoundaryTests(unittest.TestCase):
@@ -155,7 +153,7 @@ class LaunchBoundaryTests(unittest.TestCase):
     def test_unknown_and_replacement_units_are_never_stopped(self):
         description = "inert test"
         original = {"Description": description, "InvocationID": "a"*32, "MainPID": "123", "ActiveState": "active"}
-        self.assertEqual(probe.cleanup_action(original, original, description), "stop-original")
+        self.assertEqual(probe.cleanup_action(original, original, description), "wait-original")
         for observed, current in [(None, original), ({}, original), (original, dict(original, InvocationID="b"*32)),
                                   (original, dict(original, Description="other")), (original, dict(original, InvocationID=""))]:
             with self.subTest(observed=observed, current=current):
@@ -271,3 +269,43 @@ class BootstrapEvidenceTests(unittest.TestCase):
                 with mock.patch.object(probe, "read_bounded", return_value=(row+"\n"+rows[1]+"\n").encode()):
                     with self.assertRaises(RuntimeError):
                         probe.python_mappings()
+
+
+class TerminationAndRunnerTests(unittest.TestCase):
+    def test_passive_shutdown_never_targets_a_replacement_unit(self):
+        original = {"Description": "test", "InvocationID": "a"*32, "MainPID": "123", "ActiveState": "active"}
+        inactive = {"LoadState": "not-found", "MainPID": "0", "ActiveState": "inactive"}
+        sleeps = []
+        with mock.patch.object(probe.subprocess, "run", side_effect=AssertionError("named stop invoked")):
+            observations = iter([original, inactive])
+            self.assertEqual(probe.wait_for_original_stop(lambda: next(observations), original, "test", 2,
+                             now=lambda: 0, sleep=sleeps.append), inactive)
+            self.assertEqual(sleeps, [0.1])
+            observations = iter([original, dict(original, InvocationID="b"*32)])
+            with self.assertRaises(RuntimeError):
+                probe.wait_for_original_stop(lambda: next(observations), original, "test", 2,
+                                             now=lambda: 0, sleep=lambda _: None)
+            with self.assertRaises(RuntimeError):
+                probe.wait_for_original_stop(lambda: original, original, "test", 2,
+                                             now=lambda: 2, sleep=lambda _: self.fail("deadline slept"))
+
+    def test_retained_runner_replacement_is_independently_rejected(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-git-vm-runner-") as temporary:
+            runner = Path(temporary)/"runner.py"
+            pin = probe.snapshot_file(runner, b"trusted bootstrap", 0o400)
+            probe.verify_retained_runner(runner, pin)
+            runner.chmod(0o600)
+            runner.write_bytes(b"forged successful output")
+            runner.chmod(0o400)
+            with self.assertRaises(RuntimeError):
+                probe.verify_retained_runner(runner, pin)
+            runner.unlink()
+            other = Path(temporary)/"other"
+            other.write_bytes(b"trusted bootstrap")
+            runner.symlink_to(other)
+            with self.assertRaises(OSError):
+                probe.verify_retained_runner(runner, pin)
+
+
+if __name__ == "__main__":
+    unittest.main()

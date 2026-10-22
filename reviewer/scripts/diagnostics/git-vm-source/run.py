@@ -330,7 +330,31 @@ def cleanup_action(current, observed, description):
         return "already-stopped"
     require(observed is not None and re.fullmatch(r"[0-9a-f]{32}", observed.get("InvocationID", "")), "no captured live invocation; cleanup unknown")
     require(current.get("Description") == description and current.get("InvocationID") == observed["InvocationID"], "replacement unit refused")
-    return "stop-original"
+    return "wait-original"
+
+
+
+def wait_for_original_stop(show, observed, description, deadline, now=time.monotonic, sleep=time.sleep):
+    # Never target a mutable unit name with a stop/kill operation. Its original
+    # configured RuntimeMax/KillMode supplies the bounded manager shutdown.
+    while True:
+        current = show()
+        if cleanup_action(current, observed, description) == "already-stopped":
+            return current
+        remaining = deadline-now()
+        require(remaining > 0, "original invocation stop deadline elapsed; cleanup unknown")
+        sleep(min(0.1, remaining))
+
+
+def verify_retained_runner(path, pin):
+    with regular_input(path, 65536) as stream:
+        info = os.fstat(stream.fileno())
+        require(info.st_uid == os.getuid() and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 0o400,
+                "retained runner metadata changed")
+        raw = stream.read(65537)
+    require(len(raw) <= 65536, "retained runner exceeded bound")
+    validate_pin(pin)
+    require(len(raw) == pin["Bytes"] and hashlib.sha256(raw).hexdigest() == pin["SHA256"], "retained runner differs from its pin")
 
 
 
@@ -551,10 +575,7 @@ def run(args):
         failure = repr(error)
     finally:
         try:
-            current = show()
-            action = cleanup_action(current, observed, description)
-            if action == "stop-original":
-                subprocess.run(["systemctl", "--user", "stop", unit], env=environment, check=True, timeout=10)
+            wait_for_original_stop(show, observed, description, started+80)
             if process is not None:
                 process.wait(timeout=5)
             stopped = show()
@@ -564,6 +585,7 @@ def run(args):
             removed = not directory.exists()
             require(removed or directory.stat().st_ino == observed["cgroup_inode"] and not (directory/"cgroup.procs").read_text().strip()
                     and "populated 0" in (directory/"cgroup.events").read_text(), "inert VM prerequisite proof refused")
+            verify_retained_runner(root/"runner.py", runner_pin)
             verify_runtime(root/"runtime", runtime_identity)
             verify_python_bootstrap(python_bootstrap)
             require(read_bounded(root/"unit.used", 32).decode() == observed["InvocationID"], "owned bootstrap invocation differs")

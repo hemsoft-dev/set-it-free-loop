@@ -29,9 +29,12 @@ identity, requires one bounded nonce-bound guest record, then checks shutdown
 and an absent or empty original cgroup. It keeps `production_qualified` false.
 These observations do not qualify resource exhaustion or an untrusted parser.
 The unit entry requires its nonce-named cgroup and manager invocation before
-opening the runtime/helper/KVM. Cleanup requires the captured invocation before
-stopping a live unit; missing or replacement identity is an unknown result.
-An already stopped unit still needs the original cgroup proof. The original
+opening the runtime/helper/KVM. Cleanup never issues a name-targeted stop or
+kill. It waits within a finite deadline for the original invocation to end
+naturally or under its configured manager runtime ceiling. A replacement,
+missing identity or expired wait is an unknown result. An already stopped
+unit still needs the original cgroup proof. The parent independently verifies
+the retained runner after shutdown before accepting any successful receipt. The original
 namespace helper's host interpreter/libraries remain trusted bootstrap
 prerequisites. Their list must contain 2-32 sorted, unique, complete pins,
 including the loader and libc, checked before launch and after stop.
