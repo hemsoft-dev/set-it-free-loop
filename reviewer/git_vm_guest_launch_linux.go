@@ -331,6 +331,8 @@ func (d *gitVMGuestDiagnostic) Write(raw []byte) (int, error) {
 			}
 		}
 		_, _ = os.Stderr.WriteString("SFL_SOURCE_WORKER_STAGE " + kind + "\n")
+		// Temporary credential-free image diagnostic; remove before PR.
+		_, _ = os.Stderr.WriteString("SFL_SOURCE_HELPER_DIAGNOSTIC " + strconv.QuoteToASCII(text) + "\n")
 	}
 	return n, nil
 }
