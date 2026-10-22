@@ -32,7 +32,7 @@ func (j gitVMArchiveJournal) valid() bool {
 	}
 	seen := map[string]bool{}
 	for _, r := range j.Records {
-		if !validAuthHash(r.RequestHash) || !r.Binding.valid() || seen[r.Binding.Attempt] || (r.State != "receiving" && r.State != "staged") {
+		if !validAuthHash(r.RequestHash) || !r.Binding.valid() || seen[r.Binding.Attempt] || (r.State != "receiving" && r.State != "staged" && r.State != "retiring") {
 			return false
 		}
 		seen[r.Binding.Attempt] = true
@@ -132,8 +132,8 @@ func (a *gitVMExportArchive) entries() ([]os.DirEntry, error) {
 		return nil, errGitExportArchive
 	}
 	defer f.Close()
-	entries, err := f.ReadDir(4)
-	if err != nil && err != io.EOF || len(entries) > 3 {
+	entries, err := f.ReadDir(5)
+	if err != nil && err != io.EOF || len(entries) > 4 {
 		return nil, errGitExportArchive
 	}
 	return entries, nil
@@ -187,7 +187,7 @@ func (a *gitVMExportArchive) verify() error {
 		return errGitExportArchive
 	}
 	entries, err := a.entries()
-	if err != nil || len(entries) != 3 {
+	if err != nil || len(entries) < 3 {
 		return errGitExportArchive
 	}
 	for _, e := range entries {
@@ -196,13 +196,16 @@ func (a *gitVMExportArchive) verify() error {
 			if !e.Type().IsRegular() {
 				return errGitExportArchive
 			}
-		case "materialization":
+		case "materialization", "retired":
 			if !e.IsDir() {
 				return errGitExportArchive
 			}
 		default:
 			return errGitExportArchive
 		}
+	}
+	if a.verifyRetired(j) != nil {
+		return errGitExportArchive
 	}
 	records, err := a.raw.records()
 	if err != nil {
@@ -241,7 +244,7 @@ func (a *gitVMExportArchive) verify() error {
 	staged := map[string]bool{}
 	for _, r := range records {
 		outer, ok := known[r.Binding.Attempt]
-		if !ok || outer.Binding != r.Binding || (r.State != "receiving" && r.State != "staged") {
+		if !ok || outer.Binding != r.Binding || (r.State != "receiving" && r.State != "staged") || outer.State == "staged" && r.State != "staged" {
 			return errGitExportArchive
 		}
 		staged[r.Binding.Attempt] = r.State == "staged"
@@ -340,6 +343,9 @@ func (a *gitVMExportArchive) reopen(ctx context.Context, q gitVMRequest) (*gitMa
 	for i, r := range j.Records {
 		if r.Binding != q.Binding || r.RequestHash != Digest(q) {
 			continue
+		}
+		if r.State == "retiring" {
+			return nil, errGitExportArchive
 		}
 		m, err := a.raw.reopen(ctx, q.Binding)
 		if err != nil {

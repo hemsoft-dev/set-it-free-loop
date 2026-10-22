@@ -730,3 +730,28 @@ func (o *gitVMUnitOwner) has(ctx context.Context, attempt string) (bool, error) 
 	_, ok := value.record(attempt)
 	return ok, nil
 }
+
+// confirmStopped revalidates one durable granted stop receipt before retained
+// source is used. On the same boot the captured original cgroup must still be
+// empty and its root dead; a later boot alone proves every process gone.
+func (o *gitVMUnitOwner) confirmStopped(ctx context.Context, attempt string) error {
+	if !o.enter(ctx) {
+		return errGitVMOwner
+	}
+	defer o.leave()
+	r, err := o.read(attempt)
+	if err != nil || !r.Stopped || !r.Revoked || !r.Captured || !validAuthHash(r.GrantHash) {
+		return errGitVMOwner
+	}
+	boot, err := o.kernel.BootID()
+	if err != nil || boot == "" {
+		return errGitVMOwner
+	}
+	if boot != r.BootID {
+		return nil
+	}
+	if o.kernel.Empty(r.Cgroup) != nil || o.rootDead(r) != nil {
+		return errGitVMOwner
+	}
+	return nil
+}
