@@ -558,25 +558,20 @@ func (o *gitUnitOwner) stop(ctx context.Context, binding gitMaterializationBindi
 			return errGitUnit
 		}
 	}
+	before, err := o.manager.Observe(bounded, r.Unit)
+	if err != nil || !expectedGitUnit(r, before) || before.InvocationID != r.Identity.InvocationID {
+		return errGitUnit
+	}
 	if !r.Stopped {
-		before, err := o.manager.Observe(bounded, r.Unit)
-		if err != nil || !expectedGitUnit(r, before) || before.InvocationID != r.Identity.InvocationID {
-			return errGitUnit
-		}
-		job, err := o.manager.Stop(bounded, r.Unit)
-		if err != nil {
-			return errGitUnit
-		}
-		r.StopJob = job
-		if o.write(r) != nil || o.manager.WaitJob(bounded, job, r.Unit) != nil {
+		if o.kernel.Terminate(bounded, r.Cgroup) != nil {
 			return errGitUnit
 		}
 	}
 	if o.kernel.Empty(r.Cgroup) != nil || o.rootDead(r) != nil {
 		return errGitUnit
 	}
-	after, err := o.manager.Observe(bounded, r.Unit)
-	if err != nil || !expectedGitUnit(r, after) || after.InvocationID != r.Identity.InvocationID || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed") {
+	after, err := waitForOriginalUnitStop(bounded, o.manager, before, r.Cgroup)
+	if err != nil || !expectedGitUnit(r, after) || after.InvocationID != r.Identity.InvocationID || after.ControlGroup != r.Cgroup.Path || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed" && after.ActiveState != "active") {
 		return errGitUnit
 	}
 	r.Stopped = true

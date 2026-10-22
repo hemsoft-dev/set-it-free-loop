@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -127,7 +126,7 @@ func exercise(root, stub, hash string) (receipt result) {
 		finish(&receipt,
 			func(cleanup context.Context) error { return supervisor.AbortAndWait(cleanup, receipt.Binding) },
 			func(fallback context.Context) error {
-				return exec.CommandContext(fallback, "/usr/bin/systemctl", "--user", "stop", receipt.Unit).Run()
+				return supervisor.AbortAndWait(fallback, receipt.Binding)
 			}, supervisor.Close)
 		retainJournal(&receipt, filepath.Join(gates, receipt.Binding.LaunchID, "unit.json"))
 	}()

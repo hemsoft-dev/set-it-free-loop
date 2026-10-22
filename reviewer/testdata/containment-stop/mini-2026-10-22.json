@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "observedAt": "2026-10-22T05:20:42.440856+00:00",
+  "host": "mini",
+  "fakeOnly": true,
+  "productionQualified": false,
+  "baseCommit": "00d6a708d50bb8cd5cce72d42306522871e89824",
+  "sourceSHA256": {
+    "containment_stop_linux.go": "6fe71f02ecef1603e5b01a591b77f98caab9eff44ded7da8933e2b417618d9f2",
+    "containment_stop_native_linux_test.go": "232698d0c51bc0b48b16ef0467f91dcad03296e0a5cacc23c2eec6c8b99449bc",
+    "containment_supervisor_linux.go": "1765b348f99192a6f089cc6091a1650661fe5234fe7a9f8e7cf13f8ec154ab77",
+    "git_acquisition_unit_linux.go": "3e95cb464cca206187f31ed4fc5b73895ce8d59811f5925e75d0ff71a24a19fb",
+    "cmd/systemdfixture/main_linux.go": "33efa20803527642a081e91ccf1b363a5765eeb3bf0649e1e498cf401888f1f7"
+  },
+  "kernelCommand": "SFL_TEST_ORIGINAL_CGROUP=1 go test -run '^TestContainmentKernelOriginalCgroupTermination$' -v -count=1 .",
+  "kernelCases": [
+    {
+      "capturedCgroup": {
+        "Path": "/user.slice/user-1000.slice/user@1000.service/app.slice/sfl-alpha-74b1cb7b6bf1ebcb36f5cb875fda14f2.service",
+        "Inode": 2801058,
+        "Hierarchy": {
+          "Device": 30,
+          "Inode": 1,
+          "MountNamespace": 4026531832,
+          "CgroupNamespace": 4026531835
+        }
+      },
+      "case": 0,
+      "descendantDead": true,
+      "empty": true,
+      "invocation": "17cc92ca2f874cf58dae860e75de1337",
+      "replacementProtected": false,
+      "rootDead": true
+    },
+    {
+      "capturedCgroup": {
+        "Path": "/user.slice/user-1000.slice/user@1000.service/app.slice/sfl-alpha-74b1cb7b6bf1ebcb36f5cb875fda14f2.service",
+        "Inode": 2801109,
+        "Hierarchy": {
+          "Device": 30,
+          "Inode": 1,
+          "MountNamespace": 4026531832,
+          "CgroupNamespace": 4026531835
+        }
+      },
+      "case": 1,
+      "descendantDead": true,
+      "empty": true,
+      "invocation": "8ec449fd2a664eabac7ebaba31ed5271",
+      "replacementProtected": true,
+      "rootDead": true
+    }
+  ],
+  "supervisorFixture": {
+    "version": 1,
+    "passed": true,
+    "fake_only": true,
+    "production_qualified": false,
+    "binding": {
+      "session_hash": "1c60bfe5d8c1503ca277be7ffa274c3af73d29c6b12b9c45011f9e34724947b5",
+      "launch_id": "5e995adfe93f59943f57c97bbd895457",
+      "containment_id": "427e538aede7889a600803448db37ddb09b8631eddee28991f5553b237cc453d"
+    },
+    "unit": "sfl-alpha-5e995adfe93f59943f57c97bbd895457.service",
+    "stub_sha256": "29fdc740dadc888752521647d2e0e77dacd67a51fd569f019102445fac657af1",
+    "Started": true,
+    "Granted": true,
+    "Stopped": true,
+    "AuthCompleted": true,
+    "Recovered": true,
+    "escaped_child_pid": 3230749,
+    "original_path_replaced": true,
+    "escaped_child_stopped": true,
+    "private_unit_journal": {
+      "Version": 1,
+      "Binding": {
+        "session_hash": "1c60bfe5d8c1503ca277be7ffa274c3af73d29c6b12b9c45011f9e34724947b5",
+        "launch_id": "5e995adfe93f59943f57c97bbd895457",
+        "containment_id": "427e538aede7889a600803448db37ddb09b8631eddee28991f5553b237cc453d"
+      },
+      "Unit": "sfl-alpha-5e995adfe93f59943f57c97bbd895457.service",
+      "BootID": "3c11e802-f6d7-4df9-99b8-b826a81f2828",
+      "ManagerOwner": "33a5a6ebc77b26a23585cb8b6a86fdea/:1.154",
+      "StubHash": "29fdc740dadc888752521647d2e0e77dacd67a51fd569f019102445fac657af1",
+      "ManifestHash": "1c60bfe5d8c1503ca277be7ffa274c3af73d29c6b12b9c45011f9e34724947b5",
+      "Started": true,
+      "StartSettled": true,
+      "Captured": true,
+      "Aborted": true,
+      "Stopped": true,
+      "StartJob": "/org/freedesktop/systemd1/job/1327047",
+      "StopJob": "",
+      "Identity": {
+        "invocation_id": "67cf776df99f423cbeec69918af8062a",
+        "boot_id": "3c11e802-f6d7-4df9-99b8-b826a81f2828",
+        "pid": 3230743,
+        "start_ticks": 541465987
+      },
+      "Cgroup": {
+        "Path": "/user.slice/user-1000.slice/user@1000.service/app.slice/sfl-alpha-5e995adfe93f59943f57c97bbd895457.service",
+        "Inode": 2801007,
+        "Hierarchy": {
+          "Device": 30,
+          "Inode": 1,
+          "MountNamespace": 4026531832,
+          "CgroupNamespace": 4026531835
+        }
+      },
+      "PayloadKind": ""
+    },
+    "fallback_cleanup": false
+  },
+  "limitations": [
+    "Inert owned services and synthetic auth only; no model inference or real credentials.",
+    "Both native cases use the actual Linux Terminate implementation.",
+    "No whole-host-loss, complete hostile/resource-pressure or production qualification.",
+    "Initial host fixture invocation failed before launch because its socket pathname was too long; the same source and binaries passed under a short private /tmp root."
+  ]
+}

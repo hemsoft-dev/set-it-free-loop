@@ -32,6 +32,7 @@ type containmentKernel interface {
 	BootID() (string, error)
 	Capture(string, string) (cgroupBinding, error)
 	Empty(cgroupBinding) error
+	Terminate(context.Context, cgroupBinding) error
 	Executable(int, string) error
 }
 
@@ -605,23 +606,17 @@ func (s *SystemdSupervisor) AbortAndWait(ctx context.Context, binding AuthBindin
 	if err != nil || before.InvocationID != r.Identity.InvocationID || before.Unit != r.Unit || before.Description != payloadDescription(r.PayloadKind, binding) {
 		return ErrAuthRecoveryRequired
 	}
-	job, err := s.manager.Stop(ctx, r.Unit)
-	if err != nil {
+	// StopUnit accepts a reusable name, without an invocation precondition.
+	// Only the captured original cgroup descriptor may receive termination.
+	if err = s.kernel.Terminate(ctx, r.Cgroup); err != nil {
 		return ErrAuthRecoveryRequired
 	}
-	if err = s.updateUnit(ctx, binding, func(r *unitJournal) error { r.StopJob = job; return nil }); err != nil {
-		return err
-	}
-	if err = s.manager.WaitJob(ctx, job, r.Unit); err != nil {
-		return ErrAuthRecoveryRequired
-	}
-	// Do not infer emptiness from MainPID=0, a successful StopUnit or a missing
-	// service. Verify the captured cgroup inode/subtree independently in the kernel.
+	// Termination is a request, never the physical shutdown receipt.
 	if err = s.kernel.Empty(r.Cgroup); err != nil {
 		return ErrAuthRecoveryRequired
 	}
-	after, err := s.manager.Observe(ctx, r.Unit)
-	if err != nil || after.InvocationID != r.Identity.InvocationID || after.Job.ID != 0 || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed") {
+	after, err := waitForOriginalUnitStop(ctx, s.manager, before, r.Cgroup)
+	if err != nil || after.InvocationID != r.Identity.InvocationID || after.Unit != r.Unit || after.Description != payloadDescription(r.PayloadKind, binding) || after.ControlGroup != r.Cgroup.Path || after.Job.ID != 0 || after.MainPID != 0 || (after.ActiveState != "inactive" && after.ActiveState != "failed" && after.ActiveState != "active") {
 		return ErrAuthRecoveryRequired
 	}
 	return s.updateUnit(ctx, binding, func(r *unitJournal) error { r.Stopped = true; return nil })

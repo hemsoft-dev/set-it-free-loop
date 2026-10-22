@@ -28,6 +28,7 @@ type fakeContainmentKernel struct {
 	group                     cgroupBinding
 	populated, changed        bool
 	pendingImage, imageChecks int
+	terminate                 func() error
 }
 
 func (k *fakeContainmentKernel) Executable(int, string) error {
@@ -62,6 +63,23 @@ func (k *fakeContainmentKernel) Empty(group cgroupBinding) error {
 	return nil
 }
 
+func (k *fakeContainmentKernel) Terminate(ctx context.Context, group cgroupBinding) error {
+	if ctx == nil || ctx.Err() != nil {
+		return ErrAuthRecoveryRequired
+	}
+	k.mu.Lock()
+	if k.changed || group != k.group {
+		k.mu.Unlock()
+		return ErrAuthRecoveryRequired
+	}
+	fn := k.terminate
+	k.mu.Unlock()
+	if fn == nil {
+		return ErrAuthRecoveryRequired
+	}
+	return fn()
+}
+
 type fakeContainmentManager struct {
 	mu                               sync.Mutex
 	owner                            string
@@ -75,6 +93,7 @@ type fakeContainmentManager struct {
 	childDone                        chan struct{}
 	output                           bytes.Buffer
 	holdPopulated, changedInvocation bool
+	terminalState                    string
 	spawn                            bool
 	afterStart                       func()
 	afterWait                        func()
@@ -140,6 +159,9 @@ func (m *fakeContainmentManager) UnitForPIDFD(context.Context, int) (string, str
 	return m.observation.Unit, m.observation.InvocationID, nil
 }
 func (m *fakeContainmentManager) Stop(context.Context, string) (string, error) {
+	return "/org/freedesktop/systemd1/job/2", m.terminateOriginal()
+}
+func (m *fakeContainmentManager) terminateOriginal() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.stops++
@@ -149,13 +171,16 @@ func (m *fakeContainmentManager) Stop(context.Context, string) (string, error) {
 	}
 	m.observation.MainPID = 0
 	m.observation.ActiveState = "inactive"
+	if m.terminalState != "" {
+		m.observation.ActiveState = m.terminalState
+	}
 	if m.changedInvocation {
 		m.observation.InvocationID = strings.Repeat("e", 32)
 	}
 	m.kernel.mu.Lock()
 	m.kernel.populated = m.holdPopulated
 	m.kernel.mu.Unlock()
-	return "/org/freedesktop/systemd1/job/2", nil
+	return nil
 }
 func TestSystemdSupervisorStubChild(t *testing.T) {
 	if os.Getenv("SFL_UNIT_TEST_CHILD") != "1" {
@@ -190,6 +215,7 @@ func systemdSupervisorFixture(t *testing.T) (*SystemdSupervisor, *fakeContainmen
 	boot, _ := currentBootID()
 	kernel := &fakeContainmentKernel{boot: boot, group: cgroupBinding{Path: "/user.slice/user-1000.slice/" + unit, Inode: 17}, populated: true}
 	manager := &fakeContainmentManager{owner: "fake-bus/:1.2", kernel: kernel, observation: unitObservation{Unit: unit, Path: dbus.ObjectPath("/org/freedesktop/systemd1/unit/fake"), InvocationID: strings.Repeat("d", 32), MainPID: uint32(os.Getpid()), ControlGroup: kernel.group.Path, ActiveState: "active", Job: unitJob{0, "/"}, MemoryMax: 1 << 30, MemorySwapMax: 0, TasksMax: 64, CPUQuotaPerSecUSec: 1000000, KillMode: "control-group", Restart: "no", CollectMode: "inactive", RemainAfterExit: true, NoNewPrivileges: true, Transient: true, Description: "SFL fake containment " + Digest(binding)}}
+	kernel.terminate = manager.terminateOriginal
 	supervisor := newSystemdSupervisor(root, stub, hex.EncodeToString(hash[:]), manager, kernel)
 	t.Cleanup(func() {
 		supervisor.Close()

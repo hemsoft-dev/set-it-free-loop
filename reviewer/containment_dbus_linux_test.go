@@ -209,15 +209,8 @@ func TestSystemdActualDBusTransportAgainstPrivateFakeManager(t *testing.T) {
 	if unit, inv, err := manager.UnitForPIDFD(ctx, fd); err != nil || unit != fake.unit || inv != strings.Repeat("d", 32) {
 		t.Fatal(unit, inv, err)
 	}
-	job, err = manager.Stop(ctx, fake.unit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = manager.WaitJob(ctx, job, fake.unit); err != nil {
-		t.Fatal(err)
-	}
 	fake.mu.Lock()
-	if fake.starts != 1 || fake.stops != 1 || fake.refs != 1 || fake.pidfds != 1 {
+	if fake.starts != 1 || fake.stops != 0 || fake.refs != 1 || fake.pidfds != 1 {
 		t.Fatal("wire counts", fake.starts, fake.stops, fake.refs, fake.pidfds)
 	}
 	fake.mu.Unlock()

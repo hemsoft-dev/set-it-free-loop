@@ -139,7 +139,7 @@ func TestSystemdObserveRequiresTypedIdentityAndPIDFDWire(t *testing.T) {
 	}
 }
 
-func TestSystemdUnrelatedJobsDoNotPoisonFutureStartOrStop(t *testing.T) {
+func TestSystemdUnrelatedJobsDoNotPoisonFutureStarts(t *testing.T) {
 	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
 	jobs := &systemdJobs{owner: ":1.2", completed: map[string]jobResult{}, changed: make(chan struct{})}
 	flood := func() {
@@ -165,35 +165,31 @@ func TestSystemdUnrelatedJobsDoNotPoisonFutureStartOrStop(t *testing.T) {
 		t.Fatal("unrelated traffic poisoned start", err)
 	}
 	flood()
-	job, err = manager.Stop(context.Background(), unit)
+	unit = "sfl-alpha-" + strings.Repeat("c", 32) + ".service"
+	job, err = manager.Start(context.Background(), unit, retainedStubExec, args, "SFL fake containment "+Digest(authTestBinding()), 17)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = manager.WaitJob(context.Background(), job, unit); err != nil || len(jobs.completed) != 0 || len(jobs.pending) != 0 || len(jobs.waiting) != 0 {
-		t.Fatal("unrelated traffic poisoned stop or leaked tracker", err)
+		t.Fatal("unrelated traffic poisoned next start or leaked tracker", err)
 	}
 }
 
-func TestSystemdAbandonedStartResultDoesNotPreventRecoveryStop(t *testing.T) {
+func TestSystemdAbandonedStartTrackingCanBeRetiredWithoutStoppingByName(t *testing.T) {
 	unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
 	jobs := &systemdJobs{owner: ":1.2", completed: map[string]jobResult{}, changed: make(chan struct{})}
-	n := 0
-	manager := &dbusContainmentManager{jobs: jobs, calls: systemdCallFunc(func(_ context.Context, _ dbus.ObjectPath, _ string, _ ...any) ([]any, error) {
-		n++
-		p := fmt.Sprintf("/org/freedesktop/systemd1/job/%d", n)
-		jobs.DeliverSignal(systemdManagerInterface, "JobRemoved", jobSignal(":1.2", p, unit, "done"))
-		return []any{dbus.ObjectPath(p)}, nil
-	})}
-	args := []string{retainedStubExec, "endpoint", "binding", "manifest", "123"}
-	if _, err := manager.Start(context.Background(), unit, retainedStubExec, args, "SFL fake containment "+Digest(authTestBinding()), 17); err != nil {
-		t.Fatal(err)
+	// This tests the job cache only, without starting or mutating any unit.
+	if jobs.begin(unit) != nil || jobs.bind(unit, "/org/freedesktop/systemd1/job/1") != nil {
+		t.Fatal("initial tracking")
 	}
-	// Simulate cancellation/storage failure before the caller waits on its start.
-	p, err := manager.Stop(context.Background(), unit)
-	if err != nil {
-		t.Fatal("abandoned start prevented stop", err)
+	jobs.DeliverSignal(systemdManagerInterface, "JobRemoved", jobSignal(":1.2", "/org/freedesktop/systemd1/job/1", unit, "done"))
+	// A caller that abandoned its wait can retire that cache before a fresh
+	// trusted observation. No recovery path needs a name-targeted stop call.
+	if jobs.begin(unit) != nil {
+		t.Fatal("abandoned tracking poisoned later observation")
 	}
-	if err = manager.WaitJob(context.Background(), p, unit); err != nil || len(jobs.completed) != 0 || len(jobs.waiting) != 0 {
-		t.Fatal("recovery stop or tracker retirement failed", err)
+	jobs.end(unit)
+	if len(jobs.completed) != 0 || len(jobs.waiting) != 0 || len(jobs.pending) != 0 {
+		t.Fatal("abandoned tracking retained")
 	}
 }

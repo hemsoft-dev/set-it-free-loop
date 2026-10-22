@@ -1,0 +1,92 @@
+//go:build linux
+
+package reviewer
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
+)
+
+// Terminate targets the captured cgroup instance, never a reusable unit name.
+// The anchored original directory is checked before opening cgroup.kill. If
+// systemd removes it and reuses its path, this descriptor cannot select the
+// replacement. Unknown identity, permission or kernel failures remain pending.
+func (k linuxContainmentKernel) Terminate(ctx context.Context, binding cgroupBinding) error {
+	if ctx == nil || ctx.Err() != nil || binding.Inode == 0 || binding.Hierarchy == (cgroupHierarchy{}) || !strings.HasPrefix(binding.Path, "/user.slice/") || filepath.Clean(binding.Path) != binding.Path {
+		return ErrAuthRecoveryRequired
+	}
+	root, _, err := openContainmentCgroupAt("/sys/fs/cgroup", binding.Path, binding.Hierarchy)
+	if os.IsNotExist(err) {
+		return k.Empty(binding)
+	}
+	if err != nil {
+		return ErrAuthRecoveryRequired
+	}
+	defer root.Close()
+	inode, err := cgroupInode(root)
+	if err != nil || inode != binding.Inode {
+		return ErrAuthRecoveryRequired
+	}
+	// An already empty RemainAfterExit unit needs no manager mutation. Its name
+	// may stay active; only physical termination of this instance is required.
+	if k.Empty(binding) == nil {
+		return nil
+	}
+	kill, err := root.OpenFile("cgroup.kill", os.O_WRONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return ErrAuthRecoveryRequired
+	}
+	defer kill.Close()
+	if ctx.Err() != nil {
+		return ErrAuthRecoveryRequired
+	}
+	n, err := kill.Write([]byte("1"))
+	if err != nil || n != 1 {
+		return ErrAuthRecoveryRequired
+	}
+	// SIGKILL delivery is asynchronous. A successful write cannot release auth
+	// or source ownership before the original whole subtree is independently empty.
+	timer := time.NewTicker(10 * time.Millisecond)
+	defer timer.Stop()
+	for {
+		if ctx.Err() != nil {
+			return ErrAuthRecoveryRequired
+		}
+		if k.Empty(binding) == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ErrAuthRecoveryRequired
+		case <-timer.C:
+		}
+	}
+}
+
+// The kernel can finish killing before systemd reaps its original main PID.
+// Wait only for that same invocation's metadata to settle. Never mutate its name.
+func waitForOriginalUnitStop(ctx context.Context, manager containmentManager, before unitObservation, group cgroupBinding) (unitObservation, error) {
+	timer := time.NewTicker(10 * time.Millisecond)
+	defer timer.Stop()
+	for {
+		if ctx.Err() != nil {
+			return unitObservation{}, ErrAuthRecoveryRequired
+		}
+		current, err := manager.Observe(ctx, before.Unit)
+		if err != nil || current.Unit != before.Unit || current.Path != before.Path || current.InvocationID != before.InvocationID || current.Description != before.Description || current.ControlGroup != group.Path {
+			return unitObservation{}, ErrAuthRecoveryRequired
+		}
+		if current.Job.ID == 0 && current.MainPID == 0 && (current.ActiveState == "inactive" || current.ActiveState == "failed" || current.ActiveState == "active") {
+			return current, nil
+		}
+		select {
+		case <-ctx.Done():
+			return unitObservation{}, ErrAuthRecoveryRequired
+		case <-timer.C:
+		}
+	}
+}

@@ -59,7 +59,6 @@ type containmentManager interface {
 	WaitJob(context.Context, string, string) error
 	Observe(context.Context, string) (unitObservation, error)
 	UnitForPIDFD(context.Context, int) (string, string, error)
-	Stop(context.Context, string) (string, error)
 	Close() error
 }
 
@@ -104,7 +103,7 @@ func (j *systemdJobs) begin(unit string) error {
 		j.waiting = map[string]string{}
 	}
 	// A later operation for this owned unit supersedes an abandoned result.
-	// In particular, a failed journal write must not prevent recovery StopUnit.
+	// Tracking an abandoned start must not poison later owned job observations.
 	for p, owner := range j.waiting {
 		if owner == unit {
 			delete(j.waiting, p)
@@ -446,29 +445,6 @@ func (m *dbusContainmentManager) startProperties(ctx context.Context, unit strin
 }
 func (m *dbusContainmentManager) WaitJob(ctx context.Context, job, unit string) error {
 	return m.jobs.wait(ctx, job, unit)
-}
-func (m *dbusContainmentManager) Stop(ctx context.Context, unit string) (string, error) {
-	if !validContainmentUnit(unit) {
-		return "", ErrAuthRecoveryRequired
-	}
-	if m.jobs == nil || m.jobs.begin(unit) != nil {
-		return "", ErrAuthRecoveryRequired
-	}
-	body, err := m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".StopUnit", unit, "replace")
-	if err != nil {
-		m.jobs.end(unit)
-		return "", errors.Join(ErrAuthRecoveryRequired, err)
-	}
-	var job dbus.ObjectPath
-	if dbus.Store(body, &job) != nil || !job.IsValid() || !strings.HasPrefix(string(job), "/org/freedesktop/systemd1/job/") {
-		m.jobs.end(unit)
-		return "", ErrAuthRecoveryRequired
-	}
-	if err = m.jobs.bind(unit, string(job)); err != nil {
-		m.jobs.end(unit)
-		return "", err
-	}
-	return string(job), nil
 }
 func (m *dbusContainmentManager) UnitForPIDFD(ctx context.Context, fd int) (string, string, error) {
 	body, err := m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".GetUnitByPIDFD", dbus.UnixFD(fd))
