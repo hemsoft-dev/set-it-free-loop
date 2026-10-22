@@ -114,7 +114,7 @@ class FixtureUnit:
         return dict(line.split("=", 1) for line in result.stdout.decode().splitlines() if "=" in line)
 
     def start(self, command, **kwargs):
-        # Only these two diagnostic callers supply the fixed unit/payload.
+        # Diagnostic callers supply a fixed bounded unit and inert payload.
         boundary = command.index("--")
         wrapped = command[:boundary] + ["--description="+self.description,
                    "--property=ExitType=cgroup", "--property=RemainAfterExit=no"]

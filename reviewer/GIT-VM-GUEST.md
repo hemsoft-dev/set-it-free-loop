@@ -59,6 +59,12 @@ python3 -B reviewer/scripts/git-source-vm-fixture.py \
   --module-cache /absolute/prefilled-module-cache
 ```
 
+Use `--case export-close`, `--case control-close`, `--case read-close` or
+`--case foreign-request` for the hostile channel/request cases. Each must refuse
+success and power off promptly. The control-close and foreign-request cases
+also require zero upstream Git calls. Export-copy failure cancels the guest
+immediately before stopping the original worker cgroup.
+
 The runner requires the image's exact clean source revision, builds the fixture
 from an immutable archive and uses one captured original diagnostic unit. It
 bounds memory to 2 GiB, swap to zero, tasks to 96, CPU to one core and unit

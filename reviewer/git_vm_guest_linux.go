@@ -167,6 +167,9 @@ func finishGitVMGuest(ctx context.Context, cancel context.CancelFunc, q gitVMGue
 	defer stopCopy()
 	go func() { _, err := io.CopyBuffer(writer, w.process.out, make([]byte, 32<<10)); copyDone <- err }()
 	copyErr := <-copyDone
+	if copyErr != nil {
+		cancel()
+	}
 	// Pipe EOF precedes the trusted worker's final return. Observe its natural
 	// exit before stopping escaped descendants in the original cgroup.
 	select {

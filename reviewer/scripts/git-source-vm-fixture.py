@@ -29,6 +29,7 @@ def main():
     for name in ["image", "output", "module-cache"]:
         parser.add_argument("--"+name, type=Path, required=True)
     parser.add_argument("--go", required=True)
+    parser.add_argument("--case", choices=["normal", "export-close", "control-close", "read-close", "foreign-request"], default="normal")
     args = parser.parse_args()
     common = sibling("claude-fixture")
     lifecycle = sibling("fixture-unit")
@@ -69,7 +70,7 @@ def main():
     command = ["/usr/bin/systemd-run", "--user", "--wait", "--pipe", "--collect", "--unit="+unit_name,
                "--property=MemoryMax=2G", "--property=MemorySwapMax=0", "--property=TasksMax=96",
                "--property=CPUQuota=100%", "--property=RuntimeMaxSec=140", "--setenv=SFL_SOURCE_GUEST_IMAGE="+str(image),
-               "--", str(binary), "-test.run=^TestGitVMGuestContainedActualGit$", "-test.v", "-test.timeout=130s"]
+               "--setenv=SFL_SOURCE_GUEST_CASE="+args.case, "--", str(binary), "-test.run=^TestGitVMGuestContainedActualGit$", "-test.v", "-test.timeout=130s"]
     code, stopped = None, False
     try:
         with (output/"unit.log").open("wb") as log:
@@ -87,11 +88,12 @@ def main():
             result = {"version": 1, "purpose": "source-vm-guest-fixture", **source,
                       "image_manifest_sha256": common.digest(image/"manifest.json"), "unit": unit_name,
                       "exit_code": code, "original_unit_stopped": stopped,
-                      "guest_data_path_passed": code == 0 and stopped, "production_host_qualified": False,
+                      "case": args.case, "fixture_passed": code == 0 and stopped,
+                      "guest_data_path_passed": args.case == "normal" and code == 0 and stopped, "production_host_qualified": False,
                       "auth_used": False, "provider_used": False, "trusted_release_promoted": False}
             (output/"result.json").write_text(json.dumps(result, indent=2)+"\n")
     print(json.dumps(result))
-    if not result["guest_data_path_passed"]:
+    if not result["fixture_passed"]:
         raise SystemExit(1)
 
 

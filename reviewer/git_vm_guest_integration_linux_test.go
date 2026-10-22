@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +29,15 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 	directory := os.Getenv("SFL_SOURCE_GUEST_IMAGE")
 	if directory == "" {
 		t.Skip("explicit source-only image and bounded diagnostic unit required")
+	}
+	fixtureCase := os.Getenv("SFL_SOURCE_GUEST_CASE")
+	if fixtureCase == "" {
+		fixtureCase = "normal"
+	}
+	switch fixtureCase {
+	case "normal", "export-close", "control-close", "read-close", "foreign-request":
+	default:
+		t.Fatal("unknown fixture case")
 	}
 	raw, err := os.ReadFile(filepath.Join(directory, "manifest.json"))
 	if err != nil {
@@ -110,10 +120,14 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 	}
 	closeVMFiles(peers)
 	peers = nil
+	exited := false
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
 	defer func() {
 		cancel()
+		if exited {
+			return
+		}
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
@@ -126,9 +140,11 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 		}
 	})
 	defer stop()
+	var upstreamCalls atomic.Int32
 	readDone := make(chan error, 1)
 	go func() {
 		_, err := serveGitVMRead(ctx, channels[1], q.Read, gitExchangeFunc(func(ctx context.Context, r GitHubGitReadRequest) (io.ReadCloser, error) {
+			upstreamCalls.Add(1)
 			args := []string{"upload-pack", "--stateless-rpc"}
 			if r.Operation == GitHubGitAdvertisement {
 				args = append(args, "--advertise-refs")
@@ -155,15 +171,69 @@ func TestGitVMGuestContainedActualGit(t *testing.T) {
 		readDone <- err
 	}()
 	defer func() { cancel(); channels[1].Close(); <-readDone }()
-	if err := writeVMRecord(channels[0], q, gitVMRecordBytes); err != nil {
+	if fixtureCase == "foreign-request" {
+		_ = channels[0].SetReadDeadline(time.Now().Add(8 * time.Second))
+	}
+	sent := q
+	if fixtureCase == "foreign-request" {
+		sent.Read.ChannelID = "cccccccccccccccccccccccccccccccc"
+	}
+	if err := writeVMRecord(channels[0], sent, gitVMRecordBytes); err != nil {
 		t.Fatal(err)
 	}
+
+	waitRefusal := func() {
+		t.Helper()
+		select {
+		case err := <-done:
+			exited = true
+			if err != nil {
+				t.Fatal("guest failed to power off cleanly", err)
+			}
+		case <-time.After(8 * time.Second):
+			t.Fatal("guest refusal did not stop promptly")
+		}
+		if (fixtureCase == "foreign-request" || fixtureCase == "control-close") && upstreamCalls.Load() != 0 {
+			t.Fatal("Git work started without an exact host grant")
+		}
+		t.Logf("actual source guest refused %s and powered off; original outer unit still requires independent cleanup", fixtureCase)
+	}
 	ready, err := readVMRecord[gitVMGuestPhase](channels[0], gitVMRecordBytes)
+	if fixtureCase == "foreign-request" {
+		if err == nil {
+			t.Fatal("foreign request reached readiness")
+		}
+		waitRefusal()
+		return
+	}
+
 	if err != nil || !ready.valid(q, "guest-ready") {
 		t.Fatalf("guest readiness: %v %+v", err, ready)
 	}
+
+	if fixtureCase == "control-close" {
+		channels[0].Close()
+		waitRefusal()
+		return
+	}
+	if fixtureCase == "export-close" {
+		channels[2].Close()
+	}
+	if fixtureCase == "read-close" {
+		channels[1].Close()
+	}
 	if err := writeVMRecord(channels[0], gitVMGuestPhase{1, gitVMGuestPurpose, Digest(q), "host-grant"}, gitVMRecordBytes); err != nil {
 		t.Fatal(err)
+	}
+
+	if fixtureCase != "normal" {
+		_ = channels[0].SetReadDeadline(time.Now().Add(8 * time.Second))
+		record, err := readVMRecord[gitVMGuestFinished](channels[0], gitVMRecordBytes)
+		if err == nil && record.valid(q) {
+			t.Fatal("lost channel reported successful acquisition")
+		}
+		waitRefusal()
+		return
 	}
 	digest := sha256.New()
 	measured := &gitVMGuestFixtureReader{ReadCloser: channels[2], digest: digest}
