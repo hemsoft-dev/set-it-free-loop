@@ -584,11 +584,13 @@ func (o *gitVMUnitOwner) stopBeforeCapture(ctx context.Context, r gitVMUnitRecor
 // It never stops a unit by name: that call has no invocation precondition.
 // The composing run must already have joined its channels and grant.
 func (o *gitVMUnitOwner) stop(ctx context.Context, attempt string) error {
-	o.setStopFailure("")
 	if !o.enter(ctx) {
 		return o.refuseStop("enter")
 	}
 	defer o.leave()
+	// Clear only once serialized, so a concurrent refusal recorded while this
+	// call waited cannot survive this attempt's outcome.
+	o.setStopFailure("")
 	r, err := o.read(attempt)
 	if err != nil {
 		return o.refuseStop("read")

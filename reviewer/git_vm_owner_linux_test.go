@@ -523,3 +523,21 @@ func TestGitVMOwnerStopRecordsEveryRefusalStage(t *testing.T) {
 		t.Fatal("successful stop kept a stale stage", f.owner.lastStopFailure())
 	}
 }
+
+// A refusal recorded while a later stop waited for the owner token does not
+// survive that later stop's success.
+func TestGitVMOwnerStopClearsStageAfterSerialization(t *testing.T) {
+	f := newGitVMOwnerFixture(t)
+	if f.owner.prepare(context.Background(), f.request) != nil {
+		t.Fatal("prepare")
+	}
+	<-f.owner.operation
+	done := make(chan error, 1)
+	go func() { done <- f.owner.stop(context.Background(), f.attempt()) }()
+	time.Sleep(50 * time.Millisecond)
+	f.owner.setStopFailure("read")
+	f.owner.leave()
+	if err := <-done; err != nil || f.owner.lastStopFailure() != "" {
+		t.Fatal("stale stage survived a later successful stop", err, f.owner.lastStopFailure())
+	}
+}
