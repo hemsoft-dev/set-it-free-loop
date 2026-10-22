@@ -89,6 +89,12 @@ func prepareGitVMGuestWorker(ctx context.Context, q gitVMGuestRequest) (_ *gitVM
 	if err != nil || unix.Fchown(int(w.work.Fd()), gitVMGuestUID, gitVMGuestGID) != nil {
 		return nil, ErrVMBoot
 	}
+	// The unprivileged namespace helper needs its private outer /tmp during
+	// pivot setup. Only the worker owns this guest-only filesystem; the payload
+	// later sees the captured work inode at both /work and /tmp.
+	if os.Chown("/tmp", gitVMGuestUID, gitVMGuestGID) != nil {
+		return nil, ErrVMBoot
+	}
 	rootPIDFD, err := unix.PidfdOpen(os.Getpid(), 0)
 	if err != nil {
 		return nil, ErrVMBoot
