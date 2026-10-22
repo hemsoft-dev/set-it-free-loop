@@ -130,6 +130,20 @@ func TestNativeVMExportGateReopensExactGrantedPrivateBinding(t *testing.T) {
 	}
 }
 
+func attachIdleNativeProviderBridge(t *testing.T, p *nativeVMHostPhase) {
+	t.Helper()
+	guest, host := vmSocketPair(t)
+	t.Cleanup(func() { guest.Close(); host.Close() })
+	var err error
+	p.bridge, err = startNativeProviderBridge(context.Background(), p.request.Session, p.request.Policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+		t.Fatal("idle provider fixture reached upstream")
+		return nil, ErrLiveBlocked
+	}), host)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNativeVMInvalidModelOutputStillCommitsStoppedAuthReturn(t *testing.T) {
 	p, manager := nativeHostPhaseFixture(t)
 	store := authTestStore(t, Codex)
@@ -151,6 +165,7 @@ func TestNativeVMInvalidModelOutputStillCommitsStoppedAuthReturn(t *testing.T) {
 	}
 	wire := authWire(t, returned)
 	p.finished = &nativeVMFinished{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), State: "invalid_output", AuthReturn: wire, SourceAudit: nativeHostAuditFixture(t, p.request)}
+	attachIdleNativeProviderBridge(t, p)
 	report, _, _, err := p.finish(context.Background(), Report{}, PhaseError{State: "invalid_output"})
 	if err == nil || len(report.Findings) != 0 || manager.stops != 1 {
 		t.Fatal("invalid result became a review or skipped physical stop", err)

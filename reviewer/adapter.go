@@ -165,10 +165,8 @@ func (a Adapter) review(ctx context.Context, s Session, source SourceTools) (Rep
 	}
 	ctx, cancel := context.WithTimeout(ctx, s.Limits.Timeout)
 	defer cancel()
-	for _, peer := range s.PeerReports {
-		if err := a.verifyReport(ctx, s, peer); err != nil {
-			return Report{}, adapterValidation(err, true)
-		}
+	if err := verifyFrozenReports(ctx, s, a.Reader); err != nil {
+		return Report{}, adapterValidation(err, true)
 	}
 	identity, err := a.Driver.Inspect(ctx, inv)
 	if err != nil {

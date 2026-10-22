@@ -151,11 +151,8 @@ func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, con
 	}
 	reader.initialCoverage = initial
 	reader.coverage = append([]Coverage{}, initial...)
-	verifier := Adapter{Reader: reader}
-	for _, peer := range s.PeerReports {
-		if verifier.verifyReport(ctx, s, peer) != nil {
-			return nativeVMTaskReport{}, nil, nil, adapterValidation(ErrSourceService, true)
-		}
+	if verifyFrozenReports(ctx, s, reader) != nil {
+		return nativeVMTaskReport{}, nil, nil, adapterValidation(ErrSourceService, true)
 	}
 	request := nativeVMRequest{Version: 1, Binding: binding, Session: s, Paths: paths, Policy: r.options.Policy, ProfileHints: r.options.ProfileHints}
 	if control != nil {
@@ -333,6 +330,15 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 				}
 				if err == nil {
 					err = p.profile.ImportAuthReturn(cleanup, returned, p.supervisor)
+				}
+				if err == nil {
+					// Keep a durable stopped receipt before Complete disposes the
+					// returned profile. A later execution-journal failure cannot
+					// reconstruct this evidence or safely replay the native phase.
+					err = p.persistReturnedAuthIntent(cleanup, evidence)
+					if err != nil {
+						primary = errors.Join(primary, err)
+					}
 				}
 				if err == nil {
 					err = p.profile.Complete(cleanup, p.supervisor)

@@ -220,6 +220,7 @@ func TestNativeControlInvalidOutputStillRequiresStoppedAuthReturn(t *testing.T) 
 				t.Fatal(err)
 			}
 			phase.finished = &nativeVMFinished{Version: 1, Binding: phase.request.Binding, RequestHash: Digest(phase.request), State: "invalid_output", AuthReturn: authWire(t, returned), SourceAudit: nativeHostAuditFixture(t, phase.request)}
+			attachIdleNativeProviderBridge(t, phase)
 			if uncertain {
 				manager.kernel.changed = true
 			}
