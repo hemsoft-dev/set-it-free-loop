@@ -59,6 +59,47 @@ exports, oversized/truncated frames, unknown fields and trailing bytes. These
 are protocol tests on the host, with synthetic asset pins. They establish no
 guest execution, measured pin provenance, credential handling or isolation.
 
+## Source read channel implemented
+
+The private [Git read channel](git_vm_read_linux.go) now supplies the host and
+guest transport component. Its distinct `source-vm-git-read` binding fixes the
+materialization attempt, snapshot, release/runtime hashes, channel nonce and
+retained credential-generation number. None of those fields establishes
+admission. The host requires a fresh original-VM/channel/generation check
+before each upstream exchange and after its response body closes.
+
+Only typed advertisement and upload-pack operations for the existing fixed
+repository are representable. The wire carries no token, URL, header, auth
+profile or write operation. The host retains the existing reader-generation
+borrow through response Read and Close, including cancellation. The guest
+buffers one bounded opaque response until its terminal success record. Lost,
+stale, oversized or failed replies spend the channel without returning partial
+data or replaying a request.
+
+A bounded host intake reader remains active during upstream work. Guest peer
+closure cancels the host context and closes its upstream body, while ownership
+remains held until Read and Close finish. One prefetched request is allowed;
+further pipelining cancels the channel. Guest input intake is serialized with
+exchange, so queued uploads do not allocate body buffers before their turn.
+Queued cancellation closes that caller's unread body and leaves the active
+exchange alone.
+
+The component allows at most 32 exchanges, 16 MiB total decoded request bytes
+and 128 MiB total response bytes per channel. Individual requests retain the
+existing 4 MiB limit; responses retain the 4 MiB advertisement and 64 MiB
+upload-pack limits. Reply chunks contain at most 32 KiB. The host has a
+two-minute lifetime and each client exchange has a 90-second deadline covering
+input intake, queueing and transport. These bounds are additional transport
+limits, not permission to exceed an acquisition's existing bounds.
+
+The [transport tests](git_vm_read_linux_test.go) use local channels and a local
+TLS backend with synthetic installation credentials. They check exact bytes,
+foreign/extended requests, stale admission, malformed replies, cancellation,
+owned input/response drain, close errors, queue isolation and limits. They do
+not prove a measured guest, helper ancestry or original host VM admission.
+The transport is not yet connected to a source factory or trusted startup.
+
+
 ## Source work still required
 
 Connect the distinct source VM purpose to a launcher and stop-proof type. A source receipt
