@@ -882,6 +882,7 @@ func (e *e2eEnv) cleanup() {
 		for _, server := range slices.Backward(e.servers) {
 			server.Close()
 		}
+		e.settled()
 	}()
 	if !e.finished && e.units != nil {
 		// A fatal path skipped finish: keep its timeline and partial evidence.
@@ -923,6 +924,42 @@ func (e *e2eEnv) cleanup() {
 	})
 	if err := os.RemoveAll(e.root); err != nil {
 		e.t.Error("remove E2E root", err)
+	}
+}
+
+// settled re-reads the fake GitHub and model backends of a finished run once
+// every fake server is closed, and httptest's Close has therefore waited for
+// every handler to return, and judges them with e2eSettledVerdicts against
+// what finish recorded while the servers were still open.
+func (e *e2eEnv) settled() {
+	if !e.finished || e.github == nil {
+		return
+	}
+	models := map[r.Provider][]e2eModelSession{}
+	for provider, model := range e.models {
+		models[provider] = model.sessionsCopy()
+	}
+	e.mu.Lock()
+	judged := e.result
+	e.mu.Unlock()
+	for _, v := range e2eSettledVerdicts(judged, e.github.summary(), models) {
+		e.check(v.OK, "%s", v.Message)
+	}
+}
+
+// e2eSettledVerdicts requires the quiesced fake servers to hold exactly the
+// observations res recorded in finish: no later violation, review POST,
+// remote review or Git exchange, and no later model session or backend
+// request. A handler still running when finish read the servers could
+// otherwise add one the judgment never saw. Token mints and the API request
+// tally are not compared: a wedged handle keeps its credential owner until
+// the process exits.
+func e2eSettledVerdicts(res *e2eResult, github e2eGitHubSummary, models map[r.Provider][]e2eModelSession) []e2eVerdict {
+	return []e2eVerdict{
+		{slices.Equal(github.Violations, res.GitHub.Violations), fmt.Sprintf("the quiesced fake GitHub holds no violation finish did not judge (%v)", github.Violations)},
+		{maps.Equal(github.ReviewPosts, res.GitHub.ReviewPosts) && r.Digest(github.Reviews) == r.Digest(res.GitHub.Reviews), fmt.Sprintf("the quiesced fake GitHub holds exactly the review POSTs and reviews finish judged (%v)", github.ReviewPosts)},
+		{len(github.GitExchanges) == len(res.GitHub.GitExchanges), fmt.Sprintf("the quiesced fake upstream served exactly the %d Git exchanges finish judged (%d)", len(res.GitHub.GitExchanges), len(github.GitExchanges))},
+		{r.Digest(models) == r.Digest(res.Models), "the quiesced fake model backends hold exactly the sessions and requests finish judged"},
 	}
 }
 
@@ -1033,11 +1070,16 @@ func (o *e2eUnitObserver) sample() (map[string]string, error) {
 	return units, nil
 }
 
-// stop waits until a successful listing shows no unit first seen by this run,
-// then reports. A failed listing is never read as an empty one: it keeps the
-// last successful residual (or, before any, every unit this run saw) and,
-// when the grace ends without a later successful listing, returns its error.
+// stop first stops and joins the periodic sampler, so no listing still in
+// flight can record a unit after the final one, then waits until a successful
+// listing of its own shows no unit first seen by this run, and reports. The
+// last listing stop makes is therefore the last observation. A failed listing
+// is never read as an empty one: it keeps the last successful residual (or,
+// before any, every unit this run saw) and, when the grace ends without a
+// later successful listing, returns its error.
 func (o *e2eUnitObserver) stop(grace time.Duration) ([]e2eSystemdUnit, []string, error) {
+	o.stopOnce.Do(func() { close(o.done) })
+	<-o.joined
 	deadline := time.Now().Add(grace)
 	residual, listed := []string{}, false
 	var listing error
@@ -1066,8 +1108,6 @@ func (o *e2eUnitObserver) stop(grace time.Duration) ([]e2eSystemdUnit, []string,
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
-	o.stopOnce.Do(func() { close(o.done) })
-	<-o.joined
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	all := []e2eSystemdUnit{}
@@ -2103,9 +2143,12 @@ func (e *e2eEnv) assertCompleted(label string, prs ...int) []*r.DurableJob {
 // exactly one durable job, bound to its scope, the fake upstream's snapshot
 // and the current release, holding exactly the adversarial round set of
 // artifacts produced for that job, each session checked once by its own
-// provider's backend. Its sole confirmed intent must be bound to that job and
-// to the one remote review, whose canonical document is the intent's. It
-// returns the PR's job, or nil when there is not exactly one.
+// provider's backend and each holding exactly the canned backend's report.
+// Its sole confirmed intent must be bound to that job and to the one remote
+// review, whose canonical document is the intent's, and that document must be
+// the one rendered from the canned reports, not merely one the intent and the
+// remote agree on. It returns the PR's job, or nil when there is not exactly
+// one.
 func e2eReviewedVerdicts(c e2eCompletion, pr int) ([]e2eVerdict, *r.DurableJob) {
 	j := e2eJobFor(c.State, pr)
 	if j == nil {
@@ -2121,6 +2164,8 @@ func e2eReviewedVerdicts(c e2eCompletion, pr int) ([]e2eVerdict, *r.DurableJob) 
 		{rounds == nil, fmt.Sprintf("PR %d stored exactly Codex R1, Claude R1, Codex R2 and Claude R2, each produced for its job: %v", pr, rounds)},
 		{checked == nil, fmt.Sprintf("PR %d each artifact session was checked once by its own provider's backend for its job and round, and made exactly the fixture's exchanges: %v", pr, checked)},
 	}
+	canned := e2eCannedArtifacts(j)
+	v = append(v, e2eVerdict{canned == nil, fmt.Sprintf("PR %d artifacts hold exactly the canned backend's reports for their phases: %v", pr, canned)})
 	writes := e2eWritesFor(c.State, pr, "review")
 	w := e2eSoleConfirmed(writes)
 	v = append(v, e2eVerdict{w != nil, fmt.Sprintf("PR %d has exactly one review intent and it is confirmed (%d writes)", pr, len(writes))})
@@ -2129,6 +2174,8 @@ func e2eReviewedVerdicts(c e2eCompletion, pr int) ([]e2eVerdict, *r.DurableJob) 
 			e2eVerdict{w.Scope == j.Scope && w.RequestID == j.RequestID && w.Generation == j.Job.Generation && w.Snapshot == j.Job.Snapshot && w.JobHash == r.Digest(j.Job) && w.CheckpointHash == r.Digest(j.Checkpoint) && w.ReceiptID > 0, fmt.Sprintf("PR %d confirmed intent binds its job's request, generation, snapshot, job and checkpoint, and a receipt", pr)},
 			e2eVerdict{w.Marker == "<!-- sfl-alpha:"+w.ID+" -->" && w.BodyHash == r.Digest(w.Document), fmt.Sprintf("PR %d confirmed intent's marker names its own ID and its body hash is its document's", pr)},
 			e2eVerdict{len(w.Document.Inline) == 1 && w.Document.Inline[0].Path == "source.go" && w.Document.Inline[0].Line == 1, fmt.Sprintf("PR %d document carries exactly the source-backed inline finding at source.go:1", pr)})
+		document := e2eCannedDocument(j, w)
+		v = append(v, e2eVerdict{document == nil, fmt.Sprintf("PR %d confirmed document is exactly the one rendered from the canned reports and states the canned finding: %v", pr, document)})
 	}
 	v = append(v, e2eVerdict{c.Posts[pr] == 1, fmt.Sprintf("PR %d received exactly one review POST (got %d)", pr, c.Posts[pr])})
 	reviews := c.Reviews[pr]
@@ -2244,6 +2291,115 @@ func e2eFixtureExchanges(counts f.Counts, a r.Artifact, head string, files map[s
 	}
 	if a.ProviderEvidence == nil || a.ProviderEvidence.Access.InferenceRequests != counts.Inference || a.ProviderEvidence.Access.MetadataRequests != counts.Metadata {
 		return fmt.Errorf("receipt counts differ from the backend's %d inferences and %d metadata requests", counts.Inference, counts.Metadata)
+	}
+	return nil
+}
+
+// The canned backend's one synthetic finding (nativefixture sourceReport).
+const (
+	e2eCannedTitle    = "Synthetic finding"
+	e2eCannedBody     = "Protocol fixture only."
+	e2eCannedSeverity = 2
+	e2eCannedReason   = "Synthetic source-backed protocol disposition."
+)
+
+// e2eCannedAnchor is the canned finding's anchor at head: source.go line 1,
+// quoting that line of the fake upstream's source.go.
+func e2eCannedAnchor(head string) r.Anchor {
+	return r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(e2eSource), Revision: head}
+}
+
+// e2eCannedFinding is provider's canned R1 finding at head.
+func e2eCannedFinding(provider r.Provider, head string) r.Finding {
+	return r.Finding{ID: string(provider) + ":fixture", Title: e2eCannedTitle, Body: e2eCannedBody, Severity: e2eCannedSeverity, Anchor: e2eCannedAnchor(head)}
+}
+
+// e2eCannedReports is, in phase order, every report the canned backends
+// answer for an adversarial job, restated from the fixture rather than read
+// back from the run: in R1 each provider proposes its one synthetic finding
+// at source.go:1 and nothing else; in R2 each confirms its peer's R1 finding,
+// with that finding's anchor as evidence, and proposes nothing. Every report
+// carries the job's immutable headers. Usage is provider accounting, never
+// published, and is not part of the canned content.
+func e2eCannedReports(job r.Job) []r.Report {
+	head := job.Snapshot.Head
+	reports := []r.Report{}
+	for round := 1; round <= 2; round++ {
+		for _, provider := range []r.Provider{r.Codex, r.Claude} {
+			report := r.Report{JobID: job.ID, PolicyVersion: r.PolicyVersion, PacketHash: r.Digest(job.Packet), Provider: provider, Round: round, SnapshotHash: r.Digest(job.Snapshot), ConfigHash: job.Config.Hash(), Findings: []r.Finding{}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}}
+			if round == 1 {
+				report.Findings = append(report.Findings, e2eCannedFinding(provider, head))
+			} else {
+				peer := r.Claude
+				if provider == r.Claude {
+					peer = r.Codex
+				}
+				report.Judgments = append(report.Judgments, r.Judgment{FindingID: string(peer) + ":fixture", Verdict: "confirm", Reason: e2eCannedReason, Evidence: []r.Anchor{e2eCannedAnchor(head)}})
+			}
+			reports = append(reports, report)
+		}
+	}
+	return reports
+}
+
+// e2eCannedLedger is the engine's documented adversarial aggregation of
+// e2eCannedReports, written out rather than recomputed: each provider's
+// finding is corroborated by its peer's R2 confirmation, keeps its own
+// severity, and is linked to the other provider's exact duplicate. Entries
+// are ordered by severity, then finding ID.
+func e2eCannedLedger(job r.Job) []r.Entry {
+	head := job.Snapshot.Head
+	entry := func(origin, peer r.Provider) r.Entry {
+		confirm := r.Judgment{FindingID: string(origin) + ":fixture", Verdict: "confirm", Reason: e2eCannedReason, Evidence: []r.Anchor{e2eCannedAnchor(head)}}
+		return r.Entry{Finding: e2eCannedFinding(origin, head), Origin: origin, RaisedRound: 1, Status: "corroborated", History: []r.Assessment{{Provider: peer, Round: 2, Judgment: confirm}}, RelatedIDs: []string{string(peer) + ":fixture"}, SeverityMin: e2eCannedSeverity, SeverityMax: e2eCannedSeverity}
+	}
+	return []r.Entry{entry(r.Claude, r.Codex), entry(r.Codex, r.Claude)}
+}
+
+// e2eFixtureDiff is the trusted diff of PR pr against the fake upstream's
+// base: the PR adds source.go and its own one-line file.
+func e2eFixtureDiff(pr int) map[string]map[int]bool {
+	return map[string]map[int]bool{"source.go": {1: true}, fmt.Sprintf("pr%d-only.go", pr): {1: true}}
+}
+
+// e2eCannedArtifacts requires every artifact of j to hold exactly the canned
+// backend's report for its provider and round (all findings, judgments,
+// retractions, coverage and immutable headers; Usage aside) and no
+// engine-added coverage, so a decoding or merge change cannot alter what the
+// document is built from.
+func e2eCannedArtifacts(j *r.DurableJob) error {
+	canned := map[string]r.Report{}
+	for _, report := range e2eCannedReports(j.Job) {
+		canned[fmt.Sprintf("%s R%d", report.Provider, report.Round)] = report
+	}
+	for _, a := range j.Checkpoint.Artifacts {
+		key := fmt.Sprintf("%s R%d", a.Report.Provider, a.Report.Round)
+		want, ok := canned[key]
+		got := a.Report
+		got.Usage = r.Usage{}
+		if !ok || r.Digest(got) != r.Digest(want) || len(a.Coverage) != 0 {
+			return fmt.Errorf("artifact %s is not the canned backend's report", key)
+		}
+	}
+	return nil
+}
+
+// e2eCannedDocument requires the confirmed intent w of job j to carry exactly
+// the document production renders from the canned reports and their expected
+// ledger under the PR's trusted diff, with w's marker. Because that render is
+// production's own, the published inline comment must also state the canned
+// finding literally: its severity, title, body and source link at the head.
+func e2eCannedDocument(j *r.DurableJob, w *r.WriteIntent) error {
+	want, err := r.E2ECompletedDocument(j.Job, e2eCannedReports(j.Job), e2eCannedLedger(j.Job), e2eFixtureDiff(j.Job.Snapshot.PR), w.Marker)
+	if err != nil {
+		return fmt.Errorf("expected document: %v", err)
+	}
+	if r.Digest(w.Document) != r.Digest(want) {
+		return errors.New("document differs from the one rendered from the canned reports")
+	}
+	stated := fmt.Sprintf("P%d %s\n\n%s\n\nSource: [source.go:1](https://github.com/hemsoft-dev/set-it-free-loop/blob/%s/source.go#L1).", e2eCannedSeverity, e2eCannedTitle, e2eCannedBody, j.Job.Snapshot.Head)
+	if len(w.Document.Inline) != 1 || !strings.Contains(w.Document.Inline[0].Body, stated) || !strings.Contains(w.Document.Summary, stated) {
+		return errors.New("document does not state the canned finding")
 	}
 	return nil
 }
@@ -2776,10 +2932,10 @@ func e2eCloseProvider(e *e2eEnv) {
 	for _, u := range units {
 		e.note("interrupted native unit %s: audit %v complete %v exported %v returned %v", u.Launch, u.AuditPresent, u.Complete, u.AuthExported, u.AuthReturned)
 	}
-	usable := map[r.Provider]bool{r.Codex: e2eAuthUsable(e.auth, r.Codex), r.Claude: e2eAuthUsable(e.auth, r.Claude)}
-	e.note("auth disposition after close: codex usable=%v claude usable=%v", usable[r.Codex], usable[r.Claude])
-	e.check(usable[r.Claude], "the untouched provider's auth remains usable")
-	e.check(usable[r.Codex] == returned, "codex auth is usable exactly when its stopped return was committed (returned %v)", returned)
+	auth := map[r.Provider]string{r.Codex: e2eAuthDisposition(e.auth, r.Codex), r.Claude: e2eAuthDisposition(e.auth, r.Claude)}
+	e.note("auth disposition after close: codex %s, claude %s", auth[r.Codex], auth[r.Claude])
+	e.check(auth[r.Claude] == "usable", "the untouched provider's auth remains usable (%s)", auth[r.Claude])
+	e.check((returned && auth[r.Codex] == "usable") || (!returned && auth[r.Codex] == "fenced"), "codex auth is usable exactly when its stopped return was committed, and fenced otherwise (returned %v, %s)", returned, auth[r.Codex])
 	e.check(e.github.reviewPosts(1) == 0, "nothing was published for the interrupted job")
 	if !e.wedged {
 		e.check(j.LeaseToken == "" && j.State == "queued" && returned, "a completed Close leaves a queued job with returned auth (state %s)", j.State)
@@ -2809,7 +2965,7 @@ func e2eCloseProvider(e *e2eEnv) {
 		return
 	}
 	e.check(j.LeaseToken != "" && j.Outstanding && j.State == "running", "the uncertain provider attempt keeps its durable lease and outstanding reservation")
-	e.check(!returned && !usable[r.Codex], "the unreturned exported auth is fenced for recovery")
+	e.check(!returned && auth[r.Codex] == "fenced", "the unreturned exported auth is fenced for recovery")
 	e.check(len(units) == 1 && units[0].AuditPresent && units[0].AuthExported && !units[0].AuthReturned, "the stopped audit records the auth as exported and not returned")
 	_, err := e2eRetainedLaunches(units, j)
 	e.check(err == nil, "the interrupted launch is the job's outstanding attempt and the job records its complete stopped audit evidence: %v", err)
@@ -2843,7 +2999,7 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 	}
 	e.nativeBefore = launches
 	e.check(true, "the attached root holds the interrupted launch, captured, stopped and audited with exported unreturned auth, bound to the retained attempt's stopped provider evidence")
-	codexFenced := !e2eAuthUsable(e.auth, r.Codex)
+	codexFenced := e2eAuthDisposition(e.auth, r.Codex) == "fenced"
 	e.check(codexFenced, "codex auth is still fenced in the restarted process")
 	e.open("restart")
 	e.assertSourceStopped("after restart recovery", before)
@@ -2869,7 +3025,7 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 	e.check(sessions == 0, "no provider session started after restart (%d)", sessions)
 	e.check(e.github.reviewPosts(1) == 0 && e.github.reviewPosts(2) == 0, "nothing was published while fenced")
 	e.check(e.github.gitExchanges() == 0, "no source capture ran while fenced")
-	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth stays fenced; claude auth stays usable")
+	e.check(e2eAuthDisposition(e.auth, r.Codex) == "fenced" && e2eAuthUsable(e.auth, r.Claude), "codex auth stays fenced; claude auth stays usable")
 	// The fence holds every request back; none may have been duplicated
 	// behind it, or releasing the lease could admit a second review.
 	e.result.Requests = e2eRequests(d)
@@ -3004,14 +3160,68 @@ func e2eRequestVerdicts(label string, requests []e2eRequest, want map[int]e2eReq
 	return append(v, e2eVerdict{len(others) == 0, fmt.Sprintf("%s: no other PR retains a request (%+v)", label, others)})
 }
 
-func e2eAuthUsable(directory string, provider r.Provider) bool {
+// e2eAuthDisposition judges provider's auth store under directory through a
+// refresh that writes the held state back unchanged: "usable" when it holds
+// the provider's original synthetic credential; "invalid" when the store
+// yields any other state, including none, since the store itself accepts any
+// nonempty bytes (e2eSyntheticAuth); "fenced" when the store refuses the
+// refresh before yielding state, as it does while an exported profile awaits
+// recovery; "unavailable" when the store cannot be opened. Invalid auth is
+// neither usable nor fenced.
+func e2eAuthDisposition(directory string, provider r.Provider) string {
 	auth, err := r.NewAuthStore(provider, directory)
-	return err == nil && auth.Refresh(context.Background(), func(current []byte) ([]byte, error) {
-		if len(current) == 0 {
-			return nil, errors.New("missing returned synthetic auth")
+	if err != nil {
+		return "unavailable"
+	}
+	judged := false
+	err = auth.Refresh(context.Background(), func(current []byte) ([]byte, error) {
+		judged = true
+		if len(current) == 0 || !e2eSyntheticAuth(provider, current) {
+			return nil, errors.New("returned auth is not the provider's synthetic credential")
 		}
 		return current, nil
-	}) == nil
+	})
+	switch {
+	case err == nil:
+		return "usable"
+	case judged:
+		return "invalid"
+	default:
+		return "fenced"
+	}
+}
+
+// e2eAuthUsable reports whether provider's auth store is usable: unfenced
+// and holding the provider's original synthetic credential.
+func e2eAuthUsable(directory string, provider r.Provider) bool {
+	return e2eAuthDisposition(directory, provider) == "usable"
+}
+
+// e2eSyntheticAuth reports whether raw is provider's synthetic seed
+// credential (f.Seed) as the fake backends leave it, by the hostile fixture's
+// rule (cmd/nativevmfixture syntheticTokensReturned): the original synthetic
+// access and refresh tokens, and for Codex the chatgpt auth mode.
+func e2eSyntheticAuth(provider r.Provider, raw []byte) bool {
+	switch provider {
+	case r.Codex:
+		var profile struct {
+			AuthMode string `json:"auth_mode"`
+			Tokens   struct {
+				AccessToken  string `json:"access_token"`
+				RefreshToken string `json:"refresh_token"`
+			} `json:"tokens"`
+		}
+		return json.Unmarshal(raw, &profile) == nil && profile.AuthMode == "chatgpt" && profile.Tokens.AccessToken == "sfl-fake-access" && profile.Tokens.RefreshToken == "sfl-fake-refresh"
+	case r.Claude:
+		var profile struct {
+			OAuth struct {
+				AccessToken  string `json:"accessToken"`
+				RefreshToken string `json:"refreshToken"`
+			} `json:"claudeAiOauth"`
+		}
+		return json.Unmarshal(raw, &profile) == nil && profile.OAuth.AccessToken == "sfl-fake-access" && profile.OAuth.RefreshToken == "sfl-fake-refresh"
+	}
+	return false
 }
 
 // e2eProbeRelease attempts ReleaseStopped on a private copy of the store.
@@ -3452,6 +3662,96 @@ func TestE2EUnitObserverListing(t *testing.T) {
 	}
 }
 
+// TestE2EUnitObserverQuiesced is round 9 finding 2: a periodic listing still
+// in flight when stop's final listing comes back clean must not record a unit
+// that the final listing did not judge. The scripted systemd starts a unit
+// right after the first listing stop makes; the periodic listing, entered
+// before stop, takes its snapshot only after that, as a slow systemctl would.
+func TestE2EUnitObserverQuiesced(t *testing.T) {
+	unit := map[string]string{"sfl-alpha-" + strings.Repeat("b", 32) + ".service": "loaded/active/running source VM"}
+	var calls atomic.Int32
+	var running atomic.Bool
+	entered, started := make(chan struct{}), make(chan struct{})
+	world := func() map[string]string {
+		if running.Load() {
+			return unit
+		}
+		return map[string]string{}
+	}
+	list := func() (map[string]string, error) {
+		switch n := calls.Add(1); n {
+		case 1:
+			return map[string]string{}, nil
+		case 2:
+			// The periodic listing: in flight before stop, it observes the
+			// world only once the unit started or after a bound.
+			close(entered)
+			select {
+			case <-started:
+			case <-time.After(500 * time.Millisecond):
+			}
+			return world(), nil
+		case 3:
+			// The first listing stop makes is clean; the unit starts as it
+			// returns.
+			defer func() { running.Store(true); close(started) }()
+			return world(), nil
+		default:
+			return world(), nil
+		}
+	}
+	o := newE2EUnitObserver(t, list)
+	<-entered
+	units, residual, err := o.stop(time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(units) != 0 && len(residual) == 0 {
+		t.Error("a unit recorded after the final clean listing was reported observed with no residual", units)
+	}
+}
+
+// TestE2ESettledVerdicts is the round 9 self-audit of concurrent observers:
+// what the fake servers hold once quiesced must be exactly what finish judged.
+func TestE2ESettledVerdicts(t *testing.T) {
+	judged := func() (*e2eResult, e2eGitHubSummary, map[r.Provider][]e2eModelSession) {
+		github := e2eGitHubSummary{ReviewPosts: map[int]int{1: 1}, Reviews: map[int][]map[string]any{1: {{"id": int64(5001), "state": "COMMENTED", "inline": []string{"source.go:1"}}}}, GitExchanges: []e2eGitExchange{{Operation: "advertisement", Status: 200}, {Operation: "upload-pack", Status: 200}}}
+		models := map[r.Provider][]e2eModelSession{r.Codex: {{JobID: "request-1-1", Provider: r.Codex, Round: 1, Counts: f.Counts{Inference: 3}}}, r.Claude: nil}
+		res := &e2eResult{GitHub: github, Models: models}
+		// The settled reads are fresh copies, as summary and sessionsCopy make.
+		var settled e2eGitHubSummary
+		var copies map[r.Provider][]e2eModelSession
+		raw, _ := json.Marshal(github)
+		_ = json.Unmarshal(raw, &settled)
+		raw, _ = json.Marshal(models)
+		_ = json.Unmarshal(raw, &copies)
+		return res, settled, copies
+	}
+	if f := e2eFailures(e2eSettledVerdicts(judged())); len(f) != 0 {
+		t.Fatal("settled run refused:", f)
+	}
+	for name, edit := range map[string]func(*e2eGitHubSummary, map[r.Provider][]e2eModelSession){
+		"violation after finish":   func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession) { g.Violations = []string{"late"} },
+		"review POST after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession) { g.ReviewPosts[1] = 2 },
+		"remote review after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession) {
+			g.Reviews[2] = []map[string]any{{"id": int64(5002)}}
+		},
+		"Git exchange after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession) {
+			g.GitExchanges = append(g.GitExchanges, e2eGitExchange{Operation: "upload-pack"})
+		},
+		"model request after finish": func(_ *e2eGitHubSummary, m map[r.Provider][]e2eModelSession) { m[r.Codex][0].Counts.Inference = 4 },
+		"model session after finish": func(_ *e2eGitHubSummary, m map[r.Provider][]e2eModelSession) {
+			m[r.Claude] = append(m[r.Claude], e2eModelSession{JobID: "request-1-1", Provider: r.Claude, Round: 1})
+		},
+	} {
+		res, github, models := judged()
+		edit(&github, models)
+		if len(e2eFailures(e2eSettledVerdicts(res, github, models))) == 0 {
+			t.Error(name, "accepted")
+		}
+	}
+}
+
 // e2eProviderReleaseFixture is a well-formed native provider release with
 // synthetic pins and the given egress policy.
 func e2eProviderReleaseFixture(policy r.EgressPolicy) r.GitReviewerProviderRelease {
@@ -3699,18 +3999,21 @@ func TestE2EAllocateCleanupAfterSetupFailure(t *testing.T) {
 
 // e2eCompletedFixture is a valid completed PR 1 review as the open service
 // reports it: the sole job with the four adversarial artifacts, each bound to
-// the job and carrying provider evidence the job records; one completed
-// native launch with that evidence and one unheld backend check per artifact
-// session; the sole confirmed intent bound to the job; the one remote review
-// projected from that intent's document; and one stopped source attempt of
-// the job's snapshot under the current release.
+// the job, holding the canned backend's report for its phase and carrying
+// provider evidence the job records; one completed native launch with that
+// evidence and one unheld backend check per artifact session; the sole
+// confirmed intent bound to the job, carrying the document rendered from the
+// canned reports; the one remote review projected from that intent's
+// document; and one stopped source attempt of the job's snapshot under the
+// current release.
 func e2eCompletedFixture() e2eCompletion {
 	head, base, attempt, id := strings.Repeat("1", 40), strings.Repeat("e", 40), strings.Repeat("a", 32), strings.Repeat("c", 32)
 	snapshot := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: head, Base: base, MergeBase: base}
-	config := r.DefaultConfig()
-	job := &r.DurableJob{Job: r.Job{ID: "request-1-1", RequesterID: r.OwnerID, Generation: 1, Snapshot: snapshot, Config: config, ConfigVersion: 1, Release: "release"}, Scope: e2eScope(1), RequestID: 1, State: "dual_complete", Checkpoint: r.Checkpoint{ConsumedSessions: 4}}
+	config, release := r.DefaultConfig(), strings.Repeat("f", 40)
+	job := &r.DurableJob{Job: r.Job{ID: "request-1-1", RequesterID: r.OwnerID, Generation: 1, Snapshot: snapshot, Config: config, ConfigVersion: 1, Release: release, Packet: "synthetic packet"}, Scope: e2eScope(1), RequestID: 1, State: "dual_complete", Checkpoint: r.Checkpoint{ConsumedSessions: 4}}
 	job.Checkpoint.JobHash = r.Digest(job.Job)
-	c := e2eCompletion{Heads: map[int]string{1: head}, Base: base, Release: "release", Source: e2eSourceBinding{r.Digest("release package"), r.Digest("source VM manifest"), r.Digest("source stub")}, Posts: map[int]int{1: 1}}
+	reports := e2eCannedReports(job.Job)
+	c := e2eCompletion{Heads: map[int]string{1: head}, Base: base, Release: release, Source: e2eSourceBinding{r.Digest("release package"), r.Digest("source VM manifest"), r.Digest("source stub")}, Posts: map[int]int{1: 1}}
 	for i, run := range []struct {
 		provider r.Provider
 		round    int
@@ -3726,14 +4029,17 @@ func e2eCompletedFixture() e2eCompletion {
 		recorded := *evidence
 		access := &r.SourceAccess{Version: 1, SessionHash: hash, ToolCalls: 2, ReaderCalls: 3, Bytes: 64, Reads: []r.ReadRecord{{Revision: head, Path: "source.go", Hash: r.Digest([]byte(e2eSource)), Bytes: len(e2eSource)}, {Revision: head, Path: "pr1-only.go", Hash: r.Digest([]byte("pull request 1 only\n")), Bytes: 20}}}
 		read := *access
-		job.Checkpoint.Artifacts = append(job.Checkpoint.Artifacts, r.Artifact{JobHash: r.Digest(job.Job), InputHash: hash, Report: r.Report{JobID: job.Job.ID, Provider: run.provider, Round: run.round, SnapshotHash: r.Digest(snapshot), ConfigHash: config.Hash()}, SourceAccess: access, ProviderEvidence: evidence})
+		job.Checkpoint.Artifacts = append(job.Checkpoint.Artifacts, r.Artifact{JobHash: r.Digest(job.Job), InputHash: hash, Report: reports[i], SourceAccess: access, ProviderEvidence: evidence})
 		job.ProviderAttempts = append(job.ProviderAttempts, r.ProviderAttempt{ID: fmt.Sprintf("attempt-%d", i), Evidence: &recorded})
 		job.SourceAttempts = append(job.SourceAttempts, r.SourceAttempt{ID: fmt.Sprintf("attempt-%d", i), Access: &read})
 		c.Units = append(c.Units, e2eNativeUnit{Provider: string(run.provider), Launch: strconv.Itoa(i), SessionHash: hash, Captured: true, Stopped: true, AuditPresent: true, Complete: true, AuthExported: true, AuthReturned: true, Access: evidence.Access, EvidenceHash: r.Digest(evidence)})
 		c.Sessions = append(c.Sessions, e2eModelSession{JobID: job.Job.ID, Provider: run.provider, Round: run.round, PR: 1, Head: head, SessionHash: hash, Counts: counts})
 	}
 	marker := "<!-- sfl-alpha:" + id + " -->"
-	document := r.Document{Summary: "review\n\n" + marker, Inline: []r.InlineComment{{Path: "source.go", Line: 1, Body: "finding"}}}
+	document, err := r.E2ECompletedDocument(job.Job, reports, e2eCannedLedger(job.Job), e2eFixtureDiff(1), marker)
+	if err != nil {
+		panic(err)
+	}
 	write := &r.WriteIntent{ID: id, Kind: "review", Scope: job.Scope, RequestID: job.RequestID, Generation: job.Job.Generation, JobHash: r.Digest(job.Job), CheckpointHash: r.Digest(job.Checkpoint), Snapshot: snapshot, Document: document, BodyHash: r.Digest(document), Marker: marker, State: "confirmed", ReceiptID: 5001}
 	remoteMarker, remoteHash := r.E2ERemoteReview(document.Summary, document.Inline)
 	c.Reviews = map[int][]map[string]any{1: {{"id": int64(5001), "state": "COMMENTED", "commit_id": head, "marker": remoteMarker, "document_hash": remoteHash, "inline": []string{"source.go:1"}}}}
@@ -3837,6 +4143,22 @@ func TestE2ECompletedVerdicts(t *testing.T) {
 	// rehash re-derives an edited intent's own document hash, so only its
 	// binding to the remote review or the job can refuse it.
 	rehash := func(c *e2eCompletion) { write(c).BodyHash = r.Digest(write(c).Document) }
+	// republish edits the intent's document and re-derives its hash and the
+	// remote review's projection, so intent and remote agree on the edited
+	// content and only its binding to the canned reports can refuse it.
+	republish := func(c *e2eCompletion, edit func(string) string) {
+		d := &write(c).Document
+		d.Summary = edit(d.Summary)
+		for i := range d.Inline {
+			d.Inline[i].Body = edit(d.Inline[i].Body)
+		}
+		rehash(c)
+		_, remote(c)["document_hash"] = r.E2ERemoteReview(d.Summary, d.Inline)
+	}
+	// recheckpoint rebinds the intent to an edited checkpoint, so only the
+	// artifacts' binding to the canned reports can refuse the edit.
+	recheckpoint := func(c *e2eCompletion) { write(c).CheckpointHash = r.Digest(job(c).Checkpoint) }
+	finding := func(c *e2eCompletion, i int) *r.Finding { return &artifact(c, i).Report.Findings[0] }
 	otherSnapshot := func(c *e2eCompletion) r.Snapshot {
 		s := job(c).Job.Snapshot
 		s.Head = strings.Repeat("9", 40)
@@ -3912,6 +4234,24 @@ func TestE2ECompletedVerdicts(t *testing.T) {
 		"artifact phase served the other PR's file":    "fixture's exchanges",
 		"artifact phase served another revision":       "fixture's exchanges",
 		"artifact phase never served source.go":        "fixture's exchanges",
+		"report with another finding title":            "canned backend's reports",
+		"report with another finding body":             "canned backend's reports",
+		"report with another severity":                 "canned backend's reports",
+		"report with another quote":                    "canned backend's reports",
+		"report with another anchor revision":          "canned backend's reports",
+		"report without its peer confirmation":         "canned backend's reports",
+		"report rejecting its peer's finding":          "canned backend's reports",
+		"report with a retraction":                     "canned backend's reports",
+		"report with coverage":                         "canned backend's reports",
+		"artifact with engine-added coverage":          "canned backend's reports",
+		"report of another packet":                     "canned backend's reports",
+		"report of another policy":                     "canned backend's reports",
+		"document with another finding title":          "rendered from the canned reports",
+		"document with another finding body":           "rendered from the canned reports",
+		"document with another severity":               "rendered from the canned reports",
+		"document with another source revision":        "rendered from the canned reports",
+		"document with another summary":                "rendered from the canned reports",
+		"document without the peer confirmation":       "rendered from the canned reports",
 	}
 	for name, edit := range map[string]func(*e2eCompletion){
 		// Finding 2: a completed launch must have exported the auth it returned.
@@ -4015,7 +4355,7 @@ func TestE2ECompletedVerdicts(t *testing.T) {
 		"remote review with another ID": func(c *e2eCompletion) { remote(c)["id"] = int64(5002) },
 		"intent with a marker of another ID": func(c *e2eCompletion) {
 			marker := "<!-- sfl-alpha:" + strings.Repeat("d", 32) + " -->"
-			write(c).Marker, write(c).Document.Summary = marker, "review\n\n"+marker
+			write(c).Marker, write(c).Document.Summary = marker, strings.Replace(write(c).Document.Summary, write(c).Marker, marker, 1)
 			rehash(c)
 			remote(c)["marker"], remote(c)["document_hash"] = r.E2ERemoteReview(write(c).Document.Summary, write(c).Document.Inline)
 		},
@@ -4078,6 +4418,62 @@ func TestE2ECompletedVerdicts(t *testing.T) {
 		"artifact phase never served source.go": func(c *e2eCompletion) {
 			artifact(c, 1).SourceAccess.Reads = artifact(c, 1).SourceAccess.Reads[1:]
 			job(c).SourceAttempts[1].Access.Reads = job(c).SourceAttempts[1].Access.Reads[1:]
+		},
+		// Round 9 finding 1: the stored reports are the canned backend's
+		// known output, not merely reports at the right location.
+		"report with another finding title": func(c *e2eCompletion) { finding(c, 0).Title = "Altered finding"; recheckpoint(c) },
+		"report with another finding body":  func(c *e2eCompletion) { finding(c, 1).Body = "Altered body."; recheckpoint(c) },
+		"report with another severity":      func(c *e2eCompletion) { finding(c, 0).Severity = 1; recheckpoint(c) },
+		"report with another quote":         func(c *e2eCompletion) { finding(c, 1).Anchor.Quote = "immutable"; recheckpoint(c) },
+		"report with another anchor revision": func(c *e2eCompletion) {
+			finding(c, 0).Anchor.Revision = strings.Repeat("9", 40)
+			recheckpoint(c)
+		},
+		"report without its peer confirmation": func(c *e2eCompletion) {
+			artifact(c, 2).Report.Judgments = []r.Judgment{}
+			recheckpoint(c)
+		},
+		"report rejecting its peer's finding": func(c *e2eCompletion) {
+			artifact(c, 3).Report.Judgments[0].Verdict = "reject"
+			recheckpoint(c)
+		},
+		"report with a retraction": func(c *e2eCompletion) {
+			artifact(c, 2).Report.Retractions = []string{"codex:fixture"}
+			recheckpoint(c)
+		},
+		"report with coverage": func(c *e2eCompletion) {
+			artifact(c, 1).Report.Coverage = []r.Coverage{{Path: "README.md", Reason: "not read"}}
+			recheckpoint(c)
+		},
+		"artifact with engine-added coverage": func(c *e2eCompletion) {
+			artifact(c, 0).Coverage = []r.Coverage{{Path: "README.md", Reason: "not read"}}
+			recheckpoint(c)
+		},
+		"report of another packet": func(c *e2eCompletion) { artifact(c, 0).Report.PacketHash = r.Digest("another packet"); recheckpoint(c) },
+		"report of another policy": func(c *e2eCompletion) { artifact(c, 3).Report.PolicyVersion = "alpha-policy-0"; recheckpoint(c) },
+		// The intent and the remote review agree on an altered document.
+		"document with another finding title": func(c *e2eCompletion) {
+			republish(c, func(s string) string { return strings.ReplaceAll(s, "Synthetic finding", "Altered finding") })
+		},
+		"document with another finding body": func(c *e2eCompletion) {
+			republish(c, func(s string) string { return strings.ReplaceAll(s, "Protocol fixture only.", "Altered body.") })
+		},
+		"document with another severity": func(c *e2eCompletion) {
+			republish(c, func(s string) string { return strings.ReplaceAll(s, "P2 Synthetic", "P1 Synthetic") })
+		},
+		"document with another source revision": func(c *e2eCompletion) {
+			republish(c, func(s string) string { return strings.ReplaceAll(s, c.Heads[1], strings.Repeat("9", 40)) })
+		},
+		"document with another summary": func(c *e2eCompletion) {
+			d := &write(c).Document
+			d.Summary = strings.Replace(d.Summary, "## Coverage", "Additional unreviewed claim.\n\n## Coverage", 1)
+			rehash(c)
+			_, remote(c)["document_hash"] = r.E2ERemoteReview(d.Summary, d.Inline)
+		},
+		"document without the peer confirmation": func(c *e2eCompletion) {
+			republish(c, func(s string) string {
+				return strings.ReplaceAll(s, "confirm: Synthetic source-backed protocol disposition.", "")
+			})
 		},
 	} {
 		c := e2eCompletedFixture()
@@ -4591,6 +4987,74 @@ func TestE2EReconciledVerdict(t *testing.T) {
 // ReleaseStopped returned nil, to hold the retained job as auth_failed,
 // unleased and not outstanding, with its job, charged checkpoint and recorded
 // attempt evidence unchanged, and nothing else changed.
+// TestE2EAuthUsable is round 9 finding 3: an auth store holding bytes that
+// are not the provider's original synthetic credential is not usable, even
+// though the store accepts any nonempty state.
+func TestE2EAuthUsable(t *testing.T) {
+	edit := func(provider r.Provider, change func(map[string]any)) []byte {
+		var value map[string]any
+		if err := json.Unmarshal(f.Seed(provider), &value); err != nil {
+			t.Fatal(err)
+		}
+		change(value)
+		raw, _ := json.Marshal(value)
+		return raw
+	}
+	cases := []struct {
+		name     string
+		provider r.Provider
+		state    []byte
+		usable   bool
+	}{
+		{"codex synthetic seed", r.Codex, f.Seed(r.Codex), true},
+		{"claude synthetic seed", r.Claude, f.Seed(r.Claude), true},
+		{"codex corrupted", r.Codex, []byte(`{"auth_mode":"chatgpt","tokens":`), false},
+		{"claude corrupted", r.Claude, []byte("not json"), false},
+		{"codex holding claude auth", r.Codex, f.Seed(r.Claude), false},
+		{"claude holding codex auth", r.Claude, f.Seed(r.Codex), false},
+		{"codex api key mode", r.Codex, edit(r.Codex, func(v map[string]any) { v["auth_mode"] = "apikey" }), false},
+		{"codex other access token", r.Codex, edit(r.Codex, func(v map[string]any) { v["tokens"].(map[string]any)["access_token"] = "sfl-other-access" }), false},
+		{"codex without refresh token", r.Codex, edit(r.Codex, func(v map[string]any) { delete(v["tokens"].(map[string]any), "refresh_token") }), false},
+		{"claude other refresh token", r.Claude, edit(r.Claude, func(v map[string]any) { v["claudeAiOauth"].(map[string]any)["refreshToken"] = "sfl-other-refresh" }), false},
+		{"claude without access token", r.Claude, edit(r.Claude, func(v map[string]any) { delete(v["claudeAiOauth"].(map[string]any), "accessToken") }), false},
+	}
+	private := func() string {
+		directory := t.TempDir()
+		if err := os.Chmod(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+		return directory
+	}
+	for _, c := range cases {
+		directory := private()
+		store, err := r.NewAuthStore(c.provider, directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Refresh(context.Background(), func([]byte) ([]byte, error) { return c.state, nil }); err != nil {
+			t.Fatal(c.name, err)
+		}
+		if got := e2eAuthUsable(directory, c.provider); got != c.usable {
+			t.Errorf("%s: usable %v, want %v", c.name, got, c.usable)
+		}
+		// Invalid auth must not pass as a recovery fence either.
+		if got := e2eAuthDisposition(directory, c.provider); !c.usable && got != "invalid" {
+			t.Errorf("%s: disposition %s, want invalid", c.name, got)
+		}
+		// A pending recovery lease fences even the synthetic credential.
+		if err := os.WriteFile(filepath.Join(directory, string(c.provider), "lease.json"), []byte("{}"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if got := e2eAuthDisposition(directory, c.provider); got != "fenced" {
+			t.Errorf("%s with a recovery lease: disposition %s, want fenced", c.name, got)
+		}
+	}
+	// A store that holds nothing is neither usable nor fenced.
+	if got := e2eAuthDisposition(private(), r.Codex); got != "invalid" {
+		t.Error("empty auth store judged", got)
+	}
+}
+
 func TestE2EReleasedVerdict(t *testing.T) {
 	before := func() *r.DurableJob {
 		evidence := &r.ProviderEvidence{Policy: r.EgressPolicy{Provider: r.Codex}, Access: r.ProviderAccess{Version: 1, SessionHash: strings.Repeat("5", 64), InferenceRequests: 1, Failed: true, Stopped: true}}

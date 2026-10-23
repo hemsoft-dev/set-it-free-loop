@@ -184,6 +184,29 @@ func E2ERemoteReview(body string, inline []InlineComment) (marker, documentHash 
 	return documentMarker(body), Digest(canonicalPublicationDocument(Document{Summary: body, Inline: inline}))
 }
 
+// E2ECompletedDocument renders the canonical review document production
+// publishes for job completed with exactly reports, one artifact per report
+// in phase order with no engine-added coverage, and the given ledger, under
+// the trusted diff lines: production's renderer, the intent's marker appended
+// as newIntent appends it, in canonical comment order. The caller supplies
+// the ledger it expects, so an aggregation change is not absorbed here. It
+// reads no durable state.
+func E2ECompletedDocument(job Job, reports []Report, ledger []Entry, diff map[string]map[int]bool, marker string) (Document, error) {
+	out := Outcome{Job: job, State: "dual_complete", Ledger: ledger}
+	if len(job.Config.Providers()) == 1 {
+		out.State = "single_complete"
+	}
+	for _, report := range reports {
+		out.Artifacts = append(out.Artifacts, Artifact{Report: report, ValidationReads: []ReadRecord{}, Coverage: []Coverage{}})
+	}
+	doc, err := renderOutcome(out, diff)
+	if err != nil {
+		return Document{}, err
+	}
+	doc.Summary += "\n\n" + marker
+	return canonicalPublicationDocument(doc), nil
+}
+
 // E2ESourceRecord is a nonsecret projection of one source VM ownership record.
 // RequestHash binds the whole unit request; SourceRequestHash is the digest of
 // its source request, which an archive entry repeats. Attempt, ReleaseHash,
