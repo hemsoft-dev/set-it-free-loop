@@ -250,6 +250,24 @@ class HostileMatrixTests(unittest.TestCase):
                 self.assertEqual((row["verdict"], row["abort"], row["unit_stopped_independently"]), ("fail", True, True), kind)
                 self.assertEqual(stopped, [{"sfl-alpha-before.service"}], kind)
 
+    def test_standalone_fake_runner_cleans_up_after_a_nonzero_exit_only(self):
+        fake_spec = importlib.util.spec_from_file_location("native_vm_fake_exit", Path(__file__).with_name("native-vm-fake.py"))
+        fake = importlib.util.module_from_spec(fake_spec)
+        fake_spec.loader.exec_module(fake)
+        with tempfile.TemporaryDirectory(prefix="sfl-hostile-exit-") as directory:
+            root = Path(directory)
+            state = root/"sfl-nvm-cccc"
+            (state/"launches"/("f"*32)).mkdir(parents=True)
+            for code, expected in [(0, None), (3, True)]:
+                calls = []
+                units = type("Units", (), {"native_units": staticmethod(lambda: set()),
+                                           "owned_units": staticmethod(module.owned_units),
+                                           "stop_new_units": staticmethod(lambda before, owned: calls.append(set(owned)) or True)})
+                with (root/f"log-{code}").open("xb") as log:
+                    result = fake.run_fixture([sys.executable, "-c", f"raise SystemExit({code})"], dict(os.environ), log, 30, units, state)
+                self.assertEqual(result, (code, False, expected), code)
+                self.assertEqual(calls, [] if code == 0 else [{"sfl-alpha-" + "f"*32 + ".service"}], code)
+
     def test_cleanup_kills_only_units_owned_by_the_case_state_root(self):
         with tempfile.TemporaryDirectory(prefix="sfl-hostile-owned-") as directory:
             anchor = Path(directory)

@@ -64,23 +64,29 @@ def runtime_spec(image, manifest):
 
 def run_fixture(command, environment, log, timeout, units=None, state=None):
     """Run the fixture in its own process group. The native unit runs under the
-    user manager, outside that group, so a timeout also kills the native units
-    launched from this run's own state root and requires each inactive; no
-    other unit is touched. Returns (exit code or None, timed out, units
-    stopped or None when there was no timeout)."""
+    user manager, outside that group, so a timeout or any nonzero exit also
+    kills the native units launched from this run's own state root and
+    requires each inactive; no other unit is touched. Returns (exit code or
+    None, timed out, units stopped or None after a clean zero exit)."""
     units = units or sibling("native-vm-hostile")
     before = units.native_units()
+    owned = lambda: units.owned_units([state]) if state else set()
     process = subprocess.Popen(command, env=environment, stdout=log, stderr=subprocess.STDOUT,
                                start_new_session=True)
     try:
-        return process.wait(timeout=timeout), False, None
+        code = process.wait(timeout=timeout)
+        if code == 0:
+            return code, False, None
+        # A crash or stop-pending failure can leave this run's unit running;
+        # stop it before the lock is released.
+        return code, False, units.stop_new_units(before, owned())
     except subprocess.TimeoutExpired:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
         process.wait()
-        return None, True, units.stop_new_units(before, units.owned_units([state]) if state else set())
+        return None, True, units.stop_new_units(before, owned())
 
 
 def main():
@@ -168,6 +174,8 @@ def main():
                "runtime_qualified": False, "provider_eligibility_qualified": False}
     if timed_out:
         receipt["timeout_units_stopped"] = units_stopped
+    elif units_stopped is not None:
+        receipt["abnormal_exit_units_stopped"] = units_stopped
     with (output/"receipt.json").open("x") as stream:
         json.dump(receipt, stream, indent=2)
         stream.write("\n")
