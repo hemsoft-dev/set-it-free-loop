@@ -116,13 +116,18 @@ snapshot, and admitted under the current release revision. A root retained
 by another revision's `close-provider` is refused, so its interrupted job and
 launch are never recorded as this revision's restart. Before
 `close-provider-reopen` treats a native launch as the earlier process's, its
-root must hold exactly one launch: captured and whole-unit stopped, with a
-bound stopped audit that records the auth as exported and not returned and
-the session as incomplete.
-Its provider and session must be the retained job's outstanding attempt. The
-job must hold exactly one record of that attempt ID, and its recorded stopped
-provider evidence must equal the audit's complete provider evidence by
-digest; another valid stopped receipt of the same session is refused. The
+root must hold exactly one launch: started, settled, captured, aborted and
+stopped, with a bound stopped audit that records the auth as exported and not
+returned and the session as incomplete.
+Its provider and session must be the retained job's outstanding attempt, which
+must be the session the job derives for that provider and round and its only
+charged session beyond its artifacts. The job must hold exactly one provider
+attempt, that one, and its recorded stopped provider evidence must equal the
+audit's complete provider evidence by digest; another valid stopped receipt of
+the same session is refused. The job may hold no source attempt but that
+attempt's own. The audit must record that attempt's request, the zero report
+and exactly the source receipt the job recorded for it (none at `daac99c`),
+end at the wait for its result record and fail with `auth-return`. The
 first `close-provider` process applies the same check before it retains the
 root. A missing launch, an unreadable launch directory or any other entry in
 the native root fails setup, and a retained launch must still be present at
@@ -135,10 +140,13 @@ must equal the record's complete materialization binding. Record and export
 agreeing is not enough: the record must name `sfl-alpha-<attempt>.service`,
 carry the current release package hash and the runtime hash of the source VM
 manifest that release derives, record the release's source stub hash, and
-bind the snapshot of exactly one expected job, each job's once. This holds for
-the attached restart too, whose record must bind the retained job. Each final
-record must hold the start intent, the settled start, the capture, the grant,
-the revocation and the durable stop. That conjunction says nothing about
+bind the snapshot of exactly one expected job, each job's once. As restore
+requires, the staged export's packet hash must be the digest of that job's
+packet. This holds for the attached restart too, whose record must bind the
+retained job. Each final record must hold the start intent, the settled start,
+the capture, the grant, the revocation and the durable stop, recorded in the
+current boot and without a later boot's stop proof (`StopBoot` empty). That
+conjunction says nothing about
 order, so the process that acquires the source also proves it (see Source
 lifecycle order below). Once
 `review`, `close-capture` and `close-publish` confirm the review, PR 1 must
@@ -166,7 +174,14 @@ mode. Corrupted, cross-provider or substituted auth is invalid, which is
 neither usable nor fenced. A store is fenced only when it refuses the refresh
 before yielding its state. A directory without a readable `unit.json`,
 any other entry and an unreadable root each count as a failed launch, which
-no check accepts. A unit journal counts only
+no check accepts. The unit journal is read only through production's own
+reader (`readUnit`, exported to the test as `E2EReadNativeUnitJournal`): a
+private, singly linked file, strictly decoded, of the `native-vm` payload
+under the release's stub, with a possible lifecycle (a capture needs a
+settled start and a bound process and cgroup, a stop needs the abort). Its
+boot ID and its captured process's must be the current boot's, with a systemd
+invocation ID and process start time, and every native unit must be started,
+settled, captured, aborted and stopped. It then counts only
 as version 1 for its own directory's launch. It must name
 `sfl-alpha-<launch>.service`, and its binding must derive the containment ID
 from its session and launch. It must also be the pinned native payload:
@@ -175,10 +190,14 @@ production's `VMBootImages.NativeManifest` derives from the release's QEMU,
 kernel, initrd, firmware, runtime artifact, namespace helper and bootstrap
 library pins for that launch and session. A test checks that the harness
 derives exactly production's manifest. A journal of another payload, stub or
-native release therefore proves nothing. The audit counts only as a version 1
-receipt with the same binding and manifest hash, and its auth lifecycle must be
-possible: auth is returned only after it was exported, and a completed session
-has returned it.
+native release therefore proves nothing. The audit is read as production's
+exact encoding of its receipt (`E2EReadNativeAudit`): a private file whose
+fields are exactly `persistAudit`'s, in its order, and whose re-encoding is
+its bytes, so an unknown, missing, duplicated or reordered field is refused.
+It counts only as a version 1 receipt with the same binding and manifest hash,
+and its auth lifecycle must be possible: auth is returned only after it was
+exported, and a completed session has returned it. A completed audit ends at
+`result-validation` with no failure kind; an interrupted one records one.
 Once auth was exported or the session completed, the
 audit must carry provider evidence: the stopped receipt of that session under
 the release's egress policy for that provider. The receipt must also pass the
@@ -211,10 +230,16 @@ and `close-provider` if it reopens) judges its completed PRs together:
   kind. A second job for a PR is refused, not resolved by picking the newest.
 - **Job.** The job is bound to the PR's scope, the fake upstream's head, base
   and merge base, and the current release; its checkpoint is of that job and
-  consumed exactly four sessions.
+  consumed exactly four sessions. It holds no lease, deadline, reservation or
+  pending charge, its charge days are distinct dates, Codex then Claude were
+  audited, and its last attempt is the Claude R2 artifact's attempt and
+  session, requiring provider evidence.
 - **Artifacts.** The checkpoint holds exactly Codex R1, Claude R1, Codex R2
   and Claude R2, once each. Each artifact's job hash, report job ID, snapshot
   hash and config hash are the job's, and no two artifacts share a session.
+  Each artifact's session is the one the job derives for its phase, as the
+  engine does: `NewSession` under the job's protocol limits, an R2 session
+  freezing the stored R1 reports.
 - **Reports.** Each artifact holds exactly the canned backend's report for its
   phase, restated in the harness rather than read back from the run: in R1
   the provider's one synthetic finding at `source.go:1` (title, body, severity
@@ -222,15 +247,27 @@ and `close-provider` if it reopens) judges its completed PRs together:
   finding with that anchor as evidence, no retraction and no coverage, under
   the job's policy, packet, snapshot and config headers. Usage is provider
   accounting, is never published and is not compared. No artifact carries
-  engine-added coverage.
+  engine-added coverage, and each holds exactly the engine's one validation
+  read: `source.go` at the head with the fake upstream's bytes.
 - **Attempts.** The job records each artifact's provider evidence in exactly
   one provider attempt, of the artifact's session and provider, and the
   artifact's source access in exactly one source attempt of that same attempt
-  ID.
+  ID. Each artifact requires provider evidence and passes the validation
+  production runs on stored artifacts before recovery or publication. The job
+  holds no other provider or source attempt, except the allowed interrupted
+  launch's attempt with at most its one source attempt, and no attempt ID
+  repeats.
 - **Launches.** Each artifact session ran in exactly one completed native
   launch of the artifact's provider whose audit evidence equals the
   artifact's by digest, with auth exported and returned and a whole-unit stop.
-  No other launch exists except an allowed interrupted one.
+  Its audit's request hash is the digest of the request production builds for
+  that phase (the derived session, the job's sorted diff paths, the release
+  policy and the provider's profile hints), its report and source hashes are
+  the artifact's report and source receipt, and its code host receipt, native
+  result, guest stage and boot diagnostics pass production's predicates. No
+  other launch exists except an allowed interrupted one, bound to the one job
+  attempt that records its evidence, with the zero report and exactly that
+  attempt's recorded source receipt, or none.
 - **Backend checks.** Each artifact session was checked exactly once outside a
   fault hold by its own provider's fake backend, for its job, round, PR and
   head. Any other check of the job must be one a fault hook held.
@@ -238,8 +275,11 @@ and `close-provider` if it reopens) judges its completed PRs together:
   fixtures require of a canned phase: its backend answered exactly three
   inferences with no failure and no telemetry, and for Codex captured every
   mandatory metadata route with no negotiation reaching it. The phase made the
-  canned read and search (two tool calls). The artifact's stopped receipt
-  counts exactly the inference and metadata requests the backend observed.
+  canned read and search (two tool calls). Before any of this, the artifact's
+  source receipt must pass production's `SourceAccess.validate` for the
+  derived session and record no exhaustion or omission. The artifact's
+  stopped receipt counts exactly the inference and metadata requests the
+  backend observed.
   Every object the source service served the phase is the fake upstream's
   exact bytes of that path at the job head, and `source.go` is among them.
   The reader call count is not fixed: search reads every allowlisted path of
@@ -298,8 +338,11 @@ The root is owned as soon as it is created (or, for an attached run, once its
 layout is checked), before the unit observer starts. A setup failure after
 that point still stops the observer, closes the fake servers after any open
 service and removes a fresh root unless `SFL_E2E_KEEP_FAILED` is set. A
-failed SQLite close or checkpoint of any store handle is a failed check. After
-closing the fake servers, whose `Close` waits for every handler to return, a
+failed SQLite close or checkpoint of any store handle is a failed check.
+Every close, `close-provider`'s included, waits for `Run` to return before it
+cancels `Run`'s own context, so a pass proves that `Close` itself stopped it.
+After closing the fake servers, whose `Close` waits for every handler to
+return, a
 finished run re-reads them: any violation, review POST, remote review, Git
 exchange, model session or backend request that the final judgment did not
 see is a failed check. Token mints and the API request tally are not
@@ -311,6 +354,28 @@ has closed every handle and removed (or deliberately retained) the root, so a
 cleanup failure is recorded as `Passed: false`. The result goes to a synced
 temporary in the same directory, which is renamed over `<case>.json`; a failed
 write leaves no result rather than an earlier one.
+
+### Record inventory
+
+Every durable record the harness reads, the production validator it applies
+before using a field, what it compares, what it leaves open and why, and the
+rule that refuses an extra entry.
+
+| Record | Validator applied | Fields compared | Unconstrained (reason) | Exact set |
+| --- | --- | --- | --- | --- |
+| Native `unit.json` | production `readUnit`: private read, strict decode, payload, stub, possible lifecycle | version, binding (launch, derived containment), unit, payload, stub, manifest hash, boot ID, process boot ID, all five lifecycle flags | manager owner, start and stop jobs, PID, cgroup (host-assigned; `readUnit` checks their shape and the unit cgroup); invocation ID and start ticks beyond shape (systemd- and kernel-assigned) | one per launch directory; every root entry projected |
+| `native-audit.json` | exact `persistAudit` encoding; production request validity, code host and native-result predicates, guest stages, failure kinds | version, binding, request, manifest, report and source hashes, provider evidence (digest), completion, stage, failure, auth exported and returned | code host hashes and sizes, native result hash, guest stage and boot diagnostics beyond production's predicates (guest-internal, not derivable on the host) | one per launch |
+| Provider evidence (audit, artifact, attempt) | production stopped and completed receipt checks; stored-artifact evidence check | policy (release), session, inference and metadata counts (backend), digest across audit, artifact and attempt | byte, forwarded, response, negotiation and refresh counters within production's bounds (transport timing) | one per attempt |
+| Source receipts (artifact, attempt) | production `SourceAccess.validate` for the derived session | version, session, tool calls, every read (fixture bytes at head), no exhaustion or omission, digest across artifact, attempt and audit | reader calls and bytes within production's bounds (search reads every allowlisted path) | one per artifact attempt; at most one for an interrupted attempt |
+| Durable job | none in production's loader | job, scope, request, state, checkpoint hash and count, lease, deadline, reservation, pending charge, charge days (distinct dates), audited providers, last attempt (ID, provider, round, session, evidence requirement) | creation time and charge-day values (wall clock) | one per expected PR, no other job |
+| Artifacts | engine session derivation; stored-artifact evidence check | job hash, session (derived), report (canned), coverage (none), validation reads (one), source receipt, provider evidence, evidence requirement | report usage (provider accounting, never published) | exactly Codex R1, Claude R1, Codex R2, Claude R2 |
+| Provider and source attempts | production receipt checks | ID (an artifact's or the interrupted launch's), evidence and receipt by digest | none | the artifacts' attempts plus the allowed interrupted one |
+| Write intents | none | ID, kind, scope, request, generation, job and checkpoint hashes, snapshot, document (canned render), body hash, marker, state, receipt ID | creation and receipt times (wall clock) | one review intent per PR, no other write |
+| Native requests | none | PR, ID, origin actor, kind and role, admitted, removed | requester, bot, snapshot, creation time and the origin's policy, pull, comment, body hash and event times (trigger provenance production checks at admission) | the expected request per PR, none elsewhere |
+| Source owner records | production strict canonical journal reader | attempt, unit, invocation, request and source request hashes, stub, release, runtime, snapshot, lifecycle flags, grant, empty `StopBoot`, boot ID | channel ID and generation (per-attempt nonces, distinct per job in `isolation`); manager owner, start job, birth, process and cgroup (host-assigned; production checks their consistency) | one per expected job |
+| Archive exports | production archive journal reader | attempt, state (`staged`), request hash, release, runtime, snapshot, packet hash (job packet) | wire hash and size (restore verifies them against the payload) | one per source record |
+| Released private copy | production store reread | the whole job: only state, lease, deadline, reservation and pending charge differ | none | one job, no write |
+| Fake GitHub, model and Git observations | harness-owned | POSTs, reviews (marker, canonical document hash, inline), Git exchanges (operation, wants, status, journal sample), session checks and backend counts | token mints and API tallies after settling (a wedged handle keeps its owner) | settled observations equal the judged ones |
 
 ## Admission rule
 
@@ -362,11 +427,14 @@ a time and only with at least 2.5 GB of memory available, from source and
 native images, a source stub and a `reviewer.test` all built from `daac99c`,
 which is this branch on `main` with #249, #252, #253 and #254. Both binaries
 carried `vcs.revision=daac99c…` and `vcs.modified=false`, and the release hash
-was `a95abc09aa76`. Every case passed with no failures under the checks above,
-including the stored reports and published document judged against the canned
+was `a95abc09aa76`. Every case passed with no failures under that revision's
+checks, including the stored reports and published document judged against
+the canned
 backend reports and production's renderer, the quiesced unit sampler, and the
 synthetic auth returned unchanged. No unit or E2E root remained afterwards.
-Only this document changed after `daac99c`.
+After `daac99c`, the checks were tightened in `1c8ae56` (see Record
+inventory), and the cases are re-measured at the new head; the results below
+are `daac99c`'s.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
@@ -511,9 +579,9 @@ design, and the case confirms it end to end:
   durably recorded stopped provider evidence satisfies the store, so an
   explicit trusted supervisor could release the lease. A nil error is not
   taken as the release: the copy is reread through a fresh handle and must
-  hold the job as `auth_failed`, unleased and not outstanding, with its job,
-  charged session, attempt ID and recorded attempt evidence unchanged, and no
-  other job or write. The service composition
+  hold the job as `auth_failed`, unleased and not outstanding, with every
+  other field unchanged (job, charged session, attempt, source and provider
+  attempt records), and no other job or write. The service composition
   never calls it, and the Codex auth fence would still need an explicit
   stopped-return or retirement path.
 
