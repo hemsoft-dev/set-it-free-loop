@@ -355,41 +355,34 @@ For `close-provider`, run `close-provider-reopen` next in a new process with
 the same lock hold. State lives under a fresh `/tmp/sfl-e2e-<nonce>` root,
 which a passing run removes. `SFL_E2E_KEEP_FAILED=1` retains a failed root.
 
-## Measured at `b876290`
+## Measured at `daac99c`
 
 On October 23, 2026, each case ran on mini under the shared VM lock, one VM at
 a time and only with at least 2.5 GB of memory available, from source and
-native images, a source stub and a `reviewer.test` all built from `b876290`,
-which is this branch rebased onto `main` with #252, #253 and #254. Both
-binaries carried `vcs.revision=b876290…` and `vcs.modified=false`, and the
-release hash was `67a0b7a9557e`. Every case passed with no failures under the
-checks in place at `b876290`, including the launch manifest and stub binding, the exact model
-exchange counts, the served reader bytes, the re-read `ReleaseStopped` state
-and the source lifecycle order sampled at the upload-pack. No unit or E2E root
-remained afterwards. The checks were tightened afterwards in `13541a4`
-(review round 9: canned report and document content, the joined unit
-sampler, the quiesced fake servers and semantic auth disposition), so the
-cases are re-measured at the new head. The canned document the new check
-expects reproduces the body hash of every confirmed intent recorded at
-`b876290` (`review`, `close-capture`, `close-publish` and both `isolation`
-PRs), with the trigger's polling sequence or comment ID, which the result does
-not record, supplied as 1 and 5001.
+native images, a source stub and a `reviewer.test` all built from `daac99c`,
+which is this branch on `main` with #249, #252, #253 and #254. Both binaries
+carried `vcs.revision=daac99c…` and `vcs.modified=false`, and the release hash
+was `a95abc09aa76`. Every case passed with no failures under the checks above,
+including the stored reports and published document judged against the canned
+backend reports and production's renderer, the quiesced unit sampler, and the
+synthetic auth returned unchanged. No unit or E2E root remained afterwards.
+Only this document changed after `daac99c`.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
-| `review` | yes | 26.6 | 40 | 1 / 4 |
-| `close-publish` | yes | 27.6 | 47 | 1 / 4 |
-| `close-provider` | yes | 13.2 | 27 | 1 / 1 |
-| `close-provider-reopen` | yes | 38.6 | 24 | 0 / 0 |
-| `close-capture` | yes | 29.5 | 52 | 1 / 4 |
-| `isolation` | yes | 48.8 | 73 | 2 / 8 |
+| `review` | yes | 25.6 | 46 | 1 / 4 |
+| `close-publish` | yes | 23.5 | 53 | 1 / 4 |
+| `close-provider` | yes | 12.2 | 31 | 1 / 1 |
+| `close-provider-reopen` | yes | 38.6 | 28 | 0 / 0 |
+| `close-capture` | yes | 21.4 | 58 | 1 / 4 |
+| `isolation` | yes | 42.7 | 81 | 2 / 8 |
 
-Earlier runs at `c29e563`, `3bbf701`, `e144bc5` and `0cd2152`, before the later
-checks, also passed every case. `close-provider` took the branch where `Close`
-reports `ErrWorkerStopPending`; the branch where it proves completion has not
-run on a host. The sections below are pre-rebase history only: the commits they
-name are not ancestors of this branch, and their checks predate the attestation
-and binding rules above.
+Earlier runs at `c29e563`, `3bbf701`, `e144bc5`, `0cd2152` and `b876290`,
+before the later checks, also passed every case. `close-provider` took the
+branch where `Close` reports `ErrWorkerStopPending`; the branch where it proves
+completion has not run on a host. The sections below are pre-rebase history
+only: the commits they name are not ancestors of this branch, and their checks
+predate the attestation and binding rules above.
 
 ## Pre-rebase history: measured results at `3140f0a`
 
