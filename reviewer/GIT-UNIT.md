@@ -122,11 +122,17 @@ persists a `Birth` record after the accepted start-job reply and before waiting
 for that job. It binds the accepted job to the observed invocation, unit object
 path and actual cgroup/hierarchy, with stable manager, boot, fixed properties
 and repeated observations. The first nonzero invocation must be observed while
-that same accepted job is attached. Observing only empty properties before the
-job disappears cannot bind a later invocation, even at the same unit path.
-If the job completes before that correlation is observed, the attempt remains
-uncertain. It cannot grant, replay or adopt a later invocation. A missing or
-failed birth write never arms a grant or repeats the start.
+that same accepted job is attached, or job-free after the manager's job tracker
+already holds that job's `done` JobRemoved result with no other job removed on
+the unit since `StartTransientUnit`. A `Type=exec` start job can finish before a
+starved owner first observes the unit. systemd emits JobRemoved before detaching
+the job, and the bus delivers that signal before any later reply, so a job-free
+observation follows every such signal. The check neither waits nor consumes the
+result. Observing only empty properties before the job disappears cannot bind
+a later invocation, even at the same unit path. Without that proof, including a
+failed, unknown or other job, the attempt remains uncertain. It cannot grant,
+replay or adopt a later invocation. A missing or failed birth write never arms a
+grant or repeats the start.
 
 The accepted start is asynchronous. Birth capture waits within the existing
 manager/caller deadline for that job's initially empty invocation or cgroup to

@@ -18,10 +18,11 @@ It captures the bus ID and systemd's unique owner, then targets that owner.
 JobRemoved subscription precedes start. Only a pending owned unit or its bound
 job path can enter the bounded result cache. Unrelated job traffic is ignored.
 Early signals are retained until the method reply binds the exact job; consumed
-or superseded results are removed. Recovery termination does not depend on
-consuming an abandoned start result. Malformed, failed or unknown results cannot
-become successful launch evidence. Recovery takes one unit reference to prevent
-GC during stop observation.
+or superseded results are removed. Another job removed on a tracked unit marks
+it foreign; this refuses only the settled-job birth correlation, never WaitJob.
+Recovery termination does not depend on consuming an abandoned start result.
+Malformed, failed or unknown results cannot become successful launch evidence.
+Recovery takes one unit reference to prevent GC during stop observation.
 Concurrent and repeated polls reuse its independent, bounded acquisition lifetime;
 each caller, including its creator, keeps its own cancellation deadline. Manager
 close cancels and joins these metadata requests. Unknown acquisition replies stay
