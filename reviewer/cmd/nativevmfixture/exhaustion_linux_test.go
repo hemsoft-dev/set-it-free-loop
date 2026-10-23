@@ -105,6 +105,15 @@ func TestTurnAndSourceFloodChecks(t *testing.T) {
 	if allPass(exhaustionChecks(short)) {
 		t.Fatal("turn flood ended before the bound accepted")
 	}
+	// The final turn's source call must reach the broker, even though its
+	// result never returns to the model.
+	lastLost := codex
+	lastLostSource := *codex.Source
+	lastLostSource.ToolCalls = 23
+	lastLost.Source = &lastLostSource
+	if allPass(exhaustionChecks(lastLost)) {
+		t.Fatal("turn flood accepted without the final turn's broker call")
+	}
 
 	source := exhaustionBase("codex-source-flood")
 	source.Err, source.AuditComplete = nil, true
@@ -157,9 +166,26 @@ func TestOversizeAndCodeHostChecks(t *testing.T) {
 	}
 
 	code := exhaustionBase("codex-code-output-flood")
-	code.CodeHost, _ = json.Marshal(codeHostAudit{Failed: true, Stopped: true, Stage: "wait"})
+	// Measured receipt: the relay stopped within one chunk of 8 MiB.
+	code.CodeHost, _ = json.Marshal(codeHostAudit{Failed: true, Stopped: true, Stage: "wait", OutputBytes: 8356210})
 	if !allPass(exhaustionChecks(code)) {
 		t.Fatal("refused code-host exchange rejected", exhaustionChecks(code))
+	}
+	// An unrelated earlier failure never exercised the relay bound.
+	for _, unrelated := range []any{nil, codeHostAudit{Failed: true, Stopped: true, Stage: "start"}, codeHostAudit{Failed: true, Stopped: true, OutputBytes: 9 << 20}} {
+		changed := code
+		changed.CodeHost = nil
+		if unrelated != nil {
+			changed.CodeHost, _ = json.Marshal(unrelated)
+		}
+		if allPass(exhaustionChecks(changed)) {
+			t.Fatal("output flood accepted without reaching the relay limit", unrelated)
+		}
+	}
+	memory := exhaustionBase("codex-code-memory")
+	memory.CodeHost = nil
+	if !allPass(exhaustionChecks(memory)) {
+		t.Fatal("lost code-host record rejected for the memory case", exhaustionChecks(memory))
 	}
 	code.CodeHost, _ = json.Marshal(codeHostAudit{Stopped: true, RelayComplete: true, Stage: "complete"})
 	if allPass(exhaustionChecks(code)) {

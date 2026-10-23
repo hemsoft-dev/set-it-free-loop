@@ -410,8 +410,13 @@ func runNativeHostile(c config) error {
 	receipt.Passed, receipt.HostContained = passed, contained
 	data, _ := json.MarshalIndent(receipt, "", "  ")
 	if hits := f.CanaryHits(data, secrets); hits != 0 {
-		receipt.CanaryHits.Receipt, receipt.Passed, receipt.HostContained, receipt.Observation, receipt.CodeHost = hits, false, false, f.HostileObservation{Case: hc.Name, Kind: hc.Kind}, nil
+		// Drop every model-influenced field before persisting, then rescan.
+		receipt.CanaryHits.Receipt, receipt.Passed, receipt.HostContained, receipt.Observation, receipt.CodeHost, receipt.ReportCoverage = hits, false, false, f.HostileObservation{Case: hc.Name, Kind: hc.Kind}, nil, nil
 		data, _ = json.MarshalIndent(receipt, "", "  ")
+		if f.CanaryHits(data, secrets) != 0 {
+			// Still disclosing: persist only the fixed failure identity.
+			data, _ = json.MarshalIndent(hostileReceipt{Version: 1, Purpose: "native-fake-hostile", RunnerSourceHead: sourceHead, RunnerSourceTree: sourceTree, ImageSourceHead: c.ImageSourceHead, Case: hc.Name, Kind: hc.Kind, Provider: c.Provider, FakeOnly: true, State: "failed", CanaryHits: hostileCanaryHits{Receipt: hits}}, "", "  ")
+		}
 	}
 	if os.WriteFile(filepath.Join(c.Root, "result.json"), append(data, '\n'), 0600) != nil {
 		return errors.New("hostile receipt failed")

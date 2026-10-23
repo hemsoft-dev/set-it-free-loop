@@ -13,6 +13,10 @@ import (
 )
 
 // codeHostAudit is the nonsecret part of the guest's private code-host record.
+// codeHostRelayLimit is the code host's 8 MiB output relay bound; a refused
+// flood stops within one relay chunk of it (measured 8,356,210 bytes).
+const codeHostRelayLimit, codeHostRelaySlack = int64(8 << 20), int64(64 << 10)
+
 type codeHostAudit struct {
 	Failed, Stopped, RelayComplete bool
 	InputBytes, OutputBytes        int64
@@ -114,7 +118,9 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 		// Claude stops itself at --max-turns, equal to the bound; Codex has no
 		// turn limit and the guard must refuse the next inference.
 		checks["turn-bound-reached"] = pa != nil && in.Counts.Inference == limit && pa.InferenceRequests == limit && (pa.Exhausted || !pa.Failed)
-		checks["every-turn-used-source"] = in.Observation.SourceResults >= in.Counts.Inference-1 && in.Source != nil && in.Source.ToolCalls >= in.Counts.Inference-1
+		// The final turn's result never returns to the model, but its call
+		// must still reach the broker: the broker proves all limit calls.
+		checks["every-turn-used-source"] = in.Observation.SourceResults >= limit-1 && in.Source != nil && in.Source.ToolCalls == limit
 	case "codex-source-flood":
 		calls := in.Limits.ReaderCalls
 		checks["tool-call-bound"] = in.Source != nil && in.Source.ToolCalls == calls && in.Source.Exhausted && coverageHas(in.Source.Coverage, "source tool-call limit exhausted")
@@ -157,13 +163,22 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 		checks["ended-before-deadline"] = in.Elapsed < in.Limits.Timeout
 		checks["typed-or-validated"] = in.typedFailure() || in.Err == nil && in.AuditComplete
 		checks["no-source-access"] = in.noSource()
-	case "codex-code-memory", "codex-code-output-flood":
+	case "codex-code-memory":
 		var host codeHostAudit
 		decoded := len(in.CodeHost) != 0 && json.Unmarshal(in.CodeHost, &host) == nil
 		checks["typed-failure"] = in.typedFailure()
 		// A lost finished record carries no code-host receipt; the refusal is
 		// then the typed failure itself, never an accepted exchange.
 		checks["code-host-not-accepted"] = len(in.CodeHost) == 0 || string(in.CodeHost) == "null" || decoded && host.Stopped && (host.Failed || !host.RelayComplete)
+		checks["no-source-access"] = in.noSource()
+	case "codex-code-output-flood":
+		var host codeHostAudit
+		decoded := len(in.CodeHost) != 0 && json.Unmarshal(in.CodeHost, &host) == nil
+		checks["typed-failure"] = in.typedFailure()
+		// The flood must actually reach the 8 MiB relay bound: a decoded,
+		// stopped, refused receipt whose relayed output is within one relay
+		// chunk of the limit, never an unrelated earlier failure.
+		checks["relay-limit-reached"] = decoded && host.Stopped && (host.Failed || !host.RelayComplete) && host.OutputBytes > codeHostRelayLimit-codeHostRelaySlack && host.OutputBytes <= codeHostRelayLimit
 		checks["no-source-access"] = in.noSource()
 	default:
 		checks["known-exhaustion-case"] = false
