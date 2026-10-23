@@ -81,12 +81,9 @@ def run_fixture(command, environment, log, timeout, units=None, state=None):
         # stop it before the lock is released.
         return code, False, units.stop_new_units(before, owned())
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        killed = sibling("native-vm-hostile").kill_tree(process.pid)
         process.wait()
-        return None, True, units.stop_new_units(before, owned())
+        return None, True, units.stop_new_units(before, owned()) and killed
 
 
 def main():

@@ -39,6 +39,30 @@ def running(pid):
     return state != "Z"
 
 
+def nested_case(script, marker):
+    """Write a case that starts a child in its own session, as native-vm-fake.py
+    starts nativevmfixture, and a grandchild in a further session. The marker
+    lists both pids once both exist."""
+    script.write_text("import os,subprocess,sys,time\n"
+                      "grand=['import subprocess,sys,time',\n"
+                      "       'g=subprocess.Popen([sys.executable,\"-c\",\"import time; time.sleep(120)\"], start_new_session=True)',\n"
+                      "       'print(g.pid, flush=True)', 'time.sleep(120)']\n"
+                      "child=subprocess.Popen([sys.executable,'-c','\\n'.join(grand)], start_new_session=True, stdout=subprocess.PIPE)\n"
+                      "grandchild=child.stdout.readline().strip().decode()\n"
+                      f"open({str(marker)!r}+'.tmp','w').write(f'{{child.pid}} {{grandchild}}')\n"
+                      f"os.rename({str(marker)!r}+'.tmp',{str(marker)!r})\n"
+                      "time.sleep(120)\n")
+
+
+def all_stopped(marker):
+    pids = [int(pid) for pid in marker.read_text().split()]
+    for _ in range(100):
+        if not any(running(pid) for pid in pids):
+            return len(pids) == 2
+        time.sleep(0.05)
+    return False
+
+
 class HostileMatrixTests(unittest.TestCase):
     def test_case_list_matches_the_go_fixture(self):
         source = (Path(__file__).resolve().parent.parent/"internal"/"nativefixture"/"hostile_linux.go").read_text()
@@ -139,11 +163,7 @@ class HostileMatrixTests(unittest.TestCase):
             # and the timeout leaves ample room for interpreter startup under
             # load. A missing marker is reported as setup failure only after
             # the group is known to be gone.
-            script.write_text("import os,subprocess,sys,time\n"
-                              "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(120)'])\n"
-                              f"open({str(marker)!r}+'.tmp','w').write(str(child.pid))\n"
-                              f"os.rename({str(marker)!r}+'.tmp',{str(marker)!r})\n"
-                              "time.sleep(120)\n")
+            nested_case(script, marker)
             args = type("Args", (), {"image": root, "go": "go", "module_cache": root})()
             saved = (module.CASE_TIMEOUT, module.native_units, module.stop_new_units)
             stopped = []
@@ -156,16 +176,12 @@ class HostileMatrixTests(unittest.TestCase):
             finally:
                 module.CASE_TIMEOUT, module.native_units, module.stop_new_units = saved
             self.assertGreaterEqual(time.monotonic()-start, 14, "case returned before its timeout")
-            self.assertEqual((row["verdict"], row["timed_out"], row["abort"], row["unit_stopped_independently"]), ("fail", True, True, True))
+            self.assertEqual((row["verdict"], row["timed_out"], row["abort"], row["unit_stopped_independently"], row["process_tree_killed"]),
+                             ("fail", True, True, True, True))
             self.assertEqual(stopped, [set()])
             if not marker.exists():
                 self.fail("setup: case did not start its child within the patched timeout")
-            child = int(marker.read_text())
-            for _ in range(100):
-                if not running(child):
-                    break
-                time.sleep(0.05)
-            else:
+            if not all_stopped(marker):
                 self.fail("timed-out case left its child running")
 
     def _receipt_case(self, root, state, unit_props=None, exit_code=0):
@@ -293,11 +309,7 @@ class HostileMatrixTests(unittest.TestCase):
             root = Path(directory)
             marker = root/"child.pid"
             script = root/"slow.py"
-            script.write_text("import os,subprocess,sys,time\n"
-                              "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(120)'])\n"
-                              f"open({str(marker)!r}+'.tmp','w').write(str(child.pid))\n"
-                              f"os.rename({str(marker)!r}+'.tmp',{str(marker)!r})\n"
-                              "time.sleep(120)\n")
+            nested_case(script, marker)
             calls = []
             units = type("Units", (), {"native_units": staticmethod(lambda: {"sfl-alpha-before.service"}),
                                        "stop_new_units": staticmethod(lambda before, owned: calls.append(before) or True)})
@@ -307,12 +319,7 @@ class HostileMatrixTests(unittest.TestCase):
             self.assertEqual(calls, [{"sfl-alpha-before.service"}])
             if not marker.exists():
                 self.fail("setup: fixture did not start its child within the timeout")
-            child = int(marker.read_text())
-            for _ in range(100):
-                if not running(child):
-                    break
-                time.sleep(0.05)
-            else:
+            if not all_stopped(marker):
                 self.fail("standalone timeout left the fixture's child running")
             with (root/"log2").open("xb") as log:
                 self.assertEqual(fake.run_fixture([sys.executable, "-c", "pass"], dict(os.environ), log, 15, units), (0, False, None))

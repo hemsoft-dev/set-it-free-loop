@@ -306,9 +306,12 @@ python3 -B reviewer/scripts/native-vm-hostile.py --run-fake-only \
 To run one case, add `--only NAME`, for example `--only codex-code-probe`.
 Use the matrix runner for single cases too: it checks the unit independently
 and cleans up after every abnormal exit. `native-vm-fake.py` runs its fixture
-in a separate process group. On its own timeout it kills that group, then
-kills every native unit started during the run and requires each inactive,
-recording `timeout_units_stopped` in its receipt. Both runners treat any new
+in a separate session. On either runner's timeout, the runner freezes the
+timed-out process and every descendant, in any session, then kills each of
+them and their process groups and requires all gone. It then kills every
+native unit started during the run and requires each inactive.
+`native-vm-fake.py` records `timeout_units_stopped` in its receipt, and the
+matrix row records `process_tree_killed`. Both runners treat any new
 native unit as their own, so hold the shared VM lock and run one at a time.
 
 Unit tests run without KVM:

@@ -140,6 +140,62 @@ def hold_fixture_lock():
     return handle
 
 
+def process_table():
+    """Map each visible pid to (state, parent pid, process group)."""
+    table = {}
+    for entry in os.scandir("/proc"):
+        if entry.name.isdigit():
+            try:
+                fields = Path("/proc", entry.name, "stat").read_text().rsplit(")", 1)[1].split()
+                table[int(entry.name)] = (fields[0], int(fields[1]), int(fields[2]))
+            except (OSError, IndexError, ValueError):
+                continue
+    return table
+
+
+def kill_tree(root, deadline=10):
+    """Kill root and every descendant, including those in nested sessions,
+    and each of their process groups. Return whether all are gone.
+
+    The tree is frozen with SIGSTOP first, so no member exits or forks and
+    reparents a child outside the walk before the kill."""
+    stopped = set()
+    for _ in range(100):
+        table = process_table()
+        tree, grown = {root} & set(table), True
+        while grown:
+            grown = {pid for pid, (_, parent, _) in table.items() if parent in tree} - tree
+            tree |= grown
+        fresh = tree - stopped
+        if not fresh:
+            break
+        for pid in fresh:
+            try:
+                os.kill(pid, signal.SIGSTOP)
+            except ProcessLookupError:
+                pass
+        stopped |= fresh
+    groups = {table[pid][2] for pid in stopped if pid in table} - {os.getpgrp()}
+    for group in groups:
+        try:
+            os.killpg(group, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    for pid in stopped:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    end = time.monotonic() + deadline
+    while True:
+        table = process_table()
+        alive = {pid for pid in stopped | {root} if pid in table and table[pid][0] != "Z"}
+        alive |= {pid for pid, (state, _, group) in table.items() if group in groups and state != "Z"}
+        if not alive or time.monotonic() > end:
+            return not alive
+        time.sleep(0.05)
+
+
 def state_roots(anchor=Path("/tmp")):
     return set(anchor.glob(STATE_GLOB))
 
@@ -184,10 +240,13 @@ def run_case(script, args, provider, name, output):
         except subprocess.TimeoutExpired:
             # Kill the whole case, not only the wrapper, then prove its units
             # stopped before the matrix reports and stops.
-            os.killpg(process.pid, signal.SIGKILL)
+            # native-vm-fake.py runs the fixture in its own session, so the
+            # wrapper's group alone does not reach it.
+            killed = kill_tree(process.pid)
             process.wait()
             return {"provider": provider, "case": name, "verdict": "fail", "timed_out": True,
-                    "exit_code": None, "unit_stopped_independently": stop_new_units(before, owned()), "abort": True}
+                    "exit_code": None, "process_tree_killed": killed,
+                    "unit_stopped_independently": stop_new_units(before, owned()), "abort": True}
     completed = subprocess.CompletedProcess(command, returncode)
     try:
         receipt = json.loads((output/"receipt.json").read_text())
