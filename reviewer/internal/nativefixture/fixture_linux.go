@@ -47,6 +47,31 @@ func New(s r.Session, negative bool) (*Backend, r.EgressPolicy, error) {
 	if s.Validate() != nil || s.Snapshot.Head != head {
 		return nil, r.EgressPolicy{}, errors.New("invalid fixed fake session")
 	}
+	return newBackend(s, negative)
+}
+
+// NewForSnapshot serves a session whose captured head is a real synthetic Git
+// commit, such as one acquired through the source VM. The source text, path and
+// canned protocol are unchanged: the caller's repository must contain exactly
+// this fixture's source.go at that head. It never reads a repository or auth.
+func NewForSnapshot(s r.Session) (*Backend, r.EgressPolicy, error) {
+	if s.Validate() != nil {
+		return nil, r.EgressPolicy{}, errors.New("invalid fake session")
+	}
+	return newBackend(s, false)
+}
+
+// Policy is the fixed fake egress policy for a session's provider. Its limits
+// depend only on the provider and the session's turn bound, so one policy can
+// be pinned in a release for every session of a configuration.
+func Policy(s r.Session) r.EgressPolicy {
+	if s.Identity.Provider == r.Codex {
+		return codexPolicy(s)
+	}
+	return claudePolicy(s)
+}
+
+func newBackend(s r.Session, negative bool) (*Backend, r.EgressPolicy, error) {
 	b := &Backend{Session: s}
 	if s.Identity.Provider == r.Codex {
 		mode := "source"
@@ -70,7 +95,7 @@ func New(s r.Session, negative bool) (*Backend, r.EgressPolicy, error) {
 func sourceReport(s r.Session) r.Report {
 	report := r.Report{JobID: s.JobID, PolicyVersion: s.PolicyVersion, PacketHash: s.PacketHash, Provider: s.Identity.Provider, Round: s.Round, SnapshotHash: s.SnapshotHash, ConfigHash: s.ConfigHash, Findings: []r.Finding{}, Judgments: []r.Judgment{}, Retractions: []string{}, Coverage: []r.Coverage{}}
 	if s.Round == 1 {
-		report.Findings = append(report.Findings, r.Finding{ID: string(s.Identity.Provider) + ":fixture", Title: "Synthetic finding", Body: "Protocol fixture only.", Severity: 2, Anchor: r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}})
+		report.Findings = append(report.Findings, r.Finding{ID: string(s.Identity.Provider) + ":fixture", Title: "Synthetic finding", Body: "Protocol fixture only.", Severity: 2, Anchor: r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: s.Snapshot.Head}})
 		return report
 	}
 	focus := map[string]bool{}

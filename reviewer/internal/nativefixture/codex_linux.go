@@ -46,7 +46,7 @@ func outputFor(value any, id string) (any, bool) {
 	}
 	return output, count == 1
 }
-func verifiedSourceOutput(value any, id string) bool {
+func verifiedSourceOutput(value any, id, revision string) bool {
 	parts, ok := value.([]any)
 	if !ok {
 		return false
@@ -82,7 +82,7 @@ func verifiedSourceOutput(value any, id string) bool {
 			}
 		case "fixture_search":
 			matches, err := r.DecodeStrict[[]r.Anchor]([]byte(result.Content[0].Text), 1<<16)
-			if err != nil || len(matches) != 1 || matches[0] != (r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}) {
+			if err != nil || len(matches) != 1 || matches[0] != (r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: revision}) {
 				return false
 			}
 		default:
@@ -279,7 +279,7 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		if b.mode == "undeclared-patch" || b.mode == "guarded-undeclared-patch" {
 			b.negativeOutput = string(data)
 		} else {
-			if !verifiedSourceOutput(value, previousID) {
+			if !verifiedSourceOutput(value, previousID, b.session.Snapshot.Head) {
 				deny("missing source result")
 				return
 			}
@@ -298,10 +298,10 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		patch := "*** Begin Patch\n*** Add File: /work/undeclared-canary.txt\n+synthetic forbidden write\n*** End Patch\n"
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "custom_tool_call", "call_id": "fixture_patch", "namespace": "functions", "name": "apply_patch", "input": patch}})
 	} else if b.mode == "source" && b.calls <= 2 {
-		id, program := "fixture_read", `text(ALL_TOOLS.map(t=>t.name));text(await tools.mcp__sfl_source__read({revision:"`+head+`",path:"source.go"}));`
+		id, program := "fixture_read", `text(ALL_TOOLS.map(t=>t.name));text(await tools.mcp__sfl_source__read({revision:"`+b.session.Snapshot.Head+`",path:"source.go"}));`
 		if b.calls == 2 {
 			id = "fixture_search"
-			program = `text(await tools.mcp__sfl_source__search({revision:"` + head + `",needle:"immutable",max_results:5}));`
+			program = `text(await tools.mcp__sfl_source__search({revision:"` + b.session.Snapshot.Head + `",needle:"immutable",max_results:5}));`
 		}
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "custom_tool_call", "call_id": id, "namespace": "functions", "name": "exec", "input": program}})
 	} else {

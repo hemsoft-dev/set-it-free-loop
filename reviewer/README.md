@@ -127,7 +127,9 @@ executable and independent guest/host receipts. The [native VM composition](NATI
 code-host isolation, auth and egress. The [durable evaluation runner](EVALUATION-RUNNER.md)
 adds natural six-arm scheduling and stopped native recovery. Their model-free
 fixtures do not qualify aggregate acquisition/reader/provider/publisher
-containment or authorize activation. The
+containment or authorize activation. The opt-in [aggregate E2E qualification](E2E-QUALIFICATION.md)
+composes startup, source VM acquisition, both native providers and COMMENT
+publication on one host with fakes only, and records its crash-point findings. The
 [dated activation checklist](../docs/research/2026-10-21-alpha-activation-checklist.md)
 records the remaining evidence, including known host launch failures.
 

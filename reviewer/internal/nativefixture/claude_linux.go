@@ -106,18 +106,18 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		b.hostileTurn(w, body)
 		return
 	}
-	if b.calls == 2 && !claudeResult(body, "sfl_fixture_read_1") || b.calls == 3 && !claudeResult(body, "sfl_fixture_search_1") {
+	if b.calls == 2 && !claudeResult(body, "sfl_fixture_read_1", b.s.Snapshot.Head) || b.calls == 3 && !claudeResult(body, "sfl_fixture_search_1", b.s.Snapshot.Head) {
 		b.failures++
 
 		http.Error(w, "missing actual source result", 500)
 		return
 	}
 	toolID := "sfl_fixture_read_1"
-	var input any = map[string]string{"revision": head, "path": "source.go"}
+	var input any = map[string]string{"revision": b.s.Snapshot.Head, "path": "source.go"}
 	if b.calls == 2 {
 		name = "mcp__sfl-source__search"
 		toolID = "sfl_fixture_search_1"
-		input = map[string]any{"revision": head, "needle": "immutable", "max_results": 5}
+		input = map[string]any{"revision": b.s.Snapshot.Head, "needle": "immutable", "max_results": 5}
 	}
 	if b.calls > 2 {
 		name = "StructuredOutput"
@@ -158,7 +158,7 @@ func claudeToolTurn(w http.ResponseWriter, model string, call int, blocks []clau
 	send("message_delta", map[string]any{"delta": map[string]any{"stop_reason": "tool_use", "stop_sequence": nil}, "usage": map[string]int{"output_tokens": 1}})
 	send("message_stop", map[string]any{})
 }
-func claudeResult(value any, id string) bool {
+func claudeResult(value any, id, revision string) bool {
 	body, ok := value.(map[string]any)
 	if !ok {
 		return false
@@ -205,7 +205,7 @@ func claudeResult(value any, id string) bool {
 				}
 			case "sfl_fixture_search_1":
 				matches, err := r.DecodeStrict[[]r.Anchor]([]byte(data), 1<<16)
-				if err != nil || len(matches) != 1 || matches[0] != (r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: head}) {
+				if err != nil || len(matches) != 1 || matches[0] != (r.Anchor{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: revision}) {
 					return false
 				}
 			default:
