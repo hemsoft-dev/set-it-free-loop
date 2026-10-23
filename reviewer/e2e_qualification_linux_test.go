@@ -45,9 +45,10 @@ import (
 //
 // Required: SFL_E2E_SOURCE_IMAGE, SFL_E2E_SOURCE_STUB, SFL_E2E_NATIVE_IMAGE and
 // SFL_E2E_CASE (review, isolation, close-capture, close-provider,
-// close-provider-reopen, close-publish). close-provider-reopen is a second
-// process that attaches to the root retained by close-provider through
-// SFL_E2E_ATTACH, as a restarted service would. SFL_E2E_EVIDENCE optionally
+// close-provider-reopen, close-provider-recover, close-publish).
+// close-provider-reopen and close-provider-recover are second processes that
+// attach to the root retained by close-provider through SFL_E2E_ATTACH, as a
+// restarted service would; run one of them per retained root. SFL_E2E_EVIDENCE optionally
 // names an existing private directory that receives a nonsecret JSON result.
 // Run under the shared VM lock.
 func TestE2EQualification(t *testing.T) {
@@ -56,7 +57,7 @@ func TestE2EQualification(t *testing.T) {
 	if sourceImage == "" || sourceStub == "" || nativeImage == "" || scenario == "" {
 		t.Skip("explicit source image, exact-head source stub, native image and case required")
 	}
-	cases := map[string]func(*e2eEnv){"review": e2eReview, "isolation": e2eIsolation, "close-capture": e2eCloseCapture, "close-provider": e2eCloseProvider, "close-provider-reopen": e2eCloseProviderReopen, "close-publish": e2eClosePublish}
+	cases := map[string]func(*e2eEnv){"review": e2eReview, "isolation": e2eIsolation, "close-capture": e2eCloseCapture, "close-provider": e2eCloseProvider, "close-provider-reopen": e2eCloseProviderReopen, "close-provider-recover": e2eCloseProviderRecover, "close-publish": e2eClosePublish}
 	run, ok := cases[scenario]
 	if !ok {
 		t.Fatal("unknown E2E case", scenario)
@@ -464,6 +465,14 @@ func e2eNativeManifest(t *testing.T, image string) e2eNativeImage {
 // restarted process would, then explicitly refreshes and starts Run.
 func (e *e2eEnv) open(label string) {
 	e.t.Helper()
+	e.openIdle(label)
+	e.startRun(label)
+}
+
+// openIdle composes the public startup without refreshing or running, the
+// state in which an operator may invoke stopped-provider recovery.
+func (e *e2eEnv) openIdle(label string) {
+	e.t.Helper()
 	store, err := r.OpenStore(e.storePath, e2eEnrollment, e.config)
 	if err != nil {
 		e.t.Fatal("store", err)
@@ -502,6 +511,14 @@ func (e *e2eEnv) open(label string) {
 	e.service = s
 	e.live.Store(s)
 	e.event("startup", "%s OpenGitReviewerService in %s", label, time.Since(started).Round(time.Millisecond))
+}
+
+// startRun explicitly refreshes credentials and starts Run.
+func (e *e2eEnv) startRun(label string) {
+	e.t.Helper()
+	s := e.service
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
 	if err := s.Refresh(ctx); err != nil {
 		e.t.Fatal("explicit refresh", err)
 	}
@@ -3638,6 +3655,110 @@ func e2eRequestVerdicts(label string, requests []e2eRequest, want map[int]e2eReq
 		}
 	}
 	return append(v, e2eVerdict{len(others) == 0, fmt.Sprintf("%s: no other PR retains a request (%+v)", label, others)})
+}
+
+// close-provider-recover is a fresh process attached to the root retained by
+// close-provider. Before Run, the operator lists the leased attempt, is
+// refused for a wrong attempt and without consent to retire the lost auth,
+// then recovers it. The job must end auth_failed and charged, never
+// reviewed. After the operator re-provisions synthetic Codex auth, Run must
+// capture, review and publish the next request (PR 2) with exactly one
+// review POST and nothing for PR 1.
+func e2eCloseProviderRecover(e *e2eEnv) {
+	if !e.attached {
+		e.t.Fatal("close-provider-recover requires SFL_E2E_ATTACH")
+	}
+	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
+	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
+	e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
+	before := e2eJobFor(e.reopenState(), 1)
+	if before == nil || before.LeaseToken == "" || !before.Outstanding {
+		e.t.Fatal("attached root has no retained lease")
+	}
+	units := e2eReadNativeUnits(e.native)
+	e.check(len(units) == 1 && units[0].Provider == string(r.Codex) && units[0].AuditPresent && units[0].AuthExported && !units[0].AuthReturned, "the retained root has one interrupted Codex launch with exported, unreturned auth")
+	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth is fenced and claude auth usable before recovery")
+	if len(units) != 1 {
+		return
+	}
+	interrupted := units[0]
+	e.openIdle("restart")
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	candidates, err := e.service.ProviderRecoveryCandidates(ctx)
+	e.check(err == nil && len(candidates) == 1 && candidates[0].JobID == before.Job.ID && candidates[0].AttemptID == before.AttemptID && candidates[0].ProviderEvidenceRecorded && slices.Equal(candidates[0].Launches, []string{interrupted.Launch}), "the operator view lists the leased attempt and its one original launch (%v, %v)", candidates, err)
+	request := r.ProviderRecoveryRequest{JobID: before.Job.ID, AttemptID: before.AttemptID, LaunchID: interrupted.Launch}
+	wrong := request
+	wrong.AttemptID = strings.Repeat("0", 32)
+	wrong.RetireUnreturnedAuth = true
+	_, err = e.service.RecoverStoppedProvider(ctx, wrong)
+	e.check(errors.Is(err, r.ErrFenced), "recovery refuses a mismatched attempt identity: %v", err)
+	_, err = e.service.RecoverStoppedProvider(ctx, request)
+	e.check(errors.Is(err, r.ErrAuthRecoveryRequired), "recovery refuses lost exported auth without consent to retire it: %v", err)
+	unchanged := e2eJobFor(e.state(), 1)
+	e.check(unchanged.LeaseToken == before.LeaseToken && unchanged.Outstanding && unchanged.State == "running" && len(unchanged.ProviderRecoveries) == 0 && !e2eAuthUsable(e.auth, r.Codex), "refused recoveries changed neither the lease nor the auth fence")
+	request.RetireUnreturnedAuth = true
+	started := time.Now()
+	result, err := e.service.RecoverStoppedProvider(ctx, request)
+	e.event("recovery", "RecoverStoppedProvider returned %+v, %v in %s", result, err, time.Since(started).Round(time.Millisecond))
+	e.check(err == nil && result.Auth == r.ProviderAuthRetired && result.State == "auth_failed" && result.Provider == r.Codex, "operator recovery retired the lost auth and released the lease as auth_failed (%+v, %v)", result, err)
+	_, err = e.service.RecoverStoppedProvider(ctx, request)
+	e.check(errors.Is(err, r.ErrFenced), "a repeated recovery is refused: %v", err)
+	recovered := e2eJobFor(e.state(), 1)
+	e.check(recovered.LeaseToken == "" && !recovered.Outstanding && recovered.State == "auth_failed" && recovered.Checkpoint.ConsumedSessions == before.Checkpoint.ConsumedSessions && len(recovered.Checkpoint.Artifacts) == 0 && len(recovered.SourceAttempts) == 0 && len(recovered.ProviderRecoveries) == 1 && recovered.ProviderRecoveries[0].LaunchID == interrupted.Launch, "the recovered job is charged, incomplete, unreviewed and carries one recovery receipt")
+	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "the lost codex auth is retired, never reused; claude auth is untouched")
+	// The operator re-establishes synthetic Codex auth outside the reviewer.
+	codex, err := r.NewAuthStore(r.Codex, e.auth)
+	if err == nil {
+		seed := f.Seed(r.Codex)
+		err = codex.Refresh(context.Background(), func(old []byte) ([]byte, error) {
+			if len(old) != 0 {
+				return nil, errors.New("retired auth still present")
+			}
+			return seed, nil
+		})
+		clear(seed)
+	}
+	e.check(err == nil && e2eAuthUsable(e.auth, r.Codex), "operator re-provisioned synthetic codex auth: %v", err)
+	e.startRun("after recovery")
+	_, err = e.service.RecoverStoppedProvider(ctx, request)
+	e.check(errors.Is(err, r.ErrLiveBlocked), "recovery is refused while the service runs: %v", err)
+	if !e.wait("PR 2 review confirmed after recovery", 6*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 2) }) {
+		e.snapshotJobs("timeout")
+		return
+	}
+	e.snapshotJobs("confirmed")
+	j2 := e.assertReviewed(2)
+	d := e.state()
+	j1 := e2eJobFor(d, 1)
+	e.check(len(d.Jobs) == 2 && j1.State == "auth_failed" && j1.LeaseToken == "" && len(e2eWritesFor(d, 1, "review")) == 0, "PR 1 stays auth_failed with no new job or review intent")
+	e.check(e.github.reviewPosts(1) == 0 && e.github.reviewPosts(2) == 1, "exactly one review POST, for PR 2 only")
+	posts := map[string]int{}
+	for key, n := range e.github.summary().Requests {
+		if strings.Contains(key, " POST ") {
+			posts[key] = n
+		}
+	}
+	e.check(len(posts) == 2 && posts["app POST /app/installations/N/access_tokens"] == 2 && posts["publisher POST /pulls/N/reviews"] == 1, "the only GitHub POSTs are two role token mints and one review (%v)", posts)
+	h2 := e.github.commits["2"]
+	uploads, other := 0, 0
+	for _, x := range e.github.summary().GitExchanges {
+		if x.Operation != "upload-pack" {
+			continue
+		}
+		if slices.Equal(slices.Sorted(slices.Values(x.Wants)), slices.Sorted(slices.Values([]string{h2, e.github.baseSHA}))) {
+			uploads++
+		} else {
+			other++
+		}
+	}
+	e.check(uploads == 1 && other == 0, "PR 2 was captured by one upload-pack for its own head (%d, other %d)", uploads, other)
+	e.assertSourceStopped("after recovery review")
+	if j2 != nil {
+		e.assertNativeSessions([]*r.DurableJob{j2}, interrupted.SessionHash)
+		e.result.Jobs = append(e.result.Jobs, e2eJobSummary(j1), e2eJobSummary(j2))
+	}
+	e.collectWrites()
 }
 
 // e2eAuthDisposition judges provider's auth store under directory through a
