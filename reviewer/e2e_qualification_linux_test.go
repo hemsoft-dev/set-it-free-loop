@@ -179,16 +179,53 @@ type e2eEnv struct {
 }
 
 // e2eExpect is a case's declared end state: the transient units this process
-// must start (source acquisitions and native launches) and whether both
-// provider auth stores must end usable. Fence cases check their own auth.
+// must start (source acquisitions and native launches), whether both
+// provider auth stores must end usable, and exactly the role-qualified routes
+// ("role METHOD route", e2eRouteName) the fake GitHub must have served. Fence
+// cases check their own auth.
 type e2eExpect struct {
 	SourceUnits, NativeUnits int
 	AuthUsable               bool
+	Routes                   []string
 }
 
+// e2eRoleRoutes is production's credential split, every route each GitHub
+// credential role may use: the app JWT only qualifies the installation and
+// mints tokens (acquireGitHubInstallation); each installation token first
+// requalifies the installation (/installation/repositories, the bot user and
+// the repository); then, as GitHubInstallationTransport documents, only the
+// reader serves discovery and object acquisition (github_polling.go,
+// github_discovery.go, github_triggers.go; Git is reader-only, serveGit) and
+// only the publisher serves publication (github_publication.go: post, scan,
+// receipt and annotate). A route outside its role's list is reader work done
+// with the write-scoped credential, or the reverse.
+var e2eRoleRoutes = map[string][]string{
+	"app": {"GET /app", "GET /installation", "GET /app/installations/N", "POST /app/installations/N/access_tokens"},
+	"reader": {"GET /installation/repositories", "GET /users/sfl-test[bot]", "GET /repo",
+		"GET /pulls", "GET /pulls/N", "GET /git/ref/heads/main", "GET /pulls/N/requested_reviewers", "GET /compare", "GET /issues/N/events", "GET /issues/N/comments"},
+	"publisher": {"GET /installation/repositories", "GET /users/sfl-test[bot]", "GET /repo",
+		"POST /pulls/N/reviews", "POST /issues/N/comments", "GET /pulls/N/reviews", "GET /issues/N/comments", "GET /pulls/N/reviews/N/comments", "GET /pulls/N/reviews/N", "PUT /pulls/N/reviews/N"},
+}
+
+// The routes every case serves: both roles' tokens minted and qualified, and
+// the reader's polling, PR, base ref, merge base, trigger comment and
+// repository reads. A case that publishes adds the review POST and its
+// receipt read; one that reconciles an unknown POST adds the review scan.
+var (
+	e2eQualifiedRoutes = []string{"app GET /app", "app GET /installation", "app GET /app/installations/N", "app POST /app/installations/N/access_tokens",
+		"reader GET /installation/repositories", "reader GET /users/sfl-test[bot]", "reader GET /repo", "reader GET /pulls", "reader GET /pulls/N", "reader GET /git/ref/heads/main", "reader GET /compare", "reader GET /issues/N/comments",
+		"publisher GET /installation/repositories", "publisher GET /users/sfl-test[bot]", "publisher GET /repo"}
+	e2ePublishedRoutes  = append(slices.Clone(e2eQualifiedRoutes), "publisher POST /pulls/N/reviews", "publisher GET /pulls/N/reviews/N/comments")
+	e2eReconciledRoutes = append(slices.Clone(e2ePublishedRoutes), "publisher GET /pulls/N/reviews")
+)
+
 var e2eExpectations = map[string]e2eExpect{
-	"review": {1, 4, true}, "isolation": {2, 8, true}, "close-capture": {1, 4, true}, "close-publish": {1, 4, true},
-	"close-provider": {1, 1, false}, "close-provider-reopen": {0, 0, false},
+	"review":                {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2ePublishedRoutes},
+	"isolation":             {SourceUnits: 2, NativeUnits: 8, AuthUsable: true, Routes: e2ePublishedRoutes},
+	"close-capture":         {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2ePublishedRoutes},
+	"close-publish":         {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2eReconciledRoutes},
+	"close-provider":        {SourceUnits: 1, NativeUnits: 1, Routes: e2eQualifiedRoutes},
+	"close-provider-reopen": {Routes: e2eQualifiedRoutes},
 }
 
 func (e *e2eEnv) event(kind, format string, args ...any) {
@@ -727,6 +764,7 @@ func e2eFinalVerdicts(res *e2eResult, want e2eExpect, before map[string]bool, at
 		verdicts = append(verdicts, e2eVerdict{u.wholeStop() && u.AuditPresent, fmt.Sprintf("native unit %s started, settled, captured, aborted and stopped with its bound stopped audit", u.Launch)})
 	}
 	verdicts = append(verdicts, e2eVerdict{len(res.GitHub.Violations) == 0, fmt.Sprintf("fake GitHub saw no role, destination or credential violation: %v", res.GitHub.Violations)})
+	verdicts = append(verdicts, e2eRouteVerdict(res.GitHub.Requests, want.Routes))
 	verdicts = append(verdicts, e2eCorrelateUnits(res, want, before, attached)...)
 	if want.AuthUsable {
 		for _, provider := range []r.Provider{r.Codex, r.Claude} {
@@ -734,6 +772,26 @@ func e2eFinalVerdicts(res *e2eResult, want e2eExpect, before map[string]bool, at
 		}
 	}
 	return verdicts
+}
+
+// e2eRouteVerdict requires the fake GitHub to have served exactly the case's
+// role-qualified routes, so a role that did the other role's work, or work its
+// case never needs, fails even where both roles' allowlists admit the route
+// (issue comments, the repository and the qualification reads).
+func e2eRouteVerdict(requests map[string]int, want []string) e2eVerdict {
+	unexpected, missing := []string{}, []string{}
+	for route, n := range requests {
+		if n > 0 && !slices.Contains(want, route) {
+			unexpected = append(unexpected, route)
+		}
+	}
+	for _, route := range want {
+		if requests[route] == 0 {
+			missing = append(missing, route)
+		}
+	}
+	sort.Strings(unexpected)
+	return e2eVerdict{len(want) != 0 && len(unexpected) == 0 && len(missing) == 0, fmt.Sprintf("fake GitHub served exactly the case's per-role routes (unexpected %v, missing %v)", unexpected, missing)}
 }
 
 // e2eCorrelateUnits matches every transient unit the observer saw against
@@ -1833,19 +1891,27 @@ func newE2EGitHub(t *testing.T, env *e2eEnv) *e2eGitHub {
 	return g
 }
 
+// e2ePullID is the fake upstream's pull request ID of PR n.
+func e2ePullID(n int) int64 { return int64(7000 + n) }
+
 // addPR opens PR n. An automatic request needs creation at/after the epoch;
 // a PR created before the epoch is reviewed only after an owner comment.
 func (g *e2eGitHub) addPR(n int, author int64, created time.Time) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	g.prs[n] = &e2ePR{Number: n, ID: int64(7000 + n), Author: author, Created: created.UTC().Truncate(time.Second), Head: g.commits[strconv.Itoa(n)], Base: g.baseSHA, MergeBase: g.baseSHA, Comments: []map[string]any{}, Reviews: []map[string]any{}, ReviewComments: map[int64][]map[string]any{}}
+	g.prs[n] = &e2ePR{Number: n, ID: e2ePullID(n), Author: author, Created: created.UTC().Truncate(time.Second), Head: g.commits[strconv.Itoa(n)], Base: g.baseSHA, MergeBase: g.baseSHA, Comments: []map[string]any{}, Reviews: []map[string]any{}, ReviewComments: map[int64][]map[string]any{}}
 }
-func (g *e2eGitHub) addComment(n int, author int64, body string, at time.Time) {
+
+// addComment adds a comment to PR n and returns the ID the fake upstream
+// assigned it.
+func (g *e2eGitHub) addComment(n int, author int64, body string, at time.Time) int64 {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	at = at.UTC().Truncate(time.Second)
 	issue := "https://api.github.com/repos/hemsoft-dev/set-it-free-loop/issues/" + strconv.Itoa(n)
-	g.prs[n].Comments = append(g.prs[n].Comments, map[string]any{"id": g.nextID.Add(1), "user": map[string]any{"id": author}, "body": body, "issue_url": issue, "created_at": at, "updated_at": at})
+	id := g.nextID.Add(1)
+	g.prs[n].Comments = append(g.prs[n].Comments, map[string]any{"id": id, "user": map[string]any{"id": author}, "body": body, "issue_url": issue, "created_at": at, "updated_at": at})
+	return id
 }
 
 type e2eGitHubRoute struct {
@@ -1952,6 +2018,10 @@ func (g *e2eGitHub) api(q *http.Request, transport string) (int, any) {
 	}
 	if role != "app" && role != transport {
 		g.violation("%s token used on %s transport for %s %s", role, transport, q.Method, p)
+	}
+	if !slices.Contains(e2eRoleRoutes[role], q.Method+" "+e2eRouteName(p)) {
+		g.violation("%s credential used outside its production capability for %s %s", role, q.Method, p)
+		return 403, map[string]any{"message": "outside the credential's capability"}
 	}
 	if q.Method != "GET" && role != "publisher" && !strings.HasSuffix(p, "/access_tokens") {
 		g.violation("%s attempted a write %s %s", role, q.Method, p)
@@ -2304,10 +2374,13 @@ func (g *e2eGitHub) summary() e2eGitHubSummary {
 // state, the fake upstream heads, the fake GitHub's POSTs and reviews, the
 // source owner journal and archive, and the native launch receipts.
 type e2eCompletion struct {
-	State     r.DurableState
-	Heads     map[int]string
-	Base      string
-	Release   string
+	State   r.DurableState
+	Heads   map[int]string
+	Base    string
+	Release string
+	// Config is the configuration the harness opened the store with, which
+	// admission must persist at its initial version.
+	Config    r.Config
 	Source    e2eSourceBinding
 	Posts     map[int]int
 	Reviews   map[int][]map[string]any
@@ -2334,7 +2407,7 @@ type e2eSourceBinding struct{ Release, Runtime, Stub string }
 // completion gathers the current evidence from the open service.
 func (e *e2eEnv) completion() e2eCompletion {
 	summary := e.github.summary()
-	c := e2eCompletion{State: e.state(), Heads: map[int]string{}, Base: e.github.baseSHA, Release: e.options.Current, Source: e2eSourceBinding{e.result.ReleaseHash, e.result.SourceRuntimeHash, e.result.SourceStubHash}, Posts: summary.ReviewPosts, Reviews: summary.Reviews, Boot: e2eBootID(), Units: e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID()), Exchanges: summary.GitExchanges, Attached: e.attached}
+	c := e2eCompletion{State: e.state(), Heads: map[int]string{}, Base: e.github.baseSHA, Release: e.options.Current, Config: e.config, Source: e2eSourceBinding{e.result.ReleaseHash, e.result.SourceRuntimeHash, e.result.SourceStubHash}, Posts: summary.ReviewPosts, Reviews: summary.Reviews, Boot: e2eBootID(), Units: e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID()), Exchanges: summary.GitExchanges, Attached: e.attached}
 	for _, provider := range []r.Provider{r.Codex, r.Claude} {
 		c.Sessions = append(c.Sessions, e.models[provider].sessionsCopy()...)
 	}
@@ -2375,10 +2448,64 @@ func (e *e2eEnv) assertCompleted(label string, prs ...int) []*r.DurableJob {
 	return jobs
 }
 
+// e2eExpectedJob is the job admission (Store.Admit) must persist for PR pr
+// from the retained request j names, restated from the harness's inputs
+// rather than read back from j: the ID of a request with an origin, the owner
+// as requester, the fake upstream's snapshot, the configuration the harness
+// opened the store with at its initial version 1 (no case issues a configure
+// command), the current release, and the retained request's complete origin,
+// which the request verdicts hold to the fake upstream's PR and comment. Only
+// the generation (production's per-PR observation counter, which the intent
+// must repeat) and the packet (the source capture's output, whose digest the
+// staged export must carry) are j's own. The origin is nil unless PR pr
+// retains exactly one request of j's request ID and it carries an origin.
+func e2eExpectedJob(d r.DurableState, pr int, j *r.DurableJob, snapshot r.Snapshot, config r.Config, release string) r.Job {
+	var origin *r.RequestOrigin
+	if p := d.PRs[e2eScopeKey(pr)]; p != nil {
+		found := 0
+		for _, q := range p.Requests {
+			if q.ID == j.RequestID {
+				found++
+				origin = q.Origin
+			}
+		}
+		if found != 1 {
+			origin = nil
+		}
+	}
+	if origin != nil {
+		copied := *origin
+		origin = &copied
+	}
+	return r.Job{Origin: origin, ID: fmt.Sprintf("request-%d-%d", pr, j.RequestID), RequesterID: r.OwnerID, Generation: j.Job.Generation, Snapshot: snapshot, Config: config, ConfigVersion: 1, Release: release, Packet: j.Job.Packet}
+}
+
+// e2eAsExpected is j with its job replaced by expect, so that every later
+// expectation (sessions, reports, document, source binding) is derived from
+// the harness's inputs, and every record bound to j's job must be bound to
+// the expected job instead.
+func e2eAsExpected(j *r.DurableJob, expect r.Job) *r.DurableJob {
+	copied := *j
+	copied.Job = expect
+	return &copied
+}
+
+// e2eExpectedFor is e2eAsExpected of PR pr's job j under c's inputs.
+func e2eExpectedFor(c e2eCompletion, pr int, j *r.DurableJob) *r.DurableJob {
+	return e2eAsExpected(j, e2eExpectedJob(c.State, pr, j, e2eCompletionSnapshot(c, pr), c.Config, c.Release))
+}
+
+// e2eCompletionSnapshot is the fake upstream's snapshot of PR pr in c.
+func e2eCompletionSnapshot(c e2eCompletion, pr int) r.Snapshot {
+	return r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: pr, Head: c.Heads[pr], Base: c.Base, MergeBase: c.Base}
+}
+
 // e2eReviewedVerdicts judges one PR's completed review. The PR must have
-// exactly one durable job, bound to its scope, the fake upstream's snapshot
-// and the current release, holding exactly the adversarial round set of
-// artifacts produced for that job, each session checked once by its own
+// exactly one durable job, exactly the one admission derives from the
+// harness's inputs (e2eExpectedJob): bound to its scope, the fake upstream's
+// snapshot, the harness configuration at version 1, the current release and
+// its retained request's complete origin, holding exactly the adversarial
+// round set of artifacts produced for that expected job, each session checked once by its own
 // provider's backend and each holding exactly the canned backend's report.
 // Its sole confirmed intent must be bound to that job and to the one remote
 // review, whose canonical document is the intent's, and that document must be
@@ -2391,18 +2518,23 @@ func e2eReviewedVerdicts(c e2eCompletion, pr int) ([]e2eVerdict, *r.DurableJob) 
 	if j == nil {
 		return []e2eVerdict{{false, fmt.Sprintf("PR %d has exactly one durable job", pr)}}, nil
 	}
-	want := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: pr, Head: c.Heads[pr], Base: c.Base, MergeBase: c.Base}
-	rounds := e2eArtifactRounds(j)
-	checked := e2eCheckedSessions(c.Sessions, j)
+	want := e2eCompletionSnapshot(c, pr)
+	expected := e2eExpectedFor(c, pr, j)
+	expect := expected.Job
+	rounds := e2eArtifactRounds(expected)
+	checked := e2eCheckedSessions(c.Sessions, expected)
 	v := []e2eVerdict{
 		{j.State == "dual_complete", fmt.Sprintf("PR %d job %s reached dual_complete (got %s)", pr, j.Job.ID, j.State)},
-		{j.Job.Config.Mode == r.Adversarial && j.Checkpoint.ConsumedSessions == 4 && j.Checkpoint.JobHash == r.Digest(j.Job), fmt.Sprintf("PR %d adversarial engine checkpoint of its own job consumed exactly 4 sessions (consumed %d)", pr, j.Checkpoint.ConsumedSessions)},
+		{c.Config.Mode == r.Adversarial && j.Checkpoint.ConsumedSessions == 4 && j.Checkpoint.JobHash == r.Digest(j.Job), fmt.Sprintf("PR %d adversarial engine checkpoint of its own job consumed exactly 4 sessions (consumed %d)", pr, j.Checkpoint.ConsumedSessions)},
 		{c.Heads[pr] != "" && c.Base != "" && j.Job.Snapshot == want && j.Scope == e2eScope(pr) && j.Job.Release == c.Release, fmt.Sprintf("PR %d job binds its own scope, head, base and the current release", pr)},
+		{expect.Origin != nil && j.Job.Origin != nil && r.Digest(*j.Job.Origin) == r.Digest(*expect.Origin), fmt.Sprintf("PR %d job carries exactly the complete origin of its retained request %d", pr, j.RequestID)},
+		{j.Job.Config == c.Config && j.Job.ConfigVersion == 1, fmt.Sprintf("PR %d job holds exactly the configuration the harness opened the store with, at its initial version 1 (version %d)", pr, j.Job.ConfigVersion)},
+		{r.Digest(j.Job) == r.Digest(expect), fmt.Sprintf("PR %d job is exactly the one admission derives from its retained request and the harness's inputs (ID %s, requester %d)", pr, j.Job.ID, j.Job.RequesterID)},
 		{rounds == nil, fmt.Sprintf("PR %d stored exactly Codex R1, Claude R1, Codex R2 and Claude R2, each produced for its job: %v", pr, rounds)},
 		{checked == nil, fmt.Sprintf("PR %d each artifact session was checked once by its own provider's backend for its job and round, and made exactly the fixture's exchanges: %v", pr, checked)},
 		{e2eReleasedAttempts(j) == nil, fmt.Sprintf("PR %d job holds no lease, reservation or pending charge, both providers audited, and its last attempt is its Claude R2 artifact's: %v", pr, e2eReleasedAttempts(j))},
 	}
-	canned := e2eCannedArtifacts(j)
+	canned := e2eCannedArtifacts(expected)
 	v = append(v, e2eVerdict{canned == nil, fmt.Sprintf("PR %d artifacts hold exactly the canned backend's reports for their phases: %v", pr, canned)})
 	writes := e2eWritesFor(c.State, pr, "review")
 	w := e2eSoleConfirmed(writes)
@@ -2412,12 +2544,12 @@ func e2eReviewedVerdicts(c e2eCompletion, pr int) ([]e2eVerdict, *r.DurableJob) 
 			e2eVerdict{w.Scope == j.Scope && w.RequestID == j.RequestID && w.Generation == j.Job.Generation && w.Snapshot == j.Job.Snapshot && w.JobHash == r.Digest(j.Job) && w.CheckpointHash == r.Digest(j.Checkpoint) && w.ReceiptID > 0, fmt.Sprintf("PR %d confirmed intent binds its job's request, generation, snapshot, job and checkpoint, and a receipt", pr)},
 			e2eVerdict{w.Marker == "<!-- sfl-alpha:"+w.ID+" -->" && w.BodyHash == r.Digest(w.Document), fmt.Sprintf("PR %d confirmed intent's marker names its own ID and its body hash is its document's", pr)},
 			e2eVerdict{len(w.Document.Inline) == 1 && w.Document.Inline[0].Path == "source.go" && w.Document.Inline[0].Line == 1, fmt.Sprintf("PR %d document carries exactly the source-backed inline finding at source.go:1", pr)})
-		document := e2eCannedDocument(j, w)
+		document := e2eCannedDocument(expect, w)
 		v = append(v, e2eVerdict{document == nil, fmt.Sprintf("PR %d confirmed document is exactly the one rendered from the canned reports and states the canned finding: %v", pr, document)})
 	}
 	v = append(v, e2eVerdict{c.Posts[pr] == 1, fmt.Sprintf("PR %d received exactly one review POST (got %d)", pr, c.Posts[pr])})
 	reviews := c.Reviews[pr]
-	v = append(v, e2eVerdict{len(reviews) == 1 && reviews[0]["state"] == "COMMENTED" && reviews[0]["commit_id"] == j.Job.Snapshot.Head && reviews[0]["marker"] != "", fmt.Sprintf("PR %d remote review is one marked COMMENT on its head", pr)})
+	v = append(v, e2eVerdict{len(reviews) == 1 && reviews[0]["state"] == "COMMENTED" && c.Heads[pr] != "" && reviews[0]["commit_id"] == c.Heads[pr] && reviews[0]["marker"] != "", fmt.Sprintf("PR %d remote review is one marked COMMENT on its head", pr)})
 	if w != nil {
 		v = append(v, e2eVerdict{len(reviews) == 1 && reviews[0]["id"] == any(w.ReceiptID) && reviews[0]["marker"] == any(w.Marker) && reviews[0]["document_hash"] == any(w.BodyHash), fmt.Sprintf("PR %d remote review is the confirmed intent's: its receipt ID, exact marker and canonical document hash", pr)})
 	}
@@ -2681,20 +2813,23 @@ func e2eCannedArtifacts(j *r.DurableJob) error {
 	return nil
 }
 
-// e2eCannedDocument requires the confirmed intent w of job j to carry exactly
-// the document production renders from the canned reports and their expected
-// ledger under the PR's trusted diff, with w's marker. Because that render is
-// production's own, the published inline comment must also state the canned
-// finding literally: its severity, title, body and source link at the head.
-func e2eCannedDocument(j *r.DurableJob, w *r.WriteIntent) error {
-	want, err := r.E2ECompletedDocument(j.Job, e2eCannedReports(j.Job), e2eCannedLedger(j.Job), e2eFixtureDiff(j.Job.Snapshot.PR), w.Marker)
+// e2eCannedDocument requires the confirmed intent w to carry exactly the
+// document production renders for the expected job (e2eExpectedJob, not the
+// stored job, so a wrong trigger origin or configuration in the stored job
+// cannot shape its own expectation) from the canned reports and their
+// expected ledger under the PR's trusted diff, with w's marker. Because that
+// render is production's own, the published inline comment must also state
+// the canned finding literally: its severity, title, body and source link at
+// the head.
+func e2eCannedDocument(job r.Job, w *r.WriteIntent) error {
+	want, err := r.E2ECompletedDocument(job, e2eCannedReports(job), e2eCannedLedger(job), e2eFixtureDiff(job.Snapshot.PR), w.Marker)
 	if err != nil {
 		return fmt.Errorf("expected document: %v", err)
 	}
 	if r.Digest(w.Document) != r.Digest(want) {
 		return errors.New("document differs from the one rendered from the canned reports")
 	}
-	stated := fmt.Sprintf("P%d %s\n\n%s\n\nSource: [source.go:1](https://github.com/hemsoft-dev/set-it-free-loop/blob/%s/source.go#L1).", e2eCannedSeverity, e2eCannedTitle, e2eCannedBody, j.Job.Snapshot.Head)
+	stated := fmt.Sprintf("P%d %s\n\n%s\n\nSource: [source.go:1](https://github.com/hemsoft-dev/set-it-free-loop/blob/%s/source.go#L1).", e2eCannedSeverity, e2eCannedTitle, e2eCannedBody, job.Snapshot.Head)
 	if len(w.Document.Inline) != 1 || !strings.Contains(w.Document.Inline[0].Body, stated) || !strings.Contains(w.Document.Summary, stated) {
 		return errors.New("document does not state the canned finding")
 	}
@@ -2955,16 +3090,19 @@ func e2eProviderReopenVerdicts(c e2eCompletion, interrupted string) ([]e2eVerdic
 // where extra lists the session hashes of the only other launches allowed. It
 // returns the PRs' jobs in order, nil for a PR without exactly one.
 func e2eCompletedVerdicts(label string, c e2eCompletion, prs []int, extra ...string) ([]e2eVerdict, []*r.DurableJob) {
-	verdicts, jobs := e2eDurableSetVerdicts(label, c.State, prs...), []*r.DurableJob{}
+	verdicts, jobs, expected := e2eDurableSetVerdicts(label, c.State, prs...), []*r.DurableJob{}, []*r.DurableJob{}
 	for _, pr := range prs {
 		v, j := e2eReviewedVerdicts(c, pr)
 		verdicts, jobs = append(verdicts, v...), append(jobs, j)
+		if j != nil {
+			expected = append(expected, e2eExpectedFor(c, pr, j))
+		}
 	}
 	if slices.Contains(jobs, nil) {
 		return verdicts, jobs
 	}
-	verdicts = append(verdicts, e2eSourceVerdicts(label, c, jobs)...)
-	return append(verdicts, e2eAttemptSetVerdict(c.Units, jobs, extra...), e2eNativeSessionVerdict(c.Units, jobs, extra...)), jobs
+	verdicts = append(verdicts, e2eSourceVerdicts(label, c, expected)...)
+	return append(verdicts, e2eAttemptSetVerdict(c.Units, expected, extra...), e2eNativeSessionVerdict(c.Units, expected, extra...)), jobs
 }
 
 // ---------------------------------------------------------------- scenarios
@@ -2996,7 +3134,7 @@ func e2eReview(e *e2eEnv) {
 func e2eIsolation(e *e2eEnv) {
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
-	e.github.addComment(2, r.OwnerID, "@sfl review", e.github.epoch.Add(30*time.Second))
+	comment := e.github.addComment(2, r.OwnerID, "@sfl review", e.github.epoch.Add(30*time.Second))
 	e.open("initial")
 	if !e.wait("both reviews confirmed", 9*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 1) && e2eConfirmed(d, 2) }) {
 		e.snapshotJobs("timeout")
@@ -3008,12 +3146,15 @@ func e2eIsolation(e *e2eEnv) {
 	if j1 == nil || j2 == nil || len(e.result.SourceRecords) == 0 {
 		return
 	}
-	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eIsolationRequestVerdicts(d, j1, j2) })
+	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eIsolationRequestVerdicts(d, j1, j2, comment) })
 	// Admission: the host checks (session starts) of the two jobs never
 	// interleave. That whole sessions do not overlap is the serial admission
 	// rule (no job is selected while another holds its lease), not observed.
+	// Sessions and source attempts bind each job's PR and the fake upstream's
+	// head of that PR, not the head the job records.
+	h1, h2 := e.github.commits["1"], e.github.commits["2"]
 	sessions := append(e.models[r.Codex].sessionsCopy(), e.models[r.Claude].sessionsCopy()...)
-	switches, unbound := e2eSessionsBound(sessions, e2eJobSummary(j1), e2eJobSummary(j2))
+	switches, unbound := e2eSessionsBound(sessions, e2eJob{ID: j1.Job.ID, PR: 1, Head: h1}, e2eJob{ID: j2.Job.ID, PR: 2, Head: h2})
 	e.check(len(unbound) == 0, "every session binds its own job's PR and head (unbound %v)", unbound)
 	e.check(len(sessions) == 8 && switches == 1, "eight session checks ran as two non-interleaved blocks, one per job (%d job switches)", switches)
 	// Source attempts are distinct per job, and each upload-pack wanted only
@@ -3025,8 +3166,7 @@ func e2eIsolation(e *e2eEnv) {
 	}
 	a1, a2 := attempts[1], attempts[2]
 	e.check(a1.Attempt != "" && a2.Attempt != "" && a1.Attempt != a2.Attempt && a1.Unit != a2.Unit && a1.ChannelID != a2.ChannelID && a1.InvocationID != a2.InvocationID, "distinct source attempts, units, invocations and read channels per job")
-	e.check(a1.Snapshot.Head == j1.Job.Snapshot.Head && a2.Snapshot.Head == j2.Job.Snapshot.Head, "each source attempt binds its own job snapshot")
-	h1, h2 := e.github.commits["1"], e.github.commits["2"]
+	e.check(h1 != "" && h2 != "" && a1.Snapshot.Head == h1 && a2.Snapshot.Head == h2, "each source attempt binds its own PR's fake upstream head")
 	e.checkUploads(h1, h2)
 	// Restore each job from retained bytes and probe the other job's objects.
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -3162,6 +3302,11 @@ func e2eCloseCapture(e *e2eEnv) {
 	}
 	e.check(e.github.reviewPosts(1) == 0, "nothing was published before review")
 	e.open("reopen")
+	// The recovered source attempt must bind the job admission derives from
+	// the harness's inputs; assertCompleted then judges the job itself.
+	if j != nil {
+		j = e2eAsExpected(j, e2eExpectedJob(d, 1, j, e.github.snapshot(1), e.config, e.options.Current))
+	}
 	e.assertSourceStopped("after reopen recovery", j)
 	if !e.wait("PR 1 review confirmed after reopen", 6*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 1) }) {
 		e.snapshotJobs("timeout")
@@ -3234,6 +3379,10 @@ func e2eCloseProvider(e *e2eEnv) {
 		return
 	}
 	e.check(len(d.Writes) == 0, "the interrupted job left no write intent (%d)", len(d.Writes))
+	// Every later expectation of the interrupted job derives from the job
+	// admission must have persisted from the harness's inputs, not from j.
+	expected := e2eAsExpected(j, e2eExpectedJob(d, 1, j, e.github.snapshot(1), e.config, e.options.Current))
+	e.check(r.Digest(j.Job) == r.Digest(expected.Job), "the interrupted job is exactly the one admission derives from its retained request, the fake upstream's snapshot, the harness configuration at version 1 and the current release")
 	e.checkUploads(e.github.commits["1"])
 	e.note("after provider-session close: job state %s, consumed %d, artifacts %d, lease %v, outstanding %v, provider attempts %d", j.State, j.Checkpoint.ConsumedSessions, len(j.Checkpoint.Artifacts), j.LeaseToken != "", j.Outstanding, len(j.ProviderAttempts))
 	e.result.Requests = e2eRequests(d)
@@ -3256,23 +3405,27 @@ func e2eCloseProvider(e *e2eEnv) {
 		// Not yet observed on a host: the stopped receipt the job records for
 		// the interrupted attempt is the launch's audit evidence.
 		if len(units) == 1 {
-			_, err := e2eRecordedEvidence(j, units[0])
+			_, err := e2eRecordedEvidence(expected, units[0])
 			e.check(err == nil, "the job durably records the interrupted launch's complete stopped audit evidence: %v", err)
 		}
 		e.open("reopen")
 		e.wait("PR 1 review after reopen", 6*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 1) })
 		e.snapshotJobs("after reopen")
+		// The one allowed extra launch is the Codex R1 session the expected
+		// job derives, not whichever session the interrupted launch recorded.
 		interrupted := ""
-		if len(units) == 1 {
-			interrupted = units[0].SessionHash
+		if session, err := e2eSessionFor(expected, r.Codex, 1); err == nil {
+			interrupted = r.Digest(session)
 		}
+		e.check(interrupted != "" && len(units) == 1 && units[0].SessionHash == interrupted, "the interrupted launch ran the Codex R1 session the expected job derives")
 		verdicts, reopened := e2eProviderReopenVerdicts(e.completion(), interrupted)
 		e.checkAll(verdicts)
 		// Not yet observed on a host: the interrupted launch plus one completed
-		// launch per artifact of the reopened job, still one acquisition, and
-		// both auth stores usable.
+		// launch per adversarial phase, restated rather than counted from the
+		// reopened job's artifacts, still one acquisition, both auth stores
+		// usable, and the review published.
+		e.expect = e2eExpect{SourceUnits: 1, NativeUnits: 1 + len(e2eAdversarialRounds), AuthUsable: true, Routes: e2ePublishedRoutes}
 		if reopened != nil {
-			e.expect = e2eExpect{1, 1 + len(reopened.Checkpoint.Artifacts), true}
 			e.result.Jobs = append(e.result.Jobs, e2eJobSummary(reopened))
 		}
 		e.collectWrites()
@@ -3281,7 +3434,7 @@ func e2eCloseProvider(e *e2eEnv) {
 	e.check(j.LeaseToken != "" && j.Outstanding && j.State == "running", "the uncertain provider attempt keeps its durable lease and outstanding reservation")
 	e.check(!returned && auth[r.Codex] == "fenced", "the unreturned exported auth is fenced for recovery")
 	e.check(len(units) == 1 && units[0].AuditPresent && units[0].AuthExported && !units[0].AuthReturned, "the stopped audit records the auth as exported and not returned")
-	_, err := e2eRetainedLaunches(units, j)
+	_, err := e2eRetainedLaunches(units, expected)
 	e.check(err == nil, "the interrupted launch is the job's outstanding attempt and the job records its complete stopped audit evidence: %v", err)
 	// ReleaseStopped is the explicit trusted-supervisor path. Probe it on a
 	// private copy: it is accepted only with durably recorded stopped
@@ -3302,8 +3455,8 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 	}
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
-	e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
-	before, err := e2eAttachedJob(e.reopenState(), e.options.Current, e.github.snapshot(1))
+	comment := e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
+	before, err := e2eAttachedJob(e.reopenState(), e.options.Current, e.github.snapshot(1), e.config)
 	if err != nil {
 		e.t.Fatal("attached root does not hold the interrupted job:", err)
 	}
@@ -3343,7 +3496,7 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 	// The fence holds every request back; none may have been duplicated
 	// behind it, or releasing the lease could admit a second review.
 	e.result.Requests = e2eRequests(d)
-	e.checkAll(e2eRequestVerdicts("fenced after restart", e.result.Requests, map[int]e2eRequest{1: e2eAdmittedOpened(1, before.RequestID), 2: e2ePendingComment(2)}))
+	e.checkAll(e2eRequestVerdicts("fenced after restart", e.result.Requests, map[int]e2eRequest{1: e2eAdmittedOpened(1, before.RequestID), 2: e2ePendingComment(2, comment)}))
 	e.snapshotJobs("fenced after restart")
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(final))
 	e.wedged = true
@@ -3355,7 +3508,11 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 // the deterministic fake upstream's snapshot, and have been admitted under
 // the current release. A root retained by another revision's close-provider would
 // otherwise be judged, and its result recorded, as this revision's restart.
-func e2eAttachedJob(d r.DurableState, current string, snapshot r.Snapshot) (*r.DurableJob, error) {
+// The job must be exactly the one admission derives from its retained request
+// and the harness's inputs (e2eExpectedJob, under config), and is returned as
+// that expected job, so the retained launch is judged against a session
+// derived from the harness's inputs.
+func e2eAttachedJob(d r.DurableState, current string, snapshot r.Snapshot, config r.Config) (*r.DurableJob, error) {
 	j := e2eJobFor(d, 1)
 	if len(d.Jobs) != 1 || j == nil || j.LeaseToken == "" {
 		return nil, fmt.Errorf("%d retained jobs, want PR 1's one leased job", len(d.Jobs))
@@ -3366,7 +3523,11 @@ func e2eAttachedJob(d r.DurableState, current string, snapshot r.Snapshot) (*r.D
 	if current == "" || j.Job.Release != current {
 		return nil, fmt.Errorf("retained job %s was admitted under release %q, not the current release %q", j.Job.ID, j.Job.Release, current)
 	}
-	return j, nil
+	expect := e2eExpectedJob(d, 1, j, snapshot, config, current)
+	if r.Digest(j.Job) != r.Digest(expect) {
+		return nil, fmt.Errorf("retained job %s is not the one admission derives from its retained request %d, the harness configuration at version 1 and the current release", j.Job.ID, j.RequestID)
+	}
+	return e2eAsExpected(j, expect), nil
 }
 
 // e2eOpenedRequestVerdicts judges the requests a confirmed single-PR case
@@ -3380,9 +3541,10 @@ func e2eOpenedRequestVerdicts(label string, d r.DurableState, j *r.DurableJob) [
 
 // e2eIsolationRequestVerdicts judges the requests the isolation case retains:
 // PR 1 holds exactly the admitted PR-open request of j1, PR 2 exactly the
-// admitted owner comment request of j2, and no PR holds any other request.
-func e2eIsolationRequestVerdicts(d r.DurableState, j1, j2 *r.DurableJob) []e2eVerdict {
-	return e2eRequestVerdicts("after both reviews", e2eRequests(d), map[int]e2eRequest{1: e2eAdmittedOpened(1, e2eRequestOf(j1)), 2: e2eAdmittedComment(2, e2eRequestOf(j2))})
+// admitted request of j2 from the fake upstream's owner comment comment, and
+// no PR holds any other request.
+func e2eIsolationRequestVerdicts(d r.DurableState, j1, j2 *r.DurableJob, comment int64) []e2eVerdict {
+	return e2eRequestVerdicts("after both reviews", e2eRequests(d), map[int]e2eRequest{1: e2eAdmittedOpened(1, e2eRequestOf(j1)), 2: e2eAdmittedComment(2, e2eRequestOf(j2), comment)})
 }
 
 // e2eRequestOf is the request ID job j was admitted from. A missing job, or
@@ -3402,10 +3564,12 @@ func (e *e2eEnv) checkRequests(judge func(r.DurableState) []e2eVerdict) {
 	e.checkAll(judge(d))
 }
 
-// e2eRequest is a nonsecret projection of one retained native request.
+// e2eRequest is a nonsecret projection of one retained native request. Its
+// origin's pull and comment IDs are published in the review's trigger line.
 type e2eRequest struct {
 	PR                int
 	ID, ActorID       int64
+	PullID, CommentID int64
 	Kind, ActorRole   string
 	Admitted, Removed bool
 }
@@ -3419,6 +3583,7 @@ func e2eRequests(d r.DurableState) []e2eRequest {
 			s := e2eRequest{PR: p.Scope.PR, ID: q.ID, Admitted: q.Admitted, Removed: q.Removed}
 			if q.Origin != nil {
 				s.ActorID, s.Kind, s.ActorRole = q.Origin.ActorID, q.Origin.Kind, q.Origin.ActorRole
+				s.PullID, s.CommentID = q.Origin.PullID, q.Origin.CommentID
 			}
 			out = append(out, s)
 		}
@@ -3426,21 +3591,22 @@ func e2eRequests(d r.DurableState) []e2eRequest {
 	return out
 }
 
-// e2eAdmittedOpened is the automatic PR-open request of an owner-authored PR,
-// admitted as the request of job request id.
+// e2eAdmittedOpened is the automatic PR-open request of the fake upstream's
+// owner-authored PR pr, admitted as the request of job request id.
 func e2eAdmittedOpened(pr int, id int64) e2eRequest {
-	return e2eRequest{PR: pr, ID: id, ActorID: r.OwnerID, Kind: "opened", ActorRole: "pr_author", Admitted: true}
+	return e2eRequest{PR: pr, ID: id, ActorID: r.OwnerID, PullID: e2ePullID(pr), Kind: "opened", ActorRole: "pr_author", Admitted: true}
 }
 
-// e2eAdmittedComment is an owner @sfl review request admitted as the request
-// of job request id.
-func e2eAdmittedComment(pr int, id int64) e2eRequest {
-	return e2eRequest{PR: pr, ID: id, ActorID: r.OwnerID, Kind: "comment", ActorRole: "commenter", Admitted: true}
+// e2eAdmittedComment is the owner @sfl review request of the fake upstream's
+// comment on PR pr, admitted as the request of job request id.
+func e2eAdmittedComment(pr int, id, comment int64) e2eRequest {
+	return e2eRequest{PR: pr, ID: id, ActorID: r.OwnerID, PullID: e2ePullID(pr), CommentID: comment, Kind: "comment", ActorRole: "commenter", Admitted: true}
 }
 
-// e2ePendingComment is an owner @sfl review request not yet admitted.
-func e2ePendingComment(pr int) e2eRequest {
-	return e2eRequest{PR: pr, ActorID: r.OwnerID, Kind: "comment", ActorRole: "commenter"}
+// e2ePendingComment is the owner @sfl review request of the fake upstream's
+// comment on PR pr, not yet admitted.
+func e2ePendingComment(pr int, comment int64) e2eRequest {
+	return e2eRequest{PR: pr, ActorID: r.OwnerID, PullID: e2ePullID(pr), CommentID: comment, Kind: "comment", ActorRole: "commenter"}
 }
 
 // e2eRequestVerdicts requires each PR in want to retain exactly one request
@@ -3478,10 +3644,12 @@ func e2eRequestVerdicts(label string, requests []e2eRequest, want map[int]e2eReq
 // refresh that writes the held state back unchanged: "usable" when it holds
 // the provider's original synthetic credential; "invalid" when the store
 // yields any other state, including none, since the store itself accepts any
-// nonempty bytes (e2eSyntheticAuth); "fenced" when the store refuses the
-// refresh before yielding state, as it does while an exported profile awaits
-// recovery; "unavailable" when the store cannot be opened. Invalid auth is
-// neither usable nor fenced.
+// nonempty bytes (e2eSyntheticAuth); "fenced" only when the store refuses the
+// refresh with ErrAuthRecoveryRequired, as it does while an exported profile
+// awaits recovery; "unavailable" when the store cannot be opened, or refuses
+// the refresh before yielding state for any other reason (a malformed or
+// unsafe state file, an invalid lock file, a filesystem error). Invalid or
+// unavailable auth is neither usable nor fenced.
 func e2eAuthDisposition(directory string, provider r.Provider) string {
 	auth, err := r.NewAuthStore(provider, directory)
 	if err != nil {
@@ -3500,8 +3668,10 @@ func e2eAuthDisposition(directory string, provider r.Provider) string {
 		return "usable"
 	case judged:
 		return "invalid"
-	default:
+	case errors.Is(err, r.ErrAuthRecoveryRequired):
 		return "fenced"
+	default:
+		return "unavailable"
 	}
 }
 
@@ -3840,6 +4010,7 @@ func TestE2ESourceEvidence(t *testing.T) {
 // given native launches, every one of them observed by the unit observer.
 func e2eUnitRun(attempt string, launches ...string) *e2eResult {
 	res := &e2eResult{AuthRecoveryClear: map[string]bool{"codex": true, "claude": true}}
+	res.GitHub.Requests = e2eRouteTally(e2ePublishedRoutes)
 	if attempt != "" {
 		unit := "sfl-alpha-" + attempt + ".service"
 		res.SourceRecords = [][]r.E2ESourceRecord{{{Attempt: attempt, Unit: unit}}, {{Attempt: attempt, Unit: unit}}}
@@ -3850,6 +4021,15 @@ func e2eUnitRun(attempt string, launches ...string) *e2eResult {
 		res.SystemdUnits = append(res.SystemdUnits, e2eSystemdUnit{Name: "sfl-alpha-" + launch + ".service"})
 	}
 	return res
+}
+
+// e2eRouteTally is a fake GitHub request tally that served each of routes.
+func e2eRouteTally(routes []string) map[string]int {
+	tally := map[string]int{}
+	for _, route := range routes {
+		tally[route] += 2
+	}
+	return tally
 }
 
 func TestE2EFinalVerdicts(t *testing.T) {
@@ -3869,6 +4049,7 @@ func TestE2EFinalVerdicts(t *testing.T) {
 		t.Fatal("correlated review run refused:", f)
 	}
 	reopen := e2eUnitRun("", n1)
+	reopen.GitHub.Requests = e2eRouteTally(e2eQualifiedRoutes)
 	reopen.SystemdUnits = nil
 	reopen.SourceRecords = [][]r.E2ESourceRecord{{{Attempt: source, Unit: "sfl-alpha-" + source + ".service"}}}
 	reopen.AuthRecoveryClear["codex"] = false
@@ -3876,6 +4057,7 @@ func TestE2EFinalVerdicts(t *testing.T) {
 		t.Fatal("attached fenced restart refused:", f)
 	}
 	fenced := e2eUnitRun(source, n1)
+	fenced.GitHub.Requests = e2eRouteTally(e2eQualifiedRoutes)
 	fenced.AuthRecoveryClear["codex"] = false
 	if f := failures(fenced, e2eExpectations["close-provider"], nil, false); len(f) != 0 {
 		t.Fatal("fenced provider close refused:", f)
@@ -3912,6 +4094,20 @@ func TestE2EFinalVerdicts(t *testing.T) {
 		// Round 10: a native launch counts only as a production-whole stop.
 		"native launch stopped without an abort":         {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.NativeUnits[1].Aborted = false }), review, nil, false},
 		"native launch captured without a settled start": {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.NativeUnits[3].StartSettled = false }), review, nil, false},
+		// Round 11 finding 4: the fake GitHub served exactly the case's
+		// per-role routes, so reader work done with the publisher credential
+		// fails even where the publisher's own allowlist admits the route.
+		"publisher polled pull requests":   {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.GitHub.Requests["publisher GET /pulls"] = 1 }), review, nil, false},
+		"publisher read trigger comments":  {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.GitHub.Requests["publisher GET /issues/N/comments"] = 1 }), review, nil, false},
+		"reader scanned published reviews": {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.GitHub.Requests["reader GET /pulls/N/reviews"] = 1 }), review, nil, false},
+		"review never posted": {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) {
+			delete(res.GitHub.Requests, "publisher POST /pulls/N/reviews")
+		}), review, nil, false},
+		"reader never polled": {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.GitHub.Requests["reader GET /pulls"] = 0 }), review, nil, false},
+		"no request tally":    {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.GitHub.Requests = nil }), review, nil, false},
+		"fenced provider published": {mutate(e2eUnitRun(source, n1), func(res *e2eResult) {
+			res.AuthRecoveryClear["codex"] = false
+		}), e2eExpectations["close-provider"], nil, false},
 	} {
 		if f := failures(in.res, in.want, in.before, in.attached); len(f) == 0 {
 			t.Error(name, "accepted")
@@ -4418,13 +4614,21 @@ func TestE2EAllocateCleanupAfterSetupFailure(t *testing.T) {
 // document; and one stopped source attempt of the job's snapshot under the
 // current release.
 // e2eFixtureJob is PR 1's adversarial job on a deterministic snapshot before
-// any session: no lease, attempt or artifact.
+// any session: no lease, attempt or artifact. It was admitted from the
+// owner-authored PR's automatic open request 1 (e2eFixtureOrigin).
 func e2eFixtureJob() *r.DurableJob {
 	head, base := strings.Repeat("1", 40), strings.Repeat("e", 40)
 	snapshot := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: head, Base: base, MergeBase: base}
-	job := &r.DurableJob{Job: r.Job{ID: "request-1-1", RequesterID: r.OwnerID, Generation: 1, Snapshot: snapshot, Config: r.DefaultConfig(), ConfigVersion: 1, Release: strings.Repeat("f", 40), Packet: "synthetic packet"}, Scope: e2eScope(1), RequestID: 1, CreatedAt: time.Unix(1000, 0).UTC(), ChargeDays: []string{"2026-10-23"}}
+	job := &r.DurableJob{Job: r.Job{Origin: e2eFixtureOrigin(), ID: "request-1-1", RequesterID: r.OwnerID, Generation: 1, Snapshot: snapshot, Config: r.DefaultConfig(), ConfigVersion: 1, Release: strings.Repeat("f", 40), Packet: "synthetic packet"}, Scope: e2eScope(1), RequestID: 1, CreatedAt: time.Unix(1000, 0).UTC(), ChargeDays: []string{"2026-10-23"}}
 	job.Checkpoint.JobHash = r.Digest(job.Job)
 	return job
+}
+
+// e2eFixtureOrigin is the valid origin of PR 1's automatic open request: the
+// owner opened the fake upstream's PR 1 after the trigger policy took effect,
+// and polling observed it as its first observation.
+func e2eFixtureOrigin() *r.RequestOrigin {
+	return &r.RequestOrigin{PolicyEnabledAt: time.Unix(900, 0).UTC(), Kind: "opened", PolicyOwnerID: r.OwnerID, PullID: e2ePullID(1), ActorID: r.OwnerID, ActorRole: "pr_author", EventAt: time.Unix(950, 0).UTC(), ObservedAt: time.Unix(960, 0).UTC(), Sequence: 1}
 }
 
 // e2eFixtureSession is the session job j derives for provider's round,
@@ -4480,13 +4684,26 @@ func e2eLaunchFixture(j *r.DurableJob, session r.Session, launch string, evidenc
 	return e2eNativeUnit{Provider: string(provider), Launch: launch, SessionHash: hash, ManifestHash: audit.ManifestHash, Started: true, StartSettled: true, Captured: true, Aborted: true, Stopped: true, Complete: complete, AuthExported: true, AuthReturned: returned, AuditPresent: true, RequestHash: request, ReportHash: audit.ReportHash, SourceHash: audit.SourceHash, Stage: audit.Stage, Failure: audit.Failure, Access: evidence.Access, EvidenceHash: r.Digest(evidence), Binding: binding, Policy: evidence.Policy, Audit: audit}
 }
 
-func e2eCompletedFixture() e2eCompletion {
+func e2eCompletedFixture() e2eCompletion { return e2eCompletedFixtureOf(nil) }
+
+// e2eCompletedFixtureOf is e2eCompletedFixture for a job that admission
+// persisted with edit applied, every record derived from the job (artifacts,
+// attempts, launches, sessions, intent, document, remote review and source
+// export) consistently rebuilt from the edited job. The harness's own inputs
+// are not edited: the configuration it opened the store with, the release,
+// the fake upstream's heads and the retained admitted request.
+func e2eCompletedFixtureOf(edit func(*r.Job)) e2eCompletion {
 	attempt, id := strings.Repeat("a", 32), strings.Repeat("c", 32)
 	job := e2eFixtureJob()
 	head, snapshot := job.Job.Snapshot.Head, job.Job.Snapshot
+	config, release, request := job.Job.Config, job.Job.Release, r.NativeRequest{Origin: e2eFixtureOrigin(), ID: job.RequestID, RequesterID: r.OwnerID, CreatedAt: job.Job.Origin.EventAt, Snapshot: snapshot, Admitted: true}
+	if edit != nil {
+		edit(&job.Job)
+		job.Checkpoint.JobHash = r.Digest(job.Job)
+	}
 	job.State, job.Checkpoint.ConsumedSessions = "dual_complete", 4
 	reports := e2eCannedReports(job.Job)
-	c := e2eCompletion{Heads: map[int]string{1: head}, Base: snapshot.Base, Release: job.Job.Release, Source: e2eSourceBinding{r.Digest("release package"), r.Digest("source VM manifest"), r.Digest("source stub")}, Posts: map[int]int{1: 1}, Boot: e2eTestBootID}
+	c := e2eCompletion{Heads: map[int]string{1: head}, Base: snapshot.Base, Release: release, Config: config, Source: e2eSourceBinding{r.Digest("release package"), r.Digest("source VM manifest"), r.Digest("source stub")}, Posts: map[int]int{1: 1}, Boot: e2eTestBootID}
 	for i, run := range []struct {
 		provider r.Provider
 		round    int
@@ -4520,10 +4737,10 @@ func e2eCompletedFixture() e2eCompletion {
 	if err != nil {
 		panic(err)
 	}
-	write := &r.WriteIntent{ID: id, Kind: "review", Scope: job.Scope, RequestID: job.RequestID, Generation: job.Job.Generation, JobHash: r.Digest(job.Job), CheckpointHash: r.Digest(job.Checkpoint), Snapshot: snapshot, Document: document, BodyHash: r.Digest(document), Marker: marker, State: "confirmed", ReceiptID: 5001}
+	write := &r.WriteIntent{ID: id, Kind: "review", Scope: job.Scope, RequestID: job.RequestID, Generation: job.Job.Generation, JobHash: r.Digest(job.Job), CheckpointHash: r.Digest(job.Checkpoint), Snapshot: job.Job.Snapshot, Document: document, BodyHash: r.Digest(document), Marker: marker, State: "confirmed", ReceiptID: 5001}
 	remoteMarker, remoteHash := r.E2ERemoteReview(document.Summary, document.Inline)
 	c.Reviews = map[int][]map[string]any{1: {{"id": int64(5001), "state": "COMMENTED", "commit_id": head, "marker": remoteMarker, "document_hash": remoteHash, "inline": []string{"source.go:1"}}}}
-	c.State = r.DurableState{Jobs: map[string]*r.DurableJob{job.Job.ID: job}, Writes: map[string]*r.WriteIntent{write.ID: write}}
+	c.State = r.DurableState{Jobs: map[string]*r.DurableJob{job.Job.ID: job}, Writes: map[string]*r.WriteIntent{write.ID: write}, PRs: map[string]*r.PRRecord{e2eScopeKey(1): {Scope: e2eScope(1), Generation: 1, Requests: []r.NativeRequest{request}, CurrentRequest: request.ID}}}
 	c.Records = []r.E2ESourceRecord{{Attempt: attempt, Unit: "sfl-alpha-" + attempt + ".service", InvocationID: strings.Repeat("9", 32), RequestHash: strings.Repeat("6", 64), SourceRequestHash: strings.Repeat("7", 64), StubHash: c.Source.Stub, ReleaseHash: c.Source.Release, RuntimeHash: c.Source.Runtime, Snapshot: snapshot, StartIntent: true, StartSettled: true, Captured: true, Stopped: true, Revoked: true, GrantHash: "grant", BootID: e2eTestBootID}}
 	c.Exchanges = e2eAcquisition(c.Records[0])
 	c.Exports = []r.E2EExportRecord{{Attempt: attempt, State: "staged", RequestHash: strings.Repeat("7", 64), ReleaseHash: c.Source.Release, RuntimeHash: c.Source.Runtime, Snapshot: snapshot, PacketHash: r.Digest(job.Job.Packet)}}
@@ -4660,6 +4877,13 @@ func TestE2ECompletedVerdicts(t *testing.T) {
 		rehash(c)
 		_, remote(c)["document_hash"] = r.E2ERemoteReview(d.Summary, d.Inline)
 	}
+	// rejob replaces the completion with one whose job admission persisted
+	// with edit applied and every record derived from the job rebuilt
+	// consistently (e2eCompletedFixtureOf), so only a check against the
+	// harness's own inputs can refuse it.
+	rejob := func(edit func(*r.Job)) func(*e2eCompletion) {
+		return func(c *e2eCompletion) { *c = e2eCompletedFixtureOf(edit) }
+	}
 	// recheckpoint rebinds the intent to an edited checkpoint, so only the
 	// artifacts' binding to the canned reports can refuse the edit.
 	recheckpoint := func(c *e2eCompletion) { write(c).CheckpointHash = r.Digest(job(c).Checkpoint) }
@@ -4718,6 +4942,23 @@ func TestE2ECompletedVerdicts(t *testing.T) {
 		"intent of another checkpoint":                 "intent binds its job's",
 		"intent of another request":                    "intent binds its job's",
 		"intent of another generation":                 "intent binds its job's",
+		// Round 11 findings 2 and 3: the job admission persisted is held to
+		// the harness's inputs, and the expected document is rendered from
+		// those inputs, so a consistently rebuilt wrong job is refused.
+		"job of another origin":                        "carries exactly the complete origin",
+		"document of another origin":                   "confirmed document is exactly the one rendered",
+		"job of another pull origin":                   "carries exactly the complete origin",
+		"job without an origin":                        "carries exactly the complete origin",
+		"retained request of another origin":           "carries exactly the complete origin",
+		"retained request lost":                        "carries exactly the complete origin",
+		"job of another provider timeout":              "configuration the harness opened the store with",
+		"document of another configuration":            "confirmed document is exactly the one rendered",
+		"job of another quota wait":                    "configuration the harness opened the store with",
+		"job of another daily review limit":            "configuration the harness opened the store with",
+		"job of another retention":                     "configuration the harness opened the store with",
+		"job of another configuration version":         "configuration the harness opened the store with",
+		"document of another configuration version":    "confirmed document is exactly the one rendered",
+		"job of another ID":                            "exactly the one admission derives",
 		"intent of another base":                       "intent binds its job's",
 		"intent with a second inline finding":          "exactly the source-backed inline finding",
 		"artifact session never checked":               "checked once by its own provider's backend",
@@ -4977,7 +5218,23 @@ func TestE2ECompletedVerdicts(t *testing.T) {
 		"intent of another checkpoint":      func(c *e2eCompletion) { write(c).CheckpointHash = r.Digest("another checkpoint") },
 		"intent of another request":         func(c *e2eCompletion) { write(c).RequestID = 2 },
 		"intent of another generation":      func(c *e2eCompletion) { write(c).Generation = 2 },
-		"intent of another base":            func(c *e2eCompletion) { write(c).Snapshot.Base = strings.Repeat("9", 40) },
+		"job of another origin":             rejob(func(j *r.Job) { j.Origin.Sequence = 2 }),
+		"document of another origin":        rejob(func(j *r.Job) { j.Origin.Sequence = 2 }),
+		"job of another pull origin":        rejob(func(j *r.Job) { j.Origin.PullID = e2ePullID(2) }),
+		"job without an origin":             rejob(func(j *r.Job) { j.Origin = nil }),
+		"retained request of another origin": func(c *e2eCompletion) {
+			c.State.PRs[e2eScopeKey(1)].Requests[0].Origin.Sequence = 2
+		},
+		"retained request lost":                     func(c *e2eCompletion) { c.State.PRs[e2eScopeKey(1)].Requests = nil },
+		"job of another provider timeout":           rejob(func(j *r.Job) { j.Config.Limits.Timeout = time.Minute }),
+		"document of another configuration":         rejob(func(j *r.Job) { j.Config.Limits.Timeout = time.Minute }),
+		"job of another quota wait":                 rejob(func(j *r.Job) { j.Config.QuotaWait = time.Hour }),
+		"job of another daily review limit":         rejob(func(j *r.Job) { j.Config.DailyReviews = 2 }),
+		"job of another retention":                  rejob(func(j *r.Job) { j.Config.RetentionDays = 3 }),
+		"job of another configuration version":      rejob(func(j *r.Job) { j.ConfigVersion = 2 }),
+		"document of another configuration version": rejob(func(j *r.Job) { j.ConfigVersion = 2 }),
+		"job of another ID":                         rejob(func(j *r.Job) { j.ID = "native-1-1" }),
+		"intent of another base":                    func(c *e2eCompletion) { write(c).Snapshot.Base = strings.Repeat("9", 40) },
 		"intent with a second inline finding": func(c *e2eCompletion) {
 			write(c).Document.Inline = append(write(c).Document.Inline, r.InlineComment{Path: "pr1-only.go", Line: 1, Body: "extra"})
 			rehash(c)
@@ -5357,16 +5614,21 @@ func TestE2ERetainedLaunches(t *testing.T) {
 }
 
 func TestE2ERequestVerdicts(t *testing.T) {
-	origin := func(kind, role string, actor int64) *r.RequestOrigin {
-		return &r.RequestOrigin{Kind: kind, ActorID: actor, ActorRole: role}
+	const comment = int64(31)
+	origin := func(kind, role string, actor int64, pr int) *r.RequestOrigin {
+		o := &r.RequestOrigin{Kind: kind, ActorID: actor, ActorRole: role, PullID: e2ePullID(pr)}
+		if kind == "comment" {
+			o.CommentID = comment
+		}
+		return o
 	}
 	state := func() r.DurableState {
 		return r.DurableState{PRs: map[string]*r.PRRecord{
-			e2eScopeKey(1): {Scope: r.Scope{PR: 1}, Requests: []r.NativeRequest{{ID: 1, Admitted: true, Origin: origin("opened", "pr_author", r.OwnerID)}}},
-			e2eScopeKey(2): {Scope: r.Scope{PR: 2}, Requests: []r.NativeRequest{{ID: 1, Origin: origin("comment", "commenter", r.OwnerID)}}},
+			e2eScopeKey(1): {Scope: r.Scope{PR: 1}, Requests: []r.NativeRequest{{ID: 1, Admitted: true, Origin: origin("opened", "pr_author", r.OwnerID, 1)}}},
+			e2eScopeKey(2): {Scope: r.Scope{PR: 2}, Requests: []r.NativeRequest{{ID: 1, Origin: origin("comment", "commenter", r.OwnerID, 2)}}},
 		}}
 	}
-	want := map[int]e2eRequest{1: e2eAdmittedOpened(1, 1), 2: e2ePendingComment(2)}
+	want := map[int]e2eRequest{1: e2eAdmittedOpened(1, 1), 2: e2ePendingComment(2, comment)}
 	failures := func(d r.DurableState) []string {
 		out := []string{}
 		for _, v := range e2eRequestVerdicts("fenced", e2eRequests(d), want) {
@@ -5382,24 +5644,29 @@ func TestE2ERequestVerdicts(t *testing.T) {
 	pr := func(d r.DurableState, n int) *r.PRRecord { return d.PRs[e2eScopeKey(n)] }
 	for name, edit := range map[string]func(r.DurableState){
 		"second automatic request on PR 1": func(d r.DurableState) {
-			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("synchronize", "pr_author", r.OwnerID)})
+			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("synchronize", "pr_author", r.OwnerID, 1)})
 		},
 		"repeated open request on PR 1": func(d r.DurableState) {
-			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("opened", "pr_author", r.OwnerID)})
+			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("opened", "pr_author", r.OwnerID, 1)})
 		},
 		"second owner comment on PR 2": func(d r.DurableState) {
-			pr(d, 2).Requests = append(pr(d, 2).Requests, r.NativeRequest{ID: 2, Origin: origin("comment", "commenter", r.OwnerID)})
+			pr(d, 2).Requests = append(pr(d, 2).Requests, r.NativeRequest{ID: 2, Origin: origin("comment", "commenter", r.OwnerID, 2)})
 		},
 		"PR 1 request not the leased job's": func(d r.DurableState) { pr(d, 1).Requests[0].ID = 3 },
 		"PR 1 request without origin":       func(d r.DurableState) { pr(d, 1).Requests[0].Origin = nil },
 		"PR 1 request removed":              func(d r.DurableState) { pr(d, 1).Requests[0].Removed = true },
 		"PR 2 request admitted":             func(d r.DurableState) { pr(d, 2).Requests[0].Admitted = true },
-		"PR 2 request automatic":            func(d r.DurableState) { pr(d, 2).Requests[0].Origin = origin("opened", "pr_author", 4242) },
+		"PR 2 request automatic":            func(d r.DurableState) { pr(d, 2).Requests[0].Origin = origin("opened", "pr_author", 4242, 2) },
 		"PR 2 comment by another actor":     func(d r.DurableState) { pr(d, 2).Requests[0].Origin.ActorID = 4242 },
-		"PR 2 request lost":                 func(d r.DurableState) { pr(d, 2).Requests = nil },
-		"PR 2 record lost":                  func(d r.DurableState) { delete(d.PRs, e2eScopeKey(2)) },
+		// Round 11 sweep: the origin's pull and comment IDs are published in
+		// the trigger line, so they must be the fake upstream's.
+		"PR 1 request of another pull":    func(d r.DurableState) { pr(d, 1).Requests[0].Origin.PullID = e2ePullID(2) },
+		"PR 2 comment of another pull":    func(d r.DurableState) { pr(d, 2).Requests[0].Origin.PullID = e2ePullID(1) },
+		"PR 2 comment of another comment": func(d r.DurableState) { pr(d, 2).Requests[0].Origin.CommentID = comment + 1 },
+		"PR 2 request lost":               func(d r.DurableState) { pr(d, 2).Requests = nil },
+		"PR 2 record lost":                func(d r.DurableState) { delete(d.PRs, e2eScopeKey(2)) },
 		"request on another PR": func(d r.DurableState) {
-			d.PRs[e2eScopeKey(3)] = &r.PRRecord{Scope: r.Scope{PR: 3}, Requests: []r.NativeRequest{{ID: 1, Origin: origin("comment", "commenter", r.OwnerID)}}}
+			d.PRs[e2eScopeKey(3)] = &r.PRRecord{Scope: r.Scope{PR: 3}, Requests: []r.NativeRequest{{ID: 1, Origin: origin("comment", "commenter", r.OwnerID, 3)}}}
 		},
 	} {
 		d := state()
@@ -5413,14 +5680,24 @@ func TestE2ERequestVerdicts(t *testing.T) {
 func TestE2EAttachedJob(t *testing.T) {
 	current, earlier := strings.Repeat("a", 40), strings.Repeat("b", 40)
 	snapshot := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: strings.Repeat("1", 40), Base: strings.Repeat("e", 40), MergeBase: strings.Repeat("e", 40)}
-	state := func(edit func(*r.DurableJob)) r.DurableState {
-		j := &r.DurableJob{Job: r.Job{ID: "request-1-1", Release: current, Snapshot: snapshot}, Scope: e2eScope(1), LeaseToken: "lease", Outstanding: true}
+	config := r.DefaultConfig()
+	// The retained job is the fixture's admitted job (e2eFixtureJob: its
+	// origin, owner requester, configuration and version) under the current
+	// release, with PR 1 retaining the request it was admitted from.
+	states := func(edit func(*r.DurableJob), request func(*r.NativeRequest)) r.DurableState {
+		j := e2eFixtureJob()
+		j.Job.Release, j.LeaseToken, j.Outstanding = current, "lease", true
+		q := r.NativeRequest{Origin: e2eFixtureOrigin(), ID: j.RequestID, Snapshot: snapshot, Admitted: true}
 		if edit != nil {
 			edit(j)
 		}
-		return r.DurableState{Jobs: map[string]*r.DurableJob{j.Job.ID: j}}
+		if request != nil {
+			request(&q)
+		}
+		return r.DurableState{Jobs: map[string]*r.DurableJob{j.Job.ID: j}, PRs: map[string]*r.PRRecord{e2eScopeKey(1): {Scope: e2eScope(1), Requests: []r.NativeRequest{q}}}}
 	}
-	if j, err := e2eAttachedJob(state(nil), current, snapshot); err != nil || j == nil || j.Job.ID != "request-1-1" {
+	state := func(edit func(*r.DurableJob)) r.DurableState { return states(edit, nil) }
+	if j, err := e2eAttachedJob(state(nil), current, snapshot, config); err != nil || j == nil || j.Job.ID != "request-1-1" || j.LeaseToken != "lease" {
 		t.Fatal("retained job of the current release refused", j, err)
 	}
 	second := state(nil)
@@ -5438,8 +5715,19 @@ func TestE2EAttachedJob(t *testing.T) {
 		"job of another head":       state(func(j *r.DurableJob) { j.Job.Snapshot.Head = strings.Repeat("9", 40) }),
 		"job of another base":       state(func(j *r.DurableJob) { j.Job.Snapshot.Base = strings.Repeat("9", 40) }),
 		"job of another scope":      state(func(j *r.DurableJob) { j.Scope.InstallationID++ }),
+		// Round 11 findings 2 and 3: the retained job is the one admission
+		// derives from its retained request and the harness's configuration.
+		"job of another origin":                state(func(j *r.DurableJob) { j.Job.Origin.Sequence = 2 }),
+		"job without an origin":                state(func(j *r.DurableJob) { j.Job.Origin = nil }),
+		"retained request of another origin":   states(nil, func(q *r.NativeRequest) { q.Origin.PullID = e2ePullID(2) }),
+		"retained request lost":                states(nil, func(q *r.NativeRequest) { q.ID = 2 }),
+		"job of another provider timeout":      state(func(j *r.DurableJob) { j.Job.Config.Limits.Timeout = time.Minute }),
+		"job of another quota wait":            state(func(j *r.DurableJob) { j.Job.Config.QuotaWait = time.Hour }),
+		"job of another configuration version": state(func(j *r.DurableJob) { j.Job.ConfigVersion = 2 }),
+		"job of another ID":                    state(func(j *r.DurableJob) { j.Job.ID = "native-1-1" }),
+		"job of another requester":             state(func(j *r.DurableJob) { j.Job.RequesterID++ }),
 	} {
-		if j, err := e2eAttachedJob(d, current, snapshot); err == nil {
+		if j, err := e2eAttachedJob(d, current, snapshot, config); err == nil {
 			t.Error(name, "accepted as the attached root's interrupted job", j)
 		}
 	}
@@ -5450,14 +5738,19 @@ func TestE2EAttachedJob(t *testing.T) {
 // from, of the expected origin, and no PR retains any other request. A
 // further request could otherwise be admitted later as a duplicate review.
 func TestE2EConfirmedRequestVerdicts(t *testing.T) {
+	const commentID = int64(31)
 	origin := func(kind, role string, actor int64) *r.RequestOrigin {
 		return &r.RequestOrigin{Kind: kind, ActorID: actor, ActorRole: role}
 	}
 	opened := func(id int64) r.NativeRequest {
-		return r.NativeRequest{ID: id, Admitted: true, Origin: origin("opened", "pr_author", r.OwnerID)}
+		o := origin("opened", "pr_author", r.OwnerID)
+		o.PullID = e2ePullID(1)
+		return r.NativeRequest{ID: id, Admitted: true, Origin: o}
 	}
 	comment := func(id int64, admitted bool) r.NativeRequest {
-		return r.NativeRequest{ID: id, Admitted: admitted, Origin: origin("comment", "commenter", r.OwnerID)}
+		o := origin("comment", "commenter", r.OwnerID)
+		o.PullID, o.CommentID = e2ePullID(2), commentID
+		return r.NativeRequest{ID: id, Admitted: admitted, Origin: o}
 	}
 	job := func(pr int, id int64) *r.DurableJob {
 		return &r.DurableJob{Job: r.Job{ID: fmt.Sprintf("request-%d-%d", pr, id)}, Scope: r.Scope{PR: pr}, RequestID: id}
@@ -5480,7 +5773,7 @@ func TestE2EConfirmedRequestVerdicts(t *testing.T) {
 		return out
 	}
 	single := func(d r.DurableState) []string { return failures(e2eOpenedRequestVerdicts("confirmed", d, j1)) }
-	isolation := func(d r.DurableState) []string { return failures(e2eIsolationRequestVerdicts(d, j1, j2)) }
+	isolation := func(d r.DurableState) []string { return failures(e2eIsolationRequestVerdicts(d, j1, j2, commentID)) }
 	if f := single(state(1)); len(f) != 0 {
 		t.Fatal("sole admitted open request refused:", f)
 	}
@@ -5498,6 +5791,7 @@ func TestE2EConfirmedRequestVerdicts(t *testing.T) {
 		"single: request not the job's":     {1, single, func(d r.DurableState) { pr(d, 1).Requests[0].ID = 2 }},
 		"single: request removed":           {1, single, func(d r.DurableState) { pr(d, 1).Requests[0].Removed = true }},
 		"single: request by another actor":  {1, single, func(d r.DurableState) { pr(d, 1).Requests[0].Origin.ActorID = 4242 }},
+		"single: request of another pull":   {1, single, func(d r.DurableState) { pr(d, 1).Requests[0].Origin.PullID = e2ePullID(2) }},
 		"single: comment request instead":   {1, single, func(d r.DurableState) { pr(d, 1).Requests[0] = comment(1, true) }},
 		"single: further unadmitted request": {1, single, func(d r.DurableState) {
 			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("synchronize", "pr_author", r.OwnerID)})
@@ -5517,7 +5811,11 @@ func TestE2EConfirmedRequestVerdicts(t *testing.T) {
 		"isolation: PR 2 comment not admitted":     {2, isolation, func(d r.DurableState) { pr(d, 2).Requests[0].Admitted = false }},
 		"isolation: PR 2 request not the job's":    {2, isolation, func(d r.DurableState) { pr(d, 2).Requests[0].ID = 2 }},
 		"isolation: PR 2 comment by another actor": {2, isolation, func(d r.DurableState) { pr(d, 2).Requests[0].Origin.ActorID = 4242 }},
-		"isolation: PR 2 record lost":              {2, isolation, func(d r.DurableState) { delete(d.PRs, e2eScopeKey(2)) }},
+		"isolation: PR 2 comment of another pull":  {2, isolation, func(d r.DurableState) { pr(d, 2).Requests[0].Origin.PullID = e2ePullID(1) }},
+		"isolation: PR 2 another comment's request": {2, isolation, func(d r.DurableState) {
+			pr(d, 2).Requests[0].Origin.CommentID = commentID + 1
+		}},
+		"isolation: PR 2 record lost": {2, isolation, func(d r.DurableState) { delete(d.PRs, e2eScopeKey(2)) }},
 		"isolation: request on a third PR": {2, isolation, func(d r.DurableState) {
 			d.PRs[e2eScopeKey(3)] = &r.PRRecord{Scope: r.Scope{PR: 3}, Requests: []r.NativeRequest{comment(1, false)}}
 		}},
@@ -5711,6 +6009,49 @@ func TestE2EAuthUsable(t *testing.T) {
 	// A store that holds nothing is neither usable nor fenced.
 	if got := e2eAuthDisposition(private(), r.Codex); got != "invalid" {
 		t.Error("empty auth store judged", got)
+	}
+	// Round 11 finding 1: a refusal before the store yields state is a
+	// recovery fence only when it is ErrAuthRecoveryRequired. Every other
+	// pending recovery path fences; a malformed or unsafe state file, an
+	// invalid lock file or another filesystem error leaves the store
+	// unavailable, not fenced.
+	for name, c := range map[string]struct {
+		damage func(provider string) error
+		want   string
+	}{
+		"pending recovery journal":      {func(p string) error { return os.WriteFile(filepath.Join(p, "pending.json"), []byte("{}"), 0600) }, "fenced"},
+		"exposed profile":               {func(p string) error { return os.Mkdir(filepath.Join(p, "profile"), 0700) }, "fenced"},
+		"state file readable by others": {func(p string) error { return os.Chmod(filepath.Join(p, "state.json"), 0644) }, "unavailable"},
+		"empty state file":              {func(p string) error { return os.WriteFile(filepath.Join(p, "state.json"), nil, 0600) }, "unavailable"},
+		"state file is a directory": {func(p string) error {
+			if err := os.Remove(filepath.Join(p, "state.json")); err != nil {
+				return err
+			}
+			return os.Mkdir(filepath.Join(p, "state.json"), 0700)
+		}, "unavailable"},
+		"state file linked elsewhere":  {func(p string) error { return os.Link(filepath.Join(p, "state.json"), filepath.Join(p, "linked.json")) }, "unavailable"},
+		"lock file readable by others": {func(p string) error { return os.Chmod(filepath.Join(p, "refresh.lock"), 0644) }, "unavailable"},
+		"lock file is a directory": {func(p string) error {
+			if err := os.Remove(filepath.Join(p, "refresh.lock")); err != nil {
+				return err
+			}
+			return os.Mkdir(filepath.Join(p, "refresh.lock"), 0700)
+		}, "unavailable"},
+	} {
+		directory := private()
+		store, err := r.NewAuthStore(r.Codex, directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Refresh(context.Background(), func([]byte) ([]byte, error) { return f.Seed(r.Codex), nil }); err != nil {
+			t.Fatal(name, err)
+		}
+		if err := c.damage(filepath.Join(directory, string(r.Codex))); err != nil {
+			t.Fatal(name, err)
+		}
+		if got := e2eAuthDisposition(directory, r.Codex); got != c.want {
+			t.Errorf("%s: disposition %s, want %s", name, got, c.want)
+		}
 	}
 }
 
@@ -5910,6 +6251,65 @@ func TestE2EParseUnits(t *testing.T) {
 
 // TestE2EWants keeps every want line of an upload-pack request, so a
 // malformed or symbolic want is judged by the upload verdict, not dropped.
+// TestE2EGitHubRoleRoutes is round 11 finding 4: the fake GitHub holds each
+// credential role to production's capability split (e2eRoleRoutes), so
+// discovery or polling routed through the publisher credential, on its own
+// publisher transport, is a violation and is refused, as is publication work
+// done with the reader credential.
+func TestE2EGitHubRoleRoutes(t *testing.T) {
+	g := &e2eGitHub{prs: map[int]*e2ePR{}, baseSHA: strings.Repeat("e", 40), tokens: map[string]string{"reader-token": "reader", "publisher-token": "publisher"}, mints: map[string]int{}, requests: map[string]int{}}
+	call := func(role, method, path string) (int, []string) {
+		q := httptest.NewRequest(method, "https://api.github.com"+path, nil)
+		q.Header.Set("Authorization", "Bearer "+role+"-token")
+		if role == "app" {
+			q.Header.Set("Authorization", "Bearer synthetic-app-jwt")
+		}
+		transport := role
+		if role == "app" {
+			transport = "reader"
+		}
+		before := len(g.violations)
+		status, _ := g.api(q, transport)
+		return status, slices.Clone(g.violations[before:])
+	}
+	for _, c := range []struct{ role, method, path string }{
+		{"app", "GET", "/app"},
+		{"app", "GET", e2eRepoPath + "/installation"},
+		{"reader", "GET", "/installation/repositories"},
+		{"reader", "GET", "/users/sfl-test[bot]"},
+		{"reader", "GET", e2eRepoPath},
+		{"reader", "GET", e2eRepoPath + "/pulls?per_page=100&page=1"},
+		{"reader", "GET", e2eRepoPath + "/pulls/1"},
+		{"reader", "GET", e2eRepoPath + "/git/ref/heads/main"},
+		{"reader", "GET", e2eRepoPath + "/issues/1/comments"},
+		{"publisher", "GET", "/installation/repositories"},
+		{"publisher", "GET", "/users/sfl-test[bot]"},
+		{"publisher", "GET", e2eRepoPath},
+		{"publisher", "GET", e2eRepoPath + "/pulls/1/reviews"},
+		{"publisher", "GET", e2eRepoPath + "/pulls/1/reviews/5/comments"},
+	} {
+		if _, violations := call(c.role, c.method, c.path); len(violations) != 0 {
+			t.Errorf("%s %s %s within production's capability refused: %v", c.role, c.method, c.path, violations)
+		}
+	}
+	for _, c := range []struct{ role, method, path string }{
+		{"publisher", "GET", e2eRepoPath + "/pulls?per_page=100&page=1"},
+		{"publisher", "GET", e2eRepoPath + "/pulls/1"},
+		{"publisher", "GET", e2eRepoPath + "/git/ref/heads/main"},
+		{"publisher", "GET", e2eRepoPath + "/compare/" + strings.Repeat("e", 40) + "..." + strings.Repeat("1", 40) + "?per_page=1&page=2"},
+		{"publisher", "GET", e2eRepoPath + "/issues/1/events"},
+		{"publisher", "GET", e2eRepoPath + "/pulls/1/requested_reviewers"},
+		{"reader", "GET", e2eRepoPath + "/pulls/1/reviews"},
+		{"reader", "GET", e2eRepoPath + "/pulls/1/reviews/5/comments"},
+		{"reader", "GET", e2eRepoPath + "/pulls/1/reviews/5"},
+	} {
+		status, violations := call(c.role, c.method, c.path)
+		if len(violations) == 0 || status != 403 {
+			t.Errorf("%s %s %s outside production's capability served (status %d, violations %v)", c.role, c.method, c.path, status, violations)
+		}
+	}
+}
+
 func TestE2EWants(t *testing.T) {
 	head, base := strings.Repeat("1", 40), strings.Repeat("e", 40)
 	body := "0011command=fetch0001000dthin-pack0032want " + head + "\n0032want " + base + "\n0009done\n0000"
