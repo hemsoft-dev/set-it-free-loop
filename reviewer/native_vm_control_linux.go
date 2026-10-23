@@ -73,7 +73,7 @@ func (r *NativeVMControlReviewer) CritiqueAudited(ctx context.Context, s Control
 	if err != nil {
 		return ControlReport{}, nil, nil, blocked
 	}
-	report, access, evidence, err := r.reviewer.reviewTaskAudited(ctx, capability, &captured)
+	report, access, evidence, err := r.reviewer.reviewTaskAudited(ctx, capability, &captured, "")
 	if err != nil {
 		return ControlReport{}, access, evidence, err
 	}

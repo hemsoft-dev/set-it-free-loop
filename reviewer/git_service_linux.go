@@ -91,6 +91,8 @@ type gitReviewerService struct {
 	phaseCancel context.CancelFunc
 	runCancel   context.CancelFunc
 	runDone     chan struct{}
+	// openNative is a private fake manager/kernel seam for recovery tests.
+	openNative func(context.Context, NativeVMOptions) (*NativeVMSupervisor, error)
 }
 
 func (*gitReviewerService) String() string   { return "gitReviewerService{redacted}" }
