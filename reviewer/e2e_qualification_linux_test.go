@@ -1493,21 +1493,22 @@ func e2eInterruptedLaunch(u e2eNativeUnit, j *r.DurableJob) (string, error) {
 
 // e2eRetainedLaunches proves the native launch a root attached after
 // close-provider must hold, and returns it as the only pre-existing launch:
-// exactly one launch, production-whole stopped, with a bound stopped audit
-// recording the auth as exported, not returned and the session not complete.
-// Its provider and session must be the retained job's outstanding attempt,
-// which is the session the job derives for that attempt's provider and round
-// and the job's only charged session beyond its artifacts, and its version 2
-// receipt must name that attempt's ID. The job must hold
-// exactly one provider attempt, that one, whose durably recorded stopped
-// provider evidence is the audit's complete evidence (by digest), not merely
-// another stopped receipt of the same session, and no source attempt but at
-// most that attempt's own. The audit must record that attempt's request, no
-// report and exactly the source receipt the job recorded for it
+// exactly one launch, production-whole stopped, with a bound version 2
+// stopped audit recording the auth as exported, not returned and the session
+// not complete. Its provider and session must be the retained job's
+// outstanding attempt, which is the session the job derives for that
+// attempt's provider and round and the job's only charged session beyond its
+// artifacts, and its receipt must name that attempt's durable ID. The job
+// must hold exactly one provider attempt, that one, whose durably recorded
+// stopped provider evidence is the audit's complete evidence (by digest), not
+// merely another stopped receipt of the same session, and no source attempt
+// but at most that attempt's own. The audit must record that attempt's
+// request, no report and exactly the source receipt the job recorded for it
 // (e2eInterruptedLaunch). A missing launch yields no launch, and an
-// unreadable launch directory or any other root entry a failed launch beside
-// it, so either is refused and the fence cannot pass without exactly its
-// interrupted launch.
+// unreadable launch directory, a version 1 receipt naming no attempt or any
+// other root entry a failed or unaudited launch beside it, so each is refused
+// and neither the fence nor recovery can pass without exactly its interrupted
+// launch.
 func e2eRetainedLaunches(units []e2eNativeUnit, j *r.DurableJob) (map[string]bool, error) {
 	if j == nil {
 		return nil, errors.New("no retained job")
@@ -1519,7 +1520,7 @@ func e2eRetainedLaunches(units []e2eNativeUnit, j *r.DurableJob) (map[string]boo
 	if !u.wholeStop() || !u.AuditPresent || !u.AuthExported || u.AuthReturned || u.Complete {
 		return nil, fmt.Errorf("retained launch %s lacks a captured whole-unit stop with a stopped audit of exported, unreturned auth", u.Launch)
 	}
-	if !j.Outstanding || u.Provider != string(j.AttemptProvider) || u.SessionHash != j.AttemptInputHash || u.AttemptID != j.AttemptID {
+	if !j.Outstanding || u.Provider != string(j.AttemptProvider) || u.SessionHash != j.AttemptInputHash || !e2eAttemptID.MatchString(u.AttemptID) || u.AttemptID != j.AttemptID {
 		return nil, fmt.Errorf("retained launch %s is not job %s's outstanding attempt", u.Launch, j.Job.ID)
 	}
 	session, err := e2eSessionFor(j, j.AttemptProvider, j.AttemptRound)
@@ -3538,11 +3539,9 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 		e.t.Fatal("attached root does not hold the interrupted launch and its stopped audit:", err)
 	}
 	e.nativeBefore = launches
-	e.check(true, "the attached root holds the interrupted launch, captured, stopped and audited with exported unreturned auth, bound to the retained attempt's stopped provider evidence")
+	e.check(true, "the attached root holds the interrupted launch, captured, stopped and audited with exported unreturned auth, its receipt naming the leased attempt and repeating that attempt's recorded stopped provider evidence")
 	codexFenced := e2eAuthDisposition(e.auth, r.Codex) == "fenced"
 	e.check(codexFenced, "codex auth is still fenced in the restarted process")
-	held := e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID())
-	e.check(len(held) == 1 && held[0].AuditPresent && held[0].AttemptID == before.AttemptID, "the retained launch's stopped receipt names the leased attempt")
 	e.open("restart")
 	e.assertSourceStopped("after restart recovery", before)
 	e.waitFor("PR 2 comment request discovered", time.Minute, true, func(d r.DurableState) bool {
@@ -3729,18 +3728,22 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
 	e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
-	before := e2eJobFor(e.reopenState(), 1)
+	retained := e.reopenState()
+	before := e2eJobFor(retained, 1)
 	if before == nil || before.LeaseToken == "" || !before.Outstanding {
 		e.t.Fatal("attached root has no retained lease")
 	}
 	units := e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID())
-	e.check(len(units) == 1 && units[0].Provider == string(r.Codex) && units[0].AuditPresent && units[0].AuthExported && !units[0].AuthReturned, "the retained root has one interrupted Codex launch with exported, unreturned auth")
-	e.check(len(units) == 1 && units[0].AttemptID == before.AttemptID, "the interrupted launch's stopped receipt names the leased attempt")
-	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth is fenced and claude auth usable before recovery")
-	if len(units) != 1 {
-		return
+	kept, err := e2eRetainedLaunches(units, before)
+	if err != nil {
+		e.t.Fatal("attached root does not hold the interrupted launch and its stopped audit:", err)
 	}
+	e.nativeBefore = kept
 	interrupted := units[0]
+	e.check(interrupted.Provider == string(r.Codex), "the attached root holds the one interrupted Codex launch, captured, stopped and audited with exported unreturned auth, its receipt naming the leased attempt and repeating that attempt's recorded stopped provider evidence")
+	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth is fenced and claude auth usable before recovery")
+	pr1 := e2eAdmittedOpened(1, before.RequestID)
+	e.checkAll(e2eRequestVerdicts("attached before recovery", e2eRequests(retained), map[int]e2eRequest{1: pr1}))
 	e.openIdle("restart")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -3766,6 +3769,9 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	recovered := e2eJobFor(e.state(), 1)
 	e.check(recovered.LeaseToken == "" && !recovered.Outstanding && recovered.State == "auth_failed" && recovered.Checkpoint.ConsumedSessions == before.Checkpoint.ConsumedSessions && len(recovered.Checkpoint.Artifacts) == 0 && len(recovered.SourceAttempts) == 0 && len(recovered.ProviderRecoveries) == 1 && recovered.ProviderRecoveries[0].LaunchID == interrupted.Launch, "the recovered job is charged, incomplete, unreviewed and carries one recovery receipt")
 	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "the lost codex auth is retired, never reused; claude auth is untouched")
+	// Recovery releases the job, not its request: PR 1's request stays
+	// admitted to the auth_failed job, so it can never be admitted again.
+	e.checkAll(e2eRequestVerdicts("after recovery", e2eRequests(e.state()), map[int]e2eRequest{1: pr1}))
 	observed, listing := e.units.observed()
 	launches := len(e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID()))
 	e.check(listing == nil && observed == 0 && launches == 1, "startup and recovery started no source or native unit (%d observed, %d launches, listing %v)", observed, launches, listing)
@@ -3797,6 +3803,15 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	d := e.state()
 	j1 := e2eJobFor(d, 1)
 	e.check(len(d.Jobs) == 2 && j1.State == "auth_failed" && j1.LeaseToken == "" && len(e2eWritesFor(d, 1, "review")) == 0, "PR 1 stays auth_failed with no new job or review intent")
+	// PR 1 keeps only its admitted opened request; PR 2 holds only the owner
+	// comment, admitted as its reviewed job's request. A second request on
+	// either would be admitted once this job ends.
+	pr2 := e2eRequest{PR: 2, ID: -1}
+	if j := e2eJobFor(d, 2); j != nil {
+		pr2 = e2eAdmittedComment(2, j.RequestID)
+	}
+	e.result.Requests = e2eRequests(d)
+	e.checkAll(e2eRequestVerdicts("after recovery review", e.result.Requests, map[int]e2eRequest{1: pr1, 2: pr2}))
 	e.check(e.github.reviewPosts(1) == 0 && e.github.reviewPosts(2) == 1, "exactly one review POST, for PR 2 only")
 	posts := map[string]int{}
 	for key, n := range e.github.summary().Requests {
@@ -4331,7 +4346,10 @@ func TestE2EFinalVerdicts(t *testing.T) {
 			res.SystemdUnits = res.SystemdUnits[1:]
 		}), recovery, retainedLaunch, true},
 		"interrupted launch claimed by the recovery process": {recovered(), recovery, nil, true},
-		"codex auth not re-provisioned after recovery":       {mutate(recovered(), func(res *e2eResult) { res.AuthRecoveryClear["codex"] = false }), recovery, retainedLaunch, true},
+		"retained launch vanished after recovery": {mutate(recovered(), func(res *e2eResult) {
+			res.NativeUnits = res.NativeUnits[1:]
+		}), recovery, retainedLaunch, true},
+		"codex auth not re-provisioned after recovery": {mutate(recovered(), func(res *e2eResult) { res.AuthRecoveryClear["codex"] = false }), recovery, retainedLaunch, true},
 	} {
 		if f := failures(in.res, in.want, in.before, in.attached); len(f) == 0 {
 			t.Error(name, "accepted")
@@ -5923,6 +5941,19 @@ func TestE2ERetainedLaunches(t *testing.T) {
 		"audit absent from the unit":  edit(func(u *e2eNativeUnit) { u.Audit = nil }, nil),
 		"audit of another round":      edit(nil, func(j *r.DurableJob) { j.AttemptRound = 2 }),
 		"interrupted attempt charged": edit(nil, func(j *r.DurableJob) { j.Checkpoint.ConsumedSessions = 2 }),
+		// The version 2 receipt must name the outstanding attempt, and the
+		// job must record that attempt's evidence under no other ID.
+		"receipt naming no attempt":      edit(func(u *e2eNativeUnit) { u.AttemptID = "" }, nil),
+		"receipt naming another attempt": edit(func(u *e2eNativeUnit) { u.AttemptID = strings.Repeat("c", 32) }, nil),
+		"attempt ID cleared on both sides": edit(func(u *e2eNativeUnit) { u.AttemptID = "" }, func(j *r.DurableJob) {
+			j.AttemptID, j.ProviderAttempts[0].ID = "", ""
+		}),
+		"receipt repeats other evidence":             edit(func(u *e2eNativeUnit) { u.EvidenceHash = strings.Repeat("7", 64) }, nil),
+		"recorded evidence differs from the receipt": edit(nil, func(j *r.DurableJob) { j.ProviderAttempts[0].Evidence.Access.Requests = 2 }),
+		"evidence of another attempt beside the job's": edit(nil, func(j *r.DurableJob) {
+			j.ProviderAttempts[0].ID = strings.Repeat("c", 32)
+			j.ProviderAttempts = append(j.ProviderAttempts, r.ProviderAttempt{ID: j.AttemptID, Evidence: &r.ProviderEvidence{Access: r.ProviderAccess{Version: 1, SessionHash: j.AttemptInputHash, Stopped: true}}})
+		}),
 	} {
 		if _, err := e2eRetainedLaunches(in.units, in.job); err == nil {
 			t.Error(name, "accepted as the retained interrupted launch")
@@ -5990,6 +6021,49 @@ func TestE2ERequestVerdicts(t *testing.T) {
 		edit(d)
 		if len(failures(d)) == 0 {
 			t.Error(name, "accepted")
+		}
+	}
+	// close-provider-recover's end: recovery released PR 1's job but kept its
+	// admitted request, and PR 2's owner comment became its reviewed job.
+	recovered := func() r.DurableState {
+		return r.DurableState{PRs: map[string]*r.PRRecord{
+			e2eScopeKey(1): {Scope: r.Scope{PR: 1}, Requests: []r.NativeRequest{{ID: 1, Admitted: true, Origin: origin("opened", "pr_author", r.OwnerID)}}},
+			e2eScopeKey(2): {Scope: r.Scope{PR: 2}, Requests: []r.NativeRequest{{ID: 7, Admitted: true, Origin: origin("comment", "commenter", r.OwnerID)}}},
+		}}
+	}
+	wantRecovered := map[int]e2eRequest{1: e2eAdmittedOpened(1, 1), 2: e2eAdmittedComment(2, 7)}
+	recoveredFailures := func(d r.DurableState) int {
+		n := 0
+		for _, v := range e2eRequestVerdicts("after recovery review", e2eRequests(d), wantRecovered) {
+			if !v.OK {
+				n++
+			}
+		}
+		return n
+	}
+	if n := recoveredFailures(recovered()); n != 0 {
+		t.Fatal("recovered end state refused:", n)
+	}
+	for name, edit := range map[string]func(r.DurableState){
+		"PR 1 request no longer admitted":  func(d r.DurableState) { pr(d, 1).Requests[0].Admitted = false },
+		"PR 1 request removed by recovery": func(d r.DurableState) { pr(d, 1).Requests[0].Removed = true },
+		"PR 1 opened again after recovery": func(d r.DurableState) {
+			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("opened", "pr_author", r.OwnerID)})
+		},
+		"PR 2 comment never admitted": func(d r.DurableState) { pr(d, 2).Requests[0].Admitted = false },
+		"PR 2 request not the job's":  func(d r.DurableState) { pr(d, 2).Requests[0].ID = 8 },
+		"PR 2 comment repeated": func(d r.DurableState) {
+			pr(d, 2).Requests = append(pr(d, 2).Requests, r.NativeRequest{ID: 8, Origin: origin("comment", "commenter", r.OwnerID)})
+		},
+		"PR 2 automatic request recorded": func(d r.DurableState) { pr(d, 2).Requests[0].Origin = origin("opened", "pr_author", r.OwnerID) },
+		"request on another PR": func(d r.DurableState) {
+			d.PRs[e2eScopeKey(3)] = &r.PRRecord{Scope: r.Scope{PR: 3}, Requests: []r.NativeRequest{{ID: 1, Origin: origin("comment", "commenter", r.OwnerID)}}}
+		},
+	} {
+		d := recovered()
+		edit(d)
+		if recoveredFailures(d) == 0 {
+			t.Error("recovered:", name, "accepted")
 		}
 	}
 }

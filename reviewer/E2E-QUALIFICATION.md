@@ -125,23 +125,24 @@ still leased, bound to PR 1's scope and the deterministic fake upstream's
 snapshot, and admitted under the current release revision. A root retained
 by another revision's `close-provider` is refused, so its interrupted job and
 launch are never recorded as this revision's restart. Before
-`close-provider-reopen` treats a native launch as the earlier process's, its
-root must hold exactly one launch: started, settled, captured, aborted and
-stopped, with a bound stopped audit that records the auth as exported and not
-returned and the session as incomplete.
-Its provider and session must be the retained job's outstanding attempt, which
-must be the session the job derives for that provider and round and its only
-charged session beyond its artifacts. The job must hold exactly one provider
-attempt, that one, and its recorded stopped provider evidence must equal the
-audit's complete provider evidence by digest; another valid stopped receipt of
-the same session is refused. The job may hold no source attempt but that
+`close-provider-reopen` or `close-provider-recover` treats a native launch as
+the earlier process's, its root must hold exactly one launch: started,
+settled, captured, aborted and stopped, with a bound version 2 stopped audit
+that records the auth as exported and not returned and the session as
+incomplete. Its provider and session must be the retained job's outstanding
+attempt, which must be the session the job derives for that provider and
+round and its only charged session beyond its artifacts, and its receipt must
+name that attempt's ID. The job must hold exactly one provider attempt, that
+one, and its recorded stopped provider evidence must equal the audit's
+complete provider evidence by digest; another valid stopped receipt of the
+same session is refused. The job may hold no source attempt but that
 attempt's own. The audit must record that attempt's request, the zero report
 and exactly the source receipt the job recorded for it (none at `daac99c`),
 end at the wait for its result record and fail with `auth-return`. The
 first `close-provider` process applies the same check before it retains the
-root. A missing launch, an unreadable launch directory or any other entry in
-the native root fails setup, and a retained launch must still be present at
-the end. Every check of source stop receipts
+root. A missing launch, an unreadable launch directory, any other entry in
+the native root or a version 1 receipt fails setup, and a retained launch
+must still be present at the end. Every check of source stop receipts
 first requires exactly one owner journal record per expected job, each with
 exactly one archive export of the same attempt. As production recovery
 requires, the export's request hash must be the digest of the record's source
@@ -173,31 +174,37 @@ exactly one request: the admitted automatic `opened` request of its job. At
 the end of `close-provider-reopen`, PR 1 must still retain only that request,
 PR 2 exactly one unadmitted owner `comment` request, and no other PR any
 request. A duplicate held back by the lease would otherwise become a second
-job once the lease is released. Every case records the requests it judged as
-`Requests` in the JSON result. The fence states (`close-capture` after close,
-both `close-provider` processes) must hold PR 1's job as the only job and no
-write intent. The case enumerates every entry of each provider's native root
-except the supervisor's `executables` directory, reads each launch's
-`unit.json` and `native-audit.json`, and checks provider auth disposition by
-reopening the protected stores. The store itself accepts any nonempty state,
-so a store is usable only when it is unfenced and holds the provider's
-original synthetic credential, judged by the hostile fixture's rule: the
-original synthetic access and refresh tokens, and for Codex the `chatgpt` auth
-mode. Corrupted, cross-provider or substituted auth is invalid, which is
-neither usable nor fenced. A store is fenced only when it refuses the refresh
-with `ErrAuthRecoveryRequired` before yielding its state, as it does while an
-exported profile awaits recovery. Any other refusal (a malformed or unsafe
-state file, an invalid lock file or a filesystem error) leaves it
-unavailable, which is neither usable nor fenced. A directory without a readable `unit.json`,
-any other entry and an unreadable root each count as a failed launch, which
-no check accepts. The unit journal is read only through production's own
-reader (`readUnit`, exported to the test as `E2EReadNativeUnitJournal`): a
-private, singly linked file, strictly decoded, of the `native-vm` payload
-under the release's stub, with a possible lifecycle (a capture needs a
-settled start and a bound process and cgroup, a stop needs the abort). Its
-boot ID and its captured process's must be the current boot's, with a systemd
-invocation ID and process start time, and every native unit must be started,
-settled, captured, aborted and stopped. It then counts only
+job once the lease is released. `close-provider-recover` starts from the same
+PR 1 request. Recovery releases the job but not its request, so after
+recovery PR 1 must still retain only that admitted request, which can never
+be admitted again. At the end, PR 1 must still retain only that request, PR 2
+exactly one owner `comment` request, admitted as the request of PR 2's
+reviewed job, and no other PR any request. Every case records the requests it
+judged as `Requests` in the JSON result. The fence states (`close-capture`
+after close, both `close-provider` processes) must hold PR 1's job as the only
+job and no write intent. The case enumerates every entry of each provider's
+native root except the supervisor's `executables` directory, reads each
+launch's `unit.json` and `native-audit.json`, and checks provider auth
+disposition by reopening the protected stores. The store itself accepts any
+nonempty state, so a store is usable only when it is unfenced and holds the
+provider's original synthetic credential, judged by the hostile fixture's
+rule: the original synthetic access and refresh tokens, and for Codex the
+`chatgpt` auth mode. Corrupted, cross-provider or substituted auth is
+invalid, which is neither usable nor fenced. A store is fenced only when it
+refuses the refresh with `ErrAuthRecoveryRequired` before yielding its state,
+as it does while an exported profile awaits recovery. Any other refusal (a
+malformed or unsafe state file, an invalid lock file or a filesystem error)
+leaves it unavailable, which is neither usable nor fenced. A directory
+without a readable `unit.json`, any other entry and an unreadable root each
+count as a failed launch, which no check accepts. The unit journal is read
+only through production's own reader (`readUnit`, exported to the test as
+`E2EReadNativeUnitJournal`): a private, singly linked file, strictly decoded,
+of the `native-vm` payload under the release's stub, with a possible
+lifecycle (a capture needs a settled start and a bound process and cgroup, a
+stop needs the abort). Its boot ID and its captured process's must be the
+current boot's, with a systemd invocation ID and process start time, and
+every native unit must be started, settled, captured, aborted and stopped. It
+then counts only
 as version 1 for its own directory's launch. It must name
 `sfl-alpha-<launch>.service`, and its binding must derive the containment ID
 from its session and launch. It must also be the pinned native payload:
@@ -467,6 +474,10 @@ record inventory, each job held to the job expected from harness inputs, and
 each GitHub credential role held to its endpoint allowlist and exact route
 set. No unit or E2E root remained afterwards. Only this document changed after
 `13251e3`.
+`13251e3` predates the operator recovery and the version 2 audit receipts
+that this branch adds, so its native audits were version 1, which the current
+harness refuses, and it did not run `close-provider-recover`. That run is not
+evidence for this head; see [Measured at `<head>`](#measured-at-head).
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
@@ -642,9 +653,14 @@ new process attached to the root retained by `close-provider`, inside the
 same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
 
 1. Before startup, the job is `running` with its lease and one charged
-   session. The only native launch is a Codex unit whose stopped audit
-   records exported, unreturned auth and names the leased attempt. Codex auth
-   is fenced and Claude auth is usable.
+   session. The root holds exactly one native launch, which passes the
+   retained-launch rule above (a missing launch or a version 1 receipt stops
+   the run). It is a Codex unit whose version 2 stopped audit records
+   exported, unreturned auth, names the leased attempt and repeats its
+   recorded stopped evidence. Only that launch is excluded from this
+   process's unit count. Codex auth is fenced and Claude auth is usable. PR 1
+   retains only its admitted automatic `opened` request, and no other PR has
+   a request.
 2. The service is opened, but not refreshed or run.
    `ProviderRecoveryCandidates` lists the job, its attempt ID, recorded
    stopped evidence and exactly the one original launch, whose stopped
@@ -657,8 +673,9 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    has no lease, no outstanding attempt, one consumed session, no artifact,
    no source attempt and one recovery receipt bound to the launch. A repeated
    call is refused. Codex auth is retired (unusable), and Claude auth is
-   untouched. Neither startup nor recovery has started a source or native
-   unit, and the interrupted launch is still the only one.
+   untouched. PR 1 still retains only its admitted `opened` request.
+   Neither startup nor recovery has started a source or native unit, and the
+   interrupted launch is still the only one.
 5. The test re-provisions a synthetic Codex seed, standing in for the
    operator's separate auth repair, then calls `Refresh` and `Run`. Once
    PR 2 is admitted, recovery is refused with `ErrLiveBlocked`.
@@ -669,7 +686,9 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    recovered attempt, which no PR 2 artifact uses. It is published as one
    marked COMMENT with the inline comment at `source.go:1`, then confirmed.
 7. PR 1 stays `auth_failed` with no new job, write or POST. PR 2 has exactly
-   one review intent, and it is `confirmed`. The only GitHub POSTs were two
+   one review intent, and it is `confirmed`. PR 1 retains only its admitted
+   `opened` request, PR 2 only the owner `comment` request admitted as its
+   job's request, and no other PR any request. The only GitHub POSTs were two
    role token mints and one review POST for PR 2. The owner journal holds two
    stopped source records, PR 1's retained attempt and PR 2's, each with one
    staged export. Final `Close` succeeded, `Run` returned only cancellation,
@@ -681,12 +700,28 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    counted. Both auth stores are usable at the end: the re-provisioned Codex
    auth was returned by PR 2's sessions.
 
+This qualifies only the recovery path for a stop proved in process. It does
+not cover a host process kill before the stopped audit receipt. Recovery
+refuses that case because the receipt is required evidence, and it remains
+fenced. Re-provisioning provider auth after retirement is an operator action
+outside the reviewer, and the test only simulates it with a synthetic seed.
+
+### Measured at `<head>`
+
+Not yet measured. The current head, with operator recovery, version 2 audit
+receipts bound to attempt IDs, the retained-launch rule and the exact request
+checks, has not run on a host. Every case, including `close-provider` followed
+by `close-provider-recover` in one lock hold, needs to be rerun from images,
+stub and test binary built from one clean commit, and the results recorded
+here.
+
 ### Pre-rebase history: recovery runs at `098261f`, `483b17a` and `34c9d96`
 
 None of these commits is an ancestor of the current branch. All three predate
 the version 2 audit receipt: their native audits are version 1 and name no
 attempt, which production recovery and the current harness both refuse. They
-also predate the attestation and binding rules above. They are history, not
+also predate the attestation and binding rules above, the retained-launch
+rule and the exact request checks in steps 1, 4 and 7. They are history, not
 evidence for the current head; that run is recorded under
 [Measured at `<head>`](#measured-at-head).
 
@@ -708,12 +743,6 @@ the first unit was first seen after recovery returned.
 An earlier run at `ac57673` passed every check except one: its
 running-service refusal raced `Run`'s start and got `ErrFenced`. The check
 now waits for admission.
-
-This qualifies only the recovery path for a stop proved in process. It does
-not cover a host process kill before the stopped audit receipt. Recovery
-refuses that case because the receipt is required evidence, and it remains
-fenced. Re-provisioning provider auth after retirement is an operator action
-outside the reviewer, and the test only simulates it with a synthetic seed.
 
 ## Limitations and remaining work
 
