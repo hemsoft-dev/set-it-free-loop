@@ -44,15 +44,18 @@ import (
 //
 // Required: SFL_E2E_SOURCE_IMAGE, SFL_E2E_SOURCE_STUB, SFL_E2E_NATIVE_IMAGE and
 // SFL_E2E_CASE (review, isolation, close-capture, close-provider,
-// close-publish). SFL_E2E_EVIDENCE optionally names an existing private
-// directory that receives a nonsecret JSON result. Run under the shared VM lock.
+// close-provider-reopen, close-publish). close-provider-reopen is a second
+// process that attaches to the root retained by close-provider through
+// SFL_E2E_ATTACH, as a restarted service would. SFL_E2E_EVIDENCE optionally
+// names an existing private directory that receives a nonsecret JSON result.
+// Run under the shared VM lock.
 func TestE2EQualification(t *testing.T) {
 	sourceImage, sourceStub, nativeImage := os.Getenv("SFL_E2E_SOURCE_IMAGE"), os.Getenv("SFL_E2E_SOURCE_STUB"), os.Getenv("SFL_E2E_NATIVE_IMAGE")
 	scenario := os.Getenv("SFL_E2E_CASE")
 	if sourceImage == "" || sourceStub == "" || nativeImage == "" || scenario == "" {
 		t.Skip("explicit source image, exact-head source stub, native image and case required")
 	}
-	cases := map[string]func(*e2eEnv){"review": e2eReview, "isolation": e2eIsolation, "close-capture": e2eCloseCapture, "close-provider": e2eCloseProvider, "close-publish": e2eClosePublish}
+	cases := map[string]func(*e2eEnv){"review": e2eReview, "isolation": e2eIsolation, "close-capture": e2eCloseCapture, "close-provider": e2eCloseProvider, "close-provider-reopen": e2eCloseProviderReopen, "close-publish": e2eClosePublish}
 	run, ok := cases[scenario]
 	if !ok {
 		t.Fatal("unknown E2E case", scenario)
@@ -72,6 +75,7 @@ const e2eSource = "immutable source evidence\n"
 
 type e2eResult struct {
 	Case, Revision, ReleaseHash   string
+	Root                          string
 	SourceImageCommit             string
 	NativeImageCommit             string
 	Passed                        bool
@@ -122,24 +126,28 @@ type e2eWrite struct {
 }
 
 type e2eEnv struct {
-	t                                 *testing.T
-	scenario                          string
-	root                              string
-	meta, unit, export, work, auth    string
-	native                            map[r.Provider]string
-	store                             *r.Store
-	storePath                         string
-	github                            *e2eGitHub
-	models                            map[r.Provider]*e2eModel
-	options                           r.GitReviewerServiceOptions
-	service                           *r.GitReviewerService
-	runCancel                         context.CancelFunc
-	runDone                           chan error
-	config                            r.Config
-	result                            *e2eResult
-	mu                                sync.Mutex
-	units                             *e2eUnitObserver
-	finished                          bool
+	t                              *testing.T
+	scenario                       string
+	root                           string
+	meta, unit, export, work, auth string
+	native                         map[r.Provider]string
+	store                          *r.Store
+	storePath                      string
+	github                         *e2eGitHub
+	models                         map[r.Provider]*e2eModel
+	options                        r.GitReviewerServiceOptions
+	service                        *r.GitReviewerService
+	runCancel                      context.CancelFunc
+	runDone                        chan error
+	config                         r.Config
+	result                         *e2eResult
+	mu                             sync.Mutex
+	units                          *e2eUnitObserver
+	finished                       bool
+	attached                       bool
+	// wedged marks a handle whose Close is expected to keep reporting
+	// ErrWorkerStopPending; keepRoot retains the root for an attached phase.
+	wedged, keepRoot                  bool
 	sourceImageCommit, nativeRevision string
 }
 
@@ -177,19 +185,29 @@ func e2eHash(path string) r.VMBootAsset {
 
 func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage string) *e2eEnv {
 	t.Helper()
-	var nonce [6]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		t.Fatal(err)
+	attach := os.Getenv("SFL_E2E_ATTACH")
+	root := attach
+	if attach == "" {
+		var nonce [6]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			t.Fatal(err)
+		}
+		// Short private paths preserve sockaddr_un bounds for both VM kinds.
+		root = "/tmp/sfl-e2e-" + hex.EncodeToString(nonce[:])
+		if err := os.Mkdir(root, 0700); err != nil {
+			t.Fatal("fresh E2E root required", err)
+		}
+	} else if !regexp.MustCompile(`^/tmp/sfl-e2e-[0-9a-f]{12}$`).MatchString(attach) {
+		t.Fatal("attach requires a retained E2E root")
 	}
-	// Short private paths preserve sockaddr_un bounds for both VM kinds.
-	root := "/tmp/sfl-e2e-" + hex.EncodeToString(nonce[:])
-	if err := os.Mkdir(root, 0700); err != nil {
-		t.Fatal("fresh E2E root required", err)
-	}
-	e := &e2eEnv{t: t, scenario: scenario, root: root, native: map[r.Provider]string{}, models: map[r.Provider]*e2eModel{}, result: &e2eResult{Case: scenario, Probes: map[string][]r.E2EProbe{}, Models: map[r.Provider][]e2eModelSession{}, AuthRecoveryClear: map[string]bool{}, FakeOnly: true}}
+	e := &e2eEnv{t: t, scenario: scenario, root: root, attached: attach != "", native: map[r.Provider]string{}, models: map[r.Provider]*e2eModel{}, result: &e2eResult{Case: scenario, Root: root, Probes: map[string][]r.E2EProbe{}, Models: map[r.Provider][]e2eModelSession{}, AuthRecoveryClear: map[string]bool{}, FakeOnly: true}}
 	e.meta, e.unit, e.export, e.work, e.auth = filepath.Join(root, "m"), filepath.Join(root, "u"), filepath.Join(root, "x"), filepath.Join(root, "w"), filepath.Join(root, "a")
 	for _, directory := range []string{e.meta, e.unit, e.export, e.work, e.auth, filepath.Join(root, "n")} {
-		if err := os.Mkdir(directory, 0700); err != nil {
+		if attach != "" {
+			if info, err := os.Lstat(directory); err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
+				t.Fatal("retained E2E directory missing", directory)
+			}
+		} else if err := os.Mkdir(directory, 0700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -214,8 +232,10 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 		}
 		release.Providers[provider] = r.GitReviewerProviderRelease{Identity: identity, Stub: e2eHash(filepath.Join(nativeImage, "nativevmstub")), QEMU: manifest.QEMU, Kernel: e2eHash(filepath.Join(nativeImage, "vmlinuz")), Initrd: e2eHash(filepath.Join(nativeImage, "native.cpio.gz")), Firmware: e2eHash(filepath.Join(nativeImage, "bios.bin")), Runtime: manifest.Runtime, Policy: f.Policy(probe)}
 		e.native[provider] = filepath.Join(root, "n", string(provider)[:2])
-		if err := os.Mkdir(e.native[provider], 0700); err != nil {
-			t.Fatal(err)
+		if !e.attached {
+			if err := os.Mkdir(e.native[provider], 0700); err != nil {
+				t.Fatal(err)
+			}
 		}
 		model := newE2EModel(t, e, provider)
 		e.models[provider] = model
@@ -223,16 +243,18 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 		if err != nil {
 			t.Fatal(err)
 		}
-		seed := f.Seed(provider)
-		if err := store.Refresh(context.Background(), func(old []byte) ([]byte, error) {
-			if len(old) != 0 {
-				return nil, errors.New("existing synthetic seed refused")
+		if !e.attached {
+			seed := f.Seed(provider)
+			if err := store.Refresh(context.Background(), func(old []byte) ([]byte, error) {
+				if len(old) != 0 {
+					return nil, errors.New("existing synthetic seed refused")
+				}
+				return seed, nil
+			}); err != nil {
+				t.Fatal("synthetic seed", err)
 			}
-			return seed, nil
-		}); err != nil {
-			t.Fatal("synthetic seed", err)
+			clear(seed)
 		}
-		clear(seed)
 		hints := r.NativeVMProfileHints{}
 		if provider == r.Claude {
 			hints = r.NativeVMProfileHints{ClaudeAccountUUID: "11111111-1111-4111-8111-111111111111", ClaudeOrganizationUUID: "22222222-2222-4222-8222-222222222222", ClaudeEmail: "fixture@example.invalid"}
@@ -377,7 +399,11 @@ func (e *e2eEnv) close(label string) {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	e.check(err == nil, "%s: service Close proved completion (attempts %d)", label, attempts)
+	if e.wedged {
+		e.check(errors.Is(err, r.ErrWorkerStopPending), "%s: Close keeps reporting ErrWorkerStopPending while the durable lease is outstanding (attempts %d)", label, attempts)
+	} else {
+		e.check(err == nil, "%s: service Close proved completion (attempts %d)", label, attempts)
+	}
 	if attempts > 1 && err == nil {
 		e.note("%s: first Close did not prove completion; retry %d on the same owners did", label, attempts)
 	}
@@ -510,7 +536,7 @@ func (e *e2eEnv) snapshotSource(label string) {
 func (e *e2eEnv) finish() {
 	e.finished = true
 	t := e.t
-	if e.service != nil {
+	if e.service != nil && !e.wedged {
 		e.close("final")
 	}
 	e.result.SystemdUnits, e.result.ResidualSystemdUnits = e.units.stop(30 * time.Second)
@@ -576,10 +602,16 @@ func (e *e2eEnv) cleanup() {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		err := e.service.Close(ctx)
 		cancel()
-		if err != nil {
+		if err != nil && !(e.wedged && errors.Is(err, r.ErrWorkerStopPending)) {
 			e.t.Error("cleanup could not prove service stop; retaining", e.root, err)
 			return
 		}
+		// A wedged handle keeps its startup and credential locks until this
+		// process exits, exactly like a crashed service process.
+	}
+	if e.keepRoot && !e.t.Failed() {
+		e.t.Log("retaining E2E root for the attached phase", e.root)
+		return
 	}
 	if e.store != nil {
 		e.store.Close()
@@ -962,7 +994,13 @@ func newE2EGitHub(t *testing.T, env *e2eEnv) *e2eGitHub {
 	g.nextID.Store(5000)
 	// Synthetic upstream: base B, PR1 = B + source.go + pr1-only.go,
 	// PR2 = B + source.go + pr2-only.go. Only source.go contains "immutable".
-	work := filepath.Join(env.root, "g")
+	// An attached second process builds its own identical deterministic
+	// upstream (fixed contents and commit dates) beside the retained one.
+	suffix := ""
+	if env.attached {
+		suffix = "2"
+	}
+	work := filepath.Join(env.root, "g"+suffix)
 	if err := os.Mkdir(work, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -984,12 +1022,24 @@ func newE2EGitHub(t *testing.T, env *e2eEnv) *e2eGitHub {
 		e2eGit(t, git, work, "commit", "--quiet", "-m", fmt.Sprintf("synthetic PR %d", n))
 		g.commits[strconv.Itoa(n)] = e2eGit(t, git, work, "rev-parse", "HEAD")
 	}
-	g.gitDir = filepath.Join(env.root, "upstream.git")
+	g.gitDir = filepath.Join(env.root, "upstream"+suffix+".git")
 	e2eGit(t, git, env.root, "init", "--quiet", "--bare", g.gitDir)
 	e2eGit(t, git, work, "push", "--quiet", g.gitDir, "main:refs/heads/main", "pr1:refs/pull/1/head", "pr2:refs/pull/2/head")
 	e2eGit(t, git, env.root, "--git-dir="+g.gitDir, "config", "uploadpack.allowReachableSHA1InWant", "true")
 	now := time.Now().UTC().Truncate(time.Second)
 	g.epoch = now.Add(-2 * time.Minute)
+	// The trigger epoch is durable policy; a restarted process must reuse it.
+	epochFile := filepath.Join(env.root, "epoch")
+	if env.attached {
+		raw, err := os.ReadFile(epochFile)
+		seconds, parseErr := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+		if err != nil || parseErr != nil {
+			t.Fatal("retained epoch", err, parseErr)
+		}
+		g.epoch = time.Unix(seconds, 0).UTC()
+	} else if err := os.WriteFile(epochFile, []byte(strconv.FormatInt(g.epoch.Unix(), 10)), 0600); err != nil {
+		t.Fatal(err)
+	}
 	g.server = httptest.NewTLSServer(http.HandlerFunc(g.serve))
 	t.Cleanup(g.server.Close)
 	g.base, _ = url.Parse(g.server.URL)
@@ -1610,8 +1660,10 @@ func e2eCloseCapture(e *e2eEnv) {
 
 // close-provider: the service closes while the first native session's pinned
 // client waits for a withheld fake inference response. The unit must be
-// proved stopped; the exported auth is returned or fenced; and an uncertain
-// attempt keeps its durable lease, which fences all later admission.
+// proved stopped and the exported auth returned or fenced. If the attempt
+// stays uncertain, its durable lease is retained and Close keeps reporting
+// ErrWorkerStopPending; the root is then retained for close-provider-reopen,
+// which a separate process runs as a restarted service.
 func e2eCloseProvider(e *e2eEnv) {
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.models[r.Codex].mu.Lock()
@@ -1625,7 +1677,33 @@ func e2eCloseProvider(e *e2eEnv) {
 		return
 	}
 	e.snapshotJobs("held during provider session")
-	e.close("close-provider")
+	e.snapshotSource("close-provider before close")
+	var closeErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		started := time.Now()
+		closeErr = e.service.Close(ctx)
+		cancel()
+		e.event("close", "close-provider Close attempt %d returned %v in %s", attempt, closeErr, time.Since(started).Round(time.Millisecond))
+		if closeErr == nil {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	e.runCancel()
+	select {
+	case runErr := <-e.runDone:
+		e.result.RunErrors = append(e.result.RunErrors, fmt.Sprintf("close-provider: %v", runErr))
+	case <-time.After(10 * time.Second):
+		e.check(false, "Run did not return after Close")
+	}
+	e.wedged = closeErr != nil
+	if !e.wedged {
+		e.service = nil
+	}
+	e.check(closeErr == nil || errors.Is(closeErr, r.ErrWorkerStopPending), "Close either proved completion or reported ErrWorkerStopPending (%v)", closeErr)
+	e.store.Close()
+	e.store = nil
 	d := e.reopenState()
 	j := e2eJobFor(d, 1)
 	if j == nil {
@@ -1640,51 +1718,68 @@ func e2eCloseProvider(e *e2eEnv) {
 	for _, u := range units {
 		e.note("interrupted native unit %s: audit %v complete %v exported %v returned %v", u.Launch, u.AuditPresent, u.Complete, u.AuthExported, u.AuthReturned)
 	}
-	usable := map[r.Provider]bool{}
-	for _, provider := range []r.Provider{r.Codex, r.Claude} {
-		usable[provider] = e2eAuthUsable(e.auth, provider)
-	}
+	usable := map[r.Provider]bool{r.Codex: e2eAuthUsable(e.auth, r.Codex), r.Claude: e2eAuthUsable(e.auth, r.Claude)}
 	e.note("auth disposition after close: codex usable=%v claude usable=%v", usable[r.Codex], usable[r.Claude])
 	e.check(usable[r.Claude], "the untouched provider's auth remains usable")
 	e.check(usable[r.Codex] == returned, "codex auth is usable exactly when its stopped return was committed (returned %v)", returned)
 	e.check(e.github.reviewPosts(1) == 0, "nothing was published for the interrupted job")
-	if j.LeaseToken == "" {
-		e.check(j.State == "queued" && returned, "a released interrupted job is queued only with returned auth (state %s)", j.State)
+	if !e.wedged {
+		e.check(j.LeaseToken == "" && j.State == "queued" && returned, "a completed Close leaves a queued job with returned auth (state %s)", j.State)
 		e.open("reopen")
 		e.wait("PR 1 review after reopen", 6*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 1) })
 		e.snapshotJobs("after reopen")
 		e.collectWrites()
 		return
 	}
-	e.check(j.Outstanding && j.State == "running", "an uncertain provider attempt keeps its durable lease and outstanding reservation")
+	e.check(j.LeaseToken != "" && j.Outstanding && j.State == "running", "the uncertain provider attempt keeps its durable lease and outstanding reservation")
 	e.check(!returned && !usable[r.Codex], "the unreturned exported auth is fenced for recovery")
-	// A naive release of that lease must not succeed without stopped provider
-	// evidence. Probe a private copy so the retained state is not changed.
+	// ReleaseStopped is the explicit trusted-supervisor path. Probe it on a
+	// private copy: it is accepted only with durably recorded stopped
+	// provider evidence, and the service itself never calls it.
 	err := e2eProbeRelease(e, j)
-	e.note("ReleaseStopped on a private copy of the retained state: %v", err)
-	e.check(err != nil, "the durable lease cannot be released without stopped provider evidence")
-	// Reopen: recovery proves the source unit stopped, but no admission may
-	// proceed while the lease is outstanding, including a different PR.
-	sessions := len(e.models[r.Codex].sessionsCopy()) + len(e.models[r.Claude].sessionsCopy())
+	e.note("ReleaseStopped(auth_failed) on a private copy of the retained state: %v", err)
+	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(j))
+	e.keepRoot = true
+	e.note("retained root %s for close-provider-reopen; this process exits holding the wedged handle", e.root)
+}
+
+// close-provider-reopen is a fresh process attached to the retained root. The
+// restarted service must prove the source unit stopped, discover new requests
+// and admit nothing while the uncertain lease remains, including a new PR.
+func e2eCloseProviderReopen(e *e2eEnv) {
+	if !e.attached {
+		e.t.Fatal("close-provider-reopen requires SFL_E2E_ATTACH")
+	}
+	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
 	e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
-	e.open("reopen")
-	e.assertSourceStopped("after reopen recovery")
-	e.waitFor("PR 2 request discovered", time.Minute, true, func(d r.DurableState) bool {
+	before := e2eJobFor(e.reopenState(), 1)
+	if before == nil || before.LeaseToken == "" {
+		e.t.Fatal("attached root has no retained lease")
+	}
+	codexFenced := !e2eAuthUsable(e.auth, r.Codex)
+	e.check(codexFenced, "codex auth is still fenced in the restarted process")
+	e.open("restart")
+	e.assertSourceStopped("after restart recovery")
+	e.waitFor("PR 2 comment request discovered", time.Minute, true, func(d r.DurableState) bool {
 		pr := d.PRs[e2eScopeKey(2)]
 		return pr != nil && len(pr.Requests) == 1
 	})
-	e.waitFor("any further admission (expected none)", 30*time.Second, false, func(d r.DurableState) bool { return len(d.Jobs) > 1 || e2eJobFor(d, 1).LeaseToken == "" })
-	d = e.state()
+	e.waitFor("any admission while leased (expected none)", 30*time.Second, false, func(d r.DurableState) bool {
+		return len(d.Jobs) > 1 || e2eJobFor(d, 1).LeaseToken != before.LeaseToken
+	})
+	d := e.state()
 	final := e2eJobFor(d, 1)
-	after := len(e.models[r.Codex].sessionsCopy()) + len(e.models[r.Claude].sessionsCopy())
-	e.check(len(d.Jobs) == 1 && final.LeaseToken == j.LeaseToken && final.Outstanding, "the retained lease fenced every later admission, including PR 2")
-	e.check(after == sessions, "no provider session started after reopen (%d -> %d)", sessions, after)
+	sessions := len(e.models[r.Codex].sessionsCopy()) + len(e.models[r.Claude].sessionsCopy())
+	e.check(len(d.Jobs) == 1 && final.LeaseToken == before.LeaseToken && final.Outstanding && final.Checkpoint.ConsumedSessions == before.Checkpoint.ConsumedSessions, "the retained lease fenced every admission after restart, including PR 2")
+	e.check(sessions == 0, "no provider session started after restart (%d)", sessions)
 	e.check(e.github.reviewPosts(1) == 0 && e.github.reviewPosts(2) == 0, "nothing was published while fenced")
-	e.check(!e2eAuthUsable(e.auth, r.Codex), "codex auth remains fenced after reopen")
-	e.snapshotJobs("fenced after reopen")
+	e.check(e.github.gitExchanges() == 0, "no source capture ran while fenced")
+	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth stays fenced; claude auth stays usable")
+	e.snapshotJobs("fenced after restart")
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(final))
-	e.collectWrites()
+	e.wedged = true
+	e.close("final")
 }
 
 func e2eAuthUsable(directory string, provider r.Provider) bool {
