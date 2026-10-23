@@ -14,8 +14,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // This file exposes read-only test seams to the external aggregate
@@ -141,6 +143,25 @@ func E2EValidateProviderReceipt(evidence *ProviderEvidence, provider Provider, l
 		return evidence.validateCompletedCaptured(provider, limits, sessionHash)
 	}
 	return nil
+}
+
+// E2ESourceRuntimeHash is the RuntimeHash every source VM materialization
+// binding of release vm carries: the digest of the source VM manifest the
+// release derives, as startup derives it.
+func E2ESourceRuntimeHash(vm GitReviewerSourceVMRelease) (string, error) {
+	spec, err := vm.assetSpec()
+	if err != nil {
+		return "", err
+	}
+	return Digest(spec.Manifest), nil
+}
+
+// E2ERemoteReview applies production's remote receipt projection to a
+// review's body and its inline comments in comment order: the body's sole
+// publication marker ("" unless exactly one) and the digest of the canonical
+// document, which a confirmed intent's BodyHash must equal.
+func E2ERemoteReview(body string, inline []InlineComment) (marker, documentHash string) {
+	return documentMarker(body), Digest(canonicalPublicationDocument(Document{Summary: body, Inline: inline}))
 }
 
 // E2ESourceRecord is a nonsecret projection of one source VM ownership record.
@@ -291,6 +312,47 @@ func TestE2ETestBinaryStamp(t *testing.T) {
 		if _, err := e2eTestBinaryStamp(info, commit); err == nil {
 			t.Error(name, "test binary accepted for the release commit")
 		}
+	}
+}
+
+// TestE2ERemoteReview proves the remote projection reproduces exactly the
+// marker and body hash of the intent whose document was posted, and nothing
+// else: another summary, inline body, anchor, comment or marker differs.
+func TestE2ERemoteReview(t *testing.T) {
+	snapshot := Snapshot{RepositoryID: RepositoryID, HeadRepositoryID: RepositoryID, PR: 1, Head: strings.Repeat("a", 40), Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("b", 40)}
+	w := newIntent("review", Scope{RepositoryID, 9001, 1}, 1, 1, snapshot, "job", Document{Summary: "summary", Inline: []InlineComment{{"source.go", 2, "second"}, {"source.go", 1, "first"}}}, time.Now())
+	// Production posts the intent's inline comments in order; GitHub returns
+	// them in that comment order.
+	posted := append([]InlineComment(nil), w.Document.Inline...)
+	if marker, hash := E2ERemoteReview(w.Document.Summary, posted); marker != w.Marker || hash != w.BodyHash {
+		t.Fatal("posted intent document not reproduced", marker, hash)
+	}
+	slices.Reverse(posted)
+	if marker, hash := E2ERemoteReview(w.Document.Summary, posted); marker != w.Marker || hash != w.BodyHash {
+		t.Fatal("comment order changed the canonical document", marker, hash)
+	}
+	edit := func(f func(*InlineComment)) []InlineComment {
+		out := append([]InlineComment(nil), w.Document.Inline...)
+		f(&out[0])
+		return out
+	}
+	for name, in := range map[string]struct {
+		body   string
+		inline []InlineComment
+	}{
+		"other summary":      {strings.Replace(w.Document.Summary, "summary", "other", 1), w.Document.Inline},
+		"other inline body":  {w.Document.Summary, edit(func(c *InlineComment) { c.Body = "other" })},
+		"other inline line":  {w.Document.Summary, edit(func(c *InlineComment) { c.Line = 9 })},
+		"other inline path":  {w.Document.Summary, edit(func(c *InlineComment) { c.Path = "other.go" })},
+		"missing comment":    {w.Document.Summary, w.Document.Inline[:1]},
+		"additional comment": {w.Document.Summary, append(slices.Clone(w.Document.Inline), InlineComment{"source.go", 3, "third"})},
+	} {
+		if _, hash := E2ERemoteReview(in.body, in.inline); hash == w.BodyHash {
+			t.Error(name, "reproduced the intent's body hash")
+		}
+	}
+	if marker, _ := E2ERemoteReview(w.Document.Summary+"\n<!-- sfl-alpha:"+strings.Repeat("c", 32)+" -->", w.Document.Inline); marker != "" {
+		t.Error("a body with two markers projected marker", marker)
 	}
 }
 
