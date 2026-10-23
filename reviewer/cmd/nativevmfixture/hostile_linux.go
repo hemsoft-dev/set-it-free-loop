@@ -45,6 +45,11 @@ type hostileReceipt struct {
 	Source                                                       *r.SourceAccess
 	ProviderAccess                                               *r.ProviderAccess
 	CodeHost                                                     json.RawMessage
+	ReportCoverage                                               []r.Coverage `json:",omitempty"`
+	UsageKnown                                                   bool
+	// StallCancelMS is when, after the review started, a stalled upstream
+	// observed its cancellation.
+	StallCancelMS int64 `json:",omitempty"`
 }
 
 func errorClass(err error) string {
@@ -208,7 +213,7 @@ func runNativeHostile(c config) error {
 	if !ok {
 		return errors.New("unknown hostile case")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), hostileWatchdog)
 	defer cancel()
 	canaries, err := f.NewCanaries()
 	if err != nil {
@@ -241,14 +246,18 @@ func runNativeHostile(c config) error {
 		return err
 	}
 	limits := r.DefaultLimits()
-	limits.Timeout = 75 * time.Second
+	limits.Timeout = hostilePhase
 	snapshot := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: strings.Repeat("a", 40), Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("c", 40)}
 	s, err := r.NewSession("native-fake-hostile-"+hc.Name, snapshot, r.Digest("synthetic-native-hostile"), c.Provider, 1, "immutable source evidence", nil, nil, limits)
 	if err != nil {
 		return err
 	}
 	objects := f.NewHostileStore(canaries)
-	reader, err := r.NewReader(objects, snapshot, f.HostilePaths(), limits)
+	paths := f.HostilePaths()
+	if hc.Kind == f.HostileExhaust {
+		paths = f.ExhaustionPaths()
+	}
+	reader, err := r.NewReader(objects, snapshot, paths, limits)
 	if err != nil {
 		return err
 	}
@@ -285,11 +294,11 @@ func runNativeHostile(c config) error {
 		returned = syntheticTokensReturned(c.Provider, current)
 		return current, nil
 	})
-	paths, globErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "unit.json"))
+	units, globErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "unit.json"))
 	var unit cancellationUnitReceipt
 	var audit hostileAudit
-	unitRead := globErr == nil && len(paths) == 1 && readProtocolJSON(paths[0], &unit) == nil && readProtocolJSON(filepath.Join(filepath.Dir(paths[0]), "native-audit.json"), &audit) == nil
-	bound := unitRead && unit.Binding.SessionHash == r.Digest(s) && unit.Binding.LaunchID == filepath.Base(filepath.Dir(paths[0])) && audit.Binding == unit.Binding
+	unitRead := globErr == nil && len(units) == 1 && readProtocolJSON(units[0], &unit) == nil && readProtocolJSON(filepath.Join(filepath.Dir(units[0]), "native-audit.json"), &audit) == nil
+	bound := unitRead && unit.Binding.SessionHash == r.Digest(s) && unit.Binding.LaunchID == filepath.Base(filepath.Dir(units[0])) && audit.Binding == unit.Binding
 	roots, rootErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "qemu-runtime"))
 	reportRaw, _ := json.Marshal(report)
 	requests := objects.Requests()
@@ -345,6 +354,22 @@ func runNativeHostile(c config) error {
 		checks["planned-inferences"] = counts.Inference == 2 && counts.Failures == 0
 		checks["code-host-contained"] = probeContained(obs.Probe) && obs.MediaInputs == 0
 		checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
+	case f.HostileExhaust:
+		// A deadline may leave auth fenced for recovery instead of returned.
+		// Either is accepted only when it agrees with the audit, the error and
+		// a reopened store.
+		delete(checks, "auth-returned")
+		checks["auth-returned-or-fenced"] = exhaustionAuthHeld(c.Provider, filepath.Join(c.Root, "auth"), store, audit, reviewErr)
+		in := exhaustionInput{Name: hc.Name, Err: reviewErr, Report: report, Source: access, Policy: policy.Limits, Limits: limits, AuditComplete: audit.Complete, CodeHost: audit.CodeHost, Counts: counts, Observation: obs, Elapsed: time.Duration(elapsed) * time.Millisecond, StoreRequests: requests}
+		if evidence != nil {
+			in.Provider = &evidence.Access
+		}
+		if !obs.StallCancelled.IsZero() {
+			in.StallCancel = obs.StallCancelled.Sub(start)
+		}
+		for name, ok := range exhaustionChecks(in) {
+			checks[name] = ok
+		}
 	case f.HostileMetadata:
 		// The injected response must actually have reached the client;
 		// otherwise "no effect" would prove nothing.
@@ -377,12 +402,23 @@ func runNativeHostile(c config) error {
 	if evidence != nil {
 		receipt.ProviderAccess = &evidence.Access
 	}
+	if hc.Kind == f.HostileExhaust {
+		receipt.ReportCoverage, receipt.UsageKnown = report.Coverage, report.Usage.Known
+		if !obs.StallCancelled.IsZero() {
+			receipt.StallCancelMS = obs.StallCancelled.Sub(start).Milliseconds()
+		}
+	}
 	receipt.CanaryHits = hostileCanaryHits{backend.CanaryRequestHits(), f.CanaryHits(reportRaw, secrets), fileCanaryHits(c.Root, secrets), 0}
 	receipt.Passed, receipt.HostContained = passed, contained
 	data, _ := json.MarshalIndent(receipt, "", "  ")
 	if hits := f.CanaryHits(data, secrets); hits != 0 {
-		receipt.CanaryHits.Receipt, receipt.Passed, receipt.HostContained, receipt.Observation, receipt.CodeHost = hits, false, false, f.HostileObservation{Case: hc.Name, Kind: hc.Kind}, nil
+		// Drop every model-influenced field before persisting, then rescan.
+		receipt.CanaryHits.Receipt, receipt.Passed, receipt.HostContained, receipt.Observation, receipt.CodeHost, receipt.ReportCoverage = hits, false, false, f.HostileObservation{Case: hc.Name, Kind: hc.Kind}, nil, nil
 		data, _ = json.MarshalIndent(receipt, "", "  ")
+		if f.CanaryHits(data, secrets) != 0 {
+			// Still disclosing: persist only the fixed failure identity.
+			data, _ = json.MarshalIndent(hostileReceipt{Version: 1, Purpose: "native-fake-hostile", RunnerSourceHead: sourceHead, RunnerSourceTree: sourceTree, ImageSourceHead: c.ImageSourceHead, Case: hc.Name, Kind: hc.Kind, Provider: c.Provider, FakeOnly: true, State: "failed", CanaryHits: hostileCanaryHits{Receipt: hits}}, "", "  ")
+		}
 	}
 	if os.WriteFile(filepath.Join(c.Root, "result.json"), append(data, '\n'), 0600) != nil {
 		return errors.New("hostile receipt failed")
@@ -392,6 +428,25 @@ func runNativeHostile(c config) error {
 		return errors.New("native hostile qualification incomplete")
 	}
 	return nil
+}
+
+// exhaustionAuthHeld accepts auth only when it agrees with the audit, the
+// error and a reopened store. Returned auth must still hold the original
+// synthetic tokens; fenced auth must stay pending recovery in both stores.
+func exhaustionAuthHeld(provider r.Provider, dir string, store *r.AuthStore, audit hostileAudit, reviewErr error) bool {
+	pending, hash, valid := authDisposition(store)
+	reopened, openErr := r.NewAuthStore(provider, dir)
+	consistent := false
+	if openErr == nil {
+		otherPending, otherHash, otherValid := authDisposition(reopened)
+		consistent = otherValid && otherPending == pending && otherHash == hash
+	}
+	returned := false
+	authErr := store.Refresh(context.Background(), func(current []byte) ([]byte, error) {
+		returned = syntheticTokensReturned(provider, current)
+		return current, nil
+	})
+	return valid && consistent && audit.AuthExported && audit.AuthReturned != pending && pending == errors.Is(reviewErr, r.ErrAuthRecoveryRequired) && (pending || authErr == nil && returned)
 }
 
 // syntheticTokensReturned reports whether a returned profile still carries

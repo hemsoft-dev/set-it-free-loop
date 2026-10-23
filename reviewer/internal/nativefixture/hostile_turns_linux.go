@@ -289,7 +289,7 @@ func (b *codexBackend) report(w http.ResponseWriter) {
 }
 
 // Called with b.mu held after the fixed model check.
-func (b *codexBackend) hostileTurn(w http.ResponseWriter, body map[string]any) {
+func (b *codexBackend) hostileTurn(w http.ResponseWriter, q *http.Request, body map[string]any) {
 	h := b.hostile
 	h.obs.Turns = b.calls
 	inventory := codexInventory(body)
@@ -305,6 +305,12 @@ func (b *codexBackend) hostileTurn(w http.ResponseWriter, body map[string]any) {
 	}
 	deny := func(text string) { h.problem(text); b.failed++; http.Error(w, text, 400) }
 	w.Header().Set("Content-Type", "text/event-stream")
+	if h.c.Kind == HostileExhaust {
+		if b.exhaustionTurn(w, q, body) {
+			b.completed(w)
+		}
+		return
+	}
 	switch {
 	case h.c.Kind == HostileGuard && b.calls == 1:
 		sse(w, map[string]any{"type": "response.output_item.done", "item": codexGuardItem(h.c.Name)})

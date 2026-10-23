@@ -169,7 +169,7 @@ func sse(w http.ResponseWriter, value any) {
 func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	raw, err := io.ReadAll(io.LimitReader(q.Body, (2<<20)+1))
+	raw, err := io.ReadAll(io.LimitReader(q.Body, fakeRequestCap+1))
 	_ = q.Body.Close()
 	headers := []string{}
 	for h := range q.Header {
@@ -181,7 +181,7 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 	}
 	logHTTP(map[string]any{"method": q.Method, "path": q.URL.Path, "query": q.URL.RawQuery, "headers": headers, "body": string(raw), "upgrade": q.Header.Get("Upgrade")})
 	deny := func(message string) { b.failed++; http.Error(w, message, 400) }
-	if err != nil || len(raw) > 2<<20 {
+	if err != nil || len(raw) > fakeRequestCap {
 		deny("input cap")
 		return
 	}
@@ -242,7 +242,11 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	b.calls++
-	if b.calls > 4 {
+	limit := 4
+	if b.hostile != nil && b.hostile.c.Kind == HostileExhaust {
+		limit = exhaustionInferenceCap(b.hostile.c.Name)
+	}
+	if b.calls > limit {
 		deny("inference cap")
 		return
 	}
@@ -252,7 +256,7 @@ func (b *codexBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	if b.hostile != nil {
-		b.hostileTurn(w, body)
+		b.hostileTurn(w, q, body)
 		return
 	}
 	if !advertised(body) {

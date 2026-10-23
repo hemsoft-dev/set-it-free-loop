@@ -60,6 +60,9 @@ The native unit has a proposed fixed 3 GiB host memory cap, no swap, 128 tasks,
 one CPU quota and seven-minute outer runtime cap, with a 2 GiB guest. Short fake
 reviews have sampled these bounds for both clients, with peaks near 1.35 GB and
 nine tasks and no OOM events. These samples do not establish stress limits.
+[EXHAUSTION-FIXTURES.md](EXHAUSTION-FIXTURES.md) records fake-only cases that
+push response size, turns, wall time, source calls and bytes, and code-host
+memory, output and CPU past their bounds. Unit peaks stayed at 1.1 to 1.2 GB.
 The synthetic unit retains
 its original 1 GiB/64-task/two-minute profile. `NativeVMSupervisor` reuses durable
 unit identity, start settlement, revoked grants, whole-cgroup stop and fresh

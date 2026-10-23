@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -376,5 +377,120 @@ func TestSourceMCPMetadataRemainsBoundedAndTyped(t *testing.T) {
 				t.Fatal("operational control params accepted")
 			}
 		})
+	}
+}
+
+// A model that keeps calling an allowed tool past the tool-call bound must get
+// explicit denials and leave a valid exhausted receipt. Closing the connection
+// instead lost the reader audit in the native VM and fenced returned auth.
+func TestSourceMCPToolCallBoundDeniesWithoutDroppingTheAudit(t *testing.T) {
+	limits := DefaultLimits()
+	limits.ReaderCalls = 2
+	f := newMCPFixture(t, Codex, limits, nil)
+	f.initialize(t)
+	read := func(id int) string {
+		return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"read","arguments":{"revision":"%s","path":"worker.go"}}}`, id, f.session.Snapshot.Head)
+	}
+	for id := 1; id <= 4; id++ {
+		r := f.call(t, read(id))
+		var content struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			IsError bool `json:"isError"`
+		}
+		if json.Unmarshal(r["result"], &content) != nil || len(content.Content) != 1 {
+			t.Fatal("tool call past the bound did not receive a result", id, r)
+		}
+		if denied := id > limits.ReaderCalls; content.IsError != denied || denied && content.Content[0].Text != "Source request denied" {
+			t.Fatal("tool-call bound result differs", id, string(r["result"]))
+		}
+	}
+	if r := f.call(t, `{"jsonrpc":"2.0","id":"after","method":"ping"}`); len(r["result"]) == 0 {
+		t.Fatal("connection did not survive the denied calls", r)
+	}
+	_ = f.client.Close()
+	if err := <-f.done; err != nil {
+		t.Fatal("bounded tool calls became a protocol failure", err)
+	}
+	f.done <- nil
+	receipt := f.broker.seal()
+	if receipt.validate(f.session) != nil || !receipt.Exhausted || receipt.ToolCalls != limits.ReaderCalls || len(receipt.Reads) != limits.ReaderCalls || !strings.Contains(fmt.Sprint(receipt.Coverage), "source tool-call limit exhausted") {
+		t.Fatal("exhausted receipt not recorded", receipt)
+	}
+}
+
+// Calls the transport rejects as invalid still count toward its bound but not
+// the broker's. The omission is recorded without claiming broker exhaustion.
+func TestSourceMCPInvalidCallsPastTheBoundRecordOmissionOnly(t *testing.T) {
+	limits := DefaultLimits()
+	limits.ReaderCalls = 1
+	f := newMCPFixture(t, Codex, limits, nil)
+	f.initialize(t)
+	if r := f.call(t, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read","arguments":{}}}`); errorCode(t, r) != -32602 {
+		t.Fatal("invalid call admitted", r)
+	}
+	r := f.call(t, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"read","arguments":{"revision":"`+f.session.Snapshot.Head+`","path":"worker.go"}}}`)
+	if !strings.Contains(string(r["result"]), `"isError":true`) {
+		t.Fatal("call past the transport bound reached the broker", r)
+	}
+	receipt := f.broker.seal()
+	if receipt.validate(f.session) != nil || receipt.Exhausted || receipt.ToolCalls != 0 || !strings.Contains(fmt.Sprint(receipt.Coverage), "source tool-call limit exhausted") {
+		t.Fatal("transport omission misrecorded", receipt)
+	}
+}
+
+// heldStore blocks an object read until its call context ends, holding the
+// broker across store I/O like a slow object store.
+type heldStore struct{ entered, exited chan struct{} }
+
+func (s *heldStore) Read(ctx context.Context, _, _ string, _ int) (Object, error) {
+	close(s.entered)
+	<-ctx.Done()
+	close(s.exited)
+	return Object{}, ctx.Err()
+}
+
+// A call past the bound that arrives during an active read must be denied and
+// recorded without waiting for the broker the read holds. The intake loop then
+// still delivers the active call's cancellation.
+func TestSourceMCPToolCallBoundNeverWaitsOnActiveSourceIO(t *testing.T) {
+	limits := DefaultLimits()
+	limits.ReaderCalls = 1
+	s := testSession(Codex)
+	s.Limits = limits
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &heldStore{make(chan struct{}), make(chan struct{})}
+	verifier, err := NewReader(store, s.Snapshot, []string{"worker.go"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker, err := newSourceBroker(ctx, s, verifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newMCPFixture(t, Codex, limits, broker)
+	f.initialize(t)
+	read := `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"read","arguments":{"revision":"` + s.Snapshot.Head + `","path":"worker.go"}}}`
+	f.send(t, fmt.Sprintf(read, 1))
+	<-store.entered
+	_ = f.client.SetDeadline(time.Now().Add(time.Second))
+	f.send(t, fmt.Sprintf(read, 2))
+	if r := f.response(t); string(r["id"]) != "2" || !strings.Contains(string(r["result"]), "Source request denied") {
+		t.Fatal("call past the bound not denied during active source I/O", r)
+	}
+	f.send(t, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`)
+	select {
+	case <-store.exited:
+	case <-time.After(time.Second):
+		t.Fatal("active call cancellation not processed")
+	}
+	if r := f.call(t, `{"jsonrpc":"2.0","id":3,"method":"ping"}`); string(r["id"]) != "3" {
+		t.Fatal("cancelled call emitted late response", r)
+	}
+	receipt := broker.seal()
+	if receipt.validate(s) != nil || !receipt.Exhausted || receipt.ToolCalls != 1 || strings.Count(fmt.Sprint(receipt.Coverage), "source tool-call limit exhausted") != 1 {
+		t.Fatal("exhaustion not recorded exactly once", receipt)
 	}
 }

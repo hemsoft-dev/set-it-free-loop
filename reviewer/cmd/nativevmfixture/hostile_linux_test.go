@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
+	f "github.com/hemsoft-dev/set-it-free-loop/reviewer/internal/nativefixture"
 )
 
 func TestHostileCaseCannotMixModesOrProviders(t *testing.T) {
@@ -135,5 +137,42 @@ func TestGuardCasesRequireResponsePolicyDenial(t *testing.T) {
 	}
 	if responsePolicyDenied(nil) {
 		t.Fatal("missing evidence accepted")
+	}
+}
+
+// An exhaustion case that returns auth normally must still return the original
+// synthetic tokens; a client that rewrote them cannot pass as returned.
+func TestExhaustionReturnedAuthRequiresOriginalSyntheticTokens(t *testing.T) {
+	for _, provider := range []r.Provider{r.Codex, r.Claude} {
+		for _, tc := range []struct {
+			name    string
+			profile []byte
+			want    bool
+		}{
+			{"original", f.Seed(provider), true},
+			{"rewritten", []byte(`{"auth_mode":"chatgpt","tokens":{"access_token":"rewritten","refresh_token":"rewritten"},"claudeAiOauth":{"accessToken":"rewritten","refreshToken":"rewritten"}}`), false},
+			{"corrupt", []byte("corrupt"), false},
+		} {
+			dir := filepath.Join(t.TempDir(), "auth")
+			if err := os.Mkdir(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			store, err := r.NewAuthStore(provider, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = store.Refresh(context.Background(), func([]byte) ([]byte, error) { return tc.profile, nil }); err != nil {
+				t.Fatal(err)
+			}
+			returned := hostileAudit{AuthExported: true, AuthReturned: true}
+			if got := exhaustionAuthHeld(provider, dir, store, returned, r.PhaseError{State: "invalid_output"}); got != tc.want {
+				t.Fatal("returned auth disposition differs", provider, tc.name, got)
+			}
+			// Unfenced auth never agrees with a recovery error or an audit
+			// that did not return it.
+			if exhaustionAuthHeld(provider, dir, store, returned, r.ErrAuthRecoveryRequired) || exhaustionAuthHeld(provider, dir, store, hostileAudit{AuthExported: true}, nil) {
+				t.Fatal("unfenced auth accepted as fenced", provider, tc.name)
+			}
+		}
 	}
 }

@@ -22,7 +22,7 @@ module = load("native-vm-hostile.py", "native_vm_hostile")
 def result(name, variant=0, **changes):
     kind = module.CASE_KINDS.get(name, "response-guard")
     value = {"Case": name, "Kind": kind, "FakeOnly": True, "RuntimeQualified": False, "ProviderEligibilityQualified": False,
-             "Passed": True, "HostContained": True, "Checks": dict.fromkeys(module.REQUIRED_CHECKS[kind][variant], True)}
+             "Passed": True, "HostContained": True, "Checks": dict.fromkeys((module.required_checks(name) or module.REQUIRED_CHECKS[kind])[variant], True)}
     value.update(changes)
     return value
 
@@ -71,20 +71,32 @@ class HostileMatrixTests(unittest.TestCase):
         self.assertEqual(len(module.cases()), len(module.HOSTILE)+2)
         kinds = dict(re.findall(r'(Hostile[A-Za-z]+)\s*= "([a-z-]+)"', source))
         table = re.findall(r'\{"((?:claude|codex)-[a-z-]+)", r\.(?:Claude|Codex), (Hostile[A-Za-z]+)\}', source)
-        self.assertEqual({name: kinds[kind] for name, kind in table}, module.CASE_KINDS)
+        hostile = {name: kind for name, kind in module.CASE_KINDS.items() if (name.split("-")[0], name) in module.HOSTILE}
+        self.assertEqual({name: kinds[kind] for name, kind in table}, hostile)
         self.assertEqual(set(module.REQUIRED_CHECKS), set(kinds.values()))
 
     def test_required_checks_match_the_go_result(self):
         source = (Path(__file__).resolve().parent.parent/"cmd"/"nativevmfixture"/"hostile_linux.go").read_text()
         common = source[source.index("checks := map[string]bool{"):]
         common = common[:common.index("\n\t}\n")]
-        declared = set(re.findall(r'checks\["([a-z-]+)"\] =', source)) | set(re.findall(r'\n\t\t"([a-z-]+)":', common))
-        required = set().union(*(variant for variants in module.REQUIRED_CHECKS.values() for variant in variants))
+        exhaustion = (Path(__file__).resolve().parent.parent/"cmd"/"nativevmfixture"/"exhaustion_linux.go").read_text()
+        declared = set(re.findall(r'checks\["([a-z-]+)"\] =', source+exhaustion)) | set(re.findall(r'\n\t\t"([a-z-]+)":', common))
+        # The unknown-case sentinel is always false and never required.
+        declared.discard("known-exhaustion-case")
+        required = set().union(*(variant for name in module.CASE_KINDS for variant in module.required_checks(name)))
         self.assertEqual(required, declared)
+        # Each exhaustion case carries exactly the checks its Go branch sets.
+        switch = exhaustion[exhaustion.index("\tswitch in.Name {"):exhaustion.index("\tdefault:")]
+        for branch in switch.split("\n\tcase ")[1:]:
+            names = re.findall(r'"((?:claude|codex)-[a-z-]+)"', branch.split(":\n", 1)[0])
+            keys = set(re.findall(r'checks\["([a-z-]+)"\] =', branch))
+            for name in names:
+                self.assertEqual(module.EXHAUSTION_CHECKS[name], keys, name)
+        self.assertEqual(set(module.EXHAUSTION_CHECKS), {name for _, name in module.EXHAUSTION})
 
     def test_verdict_requires_the_exact_check_set_and_kind(self):
         for name, kind in module.CASE_KINDS.items():
-            for variant in range(len(module.REQUIRED_CHECKS[kind])):
+            for variant in range(len(module.required_checks(name))):
                 complete = result(name, variant)
                 self.assertEqual(module.verdict(name, complete), "pass", name)
                 for key in complete["Checks"]:
@@ -96,6 +108,21 @@ class HostileMatrixTests(unittest.TestCase):
         # A client failure needs the full set too, not only the allowed failing keys.
         partial = result("codex-metadata", 1, Passed=False, Checks={"inventory-fixed": False})
         self.assertEqual(module.verdict("codex-metadata", partial), "fail")
+
+    def test_exhaustion_list_matches_the_go_fixture(self):
+        source = (Path(__file__).resolve().parent.parent/"internal"/"nativefixture"/"exhaustion_linux.go").read_text()
+        declared = re.findall(r'\{"((?:claude|codex)-[a-z-]+)", r\.(Claude|Codex), HostileExhaust\}', source)
+        self.assertEqual([(provider.lower(), name) for name, provider in declared], module.EXHAUSTION)
+        self.assertEqual(module.cases("exhaustion"), module.EXHAUSTION)
+        self.assertFalse(set(module.EXHAUSTION) & set(module.cases()))
+        self.assertIn('HostileExhaust = "exhaustion"', source)
+        self.assertEqual({name: module.CASE_KINDS[name] for _, name in module.EXHAUSTION}, dict.fromkeys((n for _, n in module.EXHAUSTION), "exhaustion"))
+
+    def test_memory_peak_is_the_last_accounting_line(self):
+        log = ("Started x.\nx.service: Consumed 4.790s CPU time over 5.090s wall clock time, 1.1G memory peak.\n"
+               "x.service: Consumed 1.000s CPU time, 812.5M memory peak.\n")
+        self.assertEqual(module.parse_peak(log), "812.5M")
+        self.assertIsNone(module.parse_peak("Started x.\n"))
 
     def test_only_complete_contained_results_pass(self):
         self.assertEqual(module.verdict("codex-shell", result("codex-shell")), "pass")
