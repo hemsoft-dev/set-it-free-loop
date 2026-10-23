@@ -119,30 +119,30 @@ native unit with `sfl-alpha-<launch>.service` for a native launch directory
 created by this process. Every launch recorded by this process must have been
 observed, and the observed source and native counts must equal the case's
 expectation in the table. An attached process may hold the earlier process's
-source records, which it need not observe. Before `close-provider-reopen`
-accepts an attached root, the root must hold exactly one durable job: PR 1's,
-still leased, bound to PR 1's scope and the deterministic fake upstream's
-snapshot, and admitted under the current release revision. A root retained
-by another revision's `close-provider` is refused, so its interrupted job and
-launch are never recorded as this revision's restart. Before
-`close-provider-reopen` or `close-provider-recover` treats a native launch as
-the earlier process's, its root must hold exactly one launch: started,
-settled, captured, aborted and stopped, with a bound version 2 stopped audit
-that records the auth as exported and not returned and the session as
-incomplete. Its provider and session must be the retained job's outstanding
-attempt, which must be the session the job derives for that provider and
-round and its only charged session beyond its artifacts, and its receipt must
-name that attempt's ID. The job must hold exactly one provider attempt, that
-one, and its recorded stopped provider evidence must equal the audit's
-complete provider evidence by digest; another valid stopped receipt of the
-same session is refused. The job may hold no source attempt but that
-attempt's own. The audit must record that attempt's request, the zero report
-and exactly the source receipt the job recorded for it (none at `daac99c`),
-end at the wait for its result record and fail with `auth-return`. The
-first `close-provider` process applies the same check before it retains the
-root. A missing launch, an unreadable launch directory, any other entry in
-the native root or a version 1 receipt fails setup, and a retained launch
-must still be present at the end. Every check of source stop receipts
+source records, which it need not observe. Before `close-provider-reopen` or
+`close-provider-recover` accepts an attached root, the root must hold exactly
+one durable job: PR 1's, still leased, bound to PR 1's scope and the
+deterministic fake upstream's snapshot, and admitted under the current release
+revision. A root retained by another revision's `close-provider` is refused,
+so its interrupted job and launch are never recorded as this revision's
+restart or recovery. Before either case treats a native launch as the earlier
+process's, its root must hold exactly one launch: started, settled, captured,
+aborted and stopped, with a bound version 2 stopped audit that records the
+auth as exported and not returned and the session as incomplete. Its provider
+and session must be the retained job's outstanding attempt, which must be the
+session the job derives for that provider and round and its only charged
+session beyond its artifacts, and its receipt must name that attempt's ID.
+The job must hold exactly one provider attempt, that one, and its recorded
+stopped provider evidence must equal the audit's complete provider evidence
+by digest; another valid stopped receipt of the same session is refused. The
+job may hold no source attempt but that attempt's own. The audit must record
+that attempt's request, the zero report and exactly the source receipt the
+job recorded for it (none at `daac99c`), end at the wait for its result
+record and fail with `auth-return`. The first `close-provider` process
+applies the same check before it retains the root. A missing launch, an
+unreadable launch directory, any other entry in the native root or a version
+1 receipt fails setup, and a retained launch must still be present at the
+end. Every check of source stop receipts
 first requires exactly one owner journal record per expected job, each with
 exactly one archive export of the same attempt. As production recovery
 requires, the export's request hash must be the digest of the record's source
@@ -652,8 +652,10 @@ automatically. `close-provider-recover` qualifies it end to end. It runs in a
 new process attached to the root retained by `close-provider`, inside the
 same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
 
-1. Before startup, the job is `running` with its lease and one charged
-   session. The root holds exactly one native launch, which passes the
+1. Before startup, the job is `running` with its lease, an outstanding
+   attempt and one charged session, and was admitted under the current
+   release (a root from another revision stops the run). The root holds
+   exactly one native launch, which passes the
    retained-launch rule above (a missing launch or a version 1 receipt stops
    the run). It is a Codex unit whose version 2 stopped audit records
    exported, unreturned auth, names the leased attempt and repeats its
@@ -691,8 +693,9 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    job's request, and no other PR any request. The only GitHub POSTs were two
    role token mints and one review POST for PR 2. The owner journal holds two
    stopped source records, PR 1's retained attempt and PR 2's, each with one
-   staged export. Final `Close` succeeded, `Run` returned only cancellation,
-   and no unit remained.
+   staged export repeating its record's source request digest and complete
+   materialization binding. Final `Close` succeeded, `Run` returned only
+   cancellation, and no unit remained.
 8. The process observed exactly one source unit, PR 2's acquisition, and
    four native units, one per PR 2 session. Every one correlates with a
    recorded attempt or a launch directory this process created. The retained
@@ -709,9 +712,12 @@ outside the reviewer, and the test only simulates it with a synthetic seed.
 ### Measured at `<head>`
 
 Not yet measured. The current head, with operator recovery, version 2 audit
-receipts bound to attempt IDs, the retained-launch rule and the exact request
-checks, has not run on a host. Every case, including `close-provider` followed
-by `close-provider-recover` in one lock hold, needs to be rerun from images,
+receipts bound to attempt IDs and checked by the production provider-receipt
+validators, the attached-release check, the retained-launch rule, the source
+export binding and the exact request checks, has not run on a host. The
+[`0cd2152` run](#measured-at-0cd2152) predates operator recovery and the
+version 2 receipts and is not evidence for them. Every case, including `close-provider` followed by
+`close-provider-recover` in one lock hold, needs to be rerun from images,
 stub and test binary built from one clean commit, and the results recorded
 here.
 

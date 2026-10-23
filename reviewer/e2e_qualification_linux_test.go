@@ -3621,6 +3621,16 @@ func e2eIsolationRequestVerdicts(d r.DurableState, j1, j2 *r.DurableJob, comment
 	return e2eRequestVerdicts("after both reviews", e2eRequests(d), map[int]e2eRequest{1: e2eAdmittedOpened(1, e2eRequestOf(j1)), 2: e2eAdmittedComment(2, e2eRequestOf(j2), comment)})
 }
 
+// e2eRecoveredRequestVerdicts judges the requests close-provider-recover
+// retains once PR 2 is reviewed: PR 1 holds exactly the admitted PR-open
+// request of its recovered job j1, which recovery released but did not
+// remove, PR 2 exactly the admitted owner comment request of j2, and no PR
+// holds any other request. A second request on either PR would be admitted
+// once PR 2's job ends.
+func e2eRecoveredRequestVerdicts(d r.DurableState, j1, j2 *r.DurableJob) []e2eVerdict {
+	return e2eRequestVerdicts("after recovery review", e2eRequests(d), map[int]e2eRequest{1: e2eAdmittedOpened(1, e2eRequestOf(j1)), 2: e2eAdmittedComment(2, e2eRequestOf(j2))})
+}
+
 // e2eRequestOf is the request ID job j was admitted from. A missing job, or
 // one without a request ID, yields -1, which no retained request matches.
 func e2eRequestOf(j *r.DurableJob) int64 {
@@ -3729,10 +3739,14 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
 	e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
 	retained := e.reopenState()
-	before := e2eJobFor(retained, 1)
-	if before == nil || before.LeaseToken == "" || !before.Outstanding {
-		e.t.Fatal("attached root has no retained lease")
+	before, err := e2eAttachedJob(retained, e.options.Current, e.github.snapshot(1))
+	if err == nil && !before.Outstanding {
+		err = fmt.Errorf("retained job %s has no outstanding attempt", before.Job.ID)
 	}
+	if err != nil {
+		e.t.Fatal("attached root does not hold the interrupted job:", err)
+	}
+	e.check(true, "the attached root holds PR 1's leased job with an outstanding attempt, admitted under the current release")
 	units := e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID())
 	kept, err := e2eRetainedLaunches(units, before)
 	if err != nil {
@@ -3742,8 +3756,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	interrupted := units[0]
 	e.check(interrupted.Provider == string(r.Codex), "the attached root holds the one interrupted Codex launch, captured, stopped and audited with exported unreturned auth, its receipt naming the leased attempt and repeating that attempt's recorded stopped provider evidence")
 	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth is fenced and claude auth usable before recovery")
-	pr1 := e2eAdmittedOpened(1, before.RequestID)
-	e.checkAll(e2eRequestVerdicts("attached before recovery", e2eRequests(retained), map[int]e2eRequest{1: pr1}))
+	e.checkAll(e2eOpenedRequestVerdicts("attached before recovery", retained, before))
 	e.openIdle("restart")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
@@ -3771,7 +3784,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "the lost codex auth is retired, never reused; claude auth is untouched")
 	// Recovery releases the job, not its request: PR 1's request stays
 	// admitted to the auth_failed job, so it can never be admitted again.
-	e.checkAll(e2eRequestVerdicts("after recovery", e2eRequests(e.state()), map[int]e2eRequest{1: pr1}))
+	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eOpenedRequestVerdicts("after recovery", d, before) })
 	observed, listing := e.units.observed()
 	launches := len(e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID()))
 	e.check(listing == nil && observed == 0 && launches == 1, "startup and recovery started no source or native unit (%d observed, %d launches, listing %v)", observed, launches, listing)
@@ -3803,15 +3816,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	d := e.state()
 	j1 := e2eJobFor(d, 1)
 	e.check(len(d.Jobs) == 2 && j1.State == "auth_failed" && j1.LeaseToken == "" && len(e2eWritesFor(d, 1, "review")) == 0, "PR 1 stays auth_failed with no new job or review intent")
-	// PR 1 keeps only its admitted opened request; PR 2 holds only the owner
-	// comment, admitted as its reviewed job's request. A second request on
-	// either would be admitted once this job ends.
-	pr2 := e2eRequest{PR: 2, ID: -1}
-	if j := e2eJobFor(d, 2); j != nil {
-		pr2 = e2eAdmittedComment(2, j.RequestID)
-	}
-	e.result.Requests = e2eRequests(d)
-	e.checkAll(e2eRequestVerdicts("after recovery review", e.result.Requests, map[int]e2eRequest{1: pr1, 2: pr2}))
+	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eRecoveredRequestVerdicts(d, before, e2eJobFor(d, 2)) })
 	e.check(e.github.reviewPosts(1) == 0 && e.github.reviewPosts(2) == 1, "exactly one review POST, for PR 2 only")
 	posts := map[string]int{}
 	for key, n := range e.github.summary().Requests {
@@ -6031,18 +6036,33 @@ func TestE2ERequestVerdicts(t *testing.T) {
 			e2eScopeKey(2): {Scope: r.Scope{PR: 2}, Requests: []r.NativeRequest{{ID: 7, Admitted: true, Origin: origin("comment", "commenter", r.OwnerID)}}},
 		}}
 	}
-	wantRecovered := map[int]e2eRequest{1: e2eAdmittedOpened(1, 1), 2: e2eAdmittedComment(2, 7)}
-	recoveredFailures := func(d r.DurableState) int {
+	job := func(pr int, id int64) *r.DurableJob {
+		return &r.DurableJob{Job: r.Job{ID: fmt.Sprintf("request-%d-%d", pr, id)}, Scope: r.Scope{PR: pr}, RequestID: id}
+	}
+	j1, j2 := job(1, 1), job(2, 7)
+	judged := func(d r.DurableState, j1, j2 *r.DurableJob) int {
 		n := 0
-		for _, v := range e2eRequestVerdicts("after recovery review", e2eRequests(d), wantRecovered) {
+		for _, v := range e2eRecoveredRequestVerdicts(d, j1, j2) {
 			if !v.OK {
 				n++
 			}
 		}
 		return n
 	}
+	recoveredFailures := func(d r.DurableState) int { return judged(d, j1, j2) }
 	if n := recoveredFailures(recovered()); n != 0 {
 		t.Fatal("recovered end state refused:", n)
+	}
+	// A missing job, or one without a request ID, matches no retained request.
+	for name, jobs := range map[string][2]*r.DurableJob{
+		"PR 2 job missing":              {j1, nil},
+		"PR 2 job without a request ID": {j1, job(2, 0)},
+		"PR 1 job missing":              {nil, j2},
+		"PR 1 job without a request ID": {job(1, 0), j2},
+	} {
+		if judged(recovered(), jobs[0], jobs[1]) == 0 {
+			t.Error("recovered:", name, "accepted")
+		}
 	}
 	for name, edit := range map[string]func(r.DurableState){
 		"PR 1 request no longer admitted":  func(d r.DurableState) { pr(d, 1).Requests[0].Admitted = false },
