@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -77,6 +78,7 @@ type e2eResult struct {
 	Case, Revision, ReleaseHash   string
 	Root                          string
 	SourceImageCommit             string
+	TestBinary                    r.E2EBuildStamp
 	NativeImageCommit             string
 	Passed                        bool
 	ElapsedSeconds                float64
@@ -94,6 +96,7 @@ type e2eResult struct {
 	Models                        map[r.Provider][]e2eModelSession
 	AuthRecoveryClear             map[string]bool
 	ResidualSystemdUnits          []string
+	UnitListingError              string
 	RunErrors                     []string
 	Notes                         []string
 	FakeOnly, ProviderEligibility bool
@@ -131,6 +134,7 @@ type e2eEnv struct {
 	root                           string
 	meta, unit, export, work, auth string
 	native                         map[r.Provider]string
+	policies                       map[r.Provider]r.EgressPolicy
 	store                          *r.Store
 	storePath                      string
 	github                         *e2eGitHub
@@ -143,8 +147,11 @@ type e2eEnv struct {
 	result                         *e2eResult
 	mu                             sync.Mutex
 	units                          *e2eUnitObserver
-	finished                       bool
-	attached                       bool
+	// servers are the fake GitHub and model backends. cleanup closes them
+	// only after the service, which may still be using them.
+	servers  []*httptest.Server
+	finished bool
+	attached bool
 	// wedged marks a handle whose Close is expected to keep reporting
 	// ErrWorkerStopPending; keepRoot retains the root for an attached phase.
 	wedged, keepRoot                  bool
@@ -202,37 +209,19 @@ func e2eHash(path string) r.VMBootAsset {
 
 func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage string) *e2eEnv {
 	t.Helper()
-	attach := os.Getenv("SFL_E2E_ATTACH")
-	root := attach
-	if attach == "" {
-		var nonce [6]byte
-		if _, err := rand.Read(nonce[:]); err != nil {
-			t.Fatal(err)
-		}
-		// Short private paths preserve sockaddr_un bounds for both VM kinds.
-		root = "/tmp/sfl-e2e-" + hex.EncodeToString(nonce[:])
-		if err := os.Mkdir(root, 0700); err != nil {
-			t.Fatal("fresh E2E root required", err)
-		}
-	} else if !regexp.MustCompile(`^/tmp/sfl-e2e-[0-9a-f]{12}$`).MatchString(attach) {
-		t.Fatal("attach requires a retained E2E root")
-	}
-	e := &e2eEnv{t: t, scenario: scenario, root: root, attached: attach != "", native: map[r.Provider]string{}, models: map[r.Provider]*e2eModel{}, result: &e2eResult{Case: scenario, Root: root, Probes: map[string][]r.E2EProbe{}, Models: map[r.Provider][]e2eModelSession{}, AuthRecoveryClear: map[string]bool{}, FakeOnly: true}}
-	e.meta, e.unit, e.export, e.work, e.auth = filepath.Join(root, "m"), filepath.Join(root, "u"), filepath.Join(root, "x"), filepath.Join(root, "w"), filepath.Join(root, "a")
-	for _, directory := range []string{e.meta, e.unit, e.export, e.work, e.auth, filepath.Join(root, "n")} {
-		if attach != "" {
-			if info, err := os.Lstat(directory); err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
-				t.Fatal("retained E2E directory missing", directory)
-			}
-		} else if err := os.Mkdir(directory, 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	e.units = newE2EUnitObserver(t)
+	e := e2eAllocate(t, scenario, os.Getenv("SFL_E2E_ATTACH"), e2eListUnits)
+	root := e.root
 	// Release: version 2 source VM package plus both native providers.
 	vm, commit := r.E2ESourceVMRelease(t, sourceImage, sourceStub)
 	e.sourceImageCommit = commit
 	e.result.SourceImageCommit = commit
+	// The running test binary is the harness that judges the run; it must be
+	// an unmodified build of the release commit, not merely the same name.
+	stamp, err := r.E2ETestBinaryStamp(commit)
+	e.result.TestBinary = stamp
+	if err != nil {
+		t.Fatal(err)
+	}
 	config := r.DefaultConfig()
 	config.Limits.Timeout = 90 * time.Second
 	e.config = config
@@ -251,6 +240,7 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 			t.Fatal(err)
 		}
 		release.Providers[provider] = r.GitReviewerProviderRelease{Identity: identity, Stub: manifest.Stub, QEMU: manifest.QEMU, Kernel: manifest.Kernel, Initrd: manifest.Initrd, Firmware: manifest.Firmware, Runtime: manifest.Runtime, Policy: f.Policy(probe)}
+		e.policies[provider] = release.Providers[provider].Policy
 		e.native[provider] = filepath.Join(root, "n", string(provider)[:2])
 		if !e.attached {
 			if err := os.Mkdir(e.native[provider], 0700); err != nil {
@@ -283,7 +273,7 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 	}
 	// An attached root keeps the earlier process's native launches.
 	e.expect, e.nativeBefore = e2eExpectations[scenario], map[string]bool{}
-	for _, u := range e2eReadNativeUnits(e.native) {
+	for _, u := range e2eReadNativeUnits(e.native, e.policies) {
 		e.nativeBefore[u.Launch] = true
 	}
 	_, releaseHash, err := r.EncodeGitReviewerRelease(release)
@@ -304,7 +294,52 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 		},
 		Interval: time.Second, MaxBackoff: 5 * time.Second, TickTimeout: 2 * time.Minute,
 	}
-	t.Cleanup(e.cleanup)
+	return e
+}
+
+// e2eAllocate creates a fresh run root, or adopts the retained root named by
+// attach, and starts the unit observer. Cleanup is registered as soon as the
+// root is owned, before the observer starts, and tolerates a partially
+// initialized environment: a later t.Fatal in setup still stops the observer
+// and removes a fresh root.
+func e2eAllocate(t testing.TB, scenario, attach string, list func() (map[string]string, error)) *e2eEnv {
+	t.Helper()
+	root := attach
+	if attach == "" {
+		var nonce [6]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			t.Fatal(err)
+		}
+		// Short private paths preserve sockaddr_un bounds for both VM kinds.
+		root = "/tmp/sfl-e2e-" + hex.EncodeToString(nonce[:])
+		if err := os.Mkdir(root, 0700); err != nil {
+			t.Fatal("fresh E2E root required", err)
+		}
+	} else if !regexp.MustCompile(`^/tmp/sfl-e2e-[0-9a-f]{12}$`).MatchString(attach) {
+		t.Fatal("attach requires a retained E2E root")
+	}
+	e := &e2eEnv{t: t, scenario: scenario, root: root, attached: attach != "", native: map[r.Provider]string{}, policies: map[r.Provider]r.EgressPolicy{}, models: map[r.Provider]*e2eModel{}, result: &e2eResult{Case: scenario, Root: root, Probes: map[string][]r.E2EProbe{}, Models: map[r.Provider][]e2eModelSession{}, AuthRecoveryClear: map[string]bool{}, FakeOnly: true}}
+	if attach == "" {
+		// The fresh root is owned from here: any later setup failure removes
+		// it (unless SFL_E2E_KEEP_FAILED) and seals partial evidence.
+		t.Cleanup(e.cleanup)
+	}
+	e.meta, e.unit, e.export, e.work, e.auth = filepath.Join(root, "m"), filepath.Join(root, "u"), filepath.Join(root, "x"), filepath.Join(root, "w"), filepath.Join(root, "a")
+	for _, directory := range []string{e.meta, e.unit, e.export, e.work, e.auth, filepath.Join(root, "n")} {
+		if attach != "" {
+			if info, err := os.Lstat(directory); err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
+				t.Fatal("retained E2E directory missing", directory)
+			}
+		} else if err := os.Mkdir(directory, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if attach != "" {
+		// A retained root is adopted only once its layout is proved.
+		t.Cleanup(e.cleanup)
+	}
+	// cleanup stops the observer, so it never outlives a failed setup.
+	e.units = newE2EUnitObserver(t, list)
 	return e
 }
 
@@ -606,9 +641,13 @@ func (e *e2eEnv) finish() {
 	if e.service != nil && !e.wedged {
 		e.close("final")
 	}
-	e.result.SystemdUnits, e.result.ResidualSystemdUnits = e.units.stop(30 * time.Second)
+	var listing error
+	e.result.SystemdUnits, e.result.ResidualSystemdUnits, listing = e.units.stop(30 * time.Second)
+	if listing != nil {
+		e.result.UnitListingError = listing.Error()
+	}
 	e.event("systemd", "observed %d distinct sfl-alpha units (source+native)", len(e.result.SystemdUnits))
-	e.result.NativeUnits = e2eReadNativeUnits(e.native)
+	e.result.NativeUnits = e2eReadNativeUnits(e.native, e.policies)
 	for _, provider := range []r.Provider{r.Codex, r.Claude} {
 		e.result.AuthRecoveryClear[string(provider)] = e2eAuthUsable(e.auth, provider)
 	}
@@ -630,7 +669,10 @@ type e2eVerdict struct {
 // declared expectation. before holds native launches retained from an
 // earlier process; attached marks such a retained root.
 func e2eFinalVerdicts(res *e2eResult, want e2eExpect, before map[string]bool, attached bool) []e2eVerdict {
-	verdicts := []e2eVerdict{{len(res.ResidualSystemdUnits) == 0, fmt.Sprintf("no sfl-alpha unit started by this run remains (%d observed)", len(res.SystemdUnits))}}
+	verdicts := []e2eVerdict{
+		{res.UnitListingError == "", fmt.Sprintf("the final sfl-alpha unit listing succeeded (%q)", res.UnitListingError)},
+		{len(res.ResidualSystemdUnits) == 0, fmt.Sprintf("no sfl-alpha unit started by this run remains (%d observed, residual %v)", len(res.SystemdUnits), res.ResidualSystemdUnits)},
+	}
 	for _, u := range res.NativeUnits {
 		verdicts = append(verdicts, e2eVerdict{u.Captured && u.Stopped, fmt.Sprintf("native unit %s captured and stopped", u.Launch)})
 	}
@@ -726,9 +768,16 @@ func (e *e2eEnv) report() {
 // close or root removal can never leave a persisted pass.
 func (e *e2eEnv) cleanup() {
 	defer e.seal()
-	if !e.finished {
+	defer func() {
+		for _, server := range slices.Backward(e.servers) {
+			server.Close()
+		}
+	}()
+	if !e.finished && e.units != nil {
 		// A fatal path skipped finish: keep its timeline and partial evidence.
-		e.units.stop(30 * time.Second)
+		if _, residual, err := e.units.stop(30 * time.Second); len(residual) != 0 || err != nil {
+			e.t.Error("sfl-alpha units may remain after an unfinished run", residual, err)
+		}
 	}
 	// A wedged handle already reported ErrWorkerStopPending and its store
 	// handle is closed. It keeps its startup and credential locks until this
@@ -779,6 +828,7 @@ type e2eSystemdUnit struct {
 }
 
 type e2eUnitObserver struct {
+	list     func() (map[string]string, error)
 	mu       sync.Mutex
 	before   map[string]bool
 	seen     map[string]*e2eSystemdUnit
@@ -802,12 +852,14 @@ func e2eListUnits() (map[string]string, error) {
 	return units, nil
 }
 
-func newE2EUnitObserver(t *testing.T) *e2eUnitObserver {
-	before, err := e2eListUnits()
+// newE2EUnitObserver records the units list reports before the run, then
+// samples it every 200 ms until stop.
+func newE2EUnitObserver(t testing.TB, list func() (map[string]string, error)) *e2eUnitObserver {
+	before, err := list()
 	if err != nil {
 		t.Fatal("user systemd unavailable", err)
 	}
-	o := &e2eUnitObserver{before: map[string]bool{}, seen: map[string]*e2eSystemdUnit{}, done: make(chan struct{}), joined: make(chan struct{})}
+	o := &e2eUnitObserver{list: list, before: map[string]bool{}, seen: map[string]*e2eSystemdUnit{}, done: make(chan struct{}), joined: make(chan struct{})}
 	for name := range before {
 		o.before[name] = true
 	}
@@ -824,10 +876,10 @@ func newE2EUnitObserver(t *testing.T) *e2eUnitObserver {
 	}()
 	return o
 }
-func (o *e2eUnitObserver) sample() map[string]string {
-	units, err := e2eListUnits()
+func (o *e2eUnitObserver) sample() (map[string]string, error) {
+	units, err := o.list()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	now := time.Now().UTC()
 	o.mu.Lock()
@@ -853,24 +905,38 @@ func (o *e2eUnitObserver) sample() map[string]string {
 			}
 		}
 	}
-	return units
+	return units, nil
 }
 
-// stop waits until no unit first seen by this run remains, then reports.
-func (o *e2eUnitObserver) stop(grace time.Duration) ([]e2eSystemdUnit, []string) {
+// stop waits until a successful listing shows no unit first seen by this run,
+// then reports. A failed listing is never read as an empty one: it keeps the
+// last successful residual (or, before any, every unit this run saw) and,
+// when the grace ends without a later successful listing, returns its error.
+func (o *e2eUnitObserver) stop(grace time.Duration) ([]e2eSystemdUnit, []string, error) {
 	deadline := time.Now().Add(grace)
-	residual := []string{}
+	residual, listed := []string{}, false
+	var listing error
 	for {
-		units := o.sample()
-		residual = residual[:0]
+		units, err := o.sample()
 		o.mu.Lock()
-		for name := range units {
-			if !o.before[name] {
-				residual = append(residual, name+" "+units[name])
+		switch {
+		case err == nil:
+			listing, listed, residual = nil, true, residual[:0]
+			for name := range units {
+				if !o.before[name] {
+					residual = append(residual, name+" "+units[name])
+				}
 			}
+		case !listed:
+			listing, residual = err, residual[:0]
+			for name, u := range o.seen {
+				residual = append(residual, name+" last seen "+strings.Join(u.States, ","))
+			}
+		default:
+			listing = err
 		}
 		o.mu.Unlock()
-		if units != nil && len(residual) == 0 || time.Now().After(deadline) {
+		if listing == nil && len(residual) == 0 || time.Now().After(deadline) {
 			break
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -884,7 +950,11 @@ func (o *e2eUnitObserver) stop(grace time.Duration) ([]e2eSystemdUnit, []string)
 		all = append(all, *u)
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].FirstSeen.Before(all[j].FirstSeen) })
-	return all, append([]string(nil), residual...)
+	sort.Strings(residual)
+	if listing != nil {
+		listing = fmt.Errorf("final sfl-alpha unit listing failed: %w", listing)
+	}
+	return all, append([]string(nil), residual...), listing
 }
 
 // ---------------------------------------------------------------- native units
@@ -896,30 +966,64 @@ type e2eNativeUnit struct {
 	AuditPresent                         bool
 }
 
-func e2eReadNativeUnits(roots map[r.Provider]string) []e2eNativeUnit {
+// e2eReadNativeUnits projects every native launch directory under roots,
+// judging each provider's audits against that provider's release policy.
+func e2eReadNativeUnits(roots map[r.Provider]string, policies map[r.Provider]r.EgressPolicy) []e2eNativeUnit {
 	units := []e2eNativeUnit{}
 	for provider, root := range roots {
 		paths, _ := filepath.Glob(filepath.Join(root, "*", "unit.json"))
 		for _, path := range paths {
-			var unit struct {
-				Captured, Stopped bool
-				Binding           r.AuthBinding
-			}
-			raw, err := os.ReadFile(path)
-			if err != nil || json.Unmarshal(raw, &unit) != nil {
-				units = append(units, e2eNativeUnit{Provider: string(provider), Launch: filepath.Base(filepath.Dir(path))})
-				continue
-			}
-			u := e2eNativeUnit{Provider: string(provider), Launch: filepath.Base(filepath.Dir(path)), SessionHash: unit.Binding.SessionHash, Captured: unit.Captured, Stopped: unit.Stopped}
-			var audit struct{ Complete, AuthExported, AuthReturned bool }
-			if raw, err := os.ReadFile(filepath.Join(filepath.Dir(path), "native-audit.json")); err == nil && json.Unmarshal(raw, &audit) == nil {
-				u.AuditPresent, u.Complete, u.AuthExported, u.AuthReturned = true, audit.Complete, audit.AuthExported, audit.AuthReturned
-			}
-			units = append(units, u)
+			unit, _ := os.ReadFile(path)
+			audit, _ := os.ReadFile(filepath.Join(filepath.Dir(path), "native-audit.json"))
+			units = append(units, e2eNativeUnitFrom(provider, policies[provider], filepath.Base(filepath.Dir(path)), unit, audit))
 		}
 	}
 	sort.Slice(units, func(i, j int) bool { return units[i].Launch < units[j].Launch })
 	return units
+}
+
+// e2eNativeUnitFrom projects one native launch directory's unit journal and
+// stopped audit receipt. The journal counts only as version 1 for this
+// directory's launch: it names sfl-alpha-<launch>.service and its binding
+// derives the containment ID from its session and launch. The audit counts
+// (AuditPresent) only as a version 1 receipt repeating that exact binding.
+// Its provider evidence, required once auth was exported or the session
+// completed, must be the stopped receipt of the same session under the
+// release's policy. A copied or foreign audit therefore proves nothing.
+func e2eNativeUnitFrom(provider r.Provider, policy r.EgressPolicy, launch string, unitRaw, auditRaw []byte) e2eNativeUnit {
+	u := e2eNativeUnit{Provider: string(provider), Launch: launch}
+	var unit struct {
+		Version           int
+		Unit              string
+		Captured, Stopped bool
+		Binding           r.AuthBinding
+	}
+	if unitRaw == nil || json.Unmarshal(unitRaw, &unit) != nil {
+		return u
+	}
+	b := unit.Binding
+	if unit.Version != 1 || b.LaunchID != launch || unit.Unit != "sfl-alpha-"+launch+".service" || len(b.SessionHash) != 64 || b.ContainmentID != r.Digest(struct{ Session, Launch string }{b.SessionHash, launch}) {
+		return u
+	}
+	u.SessionHash, u.Captured, u.Stopped = b.SessionHash, unit.Captured, unit.Stopped
+	var audit struct {
+		Version                              int
+		Binding                              r.AuthBinding
+		Provider                             *r.ProviderEvidence
+		Complete, AuthExported, AuthReturned bool
+	}
+	if auditRaw == nil || json.Unmarshal(auditRaw, &audit) != nil || audit.Version != 1 || audit.Binding != b {
+		return u
+	}
+	if evidence := audit.Provider; evidence != nil {
+		if evidence.Policy.Provider != provider || r.Digest(evidence.Policy) != r.Digest(policy) || evidence.Access.Version != 1 || evidence.Access.SessionHash != b.SessionHash || evidence.Access.PolicyHash != r.Digest(policy) || !evidence.Access.Stopped {
+			return u
+		}
+	} else if audit.Complete || audit.AuthExported {
+		return u
+	}
+	u.AuditPresent, u.Complete, u.AuthExported, u.AuthReturned = true, audit.Complete, audit.AuthExported, audit.AuthReturned
+	return u
 }
 
 // ---------------------------------------------------------------- fake models
@@ -958,7 +1062,7 @@ type e2eModel struct {
 func newE2EModel(t *testing.T, env *e2eEnv, provider r.Provider) *e2eModel {
 	m := &e2eModel{t: t, env: env, provider: provider, held: make(chan string, 4)}
 	m.server = httptest.NewTLSServer(http.HandlerFunc(m.serve))
-	t.Cleanup(m.server.Close)
+	env.servers = append(env.servers, m.server)
 	target, _ := url.Parse(m.server.URL)
 	base := m.server.Client().Transport.(*http.Transport).Clone()
 	base.Proxy, base.ForceAttemptHTTP2 = nil, false
@@ -1176,7 +1280,7 @@ func newE2EGitHub(t *testing.T, env *e2eEnv) *e2eGitHub {
 		t.Fatal(err)
 	}
 	g.server = httptest.NewTLSServer(http.HandlerFunc(g.serve))
-	t.Cleanup(g.server.Close)
+	env.servers = append(env.servers, g.server)
 	g.base, _ = url.Parse(g.server.URL)
 	return g
 }
@@ -1587,40 +1691,88 @@ func (g *e2eGitHub) summary() e2eGitHubSummary {
 
 // ---------------------------------------------------------------- assertions
 
+// e2eCompletion is the evidence a completed review is judged on: durable
+// state, the fake upstream heads, the fake GitHub's POSTs and reviews, the
+// source owner journal and archive, and the native launch receipts.
+type e2eCompletion struct {
+	State     r.DurableState
+	Heads     map[int]string
+	Release   string
+	Posts     map[int]int
+	Reviews   map[int][]map[string]any
+	Records   []r.E2ESourceRecord
+	Exports   []r.E2EExportRecord
+	SourceErr error
+	Units     []e2eNativeUnit
+}
+
+// completion gathers the current evidence from the open service.
+func (e *e2eEnv) completion() e2eCompletion {
+	summary := e.github.summary()
+	c := e2eCompletion{State: e.state(), Heads: map[int]string{}, Release: e.options.Current, Posts: summary.ReviewPosts, Reviews: summary.Reviews, Units: e2eReadNativeUnits(e.native, e.policies)}
+	for n := range c.Posts {
+		c.Heads[n] = e.github.commits[strconv.Itoa(n)]
+	}
+	if e.service == nil {
+		c.SourceErr = errors.New("source records need an open service")
+		return c
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	c.Records, c.Exports, c.SourceErr = e.service.E2ESourceRecords(ctx)
+	return c
+}
+
+func (e *e2eEnv) checkAll(verdicts []e2eVerdict) {
+	e.t.Helper()
+	for _, v := range verdicts {
+		e.check(v.OK, "%s", v.Message)
+	}
+}
+
 // assertReviewed checks the durable outcome, remote COMMENT and outbox state
 // for one PR, and returns its job.
 func (e *e2eEnv) assertReviewed(pr int) *r.DurableJob {
-	d := e.state()
-	j := e2eJobFor(d, pr)
+	e.t.Helper()
+	verdicts, j := e2eReviewedVerdicts(e.completion(), pr)
+	e.checkAll(verdicts)
+	return j
+}
+
+// e2eReviewedVerdicts judges one PR's completed review. It returns the PR's
+// job, or nil when none exists.
+func e2eReviewedVerdicts(c e2eCompletion, pr int) ([]e2eVerdict, *r.DurableJob) {
+	j := e2eJobFor(c.State, pr)
 	if j == nil {
-		e.check(false, "PR %d has a durable job", pr)
-		return nil
+		return []e2eVerdict{{false, fmt.Sprintf("PR %d has a durable job", pr)}}, nil
 	}
-	e.check(j.State == "dual_complete", "PR %d job %s reached dual_complete (got %s)", pr, j.Job.ID, j.State)
-	e.check(j.Job.Config.Mode == r.Adversarial && len(j.Checkpoint.Artifacts) == 4 && j.Checkpoint.ConsumedSessions == 4, "PR %d adversarial engine stored 4 artifacts and consumed exactly 4 sessions (consumed %d)", pr, j.Checkpoint.ConsumedSessions)
-	e.check(j.Job.Snapshot.Head == e.github.commits[strconv.Itoa(pr)] && j.Job.Release == e.options.Current, "PR %d job binds its own head and the current release", pr)
+	v := []e2eVerdict{
+		{j.State == "dual_complete", fmt.Sprintf("PR %d job %s reached dual_complete (got %s)", pr, j.Job.ID, j.State)},
+		{j.Job.Config.Mode == r.Adversarial && len(j.Checkpoint.Artifacts) == 4 && j.Checkpoint.ConsumedSessions == 4, fmt.Sprintf("PR %d adversarial engine stored 4 artifacts and consumed exactly 4 sessions (consumed %d)", pr, j.Checkpoint.ConsumedSessions)},
+		{c.Heads[pr] != "" && j.Job.Snapshot.Head == c.Heads[pr] && j.Job.Release == c.Release, fmt.Sprintf("PR %d job binds its own head and the current release", pr)},
+	}
 	providers := map[r.Provider]int{}
 	for _, a := range j.Checkpoint.Artifacts {
 		providers[a.Report.Provider]++
 	}
-	e.check(providers[r.Codex] == 2 && providers[r.Claude] == 2, "PR %d artifacts from both providers %v", pr, providers)
-	writes := e2eWritesFor(d, pr, "review")
+	v = append(v, e2eVerdict{providers[r.Codex] == 2 && providers[r.Claude] == 2, fmt.Sprintf("PR %d artifacts from both providers %v", pr, providers)})
+	writes := e2eWritesFor(c.State, pr, "review")
 	w := e2eSoleConfirmed(writes)
-	e.check(w != nil, "PR %d has exactly one review intent and it is confirmed (%d writes)", pr, len(writes))
+	v = append(v, e2eVerdict{w != nil, fmt.Sprintf("PR %d has exactly one review intent and it is confirmed (%d writes)", pr, len(writes))})
 	if w != nil {
-		e.check(w.Snapshot.Head == j.Job.Snapshot.Head && w.ReceiptID > 0, "PR %d confirmed write binds the reviewed head and a receipt", pr)
-		e.check(len(w.Document.Inline) >= 1 && w.Document.Inline[0].Path == "source.go", "PR %d document carries the source-backed inline finding", pr)
+		v = append(v,
+			e2eVerdict{w.Snapshot.Head == j.Job.Snapshot.Head && w.ReceiptID > 0, fmt.Sprintf("PR %d confirmed write binds the reviewed head and a receipt", pr)},
+			e2eVerdict{len(w.Document.Inline) >= 1 && w.Document.Inline[0].Path == "source.go", fmt.Sprintf("PR %d document carries the source-backed inline finding", pr)})
 	}
-	e.check(e.github.reviewPosts(pr) == 1, "PR %d received exactly one review POST (got %d)", pr, e.github.reviewPosts(pr))
-	summary := e.github.summary()
-	reviews := summary.Reviews[pr]
-	e.check(len(reviews) == 1 && reviews[0]["state"] == "COMMENTED" && reviews[0]["commit_id"] == j.Job.Snapshot.Head && reviews[0]["marker"] != "", "PR %d remote review is one marked COMMENT on its head", pr)
+	v = append(v, e2eVerdict{c.Posts[pr] == 1, fmt.Sprintf("PR %d received exactly one review POST (got %d)", pr, c.Posts[pr])})
+	reviews := c.Reviews[pr]
+	v = append(v, e2eVerdict{len(reviews) == 1 && reviews[0]["state"] == "COMMENTED" && reviews[0]["commit_id"] == j.Job.Snapshot.Head && reviews[0]["marker"] != "", fmt.Sprintf("PR %d remote review is one marked COMMENT on its head", pr)})
 	var inline []string
 	if len(reviews) == 1 {
 		inline, _ = reviews[0]["inline"].([]string)
 	}
-	e.check(slices.Contains(inline, "source.go:1"), "PR %d remote review carries the inline comment at source.go:1 (%v)", pr, inline)
-	return j
+	v = append(v, e2eVerdict{slices.Contains(inline, "source.go:1"), fmt.Sprintf("PR %d remote review carries the inline comment at source.go:1 (%v)", pr, inline)})
+	return v, j
 }
 
 // e2eSoleConfirmed returns a PR's review intent when it is the only one and
@@ -1659,35 +1811,43 @@ func e2eSourceEvidence(records []r.E2ESourceRecord, exports []r.E2EExportRecord,
 }
 
 func (e *e2eEnv) assertSourceStopped(label string, want int) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if e.service == nil {
-		e.check(false, "%s: source records need an open service", label)
-		return
+	e.t.Helper()
+	c := e.completion()
+	e.checkAll(e2eSourceVerdicts(label, c, want))
+	if c.SourceErr == nil {
+		e.mu.Lock()
+		e.result.SourceRecords = append(e.result.SourceRecords, c.Records)
+		e.result.Exports = append(e.result.Exports, c.Exports)
+		e.mu.Unlock()
 	}
-	records, exports, err := e.service.E2ESourceRecords(ctx)
-	if err != nil {
-		e.check(false, "%s: source records readable: %v", label, err)
-		return
+}
+
+// e2eSourceVerdicts requires want source attempts, each with a durable
+// granted stop receipt and a staged export of its own.
+func e2eSourceVerdicts(label string, c e2eCompletion, want int) []e2eVerdict {
+	if c.SourceErr != nil {
+		return []e2eVerdict{{false, fmt.Sprintf("%s: source records readable: %v", label, c.SourceErr)}}
 	}
-	err = e2eSourceEvidence(records, exports, want)
-	e.check(err == nil, "%s: %d source records with matching staged-export entries: %v", label, want, err)
-	for _, rec := range records {
-		e.check(rec.Stopped && rec.Revoked && rec.GrantHash != "", "%s: source attempt %s (unit %s) has a durable granted stop receipt", label, rec.Attempt, rec.Unit)
+	err := e2eSourceEvidence(c.Records, c.Exports, want)
+	v := []e2eVerdict{{err == nil, fmt.Sprintf("%s: %d source records with matching staged-export entries: %v", label, want, err)}}
+	for _, rec := range c.Records {
+		v = append(v, e2eVerdict{rec.Stopped && rec.Revoked && rec.GrantHash != "", fmt.Sprintf("%s: source attempt %s (unit %s) has a durable granted stop receipt", label, rec.Attempt, rec.Unit)})
 	}
-	for _, x := range exports {
-		e.check(x.State == "staged", "%s: retained export %s is staged (%s)", label, x.Attempt, x.State)
+	for _, x := range c.Exports {
+		v = append(v, e2eVerdict{x.State == "staged", fmt.Sprintf("%s: retained export %s is staged (%s)", label, x.Attempt, x.State)})
 	}
-	e.mu.Lock()
-	e.result.SourceRecords = append(e.result.SourceRecords, records)
-	e.result.Exports = append(e.result.Exports, exports)
-	e.mu.Unlock()
+	return v
 }
 
 // assertNativeSessions requires exactly one completed native launch per
 // artifact session of the given jobs, with auth returned and whole-unit
 // stop, and no other launch except the listed extra session hashes.
 func (e *e2eEnv) assertNativeSessions(jobs []*r.DurableJob, extra ...string) {
+	e.t.Helper()
+	e.checkAll([]e2eVerdict{e2eNativeSessionVerdict(e2eReadNativeUnits(e.native, e.policies), jobs, extra...)})
+}
+
+func e2eNativeSessionVerdict(units []e2eNativeUnit, jobs []*r.DurableJob, extra ...string) e2eVerdict {
 	expected := map[string]bool{}
 	for _, j := range jobs {
 		for _, a := range j.Checkpoint.Artifacts {
@@ -1700,7 +1860,7 @@ func (e *e2eEnv) assertNativeSessions(jobs []*r.DurableJob, extra ...string) {
 	}
 	seen := map[string]int{}
 	unexpected := 0
-	for _, u := range e2eReadNativeUnits(e.native) {
+	for _, u := range units {
 		if expected[u.SessionHash] && u.Captured && u.Stopped && u.AuditPresent && u.Complete && u.AuthReturned {
 			seen[u.SessionHash]++
 		} else if allowed[u.SessionHash] > 0 {
@@ -1713,7 +1873,21 @@ func (e *e2eEnv) assertNativeSessions(jobs []*r.DurableJob, extra ...string) {
 	for _, n := range seen {
 		once = once && n == 1
 	}
-	e.check(once && unexpected == 0, "each of %d job-bound sessions ran in exactly one completed native launch with auth returned, and no other launch exists (%d matched, %d unexpected)", len(expected), len(seen), unexpected)
+	return e2eVerdict{once && unexpected == 0, fmt.Sprintf("each of %d job-bound sessions ran in exactly one completed native launch with auth returned, and no other launch exists (%d matched, %d unexpected)", len(expected), len(seen), unexpected)}
+}
+
+// e2eProviderReopenVerdicts judges close-provider after a Close that proved
+// completion and a reopen with the same assertions as every other completed
+// review: one confirmed intent, one POST and the expected remote COMMENT,
+// stopped source receipts, and one completed native launch per artifact. The
+// interrupted launch is the only other launch allowed.
+func e2eProviderReopenVerdicts(c e2eCompletion, interrupted string) ([]e2eVerdict, *r.DurableJob) {
+	verdicts, job := e2eReviewedVerdicts(c, 1)
+	verdicts = append(verdicts, e2eSourceVerdicts("after reopen", c, 1)...)
+	if job != nil {
+		verdicts = append(verdicts, e2eNativeSessionVerdict(c.Units, []*r.DurableJob{job}, interrupted))
+	}
+	return verdicts, job
 }
 
 // ---------------------------------------------------------------- scenarios
@@ -1762,14 +1936,8 @@ func e2eIsolation(e *e2eEnv) {
 	e.assertNativeSessions([]*r.DurableJob{j1, j2})
 	// Admission: sessions of the two jobs never interleave.
 	sessions := append(e.models[r.Codex].sessionsCopy(), e.models[r.Claude].sessionsCopy()...)
-	sort.Slice(sessions, func(i, j int) bool { return sessions[i].CheckedAt.Before(sessions[j].CheckedAt) })
-	switches := 0
-	for i := 1; i < len(sessions); i++ {
-		if sessions[i].JobID != sessions[i-1].JobID {
-			switches++
-		}
-		e.check(sessions[i].Head == e.github.commits[strconv.Itoa(sessions[i].PR)], "session %d binds its own PR head", i)
-	}
+	switches, unbound := e2eSessionsBound(sessions, e2eJobSummary(j1), e2eJobSummary(j2))
+	e.check(len(unbound) == 0, "every session binds its own job's PR and head (unbound %v)", unbound)
 	e.check(len(sessions) == 8 && switches == 1, "eight sessions ran as two non-interleaved jobs (%d job switches)", switches)
 	// Source attempts are distinct per job, and each upload-pack wanted only
 	// that job's commits.
@@ -1824,6 +1992,28 @@ func e2eIsolation(e *e2eEnv) {
 	e.check(e.github.gitExchanges() == before, "restore probes used retained bytes only (no upstream exchange)")
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(j1), e2eJobSummary(j2))
 	e.collectWrites()
+}
+
+// e2eSessionsBound orders sessions by host check and counts job switches. It
+// reports each session, the first included, whose job ID is not one of jobs
+// or whose PR and head differ from that job's snapshot.
+func e2eSessionsBound(sessions []e2eModelSession, jobs ...e2eJob) (int, []string) {
+	sessions = slices.Clone(sessions)
+	sort.Slice(sessions, func(i, j int) bool { return sessions[i].CheckedAt.Before(sessions[j].CheckedAt) })
+	byID := map[string]e2eJob{}
+	for _, j := range jobs {
+		byID[j.ID] = j
+	}
+	switches, unbound := 0, []string{}
+	for i, s := range sessions {
+		if i > 0 && s.JobID != sessions[i-1].JobID {
+			switches++
+		}
+		if j, ok := byID[s.JobID]; !ok || s.PR != j.PR || s.Head != j.Head {
+			unbound = append(unbound, fmt.Sprintf("session %d (job %s PR %d)", i, s.JobID, s.PR))
+		}
+	}
+	return switches, unbound
 }
 
 // close-capture: the whole service closes after the source capture and job
@@ -1920,7 +2110,7 @@ func e2eCloseProvider(e *e2eEnv) {
 	}
 	e.note("after provider-session close: job state %s, consumed %d, artifacts %d, lease %v, outstanding %v, provider attempts %d", j.State, j.Checkpoint.ConsumedSessions, len(j.Checkpoint.Artifacts), j.LeaseToken != "", j.Outstanding, len(j.ProviderAttempts))
 	e.check(j.Checkpoint.ConsumedSessions == 1 && len(j.Checkpoint.Artifacts) == 0, "the interrupted session stays charged and produced no artifact")
-	units := e2eReadNativeUnits(e.native)
+	units := e2eReadNativeUnits(e.native, e.policies)
 	e.check(len(units) == 1 && units[0].Captured && units[0].Stopped && !units[0].Complete, "the interrupted native unit was captured and whole-unit stopped without completion")
 	returned := len(units) == 1 && units[0].AuthReturned
 	e.check(len(units) == 1 && units[0].AuditPresent, "the interrupted native unit has a well-formed stopped audit receipt")
@@ -1937,11 +2127,18 @@ func e2eCloseProvider(e *e2eEnv) {
 		e.open("reopen")
 		e.wait("PR 1 review after reopen", 6*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 1) })
 		e.snapshotJobs("after reopen")
+		interrupted := ""
+		if len(units) == 1 {
+			interrupted = units[0].SessionHash
+		}
+		verdicts, reopened := e2eProviderReopenVerdicts(e.completion(), interrupted)
+		e.checkAll(verdicts)
 		// Not yet observed on a host: the interrupted launch plus one completed
 		// launch per artifact of the reopened job, still one acquisition, and
 		// both auth stores usable.
-		if reopened := e2eJobFor(e.state(), 1); reopened != nil {
+		if reopened != nil {
 			e.expect = e2eExpect{1, 1 + len(reopened.Checkpoint.Artifacts), true}
+			e.result.Jobs = append(e.result.Jobs, e2eJobSummary(reopened))
 		}
 		e.collectWrites()
 		return
@@ -2238,6 +2435,7 @@ func TestE2EFinalVerdicts(t *testing.T) {
 		}), e2eExpectations["close-provider-reopen"], map[string]bool{n1: true}, true},
 		"codex auth fenced after success": {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.AuthRecoveryClear["codex"] = false }), review, nil, false},
 		"claude auth unrecorded":          {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { delete(res.AuthRecoveryClear, "claude") }), review, nil, false},
+		"final unit listing failed":       {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.UnitListingError = "systemctl failed" }), review, nil, false},
 	} {
 		if f := failures(in.res, in.want, in.before, in.attached); len(f) == 0 {
 			t.Error(name, "accepted")
@@ -2287,5 +2485,251 @@ func TestE2ESealAfterCleanup(t *testing.T) {
 				t.Fatal("root disposition", err)
 			}
 		})
+	}
+}
+
+func TestE2EUnitObserverListing(t *testing.T) {
+	unit := map[string]string{"sfl-alpha-" + strings.Repeat("a", 32) + ".service": "loaded/active/running source VM"}
+	scripted := func(failAfter bool) func() (map[string]string, error) {
+		var calls atomic.Int32
+		return func() (map[string]string, error) {
+			switch n := calls.Add(1); {
+			case n == 1:
+				return map[string]string{}, nil
+			case n == 2:
+				return unit, nil
+			case failAfter:
+				return nil, errors.New("synthetic systemctl failure")
+			default:
+				return map[string]string{}, nil
+			}
+		}
+	}
+	units, residual, err := newE2EUnitObserver(t, scripted(false)).stop(5 * time.Second)
+	if err != nil || len(residual) != 0 || len(units) != 1 {
+		t.Fatal("observed unit that ended was not reported clean", units, residual, err)
+	}
+	units, residual, err = newE2EUnitObserver(t, scripted(true)).stop(time.Second)
+	if err == nil || len(residual) != 1 || len(units) != 1 {
+		t.Error("unit of unknown disposition after a failed final listing was reported clean", units, residual, err)
+	}
+}
+
+func TestE2ENativeUnitFrom(t *testing.T) {
+	session, launch := strings.Repeat("5", 64), strings.Repeat("6", 32)
+	binding := func(session, launch string) r.AuthBinding {
+		return r.AuthBinding{SessionHash: session, LaunchID: launch, ContainmentID: r.Digest(struct{ Session, Launch string }{session, launch})}
+	}
+	policy, otherPolicy := r.EgressPolicy{Provider: r.Codex, Headers: []string{"authorization"}}, r.EgressPolicy{Provider: r.Codex, Headers: []string{"cookie"}}
+	evidence := func(session string, policy r.EgressPolicy, stopped bool) *r.ProviderEvidence {
+		return &r.ProviderEvidence{Policy: policy, Access: r.ProviderAccess{Version: 1, SessionHash: session, PolicyHash: r.Digest(policy), Stopped: stopped}}
+	}
+	type receipts struct{ unit, audit map[string]any }
+	valid := func(complete bool) receipts {
+		return receipts{
+			map[string]any{"Version": 1, "Unit": "sfl-alpha-" + launch + ".service", "Binding": binding(session, launch), "Captured": true, "Stopped": true},
+			map[string]any{"Version": 1, "Binding": binding(session, launch), "Provider": evidence(session, policy, true), "Complete": complete, "AuthExported": true, "AuthReturned": complete},
+		}
+	}
+	project := func(in receipts) e2eNativeUnit {
+		var unit, audit []byte
+		if in.unit != nil {
+			unit, _ = json.Marshal(in.unit)
+		}
+		if in.audit != nil {
+			audit, _ = json.Marshal(in.audit)
+		}
+		return e2eNativeUnitFrom(r.Codex, policy, launch, unit, audit)
+	}
+	if u := project(valid(true)); !u.AuditPresent || !u.Captured || !u.Stopped || !u.Complete || !u.AuthReturned || u.SessionHash != session {
+		t.Fatal("bound completed receipts refused", u)
+	}
+	if u := project(valid(false)); !u.AuditPresent || u.Complete || !u.AuthExported || u.AuthReturned {
+		t.Fatal("bound interrupted receipts refused", u)
+	}
+	if u := project(receipts{valid(true).unit, nil}); u.AuditPresent || !u.Captured || u.SessionHash != session {
+		t.Fatal("unit without an audit misreported", u)
+	}
+	change := func(complete bool, edit func(receipts)) receipts { in := valid(complete); edit(in); return in }
+	for name, in := range map[string]receipts{
+		"audit of another session":         change(true, func(in receipts) { in.audit["Binding"] = binding(strings.Repeat("7", 64), launch) }),
+		"audit of another launch":          change(true, func(in receipts) { in.audit["Binding"] = binding(session, strings.Repeat("8", 32)) }),
+		"audit without a binding":          change(true, func(in receipts) { delete(in.audit, "Binding") }),
+		"audit of another version":         change(true, func(in receipts) { in.audit["Version"] = 2 }),
+		"audit without a version":          change(true, func(in receipts) { delete(in.audit, "Version") }),
+		"completed audit without evidence": change(true, func(in receipts) { delete(in.audit, "Provider") }),
+		"exported audit without evidence":  change(false, func(in receipts) { delete(in.audit, "Provider") }),
+		"evidence of another session":      change(true, func(in receipts) { in.audit["Provider"] = evidence(strings.Repeat("7", 64), policy, true) }),
+		"evidence under another policy":    change(true, func(in receipts) { in.audit["Provider"] = evidence(session, otherPolicy, true) }),
+		"evidence of another provider":     change(true, func(in receipts) { in.audit["Provider"] = evidence(session, r.EgressPolicy{Provider: r.Claude}, true) }),
+		"evidence not stopped":             change(false, func(in receipts) { in.audit["Provider"] = evidence(session, policy, false) }),
+		"unit journal of another launch": change(true, func(in receipts) {
+			in.unit["Binding"], in.audit["Binding"] = binding(session, strings.Repeat("8", 32)), binding(session, strings.Repeat("8", 32))
+		}),
+		"unit journal naming another unit": change(true, func(in receipts) { in.unit["Unit"] = "sfl-alpha-" + strings.Repeat("8", 32) + ".service" }),
+		"unit journal of another version":  change(true, func(in receipts) { in.unit["Version"] = 2 }),
+		"containment not derived from launch": change(true, func(in receipts) {
+			b := binding(session, launch)
+			b.ContainmentID = strings.Repeat("9", 64)
+			in.unit["Binding"], in.audit["Binding"] = b, b
+		}),
+	} {
+		if u := project(in); u.AuditPresent {
+			t.Error(name, "accepted as this launch's audit", u)
+		}
+	}
+}
+
+// e2eSetupTB runs registered cleanups itself and ends the calling goroutine
+// on Fatal, as testing does, without failing the enclosing test.
+type e2eSetupTB struct {
+	e2eCleanupTB
+	cleanups []func()
+}
+
+func (tb *e2eSetupTB) Cleanup(f func())  { tb.cleanups = append(tb.cleanups, f) }
+func (tb *e2eSetupTB) Fatal(args ...any) { tb.Error(args...); runtime.Goexit() }
+func (tb *e2eSetupTB) Fatalf(format string, args ...any) {
+	tb.Error(fmt.Sprintf(format, args...))
+	runtime.Goexit()
+}
+func (tb *e2eSetupTB) run(f func()) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			for i := len(tb.cleanups) - 1; i >= 0; i-- {
+				tb.cleanups[i]()
+			}
+		}()
+		f()
+	}()
+	<-done
+}
+
+func TestE2EAllocateCleanupAfterSetupFailure(t *testing.T) {
+	t.Setenv("SFL_E2E_EVIDENCE", "")
+	t.Setenv("SFL_E2E_KEEP_FAILED", "")
+	var samples atomic.Int32
+	list := func() (map[string]string, error) { samples.Add(1); return map[string]string{}, nil }
+	tb := &e2eSetupTB{e2eCleanupTB: e2eCleanupTB{T: t}}
+	var e *e2eEnv
+	tb.run(func() {
+		e = e2eAllocate(tb, "review", "", list)
+		tb.Fatal("synthetic setup failure after the observer started")
+	})
+	if e == nil {
+		t.Fatal("allocation failed", tb.errors)
+	}
+	t.Cleanup(func() {
+		e.units.stop(0)
+		_ = os.RemoveAll(e.root)
+	})
+	if _, err := os.Stat(e.root); !errors.Is(err, os.ErrNotExist) {
+		t.Error("fresh root left behind by a setup failure", e.root, err)
+	}
+	select {
+	case <-e.units.joined:
+	default:
+		t.Error("unit observer still sampling after a setup failure", samples.Load())
+	}
+	// A malformed attach path is refused before cleanup can own it.
+	foreign := t.TempDir()
+	tb = &e2eSetupTB{e2eCleanupTB: e2eCleanupTB{T: t}}
+	tb.run(func() { e2eAllocate(tb, "close-provider-reopen", foreign, list) })
+	if _, err := os.Stat(foreign); err != nil || !tb.Failed() {
+		t.Error("malformed attach root removed or accepted", err, tb.errors)
+	}
+}
+
+// e2eReopenFixture is a valid completion after close-provider's reopen: the
+// reopened job's four completed launches plus the interrupted launch.
+func e2eReopenFixture() (e2eCompletion, string) {
+	head, attempt := strings.Repeat("1", 40), strings.Repeat("a", 32)
+	hashes := []string{strings.Repeat("2", 64), strings.Repeat("3", 64), strings.Repeat("4", 64), strings.Repeat("5", 64)}
+	job := &r.DurableJob{Job: r.Job{ID: "request-1-1", Snapshot: r.Snapshot{PR: 1, Head: head}, Config: r.DefaultConfig(), Release: "release"}, Scope: r.Scope{PR: 1}, State: "dual_complete", Checkpoint: r.Checkpoint{ConsumedSessions: 4}}
+	units := []e2eNativeUnit{{Launch: "interrupted", SessionHash: hashes[0], Captured: true, Stopped: true, AuditPresent: true, AuthExported: true, AuthReturned: true}}
+	for i, hash := range hashes {
+		provider := []r.Provider{r.Codex, r.Claude}[i%2]
+		job.Checkpoint.Artifacts = append(job.Checkpoint.Artifacts, r.Artifact{InputHash: hash, Report: r.Report{Provider: provider}})
+		units = append(units, e2eNativeUnit{Launch: strconv.Itoa(i), SessionHash: hash, Captured: true, Stopped: true, AuditPresent: true, Complete: true, AuthExported: true, AuthReturned: true})
+	}
+	write := &r.WriteIntent{ID: "w1", Kind: "review", Scope: r.Scope{PR: 1}, State: "confirmed", Snapshot: r.Snapshot{PR: 1, Head: head}, ReceiptID: 5001, Document: r.Document{Inline: []r.InlineComment{{Path: "source.go", Line: 1}}}}
+	snapshot := r.Snapshot{PR: 1, Head: head}
+	return e2eCompletion{
+		State:   r.DurableState{Jobs: map[string]*r.DurableJob{job.Job.ID: job}, Writes: map[string]*r.WriteIntent{write.ID: write}},
+		Heads:   map[int]string{1: head},
+		Release: "release",
+		Posts:   map[int]int{1: 1},
+		Reviews: map[int][]map[string]any{1: {{"state": "COMMENTED", "commit_id": head, "marker": "<!-- sfl-alpha:" + attempt + " -->", "inline": []string{"source.go:1"}}}},
+		Records: []r.E2ESourceRecord{{Attempt: attempt, Unit: "sfl-alpha-" + attempt + ".service", Snapshot: snapshot, Stopped: true, Revoked: true, GrantHash: "grant"}},
+		Exports: []r.E2EExportRecord{{Attempt: attempt, State: "staged", Snapshot: snapshot}},
+		Units:   units,
+	}, hashes[0]
+}
+
+func TestE2EProviderReopenVerdicts(t *testing.T) {
+	failures := func(c e2eCompletion, interrupted string) []string {
+		verdicts, _ := e2eProviderReopenVerdicts(c, interrupted)
+		out := []string{}
+		for _, v := range verdicts {
+			if !v.OK {
+				out = append(out, v.Message)
+			}
+		}
+		return out
+	}
+	if f := failures(e2eReopenFixture()); len(f) != 0 {
+		t.Fatal("completed reopen refused:", f)
+	}
+	for name, edit := range map[string]func(*e2eCompletion){
+		"duplicate unknown intent": func(c *e2eCompletion) {
+			c.State.Writes["w2"] = &r.WriteIntent{ID: "w2", Kind: "review", Scope: r.Scope{PR: 1}, State: "unknown"}
+		},
+		"second review POST":             func(c *e2eCompletion) { c.Posts[1] = 2 },
+		"remote review without inline":   func(c *e2eCompletion) { c.Reviews[1][0]["inline"] = []string{} },
+		"remote review on another head":  func(c *e2eCompletion) { c.Reviews[1][0]["commit_id"] = strings.Repeat("9", 40) },
+		"completed launch kept its auth": func(c *e2eCompletion) { c.Units[1].AuthReturned = false },
+		"completed launch audit unbound": func(c *e2eCompletion) { c.Units[2].AuditPresent = false },
+		"second interrupted launch":      func(c *e2eCompletion) { c.Units = append(c.Units, c.Units[0]) },
+		"source attempt not stopped":     func(c *e2eCompletion) { c.Records[0].Stopped = false },
+		"source records unreadable":      func(c *e2eCompletion) { c.SourceErr = r.ErrLiveBlocked },
+		"interrupted session recharged":  func(c *e2eCompletion) { e2eJobFor(c.State, 1).Checkpoint.ConsumedSessions = 5 },
+	} {
+		c, interrupted := e2eReopenFixture()
+		edit(&c)
+		if len(failures(c, interrupted)) == 0 {
+			t.Error(name, "accepted")
+		}
+	}
+}
+
+func TestE2ESessionsBound(t *testing.T) {
+	h1, h2 := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	j1, j2 := e2eJob{ID: "request-1-1", PR: 1, Head: h1}, e2eJob{ID: "request-2-1", PR: 2, Head: h2}
+	at := time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC)
+	run := func() []e2eModelSession {
+		sessions := []e2eModelSession{}
+		for i, j := range []e2eJob{j2, j2, j2, j2, j1, j1, j1, j1} {
+			sessions = append(sessions, e2eModelSession{JobID: j.ID, PR: j.PR, Head: j.Head, CheckedAt: at.Add(time.Duration(i) * time.Second)})
+		}
+		// Provider order is not check order.
+		slices.Reverse(sessions)
+		return sessions
+	}
+	if switches, unbound := e2eSessionsBound(run(), j1, j2); switches != 1 || len(unbound) != 0 {
+		t.Fatal("two bound sequential jobs refused", switches, unbound)
+	}
+	for name, edit := range map[string]func([]e2eModelSession){
+		"first session on the other head":   func(s []e2eModelSession) { s[7].Head = h1 },
+		"first session of an unknown job":   func(s []e2eModelSession) { s[7].JobID = "request-3-1" },
+		"session of job 2 bound to PR 1":    func(s []e2eModelSession) { s[5].PR, s[5].Head = 1, h1 },
+		"session of job 1 on the PR 2 head": func(s []e2eModelSession) { s[0].Head = h2 },
+	} {
+		sessions := run()
+		edit(sessions)
+		if _, unbound := e2eSessionsBound(sessions, j1, j2); len(unbound) == 0 {
+			t.Error(name, "accepted")
+		}
 	}
 }

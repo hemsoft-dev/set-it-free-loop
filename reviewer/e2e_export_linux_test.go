@@ -26,10 +26,11 @@ import (
 // E2ESourceVMRelease derives the version 2 source VM package pins from a
 // measured source image and an exact-head host stub. It returns the image's
 // recorded source commit so the caller can bind the release revision to it.
-// The stub must carry Go VCS stamping for that commit from an unmodified tree.
+// The image's guest release must name that commit as its source head, and the
+// stub must carry Go VCS stamping for that commit from an unmodified tree.
 func E2ESourceVMRelease(t *testing.T, image, stub string) (GitReviewerSourceVMRelease, string) {
 	t.Helper()
-	spec, _, _ := gitVMActualImageFixture(t, image)
+	spec, _, guest := gitVMActualImageFixture(t, image)
 	raw, err := os.ReadFile(stub)
 	if err != nil {
 		t.Fatal("source stub", err)
@@ -48,36 +49,83 @@ func E2ESourceVMRelease(t *testing.T, image, stub string) (GitReviewerSourceVMRe
 	if err != nil {
 		t.Fatal(err)
 	}
+	commit, err := e2eRecordedCommit(manifest, guest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e2eStubRevision(info, commit); err != nil {
+		t.Fatal(err)
+	}
+	return vm, commit
+}
+
+// e2eRecordedCommit returns the source image's clean recorded commit. The
+// image's embedded guest release must name the same source head: the derived
+// manifest pins the guest assets but not their head, so a guest built from
+// another commit could otherwise run under this commit's release revision.
+func e2eRecordedCommit(manifest []byte, guest gitVMGuestRelease) (string, error) {
 	var recorded struct {
 		Commit string `json:"source_commit"`
 		Dirty  bool   `json:"source_dirty"`
 	}
 	if json.Unmarshal(manifest, &recorded) != nil || !objectID.MatchString(recorded.Commit) || recorded.Dirty {
-		t.Fatal("source image lacks a clean recorded commit")
+		return "", errors.New("source image lacks a clean recorded commit")
 	}
-	if err := e2eStubRevision(info, recorded.Commit); err != nil {
-		t.Fatal(err)
+	if guest.SourceHead != recorded.Commit {
+		return "", fmt.Errorf("source image guest release head %q differs from its recorded commit %s", guest.SourceHead, recorded.Commit)
 	}
-	return vm, recorded.Commit
+	return recorded.Commit, nil
 }
 
 const e2eStubPackage = "github.com/hemsoft-dev/set-it-free-loop/reviewer/cmd/gitsourcevmstub"
 
-// e2eStubRevision requires the stub's embedded Go VCS stamp to name commit
-// from an unmodified Git tree. Go does not stamp builds in a linked worktree,
-// so such a stub is refused rather than trusted by hash alone.
-func e2eStubRevision(info *debug.BuildInfo, commit string) error {
+// e2eTestPackage is the program path Go records for this package's test binary.
+const e2eTestPackage = "github.com/hemsoft-dev/set-it-free-loop/reviewer.test"
+
+// E2EBuildStamp is the Go VCS stamp recorded in a qualified binary.
+type E2EBuildStamp struct {
+	Path, GoVersion, VCS, Revision, Modified string
+}
+
+// e2eBuildStamp requires info to describe program path, stamped by Go as a
+// build of commit from an unmodified Git tree. A repeated setting is refused.
+// Go does not stamp builds in a linked worktree, so such a binary is refused
+// rather than trusted by hash alone.
+func e2eBuildStamp(label string, info *debug.BuildInfo, path, commit string) (E2EBuildStamp, error) {
+	stamp := E2EBuildStamp{Path: info.Path, GoVersion: info.GoVersion}
 	settings := map[string]string{}
 	for _, setting := range info.Settings {
 		if _, duplicate := settings[setting.Key]; duplicate {
-			return errors.New("source stub repeats build setting " + setting.Key)
+			return stamp, errors.New(label + " repeats build setting " + setting.Key)
 		}
 		settings[setting.Key] = setting.Value
 	}
-	if info.Path != e2eStubPackage || settings["vcs"] != "git" || settings["vcs.revision"] != commit || settings["vcs.modified"] != "false" {
-		return fmt.Errorf("source stub %s is not stamped as an unmodified build of %s (vcs %q revision %q modified %q)", info.Path, commit, settings["vcs"], settings["vcs.revision"], settings["vcs.modified"])
+	stamp.VCS, stamp.Revision, stamp.Modified = settings["vcs"], settings["vcs.revision"], settings["vcs.modified"]
+	if info.Path != path || stamp.VCS != "git" || stamp.Revision != commit || stamp.Modified != "false" {
+		return stamp, fmt.Errorf("%s %s is not stamped as an unmodified build of %s (vcs %q revision %q modified %q)", label, info.Path, commit, stamp.VCS, stamp.Revision, stamp.Modified)
 	}
-	return nil
+	return stamp, nil
+}
+
+// e2eStubRevision requires the source stub's stamp to name commit.
+func e2eStubRevision(info *debug.BuildInfo, commit string) error {
+	_, err := e2eBuildStamp("source stub", info, e2eStubPackage, commit)
+	return err
+}
+
+// E2ETestBinaryStamp attests the running test binary: it must be this
+// package's test program, stamped as an unmodified build of the release
+// commit. The returned stamp is recorded in the evidence either way.
+func E2ETestBinaryStamp(commit string) (E2EBuildStamp, error) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return E2EBuildStamp{}, errors.New("test binary carries no build info")
+	}
+	return e2eTestBinaryStamp(info, commit)
+}
+
+func e2eTestBinaryStamp(info *debug.BuildInfo, commit string) (E2EBuildStamp, error) {
+	return e2eBuildStamp("test binary", info, e2eTestPackage, commit)
 }
 
 // E2ESourceRecord is a nonsecret projection of one source VM ownership record.
@@ -173,15 +221,17 @@ func (s *GitReviewerService) E2ERestoreProbe(ctx context.Context, job Job, reads
 	return probes, nil
 }
 
+func e2eStamped(path string, settings ...string) *debug.BuildInfo {
+	info := &debug.BuildInfo{Path: path}
+	for i := 0; i+1 < len(settings); i += 2 {
+		info.Settings = append(info.Settings, debug.BuildSetting{Key: settings[i], Value: settings[i+1]})
+	}
+	return info
+}
+
 func TestE2EStubRevision(t *testing.T) {
 	commit, other := strings.Repeat("a", 40), strings.Repeat("b", 40)
-	stamped := func(path string, settings ...string) *debug.BuildInfo {
-		info := &debug.BuildInfo{Path: path}
-		for i := 0; i+1 < len(settings); i += 2 {
-			info.Settings = append(info.Settings, debug.BuildSetting{Key: settings[i], Value: settings[i+1]})
-		}
-		return info
-	}
+	stamped := e2eStamped
 	if err := e2eStubRevision(stamped(e2eStubPackage, "vcs", "git", "vcs.revision", commit, "vcs.modified", "false"), commit); err != nil {
 		t.Fatal("exact clean stamp refused", err)
 	}
@@ -196,6 +246,52 @@ func TestE2EStubRevision(t *testing.T) {
 	} {
 		if e2eStubRevision(info, commit) == nil {
 			t.Error(name, "stub accepted for the recorded commit")
+		}
+	}
+}
+
+func TestE2ETestBinaryStamp(t *testing.T) {
+	commit, other := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	stamp, err := e2eTestBinaryStamp(e2eStamped(e2eTestPackage, "vcs", "git", "vcs.revision", commit, "vcs.modified", "false"), commit)
+	if err != nil || stamp.Path != e2eTestPackage || stamp.Revision != commit || stamp.Modified != "false" || stamp.VCS != "git" {
+		t.Fatal("exact clean test binary stamp refused", stamp, err)
+	}
+	for name, info := range map[string]*debug.BuildInfo{
+		"unstamped":          e2eStamped(e2eTestPackage),
+		"other commit":       e2eStamped(e2eTestPackage, "vcs", "git", "vcs.revision", other, "vcs.modified", "false"),
+		"modified":           e2eStamped(e2eTestPackage, "vcs", "git", "vcs.revision", commit, "vcs.modified", "true"),
+		"modified unknown":   e2eStamped(e2eTestPackage, "vcs", "git", "vcs.revision", commit),
+		"other vcs":          e2eStamped(e2eTestPackage, "vcs", "hg", "vcs.revision", commit, "vcs.modified", "false"),
+		"duplicate revision": e2eStamped(e2eTestPackage, "vcs", "git", "vcs.revision", other, "vcs.revision", commit, "vcs.modified", "false"),
+		"source stub":        e2eStamped(e2eStubPackage, "vcs", "git", "vcs.revision", commit, "vcs.modified", "false"),
+	} {
+		if _, err := e2eTestBinaryStamp(info, commit); err == nil {
+			t.Error(name, "test binary accepted for the release commit")
+		}
+	}
+}
+
+func TestE2ERecordedCommit(t *testing.T) {
+	commit, other := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	manifest := func(commit string, dirty bool) []byte {
+		raw, _ := json.Marshal(map[string]any{"source_commit": commit, "source_dirty": dirty})
+		return raw
+	}
+	if got, err := e2eRecordedCommit(manifest(commit, false), gitVMGuestRelease{SourceHead: commit}); err != nil || got != commit {
+		t.Fatal("matching guest release refused", got, err)
+	}
+	for name, in := range map[string]struct {
+		manifest []byte
+		head     string
+	}{
+		"guest from another commit": {manifest(commit, false), other},
+		"guest without a head":      {manifest(commit, false), ""},
+		"dirty image":               {manifest(commit, true), commit},
+		"no recorded commit":        {manifest("", false), commit},
+		"malformed manifest":        {[]byte("{"), commit},
+	} {
+		if got, err := e2eRecordedCommit(in.manifest, gitVMGuestRelease{SourceHead: in.head}); err == nil {
+			t.Error(name, "accepted as release revision", got)
 		}
 	}
 }
