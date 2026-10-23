@@ -146,7 +146,8 @@ func (e *ProviderEvidence) validateStoppedCaptured(provider Provider, limits Lim
 		a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests ||
 		a.Forwarded < 0 || a.Forwarded > a.Requests-a.NegotiationRequests || a.Responses < 0 || a.Responses > a.Forwarded ||
 		a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes+1 || a.ResponseBytes > l.TotalBytes+1-a.RequestBytes ||
-		a.RequestBytes > a.Requests*(l.RequestBytes+1) || a.ResponseBytes > a.Forwarded*(l.ResponseBytes+1) || a.Exhausted && !a.Failed {
+		a.RequestBytes > a.Requests*(l.RequestBytes+1) || a.ResponseBytes > a.Forwarded*(l.ResponseBytes+1) || a.Exhausted && !a.Failed ||
+		a.RouteDenials < 0 || a.ResponseDenials < 0 || a.ResponseDenials > a.Forwarded || (a.RouteDenials > 0 || a.ResponseDenials > 0) && !a.Failed {
 		return ErrProviderEgressFailed
 	}
 	return nil

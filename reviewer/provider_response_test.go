@@ -3,6 +3,7 @@ package reviewer
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -142,7 +143,7 @@ func TestProviderEgressPolicyDenialExposesNoBufferedToolBytes(t *testing.T) {
 				t.Fatal("tool bytes leaked before late denial", recorder.Code, recorder.Body.String())
 			}
 			audit, err := guard.Close(context.Background())
-			if err != nil || !audit.Stopped || !audit.Failed || audit.Requests != 1 || audit.Forwarded != 1 || audit.Responses != 0 || audit.ResponseBytes != len(output) {
+			if err != nil || !audit.Stopped || !audit.Failed || audit.Requests != 1 || audit.Forwarded != 1 || audit.Responses != 0 || audit.ResponseBytes != len(output) || audit.ResponseDenials != 1 {
 				t.Fatal("denied work became free/complete or lost bytes", audit, err)
 			}
 			if audit.ValidateCompleted(session, policy) == nil {
@@ -152,6 +153,70 @@ func TestProviderEgressPolicyDenialExposesNoBufferedToolBytes(t *testing.T) {
 			changed.ResponsePolicy = ""
 			if Digest(changed) == audit.PolicyHash {
 				t.Fatal("tool restriction missing from private policy binding")
+			}
+		})
+	}
+}
+
+// Only a completely read response refused by the response policy counts as a
+// policy denial. A failed, truncated, oversized or unavailable upstream fails
+// the session without that signal, so a guard fixture cannot mistake one for
+// the other.
+func TestProviderEgressResponseDenialExcludesTransportAndReadFailures(t *testing.T) {
+	tool := codexToolStream("apply_patch")
+	for _, kind := range []string{"transport-error", "read-error", "truncated", "oversized", "status", "policy"} {
+		t.Run(kind, func(t *testing.T) {
+			session := testSession(Codex)
+			policy := egressTestPolicy(Codex)
+			policy.ResponsePolicy = CodexSourceResponses
+			guard, err := NewProviderEgress(context.Background(), session, policy, egressRoundTrip(func(q *http.Request) (*http.Response, error) {
+				r := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader(tool)), ContentLength: int64(len(tool))}
+				switch kind {
+				case "transport-error":
+					return nil, errors.New("synthetic upstream failure")
+				case "read-error":
+					r.Body = io.NopCloser(io.MultiReader(strings.NewReader(tool[:len(tool)/2]), egressFailingReader{}))
+					r.ContentLength = -1
+				case "truncated":
+					// A real HTTP/1.1 peer declares the whole body, sends half
+					// and closes; the client transport reports the short read.
+					upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+						conn, buffered, err := http.NewResponseController(w).Hijack()
+						if err != nil {
+							return
+						}
+						defer conn.Close()
+						fmt.Fprintf(buffered, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: %d\r\n\r\n%s", len(tool), tool[:len(tool)/2])
+						_ = buffered.Flush()
+					}))
+					t.Cleanup(upstream.Close)
+					forward, _ := http.NewRequestWithContext(q.Context(), "POST", upstream.URL, nil)
+					return upstream.Client().Transport.RoundTrip(forward)
+				case "oversized":
+					r.ContentLength = int64(policy.Limits.ResponseBytes) + 1
+				case "status":
+					r.StatusCode = 302
+				}
+				return r, nil
+			}))
+			if err != nil {
+				t.Fatal(err)
+			}
+			recorder := httptest.NewRecorder()
+			q := httptest.NewRequest("POST", "/infer", strings.NewReader(`{}`))
+			q.Host = "provider.example"
+			guard.ServeHTTP(recorder, q)
+			audit, err := guard.Close(context.Background())
+			want := 0
+			if kind == "policy" {
+				want = 1
+			}
+			if err != nil || !audit.Failed || audit.Responses != 0 || audit.ResponseDenials != want || strings.Contains(recorder.Body.String(), "apply_patch") {
+				t.Fatal("response denial signal differs", kind, audit, err)
+			}
+			raw, _ := json.Marshal(audit)
+			if strings.Contains(string(raw), "response_denials") != (want != 0) {
+				t.Fatal("zero response denial changed receipt bytes", string(raw))
 			}
 		})
 	}

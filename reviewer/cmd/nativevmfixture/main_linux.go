@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
@@ -30,7 +31,7 @@ type config struct {
 	Provider                             r.Provider
 	Negative                             bool
 	Refresh, UncertainRefresh            bool
-	Cancellation                         string
+	Cancellation, Hostile                string
 	ProtocolRounds                       int
 	QEMU, Kernel, Initrd, Stub, Firmware r.VMBootAsset
 	Runtime                              r.NativeVMRuntimeSpec
@@ -39,6 +40,7 @@ type localOnly struct {
 	target  *url.URL
 	base    *http.Transport
 	refresh r.Provider
+	denied  *atomic.Int64
 }
 
 func (t localOnly) RoundTrip(q *http.Request) (*http.Response, error) {
@@ -53,6 +55,9 @@ func (t localOnly) RoundTrip(q *http.Request) (*http.Response, error) {
 		allowed = true
 	}
 	if q.URL.Scheme != "https" || !allowed {
+		if t.denied != nil {
+			t.denied.Add(1)
+		}
 		return nil, errors.New("fake-only destination denied")
 	}
 
@@ -89,6 +94,9 @@ func run(c config) error {
 	}
 	if c.Purpose == "native-control-fake-only" {
 		return runNativeControl(c)
+	}
+	if c.Hostile != "" {
+		return runNativeHostile(c)
 	}
 	if c.Cancellation != "" {
 		return runNativeCancellation(c)

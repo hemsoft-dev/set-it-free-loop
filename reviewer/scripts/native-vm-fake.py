@@ -10,8 +10,10 @@ import importlib.util
 import io
 import json
 import os
+import re
 from pathlib import Path
 import secrets
+import signal
 import subprocess
 import tarfile
 import tempfile
@@ -60,19 +62,46 @@ def runtime_spec(image, manifest):
             "BootstrapLibraries": captured["bootstrap_dependencies"]}
 
 
+def run_fixture(command, environment, log, timeout, units=None, state=None):
+    """Run the fixture in its own process group. The native unit runs under the
+    user manager, outside that group, so a timeout or any nonzero exit also
+    kills the native units launched from this run's own state root and
+    requires each inactive; no other unit is touched. Returns (exit code or
+    None, timed out, units stopped or None after a clean zero exit)."""
+    units = units or sibling("native-vm-hostile")
+    before = units.native_units()
+    owned = lambda: units.owned_units([state]) if state else set()
+    process = subprocess.Popen(command, env=environment, stdout=log, stderr=subprocess.STDOUT,
+                               start_new_session=True)
+    try:
+        code = process.wait(timeout=timeout)
+        if code == 0:
+            return code, False, None
+        # A crash or stop-pending failure can leave this run's unit running;
+        # stop it before the lock is released.
+        return code, False, units.stop_new_units(before, owned())
+    except subprocess.TimeoutExpired:
+        killed = sibling("native-vm-hostile").kill_tree(process.pid)
+        process.wait()
+        return None, True, units.stop_new_units(before, owned()) and killed
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-fake-only", action="store_true", required=True)
     parser.add_argument("--image", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--provider", choices=["codex", "claude", "both"], required=True)
-    parser.add_argument("--case", choices=["source", "forbidden", "adversarial", "self-critique", "refresh", "refresh-uncertain", "cancel-provider", "cancel-reader", "cancel-refresh"], required=True)
+    parser.add_argument("--case", choices=["source", "forbidden", "adversarial", "self-critique", "refresh", "refresh-uncertain", "cancel-provider", "cancel-reader", "cancel-refresh", "hostile"], required=True)
+    parser.add_argument("--hostile", default="", help="named hostile case for --case hostile")
     parser.add_argument("--peer-rounds", type=int, choices=[1, 2], default=1)
     parser.add_argument("--go", required=True)
     parser.add_argument("--module-cache", type=Path, required=True)
     args = parser.parse_args()
     if (args.provider == "both") != (args.case == "adversarial"):
         parser.error("adversarial requires both providers; every other case requires one")
+    if (args.case == "hostile") != bool(args.hostile) or args.hostile and not re.fullmatch(r"(codex|claude)-[a-z-]{1,40}", args.hostile):
+        parser.error("hostile requires one named case; other cases refuse --hostile")
     if args.case != "adversarial" and args.peer_rounds != 1:
         parser.error("extra peer rounds require the adversarial case")
     common = sibling("claude-fixture")
@@ -114,6 +143,7 @@ def main():
               "Root": str(state), "Provider": "" if args.provider == "both" else args.provider,
               "Negative": args.case == "forbidden", "Refresh": args.case == "refresh", "UncertainRefresh": args.case == "refresh-uncertain",
               "Cancellation": args.case.removeprefix("cancel-") if args.case.startswith("cancel-") else "",
+              "Hostile": args.hostile,
               "ProtocolRounds": args.peer_rounds if args.case == "adversarial" else 0,
               "QEMU": asset(Path(manifest["qemu"]["Path"]), manifest["qemu"]["SHA256"]),
               "Firmware": asset(image/"bios.bin", manifest["bios_sha256"]),
@@ -128,20 +158,21 @@ def main():
     start = time.monotonic()
     # No inherited proxy, provider auth, profile paths or GitHub token.
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "SFL_NATIVE_VM_FAKE_ONLY": "1"}
-    timed_out = False
-    exit_code = None
+    timeout = 425 if args.case == "self-critique" else 225 if args.case == "refresh" else 125 if args.case != "adversarial" else 2*(1+args.peer_rounds)*100+25
+    # Standalone runs hold the cross-process fixture lock themselves; the
+    # matrix runner passes its held lock down through the environment.
+    lock = sibling("native-vm-hostile").hold_fixture_lock()
     with (output/"runner.log").open("xb") as log:
-        try:
-            result = subprocess.run([str(program), "--run-fake-only", str(configuration)],
-                                    env=environment, stdout=log, stderr=subprocess.STDOUT,
-                                    timeout=425 if args.case == "self-critique" else 225 if args.case == "refresh" else 125 if args.case != "adversarial" else 2*(1+args.peer_rounds)*100+25)
-            exit_code = result.returncode
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        exit_code, timed_out, units_stopped = run_fixture([str(program), "--run-fake-only", str(configuration)],
+                                                          environment, log, timeout, state=state)
     receipt = {**source, "image_source_commit": manifest["source_commit"], "state_directory": str(state),
                "program_sha256": common.digest(program), "exit_code": exit_code, "timed_out": timed_out,
                "elapsed_seconds": round(time.monotonic()-start, 3), "fake_only": True,
                "runtime_qualified": False, "provider_eligibility_qualified": False}
+    if timed_out:
+        receipt["timeout_units_stopped"] = units_stopped
+    elif units_stopped is not None:
+        receipt["abnormal_exit_units_stopped"] = units_stopped
     with (output/"receipt.json").open("x") as stream:
         json.dump(receipt, stream, indent=2)
         stream.write("\n")

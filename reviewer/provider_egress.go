@@ -86,6 +86,13 @@ type ProviderAccess struct {
 	Failed               bool   `json:"failed"`
 	Exhausted            bool   `json:"exhausted"`
 	Stopped              bool   `json:"stopped"`
+	// RouteDenials counts requests refused at ingress before any transport.
+	// It is omitted when zero, so existing receipts keep their bytes.
+	RouteDenials int `json:"route_denials,omitempty"`
+	// ResponseDenials counts completely read inference responses the response
+	// policy refused. Transport, status, size, read and format failures never
+	// reach that validator and are not counted. Omitted when zero.
+	ResponseDenials int `json:"response_denials,omitempty"`
 }
 
 // ValidateCompleted is required before accepting a model report. A successful
@@ -109,7 +116,7 @@ func (a *ProviderAccess) validateCompletedCaptured(provider Provider, limits Lim
 		return ErrProviderEgressFailed
 	}
 	l := p.Limits
-	if len(inputHash) != 64 || !objectID.MatchString(inputHash) || a.Version != 1 || a.SessionHash != inputHash || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes {
+	if len(inputHash) != 64 || !objectID.MatchString(inputHash) || a.Version != 1 || a.SessionHash != inputHash || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes || a.RouteDenials != 0 || a.ResponseDenials != 0 {
 		return ErrProviderEgressFailed
 	}
 	return nil
@@ -419,6 +426,32 @@ func (b *ProviderEgress) admit() bool {
 	b.intake <- struct{}{}
 	return true
 }
+
+// denyRoute records an ingress refusal and fails the session. After stop has
+// been attested nothing can change the receipt; such a request was refused
+// after the session ended.
+func (b *ProviderEgress) denyRoute() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.audit.Stopped {
+		return
+	}
+	b.audit.RouteDenials++
+	b.audit.Failed = true
+	b.cancel()
+}
+
+// denyResponse records a response-policy refusal and fails the session.
+func (b *ProviderEgress) denyResponse() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.audit.Stopped {
+		return
+	}
+	b.audit.ResponseDenials++
+	b.audit.Failed = true
+	b.cancel()
+}
 func (b *ProviderEgress) finishIntake() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -431,18 +464,25 @@ func (b *ProviderEgress) finishIntake() {
 
 func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	route, ok := b.route(r)
-	if !ok {
-		b.fail(false)
-		http.Error(w, "provider route denied", http.StatusForbidden)
-		return
-	}
 	// Bound waiting headers without reading their bodies or dialing upstream.
 	// Actual pinned clients overlap startup metadata; forwarding stays serial.
+	// A denied route is admitted too, so Close cannot attest stop while its
+	// refusal is still being recorded.
 	if !b.admit() {
+		if !ok {
+			b.denyRoute()
+			http.Error(w, "provider route denied", http.StatusForbidden)
+			return
+		}
 		http.Error(w, "provider intake stopped or exhausted", http.StatusTooManyRequests)
 		return
 	}
 	defer b.finishIntake()
+	if !ok {
+		b.denyRoute()
+		http.Error(w, "provider route denied", http.StatusForbidden)
+		return
+	}
 	closeBody := sync.OnceFunc(func() {
 		if r.Body != nil {
 			_ = r.Body.Close()
@@ -567,7 +607,7 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if route.Kind == "inference" && validateProviderResponse(b.policy.Provider, b.policy.ResponsePolicy, typeHeader, response.StatusCode, output) != nil {
-		b.fail(false)
+		b.denyResponse()
 		// Deny the entire buffered response before exposing headers or tool
 		// bytes. Nonretryable status plus latched failure stops upstream replay.
 		http.Error(w, "provider tool response denied", http.StatusBadRequest)

@@ -5,12 +5,15 @@
 package nativefixture
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
@@ -30,10 +33,14 @@ func (Store) Read(_ context.Context, revision, path string, limit int) (r.Object
 }
 
 type Backend struct {
-	Session r.Session
-	Codex   *codexBackend
-	Claude  *claudeBackend
-	Refresh *refreshBackend
+	Session  r.Session
+	Codex    *codexBackend
+	Claude   *claudeBackend
+	Refresh  *refreshBackend
+	hostile  *hostileState
+	secrets  []string
+	scanMu   sync.Mutex
+	scanHits int
 }
 
 func New(s r.Session, negative bool) (*Backend, r.EgressPolicy, error) {
@@ -88,6 +95,16 @@ func sourceReport(s r.Session) r.Report {
 	return report
 }
 func (b *Backend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
+	if len(b.secrets) != 0 {
+		raw, err := io.ReadAll(io.LimitReader(q.Body, (2<<20)+1))
+		_ = q.Body.Close()
+		b.scan(q, raw)
+		if err != nil || len(raw) > 2<<20 {
+			http.Error(w, "request cap", 413)
+			return
+		}
+		q.Body = io.NopCloser(bytes.NewReader(raw))
+	}
 	if b.Refresh != nil && b.Refresh.serve(w, q) {
 		return
 	}

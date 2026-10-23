@@ -22,6 +22,7 @@ type claudeBackend struct {
 	failures    int
 	requests    int
 	accessToken string
+	hostile     *hostileState
 }
 
 func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
@@ -50,7 +51,7 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		return
 	}
 	b.calls++
-	if b.calls > 6 {
+	if b.calls > 6 && (b.hostile == nil || b.calls > HostileSourceCalls()+1) {
 		b.failures++
 		http.Error(w, "fixture request cap", 429)
 		return
@@ -88,6 +89,10 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		http.Error(w, "source/structured tools missing", 500)
 		return
 	}
+	if b.hostile != nil {
+		b.hostileTurn(w, body)
+		return
+	}
 	if b.calls == 2 && !claudeResult(body, "sfl_fixture_read_1") || b.calls == 3 && !claudeResult(body, "sfl_fixture_search_1") {
 		b.failures++
 
@@ -114,17 +119,29 @@ func (b *claudeBackend) ServeHTTP(w http.ResponseWriter, q *http.Request) {
 		toolID = "sfl_fixture_forbidden_1"
 		input = map[string]string{"command": "printf forbidden > /work/undeclared-canary.txt"}
 	}
-	encoded, _ := json.Marshal(input)
+	claudeToolTurn(w, b.s.Identity.Model, b.calls, []claudeBlock{{"tool_use", toolID, name, input}})
+}
+
+type claudeBlock struct {
+	kind, id, name string
+	input          any
+}
+
+// claudeToolTurn streams one assistant message containing the given tool blocks.
+func claudeToolTurn(w http.ResponseWriter, model string, call int, blocks []claudeBlock) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	send := func(kind string, v map[string]any) {
 		v["type"] = kind
 		data, _ := json.Marshal(v)
 		_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", kind, data)
 	}
-	send("message_start", map[string]any{"message": map[string]any{"id": fmt.Sprintf("msg_fixture_%d", b.calls), "type": "message", "role": "assistant", "model": b.s.Identity.Model, "content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": map[string]int{"input_tokens": 1, "output_tokens": 0}}})
-	send("content_block_start", map[string]any{"index": 0, "content_block": map[string]any{"type": "tool_use", "id": toolID, "name": name, "input": map[string]any{}}})
-	send("content_block_delta", map[string]any{"index": 0, "delta": map[string]any{"type": "input_json_delta", "partial_json": string(encoded)}})
-	send("content_block_stop", map[string]any{"index": 0})
+	send("message_start", map[string]any{"message": map[string]any{"id": fmt.Sprintf("msg_fixture_%d", call), "type": "message", "role": "assistant", "model": model, "content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": map[string]int{"input_tokens": 1, "output_tokens": 0}}})
+	for i, block := range blocks {
+		encoded, _ := json.Marshal(block.input)
+		send("content_block_start", map[string]any{"index": i, "content_block": map[string]any{"type": block.kind, "id": block.id, "name": block.name, "input": map[string]any{}}})
+		send("content_block_delta", map[string]any{"index": i, "delta": map[string]any{"type": "input_json_delta", "partial_json": string(encoded)}})
+		send("content_block_stop", map[string]any{"index": i})
+	}
 	send("message_delta", map[string]any{"delta": map[string]any{"stop_reason": "tool_use", "stop_sequence": nil}, "usage": map[string]int{"output_tokens": 1}})
 	send("message_stop", map[string]any{})
 }
