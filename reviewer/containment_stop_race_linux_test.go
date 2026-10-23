@@ -4,6 +4,11 @@ package reviewer
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -164,4 +169,81 @@ func TestOriginalUnitStopWaitsForManagerReap(t *testing.T) {
 			t.Fatal("original manager reap was not awaited", err)
 		}
 	})
+}
+
+// ownEmptyCgroup creates an empty child of this test's own delegated cgroup.
+// It has no processes, so the test can remove it at a chosen instant.
+func ownEmptyCgroup(t *testing.T) (string, func() cgroupBinding) {
+	t.Helper()
+	raw, err := os.ReadFile("/proc/self/cgroup")
+	own := strings.TrimPrefix(strings.TrimSpace(string(raw)), "0::")
+	if err != nil || !strings.HasPrefix(own, "/user.slice/") || strings.Contains(own, "\n") {
+		t.Skip("no delegated cgroup v2 user hierarchy")
+	}
+	var nonce [8]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		t.Fatal(err)
+	}
+	group := filepath.Join(own, "sfl-test-"+hex.EncodeToString(nonce[:]))
+	full := filepath.Join("/sys/fs/cgroup", group)
+	create := func() cgroupBinding {
+		t.Helper()
+		if err := os.Mkdir(full, 0700); err != nil {
+			t.Skip("delegated cgroup is not writable", err)
+		}
+		root, hierarchy, err := openContainmentCgroupAt("/sys/fs/cgroup", group, cgroupHierarchy{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer root.Close()
+		inode, err := cgroupInode(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cgroupBinding{Path: group, Inode: inode, Hierarchy: hierarchy}
+	}
+	t.Cleanup(func() { os.Remove(full) })
+	return full, create
+}
+
+// systemd removes an empty unit group about as soon as it is unpopulated, so
+// its rmdir can land between opening the original and reading its files.
+func TestOriginalCgroupRemovedAfterOpenIsStopped(t *testing.T) {
+	for _, step := range []string{"empty", "kill"} {
+		t.Run(step, func(t *testing.T) {
+			full, create := ownEmptyCgroup(t)
+			check := func(root *os.Root, binding cgroupBinding) error {
+				if step == "empty" {
+					return openedCgroupEmpty(root, binding)
+				}
+				return killOpenedCgroup(context.Background(), root, binding)
+			}
+			binding := create()
+			root, _, err := openContainmentCgroupAt("/sys/fs/cgroup", binding.Path, binding.Hierarchy)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer root.Close()
+			if err := os.Remove(full); err != nil {
+				t.Fatal(err)
+			}
+			if err := check(root, binding); err != nil {
+				t.Fatal("removed original rejected", err)
+			}
+			if err := (linuxContainmentKernel{}).Empty(binding); err != nil {
+				t.Fatal("missing original rejected", err)
+			}
+			// Name reuse is a new instance. It never proves the original removed.
+			replacement := create()
+			if replacement.Inode == binding.Inode {
+				t.Skip("kernel reused the cgroup inode")
+			}
+			if err := check(root, binding); !errors.Is(err, ErrAuthRecoveryRequired) {
+				t.Fatal("replacement accepted as removed original", err)
+			}
+			if err := (linuxContainmentKernel{}).Empty(binding); !errors.Is(err, ErrAuthRecoveryRequired) {
+				t.Fatal("replacement accepted as original", err)
+			}
+		})
+	}
 }

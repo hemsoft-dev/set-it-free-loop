@@ -181,13 +181,38 @@ func (linuxContainmentKernel) Empty(binding cgroupBinding) error {
 		return ErrAuthRecoveryRequired
 	}
 	defer root.Close()
+	return openedCgroupEmpty(root, binding)
+}
+
+// systemd removes an empty unit group about as soon as it is unpopulated. That
+// can land between opening the original and reading it: the opened original
+// then refuses lookups (ENOENT) and IO (ENODEV). Only a fresh missing path
+// beneath the verified hierarchy proves that removal; a replacement never does.
+func cgroupRemovedAfterOpen(err error, binding cgroupBinding) error {
+	if !errors.Is(err, unix.ENOENT) && !errors.Is(err, unix.ENODEV) {
+		return ErrAuthRecoveryRequired
+	}
+	root, _, err := openContainmentCgroupAt("/sys/fs/cgroup", binding.Path, binding.Hierarchy)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err == nil {
+		root.Close()
+	}
+	return ErrAuthRecoveryRequired
+}
+
+func openedCgroupEmpty(root *os.Root, binding cgroupBinding) error {
 	inode, err := cgroupInode(root)
-	if err != nil || inode != binding.Inode {
+	if err != nil {
+		return cgroupRemovedAfterOpen(err, binding)
+	}
+	if inode != binding.Inode {
 		return ErrAuthRecoveryRequired
 	}
 	events, err := cgroupFile(root, "cgroup.events")
 	if err != nil {
-		return ErrAuthRecoveryRequired
+		return cgroupRemovedAfterOpen(err, binding)
 	}
 	seen := false
 	for _, line := range strings.Split(events, "\n") {

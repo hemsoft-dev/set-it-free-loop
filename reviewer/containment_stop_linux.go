@@ -36,17 +36,8 @@ func (k linuxContainmentKernel) Terminate(ctx context.Context, binding cgroupBin
 	if k.Empty(binding) == nil {
 		return nil
 	}
-	kill, err := root.OpenFile("cgroup.kill", os.O_WRONLY|syscall.O_NOFOLLOW, 0)
-	if err != nil {
-		return ErrAuthRecoveryRequired
-	}
-	defer kill.Close()
-	if ctx.Err() != nil {
-		return ErrAuthRecoveryRequired
-	}
-	n, err := kill.Write([]byte("1"))
-	if err != nil || n != 1 {
-		return ErrAuthRecoveryRequired
+	if err = killOpenedCgroup(ctx, root, binding); err != nil {
+		return err
 	}
 	// SIGKILL delivery is asynchronous. A successful write cannot release auth
 	// or source ownership before the original whole subtree is independently empty.
@@ -65,6 +56,26 @@ func (k linuxContainmentKernel) Terminate(ctx context.Context, binding cgroupBin
 		case <-timer.C:
 		}
 	}
+}
+
+func killOpenedCgroup(ctx context.Context, root *os.Root, binding cgroupBinding) error {
+	// An original that emptied itself after the check above may be removed.
+	kill, err := root.OpenFile("cgroup.kill", os.O_WRONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return cgroupRemovedAfterOpen(err, binding)
+	}
+	defer kill.Close()
+	if ctx.Err() != nil {
+		return ErrAuthRecoveryRequired
+	}
+	n, err := kill.Write([]byte("1"))
+	if err != nil {
+		return cgroupRemovedAfterOpen(err, binding)
+	}
+	if n != 1 {
+		return ErrAuthRecoveryRequired
+	}
+	return nil
 }
 
 // The kernel can finish killing before systemd reaps its original main PID.
