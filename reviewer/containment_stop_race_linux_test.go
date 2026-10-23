@@ -209,14 +209,25 @@ func ownEmptyCgroup(t *testing.T) (string, func() cgroupBinding) {
 // systemd removes an empty unit group about as soon as it is unpopulated, so
 // its rmdir can land between opening the original and reading its files.
 func TestOriginalCgroupRemovedAfterOpenIsStopped(t *testing.T) {
-	for _, step := range []string{"empty", "kill"} {
+	for _, step := range []string{"empty", "kill", "terminate", "read"} {
 		t.Run(step, func(t *testing.T) {
 			full, create := ownEmptyCgroup(t)
+			var events *os.File
 			check := func(root *os.Root, binding cgroupBinding) error {
-				if step == "empty" {
+				switch step {
+				case "empty":
 					return openedCgroupEmpty(root, binding)
+				case "kill":
+					return killOpenedCgroup(context.Background(), root, binding)
+				case "terminate":
+					// Removed before Terminate's own first identity check.
+					return linuxContainmentKernel{}.terminateOpened(context.Background(), root, binding)
 				}
-				return killOpenedCgroup(context.Background(), root, binding)
+				// Removed after cgroup.events was opened, before it was read.
+				if _, err := readCgroupFile(events); err != nil {
+					return cgroupRemovedAfterOpen(err, binding)
+				}
+				return errors.New("removed original still readable")
 			}
 			binding := create()
 			root, _, err := openContainmentCgroupAt("/sys/fs/cgroup", binding.Path, binding.Hierarchy)
@@ -224,6 +235,10 @@ func TestOriginalCgroupRemovedAfterOpenIsStopped(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer root.Close()
+			if events, err = root.OpenFile("cgroup.events", os.O_RDONLY, 0); err != nil {
+				t.Fatal(err)
+			}
+			defer events.Close()
 			if err := os.Remove(full); err != nil {
 				t.Fatal(err)
 			}

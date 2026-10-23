@@ -27,8 +27,16 @@ func (k linuxContainmentKernel) Terminate(ctx context.Context, binding cgroupBin
 		return ErrAuthRecoveryRequired
 	}
 	defer root.Close()
+	return k.terminateOpened(ctx, root, binding)
+}
+
+func (k linuxContainmentKernel) terminateOpened(ctx context.Context, root *os.Root, binding cgroupBinding) error {
+	// The original may empty itself and be removed right after it was opened.
 	inode, err := cgroupInode(root)
-	if err != nil || inode != binding.Inode {
+	if err != nil {
+		return cgroupRemovedAfterOpen(err, binding)
+	}
+	if inode != binding.Inode {
 		return ErrAuthRecoveryRequired
 	}
 	// An already empty RemainAfterExit unit needs no manager mutation. Its name

@@ -93,8 +93,17 @@ func cgroupFile(root *os.Root, name string) (string, error) {
 		return "", err
 	}
 	defer file.Close()
+	return readCgroupFile(file)
+}
+
+// readCgroupFile keeps the read error: a group removed after its file was
+// opened refuses the read, which only a fresh lookup may prove as removal.
+func readCgroupFile(file *os.File) (string, error) {
 	raw, err := io.ReadAll(io.LimitReader(file, 4097))
-	if err != nil || len(raw) > 4096 {
+	if err != nil {
+		return "", err
+	}
+	if len(raw) > 4096 {
 		return "", ErrAuthRecoveryRequired
 	}
 	return strings.TrimSpace(string(raw)), nil
@@ -106,7 +115,10 @@ func cgroupInode(root *os.Root) (uint64, error) {
 	}
 	defer dir.Close()
 	var fs unix.Statfs_t
-	if unix.Fstatfs(int(dir.Fd()), &fs) != nil || fs.Type != unix.CGROUP2_SUPER_MAGIC {
+	if err := unix.Fstatfs(int(dir.Fd()), &fs); err != nil {
+		return 0, err
+	}
+	if fs.Type != unix.CGROUP2_SUPER_MAGIC {
 		return 0, ErrAuthRecoveryRequired
 	}
 	info, err := dir.Stat()
