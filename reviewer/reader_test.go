@@ -3,6 +3,7 @@ package reviewer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -115,7 +116,10 @@ func TestGitReaderUsesImmutableObjectsWithoutCheckoutOrHooks(t *testing.T) {
 	if err := os.Symlink("/secret-canary", filepath.Join(dir, "link")); err != nil {
 		t.Fatal(err)
 	}
-	run("add", "source.go", "link")
+	if err := os.WriteFile(filepath.Join(dir, "big.go"), []byte(strings.Repeat("x", 64)), 0600); err != nil {
+		t.Fatal(err)
+	}
+	run("add", "source.go", "link", "big.go")
 	run("commit", "-qm", "fixture")
 	head := run("rev-parse", "HEAD")
 	os.WriteFile(filepath.Join(dir, "source.go"), []byte("candidate checkout changed"), 0600)
@@ -138,6 +142,55 @@ func TestGitReaderUsesImmutableObjectsWithoutCheckoutOrHooks(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatal("candidate hook executed")
+	}
+	// Git's capped blob output is the byte budget, not a missing object. The
+	// cap must hold even though the output buffer could read from the pipe.
+	if object, err := (GitStore{git, filepath.Join(dir, ".git")}).Read(context.Background(), head, "big.go", 32); err == nil || len(object.Data) != 0 {
+		t.Fatal("git output cap bypassed", len(object.Data), err)
+	}
+	limits := DefaultLimits()
+	limits.ReaderBytes = 32
+	r, err = NewReader(GitStore{git, filepath.Join(dir, ".git")}, snap, []string{"big.go", "gone.go"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{"big.go", "gone.go"} {
+		if _, err := r.Read(context.Background(), head, p); err == nil {
+			t.Fatal("unbounded or missing object served", p)
+		}
+	}
+	reads, coverage := r.Evidence()
+	want := []Coverage{{"big.go", "source byte limit exhausted"}, {"gone.go", "missing or unreadable object"}}
+	if len(reads) != 0 || fmt.Sprint(coverage) != fmt.Sprint(want) {
+		t.Fatal("byte budget refusal not told apart from a missing object", reads, coverage)
+	}
+}
+
+// A byte-budget refusal is recorded as such, never as a missing object, so
+// coverage tells reader-limit exhaustion apart from an absent file.
+func TestReaderRecordsByteBudgetApartFromMissingObjects(t *testing.T) {
+	l := DefaultLimits()
+	l.ReaderCalls = 8
+	l.ReaderBytes = 8
+	s := &fixtureStore{files: map[string]Object{"a.go": {"100644", []byte("one\nt")}, "b.go": {"100644", []byte("two")}, "big.go": {"100644", []byte("123456789")}}}
+	r, err := NewReader(s, testSnapshot(), []string{"a.go", "b.go", "big.go", "gone.go"}, l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := testSnapshot().Head
+	for _, step := range []struct {
+		path string
+		ok   bool
+	}{{"big.go", false}, {"gone.go", false}, {"a.go", true}, {"a.go", false}, {"b.go", true}, {"b.go", false}} {
+		if _, err := r.Read(context.Background(), head, step.path); (err == nil) != step.ok {
+			t.Fatal("unexpected read outcome", step.path, err)
+		}
+	}
+	reads, coverage := r.Evidence()
+	budget := "source byte limit exhausted"
+	want := []Coverage{{"big.go", budget}, {"gone.go", "missing or unreadable object"}, {"a.go", budget}, {"b.go", budget}}
+	if len(reads) != 2 || fmt.Sprint(coverage) != fmt.Sprint(want) {
+		t.Fatal("byte budget refusal not told apart from a missing object", reads, coverage)
 	}
 }
 

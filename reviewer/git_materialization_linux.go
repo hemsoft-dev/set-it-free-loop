@@ -30,6 +30,10 @@ const gitMaterializationEntries = 3 * snapshotFileLimit
 
 var errGitMaterialization = errors.New("Git materialization refused")
 
+// errGitMaterializationByteLimit refuses a sealed blob larger than the caller's
+// remaining byte budget. It is still a materialization refusal.
+var errGitMaterializationByteLimit = fmt.Errorf("%w: %w", errGitMaterialization, ErrSourceByteLimit)
+
 // These private bindings are supplied by the trusted acquisition factory, not
 // by a candidate or provider. Matching metadata alone does not prove unit stop.
 type gitMaterializationBinding struct {
@@ -503,8 +507,11 @@ func (m *gitMaterialization) blob(ctx context.Context, id string, max int) ([]by
 			break
 		}
 	}
-	if record == nil || record.Bytes > max {
+	if record == nil {
 		return nil, errGitMaterialization
+	}
+	if record.Bytes > max {
+		return nil, errGitMaterializationByteLimit
 	}
 	info, err := file.Stat()
 	seals, sealErr := unix.FcntlInt(file.Fd(), unix.F_GET_SEALS, 0)

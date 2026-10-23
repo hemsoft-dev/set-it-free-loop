@@ -164,9 +164,9 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 			}
 		}
 		// The byte bound must hold: one big read served and counted, the
-		// second refused and listed as an omission of big.go. The recorded
-		// reason is not asserted; see HOSTILE-FIXTURES.md.
-		omitted := func(c r.Coverage) bool { return c.Path == "big.go" }
+		// second refused and listed as a byte-limit omission of big.go, not
+		// as a missing object.
+		omitted := func(c r.Coverage) bool { return c == r.Coverage{Path: "big.go", Reason: "source byte limit exhausted"} }
 		checks["byte-bound"] = in.Source != nil && bigReads == 1 && in.Source.Bytes == f.BigObjectBytes && in.Source.Bytes <= in.Limits.ReaderBytes && slices.ContainsFunc(in.Source.Coverage, omitted)
 		checks["honest-outcome"] = in.honestPartial(omitted)
 	case "codex-code-spin":

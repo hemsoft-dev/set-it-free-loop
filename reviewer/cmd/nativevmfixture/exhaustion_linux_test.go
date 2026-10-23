@@ -154,13 +154,30 @@ func TestTurnAndSourceFloodChecks(t *testing.T) {
 func TestOversizeAndCodeHostChecks(t *testing.T) {
 	big := exhaustionBase("codex-source-oversize")
 	big.Err, big.AuditComplete = nil, true
-	omission := r.Coverage{Path: "big.go", Reason: "missing or unreadable object"}
+	omission := r.Coverage{Path: "big.go", Reason: "source byte limit exhausted"}
 	big.Source = &r.SourceAccess{Version: 1, ToolCalls: 2, ReaderCalls: 2, Bytes: f.BigObjectBytes, Reads: []r.ReadRecord{{Path: "big.go", Bytes: f.BigObjectBytes}}, Coverage: []r.Coverage{omission}}
 	big.Report.Coverage = []r.Coverage{omission}
 	big.Observation.Probe = map[string]string{"first-read": "ok:1572864:// synthetic", "second-read": "error:21:Source request denied"}
 	big.Provider.Failed = false
 	if !allPass(exhaustionChecks(big)) {
 		t.Fatal("held byte bound rejected", exhaustionChecks(big))
+	}
+	// A refusal recorded as a missing object, or an unrelated omission of
+	// big.go, does not prove the byte bound refused the second read.
+	for _, reason := range []string{"missing or unreadable object", "binary object omitted", "source tool-call limit exhausted"} {
+		misread := big
+		other := r.Coverage{Path: "big.go", Reason: reason}
+		source := *big.Source
+		source.Coverage = []r.Coverage{other}
+		misread.Source, misread.Report.Coverage = &source, []r.Coverage{other}
+		if checks := exhaustionChecks(misread); allPass(checks) || checks["byte-bound"] || checks["honest-outcome"] {
+			t.Fatal("byte bound accepted without its recorded reason", reason, checks)
+		}
+	}
+	unreported := big
+	unreported.Report.Coverage = []r.Coverage{{Path: "big.go", Reason: "missing or unreadable object"}}
+	if checks := exhaustionChecks(unreported); allPass(checks) || checks["honest-outcome"] {
+		t.Fatal("report without the byte-limit omission accepted", checks)
 	}
 	twice := big
 	twice.Source = &r.SourceAccess{Version: 1, Bytes: 2 * f.BigObjectBytes, Reads: []r.ReadRecord{{Path: "big.go"}, {Path: "big.go"}}, Coverage: []r.Coverage{omission}}

@@ -183,7 +183,7 @@ func (s *HostileStore) Read(_ context.Context, revision, path string, limit int)
 		object.Data = []byte(s.canaries.Foreign)
 	}
 	if len(object.Data) > limit {
-		return r.Object{}, errors.New("fake object exceeds limit")
+		return r.Object{}, r.ErrSourceByteLimit
 	}
 	return object, nil
 }
