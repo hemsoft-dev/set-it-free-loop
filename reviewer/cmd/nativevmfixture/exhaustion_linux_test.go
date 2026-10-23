@@ -195,11 +195,7 @@ func TestOversizeAndCodeHostChecks(t *testing.T) {
 			t.Fatal("output flood accepted without reaching the relay limit", unrelated)
 		}
 	}
-	memory := exhaustionBase("codex-code-memory")
-	memory.CodeHost = nil
-	if !allPass(exhaustionChecks(memory)) {
-		t.Fatal("lost code-host record rejected for the memory case", exhaustionChecks(memory))
-	}
+	memoryChecks(t)
 	code.CodeHost, _ = json.Marshal(codeHostAudit{Stopped: true, RelayComplete: true, Stage: "complete"})
 	if allPass(exhaustionChecks(code)) {
 		t.Fatal("complete code-host exchange accepted as exhaustion")
@@ -229,6 +225,81 @@ func TestOversizeAndCodeHostChecks(t *testing.T) {
 	for _, c := range f.ExhaustionCases() {
 		if _, ok := exhaustionChecks(exhaustionBase(c.Name))["known-exhaustion-case"]; ok || !strings.HasPrefix(c.Name, string(c.Provider)) {
 			t.Fatal("declared case has no outcome checks", c.Name)
+		}
+	}
+}
+
+// The memory case passes only when the client ran an allocation under the
+// bound, the guard relayed the over-bound cell, and that cell never completed:
+// the code host failed inside the exchange, or the client never returned it
+// and only the phase deadline ended the session.
+func memoryChecks(t *testing.T) {
+	t.Helper()
+	// Measured shape: the client never returned the over-bound cell and the
+	// deadline fenced auth with the code-host receipt lost.
+	hung := exhaustionBase("codex-code-memory")
+	hung.Err = errors.Join(r.PhaseError{State: "provider_unavailable"}, context.DeadlineExceeded, r.ErrAuthRecoveryRequired)
+	hung.Source, hung.CodeHost, hung.Elapsed = nil, nil, 75300*time.Millisecond
+	hung.Counts.Inference = 2
+	hung.Provider = &r.ProviderAccess{Version: 1, Requests: 8, InferenceRequests: 2, Forwarded: 7, Responses: 7, Stopped: true, Failed: true}
+	hung.Observation.Results = map[string]string{"control-output": "survived", "memory-cell": "issued"}
+	if !allPass(exhaustionChecks(hung)) {
+		t.Fatal("deadline-ended over-bound cell rejected", exhaustionChecks(hung))
+	}
+	killed := hung
+	killed.Err, killed.Elapsed = r.PhaseError{State: "invalid_output"}, 6*time.Second
+	killed.Counts.Inference = 3
+	killed.Provider = &r.ProviderAccess{Version: 1, Requests: 9, InferenceRequests: 3, Forwarded: 8, Responses: 8, Stopped: true, Failed: true}
+	killed.Observation.Results = map[string]string{"control-output": "survived", "memory-cell": "issued", "exec-output": "60:failed to read code-mode host message: early eof"}
+	killed.CodeHost, _ = json.Marshal(codeHostAudit{Failed: true, Stopped: true, Stage: "wait", OutputBytes: 120})
+	if !allPass(exhaustionChecks(killed)) {
+		t.Fatal("code host failed by the over-bound cell rejected", exhaustionChecks(killed))
+	}
+	// A client or code host that fails before running the allocation, even
+	// immediately and with no memory pressure, never passes.
+	early := exhaustionBase("codex-code-memory")
+	early.CodeHost, early.Elapsed = nil, 5*time.Second
+	for name, in := range map[string]exhaustionInput{"early-typed-failure": early, "early-failure-at-deadline": func() exhaustionInput { in := early; in.Elapsed = hung.Elapsed; return in }()} {
+		if allPass(exhaustionChecks(in)) {
+			t.Fatal("memory case passed without dispatching the allocation", name)
+		}
+	}
+	accepted, _ := json.Marshal(codeHostAudit{Stopped: true, RelayComplete: true, Stage: "complete"})
+	for name, mutate := range map[string]func(*exhaustionInput){
+		"no-control-output":   func(in *exhaustionInput) { delete(in.Observation.Results, "control-output") },
+		"control-failed":      func(in *exhaustionInput) { in.Observation.Results["control-output"] = "9:early eof" },
+		"cell-not-issued":     func(in *exhaustionInput) { delete(in.Observation.Results, "memory-cell") },
+		"cell-refused":        func(in *exhaustionInput) { in.Provider.Responses-- },
+		"cell-survived":       func(in *exhaustionInput) { in.Observation.Results["exec-output"] = "survived" },
+		"returned-before-end": func(in *exhaustionInput) { in.Elapsed = 5 * time.Second },
+		"watchdog-ended":      func(in *exhaustionInput) { in.Elapsed = hostileWatchdog + 300*time.Millisecond },
+		"accepted-receipt":    func(in *exhaustionInput) { in.CodeHost = accepted },
+	} {
+		changed := hung
+		provider := *hung.Provider
+		changed.Provider, changed.Observation.Results = &provider, map[string]string{}
+		for k, v := range hung.Observation.Results {
+			changed.Observation.Results[k] = v
+		}
+		mutate(&changed)
+		if allPass(exhaustionChecks(changed)) {
+			t.Fatal("deadline-ended memory case accepted without its evidence", name)
+		}
+	}
+	for name, host := range map[string]any{
+		"before-exchange": codeHostAudit{Failed: true, Stopped: true, Stage: "probe"},
+		"relay-bound":     codeHostAudit{Failed: true, Stopped: true, Stage: "wait", OutputBytes: 8356210},
+		"not-stopped":     codeHostAudit{Failed: true, Stage: "wait"},
+		"completed":       codeHostAudit{Stopped: true, RelayComplete: true, Stage: "complete"},
+		"lost":            nil,
+	} {
+		changed := killed
+		changed.CodeHost = nil
+		if host != nil {
+			changed.CodeHost, _ = json.Marshal(host)
+		}
+		if allPass(exhaustionChecks(changed)) {
+			t.Fatal("code-host failure not attributable to the over-bound cell", name)
 		}
 	}
 }

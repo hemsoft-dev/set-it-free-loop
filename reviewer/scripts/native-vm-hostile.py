@@ -77,7 +77,7 @@ EXHAUSTION_CHECKS = {
     "claude-source-oversize": OVERSIZE_CHECKS, "codex-source-oversize": OVERSIZE_CHECKS,
     "codex-source-flood": {"tool-call-bound", "client-saw-bound", "honest-outcome"},
     "codex-code-spin": {"cell-yielded", "code-host-stopped", "ended-before-deadline", "typed-or-validated", "no-source-access"},
-    "codex-code-memory": {"typed-failure", "code-host-not-accepted", "no-source-access"},
+    "codex-code-memory": {"typed-failure", "allocation-dispatched", "memory-bound-ended-cell", "no-source-access"},
     "codex-code-output-flood": {"typed-failure", "relay-limit-reached", "no-source-access"},
 }
 # Case kinds, matching internal/nativefixture hostileCases and exhaustionCases.

@@ -217,8 +217,11 @@ for (const k of ["first-read","second-read"]) { try { const v=await tools.mcp__s
 text(JSON.stringify({sfl_big:out}));`
 
 // The code host has 256 MiB in its own guest cgroup. Touched typed arrays
-// pass that bound regardless of V8 heap limits.
-const codexMemoryProgram = `const keep=[];for(let i=0;i<64;i++){const a=new Uint8Array(32<<20);a.fill(i+1);keep.push(a)}text("survived:"+keep.length);`
+// pass that bound regardless of V8 heap limits. A control cell first touches
+// 64 MiB, under the bound, so the over-bound cell differs only in size.
+const codexMemoryProgram = `const keep=[];for(let i=0;i<%d;i++){const a=new Uint8Array(32<<20);a.fill(i+1);keep.push(a)}text("survived:"+keep.length);`
+
+const memoryControlArrays, memoryArrays = 2, 64
 
 // Nine MiB of output exceeds the 8 MiB code-host relay bound.
 const codexOutputFloodProgram = `text("x".repeat(9<<20));`
@@ -231,14 +234,43 @@ func (b *codexBackend) exhaustionProgram() (string, string) {
 		return "h_flood", fmt.Sprintf(codexSourceFloodProgram, SourceFloodCalls, head, source)
 	case "codex-source-oversize":
 		return "h_big", fmt.Sprintf(codexSourceOversizeProgram, head)
-	case "codex-code-memory":
-		return "h_memory", codexMemoryProgram
 	case "codex-code-output-flood":
 		return "h_output", codexOutputFloodProgram
 	case "codex-code-spin":
 		return "h_spin", codexSpinProgram
 	}
 	return "", ""
+}
+
+// memoryOutcome reduces one allocation cell's result to "survived" when the
+// client returned its completion, otherwise to a short snippet.
+func memoryOutcome(body map[string]any, id string, arrays int, secrets []string) string {
+	value, ok := outputFor(body, id)
+	if !ok {
+		return "missing"
+	}
+	snippet := snippetOf(value, secrets)
+	if snippet != "canary-disclosed" && strings.Contains(codexOutputText(value), fmt.Sprintf("survived:%d", arrays)) {
+		return "survived"
+	}
+	return snippet
+}
+
+// memoryTurn runs the control allocation, then the over-bound cell, then
+// reports. The host, not this fake model, must refuse an incomplete exchange.
+func (b *codexBackend) memoryTurn(w http.ResponseWriter, body map[string]any) {
+	h := b.hostile
+	switch b.calls {
+	case 1:
+		codexExec(w, "h_memory_control", fmt.Sprintf(codexMemoryProgram, memoryControlArrays))
+	case 2:
+		h.obs.Results["control-output"] = memoryOutcome(body, "h_memory_control", memoryControlArrays, h.secrets)
+		codexExec(w, "h_memory", fmt.Sprintf(codexMemoryProgram, memoryArrays))
+		h.obs.Results["memory-cell"] = "issued"
+	default:
+		h.obs.Results["exec-output"] = memoryOutcome(body, "h_memory", memoryArrays, h.secrets)
+		b.report(w)
+	}
 }
 
 // snippetOf records a short nonsecret prefix of a code-mode output.
@@ -276,6 +308,9 @@ func (b *codexBackend) exhaustionTurn(w http.ResponseWriter, q *http.Request, bo
 			}
 		}
 		codexExec(w, fmt.Sprintf("h_flood_%d", b.calls-1), `text(await tools.mcp__sfl_source__read({revision:"`+head+`",path:"source.go"}));`)
+		return true
+	case name == "codex-code-memory" && b.calls <= 3:
+		b.memoryTurn(w, body)
 		return true
 	case b.calls == 1:
 		id, program := b.exhaustionProgram()

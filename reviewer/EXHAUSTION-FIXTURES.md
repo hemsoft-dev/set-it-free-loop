@@ -27,7 +27,7 @@ themselves.
 | `*-stall` | Accepts the first inference and writes nothing | 75 s phase deadline |
 | `*-source-oversize` | Reads `big.go` twice, then reports | 2 MiB reader byte budget |
 | `codex-source-flood` | One exec makes 140 sequential source reads | 128 source tool calls |
-| `codex-code-memory` | Fills 64 × 32 MiB typed arrays in code mode | 256 MiB code-host guest cgroup |
+| `codex-code-memory` | Fills 2 × 32 MiB typed arrays in one exec, then 64 × 32 MiB in the next | 256 MiB code-host guest cgroup |
 | `codex-code-output-flood` | Prints 9 MiB from one exec | 8 MiB code-host relay bound |
 | `codex-code-spin` | Runs `for(;;){}` in one exec, then reports | Client yield and session stop |
 
@@ -113,6 +113,32 @@ Details:
   never sent a second inference, so the phase deadline ended the session and
   auth was fenced. No guest-side OOM record is exported. That the code host was
   killed by its cgroup, rather than stalled, is inferred, not observed.
+
+  That run would not pass the current case. It accepted a typed failure with no
+  code-host receipt, which an immediate client or code-host failure before the
+  allocation also produces. The host cannot see guest cgroups, so the case now
+  runs a control. The first exec touches 64 MiB, under the bound. The second
+  is the same program with 2 GiB. The fake model records each result, reduced
+  to whether the allocation survived. The case requires both of these:
+
+  - `allocation-dispatched`: the control returned `survived`, the fake model
+    then issued the over-bound cell, and the guard relayed every forwarded
+    response.
+  - `memory-bound-ended-cell`: the over-bound cell never returned `survived`,
+    and one of two outcomes holds. In the first, the code host's receipt is
+    stopped and failed in its `wait` stage, with output well below the relay
+    bound, and the client returned the failure on a third inference. In the
+    second, the receipt is lost, the client never returned the cell, there
+    were exactly two inferences, and the result came back within 20 s after
+    the 75 s phase deadline, before the outer watchdog.
+
+  The only difference between the two cells is crossing 256 MiB. A cell that
+  is merely slow yields after about 30 s (see `codex-code-spin`). So a client
+  that ran the control but hung on the over-bound cell until the deadline is
+  attributed to the memory bound. That is still an inference: no OOM record
+  exists. The earlier runs, through `matrix-r6` at `7c5dae4`, predate the
+  control. They match the second outcome only in their timing and need a
+  fresh run.
 - **Code-host output.** The broker stopped the relay before 8 MiB, marked the
   exchange failed and the client reported `failed to read code-mode host
   message: early eof`. The fake model still emitted a report; the guest
@@ -173,7 +199,8 @@ the fix (`missing MCP response`) and passes after it.
   16 MiB before the client, and tool results are capped by the reader. Inducing
   either would need a guest change.
 - **Observation limits.** Peaks are whole-unit host accounting. Guest-internal
-  memory, OOM kills and task counts are not exported.
+  memory, OOM kills and task counts are not exported. The memory case is
+  attributed by its control cell, not by an observed OOM kill.
 - **Image provenance.** The image was built from `5c9f757`. Later commits on
   this branch change only the fixture runner, its tests and documentation.
 - These results do not establish production resource limits, live-account

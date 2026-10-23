@@ -184,10 +184,22 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 	case "codex-code-memory":
 		var host codeHostAudit
 		decoded := len(in.CodeHost) != 0 && json.Unmarshal(in.CodeHost, &host) == nil
+		lost := len(in.CodeHost) == 0 || string(in.CodeHost) == "null"
+		results := in.Observation.Results
+		exec, returned := results["exec-output"]
 		checks["typed-failure"] = in.typedFailure()
-		// A lost finished record carries no code-host receipt; the refusal is
-		// then the typed failure itself, never an accepted exchange.
-		checks["code-host-not-accepted"] = len(in.CodeHost) == 0 || string(in.CodeHost) == "null" || decoded && host.Stopped && (host.Failed || !host.RelayComplete)
+		// The client ran and returned a 64 MiB control allocation under the
+		// bound, then the guard relayed the over-bound cell to it.
+		checks["allocation-dispatched"] = results["control-output"] == "survived" && results["memory-cell"] == "issued" && pa != nil && pa.InferenceRequests >= 2 && pa.Forwarded == pa.Responses
+		// The over-bound cell, differing from the control only in size, never
+		// completed. Either the code host's receipt shows it failed inside the
+		// exchange well below the relay bound and the client returned that
+		// failure, or the receipt was lost because the client never returned
+		// the cell and only the phase deadline ended the session. A merely
+		// long cell yields after about 30 s instead; see codex-code-spin.
+		failed := decoded && host.Stopped && host.Failed && !host.RelayComplete && host.Stage == "wait" && host.OutputBytes < codeHostRelayLimit-codeHostRelaySlack && returned && in.Counts.Inference == 3
+		hung := lost && !returned && in.Counts.Inference == 2 && in.deadlineEnded()
+		checks["memory-bound-ended-cell"] = exec != "survived" && (failed || hung)
 		checks["no-source-access"] = in.noSource()
 	case "codex-code-output-flood":
 		var host codeHostAudit

@@ -4,7 +4,10 @@ package nativefixture
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -139,7 +142,6 @@ func TestCodexExhaustionProgramsTargetTheirBounds(t *testing.T) {
 	want := map[string]string{
 		"codex-source-flood":      fmt.Sprintf("%d;i++", SourceFloodCalls),
 		"codex-source-oversize":   `path:"big.go"`,
-		"codex-code-memory":       "new Uint8Array(32",
 		"codex-code-output-flood": "repeat(9",
 		"codex-code-spin":         "for(;;)",
 	}
@@ -181,5 +183,65 @@ func TestBigObjectClassificationAndStore(t *testing.T) {
 	}
 	if classifyBig(true, "Source request denied", secrets) != "denied" || !strings.HasPrefix(classifyBig(true, "Source request active", secrets), "error-other") {
 		t.Fatal("big denial classification differs")
+	}
+}
+
+// The memory case first runs an allocation under the code-host bound, then
+// one past it that differs only in size, then reports. Each result is reduced
+// to whether its allocation survived.
+func TestCodeMemoryRunsAControlCellBeforeTheOverBoundCell(t *testing.T) {
+	canaries, _ := NewCanaries()
+	s := hostileSession(t, r.Codex)
+	backend, _, err := NewHostile(s, "codex-code-memory", canaries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := func(id, text string) *http.Request {
+		item, _ := json.Marshal(map[string]any{"type": "custom_tool_call_output", "call_id": id, "output": []map[string]string{{"type": "input_text", "text": "Script completed\nOutput:\n" + text}}})
+		q := inferenceRequest(s, "")
+		raw, _ := io.ReadAll(q.Body)
+		body := strings.Replace(string(raw), `}]}]}]`, `}]}]},`+string(item)+`]`, 1)
+		q.Body, q.ContentLength = io.NopCloser(strings.NewReader(body)), int64(len(body))
+		return q
+	}
+	for turn, tc := range []struct {
+		request          *http.Request
+		fragment, result string
+	}{
+		{inferenceRequest(s, ""), `"call_id":"h_memory_control"`, ""},
+		{output("h_memory_control", "survived:2"), `"call_id":"h_memory"`, "survived"},
+		{output("h_memory", "survived:64"), "msg_fixture", "survived"},
+	} {
+		w := httptest.NewRecorder()
+		backend.ServeHTTP(w, tc.request)
+		if w.Code != 200 || !strings.Contains(w.Body.String(), tc.fragment) {
+			t.Fatal("memory turn differs", turn, w.Code, w.Body.String())
+		}
+		switch turn {
+		case 0:
+			if !strings.Contains(w.Body.String(), fmt.Sprintf(`i\u003c%d;`, memoryControlArrays)) {
+				t.Fatal("control cell is not under the bound", w.Body.String())
+			}
+		case 1:
+			if !strings.Contains(w.Body.String(), fmt.Sprintf(`i\u003c%d;`, memoryArrays)) || backend.Hostile().Results["control-output"] != tc.result || backend.Hostile().Results["memory-cell"] != "issued" {
+				t.Fatal("over-bound cell differs", backend.Hostile().Results, w.Body.String())
+			}
+		case 2:
+			if backend.Hostile().Results["exec-output"] != tc.result {
+				t.Fatal("over-bound outcome differs", backend.Hostile().Results)
+			}
+		}
+	}
+	// 64 MiB plus the code host fits 256 MiB; 2 GiB never does.
+	if memoryControlArrays*32 > 64 || memoryArrays*32<<20 <= 256<<20 {
+		t.Fatal("memory cells no longer straddle the code-host bound")
+	}
+	// A failed or missing cell is never classified as survived.
+	other, _, _ := NewHostile(s, "codex-code-memory", canaries)
+	for _, q := range []*http.Request{inferenceRequest(s, ""), output("h_memory_control", "failed to read code-mode host message: early eof"), inferenceRequest(s, "")} {
+		other.ServeHTTP(httptest.NewRecorder(), q)
+	}
+	if got := other.Hostile().Results; got["control-output"] == "survived" || got["exec-output"] != "missing" || len(got) != 3 {
+		t.Fatal("failed cells classified as survived", got)
 	}
 }
