@@ -66,7 +66,11 @@ failure counts defer. Enrollment/default changes still require explicit migratio
    defer admission. Prune only records already eligible under retention policy.
 5. If no physical invocation or unresolved durable lease exists, select the
    oldest runnable job or authorized comment/automatic request. For a new request, capture source
-   and reobserve before admission. Restore the exact SQLite-returned packet
+   and reobserve before admission. One controller exclusion covers each
+   observation, publication refresh and the worker's reobservation through
+   admission, never capture or work. A concurrent poll therefore cannot make the
+   worker's trigger hash stale and discard its capture; real remote changes still
+   fence it. Restore the exact SQLite-returned packet
    against its immutable Git inventory before invoking the qualified runtime
    factory. Existing queued/completed jobs use restoration without recapture.
    Originally omitted patches retain their coverage and cannot gain inline
@@ -123,7 +127,7 @@ phases, typed outbox preparation, fake publication and restart. Fault cases cove
 cancel during a blocked worker, pending ACK ordering/rate limits, a late B request
 cleared by A's publication, lost POST responses, persisted/cold-store backoff,
 legacy state rewrites, startup/enrollment refusal, expired lease retention,
-snapshot movement, shutdown timeouts/owner retention and cached-completion
+snapshot movement, a poll racing the worker's post-capture observation, shutdown timeouts/owner retention and cached-completion
 recovery without inference, recoverable qualification interruption in both
 factory, provider and evidence-restoration work, early admitted-job qualification
 failure, owner fencing during restoration, repository lookup access loss with active and

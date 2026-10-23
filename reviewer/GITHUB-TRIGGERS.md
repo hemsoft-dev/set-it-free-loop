@@ -87,7 +87,9 @@ behind a completed cutoff is uncertainty, not permission to backdate work.
 A `TriggerCursor` persists epoch, PR identity, last snapshot and observation
 sequence in the existing SQLite transaction. A previous-state hash rejects stale
 concurrent reads and prevents duplicate request allocation. It does not claim
-GitHub linearizability. Existing native requests/events are refused by the new
+GitHub linearizability. The polling controller serializes its own observations,
+publication refreshes and post-capture admission, so a concurrent poll's newer
+cursor cannot fail the worker's hash fence and discard captured source. Existing native requests/events are refused by the new
 adapter: switching a populated legacy native store requires an explicit migration,
 not silent reinterpretation. Record caps stop admission without dropping unknown
 writes or request tombstones. No automatic replay of ambiguous inference is added.
