@@ -98,6 +98,10 @@ Details:
   share that deadline, so the host stopped the unit before the guest's finished
   record arrived. The host then had no auth return and no source audit, so auth
   stays fenced for recovery, as documented in [NATIVE-VM.md](NATIVE-VM.md).
+  The fake upstream records when it observed the cancellation. The case passes
+  only if that is within 2 s after the 75 s deadline and the result returns
+  within 20 s of the deadline. The runner's 100 s outer watchdog lies outside
+  both intervals, so its cancellation cannot pass the case.
 - **Oversized object.** The first read was served and counted at 1,572,864
   bytes. The second read was refused by the host object stream's own budget
   before the reader's check, and was listed as an omission of `big.go`. Claude

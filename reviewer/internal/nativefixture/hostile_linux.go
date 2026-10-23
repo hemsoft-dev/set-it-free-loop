@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
 )
@@ -240,6 +241,9 @@ type HostileObservation struct {
 	// valid source results the client returned during a turn flood.
 	FloodBytes    int
 	SourceResults int
+	// StallCancelled is when a stalled upstream request observed its
+	// cancellation; zero if it never did.
+	StallCancelled time.Time `json:",omitzero"`
 }
 
 type hostileState struct {

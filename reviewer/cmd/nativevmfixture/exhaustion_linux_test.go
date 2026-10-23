@@ -25,7 +25,7 @@ func allPass(checks map[string]bool) bool {
 
 func exhaustionBase(name string) exhaustionInput {
 	limits := r.DefaultLimits()
-	limits.Timeout = 75 * time.Second
+	limits.Timeout = hostilePhase
 	policy := r.EgressLimits{Requests: 32, InferenceRequests: 24, RefreshRequests: 2, MetadataRequests: 5, NegotiationRequests: 1, RequestBytes: 8 << 20, ResponseBytes: 16 << 20, TotalBytes: 32 << 20}
 	return exhaustionInput{Name: name, Err: r.PhaseError{State: "invalid_output"}, Source: &r.SourceAccess{Version: 1}, Policy: policy, Limits: limits,
 		Provider: &r.ProviderAccess{Version: 1, Requests: 1, InferenceRequests: 1, Forwarded: 1, Stopped: true, Failed: true},
@@ -62,16 +62,29 @@ func TestExhaustionChecksRequireTheMeasuredBound(t *testing.T) {
 	stall.Err = errors.Join(r.PhaseError{State: "provider_unavailable"}, context.DeadlineExceeded, r.ErrAuthRecoveryRequired)
 	stall.Source = nil
 	stall.Observation.Results["stall"] = "cancelled-by-guard"
-	stall.Elapsed = 75300 * time.Millisecond
+	// Measured: the upstream was cancelled at the 75 s deadline and the result
+	// returned 0.2 to 0.3 s later.
+	stall.Elapsed, stall.StallCancel = 75300*time.Millisecond, 75050*time.Millisecond
 	if !allPass(exhaustionChecks(stall)) {
 		t.Fatal("deadline-fenced stall rejected", exhaustionChecks(stall))
 	}
-	for _, elapsed := range []time.Duration{10 * time.Second, 120 * time.Second} {
+	for _, ended := range [][2]time.Duration{
+		{10 * time.Second, 9 * time.Second},
+		{120 * time.Second, 75050 * time.Millisecond},
+		// The fixture's outer watchdog, not the phase deadline, cancelled it.
+		{hostileWatchdog + 300*time.Millisecond, hostileWatchdog},
+		// No upstream cancellation was observed at all.
+		{75300 * time.Millisecond, 0},
+		{75300 * time.Millisecond, 70 * time.Second},
+	} {
 		late := stall
-		late.Elapsed = elapsed
+		late.Elapsed, late.StallCancel = ended[0], ended[1]
 		if allPass(exhaustionChecks(late)) {
-			t.Fatal("stall ended by something other than the phase deadline", elapsed)
+			t.Fatal("stall ended by something other than the phase deadline", ended)
 		}
+	}
+	if hostilePhase+deadlineCleanup >= hostileWatchdog {
+		t.Fatal("accepted deadline interval reaches the outer watchdog")
 	}
 	read := stall
 	read.StoreRequests = []string{"x:source.go"}

@@ -85,8 +85,10 @@ func stall(mu interface {
 	defer timer.Stop()
 	select {
 	case <-q.Context().Done():
+		at := time.Now()
 		mu.Lock()
 		h.obs.Results["stall"] = "cancelled-by-guard"
+		h.obs.StallCancelled = at
 	case <-timer.C:
 		mu.Lock()
 		h.obs.Results["stall"] = "fixture-limit"

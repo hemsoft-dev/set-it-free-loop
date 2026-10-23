@@ -91,6 +91,7 @@ func TestStallIsReleasedByGuardCancellation(t *testing.T) {
 			time.Sleep(time.Millisecond)
 		}
 		_ = backend.Counts() // must not wait for the stalled handler
+		cancelled := time.Now()
 		cancel()
 		select {
 		case <-done:
@@ -98,6 +99,11 @@ func TestStallIsReleasedByGuardCancellation(t *testing.T) {
 			t.Fatal("guard cancellation did not release the stall", provider)
 		}
 		access, _ := guard.Close(context.Background())
+		// The upstream's own cancellation time lets the runner tell the phase
+		// deadline from the fixture's outer watchdog.
+		if at := backend.Hostile().StallCancelled; at.Before(cancelled) || at.After(time.Now()) {
+			t.Fatal("stall cancellation time not recorded", provider, at)
+		}
 		if backend.Hostile().Results["stall"] != "cancelled-by-guard" || !access.Failed || access.Forwarded != 1 || access.Responses != 0 {
 			t.Fatal("stall outcome differs", provider, backend.Hostile().Results, access)
 		}

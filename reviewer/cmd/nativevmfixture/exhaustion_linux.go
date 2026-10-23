@@ -17,6 +17,15 @@ import (
 // flood stops within one relay chunk of it (measured 8,356,210 bytes).
 const codeHostRelayLimit, codeHostRelaySlack = int64(8 << 20), int64(64 << 10)
 
+// hostilePhase is the phase deadline of hostile and exhaustion runs. The
+// fixture's outer watchdog lies beyond every accepted deadline interval, so its
+// cancellation can never satisfy a deadline check.
+const hostilePhase, hostileWatchdog = 75 * time.Second, 100 * time.Second
+
+// A stalled upstream must observe the phase deadline within
+// deadlineCancelSlack, and the result must return within deadlineCleanup of it.
+const deadlineCancelSlack, deadlineCleanup = 2 * time.Second, 20 * time.Second
+
 type codeHostAudit struct {
 	Failed, Stopped, RelayComplete bool
 	InputBytes, OutputBytes        int64
@@ -39,6 +48,9 @@ type exhaustionInput struct {
 	Observation   f.HostileObservation
 	Elapsed       time.Duration
 	StoreRequests []string
+	// StallCancel is when, after the review started, a stalled fake upstream
+	// observed its cancellation; zero if it never did.
+	StallCancel time.Duration
 }
 
 // typedFailure accepts only a normalized failure: an empty report, an
@@ -86,6 +98,12 @@ func (in exhaustionInput) noSource() bool {
 	return in.Source.ToolCalls == 0 && len(in.Source.Reads) == 0
 }
 
+// deadlineEnded accepts a result returned only after the phase deadline and
+// within the cleanup bound, which ends before the fixture's outer watchdog.
+func (in exhaustionInput) deadlineEnded() bool {
+	return in.Elapsed >= in.Limits.Timeout-time.Second && in.Elapsed <= in.Limits.Timeout+deadlineCleanup
+}
+
 func exhaustionChecks(in exhaustionInput) map[string]bool {
 	checks := map[string]bool{}
 	pa := in.Provider
@@ -105,9 +123,9 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 		checks["typed-failure"] = in.typedFailure()
 		checks["guard-cancelled-stall"] = in.Observation.Results["stall"] == "cancelled-by-guard"
 		checks["unaccepted-upstream-recorded"] = pa != nil && pa.Failed && pa.InferenceRequests == 1 && pa.Forwarded == pa.Responses+1
-		// The phase deadline, not a client or fixture timer, ends the stall,
-		// and cleanup is bounded after it.
-		checks["deadline-bounded"] = in.Elapsed >= in.Limits.Timeout-time.Second && in.Elapsed <= in.Limits.Timeout+30*time.Second
+		// The phase deadline, not a client timer or the fixture's watchdog,
+		// cancels the stalled upstream, and cleanup is bounded after it.
+		checks["deadline-bounded"] = in.StallCancel >= in.Limits.Timeout && in.StallCancel <= in.Limits.Timeout+deadlineCancelSlack && in.deadlineEnded()
 		checks["single-inference"] = in.Counts.Inference == 1
 		checks["no-source-access"] = in.noSource()
 	case "claude-turn-flood", "codex-turn-flood":

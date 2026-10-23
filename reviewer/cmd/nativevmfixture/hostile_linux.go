@@ -47,6 +47,9 @@ type hostileReceipt struct {
 	CodeHost                                                     json.RawMessage
 	ReportCoverage                                               []r.Coverage `json:",omitempty"`
 	UsageKnown                                                   bool
+	// StallCancelMS is when, after the review started, a stalled upstream
+	// observed its cancellation.
+	StallCancelMS int64 `json:",omitempty"`
 }
 
 func errorClass(err error) string {
@@ -210,7 +213,7 @@ func runNativeHostile(c config) error {
 	if !ok {
 		return errors.New("unknown hostile case")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), hostileWatchdog)
 	defer cancel()
 	canaries, err := f.NewCanaries()
 	if err != nil {
@@ -243,7 +246,7 @@ func runNativeHostile(c config) error {
 		return err
 	}
 	limits := r.DefaultLimits()
-	limits.Timeout = 75 * time.Second
+	limits.Timeout = hostilePhase
 	snapshot := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: strings.Repeat("a", 40), Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("c", 40)}
 	s, err := r.NewSession("native-fake-hostile-"+hc.Name, snapshot, r.Digest("synthetic-native-hostile"), c.Provider, 1, "immutable source evidence", nil, nil, limits)
 	if err != nil {
@@ -361,6 +364,9 @@ func runNativeHostile(c config) error {
 		if evidence != nil {
 			in.Provider = &evidence.Access
 		}
+		if !obs.StallCancelled.IsZero() {
+			in.StallCancel = obs.StallCancelled.Sub(start)
+		}
 		for name, ok := range exhaustionChecks(in) {
 			checks[name] = ok
 		}
@@ -398,6 +404,9 @@ func runNativeHostile(c config) error {
 	}
 	if hc.Kind == f.HostileExhaust {
 		receipt.ReportCoverage, receipt.UsageKnown = report.Coverage, report.Usage.Known
+		if !obs.StallCancelled.IsZero() {
+			receipt.StallCancelMS = obs.StallCancelled.Sub(start).Milliseconds()
+		}
 	}
 	receipt.CanaryHits = hostileCanaryHits{backend.CanaryRequestHits(), f.CanaryHits(reportRaw, secrets), fileCanaryHits(c.Root, secrets), 0}
 	receipt.Passed, receipt.HostContained = passed, contained
