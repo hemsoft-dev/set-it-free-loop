@@ -38,6 +38,7 @@ type gitUnitRecord struct {
 type gitUnitManager interface {
 	containmentManager
 	StartGit(context.Context, string, string, []string, string, int, int) (string, error)
+	JobSettled(string, string) error
 }
 
 type gitUnitOwner struct {

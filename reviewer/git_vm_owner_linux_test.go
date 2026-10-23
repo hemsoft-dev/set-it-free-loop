@@ -541,3 +541,90 @@ func TestGitVMOwnerStopClearsStageAfterSerialization(t *testing.T) {
 		t.Fatal("stale stage survived a later successful stop", err, f.owner.lastStopFailure())
 	}
 }
+
+// gitVMJobSettledBeforeObserve models systemd running the accepted Type=exec
+// job to completion (Starting..Started takes about 5-30 ms on the host) before
+// a starved owner makes its first observation.
+type gitVMJobSettledBeforeObserve struct{ *fakeContainmentManager }
+
+func (m gitVMJobSettledBeforeObserve) StartGitVM(ctx context.Context, unit, stub string, args []string, description string, imageFD, supervisorFD int) (string, error) {
+	job, err := m.fakeContainmentManager.StartGitVM(ctx, unit, stub, args, description, imageFD, supervisorFD)
+	m.mu.Lock()
+	m.observation.Job = unitJob{}
+	m.mu.Unlock()
+	return job, err
+}
+
+// gitVMJobSettledBetweenPolls first shows the queued job without an
+// invocation, then the settled job-free unit on the next 5 ms poll.
+type gitVMJobSettledBetweenPolls struct {
+	gitVMJobSettledBeforeObserve
+	queued *bool
+}
+
+func (m gitVMJobSettledBetweenPolls) Observe(ctx context.Context, unit string) (unitObservation, error) {
+	v, err := m.fakeContainmentManager.Observe(ctx, unit)
+	if !*m.queued {
+		*m.queued = true
+		v.InvocationID, v.ControlGroup, v.ActiveState, v.MainPID = strings.Repeat("0", 32), "", "inactive", 0
+		v.Job = unitJob{1, "/org/freedesktop/systemd1/job/1"}
+	}
+	return v, err
+}
+
+func TestGitVMOwnerStartAdoptsOwnJobSettledBeforeFirstObservation(t *testing.T) {
+	for _, kind := range []string{"settled", "settled-between-polls", "foreign-job", "failed-job"} {
+		t.Run(kind, func(t *testing.T) {
+			f := newGitVMOwnerFixture(t)
+			f.owner.manager = gitVMJobSettledBeforeObserve{f.manager}
+			if kind == "settled-between-polls" {
+				f.owner.manager = gitVMJobSettledBetweenPolls{gitVMJobSettledBeforeObserve{f.manager}, new(bool)}
+			}
+			switch kind {
+			case "foreign-job":
+				// Another job settled on the unit: the invocation may be a replacement.
+				f.manager.settledErr = errors.New("foreign job removed on owned unit")
+			case "failed-job":
+				f.manager.waitErr = errors.New("job failed")
+			}
+			if f.owner.prepare(context.Background(), f.request) != nil {
+				t.Fatal("prepare")
+			}
+			err := f.owner.start(context.Background(), f.attempt(), "/private/source-vm-gate.sock")
+			r, readErr := f.owner.read(f.attempt())
+			if readErr != nil || !r.StartIntent || r.StartJob == "" || f.manager.starts != 1 {
+				t.Fatal("start intent", r, readErr)
+			}
+			if kind != "settled" && kind != "settled-between-polls" {
+				if err == nil || r.born() || r.StartSettled || r.Captured || f.owner.grantEligible[f.attempt()] {
+					t.Fatal("uncorrelated job-free invocation adopted", r, err)
+				}
+				return
+			}
+			if err != nil || !r.born() || !r.StartSettled || !r.Captured || r.Birth.InvocationID != r.Identity.InvocationID || !f.owner.grantEligible[f.attempt()] {
+				t.Fatalf("own settled start refused: err=%v born=%v settled=%v captured=%v invocation=%q", err, r.born(), r.StartSettled, r.Captured, r.Birth.InvocationID)
+			}
+			if f.owner.stop(context.Background(), f.attempt()) != nil || f.owner.Close() != nil {
+				t.Fatal("settled start cleanup", f.owner.lastStopFailure())
+			}
+		})
+	}
+}
+
+// The evidence signature: an unborn started attempt can only be revoked; its
+// stop and Close refuse on the same boot.
+func TestGitVMOwnerUnbornStartedAttemptBlocksClose(t *testing.T) {
+	f := newGitVMOwnerFixture(t)
+	f.owner.manager = gitVMJobSettledBeforeObserve{f.manager}
+	f.manager.settledErr = errors.New("uncorrelated")
+	if f.owner.prepare(context.Background(), f.request) != nil || f.owner.start(context.Background(), f.attempt(), "/private/source-vm-gate.sock") == nil {
+		t.Fatal("uncorrelated start accepted")
+	}
+	if f.owner.stop(context.Background(), f.attempt()) == nil || f.owner.lastStopFailure() != "before-capture" || f.owner.Close() == nil {
+		t.Fatal("unborn attempt stop", f.owner.lastStopFailure())
+	}
+	r, _ := f.owner.read(f.attempt())
+	if !r.Revoked || r.Stopped || r.born() || r.StartSettled || r.Captured {
+		t.Fatal("signature", r)
+	}
+}
