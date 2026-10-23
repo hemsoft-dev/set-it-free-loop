@@ -93,8 +93,17 @@ func cgroupFile(root *os.Root, name string) (string, error) {
 		return "", err
 	}
 	defer file.Close()
+	return readCgroupFile(file)
+}
+
+// readCgroupFile keeps the read error: a group removed after its file was
+// opened refuses the read, which only a fresh lookup may prove as removal.
+func readCgroupFile(file *os.File) (string, error) {
 	raw, err := io.ReadAll(io.LimitReader(file, 4097))
-	if err != nil || len(raw) > 4096 {
+	if err != nil {
+		return "", err
+	}
+	if len(raw) > 4096 {
 		return "", ErrAuthRecoveryRequired
 	}
 	return strings.TrimSpace(string(raw)), nil
@@ -106,7 +115,10 @@ func cgroupInode(root *os.Root) (uint64, error) {
 	}
 	defer dir.Close()
 	var fs unix.Statfs_t
-	if unix.Fstatfs(int(dir.Fd()), &fs) != nil || fs.Type != unix.CGROUP2_SUPER_MAGIC {
+	if err := unix.Fstatfs(int(dir.Fd()), &fs); err != nil {
+		return 0, err
+	}
+	if fs.Type != unix.CGROUP2_SUPER_MAGIC {
 		return 0, ErrAuthRecoveryRequired
 	}
 	info, err := dir.Stat()
@@ -181,13 +193,38 @@ func (linuxContainmentKernel) Empty(binding cgroupBinding) error {
 		return ErrAuthRecoveryRequired
 	}
 	defer root.Close()
+	return openedCgroupEmpty(root, binding)
+}
+
+// systemd removes an empty unit group about as soon as it is unpopulated. That
+// can land between opening the original and reading it: the opened original
+// then refuses lookups (ENOENT) and IO (ENODEV). Only a fresh missing path
+// beneath the verified hierarchy proves that removal; a replacement never does.
+func cgroupRemovedAfterOpen(err error, binding cgroupBinding) error {
+	if !errors.Is(err, unix.ENOENT) && !errors.Is(err, unix.ENODEV) {
+		return ErrAuthRecoveryRequired
+	}
+	root, _, err := openContainmentCgroupAt("/sys/fs/cgroup", binding.Path, binding.Hierarchy)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err == nil {
+		root.Close()
+	}
+	return ErrAuthRecoveryRequired
+}
+
+func openedCgroupEmpty(root *os.Root, binding cgroupBinding) error {
 	inode, err := cgroupInode(root)
-	if err != nil || inode != binding.Inode {
+	if err != nil {
+		return cgroupRemovedAfterOpen(err, binding)
+	}
+	if inode != binding.Inode {
 		return ErrAuthRecoveryRequired
 	}
 	events, err := cgroupFile(root, "cgroup.events")
 	if err != nil {
-		return ErrAuthRecoveryRequired
+		return cgroupRemovedAfterOpen(err, binding)
 	}
 	seen := false
 	for _, line := range strings.Split(events, "\n") {
