@@ -91,6 +91,7 @@ ledger, and a restore probe.
 | `close-capture` | Close the whole service after capture and admission, inside the first session's host check, before any VM launch. Reopen and finish. | 1 / 4 | 1 | both usable |
 | `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. | 1 / 1 | lifecycle order only | Codex fenced, Claude usable |
 | `close-provider-reopen` | A second process attached to the root retained by `close-provider` (`SFL_E2E_ATTACH`), as a restarted service. | 0 / 0 | 1 (retained) | Codex fenced, Claude usable |
+| `close-provider-recover` | Instead of `close-provider-reopen`: a restarted process recovers the retained attempt through the operator API, then reviews and publishes the next request. | TBD | TBD | TBD |
 | `close-publish` | The fake GitHub commits the review POST but withholds its response; close the whole service; reopen and reconcile. | 1 / 4 | 1 | both usable |
 
 If `close-provider`'s `Close` proves completion instead of reporting
@@ -618,12 +619,69 @@ offline. Before activation, that path needs to be specified and qualified as a
 separate gate: native stopped-attempt verification, a lease release that
 records a charged session, auth return or retirement, and job disposition. The
 alternative is a bounded grace on shutdown that lets the guest stop its client
-and return auth. Both change security-relevant recovery behavior, so neither is
-implemented here.
+and return auth. Both change security-relevant recovery behavior, so neither
+was implemented in the commits measured above. The operator path was added
+later and is qualified in
+[Operator recovery after a provider-session close](#operator-recovery-after-a-provider-session-close).
+The bounded shutdown grace is not implemented.
 
 A shutdown before a session's work, while the host check runs, is
 different. The native reviewer reports a trusted before-work failure, the
 reserved session is refunded, and the job returns to `queued`.
+
+## Operator recovery after a provider-session close
+
+[`RecoverStoppedProvider`](GIT-STARTUP.md#stopped-provider-recovery) answers
+the finding above with an explicit operator path; nothing runs it
+automatically. `close-provider-recover` qualifies it end to end. It runs in a
+new process attached to the root retained by `close-provider`, inside the
+same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
+
+1. Before startup, the job is `running` with its lease and one charged
+   session. The only native launch is a Codex unit whose stopped audit
+   records exported, unreturned auth. Codex auth is fenced and Claude auth is
+   usable.
+2. The service is opened, but not refreshed or run.
+   `ProviderRecoveryCandidates` lists the job, its attempt ID, recorded
+   stopped evidence and exactly the one original launch.
+3. A wrong attempt ID is refused with `ErrFenced`. The correct request without
+   `RetireUnreturnedAuth` is refused with `ErrAuthRecoveryRequired`. After
+   both, the lease, job state and auth fence are unchanged.
+4. With consent, recovery returns `Auth: retired, State: auth_failed`. The job
+   has no lease, no outstanding attempt, one consumed session, no artifact,
+   no source attempt and one recovery receipt bound to the launch. A repeated
+   call is refused. Codex auth is retired (unusable), and Claude auth is
+   untouched.
+5. The test re-provisions a synthetic Codex seed, standing in for the
+   operator's separate auth repair, then calls `Refresh` and `Run`. Once
+   PR 2 is admitted, recovery is refused with `ErrLiveBlocked`.
+6. The PR 2 `@sfl review` request is captured by one upload-pack wanting
+   exactly its head and the base. It runs four native sessions, each in one
+   completed launch with auth returned. It is published as one marked
+   COMMENT with the inline comment at `source.go:1`, then confirmed.
+7. PR 1 stays `auth_failed` with no new job, write or POST. The only GitHub
+   POSTs were two role token mints and one review POST for PR 2. Final
+   `Close` succeeded, `Run` returned only cancellation, and no unit remained.
+
+Measured on mini on 2026-10-22 with code, test binary, stub and both images
+from commit `098261f` (release digest `4861b9df…cfb6`), under the shared VM
+lock with `GOMAXPROCS=2` and `nice -n 10`. Only this document changed
+afterwards. `close-provider` passed in 14.5 s (15 checks). Then
+`close-provider-recover` passed in 26.6 s (40 checks, no failure, no fake
+GitHub violation). Startup took 191 ms. Recovery returned 35 ms after
+startup completed, and PR 2 was confirmed 26.4 s after startup with receipt 5002. The
+observer saw one source VM unit and four native units in the recovery
+process, and none remained. Evidence is kept outside the repository in the
+merge-mission directory `e2e-174/recovery/run-098261f-close-provider-recover2/`.
+An earlier run at `ac57673` passed every check except one: its
+running-service refusal raced `Run`'s start and got `ErrFenced`. The check
+now waits for admission.
+
+This qualifies only the recovery path for a stop proved in process. It does
+not cover a host process kill before the stopped audit receipt. Recovery
+refuses that case because the receipt is required evidence, and it remains
+fenced. Re-provisioning provider auth after retirement is an operator action
+outside the reviewer, and the test only simulates it with a synthetic seed.
 
 ## Limitations and remaining work
 
@@ -635,8 +693,9 @@ reserved session is refunded, and the job returns to `queued`.
   [NATIVE-VM-CRASH.md](NATIVE-VM-CRASH.md). A `SIGKILL` between session
   reservation and stopped receipt would leave the same durable fence as
   `close-provider`, without the in-process stop proof.
-- No in-service recovery path exists for an uncertain provider lease (see
-  Findings).
+- Operator recovery covers a provider attempt stopped with a durable
+  stopped audit receipt (see the recovery section). An attempt without that
+  receipt, such as after a host process kill mid-session, stays fenced.
 - Isolation is between sequential jobs because admission is serial. Both jobs
   share the per-provider auth stores by design; each session exports and
   returns them, and the case checks returns but cannot observe a concurrent
