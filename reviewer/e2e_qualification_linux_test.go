@@ -3890,13 +3890,24 @@ func e2eRecoveredJobVerdicts(label string, d r.DurableState, before *r.DurableJo
 // completed case is judged, with PR 1 recovered instead of reviewed: exactly
 // one job per PR, no PR 1 intent and one PR 2 intent, and no other write;
 // PR 1's recovered job (e2eRecoveredJobVerdicts) with no review POST or remote
-// review; PR 2's full review (e2eReviewedVerdicts); one stopped source record
-// per job, PR 1's retained one and PR 2's, each bound to its own job's
-// snapshot and the current release; the interrupted launch still present with
-// its unchanged receipt; and PR 2's four completed launches plus that
-// interrupted launch, whose receipt must name PR 1's recovered attempt, as the
-// only launches. It returns the PR 1 and PR 2 jobs, nil for a PR without
-// exactly one.
+// review; PR 2's full review (e2eReviewedVerdicts), whose four sessions must
+// each make exactly the fixture's exchanges and be served only the fake
+// upstream's bytes; one stopped source record per job, PR 1's retained one
+// and PR 2's, each bound to its own job's snapshot, the current release and
+// the release's source stub; the interrupted launch still present with its
+// unchanged receipt; and PR 2's four completed launches plus that interrupted
+// launch, whose receipt must name PR 1's recovered attempt, as the only
+// entries of the attached native roots.
+//
+// This attached process acquired only PR 2's source attempt, so only that
+// attempt's lifecycle order is judged here, from the journal sampled at its
+// upload-pack; PR 1's retained attempt was acquired, and its order judged,
+// by close-provider, and is judged here by its final record only. PR 1's
+// interrupted session is never run again: this process's backends must have
+// checked exactly PR 2's artifact sessions, none held, and the interrupted
+// session is judged by its retained stopped receipt, which must count its one
+// held inference as forwarded and never answered. It returns the PR 1 and
+// PR 2 jobs, nil for a PR without exactly one.
 func e2eRecoveredVerdicts(c e2eCompletion, before *r.DurableJob, interrupted e2eNativeUnit) ([]e2eVerdict, *r.DurableJob, *r.DurableJob) {
 	const label = "after recovery review"
 	verdicts := e2eDurableCountVerdicts(label, c.State, map[int]int{1: 1, 2: 1}, map[int]int{2: 1})
@@ -3906,10 +3917,32 @@ func e2eRecoveredVerdicts(c e2eCompletion, before *r.DurableJob, interrupted e2e
 	verdicts = append(verdicts,
 		e2eVerdict{c.Posts[1] == 0 && len(c.Reviews[1]) == 0, fmt.Sprintf("%s: PR 1 received no review POST and holds no remote review (%d POSTs, %d reviews)", label, c.Posts[1], len(c.Reviews[1]))},
 		e2eVerdict{interrupted.Launch != "" && e2eLaunchUnchanged(c.Units, interrupted), fmt.Sprintf("%s: the interrupted launch %s is still present with its unchanged stopped receipt", label, interrupted.Launch)})
+	held := interrupted.Access
+	verdicts = append(verdicts, e2eVerdict{interrupted.AuditPresent && held.InferenceRequests == 1 && held.Failed && !held.Exhausted && held.Forwarded == held.Responses+1, fmt.Sprintf("%s: PR 1's interrupted session's stopped receipt counts exactly its one held inference, forwarded and never answered (%d inferences, %d forwarded, %d responses, failed %v)", label, held.InferenceRequests, held.Forwarded, held.Responses, held.Failed)})
 	if j1 == nil || j2 == nil {
 		return verdicts, j1, j2
 	}
-	verdicts = append(verdicts, e2eSourceVerdicts(label, c, []*r.DurableJob{j1, j2})...)
+	others := 0
+	for _, s := range c.Sessions {
+		if s.JobID != j2.Job.ID || s.PR != 2 || s.HeldInCheck {
+			others++
+		}
+	}
+	verdicts = append(verdicts, e2eVerdict{len(c.Sessions) == len(j2.Checkpoint.Artifacts) && others == 0, fmt.Sprintf("%s: this process's backends checked only PR 2's %d artifact sessions, none held, and never ran PR 1's interrupted session again (%d checks, %d others)", label, len(j2.Checkpoint.Artifacts), len(c.Sessions), others)})
+	// The final records of both attempts are judged as an attached restart's;
+	// only PR 2's acquisition was sampled by this process.
+	attached := c
+	attached.Attached = true
+	verdicts = append(verdicts, e2eSourceVerdicts(label, attached, []*r.DurableJob{j1, j2})...)
+	if c.SourceErr == nil {
+		own := []r.E2ESourceRecord{}
+		for _, rec := range c.Records {
+			if rec.Snapshot == j2.Job.Snapshot {
+				own = append(own, rec)
+			}
+		}
+		verdicts = append(verdicts, e2eSourceOrderVerdicts(label+" (PR 2's acquisition)", own, c.Exchanges)...)
+	}
 	return append(verdicts, e2eNativeSessionVerdict(c.Units, []*r.DurableJob{j1, j2}, interrupted.SessionHash)), j1, j2
 }
 
@@ -5080,7 +5113,9 @@ func e2eReviewFixtureOf(pr int, edit func(*r.Job)) e2eCompletion {
 		}
 		evidence := e2eFixtureEvidence(session, true)
 		recorded := *evidence
-		access := &r.SourceAccess{Version: 1, SessionHash: hash, ToolCalls: 2, ReaderCalls: 3, Bytes: 64, Reads: []r.ReadRecord{{Revision: head, Path: "source.go", Hash: r.Digest([]byte(e2eSource)), Bytes: len(e2eSource)}, {Revision: head, Path: "pr1-only.go", Hash: r.Digest([]byte("pull request 1 only\n")), Bytes: 20}}, Coverage: []r.Coverage{}}
+		own := fmt.Sprintf("pr%d-only.go", pr)
+		ownBytes := e2eFixtureFiles(pr)[own]
+		access := &r.SourceAccess{Version: 1, SessionHash: hash, ToolCalls: 2, ReaderCalls: 3, Bytes: 64, Reads: []r.ReadRecord{{Revision: head, Path: "source.go", Hash: r.Digest([]byte(e2eSource)), Bytes: len(e2eSource)}, {Revision: head, Path: own, Hash: r.Digest([]byte(ownBytes)), Bytes: len(ownBytes)}}, Coverage: []r.Coverage{}}
 		read := *access
 		attemptID := strings.Repeat(strconv.Itoa(6+i), 32)
 		validation := []r.ReadRecord{{Revision: head, Path: "source.go", Hash: r.Digest([]byte(e2eSource)), Bytes: len(e2eSource)}}
@@ -5803,16 +5838,19 @@ func TestE2ENativeSessionRecovery(t *testing.T) {
 // completed review (e2eReviewFixture) beside PR 1's recovered job, which
 // records only its leased attempt with the interrupted launch's stopped
 // evidence and one recovery receipt; the interrupted launch, whose version 2
-// receipt names that attempt; and PR 1's retained source record and export.
-// It returns the end state, the retained job as the attached root held it,
-// and the interrupted launch.
+// receipt names that attempt and counts its one held inference, forwarded and
+// never answered; and PR 1's retained source record and export, acquired by
+// the earlier process. The attached process's only Git exchanges are PR 2's
+// acquisition, sampled while PR 2's attempt was live. It returns the end
+// state, the retained job as the attached root held it, and the interrupted
+// launch.
 func e2eRecoveredFixture() (e2eCompletion, *r.DurableJob, e2eNativeUnit) {
 	c := e2eReviewFixture(2)
 	head, attempt, source := strings.Repeat("1", 40), strings.Repeat("b", 32), strings.Repeat("d", 32)
 	session := r.Digest("interrupted session")
 	snapshot := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: head, Base: c.Base, MergeBase: c.Base}
 	evidence := func() *r.ProviderEvidence {
-		return &r.ProviderEvidence{Policy: r.EgressPolicy{Provider: r.Codex}, Access: r.ProviderAccess{Version: 1, SessionHash: session, InferenceRequests: 1, Failed: true, Stopped: true}}
+		return &r.ProviderEvidence{Policy: r.EgressPolicy{Provider: r.Codex}, Access: r.ProviderAccess{Version: 1, SessionHash: session, Requests: 7, InferenceRequests: 1, MetadataRequests: 5, NegotiationRequests: 1, NegotiationResponses: 1, Forwarded: 6, Responses: 5, Failed: true, Stopped: true}}
 	}
 	retained := func() *r.DurableJob {
 		return &r.DurableJob{Job: r.Job{ID: "request-1-1", RequesterID: r.OwnerID, Generation: 1, Snapshot: snapshot, Config: r.DefaultConfig(), ConfigVersion: 1, Release: c.Release}, Scope: e2eScope(1), RequestID: 1, State: "running", LeaseToken: "lease", Outstanding: true, AttemptProvider: r.Codex, AttemptRound: 1, AttemptID: attempt, AttemptInputHash: session, Checkpoint: r.Checkpoint{ConsumedSessions: 1}, ProviderAttempts: []r.ProviderAttempt{{ID: attempt, Evidence: evidence()}}}
@@ -5824,7 +5862,8 @@ func e2eRecoveredFixture() (e2eCompletion, *r.DurableJob, e2eNativeUnit) {
 	c.State.Jobs[j1.Job.ID] = j1
 	c.Heads[1], c.Posts[1] = head, 0
 	c.Units = append(c.Units, interrupted)
-	c.Records = append(c.Records, r.E2ESourceRecord{Attempt: source, Unit: "sfl-alpha-" + source + ".service", RequestHash: strings.Repeat("4", 64), SourceRequestHash: strings.Repeat("5", 64), ReleaseHash: c.Source.Release, RuntimeHash: c.Source.Runtime, Snapshot: snapshot, StartIntent: true, StartSettled: true, Captured: true, Stopped: true, Revoked: true, GrantHash: "grant"})
+	c.Attached = true
+	c.Records = append(c.Records, r.E2ESourceRecord{Attempt: source, Unit: "sfl-alpha-" + source + ".service", InvocationID: strings.Repeat("8", 32), RequestHash: strings.Repeat("4", 64), SourceRequestHash: strings.Repeat("5", 64), StubHash: c.Source.Stub, ReleaseHash: c.Source.Release, RuntimeHash: c.Source.Runtime, Snapshot: snapshot, StartIntent: true, StartSettled: true, Captured: true, Stopped: true, Revoked: true, GrantHash: "grant"})
 	c.Exports = append(c.Exports, r.E2EExportRecord{Attempt: source, State: "staged", RequestHash: strings.Repeat("5", 64), ReleaseHash: c.Source.Release, RuntimeHash: c.Source.Runtime, Snapshot: snapshot})
 	return c, retained(), interrupted
 }
@@ -5887,13 +5926,32 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 		"retained source record of another head":  "source records with matching",
 		"retained source record of a release":     "source records with matching",
 		"retained source record of a runtime":     "source records with matching",
-		"retained source record not stopped":      "started, settled",
+		"retained source record not stopped":      "final record holds its start intent",
 		"interrupted launch names a PR 2 attempt": "job-bound sessions",
 		"PR 2 launch names the recovered attempt": "job-bound sessions",
 		"second interrupted launch":               "job-bound sessions",
 		"PR 2 review never POSTed":                "PR 2 received exactly one review POST",
 		"PR 2 checked as another round":           "checked once by its own provider's backend",
 		"PR 2 missing a round":                    "exactly Codex R1",
+		// Round 8 rules applied to the recovery case.
+		"PR 2 phase served PR 1's file":                 "made exactly the fixture's exchanges",
+		"PR 2 phase served other bytes":                 "made exactly the fixture's exchanges",
+		"PR 2 backend counted another inference":        "made exactly the fixture's exchanges",
+		"PR 2 receipt differs from its backend":         "made exactly the fixture's exchanges",
+		"PR 2 codex metadata not captured":              "made exactly the fixture's exchanges",
+		"PR 1 interrupted session checked again":        "checked only PR 2's",
+		"PR 2 session held in the recovery process":     "checked only PR 2's",
+		"interrupted receipt answered its inference":    "one held inference",
+		"interrupted receipt counts two inferences":     "one held inference",
+		"retained source record of another stub":        "source records with matching",
+		"PR 2 source record of another stub":            "source records with matching",
+		"PR 2 acquisition never sampled":                "PR 2's acquisition",
+		"PR 2 acquisition sample failed":                "PR 2's acquisition",
+		"PR 2 acquisition sampled after revocation":     "PR 2's acquisition",
+		"PR 2 acquisition sampled before its grant":     "PR 2's acquisition",
+		"PR 2 acquisition fetched twice":                "PR 2's acquisition",
+		"stray entry in the attached native root":       "job-bound sessions",
+		"unreadable launch in the attached native root": "job-bound sessions",
 	}
 	for name, edit := range map[string]func(*recovery){
 		"PR 1 review intent": func(in *recovery) {
@@ -5971,6 +6029,50 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 		"PR 2 checked as another round": func(in *recovery) { in.c.Sessions[0].Round = 2 },
 		"PR 2 missing a round": func(in *recovery) {
 			j2(in).Checkpoint.Artifacts = j2(in).Checkpoint.Artifacts[1:]
+		},
+		"PR 2 phase served PR 1's file": func(in *recovery) {
+			j2(in).Checkpoint.Artifacts[0].SourceAccess.Reads[1] = r.ReadRecord{Revision: in.c.Heads[2], Path: "pr1-only.go", Hash: r.Digest([]byte("pull request 1 only\n")), Bytes: 20}
+		},
+		"PR 2 phase served other bytes": func(in *recovery) {
+			j2(in).Checkpoint.Artifacts[1].SourceAccess.Reads[0].Hash = r.Digest("other bytes")
+		},
+		"PR 2 backend counted another inference": func(in *recovery) { in.c.Sessions[2].Counts.Inference = 4 },
+		"PR 2 receipt differs from its backend": func(in *recovery) {
+			j2(in).Checkpoint.Artifacts[0].ProviderEvidence.Access.MetadataRequests = 4
+		},
+		"PR 2 codex metadata not captured": func(in *recovery) { in.c.Sessions[0].Counts.MetadataCaptured = false },
+		"PR 1 interrupted session checked again": func(in *recovery) {
+			in.c.Sessions = append(in.c.Sessions, e2eModelSession{JobID: in.before.Job.ID, Provider: r.Codex, Round: 1, PR: 1, Head: in.c.Heads[1], SessionHash: in.interrupted.SessionHash, HeldInCheck: true})
+		},
+		"PR 2 session held in the recovery process": func(in *recovery) {
+			held := in.c.Sessions[0]
+			held.HeldInCheck = true
+			in.c.Sessions = append(in.c.Sessions, held)
+		},
+		"interrupted receipt answered its inference": func(in *recovery) {
+			in.interrupted.Access.Responses++
+			in.c.Units[last(in)] = in.interrupted
+		},
+		"interrupted receipt counts two inferences": func(in *recovery) {
+			in.interrupted.Access.InferenceRequests++
+			in.c.Units[last(in)] = in.interrupted
+		},
+		"retained source record of another stub": func(in *recovery) { in.c.Records[1].StubHash = r.Digest("another stub") },
+		"PR 2 source record of another stub":     func(in *recovery) { in.c.Records[0].StubHash = "" },
+		"PR 2 acquisition never sampled":         func(in *recovery) { in.c.Exchanges = nil },
+		"PR 2 acquisition sample failed": func(in *recovery) {
+			in.c.Exchanges[1].Journal, in.c.Exchanges[1].JournalErr = nil, "journal sample timed out"
+		},
+		"PR 2 acquisition sampled after revocation": func(in *recovery) { in.c.Exchanges[1].Journal[0].Revoked = true },
+		"PR 2 acquisition sampled before its grant": func(in *recovery) { in.c.Exchanges[1].Journal[0].GrantHash = "" },
+		"PR 2 acquisition fetched twice": func(in *recovery) {
+			in.c.Exchanges = append(in.c.Exchanges, in.c.Exchanges[1])
+		},
+		"stray entry in the attached native root": func(in *recovery) {
+			in.c.Units = append(in.c.Units, e2eNativeUnit{Provider: string(r.Codex), Launch: "stray"})
+		},
+		"unreadable launch in the attached native root": func(in *recovery) {
+			in.c.Units = append(in.c.Units, e2eNativeUnit{Provider: string(r.Claude), Launch: strings.Repeat("e", 32)})
 		},
 	} {
 		in := fixture()

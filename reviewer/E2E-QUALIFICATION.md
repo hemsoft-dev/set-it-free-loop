@@ -364,7 +364,9 @@ and `close-provider` if it reopens) judges its completed PRs together:
   `TestGitVMGrantRefusesBeforeDurableAuthority` cover it. `close-provider`
   judges this order before it retains its root. The attached
   `close-provider-reopen` process did not acquire the source, so it judges the
-  final records only.
+  final records only. The attached `close-provider-recover` process acquired
+  only PR 2's source, so it judges PR 2's order from the sample at PR 2's
+  upload-pack and PR 1's retained record by its final record only.
 
 `close-provider-recover` judges its end state with the same rules, with PR 1
 recovered instead of reviewed. The durable state holds exactly one job for
@@ -377,11 +379,23 @@ one, whose evidence equals the interrupted launch's audit evidence by digest,
 and exactly one recovery receipt of that attempt, round, launch and evidence
 digest, with the auth retired. PR 1 received no POST and holds no remote
 review. The owner journal holds exactly two source records, PR 1's retained
-one and PR 2's, each bound to its own job's snapshot and the current release
-and source VM runtime hashes. The interrupted launch is still present with
-its receipt unchanged, still names PR 1's recorded attempt, and is the only
-launch besides PR 2's four. The only upstream exchanges are PR 2's
-acquisition.
+one and PR 2's, each bound to its own job's snapshot, the current release and
+source VM runtime hashes and the release's source stub hash. PR 2's record
+must pass the source lifecycle order from the journal sampled at its one
+upload-pack; PR 1's record, acquired by `close-provider`, which judged its
+order, must pass the final-record rule. PR 2's four sessions must each meet
+the exchange contract, with served objects equal to the fake upstream's bytes
+at PR 2's head. PR 1's interrupted session is never run again: the recovery
+process's backends checked exactly PR 2's four artifact sessions, none held,
+and the interrupted session is judged by its retained stopped receipt, which
+must count exactly its one held inference, forwarded and never answered, as
+a failed receipt. Every entry of the attached native roots counts as a
+launch: the interrupted launch is still present with its receipt unchanged,
+still names PR 1's recorded attempt, and is the only launch besides PR 2's
+four. Each of the five must be the pinned native payload with its release's
+stub and manifest hashes, and its version 2 receipt must repeat that manifest
+hash. Any other entry, including an unreadable launch directory, fails. The
+only upstream exchanges are PR 2's acquisition.
 
 In `close-publish`, the confirmed intent must be the one the closed POST left
 `unknown` or `dispatched`, with the same ID, marker, body hash, job,
@@ -491,6 +505,7 @@ record inventory, each job held to the job expected from harness inputs, and
 each GitHub credential role held to its endpoint allowlist and exact route
 set. No unit or E2E root remained afterwards. Only this document changed after
 `13251e3`.
+
 `13251e3` predates the operator recovery and the version 2 audit receipts
 that this branch adds, so its native audits were version 1, which the current
 harness refuses, and it did not run `close-provider-recover`. That run is not
@@ -737,9 +752,11 @@ Not yet measured. The current head, with operator recovery, version 2 audit
 receipts bound to attempt IDs and checked by the production provider-receipt
 validators, the attached-release check, the retained-launch rule, the source
 export binding, the exact request checks and the round 7 evidence bindings
-applied to the recovered end state, has not run on a host. The
-[`0cd2152` run](#measured-at-0cd2152) predates operator recovery and the
-version 2 receipts and is not evidence for them. Every case, including
+applied to the recovered end state, and the round 8 rules (pinned launch
+manifest and stub, exact exchange counts, served bytes, whole native root
+enumeration and source lifecycle order) applied to recovery, has not run on a
+host. The [`b876290` run](#measured-at-b876290) predates operator recovery
+and the version 2 receipts and is not evidence for them. Every case, including
 `close-provider` followed by `close-provider-recover` in one lock hold, needs
 to be rerun from images, stub and test binary built from one clean commit,
 and the results recorded here.
