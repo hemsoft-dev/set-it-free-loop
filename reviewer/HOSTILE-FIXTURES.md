@@ -78,6 +78,14 @@ proof, the matrix kills every native unit started during the case, requires
 each inactive, records the case as failed and stops. The matrix exits 1 for
 any failure and 3 for a contained client capability failure.
 
+A case passes only if its result names the case and the kind from the Go case
+table, carries exactly the check names for that kind, has every check true and
+the fixture exited 0. A client failure needs the same complete check set, with
+only `inventory-fixed` and `no-backend-problem` false. At start the matrix
+records the committed runner head and the image's source head. A row that
+reports any other revision fails and stops the matrix. Every `--only` name
+must be a known case.
+
 `response_denials` is a supervisor-owned counter in the provider guard's
 private receipt. It is incremented only where the response policy refuses a
 completely read inference response. Transport errors, short reads, size and

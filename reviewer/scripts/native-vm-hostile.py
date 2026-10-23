@@ -35,6 +35,28 @@ BASELINE = [("claude", "forbidden"), ("codex", "forbidden")]
 CLIENT_FAILURE_CHECKS = {"inventory-fixed", "no-backend-problem"}
 
 
+# Exact check sets per case kind, matching cmd/nativevmfixture. A result that
+# omits or adds a check is a runner regression, not a verdict.
+COMMON_CHECKS = {"auth-returned", "inventory-fixed", "no-backend-problem", "no-canary-in-launch-files",
+                 "no-canary-in-report", "no-canary-in-requests", "no-denied-destination", "no-stop-pending",
+                 "no-telemetry", "provider-stopped", "runtime-root-removed", "unit-captured-and-stopped"}
+GUARD_CHECKS = {"no-source-access", "response-policy-denied", "single-inference", "typed-guard-refusal"}
+REQUIRED_CHECKS = {
+    "response-guard": [COMMON_CHECKS | GUARD_CHECKS],
+    "source-reader": [COMMON_CHECKS | {"complete-report", "every-call-reached-broker", "hostile-results-denied",
+                                       "only-allowed-reads", "planned-inferences", "store-saw-only-allowlisted"}],
+    "code-host": [COMMON_CHECKS | {"code-host-contained", "complete-report", "no-source-access", "planned-inferences"}],
+    # Metadata checks a complete report while the inventory holds and a guard
+    # refusal once the client re-advertises tools.
+    "metadata": [COMMON_CHECKS | {"metadata-delivered", "complete-report", "only-allowed-reads", "planned-inferences"},
+                 COMMON_CHECKS | {"metadata-delivered"} | GUARD_CHECKS],
+}
+# Case kinds, matching internal/nativefixture hostileCases.
+CASE_KINDS = {name: "source-reader" if name.endswith("-source-mcp") else "code-host" if name == "codex-code-probe"
+              else "metadata" if name in ("codex-metadata", "codex-settings") else "response-guard"
+              for _, name in HOSTILE}
+
+
 def cases():
     return [(provider, name) for provider, name in HOSTILE + BASELINE]
 
@@ -45,8 +67,9 @@ def verdict(name, result):
         return "fail"
     if name == "forbidden":
         return "pass" if result.get("Passed") is True and result.get("Negative") is True else "fail"
-    checks = result.get("Checks")
-    if not isinstance(checks, dict) or not checks or result.get("Case") != name:
+    checks, kind = result.get("Checks"), CASE_KINDS.get(name)
+    if not isinstance(checks, dict) or result.get("Case") != name or result.get("Kind") != kind \
+            or set(checks) not in REQUIRED_CHECKS.get(kind, []):
         return "fail"
     failed = {key for key, ok in checks.items() if ok is not True}
     if not failed and result.get("Passed") is True and result.get("HostContained") is True:
@@ -213,6 +236,10 @@ def run_case(script, args, provider, name, output):
                 "unit_stopped_independently": False, "cleanup_stopped_units": stop_new_units(before, owned()),
                 "result": str(result_path), "abort": True}
     outcome = verdict(name, result)
+    # An abnormal fixture exit never qualifies, even after a passing result
+    # was written. A contained client failure exits nonzero by design.
+    if outcome == "pass" and returncode != 0:
+        outcome = "fail"
     return {"provider": provider, "case": name, "kind": result.get("Kind", "baseline-denial"),
             "verdict": outcome, "exit_code": completed.returncode, "timed_out": receipt["timed_out"],
             "runner_head": receipt["source_commit"], "image_head": receipt["image_source_commit"],
@@ -221,6 +248,15 @@ def run_case(script, args, provider, name, output):
             "elapsed_seconds": receipt["elapsed_seconds"], "unit_stopped_independently": stopped,
             "result": str(result_path),
             "result_sha256": hashlib.sha256(result_path.read_bytes()).hexdigest() if result_path.exists() else None}
+
+
+def expected_heads(script, image):
+    """Return the committed runner head and the image's source head."""
+    root = script.resolve().parent.parent.parent
+    runner = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+    with (image/"manifest.json").open("rb") as stream:
+        manifest = json.loads(stream.read(65537)[:65536])
+    return runner, manifest.get("source_commit") if isinstance(manifest, dict) else None
 
 
 def main():
@@ -232,15 +268,23 @@ def main():
     parser.add_argument("--module-cache", type=Path, required=True)
     parser.add_argument("--only", action="append", default=[])
     args = parser.parse_args()
+    unknown = sorted(set(args.only) - {name for _, name in cases()})
+    if unknown:
+        parser.error("unknown case: " + ", ".join(unknown))
     selected = [c for c in cases() if not args.only or c[1] in args.only]
     if not selected:
         parser.error("no matching case")
     args.output.mkdir(mode=0o700, parents=False, exist_ok=False)
     lock = hold_fixture_lock()
     script = Path(__file__).with_name("native-vm-fake.py")
+    # One matrix qualifies one runner revision and one image. Every row must
+    # report the revisions captured here, or the matrix fails and stops.
+    expected = expected_heads(script, args.image)
     rows = []
     for provider, name in selected:
         rows.append(run_case(script, args, provider, name, args.output/f"{provider}-{name}"))
+        if (rows[-1].get("runner_head"), rows[-1].get("image_head")) != expected:
+            rows[-1].update({"verdict": "fail", "expected_heads": list(expected), "abort": True})
         with (args.output/"matrix.json").open("w") as stream:
             json.dump(rows, stream, indent=2)
             stream.write("\n")

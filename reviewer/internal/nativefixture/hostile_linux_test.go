@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -426,5 +427,44 @@ func TestHostileDenialDuringCloseIsInTheStopReceipt(t *testing.T) {
 	access := <-closed
 	if !access.Stopped || access.RouteDenials != 1 || !access.Failed {
 		t.Fatal("denial during close missing from the stop receipt", access)
+	}
+}
+
+func TestClaudeHostileTurnsKeepTheFirstInventory(t *testing.T) {
+	canaries, err := NewCanaries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := hostileSession(t, r.Claude)
+	tools := func(names ...string) map[string]any {
+		list := []any{}
+		for _, name := range names {
+			list = append(list, map[string]any{"name": name})
+		}
+		return map[string]any{"tools": list}
+	}
+	fixed := tools("StructuredOutput", "mcp__sfl-source__read", "mcp__sfl-source__search")
+	for _, changed := range []bool{false, true} {
+		backend, _, err := NewHostile(s, "claude-source-mcp", canaries)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// A transient inventory change in a middle turn must stay recorded
+		// even though the final turn advertises the fixed list again.
+		turns := []map[string]any{fixed, fixed, fixed}
+		if changed {
+			turns[1] = tools("Bash", "StructuredOutput", "mcp__sfl-source__read")
+		}
+		b := backend.Claude
+		for i, body := range turns {
+			b.mu.Lock()
+			b.calls = i + 1
+			b.hostileTurn(httptest.NewRecorder(), body)
+			b.mu.Unlock()
+		}
+		observed := backend.Hostile()
+		if !slices.Equal(observed.Inventory, claudeInventory(fixed)) || slices.Contains(observed.Problems, "tool inventory changed between turns") != changed {
+			t.Fatal("Claude inventory was not compared across turns", changed, observed.Inventory, observed.Problems)
+		}
 	}
 }

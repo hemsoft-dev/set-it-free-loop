@@ -19,9 +19,10 @@ def load(filename, name):
 module = load("native-vm-hostile.py", "native_vm_hostile")
 
 
-def result(name, **changes):
-    value = {"Case": name, "FakeOnly": True, "RuntimeQualified": False, "ProviderEligibilityQualified": False,
-             "Passed": True, "HostContained": True, "Checks": {"unit-captured-and-stopped": True, "inventory-fixed": True}}
+def result(name, variant=0, **changes):
+    kind = module.CASE_KINDS.get(name, "response-guard")
+    value = {"Case": name, "Kind": kind, "FakeOnly": True, "RuntimeQualified": False, "ProviderEligibilityQualified": False,
+             "Passed": True, "HostContained": True, "Checks": dict.fromkeys(module.REQUIRED_CHECKS[kind][variant], True)}
     value.update(changes)
     return value
 
@@ -44,21 +45,50 @@ class HostileMatrixTests(unittest.TestCase):
         declared = re.findall(r'\{"((?:claude|codex)-[a-z-]+)", r\.(Claude|Codex), Hostile', source)
         self.assertEqual([(provider.lower(), name) for name, provider in declared], module.HOSTILE)
         self.assertEqual(len(module.cases()), len(module.HOSTILE)+2)
+        kinds = dict(re.findall(r'(Hostile[A-Za-z]+)\s*= "([a-z-]+)"', source))
+        table = re.findall(r'\{"((?:claude|codex)-[a-z-]+)", r\.(?:Claude|Codex), (Hostile[A-Za-z]+)\}', source)
+        self.assertEqual({name: kinds[kind] for name, kind in table}, module.CASE_KINDS)
+        self.assertEqual(set(module.REQUIRED_CHECKS), set(kinds.values()))
+
+    def test_required_checks_match_the_go_result(self):
+        source = (Path(__file__).resolve().parent.parent/"cmd"/"nativevmfixture"/"hostile_linux.go").read_text()
+        common = source[source.index("checks := map[string]bool{"):]
+        common = common[:common.index("\n\t}\n")]
+        declared = set(re.findall(r'checks\["([a-z-]+)"\] =', source)) | set(re.findall(r'\n\t\t"([a-z-]+)":', common))
+        required = set().union(*(variant for variants in module.REQUIRED_CHECKS.values() for variant in variants))
+        self.assertEqual(required, declared)
+
+    def test_verdict_requires_the_exact_check_set_and_kind(self):
+        for name, kind in module.CASE_KINDS.items():
+            for variant in range(len(module.REQUIRED_CHECKS[kind])):
+                complete = result(name, variant)
+                self.assertEqual(module.verdict(name, complete), "pass", name)
+                for key in complete["Checks"]:
+                    missing = dict(complete, Checks={k: v for k, v in complete["Checks"].items() if k != key})
+                    self.assertEqual(module.verdict(name, missing), "fail", (name, key))
+                extra = dict(complete, Checks=dict(complete["Checks"], **{"unexpected": True}))
+                self.assertEqual(module.verdict(name, extra), "fail", name)
+                self.assertEqual(module.verdict(name, dict(complete, Kind="other")), "fail", name)
+        # A client failure needs the full set too, not only the allowed failing keys.
+        partial = result("codex-metadata", 1, Passed=False, Checks={"inventory-fixed": False})
+        self.assertEqual(module.verdict("codex-metadata", partial), "fail")
 
     def test_only_complete_contained_results_pass(self):
         self.assertEqual(module.verdict("codex-shell", result("codex-shell")), "pass")
         for bad in [result("codex-shell", Passed=False), result("codex-shell", HostContained=False),
                     result("other-case"), result("codex-shell", Checks={}),
                     result("codex-shell", RuntimeQualified=True), result("codex-shell", FakeOnly=False),
-                    result("codex-shell", Checks={"unit-captured-and-stopped": False}, Passed=False)]:
+                    result("codex-shell", Kind="metadata"),
+                    result("codex-shell", Checks=dict(result("codex-shell")["Checks"], **{"unit-captured-and-stopped": False}), Passed=False)]:
             self.assertEqual(module.verdict("codex-shell", bad), "fail", bad)
 
     def test_client_failure_requires_contained_host_and_only_inventory_checks(self):
-        failed = result("codex-metadata", Passed=False, Checks={"inventory-fixed": False, "no-backend-problem": False, "typed-guard-refusal": True})
+        failed = result("codex-metadata", 1, Passed=False)
+        failed["Checks"].update({"inventory-fixed": False, "no-backend-problem": False})
         self.assertEqual(module.verdict("codex-metadata", failed), "client-failure")
         self.assertEqual(module.verdict("codex-metadata", dict(failed, HostContained=False)), "fail")
         self.assertEqual(module.verdict("codex-metadata", dict(failed, Passed=True)), "fail")
-        widened = dict(failed, Checks={"inventory-fixed": False, "no-canary-in-requests": False})
+        widened = dict(failed, Checks=dict(failed["Checks"], **{"no-canary-in-requests": False}))
         self.assertEqual(module.verdict("codex-metadata", widened), "fail")
 
     def test_baseline_denial_requires_negative_pass(self):
@@ -138,13 +168,14 @@ class HostileMatrixTests(unittest.TestCase):
             else:
                 self.fail("timed-out case left its child running")
 
-    def _receipt_case(self, root, state, unit_props=None):
+    def _receipt_case(self, root, state, unit_props=None, exit_code=0):
         """Run a case whose runner leaves a completed receipt for state."""
         output = root/"case"
         script = root/"runner.py"
         script.write_text(f"import json,os; os.makedirs({str(output)!r}, exist_ok=True); "
                           f"json.dump({{'state_directory':{str(state)!r},'timed_out':False,'source_commit':'x',"
-                          f"'image_source_commit':'y','elapsed_seconds':1}}, open({str(output/'receipt.json')!r},'w'))\n")
+                          f"'image_source_commit':'y','elapsed_seconds':1}}, open({str(output/'receipt.json')!r},'w'))\n"
+                          f"raise SystemExit({exit_code})\n")
         args = type("Args", (), {"image": root, "go": "go", "module_cache": root})()
         saved = (module.native_units, module.stop_new_units, module.manager_properties)
         stopped = []
@@ -156,6 +187,69 @@ class HostileMatrixTests(unittest.TestCase):
         finally:
             module.native_units, module.stop_new_units, module.manager_properties = saved
         return row, stopped
+
+    def test_passing_result_from_a_nonzero_exit_fails(self):
+        unit = {"Unit": "sfl-alpha-x.service", "Captured": True, "Stopped": True, "PayloadKind": "native-vm",
+                "Identity": {"invocation_id": "abc"}, "Cgroup": {"Path": "/nonexistent-sfl-test.slice/x.service", "Inode": 0}}
+        gone = {"LoadState": "not-found", "MainPID": "0", "ActiveState": "inactive", "InvocationID": ""}
+        for code in [0, 1, 137]:
+            with tempfile.TemporaryDirectory(prefix="sfl-hostile-exit-") as directory:
+                root = Path(directory)
+                state = root/"state"
+                launch = state/"launches"/"l1"
+                launch.mkdir(parents=True)
+                (launch/"unit.json").write_text(json.dumps(unit))
+                (state/"result.json").write_text(json.dumps(result("codex-shell")))
+                row, _ = self._receipt_case(root, state, gone, exit_code=code)
+                self.assertEqual((row["verdict"], row["exit_code"]), ("pass" if code == 0 else "fail", code), code)
+
+    def _main(self, only, heads):
+        """Run main with fake cases that report the given runner and image heads."""
+        saved = (module.run_case, module.expected_heads, module.hold_fixture_lock, sys.argv)
+        ran = []
+        def run_case(script, args, provider, name, output):
+            ran.append(name)
+            runner, image = heads[len(ran)-1]
+            return {"provider": provider, "case": name, "verdict": "pass", "runner_head": runner, "image_head": image}
+        with tempfile.TemporaryDirectory(prefix="sfl-hostile-main-") as directory:
+            module.run_case, module.expected_heads, module.hold_fixture_lock = run_case, lambda script, image: ("r", "i"), lambda: None
+            sys.argv = ["native-vm-hostile.py", "--run-fake-only", "--image", directory, "--output", directory+"/out",
+                        "--go", "go", "--module-cache", directory] + [f"--only={name}" for name in only]
+            try:
+                with self.assertRaises(SystemExit) as exit:
+                    module.main()
+                rows = json.loads(Path(directory, "out", "matrix.json").read_text()) if ran else []
+            finally:
+                module.run_case, module.expected_heads, module.hold_fixture_lock, sys.argv = saved
+        return exit.exception.code, ran, rows
+
+    def test_every_only_selector_must_name_a_case(self):
+        stderr = sys.stderr
+        sys.stderr = open(os.devnull, "w")
+        try:
+            for only in [["codex-shell", "codex-code-proeb"], ["nope"]]:
+                code, ran, _ = self._main(only, [("r", "i")])
+                self.assertEqual((code, ran), (2, []), only)
+        finally:
+            sys.stderr.close()
+            sys.stderr = stderr
+        self.assertEqual(self._main(["codex-shell"], [("r", "i")])[:2], (0, ["codex-shell"]))
+
+    def test_matrix_aborts_when_a_row_reports_another_revision(self):
+        cases = ["codex-shell", "codex-exec-command", "codex-local-shell"]
+        for heads in [[("r", "i"), ("r2", "i")], [("r", "i"), ("r", "i2")], [("r2", "i2")]]:
+            code, ran, rows = self._main(cases, heads + [("r", "i")]*3)
+            self.assertEqual((code, len(ran)), (1, len(heads)), heads)
+            self.assertEqual((rows[-1]["verdict"], rows[-1]["abort"], rows[-1]["expected_heads"]), ("fail", True, ["r", "i"]))
+        code, ran, rows = self._main(cases, [("r", "i")]*3)
+        self.assertEqual((code, ran), (0, cases))
+
+    def test_expected_heads_reads_the_committed_runner_and_image_manifest(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-hostile-heads-") as directory:
+            Path(directory, "manifest.json").write_text(json.dumps({"source_commit": "abc"}))
+            script = Path(module.__file__)
+            head = subprocess.check_output(["git", "-C", str(script.parent), "rev-parse", "HEAD"], text=True).strip()
+            self.assertEqual(module.expected_heads(script, Path(directory)), (head, "abc"))
 
     def test_malformed_result_cleans_up_and_aborts(self):
         for body in ['{"Case": "codex-sh', "[1]", "", '"text"', "\xff"]:

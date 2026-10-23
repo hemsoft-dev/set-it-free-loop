@@ -86,7 +86,14 @@ func claudeToolResult(body map[string]any, id string) (bool, string, bool) {
 func (b *claudeBackend) hostileTurn(w http.ResponseWriter, body map[string]any) {
 	h := b.hostile
 	h.obs.Turns = b.calls
-	h.obs.Inventory = claudeInventory(body)
+	// Keep the first inventory; any later turn that differs is a problem,
+	// even if the tool list returns to normal before the final turn.
+	inventory := claudeInventory(body)
+	if b.calls == 1 {
+		h.obs.Inventory = inventory
+	} else if !slices.Equal(inventory, h.obs.Inventory) {
+		h.problem("tool inventory changed between turns")
+	}
 	fail := func(text string) { h.problem(text); b.failures++; http.Error(w, text, 500) }
 	switch {
 	case h.c.Kind == HostileGuard && b.calls == 1:
