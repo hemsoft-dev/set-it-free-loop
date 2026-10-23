@@ -38,7 +38,7 @@ func TestCapturedCodeModeProbeIsContainedAndMutationsAreNot(t *testing.T) {
 	}
 	// A present network or compute global is a capability even when sampled
 	// calls throw.
-	for key, value := range map[string]string{"typeof:fetch": "function", "typeof:WebAssembly": "object", "typeof:SharedArrayBuffer": "function", "typeof:navigator": "object", "typeof:require": "function", "typeof:process": "object", "import:node:fs": "loaded:12", "fetch:http://10.0.0.1/": "status:200", "tool:shell": "function", "tools": "mcp__sfl_source__read,mcp__sfl_source__search,shell", "env": "PATH", "image:profile": "returned:undefined", "load:profile": `returned:"secret"`} {
+	for key, value := range map[string]string{"typeof:fetch": "function", "typeof:WebAssembly": "object", "typeof:SharedArrayBuffer": "function", "typeof:navigator": "object", "typeof:require": "function", "typeof:process": "object", "import:node:fs": "loaded:12", "fetch:http://10.0.0.1/": "status:200", "tool:shell": "function", "tools": "mcp__sfl_source__read,mcp__sfl_source__search,shell", "env": "PATH", "image:profile": "returned:undefined", "audio:file-url": "returned:undefined", "audio:lan-url": `returned:"x"`, "load:profile": `returned:"secret"`} {
 		changed := map[string]string{}
 		for k, v := range probe {
 			changed[k] = v
@@ -48,14 +48,25 @@ func TestCapturedCodeModeProbeIsContainedAndMutationsAreNot(t *testing.T) {
 			t.Fatal("capability accepted", key, value)
 		}
 	}
-	missing := map[string]string{}
-	for k, v := range probe {
-		if k != "import:fs" {
-			missing[k] = v
+	// Every probe key must be present, including both audio URL attempts,
+	// and no unknown key may replace one.
+	for _, drop := range []string{"import:fs", "audio:file-url", "audio:lan-url", "image:lan-url", "globals"} {
+		missing := map[string]string{}
+		for k, v := range probe {
+			if k != drop {
+				missing[k] = v
+			}
+		}
+		if probeContained(missing) {
+			t.Fatal("incomplete probe accepted", drop)
+		}
+		missing["audio:other"] = "throw:x"
+		if probeContained(missing) {
+			t.Fatal("substituted probe key accepted", drop)
 		}
 	}
-	if probeContained(missing) || probeContained(nil) {
-		t.Fatal("incomplete probe accepted")
+	if probeContained(nil) {
+		t.Fatal("empty probe accepted")
 	}
 }
 
@@ -91,5 +102,27 @@ func TestHostileAuthReturnRequiresOriginalSyntheticTokens(t *testing.T) {
 				t.Fatal("corrupt or replaced profile accepted", provider, string(raw))
 			}
 		}
+	}
+}
+
+// A guard case passes only on the supervisor's response-policy denial, not on
+// a failed session caused by transport, read or size errors.
+func TestGuardCasesRequireResponsePolicyDenial(t *testing.T) {
+	denied := &r.ProviderEvidence{Access: r.ProviderAccess{Failed: true, Forwarded: 3, Responses: 2, ResponseDenials: 1}}
+	if !responsePolicyDenied(denied) {
+		t.Fatal("response-policy denial rejected")
+	}
+	for name, access := range map[string]r.ProviderAccess{
+		"transport-or-read-failure": {Failed: true, Forwarded: 1},
+		"not-failed":                {Forwarded: 1, ResponseDenials: 1},
+		"second-unanswered-forward": {Failed: true, Forwarded: 3, Responses: 1, ResponseDenials: 1},
+		"two-denials":               {Failed: true, Forwarded: 2, ResponseDenials: 2},
+	} {
+		if responsePolicyDenied(&r.ProviderEvidence{Access: access}) {
+			t.Fatal("non-policy failure accepted as response denial", name)
+		}
+	}
+	if responsePolicyDenied(nil) {
+		t.Fatal("missing evidence accepted")
 	}
 }

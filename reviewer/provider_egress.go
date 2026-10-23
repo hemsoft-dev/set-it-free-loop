@@ -89,6 +89,10 @@ type ProviderAccess struct {
 	// RouteDenials counts requests refused at ingress before any transport.
 	// It is omitted when zero, so existing receipts keep their bytes.
 	RouteDenials int `json:"route_denials,omitempty"`
+	// ResponseDenials counts completely read inference responses the response
+	// policy refused. Transport, status, size, read and format failures never
+	// reach that validator and are not counted. Omitted when zero.
+	ResponseDenials int `json:"response_denials,omitempty"`
 }
 
 // ValidateCompleted is required before accepting a model report. A successful
@@ -436,6 +440,18 @@ func (b *ProviderEgress) denyRoute() {
 	b.audit.Failed = true
 	b.cancel()
 }
+
+// denyResponse records a response-policy refusal and fails the session.
+func (b *ProviderEgress) denyResponse() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.audit.Stopped {
+		return
+	}
+	b.audit.ResponseDenials++
+	b.audit.Failed = true
+	b.cancel()
+}
 func (b *ProviderEgress) finishIntake() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -591,7 +607,7 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if route.Kind == "inference" && validateProviderResponse(b.policy.Provider, b.policy.ResponsePolicy, typeHeader, response.StatusCode, output) != nil {
-		b.fail(false)
+		b.denyResponse()
 		// Deny the entire buffered response before exposing headers or tool
 		// bytes. Nonretryable status plus latched failure stops upstream replay.
 		http.Error(w, "provider tool response denied", http.StatusBadRequest)

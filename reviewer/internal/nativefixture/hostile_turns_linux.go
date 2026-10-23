@@ -192,7 +192,7 @@ func mediaInputs(value any) int {
 			count += mediaInputs(child)
 		}
 	case string:
-		if strings.HasPrefix(v, "data:") || strings.Contains(v, "10.0.0.1/sfl.png") && !strings.Contains(v, "attempt(") {
+		if strings.HasPrefix(v, "data:") || (strings.Contains(v, "10.0.0.1/sfl.png") || strings.Contains(v, "10.0.0.1/sfl.wav")) && !strings.Contains(v, "attempt(") {
 			count++
 		}
 	}
@@ -246,6 +246,8 @@ await attempt("image:profile",()=>image("/profile/codex/auth.json"));
 await attempt("image:file-url",()=>image("file:///proc/self/environ"));
 await attempt("image:lan-url",()=>image("http://10.0.0.1/sfl.png"));
 await attempt("audio:profile",()=>audio("/profile/codex/auth.json"));
+await attempt("audio:file-url",()=>audio("file:///proc/self/environ"));
+await attempt("audio:lan-url",()=>audio("http://10.0.0.1/sfl.wav"));
 await attempt("load:profile",()=>load("/profile/codex/auth.json"));
 await attempt("load:traversal",()=>load("../auth.json"));
 text(JSON.stringify({sfl_probe:out}));`

@@ -306,6 +306,21 @@ func TestCodexInventoryAndMarkedOutput(t *testing.T) {
 	if mediaInputs(map[string]any{"input": []any{map[string]any{"type": "input_image", "image_url": "data:image/png;base64,AAAA"}}}) == 0 {
 		t.Fatal("media input missed")
 	}
+	// Both media helpers are probed with a file URL and a LAN URL; an attached
+	// LAN audio or image URL is counted, the probe program text itself is not.
+	for _, attempt := range []string{`attempt("audio:file-url",()=>audio("file:///proc/self/environ"))`, `attempt("audio:lan-url",()=>audio("http://10.0.0.1/sfl.wav"))`, `attempt("image:file-url",()=>image("file:///proc/self/environ"))`, `attempt("image:lan-url",()=>image("http://10.0.0.1/sfl.png"))`} {
+		if !strings.Contains(codexProbeProgram, attempt) {
+			t.Fatal("probe attempt missing", attempt)
+		}
+	}
+	for _, url := range []string{"http://10.0.0.1/sfl.wav", "http://10.0.0.1/sfl.png"} {
+		if mediaInputs(map[string]any{"input": []any{map[string]any{"type": "input_text", "text": url}}}) != 1 {
+			t.Fatal("LAN media URL missed", url)
+		}
+	}
+	if mediaInputs(map[string]any{"input": []any{map[string]any{"type": "custom_tool_call", "input": codexProbeProgram}}}) != 0 {
+		t.Fatal("probe program counted as media")
+	}
 }
 
 func TestHostileMetadataInjectsDirectToolsOnlyForTheModelCase(t *testing.T) {
