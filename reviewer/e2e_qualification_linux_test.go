@@ -139,6 +139,7 @@ type e2eEnv struct {
 	result                            *e2eResult
 	mu                                sync.Mutex
 	units                             *e2eUnitObserver
+	finished                          bool
 	sourceImageCommit, nativeRevision string
 }
 
@@ -333,7 +334,8 @@ func (e *e2eEnv) open(label string) {
 	started := time.Now()
 	s, err := r.OpenGitReviewerService(ctx, e.options)
 	if err != nil {
-		if s != nil {
+		e.event("startup", "%s OpenGitReviewerService failed: %v", label, err)
+		if s != nil && e.service == nil {
 			e.service = s
 		}
 		e.t.Fatal("public startup", label, err)
@@ -359,12 +361,26 @@ func (e *e2eEnv) close(label string) {
 		return
 	}
 	e.snapshotSource(label + " before close")
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	started := time.Now()
-	err := e.service.Close(ctx)
-	e.event("close", "%s Close returned %v in %s", label, err, time.Since(started).Round(time.Millisecond))
-	e.check(err == nil, "%s: service Close proved completion", label)
+	// Close has a 30-second ceiling and a timeout is not a stop receipt.
+	// Retrying operates on the same retained owners, as documented.
+	var err error
+	attempts := 0
+	for attempts < 4 {
+		attempts++
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		started := time.Now()
+		err = e.service.Close(ctx)
+		cancel()
+		e.event("close", "%s Close attempt %d returned %v in %s", label, attempts, err, time.Since(started).Round(time.Millisecond))
+		if err == nil {
+			break
+		}
+		time.Sleep(2 * time.Second)
+	}
+	e.check(err == nil, "%s: service Close proved completion (attempts %d)", label, attempts)
+	if attempts > 1 && err == nil {
+		e.note("%s: first Close did not prove completion; retry %d on the same owners did", label, attempts)
+	}
 	select {
 	case runErr := <-e.runDone:
 		e.result.RunErrors = append(e.result.RunErrors, fmt.Sprintf("%s: %v", label, runErr))
@@ -492,6 +508,7 @@ func (e *e2eEnv) snapshotSource(label string) {
 // finish proves no unit of this run remains, auth disposition, native unit
 // receipts and writes the nonsecret evidence record.
 func (e *e2eEnv) finish() {
+	e.finished = true
 	t := e.t
 	if e.service != nil {
 		e.close("final")
@@ -514,14 +531,7 @@ func (e *e2eEnv) finish() {
 		e.check(u.Captured && u.Stopped, "native unit %s captured and stopped", u.Launch)
 	}
 	for _, provider := range []r.Provider{r.Codex, r.Claude} {
-		auth, err := r.NewAuthStore(provider, e.auth)
-		clean := err == nil && auth.Refresh(context.Background(), func(current []byte) ([]byte, error) {
-			if len(current) == 0 {
-				return nil, errors.New("missing returned synthetic auth")
-			}
-			return current, nil
-		}) == nil
-		e.result.AuthRecoveryClear[string(provider)] = clean
+		e.result.AuthRecoveryClear[string(provider)] = e2eAuthUsable(e.auth, provider)
 	}
 	e.result.GitHub = e.github.summary()
 	e.check(len(e.result.GitHub.Violations) == 0, "fake GitHub saw no role, destination or credential violation: %v", e.result.GitHub.Violations)
@@ -535,13 +545,33 @@ func (e *e2eEnv) finish() {
 			t.Error("evidence", err)
 		}
 	}
+	e.report()
+}
+
+func (e *e2eEnv) report() {
+	t := e.t
 	t.Logf("E2E %s passed=%v elapsed=%.1fs checks=%d failures=%d", e.scenario, e.result.Passed, e.result.ElapsedSeconds, len(e.result.Checks), len(e.result.Failures))
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	for _, ev := range e.result.Timeline {
 		t.Logf("%s %-8s %s", ev.At.Format("15:04:05.000"), ev.Kind, ev.Detail)
+	}
+	for _, n := range e.result.Notes {
+		t.Logf("note: %s", n)
 	}
 }
 
 func (e *e2eEnv) cleanup() {
+	if !e.finished {
+		// A fatal path skipped finish: keep its timeline and partial evidence.
+		e.result.Passed = false
+		e.report()
+		if directory := os.Getenv("SFL_E2E_EVIDENCE"); directory != "" {
+			data, _ := json.MarshalIndent(e.result, "", "  ")
+			_ = os.WriteFile(filepath.Join(directory, e.scenario+".json"), append(data, '\n'), 0600)
+		}
+		e.units.stop(30 * time.Second)
+	}
 	if e.service != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		err := e.service.Close(ctx)
@@ -1579,7 +1609,9 @@ func e2eCloseCapture(e *e2eEnv) {
 }
 
 // close-provider: the service closes while the first native session's pinned
-// client waits for a withheld fake inference response.
+// client waits for a withheld fake inference response. The unit must be
+// proved stopped; the exported auth is returned or fenced; and an uncertain
+// attempt keeps its durable lease, which fences all later admission.
 func e2eCloseProvider(e *e2eEnv) {
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.models[r.Codex].mu.Lock()
@@ -1600,50 +1632,97 @@ func e2eCloseProvider(e *e2eEnv) {
 		e.check(false, "job exists after provider close")
 		return
 	}
-	e.note("after provider-session close: job state %s, consumed %d, artifacts %d, lease %v, outstanding %v", j.State, j.Checkpoint.ConsumedSessions, len(j.Checkpoint.Artifacts), j.LeaseToken != "", j.Outstanding)
-	e.check(j.LeaseToken == "" && !j.Outstanding, "closed provider session left no durable lease or outstanding attempt")
+	e.note("after provider-session close: job state %s, consumed %d, artifacts %d, lease %v, outstanding %v, provider attempts %d", j.State, j.Checkpoint.ConsumedSessions, len(j.Checkpoint.Artifacts), j.LeaseToken != "", j.Outstanding, len(j.ProviderAttempts))
 	e.check(j.Checkpoint.ConsumedSessions == 1 && len(j.Checkpoint.Artifacts) == 0, "the interrupted session stays charged and produced no artifact")
 	units := e2eReadNativeUnits(e.native)
 	e.check(len(units) == 1 && units[0].Captured && units[0].Stopped && !units[0].Complete, "the interrupted native unit was captured and whole-unit stopped without completion")
+	returned := len(units) == 1 && units[0].AuthReturned
 	for _, u := range units {
 		e.note("interrupted native unit %s: audit %v complete %v exported %v returned %v", u.Launch, u.AuditPresent, u.Complete, u.AuthExported, u.AuthReturned)
 	}
-	authClear := map[r.Provider]bool{}
+	usable := map[r.Provider]bool{}
 	for _, provider := range []r.Provider{r.Codex, r.Claude} {
-		auth, err := r.NewAuthStore(provider, e.auth)
-		authClear[provider] = err == nil && auth.Refresh(context.Background(), func(current []byte) ([]byte, error) {
-			if len(current) == 0 {
-				return nil, errors.New("missing")
-			}
-			return current, nil
-		}) == nil
+		usable[provider] = e2eAuthUsable(e.auth, provider)
 	}
-	e.note("auth disposition after close: codex usable=%v claude usable=%v", authClear[r.Codex], authClear[r.Claude])
-	e.check(authClear[r.Claude], "the untouched provider's auth remains usable")
-	if len(units) == 1 {
-		e.check(authClear[r.Codex] == units[0].AuthReturned, "codex auth is usable exactly when its return was committed (returned %v)", units[0].AuthReturned)
-	}
+	e.note("auth disposition after close: codex usable=%v claude usable=%v", usable[r.Codex], usable[r.Claude])
+	e.check(usable[r.Claude], "the untouched provider's auth remains usable")
+	e.check(usable[r.Codex] == returned, "codex auth is usable exactly when its stopped return was committed (returned %v)", returned)
 	e.check(e.github.reviewPosts(1) == 0, "nothing was published for the interrupted job")
+	if j.LeaseToken == "" {
+		e.check(j.State == "queued" && returned, "a released interrupted job is queued only with returned auth (state %s)", j.State)
+		e.open("reopen")
+		e.wait("PR 1 review after reopen", 6*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 1) })
+		e.snapshotJobs("after reopen")
+		e.collectWrites()
+		return
+	}
+	e.check(j.Outstanding && j.State == "running", "an uncertain provider attempt keeps its durable lease and outstanding reservation")
+	e.check(!returned && !usable[r.Codex], "the unreturned exported auth is fenced for recovery")
+	// A naive release of that lease must not succeed without stopped provider
+	// evidence. Probe a private copy so the retained state is not changed.
+	err := e2eProbeRelease(e, j)
+	e.note("ReleaseStopped on a private copy of the retained state: %v", err)
+	e.check(err != nil, "the durable lease cannot be released without stopped provider evidence")
+	// Reopen: recovery proves the source unit stopped, but no admission may
+	// proceed while the lease is outstanding, including a different PR.
+	sessions := len(e.models[r.Codex].sessionsCopy()) + len(e.models[r.Claude].sessionsCopy())
+	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
+	e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
 	e.open("reopen")
 	e.assertSourceStopped("after reopen recovery")
-	limit := 6 * time.Minute
-	if j.State != "queued" || !authClear[r.Codex] {
-		limit = 45 * time.Second
-	}
-	reached := e.waitFor("PR 1 review confirmed after reopen", limit, false, func(d r.DurableState) bool { return e2eConfirmed(d, 1) })
-	e.snapshotJobs("after reopen wait")
-	if reached {
-		job := e.assertReviewed(1)
-		e.result.Jobs = append(e.result.Jobs, e2eJobSummary(job))
-	} else {
-		// A fenced outcome must not publish and must not run more work.
-		d := e.state()
-		final := e2eJobFor(d, 1)
-		e.note("reopened job did not complete: state %s consumed %d", final.State, final.Checkpoint.ConsumedSessions)
-		e.check(e.github.reviewPosts(1) == 0, "no review was published for the fenced job")
-		e.result.Jobs = append(e.result.Jobs, e2eJobSummary(final))
-	}
+	e.waitFor("PR 2 request discovered", time.Minute, true, func(d r.DurableState) bool {
+		pr := d.PRs[e2eScopeKey(2)]
+		return pr != nil && len(pr.Requests) == 1
+	})
+	e.waitFor("any further admission (expected none)", 30*time.Second, false, func(d r.DurableState) bool { return len(d.Jobs) > 1 || e2eJobFor(d, 1).LeaseToken == "" })
+	d = e.state()
+	final := e2eJobFor(d, 1)
+	after := len(e.models[r.Codex].sessionsCopy()) + len(e.models[r.Claude].sessionsCopy())
+	e.check(len(d.Jobs) == 1 && final.LeaseToken == j.LeaseToken && final.Outstanding, "the retained lease fenced every later admission, including PR 2")
+	e.check(after == sessions, "no provider session started after reopen (%d -> %d)", sessions, after)
+	e.check(e.github.reviewPosts(1) == 0 && e.github.reviewPosts(2) == 0, "nothing was published while fenced")
+	e.check(!e2eAuthUsable(e.auth, r.Codex), "codex auth remains fenced after reopen")
+	e.snapshotJobs("fenced after reopen")
+	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(final))
 	e.collectWrites()
+}
+
+func e2eAuthUsable(directory string, provider r.Provider) bool {
+	auth, err := r.NewAuthStore(provider, directory)
+	return err == nil && auth.Refresh(context.Background(), func(current []byte) ([]byte, error) {
+		if len(current) == 0 {
+			return nil, errors.New("missing returned synthetic auth")
+		}
+		return current, nil
+	}) == nil
+}
+
+// e2eProbeRelease attempts ReleaseStopped on a private copy of the store.
+func e2eProbeRelease(e *e2eEnv, j *r.DurableJob) error {
+	directory := filepath.Join(e.root, "probe")
+	if err := os.Mkdir(directory, 0700); err != nil {
+		return err
+	}
+	defer os.RemoveAll(directory)
+	raw, err := os.ReadFile(e.storePath)
+	if err != nil {
+		return err
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(e.storePath + suffix); err == nil {
+			return errors.New("store not checkpointed")
+		}
+	}
+	copied := filepath.Join(directory, "state.db")
+	if err := os.WriteFile(copied, raw, 0600); err != nil {
+		return err
+	}
+	store, err := r.OpenStore(copied, e2eEnrollment, e.config)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	return store.ReleaseStopped(context.Background(), j.Job.ID, j.LeaseToken, "auth_failed")
 }
 
 // close-publish: the review POST is committed remotely but its response is
