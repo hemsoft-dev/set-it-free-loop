@@ -152,13 +152,35 @@ def run_case(script, args, provider, name, output):
                 "unit_stopped_independently": stop_new_units(before), "abort": True}
     root = Path(receipt["state_directory"])
     result_path = root/"result.json"
-    result = json.loads(result_path.read_text()) if result_path.exists() else {}
     units = list(root.glob("launches/*/unit.json"))
+    try:
+        result = json.loads(result_path.read_text()) if result_path.exists() else {}
+        if not isinstance(result, dict):
+            raise ValueError("result is not an object")
+        unit = json.loads(units[0].read_text()) if len(units) == 1 else None
+        if unit is not None and not isinstance(unit, dict):
+            raise ValueError("unit receipt is not an object")
+    except (OSError, ValueError):
+        # A truncated or malformed receipt proves nothing about the unit:
+        # record the failure, stop what the case started and end the matrix.
+        return {"provider": provider, "case": name, "verdict": "fail", "timed_out": False,
+                "exit_code": returncode, "result": "malformed", "runner_head": receipt.get("source_commit"),
+                "unit_stopped_independently": stop_new_units(before), "abort": True}
     stopped = False
-    if len(units) == 1:
-        unit = json.loads(units[0].read_text())
-        stopped = unit_stopped(unit, manager_properties(unit["Unit"])) and not (units[0].parent/"qemu-runtime").exists()
-    outcome = verdict(name, result) if stopped and not receipt["timed_out"] else "fail"
+    if unit is not None:
+        try:
+            stopped = unit_stopped(unit, manager_properties(unit["Unit"])) and not (units[0].parent/"qemu-runtime").exists()
+        except (KeyError, TypeError, AttributeError, subprocess.SubprocessError):
+            stopped = False
+    if not stopped:
+        # The case returned but its stop is not independently proven, or its
+        # runtime root remains. Clean up like a timeout and end the matrix.
+        return {"provider": provider, "case": name, "kind": result.get("Kind", "baseline-denial"), "verdict": "fail",
+                "timed_out": False, "exit_code": returncode, "runner_head": receipt.get("source_commit"),
+                "state": result.get("State"), "error_class": result.get("ErrorClass"),
+                "unit_stopped_independently": False, "cleanup_stopped_units": stop_new_units(before),
+                "result": str(result_path), "abort": True}
+    outcome = verdict(name, result)
     return {"provider": provider, "case": name, "kind": result.get("Kind", "baseline-denial"),
             "verdict": outcome, "exit_code": completed.returncode, "timed_out": receipt["timed_out"],
             "runner_head": receipt["source_commit"], "image_head": receipt["image_source_commit"],

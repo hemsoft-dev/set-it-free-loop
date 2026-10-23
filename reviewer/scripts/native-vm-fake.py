@@ -13,6 +13,7 @@ import os
 import re
 from pathlib import Path
 import secrets
+import signal
 import subprocess
 import tarfile
 import tempfile
@@ -59,6 +60,27 @@ def runtime_spec(image, manifest):
         raise RuntimeError("captured runtime length changed")
     return {"Artifact": artifact, "NamespaceHelper": helper,
             "BootstrapLibraries": captured["bootstrap_dependencies"]}
+
+
+def run_fixture(command, environment, log, timeout, units=None):
+    """Run the fixture in its own process group. The native unit runs under the
+    user manager, outside that group, so a timeout also kills every native unit
+    started during the run and requires each inactive. Callers hold the shared
+    VM lock, so a new unit belongs to this run. Returns (exit code or None,
+    timed out, units stopped or None when there was no timeout)."""
+    units = units or sibling("native-vm-hostile")
+    before = units.native_units()
+    process = subprocess.Popen(command, env=environment, stdout=log, stderr=subprocess.STDOUT,
+                               start_new_session=True)
+    try:
+        return process.wait(timeout=timeout), False, None
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+        return None, True, units.stop_new_units(before)
 
 
 def main():
@@ -133,20 +155,16 @@ def main():
     start = time.monotonic()
     # No inherited proxy, provider auth, profile paths or GitHub token.
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "SFL_NATIVE_VM_FAKE_ONLY": "1"}
-    timed_out = False
-    exit_code = None
+    timeout = 425 if args.case == "self-critique" else 225 if args.case == "refresh" else 125 if args.case != "adversarial" else 2*(1+args.peer_rounds)*100+25
     with (output/"runner.log").open("xb") as log:
-        try:
-            result = subprocess.run([str(program), "--run-fake-only", str(configuration)],
-                                    env=environment, stdout=log, stderr=subprocess.STDOUT,
-                                    timeout=425 if args.case == "self-critique" else 225 if args.case == "refresh" else 125 if args.case != "adversarial" else 2*(1+args.peer_rounds)*100+25)
-            exit_code = result.returncode
-        except subprocess.TimeoutExpired:
-            timed_out = True
+        exit_code, timed_out, units_stopped = run_fixture([str(program), "--run-fake-only", str(configuration)],
+                                                          environment, log, timeout)
     receipt = {**source, "image_source_commit": manifest["source_commit"], "state_directory": str(state),
                "program_sha256": common.digest(program), "exit_code": exit_code, "timed_out": timed_out,
                "elapsed_seconds": round(time.monotonic()-start, 3), "fake_only": True,
                "runtime_qualified": False, "provider_eligibility_qualified": False}
+    if timed_out:
+        receipt["timeout_units_stopped"] = units_stopped
     with (output/"receipt.json").open("x") as stream:
         json.dump(receipt, stream, indent=2)
         stream.write("\n")
