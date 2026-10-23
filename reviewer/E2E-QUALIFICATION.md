@@ -269,36 +269,31 @@ For `close-provider`, run `close-provider-reopen` next in a new process with
 the same lock hold. State lives under a fresh `/tmp/sfl-e2e-<nonce>` root,
 which a passing run removes. `SFL_E2E_KEEP_FAILED=1` retains a failed root.
 
-## Measured at `e144bc5`
+## Measured at `0cd2152`
 
 On October 23, 2026, each case ran on mini under the shared VM lock, one VM at
-a time, from source and native images, a source stub and a `reviewer.test` all
-built from `e144bc5`. Both binaries carried `vcs.revision=e144bc5…` and
-`vcs.modified=false`, and the release hash was `6364636bb5e9`. The first pass
-of `close-publish` and `close-capture` was killed when the shared host ran
-out of memory, with these guests running beside other workloads; both were
-re-run at the same head under a check that at least 2.5 GB was available, and
-passed. Every case passed with no
-failures, every observed unit matched a recorded launch, every native receipt
-passed the production provider-receipt validation, and no unit or E2E root
-remained afterwards. Each PR held exactly its expected requests: PR 1 its
-admitted automatic `opened` request in every case, and PR 2 an unadmitted owner
-`comment` request after the `close-provider` restart and an admitted one in
-`isolation`. The checks were tightened afterwards in `86d25eb` (see Evidence
-bindings), so the cases are re-measured at the new head; the table below is
-the `e144bc5` measurement.
+a time and only with at least 2.5 GB of memory available, from source and
+native images, a source stub and a `reviewer.test` all built from `0cd2152`.
+Both binaries carried `vcs.revision=0cd2152…` and `vcs.modified=false`, and
+the release hash was `ece473a3e880`. Every case passed with no failures under the
+evidence bindings above: every observed unit matched a recorded launch, every
+native receipt passed the production provider-receipt validation and matched
+its artifact's provider and evidence digest, each PR held exactly its expected
+job, intent and requests, the remote review matched its confirmed document,
+and no unit or E2E root remained afterwards. Only this document changed after
+`0cd2152`.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
-| `review` | yes | 29.6 | 32 | 1 / 4 |
-| `close-publish` | yes | 28.6 | 36 | 1 / 4 |
-| `close-provider` | yes | 13.6 | 22 | 1 / 1 |
-| `close-provider-reopen` | yes | 38.6 | 23 | 0 / 0 |
-| `close-capture` | yes | 28.6 | 38 | 1 / 4 |
-| `isolation` | yes | 56.8 | 62 | 2 / 8 |
+| `review` | yes | 27.6 | 38 | 1 / 4 |
+| `close-publish` | yes | 28.6 | 45 | 1 / 4 |
+| `close-provider` | yes | 13.5 | 25 | 1 / 1 |
+| `close-provider-reopen` | yes | 38.6 | 24 | 0 / 0 |
+| `close-capture` | yes | 26.5 | 48 | 1 / 4 |
+| `isolation` | yes | 51.8 | 70 | 2 / 8 |
 
-Earlier runs at `c29e563` and `3bbf701`, before the later checks, also passed
-every case. `close-provider` took the branch where `Close` reports
+Earlier runs at `c29e563`, `3bbf701` and `e144bc5`, before the later checks,
+also passed every case. `close-provider` took the branch where `Close` reports
 `ErrWorkerStopPending`; the branch where it proves completion has not run on a
 host. The sections below are pre-rebase history only: the commits they name
 are not ancestors of this branch, and their checks predate the attestation and
