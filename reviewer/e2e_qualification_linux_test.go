@@ -228,7 +228,8 @@ var e2eExpectations = map[string]e2eExpect{
 	"close-provider":        {SourceUnits: 1, NativeUnits: 1, Routes: e2eQualifiedRoutes},
 	"close-provider-reopen": {Routes: e2eQualifiedRoutes},
 	// Recovery launches nothing; PR 2's review is one acquisition and four
-	// sessions, and the re-provisioned Codex auth is returned by its last one.
+	// sessions, and the re-provisioned Codex auth, a fresh synthetic seed
+	// with the original synthetic tokens, is returned by its last one.
 	"close-provider-recover": {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2ePublishedRoutes},
 }
 
@@ -3749,9 +3750,14 @@ func e2eRequestVerdicts(label string, requests []e2eRequest, want map[int]e2eReq
 // close-provider. Before Run, the operator lists the leased attempt, is
 // refused for a wrong attempt and without consent to retire the lost auth,
 // then recovers it. The job must end auth_failed and charged, never
-// reviewed. After the operator re-provisions synthetic Codex auth, Run must
-// capture, review and publish the next request (PR 2) with exactly one
-// review POST and nothing for PR 1.
+// reviewed. Codex auth is fenced until recovery and retired after it: the
+// store holds no state and no lease, as production's retirement leaves it.
+// After the operator re-provisions it with exactly a fresh synthetic seed,
+// which carries the original synthetic tokens, Run must capture, review and
+// publish the next request (PR 2) with exactly one review POST and nothing
+// for PR 1. finish then requires both stores usable: Codex holding the
+// original synthetic tokens as PR 2's sessions returned the re-supplied
+// seed, Claude its untouched original.
 func e2eCloseProviderRecover(e *e2eEnv) {
 	if !e.attached {
 		e.t.Fatal("close-provider-recover requires SFL_E2E_ATTACH")
@@ -3777,7 +3783,8 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	e.nativeBefore = kept
 	interrupted := units[0]
 	e.check(interrupted.Provider == string(r.Codex), "the attached root holds the one interrupted Codex launch, captured, stopped and audited with exported unreturned auth, its receipt naming the leased attempt and repeating that attempt's recorded stopped provider evidence")
-	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth is fenced and claude auth usable before recovery")
+	auth := map[r.Provider]string{r.Codex: e2eAuthDisposition(e.auth, r.Codex), r.Claude: e2eAuthDisposition(e.auth, r.Claude)}
+	e.check(auth[r.Codex] == "fenced" && auth[r.Claude] == "usable", "codex auth is fenced and claude auth usable before recovery (codex %s, claude %s)", auth[r.Codex], auth[r.Claude])
 	e.checkAll(e2eOpenedRequestVerdicts("attached before recovery", retained, before))
 	e.openIdle("restart")
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -3793,7 +3800,8 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	_, err = e.service.RecoverStoppedProvider(ctx, request)
 	e.check(errors.Is(err, r.ErrAuthRecoveryRequired), "recovery refuses lost exported auth without consent to retire it: %v", err)
 	unchanged := e2eJobFor(e.state(), 1)
-	e.check(unchanged.LeaseToken == before.LeaseToken && unchanged.Outstanding && unchanged.State == "running" && len(unchanged.ProviderRecoveries) == 0 && !e2eAuthUsable(e.auth, r.Codex), "refused recoveries changed neither the lease nor the auth fence")
+	codexAuth := e2eAuthDisposition(e.auth, r.Codex)
+	e.check(unchanged.LeaseToken == before.LeaseToken && unchanged.Outstanding && unchanged.State == "running" && len(unchanged.ProviderRecoveries) == 0 && codexAuth == "fenced", "refused recoveries changed neither the lease nor the auth fence (codex %s)", codexAuth)
 	request.RetireUnreturnedAuth = true
 	started := time.Now()
 	result, err := e.service.RecoverStoppedProvider(ctx, request)
@@ -3805,7 +3813,11 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	e.checkAll(e2eDurableCountVerdicts("after recovery", recoveredState, map[int]int{1: 1}, map[int]int{}))
 	recovered, _ := e2eRecoveredJobVerdicts("after recovery", recoveredState, before, interrupted)
 	e.checkAll(recovered)
-	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "the lost codex auth is retired, never reused; claude auth is untouched")
+	// Production retirement removes the lost auth's state and lease, so the
+	// store is neither fenced nor holding any credential, original or not.
+	auth = map[r.Provider]string{r.Codex: e2eAuthDisposition(e.auth, r.Codex), r.Claude: e2eAuthDisposition(e.auth, r.Claude)}
+	e.note("auth disposition after recovery: codex %s, claude %s", auth[r.Codex], auth[r.Claude])
+	e.check(auth[r.Codex] == "retired" && auth[r.Claude] == "usable", "the lost codex auth is retired, holding no state and no lease, never reused; claude auth is untouched and usable (codex %s, claude %s)", auth[r.Codex], auth[r.Claude])
 	// Recovery releases the job, not its request: PR 1's request stays
 	// admitted to the auth_failed job, so it can never be admitted again.
 	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eOpenedRequestVerdicts("after recovery", d, before) })
@@ -3813,18 +3825,34 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	launches := len(e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID()))
 	e.check(listing == nil && observed == 0 && launches == 1, "startup and recovery started no source or native unit (%d observed, %d launches, listing %v)", observed, launches, listing)
 	// The operator re-establishes synthetic Codex auth outside the reviewer.
+	// The re-supplied seed is a fresh synthetic profile, not the retired
+	// state, but it carries the original synthetic tokens and chatgpt mode,
+	// the only credential the canned Codex backend accepts. The store must
+	// then hold exactly the re-supplied bytes.
 	codex, err := r.NewAuthStore(r.Codex, e.auth)
+	supplied := false
 	if err == nil {
 		seed := f.Seed(r.Codex)
+		resupplied := r.Digest(seed)
+		supplied = e2eSyntheticAuth(r.Codex, seed)
 		err = codex.Refresh(context.Background(), func(old []byte) ([]byte, error) {
 			if len(old) != 0 {
 				return nil, errors.New("retired auth still present")
 			}
 			return seed, nil
 		})
+		if err == nil {
+			err = codex.Refresh(context.Background(), func(current []byte) ([]byte, error) {
+				if r.Digest(current) != resupplied {
+					return nil, errors.New("codex auth is not the re-supplied seed")
+				}
+				return current, nil
+			})
+		}
 		clear(seed)
 	}
-	e.check(err == nil && e2eAuthUsable(e.auth, r.Codex), "operator re-provisioned synthetic codex auth: %v", err)
+	codexAuth = e2eAuthDisposition(e.auth, r.Codex)
+	e.check(err == nil && supplied && codexAuth == "usable", "operator re-provisioned the retired codex store with exactly the re-supplied synthetic seed, carrying the original synthetic tokens (%s): %v", codexAuth, err)
 	e.startRun("after recovery")
 	// Once Run has admitted PR 2, the service is certainly running.
 	if e.wait("PR 2 admitted after recovery", 3*time.Minute, func(d r.DurableState) bool { return e2eJobFor(d, 2) != nil }) {
@@ -3963,22 +3991,26 @@ func e2eLaunchUnchanged(units []e2eNativeUnit, u e2eNativeUnit) bool {
 
 // e2eAuthDisposition judges provider's auth store under directory through a
 // refresh that writes the held state back unchanged: "usable" when it holds
-// the provider's original synthetic credential; "invalid" when the store
-// yields any other state, including none, since the store itself accepts any
-// nonempty bytes (e2eSyntheticAuth); "fenced" only when the store refuses the
-// refresh with ErrAuthRecoveryRequired, as it does while an exported profile
-// awaits recovery; "unavailable" when the store cannot be opened, or refuses
-// the refresh before yielding state for any other reason (a malformed or
-// unsafe state file, an invalid lock file, a filesystem error). Invalid or
-// unavailable auth is neither usable nor fenced.
+// the provider's original synthetic credential; "retired" when the unfenced
+// store yields no state at all, which is exactly what production's
+// AuthProfile.Retire leaves once operator recovery retires lost exported auth
+// (no lease, profile or pending journal, and no state, so new auth must be
+// established separately); "invalid" when it yields any other nonempty state,
+// since the store itself accepts any nonempty bytes (e2eSyntheticAuth);
+// "fenced" only when the store refuses the refresh with
+// ErrAuthRecoveryRequired, as it does while an exported profile awaits
+// recovery; "unavailable" when the store cannot be opened, or refuses the
+// refresh before yielding state for any other reason (a malformed or unsafe
+// state file, an invalid lock file, a filesystem error). Retired, invalid and
+// unavailable auth are neither usable nor fenced.
 func e2eAuthDisposition(directory string, provider r.Provider) string {
 	auth, err := r.NewAuthStore(provider, directory)
 	if err != nil {
 		return "unavailable"
 	}
-	judged := false
+	judged, empty := false, false
 	err = auth.Refresh(context.Background(), func(current []byte) ([]byte, error) {
-		judged = true
+		judged, empty = true, len(current) == 0
 		if len(current) == 0 || !e2eSyntheticAuth(provider, current) {
 			return nil, errors.New("returned auth is not the provider's synthetic credential")
 		}
@@ -3987,6 +4019,8 @@ func e2eAuthDisposition(directory string, provider r.Provider) string {
 	switch {
 	case err == nil:
 		return "usable"
+	case judged && empty:
+		return "retired"
 	case judged:
 		return "invalid"
 	case errors.Is(err, r.ErrAuthRecoveryRequired):
@@ -5894,6 +5928,14 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 	}
 	j1 := func(in *recovery) *r.DurableJob { return in.c.State.Jobs["request-1-1"] }
 	j2 := func(in *recovery) *r.DurableJob { return in.c.State.Jobs["request-2-1"] }
+	w2 := func(in *recovery) *r.WriteIntent {
+		for _, w := range in.c.State.Writes {
+			if w.Scope == e2eScope(2) {
+				return w
+			}
+		}
+		return nil
+	}
 	last := func(in *recovery) int { return len(in.c.Units) - 1 }
 	refusal := map[string]string{
 		"PR 1 review intent":                      "exactly the review intents",
@@ -5952,6 +5994,12 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 		"PR 2 acquisition fetched twice":                "PR 2's acquisition",
 		"stray entry in the attached native root":       "job-bound sessions",
 		"unreadable launch in the attached native root": "job-bound sessions",
+		// Round 9 rules applied to the recovery case: PR 2's stored reports
+		// and published document are the canned ones.
+		"PR 2 report with another finding title":   "PR 2 artifacts hold exactly the canned backend's reports",
+		"PR 2 report rejecting its peer's finding": "PR 2 artifacts hold exactly the canned backend's reports",
+		"PR 2 document with another finding body":  "PR 2 confirmed document is exactly the one rendered from the canned reports",
+		"PR 2 document without its coverage":       "PR 2 confirmed document is exactly the one rendered from the canned reports",
 	}
 	for name, edit := range map[string]func(*recovery){
 		"PR 1 review intent": func(in *recovery) {
@@ -6074,12 +6122,100 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 		"unreadable launch in the attached native root": func(in *recovery) {
 			in.c.Units = append(in.c.Units, e2eNativeUnit{Provider: string(r.Claude), Launch: strings.Repeat("e", 32)})
 		},
+		// The intent is rebound to the edited checkpoint, so only the
+		// artifacts' binding to the canned reports can refuse it.
+		"PR 2 report with another finding title": func(in *recovery) {
+			j2(in).Checkpoint.Artifacts[0].Report.Findings[0].Title = "Altered finding"
+			w2(in).CheckpointHash = r.Digest(j2(in).Checkpoint)
+		},
+		"PR 2 report rejecting its peer's finding": func(in *recovery) {
+			j2(in).Checkpoint.Artifacts[3].Report.Judgments[0].Verdict = "reject"
+			w2(in).CheckpointHash = r.Digest(j2(in).Checkpoint)
+		},
+		// The intent and the remote review agree on the altered document, so
+		// only its binding to the canned reports can refuse it.
+		"PR 2 document with another finding body": func(in *recovery) {
+			d := &w2(in).Document
+			d.Summary = strings.ReplaceAll(d.Summary, e2eCannedBody, "Altered body.")
+			for i := range d.Inline {
+				d.Inline[i].Body = strings.ReplaceAll(d.Inline[i].Body, e2eCannedBody, "Altered body.")
+			}
+			w2(in).BodyHash = r.Digest(*d)
+			_, in.c.Reviews[2][0]["document_hash"] = r.E2ERemoteReview(d.Summary, d.Inline)
+		},
+		"PR 2 document without its coverage": func(in *recovery) {
+			d := &w2(in).Document
+			d.Summary = strings.Replace(d.Summary, "## Coverage", "## Omitted", 1)
+			w2(in).BodyHash = r.Digest(*d)
+			_, in.c.Reviews[2][0]["document_hash"] = r.E2ERemoteReview(d.Summary, d.Inline)
+		},
 	} {
 		in := fixture()
 		edit(&in)
 		f, target := failures(in), refusal[name]
 		if target == "" || !slices.ContainsFunc(f, func(m string) bool { return strings.Contains(m, target) }) {
 			t.Error(name, "not refused by its target check", target, f)
+		}
+	}
+}
+
+// TestE2ESettledRecoveredVerdicts applies the round 9 settled re-read to
+// close-provider-recover. The attached process's fake servers are its own:
+// they hold only PR 2's acquisition, its four sessions and its one review
+// POST, and nothing of what close-provider observed, since PR 1's retained
+// attempt and interrupted session were judged by that process. Once
+// quiesced they must hold exactly what finish recorded, so a late rerun of
+// PR 1's interrupted session, a late PR 1 review or refetch, or a late PR 2
+// request is refused.
+func TestE2ESettledRecoveredVerdicts(t *testing.T) {
+	judged := func() (*e2eResult, e2eGitHubSummary, map[r.Provider][]e2eModelSession, e2eNativeUnit) {
+		c, _, interrupted := e2eRecoveredFixture()
+		github := e2eGitHubSummary{ReviewPosts: c.Posts, Reviews: c.Reviews, GitExchanges: c.Exchanges}
+		models := map[r.Provider][]e2eModelSession{}
+		for _, s := range c.Sessions {
+			models[s.Provider] = append(models[s.Provider], s)
+		}
+		res := &e2eResult{GitHub: github, Models: models}
+		// The settled reads are fresh copies, as summary and sessionsCopy make.
+		var settled e2eGitHubSummary
+		var copies map[r.Provider][]e2eModelSession
+		raw, _ := json.Marshal(github)
+		_ = json.Unmarshal(raw, &settled)
+		raw, _ = json.Marshal(models)
+		_ = json.Unmarshal(raw, &copies)
+		return res, settled, copies, interrupted
+	}
+	res, github, models, _ := judged()
+	if len(github.GitExchanges) == 0 || len(models[r.Codex]) != 2 || len(models[r.Claude]) != 2 || github.ReviewPosts[2] != 1 || github.ReviewPosts[1] != 0 {
+		t.Fatal("recovered observations are not PR 2's acquisition, four sessions and one review POST", github.ReviewPosts, len(github.GitExchanges), len(models[r.Codex]), len(models[r.Claude]))
+	}
+	if f := e2eFailures(e2eSettledVerdicts(res, github, models)); len(f) != 0 {
+		t.Fatal("settled recovery refused:", f)
+	}
+	for name, edit := range map[string]func(*e2eGitHubSummary, map[r.Provider][]e2eModelSession, e2eNativeUnit){
+		"PR 1 interrupted session rerun after finish": func(_ *e2eGitHubSummary, m map[r.Provider][]e2eModelSession, u e2eNativeUnit) {
+			m[r.Codex] = append(m[r.Codex], e2eModelSession{JobID: "request-1-1", Provider: r.Codex, Round: 1, PR: 1, Head: strings.Repeat("1", 40), SessionHash: u.SessionHash})
+		},
+		"PR 1 review POST after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
+			g.ReviewPosts[1] = 1
+		},
+		"PR 1 remote review after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
+			g.Reviews[1] = []map[string]any{{"id": int64(5002)}}
+		},
+		"PR 1 refetched after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
+			g.GitExchanges = append(g.GitExchanges, e2eGitExchange{Operation: "upload-pack", Wants: []string{strings.Repeat("1", 40), strings.Repeat("e", 40)}, Status: 200})
+		},
+		"second PR 2 review POST after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
+			g.ReviewPosts[2] = 2
+		},
+		"PR 2 inference after finish": func(_ *e2eGitHubSummary, m map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
+			m[r.Claude][1].Counts.Inference++
+		},
+	} {
+		res, github, models, interrupted := judged()
+		edit(&github, models, interrupted)
+		if len(e2eFailures(e2eSettledVerdicts(res, github, models))) == 0 {
+			t.Error(name, "accepted")
 		}
 	}
 }
@@ -6806,8 +6942,9 @@ func TestE2EAuthUsable(t *testing.T) {
 			t.Errorf("%s with a recovery lease: disposition %s, want fenced", c.name, got)
 		}
 	}
-	// A store that holds nothing is neither usable nor fenced.
-	if got := e2eAuthDisposition(private(), r.Codex); got != "invalid" {
+	// A store that holds nothing is retired, neither usable, invalid nor
+	// fenced.
+	if got := e2eAuthDisposition(private(), r.Codex); got != "retired" {
 		t.Error("empty auth store judged", got)
 	}
 	// Round 11 finding 1: a refusal before the store yields state is a
@@ -6851,6 +6988,46 @@ func TestE2EAuthUsable(t *testing.T) {
 		}
 		if got := e2eAuthDisposition(directory, r.Codex); got != c.want {
 			t.Errorf("%s: disposition %s, want %s", name, got, c.want)
+		}
+	}
+	// A store left as production's AuthProfile.Retire leaves it, with neither
+	// state nor lease (TestProviderRecoveryRetiresLostAuthAndReleasesChargedLease),
+	// is retired; re-provisioning the synthetic seed makes it usable again,
+	// and a pending lease fences it.
+	for _, provider := range []r.Provider{r.Codex, r.Claude} {
+		directory := private()
+		store, err := r.NewAuthStore(provider, directory)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := store.Refresh(context.Background(), func([]byte) ([]byte, error) { return f.Seed(provider), nil }); err != nil {
+			t.Fatal(provider, err)
+		}
+		if err := os.Remove(filepath.Join(directory, string(provider), "state.json")); err != nil {
+			t.Fatal(err)
+		}
+		if got := e2eAuthDisposition(directory, provider); got != "retired" {
+			t.Errorf("%s retired store judged %s", provider, got)
+		}
+		if err := store.Refresh(context.Background(), func(old []byte) ([]byte, error) {
+			if len(old) != 0 {
+				return nil, errors.New("retired auth still present")
+			}
+			return f.Seed(provider), nil
+		}); err != nil {
+			t.Fatal(provider, err)
+		}
+		if got := e2eAuthDisposition(directory, provider); got != "usable" {
+			t.Errorf("%s re-provisioned store judged %s", provider, got)
+		}
+		if err := os.Remove(filepath.Join(directory, string(provider), "state.json")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(directory, string(provider), "lease.json"), []byte("{}"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if got := e2eAuthDisposition(directory, provider); got != "fenced" {
+			t.Errorf("%s retired store with a recovery lease judged %s", provider, got)
 		}
 	}
 }

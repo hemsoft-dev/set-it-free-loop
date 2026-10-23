@@ -194,7 +194,10 @@ invalid, which is neither usable nor fenced. A store is fenced only when it
 refuses the refresh with `ErrAuthRecoveryRequired` before yielding its state,
 as it does while an exported profile awaits recovery. Any other refusal (a
 malformed or unsafe state file, an invalid lock file or a filesystem error)
-leaves it unavailable, which is neither usable nor fenced. A directory
+leaves it unavailable. An unfenced store that yields no state at all is
+retired: production's retirement of lost exported auth removes both the state
+and the lease, and new auth must be established separately. Retired,
+invalid and unavailable auth are each neither usable nor fenced. A directory
 without a readable `unit.json`, any other entry and an unreadable root each
 count as a failed launch, which no check accepts. The unit journal is read
 only through production's own reader (`readUnit`, exported to the test as
@@ -371,7 +374,10 @@ and `close-provider` if it reopens) judges its completed PRs together:
 `close-provider-recover` judges its end state with the same rules, with PR 1
 recovered instead of reviewed. The durable state holds exactly one job for
 each of PRs 1 and 2, no PR 1 intent, one PR 2 intent and no other write. PR 2
-must pass every rule above. PR 1's job must be the retained job itself (same
+must pass every rule above, including its stored reports judged against the
+canned backend reports and its confirmed document against the one
+production's renderer builds from them; PR 1 has no artifact and no document.
+PR 1's job must be the retained job itself (same
 ID, job, scope and request), `auth_failed` with no lease or outstanding
 attempt, still charged for its one interrupted session, with no artifact and
 no source access. It must record exactly one provider attempt, the leased
@@ -395,7 +401,11 @@ still names PR 1's recorded attempt, and is the only launch besides PR 2's
 four. Each of the five must be the pinned native payload with its release's
 stub and manifest hashes, and its version 2 receipt must repeat that manifest
 hash. Any other entry, including an unreadable launch directory, fails. The
-only upstream exchanges are PR 2's acquisition.
+only upstream exchanges are PR 2's acquisition. The settled re-read below
+applies to the recovery process's own fake servers, which hold only PR 2's
+acquisition, sessions and review POST: `close-provider` judged what it
+observed itself, so a late rerun of PR 1's interrupted session, a late PR 1
+review or refetch, or any late PR 2 request fails.
 
 In `close-publish`, the confirmed intent must be the one the closed POST left
 `unknown` or `dispatched`, with the same ID, marker, body hash, job,
@@ -692,7 +702,8 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    the run). It is a Codex unit whose version 2 stopped audit records
    exported, unreturned auth, names the leased attempt and repeats its
    recorded stopped evidence. Only that launch is excluded from this
-   process's unit count. Codex auth is fenced and Claude auth is usable. PR 1
+   process's unit count. Codex auth is fenced, not merely unusable, and
+   Claude auth is usable. PR 1
    retains only its admitted automatic `opened` request, and no other PR has
    a request.
 2. The service is opened, but not refreshed or run.
@@ -702,18 +713,26 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    receipts lack the attempt ID cannot be recovered.
 3. A wrong attempt ID is refused with `ErrFenced`. The correct request without
    `RetireUnreturnedAuth` is refused with `ErrAuthRecoveryRequired`. After
-   both, the lease, job state and auth fence are unchanged.
+   both, the lease, job state and auth fence are unchanged: Codex auth is
+   still fenced.
 4. With consent, recovery returns `Auth: retired, State: auth_failed`. The job
    has no lease, no outstanding attempt, one consumed session, no artifact,
    no source attempt and one recovery receipt bound to the launch. A repeated
-   call is refused. Codex auth is retired (unusable), and Claude auth is
-   untouched. The durable state holds only that job and no write, the job
+   call is refused. Codex auth is retired: the store holds no state and no
+   lease, exactly as production's retirement leaves it, so it is neither
+   usable, invalid nor fenced. Claude auth is untouched and usable. The
+   durable state holds only that job and no write, the job
    passes the recovered-job rule under [Evidence bindings](#evidence-bindings),
    and PR 1 still retains only its admitted `opened` request. Neither startup
    nor recovery has started a source or native unit, and the interrupted
    launch is still the only one.
-5. The test re-provisions a synthetic Codex seed, standing in for the
-   operator's separate auth repair, then calls `Refresh` and `Run`. Once
+5. The test re-provisions the retired store, which must yield no state, with
+   a fresh synthetic Codex seed, standing in for the operator's separate auth
+   repair. That seed is not the retired state, but it carries the original
+   synthetic access and refresh tokens and the `chatgpt` auth mode, the only
+   credential the canned Codex backend accepts. The store must then hold
+   exactly the re-supplied bytes and be usable. The test calls `Refresh` and
+   `Run`. Once
    PR 2 is admitted, recovery is refused with `ErrLiveBlocked`.
 6. The PR 2 `@sfl review` request is captured by one advertisement and one
    upload-pack wanting exactly its head and the base, the only upstream
@@ -737,8 +756,9 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    four native units, one per PR 2 session. Every one correlates with a
    recorded attempt or a launch directory this process created. The retained
    PR 1 attempt and interrupted launch belong to `close-provider` and are not
-   counted. Both auth stores are usable at the end: the re-provisioned Codex
-   auth was returned by PR 2's sessions.
+   counted. Both auth stores are usable at the end: Codex holds the original
+   synthetic tokens, as PR 2's sessions returned the re-supplied seed, and
+   Claude its untouched original credential.
 
 This qualifies only the recovery path for a stop proved in process. It does
 not cover a host process kill before the stopped audit receipt. Recovery
@@ -754,9 +774,13 @@ validators, the attached-release check, the retained-launch rule, the source
 export binding, the exact request checks and the round 7 evidence bindings
 applied to the recovered end state, and the round 8 rules (pinned launch
 manifest and stub, exact exchange counts, served bytes, whole native root
-enumeration and source lifecycle order) applied to recovery, has not run on a
-host. The [`b876290` run](#measured-at-b876290) predates operator recovery
-and the version 2 receipts and is not evidence for them. Every case, including
+enumeration and source lifecycle order) applied to recovery, and the round 9
+rules (PR 2's reports and document judged against the canned reports and
+production's renderer, the quiesced unit sampler, the settled re-read of the
+recovery process's fake servers, and the exact fenced, retired and usable
+auth dispositions) applied to recovery, has not run on a host. The
+[`daac99c` run](#measured-at-daac99c) predates operator recovery and the
+version 2 receipts and is not evidence for them. Every case, including
 `close-provider` followed by `close-provider-recover` in one lock hold, needs
 to be rerun from images, stub and test binary built from one clean commit,
 and the results recorded here.
