@@ -144,11 +144,16 @@ could not attest stop within its cleanup window. It kept the auth lease for
 recovery and left the runtime root. The independent check marked it failed.
 Systemd recorded the unit killed with SIGKILL five seconds after start. Later
 it was unloaded with no main PID and no control group. That case then passed
-six standalone reruns and passed again in `matrix-r2`. The cause of the missed
-stop attestation is not diagnosed. The new `ErrorText` receipt field keeps a
-bounded error for any recurrence.
-This was fail-closed, but an intermittent stop-proof miss is still open
-containment evidence.
+six standalone reruns and passed again in `matrix-r2`. The cause was diagnosed
+and fixed in [#252](https://github.com/hemsoft-dev/set-it-free-loop/pull/252).
+Systemd removes an emptied unit cgroup about a millisecond after it becomes
+unpopulated. When that removal landed between the owner opening the original
+cgroup and reading its `cgroup.events`, the read failed and stop attestation
+was refused. The owner now accepts a missing original, which the kernel only
+removes when empty, as proof of stop; a replacement at the same path still
+fails closed. #252 observed the same failure in hostile `codex-local-shell`
+and an E2E run, and reproduced it by holding that window open. The
+`ErrorText` receipt field still keeps a bounded error for any recurrence.
 
 ## Per-client capability matrix
 
