@@ -128,9 +128,29 @@ func e2eTestBinaryStamp(info *debug.BuildInfo, commit string) (E2EBuildStamp, er
 	return e2eBuildStamp("test binary", info, e2eTestPackage, commit)
 }
 
+// E2EValidateProviderReceipt applies the production provider receipt checks
+// to a native audit's evidence for one session hash under the session limits.
+// Every receipt must hold the stopped-receipt invariants recovery requires
+// before recording a stopped attempt; a completed session's receipt must also
+// pass the completed-receipt validation an artifact requires.
+func E2EValidateProviderReceipt(evidence *ProviderEvidence, provider Provider, limits Limits, sessionHash string, completed bool) error {
+	if err := evidence.validateStoppedCaptured(provider, limits, sessionHash); err != nil {
+		return err
+	}
+	if completed {
+		return evidence.validateCompletedCaptured(provider, limits, sessionHash)
+	}
+	return nil
+}
+
 // E2ESourceRecord is a nonsecret projection of one source VM ownership record.
+// RequestHash binds the whole unit request; SourceRequestHash is the digest of
+// its source request, which an archive entry repeats. Attempt, ReleaseHash,
+// RuntimeHash and Snapshot are the complete materialization binding.
 type E2ESourceRecord struct {
 	Attempt, Unit, InvocationID, RequestHash string
+	SourceRequestHash                        string
+	ReleaseHash, RuntimeHash                 string
 	ChannelID                                string
 	Generation                               uint64
 	Snapshot                                 Snapshot
@@ -139,9 +159,11 @@ type E2ESourceRecord struct {
 	GrantHash, StopBoot                      string
 }
 
-// E2EExportRecord projects one source VM archive record.
+// E2EExportRecord projects one source VM archive record: its source request
+// hash and complete materialization binding.
 type E2EExportRecord struct {
 	Attempt, State, RequestHash string
+	ReleaseHash, RuntimeHash    string
 	Snapshot                    Snapshot
 }
 
@@ -166,7 +188,8 @@ func (s *GitReviewerService) E2ESourceRecords(ctx context.Context) ([]E2ESourceR
 	}
 	records := []E2ESourceRecord{}
 	for _, r := range journal.Records {
-		records = append(records, E2ESourceRecord{Attempt: r.Request.Source.Binding.Attempt, Unit: r.Unit, InvocationID: r.Birth.InvocationID, RequestHash: r.RequestHash, ChannelID: r.Request.Read.ChannelID, Generation: r.Request.Read.Generation, Snapshot: r.Request.Source.Binding.Snapshot, StartIntent: r.StartIntent, StartSettled: r.StartSettled, Captured: r.Captured, Revoked: r.Revoked, Stopped: r.Stopped, GrantHash: r.GrantHash, StopBoot: r.StopBoot})
+		b := r.Request.Source.Binding
+		records = append(records, E2ESourceRecord{Attempt: b.Attempt, Unit: r.Unit, InvocationID: r.Birth.InvocationID, RequestHash: r.RequestHash, SourceRequestHash: Digest(r.Request.Source), ReleaseHash: b.ReleaseHash, RuntimeHash: b.RuntimeHash, ChannelID: r.Request.Read.ChannelID, Generation: r.Request.Read.Generation, Snapshot: b.Snapshot, StartIntent: r.StartIntent, StartSettled: r.StartSettled, Captured: r.Captured, Revoked: r.Revoked, Stopped: r.Stopped, GrantHash: r.GrantHash, StopBoot: r.StopBoot})
 	}
 	archived, _, err := factory.archive.records(ctx)
 	if err != nil {
@@ -174,7 +197,7 @@ func (s *GitReviewerService) E2ESourceRecords(ctx context.Context) ([]E2ESourceR
 	}
 	exports := []E2EExportRecord{}
 	for _, r := range archived {
-		exports = append(exports, E2EExportRecord{Attempt: r.Binding.Attempt, State: r.State, RequestHash: r.RequestHash, Snapshot: r.Binding.Snapshot})
+		exports = append(exports, E2EExportRecord{Attempt: r.Binding.Attempt, State: r.State, RequestHash: r.RequestHash, ReleaseHash: r.Binding.ReleaseHash, RuntimeHash: r.Binding.RuntimeHash, Snapshot: r.Binding.Snapshot})
 	}
 	return records, exports, nil
 }

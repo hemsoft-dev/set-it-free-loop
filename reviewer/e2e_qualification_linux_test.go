@@ -110,7 +110,7 @@ type e2eEvent struct {
 }
 
 type e2eJob struct {
-	ID, State, Scope                    string
+	ID, State, Scope, Release           string
 	PR                                  int
 	Head                                string
 	RequestID                           int64
@@ -664,7 +664,7 @@ func (e *e2eEnv) finish() {
 		e.result.UnitListingError = listing.Error()
 	}
 	e.event("systemd", "observed %d distinct sfl-alpha units (source+native)", len(e.result.SystemdUnits))
-	e.result.NativeUnits = e2eReadNativeUnits(e.native, e.policies)
+	e.result.NativeUnits = e2eReadNativeUnits(e.native, e.policies, e.config.Limits)
 	for _, provider := range []r.Provider{r.Codex, r.Claude} {
 		e.result.AuthRecoveryClear[string(provider)] = e2eAuthUsable(e.auth, provider)
 	}
@@ -1047,18 +1047,20 @@ type e2eNativeUnit struct {
 	Captured, Stopped                    bool
 	Complete, AuthExported, AuthReturned bool
 	AuditPresent                         bool
+	// Access is the nonsecret provider access receipt of a present audit.
+	Access r.ProviderAccess
 }
 
 // e2eReadNativeUnits projects every native launch directory under roots,
 // judging each provider's audits against that provider's release policy.
-func e2eReadNativeUnits(roots map[r.Provider]string, policies map[r.Provider]r.EgressPolicy) []e2eNativeUnit {
+func e2eReadNativeUnits(roots map[r.Provider]string, policies map[r.Provider]r.EgressPolicy, limits r.Limits) []e2eNativeUnit {
 	units := []e2eNativeUnit{}
 	for provider, root := range roots {
 		paths, _ := filepath.Glob(filepath.Join(root, "*", "unit.json"))
 		for _, path := range paths {
 			unit, _ := os.ReadFile(path)
 			audit, _ := os.ReadFile(filepath.Join(filepath.Dir(path), "native-audit.json"))
-			units = append(units, e2eNativeUnitFrom(provider, policies[provider], filepath.Base(filepath.Dir(path)), unit, audit))
+			units = append(units, e2eNativeUnitFrom(provider, policies[provider], limits, filepath.Base(filepath.Dir(path)), unit, audit))
 		}
 	}
 	sort.Slice(units, func(i, j int) bool { return units[i].Launch < units[j].Launch })
@@ -1072,8 +1074,11 @@ func e2eReadNativeUnits(roots map[r.Provider]string, policies map[r.Provider]r.E
 // (AuditPresent) only as a version 1 receipt repeating that exact binding.
 // Its provider evidence, required once auth was exported or the session
 // completed, must be the stopped receipt of the same session under the
-// release's policy. A copied or foreign audit therefore proves nothing.
-func e2eNativeUnitFrom(provider r.Provider, policy r.EgressPolicy, launch string, unitRaw, auditRaw []byte) e2eNativeUnit {
+// release's policy and pass production's provider receipt validation under
+// the session limits: the stopped-receipt invariants always, and the
+// completed-receipt validation when the audit records a completed session. A
+// copied, foreign, failed or impossible receipt therefore proves nothing.
+func e2eNativeUnitFrom(provider r.Provider, policy r.EgressPolicy, limits r.Limits, launch string, unitRaw, auditRaw []byte) e2eNativeUnit {
 	u := e2eNativeUnit{Provider: string(provider), Launch: launch}
 	var unit struct {
 		Version           int
@@ -1102,10 +1107,16 @@ func e2eNativeUnitFrom(provider r.Provider, policy r.EgressPolicy, launch string
 		if evidence.Policy.Provider != provider || r.Digest(evidence.Policy) != r.Digest(policy) || evidence.Access.Version != 1 || evidence.Access.SessionHash != b.SessionHash || evidence.Access.PolicyHash != r.Digest(policy) || !evidence.Access.Stopped {
 			return u
 		}
+		if r.E2EValidateProviderReceipt(evidence, provider, limits, b.SessionHash, audit.Complete) != nil {
+			return u
+		}
 	} else if audit.Complete || audit.AuthExported {
 		return u
 	}
 	u.AuditPresent, u.Complete, u.AuthExported, u.AuthReturned = true, audit.Complete, audit.AuthExported, audit.AuthReturned
+	if audit.Provider != nil {
+		u.Access = audit.Provider.Access
+	}
 	return u
 }
 
@@ -1823,7 +1834,7 @@ type e2eCompletion struct {
 // completion gathers the current evidence from the open service.
 func (e *e2eEnv) completion() e2eCompletion {
 	summary := e.github.summary()
-	c := e2eCompletion{State: e.state(), Heads: map[int]string{}, Release: e.options.Current, Posts: summary.ReviewPosts, Reviews: summary.Reviews, Units: e2eReadNativeUnits(e.native, e.policies)}
+	c := e2eCompletion{State: e.state(), Heads: map[int]string{}, Release: e.options.Current, Posts: summary.ReviewPosts, Reviews: summary.Reviews, Units: e2eReadNativeUnits(e.native, e.policies, e.config.Limits)}
 	for n := range c.Posts {
 		c.Heads[n] = e.github.commits[strconv.Itoa(n)]
 	}
@@ -1900,8 +1911,11 @@ func e2eSoleConfirmed(writes []*r.WriteIntent) *r.WriteIntent {
 }
 
 // e2eSourceEvidence requires exactly want source records, each with one
-// archive export of the same attempt and snapshot, before any entry is
-// validated, so a missing journal or archive cannot pass vacuously.
+// archive export of the same attempt, before any entry is validated, so a
+// missing journal or archive cannot pass vacuously. As production recovery
+// does, an export counts only when its request hash is the digest of its
+// record's source request and its binding (attempt, release, runtime and
+// snapshot) is the record's complete materialization binding.
 func e2eSourceEvidence(records []r.E2ESourceRecord, exports []r.E2EExportRecord, want int) error {
 	if want <= 0 || len(records) != want || len(exports) != want {
 		return fmt.Errorf("%d records and %d exports, want %d of each", len(records), len(exports), want)
@@ -1916,7 +1930,7 @@ func e2eSourceEvidence(records []r.E2ESourceRecord, exports []r.E2EExportRecord,
 	seen := map[string]bool{}
 	for _, rec := range records {
 		x, ok := staged[rec.Attempt]
-		if seen[rec.Attempt] || !ok || x.Snapshot != rec.Snapshot {
+		if seen[rec.Attempt] || !ok || x.Snapshot != rec.Snapshot || rec.SourceRequestHash == "" || x.RequestHash != rec.SourceRequestHash || x.ReleaseHash != rec.ReleaseHash || x.RuntimeHash != rec.RuntimeHash {
 			return fmt.Errorf("source attempt %s lacks its own export", rec.Attempt)
 		}
 		seen[rec.Attempt] = true
@@ -1958,7 +1972,7 @@ func e2eSourceVerdicts(label string, c e2eCompletion, want int) []e2eVerdict {
 // stop, and no other launch except the listed extra session hashes.
 func (e *e2eEnv) assertNativeSessions(jobs []*r.DurableJob, extra ...string) {
 	e.t.Helper()
-	e.checkAll([]e2eVerdict{e2eNativeSessionVerdict(e2eReadNativeUnits(e.native, e.policies), jobs, extra...)})
+	e.checkAll([]e2eVerdict{e2eNativeSessionVerdict(e2eReadNativeUnits(e.native, e.policies, e.config.Limits), jobs, extra...)})
 }
 
 func e2eNativeSessionVerdict(units []e2eNativeUnit, jobs []*r.DurableJob, extra ...string) e2eVerdict {
@@ -2019,9 +2033,7 @@ func e2eReview(e *e2eEnv) {
 	job := e.assertReviewed(1)
 	e.assertSourceStopped("after review", 1)
 	e.assertNativeSessions([]*r.DurableJob{job})
-	d := e.state()
-	request := d.PRs[e2eScopeKey(1)]
-	e.check(request != nil && len(request.Requests) == 1 && request.Requests[0].Origin != nil && request.Requests[0].Origin.Kind == "opened", "PR 1 request came from an automatic PR-open observation")
+	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eOpenedRequestVerdicts("after review", d, job) })
 	e.check(len(job.SourceAttempts) > 0, "job retained %d trusted source receipts", len(job.SourceAttempts))
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(job))
 	e.collectWrites()
@@ -2044,8 +2056,7 @@ func e2eIsolation(e *e2eEnv) {
 	if j1 == nil || j2 == nil {
 		return
 	}
-	d := e.state()
-	e.check(d.PRs[e2eScopeKey(2)].Requests[0].Origin.Kind == "comment", "PR 2 request came from the owner @sfl review comment")
+	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eIsolationRequestVerdicts(d, j1, j2) })
 	e.assertSourceStopped("after both reviews", 2)
 	e.assertNativeSessions([]*r.DurableJob{j1, j2})
 	// Admission: sessions of the two jobs never interleave.
@@ -2165,6 +2176,7 @@ func e2eCloseCapture(e *e2eEnv) {
 	job := e.assertReviewed(1)
 	e.check(e.github.gitExchanges() == exchanges, "reopened service restored retained source without refetching (%d exchanges)", e.github.gitExchanges())
 	e.assertNativeSessions([]*r.DurableJob{job})
+	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eOpenedRequestVerdicts("after reopen", d, job) })
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(job))
 	e.collectWrites()
 }
@@ -2226,7 +2238,7 @@ func e2eCloseProvider(e *e2eEnv) {
 	e.result.Requests = e2eRequests(d)
 	e.checkAll(e2eRequestVerdicts("after provider close", e.result.Requests, map[int]e2eRequest{1: e2eAdmittedOpened(1, j.RequestID)}))
 	e.check(j.Checkpoint.ConsumedSessions == 1 && len(j.Checkpoint.Artifacts) == 0, "the interrupted session stays charged and produced no artifact")
-	units := e2eReadNativeUnits(e.native, e.policies)
+	units := e2eReadNativeUnits(e.native, e.policies, e.config.Limits)
 	e.check(len(units) == 1 && units[0].Captured && units[0].Stopped && !units[0].Complete, "the interrupted native unit was captured and whole-unit stopped without completion")
 	returned := len(units) == 1 && units[0].AuthReturned
 	e.check(len(units) == 1 && units[0].AuditPresent, "the interrupted native unit has a well-formed stopped audit receipt")
@@ -2282,12 +2294,11 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
 	e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
-	retained := e.reopenState()
-	before := e2eJobFor(retained, 1)
-	if before == nil || before.LeaseToken == "" {
-		e.t.Fatal("attached root has no retained lease")
+	before, err := e2eAttachedJob(e.reopenState(), e.options.Current)
+	if err != nil {
+		e.t.Fatal("attached root does not hold the interrupted job:", err)
 	}
-	launches, err := e2eRetainedLaunches(e2eReadNativeUnits(e.native, e.policies), before)
+	launches, err := e2eRetainedLaunches(e2eReadNativeUnits(e.native, e.policies, e.config.Limits), before)
 	if err != nil {
 		e.t.Fatal("attached root does not hold the interrupted launch and its stopped audit:", err)
 	}
@@ -2322,6 +2333,54 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 	e.close("final")
 }
 
+// e2eAttachedJob returns the PR 1 job an attached root retains, which must
+// still hold its durable lease and have been admitted under the current
+// release. A root retained by another revision's close-provider would
+// otherwise be judged, and its result recorded, as this revision's restart.
+func e2eAttachedJob(d r.DurableState, current string) (*r.DurableJob, error) {
+	j := e2eJobFor(d, 1)
+	if j == nil || j.LeaseToken == "" {
+		return nil, errors.New("no retained lease")
+	}
+	if current == "" || j.Job.Release != current {
+		return nil, fmt.Errorf("retained job %s was admitted under release %q, not the current release %q", j.Job.ID, j.Job.Release, current)
+	}
+	return j, nil
+}
+
+// e2eOpenedRequestVerdicts judges the requests a confirmed single-PR case
+// (review, close-capture, close-publish) retains: PR 1 holds exactly the
+// admitted automatic PR-open request its job j came from, and no PR holds any
+// other request. A further request could still be admitted after the review
+// is confirmed and produce a duplicate review.
+func e2eOpenedRequestVerdicts(label string, d r.DurableState, j *r.DurableJob) []e2eVerdict {
+	return e2eRequestVerdicts(label, e2eRequests(d), map[int]e2eRequest{1: e2eAdmittedOpened(1, e2eRequestOf(j))})
+}
+
+// e2eIsolationRequestVerdicts judges the requests the isolation case retains:
+// PR 1 holds exactly the admitted PR-open request of j1, PR 2 exactly the
+// admitted owner comment request of j2, and no PR holds any other request.
+func e2eIsolationRequestVerdicts(d r.DurableState, j1, j2 *r.DurableJob) []e2eVerdict {
+	return e2eRequestVerdicts("after both reviews", e2eRequests(d), map[int]e2eRequest{1: e2eAdmittedOpened(1, e2eRequestOf(j1)), 2: e2eAdmittedComment(2, e2eRequestOf(j2))})
+}
+
+// e2eRequestOf is the request ID job j was admitted from. A missing job, or
+// one without a request ID, yields -1, which no retained request matches.
+func e2eRequestOf(j *r.DurableJob) int64 {
+	if j == nil || j.RequestID <= 0 {
+		return -1
+	}
+	return j.RequestID
+}
+
+// checkRequests records the requests the open service retains and judges them.
+func (e *e2eEnv) checkRequests(judge func(r.DurableState) []e2eVerdict) {
+	e.t.Helper()
+	d := e.state()
+	e.result.Requests = e2eRequests(d)
+	e.checkAll(judge(d))
+}
+
 // e2eRequest is a nonsecret projection of one retained native request.
 type e2eRequest struct {
 	PR                int
@@ -2350,6 +2409,12 @@ func e2eRequests(d r.DurableState) []e2eRequest {
 // admitted as the request of job request id.
 func e2eAdmittedOpened(pr int, id int64) e2eRequest {
 	return e2eRequest{PR: pr, ID: id, ActorID: r.OwnerID, Kind: "opened", ActorRole: "pr_author", Admitted: true}
+}
+
+// e2eAdmittedComment is an owner @sfl review request admitted as the request
+// of job request id.
+func e2eAdmittedComment(pr int, id int64) e2eRequest {
+	return e2eRequest{PR: pr, ID: id, ActorID: r.OwnerID, Kind: "comment", ActorRole: "commenter", Admitted: true}
 }
 
 // e2ePendingComment is an owner @sfl review request not yet admitted.
@@ -2462,6 +2527,7 @@ func e2eClosePublish(e *e2eEnv) {
 	e.check(e.github.reviewPosts(1) == 1, "reconciliation after reopen never POSTed again")
 	e.assertSourceStopped("after reconciliation", 1)
 	e.assertNativeSessions([]*r.DurableJob{job})
+	e.checkRequests(func(d r.DurableState) []e2eVerdict { return e2eOpenedRequestVerdicts("after reconciliation", d, job) })
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(job))
 	e.collectWrites()
 }
@@ -2493,7 +2559,7 @@ func e2eScopeKey(pr int) string {
 }
 
 func e2eJobSummary(j *r.DurableJob) e2eJob {
-	s := e2eJob{ID: j.Job.ID, State: j.State, PR: j.Scope.PR, Head: j.Job.Snapshot.Head, RequestID: j.RequestID, Consumed: j.Checkpoint.ConsumedSessions, Artifacts: len(j.Checkpoint.Artifacts), Lease: j.LeaseToken != "", Outstanding: j.Outstanding, SourceAttempts: len(j.SourceAttempts), ProviderAttempts: len(j.ProviderAttempts)}
+	s := e2eJob{ID: j.Job.ID, State: j.State, Release: j.Job.Release, PR: j.Scope.PR, Head: j.Job.Snapshot.Head, RequestID: j.RequestID, Consumed: j.Checkpoint.ConsumedSessions, Artifacts: len(j.Checkpoint.Artifacts), Lease: j.LeaseToken != "", Outstanding: j.Outstanding, SourceAttempts: len(j.SourceAttempts), ProviderAttempts: len(j.ProviderAttempts)}
 	for _, a := range j.Checkpoint.Artifacts {
 		for _, finding := range a.Report.Findings {
 			s.LedgerFindings = append(s.LedgerFindings, fmt.Sprintf("%s R%d %s %s:%d", a.Report.Provider, a.Report.Round, finding.ID, finding.Anchor.Path, finding.Anchor.Line))
@@ -2524,11 +2590,19 @@ func TestE2ESoleConfirmed(t *testing.T) {
 func TestE2ESourceEvidence(t *testing.T) {
 	a, b := strings.Repeat("a", 32), strings.Repeat("b", 32)
 	snapshot := func(pr int) r.Snapshot { return r.Snapshot{PR: pr, Head: strings.Repeat(strconv.Itoa(pr), 40)} }
+	// Each attempt's source request and binding hashes derive from it, so
+	// distinct attempts never share them.
+	hash := func(kind, attempt string) string { return r.Digest(kind + attempt) }
 	rec := func(attempt string, pr int) r.E2ESourceRecord {
-		return r.E2ESourceRecord{Attempt: attempt, Unit: "sfl-alpha-" + attempt + ".service", Snapshot: snapshot(pr), Stopped: true, Revoked: true, GrantHash: "grant"}
+		return r.E2ESourceRecord{Attempt: attempt, Unit: "sfl-alpha-" + attempt + ".service", RequestHash: hash("unit", attempt), SourceRequestHash: hash("source", attempt), ReleaseHash: hash("release", attempt), RuntimeHash: hash("runtime", attempt), Snapshot: snapshot(pr), Stopped: true, Revoked: true, GrantHash: "grant"}
 	}
 	export := func(attempt string, pr int) r.E2EExportRecord {
-		return r.E2EExportRecord{Attempt: attempt, State: "staged", Snapshot: snapshot(pr)}
+		return r.E2EExportRecord{Attempt: attempt, State: "staged", RequestHash: hash("source", attempt), ReleaseHash: hash("release", attempt), RuntimeHash: hash("runtime", attempt), Snapshot: snapshot(pr)}
+	}
+	exportWith := func(edit func(*r.E2EExportRecord)) []r.E2EExportRecord {
+		x := export(a, 1)
+		edit(&x)
+		return []r.E2EExportRecord{x}
 	}
 	type input struct {
 		records []r.E2ESourceRecord
@@ -2544,16 +2618,22 @@ func TestE2ESourceEvidence(t *testing.T) {
 		}
 	}
 	for name, in := range map[string]input{
-		"journal and archive empty": {nil, nil, 1},
-		"nothing expected":          {nil, nil, 0},
-		"records without exports":   {[]r.E2ESourceRecord{rec(a, 1)}, nil, 1},
-		"exports without records":   {nil, []r.E2EExportRecord{export(a, 1)}, 1},
-		"fewer than expected":       {[]r.E2ESourceRecord{rec(a, 1)}, []r.E2EExportRecord{export(a, 1)}, 2},
-		"more than expected":        {[]r.E2ESourceRecord{rec(a, 1), rec(b, 2)}, []r.E2EExportRecord{export(a, 1), export(b, 2)}, 1},
-		"export of another attempt": {[]r.E2ESourceRecord{rec(a, 1)}, []r.E2EExportRecord{export(b, 1)}, 1},
-		"export of another PR":      {[]r.E2ESourceRecord{rec(a, 1)}, []r.E2EExportRecord{export(a, 2)}, 1},
-		"duplicate attempt":         {[]r.E2ESourceRecord{rec(a, 1), rec(a, 1)}, []r.E2EExportRecord{export(a, 1), export(a, 1)}, 2},
-		"extra export":              {[]r.E2ESourceRecord{rec(a, 1)}, []r.E2EExportRecord{export(a, 1), export(b, 2)}, 1},
+		"journal and archive empty":        {nil, nil, 1},
+		"nothing expected":                 {nil, nil, 0},
+		"records without exports":          {[]r.E2ESourceRecord{rec(a, 1)}, nil, 1},
+		"exports without records":          {nil, []r.E2EExportRecord{export(a, 1)}, 1},
+		"fewer than expected":              {[]r.E2ESourceRecord{rec(a, 1)}, []r.E2EExportRecord{export(a, 1)}, 2},
+		"more than expected":               {[]r.E2ESourceRecord{rec(a, 1), rec(b, 2)}, []r.E2EExportRecord{export(a, 1), export(b, 2)}, 1},
+		"export of another attempt":        {[]r.E2ESourceRecord{rec(a, 1)}, []r.E2EExportRecord{export(b, 1)}, 1},
+		"export of another PR":             {[]r.E2ESourceRecord{rec(a, 1)}, []r.E2EExportRecord{export(a, 2)}, 1},
+		"duplicate attempt":                {[]r.E2ESourceRecord{rec(a, 1), rec(a, 1)}, []r.E2EExportRecord{export(a, 1), export(a, 1)}, 2},
+		"extra export":                     {[]r.E2ESourceRecord{rec(a, 1)}, []r.E2EExportRecord{export(a, 1), export(b, 2)}, 1},
+		"export of another source request": {[]r.E2ESourceRecord{rec(a, 1)}, exportWith(func(x *r.E2EExportRecord) { x.RequestHash = hash("source", b) }), 1},
+		"export bound to the unit request": {[]r.E2ESourceRecord{rec(a, 1)}, exportWith(func(x *r.E2EExportRecord) { x.RequestHash = hash("unit", a) }), 1},
+		"export without a request hash":    {[]r.E2ESourceRecord{rec(a, 1)}, exportWith(func(x *r.E2EExportRecord) { x.RequestHash = "" }), 1},
+		"export of another release":        {[]r.E2ESourceRecord{rec(a, 1)}, exportWith(func(x *r.E2EExportRecord) { x.ReleaseHash = hash("release", b) }), 1},
+		"export of another runtime":        {[]r.E2ESourceRecord{rec(a, 1)}, exportWith(func(x *r.E2EExportRecord) { x.RuntimeHash = hash("runtime", b) }), 1},
+		"export of another base":           {[]r.E2ESourceRecord{rec(a, 1)}, exportWith(func(x *r.E2EExportRecord) { x.Snapshot.Base = strings.Repeat("e", 40) }), 1},
 	} {
 		if e2eSourceEvidence(in.records, in.exports, in.want) == nil {
 			t.Error(name, "accepted")
@@ -2717,15 +2797,34 @@ func TestE2ENativeUnitFrom(t *testing.T) {
 	binding := func(session, launch string) r.AuthBinding {
 		return r.AuthBinding{SessionHash: session, LaunchID: launch, ContainmentID: r.Digest(struct{ Session, Launch string }{session, launch})}
 	}
-	policy, otherPolicy := r.EgressPolicy{Provider: r.Codex, Headers: []string{"authorization"}}, r.EgressPolicy{Provider: r.Codex, Headers: []string{"cookie"}}
-	evidence := func(session string, policy r.EgressPolicy, stopped bool) *r.ProviderEvidence {
-		return &r.ProviderEvidence{Policy: policy, Access: r.ProviderAccess{Version: 1, SessionHash: session, PolicyHash: r.Digest(policy), Stopped: stopped}}
+	config := r.DefaultConfig()
+	policyOf := func(provider r.Provider) r.EgressPolicy {
+		probe, err := r.NewSession("e2e-policy-probe", r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 1, Head: strings.Repeat("a", 40), Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("c", 40)}, config.Hash(), provider, 1, "probe", nil, nil, config.Limits)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f.Policy(probe)
+	}
+	policy, claudePolicy := policyOf(r.Codex), policyOf(r.Claude)
+	otherPolicy := policy
+	otherPolicy.Headers = append(slices.Clone(policy.Headers), "X-Other")
+	// A completed session's receipt and an interrupted one's: the held
+	// inference was forwarded but never answered.
+	access := func(complete bool) r.ProviderAccess {
+		if complete {
+			return r.ProviderAccess{Version: 1, Requests: 9, InferenceRequests: 3, MetadataRequests: 5, NegotiationRequests: 1, NegotiationResponses: 1, Forwarded: 8, Responses: 8, RequestBytes: 4096, ResponseBytes: 8192, Stopped: true}
+		}
+		return r.ProviderAccess{Version: 1, Requests: 7, InferenceRequests: 1, MetadataRequests: 5, NegotiationRequests: 1, NegotiationResponses: 1, Forwarded: 6, Responses: 5, RequestBytes: 2048, ResponseBytes: 4096, Failed: true, Stopped: true}
+	}
+	evidence := func(session string, policy r.EgressPolicy, a r.ProviderAccess) *r.ProviderEvidence {
+		a.SessionHash, a.PolicyHash = session, r.Digest(policy)
+		return &r.ProviderEvidence{Policy: policy, Access: a}
 	}
 	type receipts struct{ unit, audit map[string]any }
 	valid := func(complete bool) receipts {
 		return receipts{
 			map[string]any{"Version": 1, "Unit": "sfl-alpha-" + launch + ".service", "Binding": binding(session, launch), "Captured": true, "Stopped": true},
-			map[string]any{"Version": 1, "Binding": binding(session, launch), "Provider": evidence(session, policy, true), "Complete": complete, "AuthExported": true, "AuthReturned": complete},
+			map[string]any{"Version": 1, "Binding": binding(session, launch), "Provider": evidence(session, policy, access(complete)), "Complete": complete, "AuthExported": true, "AuthReturned": complete},
 		}
 	}
 	project := func(in receipts) e2eNativeUnit {
@@ -2736,30 +2835,59 @@ func TestE2ENativeUnitFrom(t *testing.T) {
 		if in.audit != nil {
 			audit, _ = json.Marshal(in.audit)
 		}
-		return e2eNativeUnitFrom(r.Codex, policy, launch, unit, audit)
+		return e2eNativeUnitFrom(r.Codex, policy, config.Limits, launch, unit, audit)
 	}
-	if u := project(valid(true)); !u.AuditPresent || !u.Captured || !u.Stopped || !u.Complete || !u.AuthReturned || u.SessionHash != session {
+	if u := project(valid(true)); !u.AuditPresent || !u.Captured || !u.Stopped || !u.Complete || !u.AuthReturned || u.SessionHash != session || u.Access.InferenceRequests != 3 || u.Access.SessionHash != session {
 		t.Fatal("bound completed receipts refused", u)
 	}
-	if u := project(valid(false)); !u.AuditPresent || u.Complete || !u.AuthExported || u.AuthReturned {
+	if u := project(valid(false)); !u.AuditPresent || u.Complete || !u.AuthExported || u.AuthReturned || !u.Access.Failed {
 		t.Fatal("bound interrupted receipts refused", u)
 	}
 	if u := project(receipts{valid(true).unit, nil}); u.AuditPresent || !u.Captured || u.SessionHash != session {
 		t.Fatal("unit without an audit misreported", u)
 	}
 	change := func(complete bool, edit func(receipts)) receipts { in := valid(complete); edit(in); return in }
+	// receipt edits only the provider access counters of a bound audit.
+	receipt := func(complete bool, edit func(*r.ProviderAccess)) receipts {
+		a := access(complete)
+		edit(&a)
+		return change(complete, func(in receipts) { in.audit["Provider"] = evidence(session, policy, a) })
+	}
+	l := policy.Limits
 	for name, in := range map[string]receipts{
-		"audit of another session":         change(true, func(in receipts) { in.audit["Binding"] = binding(strings.Repeat("7", 64), launch) }),
-		"audit of another launch":          change(true, func(in receipts) { in.audit["Binding"] = binding(session, strings.Repeat("8", 32)) }),
-		"audit without a binding":          change(true, func(in receipts) { delete(in.audit, "Binding") }),
-		"audit of another version":         change(true, func(in receipts) { in.audit["Version"] = 2 }),
-		"audit without a version":          change(true, func(in receipts) { delete(in.audit, "Version") }),
-		"completed audit without evidence": change(true, func(in receipts) { delete(in.audit, "Provider") }),
-		"exported audit without evidence":  change(false, func(in receipts) { delete(in.audit, "Provider") }),
-		"evidence of another session":      change(true, func(in receipts) { in.audit["Provider"] = evidence(strings.Repeat("7", 64), policy, true) }),
-		"evidence under another policy":    change(true, func(in receipts) { in.audit["Provider"] = evidence(session, otherPolicy, true) }),
-		"evidence of another provider":     change(true, func(in receipts) { in.audit["Provider"] = evidence(session, r.EgressPolicy{Provider: r.Claude}, true) }),
-		"evidence not stopped":             change(false, func(in receipts) { in.audit["Provider"] = evidence(session, policy, false) }),
+		"audit of another session":                  change(true, func(in receipts) { in.audit["Binding"] = binding(strings.Repeat("7", 64), launch) }),
+		"audit of another launch":                   change(true, func(in receipts) { in.audit["Binding"] = binding(session, strings.Repeat("8", 32)) }),
+		"audit without a binding":                   change(true, func(in receipts) { delete(in.audit, "Binding") }),
+		"audit of another version":                  change(true, func(in receipts) { in.audit["Version"] = 2 }),
+		"audit without a version":                   change(true, func(in receipts) { delete(in.audit, "Version") }),
+		"completed audit without evidence":          change(true, func(in receipts) { delete(in.audit, "Provider") }),
+		"exported audit without evidence":           change(false, func(in receipts) { delete(in.audit, "Provider") }),
+		"evidence of another session":               change(true, func(in receipts) { in.audit["Provider"] = evidence(strings.Repeat("7", 64), policy, access(true)) }),
+		"evidence under another policy":             change(true, func(in receipts) { in.audit["Provider"] = evidence(session, otherPolicy, access(true)) }),
+		"evidence of another provider":              change(true, func(in receipts) { in.audit["Provider"] = evidence(session, claudePolicy, access(true)) }),
+		"evidence not stopped":                      receipt(false, func(a *r.ProviderAccess) { a.Stopped = false }),
+		"completed audit with a failed receipt":     receipt(true, func(a *r.ProviderAccess) { a.Failed = true }),
+		"completed audit with an exhausted receipt": receipt(true, func(a *r.ProviderAccess) { a.Failed, a.Exhausted = true, true }),
+		"completed audit without inference": receipt(true, func(a *r.ProviderAccess) {
+			a.InferenceRequests, a.Requests, a.Forwarded, a.Responses = 0, 6, 5, 5
+		}),
+		"completed audit with an unanswered request": receipt(true, func(a *r.ProviderAccess) { a.Responses-- }),
+		"completed audit with negative bytes":        receipt(true, func(a *r.ProviderAccess) { a.RequestBytes = -1 }),
+		"completed audit over the inference budget": receipt(true, func(a *r.ProviderAccess) {
+			extra := l.InferenceRequests + 1 - a.InferenceRequests
+			a.InferenceRequests, a.Requests, a.Forwarded, a.Responses = a.InferenceRequests+extra, a.Requests+extra, a.Forwarded+extra, a.Responses+extra
+		}),
+		"completed audit with an impossible request total": receipt(true, func(a *r.ProviderAccess) { a.Requests++ }),
+		"completed audit with a route denial":              receipt(true, func(a *r.ProviderAccess) { a.RouteDenials = 1 }),
+		"interrupted audit with negative responses":        receipt(false, func(a *r.ProviderAccess) { a.Responses = -1 }),
+		"interrupted audit over the request budget": receipt(false, func(a *r.ProviderAccess) {
+			extra := l.InferenceRequests + 1 - a.InferenceRequests
+			a.InferenceRequests, a.Requests, a.Forwarded = a.InferenceRequests+extra, a.Requests+extra, a.Forwarded+extra
+		}),
+		"interrupted audit exhausted without failure":        receipt(false, func(a *r.ProviderAccess) { a.Failed, a.Exhausted = false, true }),
+		"interrupted audit answering more than it forwarded": receipt(false, func(a *r.ProviderAccess) { a.Responses = a.Forwarded + 1 }),
+		"interrupted audit with an impossible request total": receipt(false, func(a *r.ProviderAccess) { a.Requests++ }),
+		"interrupted audit with an unfailed route denial":    receipt(false, func(a *r.ProviderAccess) { a.Failed, a.RouteDenials = false, 1 }),
 		"unit journal of another launch": change(true, func(in receipts) {
 			in.unit["Binding"], in.audit["Binding"] = binding(session, strings.Repeat("8", 32)), binding(session, strings.Repeat("8", 32))
 		}),
@@ -2859,8 +2987,8 @@ func e2eReopenFixture() (e2eCompletion, string) {
 		Release: "release",
 		Posts:   map[int]int{1: 1},
 		Reviews: map[int][]map[string]any{1: {{"state": "COMMENTED", "commit_id": head, "marker": "<!-- sfl-alpha:" + attempt + " -->", "inline": []string{"source.go:1"}}}},
-		Records: []r.E2ESourceRecord{{Attempt: attempt, Unit: "sfl-alpha-" + attempt + ".service", Snapshot: snapshot, Stopped: true, Revoked: true, GrantHash: "grant"}},
-		Exports: []r.E2EExportRecord{{Attempt: attempt, State: "staged", Snapshot: snapshot}},
+		Records: []r.E2ESourceRecord{{Attempt: attempt, Unit: "sfl-alpha-" + attempt + ".service", RequestHash: strings.Repeat("6", 64), SourceRequestHash: strings.Repeat("7", 64), ReleaseHash: strings.Repeat("8", 64), RuntimeHash: strings.Repeat("9", 64), Snapshot: snapshot, Stopped: true, Revoked: true, GrantHash: "grant"}},
+		Exports: []r.E2EExportRecord{{Attempt: attempt, State: "staged", RequestHash: strings.Repeat("7", 64), ReleaseHash: strings.Repeat("8", 64), RuntimeHash: strings.Repeat("9", 64), Snapshot: snapshot}},
 		Units:   units,
 	}, hashes[0]
 }
@@ -3148,6 +3276,116 @@ func TestE2ERequestVerdicts(t *testing.T) {
 		d := state()
 		edit(d)
 		if len(failures(d)) == 0 {
+			t.Error(name, "accepted")
+		}
+	}
+}
+
+func TestE2EAttachedJob(t *testing.T) {
+	current, earlier := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	state := func(edit func(*r.DurableJob)) r.DurableState {
+		j := &r.DurableJob{Job: r.Job{ID: "request-1-1", Release: current}, Scope: r.Scope{PR: 1}, LeaseToken: "lease", Outstanding: true}
+		if edit != nil {
+			edit(j)
+		}
+		return r.DurableState{Jobs: map[string]*r.DurableJob{j.Job.ID: j}}
+	}
+	if j, err := e2eAttachedJob(state(nil), current); err != nil || j == nil || j.Job.ID != "request-1-1" {
+		t.Fatal("retained job of the current release refused", j, err)
+	}
+	for name, d := range map[string]r.DurableState{
+		"no retained job":           {},
+		"job without a lease":       state(func(j *r.DurableJob) { j.LeaseToken = "" }),
+		"job of an earlier release": state(func(j *r.DurableJob) { j.Job.Release = earlier }),
+		"job without a release":     state(func(j *r.DurableJob) { j.Job.Release = "" }),
+		"job of another PR":         state(func(j *r.DurableJob) { j.Scope.PR = 2 }),
+	} {
+		if j, err := e2eAttachedJob(d, current); err == nil {
+			t.Error(name, "accepted as the attached root's interrupted job", j)
+		}
+	}
+}
+
+// TestE2EConfirmedRequestVerdicts covers the request set a confirmed case
+// leaves: each reviewed PR retains exactly the admitted request its job came
+// from, of the expected origin, and no PR retains any other request. A
+// further request could otherwise be admitted later as a duplicate review.
+func TestE2EConfirmedRequestVerdicts(t *testing.T) {
+	origin := func(kind, role string, actor int64) *r.RequestOrigin {
+		return &r.RequestOrigin{Kind: kind, ActorID: actor, ActorRole: role}
+	}
+	opened := func(id int64) r.NativeRequest {
+		return r.NativeRequest{ID: id, Admitted: true, Origin: origin("opened", "pr_author", r.OwnerID)}
+	}
+	comment := func(id int64, admitted bool) r.NativeRequest {
+		return r.NativeRequest{ID: id, Admitted: admitted, Origin: origin("comment", "commenter", r.OwnerID)}
+	}
+	job := func(pr int, id int64) *r.DurableJob {
+		return &r.DurableJob{Job: r.Job{ID: fmt.Sprintf("request-%d-%d", pr, id)}, Scope: r.Scope{PR: pr}, RequestID: id}
+	}
+	j1, j2 := job(1, 1), job(2, 1)
+	state := func(prs int) r.DurableState {
+		d := r.DurableState{PRs: map[string]*r.PRRecord{e2eScopeKey(1): {Scope: r.Scope{PR: 1}, Requests: []r.NativeRequest{opened(1)}}}}
+		if prs == 2 {
+			d.PRs[e2eScopeKey(2)] = &r.PRRecord{Scope: r.Scope{PR: 2}, Requests: []r.NativeRequest{comment(1, true)}}
+		}
+		return d
+	}
+	failures := func(verdicts []e2eVerdict) []string {
+		out := []string{}
+		for _, v := range verdicts {
+			if !v.OK {
+				out = append(out, v.Message)
+			}
+		}
+		return out
+	}
+	single := func(d r.DurableState) []string { return failures(e2eOpenedRequestVerdicts("confirmed", d, j1)) }
+	isolation := func(d r.DurableState) []string { return failures(e2eIsolationRequestVerdicts(d, j1, j2)) }
+	if f := single(state(1)); len(f) != 0 {
+		t.Fatal("sole admitted open request refused:", f)
+	}
+	if f := isolation(state(2)); len(f) != 0 {
+		t.Fatal("admitted open and comment requests refused:", f)
+	}
+	pr := func(d r.DurableState, n int) *r.PRRecord { return d.PRs[e2eScopeKey(n)] }
+	type mutation struct {
+		prs   int
+		judge func(r.DurableState) []string
+		edit  func(r.DurableState)
+	}
+	for name, m := range map[string]mutation{
+		"single: open request not admitted": {1, single, func(d r.DurableState) { pr(d, 1).Requests[0].Admitted = false }},
+		"single: request not the job's":     {1, single, func(d r.DurableState) { pr(d, 1).Requests[0].ID = 2 }},
+		"single: request removed":           {1, single, func(d r.DurableState) { pr(d, 1).Requests[0].Removed = true }},
+		"single: request by another actor":  {1, single, func(d r.DurableState) { pr(d, 1).Requests[0].Origin.ActorID = 4242 }},
+		"single: comment request instead":   {1, single, func(d r.DurableState) { pr(d, 1).Requests[0] = comment(1, true) }},
+		"single: further unadmitted request": {1, single, func(d r.DurableState) {
+			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("synchronize", "pr_author", r.OwnerID)})
+		}},
+		"single: request on another PR": {1, single, func(d r.DurableState) {
+			d.PRs[e2eScopeKey(2)] = &r.PRRecord{Scope: r.Scope{PR: 2}, Requests: []r.NativeRequest{comment(1, false)}}
+		}},
+		"isolation: further comment on PR 2": {2, isolation, func(d r.DurableState) {
+			pr(d, 2).Requests = append(pr(d, 2).Requests, comment(2, false))
+		}},
+		"isolation: further automatic request on PR 1": {2, isolation, func(d r.DurableState) {
+			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("synchronize", "pr_author", r.OwnerID)})
+		}},
+		"isolation: PR 1 request lost":             {2, isolation, func(d r.DurableState) { pr(d, 1).Requests = nil }},
+		"isolation: PR 1 request not admitted":     {2, isolation, func(d r.DurableState) { pr(d, 1).Requests[0].Admitted = false }},
+		"isolation: PR 1 comment request":          {2, isolation, func(d r.DurableState) { pr(d, 1).Requests[0] = comment(1, true) }},
+		"isolation: PR 2 comment not admitted":     {2, isolation, func(d r.DurableState) { pr(d, 2).Requests[0].Admitted = false }},
+		"isolation: PR 2 request not the job's":    {2, isolation, func(d r.DurableState) { pr(d, 2).Requests[0].ID = 2 }},
+		"isolation: PR 2 comment by another actor": {2, isolation, func(d r.DurableState) { pr(d, 2).Requests[0].Origin.ActorID = 4242 }},
+		"isolation: PR 2 record lost":              {2, isolation, func(d r.DurableState) { delete(d.PRs, e2eScopeKey(2)) }},
+		"isolation: request on a third PR": {2, isolation, func(d r.DurableState) {
+			d.PRs[e2eScopeKey(3)] = &r.PRRecord{Scope: r.Scope{PR: 3}, Requests: []r.NativeRequest{comment(1, false)}}
+		}},
+	} {
+		d := state(m.prs)
+		m.edit(d)
+		if len(m.judge(d)) == 0 {
 			t.Error(name, "accepted")
 		}
 	}
