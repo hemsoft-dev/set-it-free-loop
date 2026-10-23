@@ -474,20 +474,7 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report any, access
 	if p.finished != nil {
 		host = p.finished.CodeHost
 	}
-	receipt := struct {
-		Version                                           int
-		Binding                                           AuthBinding
-		RequestHash, ManifestHash, ReportHash, SourceHash string
-		Provider                                          *ProviderEvidence
-		CodeHost                                          *nativeVMCodeHostAccess
-		Complete                                          bool
-		Stage                                             string
-		AuthExported, AuthReturned                        bool
-		GuestStage                                        string
-		Native                                            *nativeResultObservation
-		Failure                                           string
-		BootDiagnostics                                   []string
-	}{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, failure == nil, p.stage, p.exported, p.authReturned, "", nil, nativeVMFailureKind(failure), p.bootDiagnostics}
+	receipt := nativeVMAuditReceipt{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, failure == nil, p.stage, p.exported, p.authReturned, "", nil, nativeVMFailureKind(failure), p.bootDiagnostics}
 	if p.finished != nil && nativeVMGuestStage(p.finished.GuestStage) {
 		receipt.GuestStage = p.finished.GuestStage
 	}
@@ -499,6 +486,23 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report any, access
 		return ErrProviderAuditPending
 	}
 	return writeAuth(held.root, "native-audit.json", raw)
+}
+
+// nativeVMAuditReceipt is the host's private stopped receipt in the launch
+// directory, written only after the whole unit is aborted and stopped.
+type nativeVMAuditReceipt struct {
+	Version                                           int
+	Binding                                           AuthBinding
+	RequestHash, ManifestHash, ReportHash, SourceHash string
+	Provider                                          *ProviderEvidence
+	CodeHost                                          *nativeVMCodeHostAccess
+	Complete                                          bool
+	Stage                                             string
+	AuthExported, AuthReturned                        bool
+	GuestStage                                        string
+	Native                                            *nativeResultObservation
+	Failure                                           string
+	BootDiagnostics                                   []string
 }
 
 func nativeVMFailureKind(err error) string {

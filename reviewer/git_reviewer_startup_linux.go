@@ -514,3 +514,21 @@ func (r *gitRuntimeRoot) Close() error {
 	r.closed = true
 	return errors.Join(r.root.Close(), r.parent.Close())
 }
+
+// RecoverStoppedProvider is the explicit operator recovery for a provider
+// attempt left leased after its worker stopped without a complete result.
+// Call it after a restart, before Run. See gitReviewerService.RecoverStoppedProvider.
+func (s *GitReviewerService) RecoverStoppedProvider(ctx context.Context, request ProviderRecoveryRequest) (ProviderRecoveryResult, error) {
+	if s == nil || s.inner == nil {
+		return ProviderRecoveryResult{}, ErrLiveBlocked
+	}
+	return s.inner.RecoverStoppedProvider(ctx, request)
+}
+
+// ProviderRecoveryCandidates lists leased jobs and their candidate launches.
+func (s *GitReviewerService) ProviderRecoveryCandidates(ctx context.Context) ([]ProviderRecoveryCandidate, error) {
+	if s == nil || s.inner == nil {
+		return nil, ErrLiveBlocked
+	}
+	return s.inner.ProviderRecoveryCandidates(ctx)
+}
