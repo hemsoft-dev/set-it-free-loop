@@ -34,8 +34,9 @@ themselves.
 Every case requires these checks: unit bound and physically stopped, provider
 stopped, runtime root removed, no stop-pending, no canary anywhere scanned, no
 denied destination, no telemetry, a fixed tool inventory and no backend
-problem. Auth must be either returned or fenced. Fenced means recovery is
-required and agrees with the audit, the error and a reopened store. The
+problem. Auth must be either returned or fenced. Returned auth must still hold
+the original synthetic tokens, as in the hostile matrix. Fenced means recovery
+is required and agrees with the audit, the error and a reopened store. The
 provider receipt must stay within the policy's request and byte bounds. Usage
 must not be claimed for failed work. A failed report is empty, so `Usage.Known`
 is false and no tokens are reported. The case-specific outcome is either a typed

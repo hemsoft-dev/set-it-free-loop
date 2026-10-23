@@ -356,14 +356,7 @@ func runNativeHostile(c config) error {
 		// Either is accepted only when it agrees with the audit, the error and
 		// a reopened store.
 		delete(checks, "auth-returned")
-		pending, hash, valid := authDisposition(store)
-		reopened, openErr := r.NewAuthStore(c.Provider, filepath.Join(c.Root, "auth"))
-		consistent := false
-		if openErr == nil {
-			otherPending, otherHash, otherValid := authDisposition(reopened)
-			consistent = otherValid && otherPending == pending && otherHash == hash
-		}
-		checks["auth-returned-or-fenced"] = valid && consistent && audit.AuthExported && audit.AuthReturned != pending && pending == errors.Is(reviewErr, r.ErrAuthRecoveryRequired)
+		checks["auth-returned-or-fenced"] = exhaustionAuthHeld(c.Provider, filepath.Join(c.Root, "auth"), store, audit, reviewErr)
 		in := exhaustionInput{Name: hc.Name, Err: reviewErr, Report: report, Source: access, Policy: policy.Limits, Limits: limits, AuditComplete: audit.Complete, CodeHost: audit.CodeHost, Counts: counts, Observation: obs, Elapsed: time.Duration(elapsed) * time.Millisecond, StoreRequests: requests}
 		if evidence != nil {
 			in.Provider = &evidence.Access
@@ -426,6 +419,25 @@ func runNativeHostile(c config) error {
 		return errors.New("native hostile qualification incomplete")
 	}
 	return nil
+}
+
+// exhaustionAuthHeld accepts auth only when it agrees with the audit, the
+// error and a reopened store. Returned auth must still hold the original
+// synthetic tokens; fenced auth must stay pending recovery in both stores.
+func exhaustionAuthHeld(provider r.Provider, dir string, store *r.AuthStore, audit hostileAudit, reviewErr error) bool {
+	pending, hash, valid := authDisposition(store)
+	reopened, openErr := r.NewAuthStore(provider, dir)
+	consistent := false
+	if openErr == nil {
+		otherPending, otherHash, otherValid := authDisposition(reopened)
+		consistent = otherValid && otherPending == pending && otherHash == hash
+	}
+	returned := false
+	authErr := store.Refresh(context.Background(), func(current []byte) ([]byte, error) {
+		returned = syntheticTokensReturned(provider, current)
+		return current, nil
+	})
+	return valid && consistent && audit.AuthExported && audit.AuthReturned != pending && pending == errors.Is(reviewErr, r.ErrAuthRecoveryRequired) && (pending || authErr == nil && returned)
 }
 
 // syntheticTokensReturned reports whether a returned profile still carries
