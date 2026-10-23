@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 // SourceTools is the complete source capability handed to a trusted worker
@@ -105,10 +106,13 @@ type sourceBroker struct {
 	calls     int
 	sealed    bool
 	exhausted bool
-	// transportDenied records that the MCP transport already denied a call
-	// past the bound, so the omission is listed once.
-	transportDenied bool
-	denials         []Coverage
+	// transportDenied is set by the MCP transport for a call it denied past
+	// the bound. It never takes mu, which an active Read or Search holds
+	// across store I/O; the next holder of mu folds it into the audit.
+	transportDenied atomic.Bool
+	// transportRecorded means that omission is already listed once.
+	transportRecorded bool
+	denials           []Coverage
 }
 
 // newSourceBroker forks a fresh read budget. Citation validation on the supplied
@@ -143,8 +147,9 @@ func (b *sourceBroker) begin(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	b.foldTransportDenial()
 	if b.calls >= b.session.Limits.ReaderCalls {
-		if !b.exhausted && !b.transportDenied {
+		if !b.exhausted && !b.transportRecorded {
 			b.denials = append(b.denials, Coverage{Reason: "source tool-call limit exhausted"})
 		}
 		b.exhausted = true
@@ -155,20 +160,22 @@ func (b *sourceBroker) begin(ctx context.Context) error {
 }
 
 // recordToolCallExhaustion is called by the MCP transport for a call it denied
-// past the tool-call bound. The omission is always recorded once. Exhausted is
-// claimed only when the broker itself served the full bound; calls that the
-// transport rejected as invalid never count toward it.
-func (b *sourceBroker) recordToolCallExhaustion() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if b.sealed || b.exhausted {
+// past the tool-call bound. It only marks the denial, so the transport's intake
+// loop never waits on source I/O.
+func (b *sourceBroker) recordToolCallExhaustion() { b.transportDenied.Store(true) }
+
+// foldTransportDenial records a transport denial once. Exhausted is claimed
+// only when the broker itself served the full bound; calls that the transport
+// rejected as invalid never count toward it. Called with mu held.
+func (b *sourceBroker) foldTransportDenial() {
+	if b.sealed || !b.transportDenied.Swap(false) {
 		return
 	}
-	if !b.transportDenied {
+	if !b.exhausted && !b.transportRecorded {
 		b.denials = append(b.denials, Coverage{Reason: "source tool-call limit exhausted"})
-		b.transportDenied = true
+		b.transportRecorded = true
 	}
-	b.exhausted = b.calls >= b.session.Limits.ReaderCalls
+	b.exhausted = b.exhausted || b.calls >= b.session.Limits.ReaderCalls
 }
 
 func (b *sourceBroker) Read(ctx context.Context, revision, path string) (string, error) {
@@ -208,6 +215,7 @@ func (b *sourceBroker) callContext(worker context.Context) (context.Context, fun
 func (b *sourceBroker) seal() *SourceAccess {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.foldTransportDenial()
 	b.sealed = true
 	reads, coverage := b.reader.Evidence()
 	b.reader.mu.Lock()

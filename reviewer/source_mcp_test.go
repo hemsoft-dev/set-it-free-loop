@@ -439,3 +439,58 @@ func TestSourceMCPInvalidCallsPastTheBoundRecordOmissionOnly(t *testing.T) {
 		t.Fatal("transport omission misrecorded", receipt)
 	}
 }
+
+// heldStore blocks an object read until its call context ends, holding the
+// broker across store I/O like a slow object store.
+type heldStore struct{ entered, exited chan struct{} }
+
+func (s *heldStore) Read(ctx context.Context, _, _ string, _ int) (Object, error) {
+	close(s.entered)
+	<-ctx.Done()
+	close(s.exited)
+	return Object{}, ctx.Err()
+}
+
+// A call past the bound that arrives during an active read must be denied and
+// recorded without waiting for the broker the read holds. The intake loop then
+// still delivers the active call's cancellation.
+func TestSourceMCPToolCallBoundNeverWaitsOnActiveSourceIO(t *testing.T) {
+	limits := DefaultLimits()
+	limits.ReaderCalls = 1
+	s := testSession(Codex)
+	s.Limits = limits
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	store := &heldStore{make(chan struct{}), make(chan struct{})}
+	verifier, err := NewReader(store, s.Snapshot, []string{"worker.go"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	broker, err := newSourceBroker(ctx, s, verifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newMCPFixture(t, Codex, limits, broker)
+	f.initialize(t)
+	read := `{"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"read","arguments":{"revision":"` + s.Snapshot.Head + `","path":"worker.go"}}}`
+	f.send(t, fmt.Sprintf(read, 1))
+	<-store.entered
+	_ = f.client.SetDeadline(time.Now().Add(time.Second))
+	f.send(t, fmt.Sprintf(read, 2))
+	if r := f.response(t); string(r["id"]) != "2" || !strings.Contains(string(r["result"]), "Source request denied") {
+		t.Fatal("call past the bound not denied during active source I/O", r)
+	}
+	f.send(t, `{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":1}}`)
+	select {
+	case <-store.exited:
+	case <-time.After(time.Second):
+		t.Fatal("active call cancellation not processed")
+	}
+	if r := f.call(t, `{"jsonrpc":"2.0","id":3,"method":"ping"}`); string(r["id"]) != "3" {
+		t.Fatal("cancelled call emitted late response", r)
+	}
+	receipt := broker.seal()
+	if receipt.validate(s) != nil || !receipt.Exhausted || receipt.ToolCalls != 1 || strings.Count(fmt.Sprint(receipt.Coverage), "source tool-call limit exhausted") != 1 {
+		t.Fatal("exhaustion not recorded exactly once", receipt)
+	}
+}

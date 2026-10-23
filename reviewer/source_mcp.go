@@ -249,7 +249,9 @@ func ServeSourceMCP(ctx context.Context, inv Invocation, connection io.ReadWrite
 				// Past the bound the call is denied without source access. The
 				// connection and receipt survive, so a model that over-reads
 				// leaves recorded exhaustion instead of a lost reader audit.
-				// The total request budget above still ends a flood.
+				// The total request budget above still ends a flood. The hook
+				// only marks the denial: an active call holds the broker across
+				// store I/O, and this loop must still read its cancellation.
 				if exhausted, ok := inv.Source.(interface{ recordToolCallExhaustion() }); ok {
 					exhausted.recordToolCallExhaustion()
 				}
