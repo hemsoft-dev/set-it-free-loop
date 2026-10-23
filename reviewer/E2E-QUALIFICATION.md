@@ -27,7 +27,10 @@ projections of the source VM owner journal and archive, and a restore probe.
 1. **Startup.** The public `OpenGitReviewerService` is called with a version 2
    `GitReviewerRelease`: the measured source image and exact-head
    `gitsourcevmstub`, plus both native providers pinned to a measured native
-   image. The public constructor uses the real user-systemd source VM owner
+   image. The stub's embedded Go build info must record `vcs=git`,
+   `vcs.revision` equal to the image's recorded commit and
+   `vcs.modified=false`; a stub without that stamp is refused. The public
+   constructor uses the real user-systemd source VM owner
    (`openGitVMUnitOwner`); no private opener or internal composition is used.
    The credentials are an installation journal over the controller SQLite
    store, a synthetic App JWT callback and two loopback transports. `Refresh`
@@ -88,11 +91,17 @@ therefore proves isolation between sequential jobs, not concurrent ones.
 
 Build exact-head images from a clean commit (see
 `scripts/git-source-vm-image.py` and `scripts/native-vm-image.py`), then build
-the stub and test binary from the same head. Run each case under the shared
-VM lock, with a bounded timeout:
+the stub and test binary from the same head. Go does not stamp VCS build info
+in a linked worktree, so build the stub from a fresh clone of that head. Run
+each case under the shared VM lock, with a bounded timeout:
 
 ```sh
-go -C reviewer build -o "$OUT/gitsourcevmstub" ./cmd/gitsourcevmstub
+STUB_SRC=$(mktemp -d)
+git clone --quiet --no-hardlinks --no-checkout . "$STUB_SRC"
+git -C "$STUB_SRC" checkout --quiet --detach "$(git rev-parse HEAD)"
+go -C "$STUB_SRC/reviewer" build -buildvcs=true -o "$OUT/gitsourcevmstub" ./cmd/gitsourcevmstub
+rm -rf "$STUB_SRC"
+go version -m "$OUT/gitsourcevmstub" | grep -E 'vcs\.(revision|modified)'
 chmod 0500 "$OUT/gitsourcevmstub"
 go -C reviewer test -c -o "$OUT/reviewer.test" .
 flock ~/.cache/sfl-vm.lock env GOMAXPROCS=2 \
