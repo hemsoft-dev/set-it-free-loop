@@ -21,9 +21,11 @@ The test lives in the external package `reviewer_test`, so it can import the
 fake-only model producers in `internal/nativefixture`, which themselves import
 this package. A small in-package bridge,
 [e2e_export_linux_test.go](e2e_export_linux_test.go), exposes read-only test
-seams: deriving the source VM release from a measured image, nonsecret
-projections of the source VM owner journal and archive, the production
-provider receipt validators, and a restore probe.
+seams: deriving the source VM release and its manifest's runtime hash from a
+measured image, nonsecret projections of the source VM owner journal and
+archive, the production provider receipt validators, production's projection
+of a remote review into its marker and canonical document hash, and a restore
+probe.
 
 1. **Startup.** The public `OpenGitReviewerService` is called with a version 2
    `GitReviewerRelease`: the measured source image and exact-head
@@ -83,13 +85,11 @@ provider receipt validators, and a restore probe.
 If `close-provider`'s `Close` proves completion instead of reporting
 `ErrWorkerStopPending`, the case reopens and expects one source unit, one
 native unit for the interrupted launch plus one per artifact of the reopened
-job, and both auth stores usable. After the reopen it runs the same
-completed-review checks as the other successful cases: exactly one confirmed
-review intent, one POST, one marked COMMENT on the head with the inline
-comment, four artifacts from four consumed sessions, stopped source receipts
-with staged exports, and one completed native launch with returned auth per
-artifact, with the interrupted launch as the only other launch. No host run
-has taken this branch.
+job, and both auth stores usable. The job must record the interrupted
+launch's complete stopped audit evidence. After the reopen it runs the same
+completed-review checks as the other successful cases (see Evidence bindings),
+with the interrupted launch, stopped, audited and incomplete, as the only
+other launch. No host run has taken this branch.
 
 Every case also observes `systemctl --user list-units 'sfl-alpha-*'` every 200
 ms, excluding units that existed before the run. At the end it requires a
@@ -104,24 +104,33 @@ created by this process. Every launch recorded by this process must have been
 observed, and the observed source and native counts must equal the case's
 expectation in the table. An attached process may hold the earlier process's
 source records, which it need not observe. Before `close-provider-reopen`
-accepts an attached root, the root's PR 1 job must still hold its lease and
-must have been admitted under the current release revision. A root retained
+accepts an attached root, the root must hold exactly one durable job: PR 1's,
+still leased, bound to PR 1's scope and the deterministic fake upstream's
+snapshot, and admitted under the current release revision. A root retained
 by another revision's `close-provider` is refused, so its interrupted job and
 launch are never recorded as this revision's restart. Before
 `close-provider-reopen` treats a native launch as the earlier process's, its
 root must hold exactly one launch: captured and whole-unit stopped, with a
 bound stopped audit that records the auth as exported and not returned and
 the session as incomplete.
-Its provider and session must be the retained job's outstanding attempt, and
-the job must hold that attempt's stopped provider evidence. A missing or
-unreadable launch directory fails setup, and a retained launch must still be
-present at the end. Every check of source stop receipts
-first requires the expected nonzero number of owner journal records, each with
+Its provider and session must be the retained job's outstanding attempt. The
+job must hold exactly one record of that attempt ID, and its recorded stopped
+provider evidence must equal the audit's complete provider evidence by
+digest; another valid stopped receipt of the same session is refused. The
+first `close-provider` process applies the same check before it retains the
+root. A missing or unreadable launch directory fails setup, and a retained
+launch must still be present at the end. Every check of source stop receipts
+first requires exactly one owner journal record per expected job, each with
 exactly one archive export of the same attempt. As production recovery
 requires, the export's request hash must be the digest of the record's source
 request, and its binding (attempt, release hash, runtime hash and snapshot)
-must equal the record's complete materialization binding. Each reviewed PR
-must have exactly one review intent, and it must be `confirmed`. Once
+must equal the record's complete materialization binding. Record and export
+agreeing is not enough: the record must name `sfl-alpha-<attempt>.service`,
+carry the current release package hash and the runtime hash of the source VM
+manifest that release derives, and bind the snapshot of exactly one expected
+job, each job's once. This holds for the attached restart too, whose record
+must bind the retained job. Each record must also show the unit's start as
+recorded, settled and captured before its granted stop. Once
 `review`, `close-capture` and `close-publish` confirm the review, PR 1 must
 retain exactly one request, the admitted automatic `opened` request its job
 came from, and no other PR may retain any request. In `isolation`, PR 1 must
@@ -134,13 +143,17 @@ the end of `close-provider-reopen`, PR 1 must still retain only that request,
 PR 2 exactly one unadmitted owner `comment` request, and no other PR any
 request. A duplicate held back by the lease would otherwise become a second
 job once the lease is released. Every case records the requests it judged as
-`Requests` in the JSON result. The case reads each native launch's
+`Requests` in the JSON result. The fence states (`close-capture` after close,
+both `close-provider` processes) must hold PR 1's job as the only job and no
+write intent. The case reads each native launch's
 `unit.json` and `native-audit.json` and checks provider auth disposition by
 reopening the protected stores. A unit journal counts only
 as version 1 for its own directory's launch. It must name
 `sfl-alpha-<launch>.service`, and its binding must derive the containment ID
 from its session and launch. The audit counts only as a version 1 receipt
-with the same binding. Once auth was exported or the session completed, the
+with the same binding, and its auth lifecycle must be possible: auth is
+returned only after it was exported, and a completed session has returned it.
+Once auth was exported or the session completed, the
 audit must carry provider evidence: the stopped receipt of that session under
 the release's egress policy for that provider. The receipt must also pass the
 production provider receipt validators under the session limits. Every
@@ -150,10 +163,59 @@ response and byte counters, and no exhaustion or denial without failure. The
 receipt of a completed session must also pass the completed-receipt validation
 an artifact requires: not failed or exhausted, at least one inference, every
 forwarded request answered and no denial. The receipt's counters are recorded
-as `Access` for each native unit. A copied, foreign, regenerated, failed or
-impossible audit therefore proves nothing about the launch. In `isolation`,
-every session from the first onward must carry one of the two job IDs, and
-its PR and head must equal that job's snapshot.
+as `Access`, and the digest of the complete provider evidence as
+`EvidenceHash`, for each native unit. A copied, foreign, regenerated, failed
+or impossible audit therefore proves nothing about the launch, and every
+native unit at the end must have a bound audit. In `isolation`, every session
+from the first onward must carry one of the two job IDs, and its PR and head
+must equal that job's snapshot. Each restore probe must report exactly its
+five reads in order; both own reads must return the fake upstream's exact
+bytes, and every foreign read must be refused by both the store and the
+reader.
+
+### Evidence bindings
+
+Every completed case (`review`, `isolation`, `close-capture`, `close-publish`,
+and `close-provider` if it reopens) judges its completed PRs together:
+
+- **Jobs and intents.** The durable state holds exactly one job and exactly
+  one review intent for each reviewed PR, and no other job or write of any
+  kind. A second job for a PR is refused, not resolved by picking the newest.
+- **Job.** The job is bound to the PR's scope, the fake upstream's head, base
+  and merge base, and the current release; its checkpoint is of that job and
+  consumed exactly four sessions.
+- **Artifacts.** The checkpoint holds exactly Codex R1, Claude R1, Codex R2
+  and Claude R2, once each. Each artifact's job hash, report job ID, snapshot
+  hash and config hash are the job's, and no two artifacts share a session.
+- **Attempts.** The job records each artifact's provider evidence in exactly
+  one provider attempt, of the artifact's session and provider, and the
+  artifact's source access in exactly one source attempt of that same attempt
+  ID.
+- **Launches.** Each artifact session ran in exactly one completed native
+  launch of the artifact's provider whose audit evidence equals the
+  artifact's by digest, with auth exported and returned and a whole-unit stop.
+  No other launch exists except an allowed interrupted one.
+- **Backend checks.** Each artifact session was checked exactly once outside a
+  fault hold by its own provider's fake backend, for its job, round, PR and
+  head. Any other check of the job must be one a fault hook held.
+- **Intent.** The sole intent is `confirmed`. Its scope, request, generation,
+  snapshot, job hash and checkpoint hash are the job's; its marker names its
+  own ID; its body hash is its document's digest; and its document carries
+  exactly one inline finding, at `source.go:1`.
+- **Remote review.** The PR received exactly one POST and holds one COMMENT on
+  the head, whose ID is the intent's receipt ID, whose sole marker is the
+  intent's, and whose canonical document hash, computed as production computes
+  a remote receipt (body plus inline comments in comment order), equals the
+  intent's body hash. Its inline anchors are exactly `source.go:1`.
+- **Upstream.** Each acquisition made exactly one successful advertisement and
+  one successful upload-pack wanting exactly its head and the base, and
+  nothing else reached the fake upstream.
+
+In `close-publish`, the confirmed intent must be the one the closed POST left
+`unknown` or `dispatched`, with the same ID, marker, body hash, job,
+checkpoint, request and snapshot. The JSON result records each write's
+`Marker` and `BodyHash`, each remote review's `document_hash`, each job's
+`ArtifactSessions` and the run's `SourceRuntimeHash`.
 
 The root is owned as soon as it is created (or, for an attached run, once its
 layout is checked), before the unit observer starts. A setup failure after
@@ -222,7 +284,9 @@ passed the production provider-receipt validation, and no unit or E2E root
 remained afterwards. Each PR held exactly its expected requests: PR 1 its
 admitted automatic `opened` request in every case, and PR 2 an unadmitted owner
 `comment` request after the `close-provider` restart and an admitted one in
-`isolation`. Only this document changed after `e144bc5`.
+`isolation`. The checks were tightened afterwards in `86d25eb` (see Evidence
+bindings), so the cases are re-measured at the new head; the table below is
+the `e144bc5` measurement.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
