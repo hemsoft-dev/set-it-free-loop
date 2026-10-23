@@ -86,6 +86,7 @@ type e2eResult struct {
 	Failures                      []string
 	Timeline                      []e2eEvent
 	Jobs                          []e2eJob
+	Requests                      []e2eRequest
 	Writes                        []e2eWrite
 	SourceRecords                 [][]r.E2ESourceRecord
 	Exports                       [][]r.E2EExportRecord
@@ -272,10 +273,9 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 		hosts[provider] = r.GitReviewerProviderHost{Root: e.native[provider], Auth: store, Transport: model.transport, ProfileHints: hints, Check: model.check}
 	}
 	// An attached root keeps the earlier process's native launches.
+	// An attached root's retained launch is proved, and only then treated as
+	// pre-existing, once the retained job is read (e2eCloseProviderReopen).
 	e.expect, e.nativeBefore = e2eExpectations[scenario], map[string]bool{}
-	for _, u := range e2eReadNativeUnits(e.native, e.policies) {
-		e.nativeBefore[u.Launch] = true
-	}
 	_, releaseHash, err := r.EncodeGitReviewerRelease(release)
 	if err != nil {
 		t.Fatal("release package", err)
@@ -304,6 +304,11 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 // and removes a fresh root.
 func e2eAllocate(t testing.TB, scenario, attach string, list func() (map[string]string, error)) *e2eEnv {
 	t.Helper()
+	// An earlier result for this case must not outlive a run that later
+	// fails to write its own; a run that cannot remove it does not start.
+	if err := e2eClearEvidence(os.Getenv("SFL_E2E_EVIDENCE"), scenario); err != nil {
+		t.Fatal("earlier E2E result could not be removed", err)
+	}
 	root := attach
 	if attach == "" {
 		var nonce [6]byte
@@ -499,8 +504,20 @@ func (e *e2eEnv) close(label string) {
 	}
 	e.snapshotJobs(label + " after close")
 	if e.store != nil {
-		e.store.Close()
+		e.closeStore(label, e.store)
 		e.store = nil
+	}
+}
+
+// closeStore closes a store handle and records a failed close or checkpoint
+// as a failed check, which forbids a persisted pass. database/sql marks the
+// handle closed even when Close fails and a repeated Close reports nil, so the
+// failure is recorded here, before the caller drops the handle, rather than
+// left to a retry that could not see it.
+func (e *e2eEnv) closeStore(label string, store io.Closer) {
+	e.t.Helper()
+	if err := store.Close(); err != nil {
+		e.check(false, "%s: store Close completed the SQLite close and checkpoint: %v", label, err)
 	}
 }
 
@@ -700,11 +717,20 @@ func e2eCorrelateUnits(res *e2eResult, want e2eExpect, before map[string]bool, a
 			sources[rec.Unit] = true
 		}
 	}
+	present := map[string]bool{}
 	for _, u := range res.NativeUnits {
+		present[u.Launch] = true
 		if !before[u.Launch] {
 			launches["sfl-alpha-"+u.Launch+".service"] = true
 		}
 	}
+	vanished := []string{}
+	for launch := range before {
+		if !present[launch] {
+			vanished = append(vanished, launch)
+		}
+	}
+	sort.Strings(vanished)
 	observedSource, observedNative, uncorrelated := map[string]bool{}, map[string]bool{}, []string{}
 	for _, u := range res.SystemdUnits {
 		switch {
@@ -734,6 +760,7 @@ func e2eCorrelateUnits(res *e2eResult, want e2eExpect, before map[string]bool, a
 		{len(uncorrelated) == 0, fmt.Sprintf("every observed sfl-alpha unit is a recorded source attempt or native launch of this run (uncorrelated %v)", uncorrelated)},
 		{len(unobserved) == 0, fmt.Sprintf("every source attempt and native launch this run recorded was observed as a transient unit (unobserved %v)", unobserved)},
 		{len(observedSource) == want.SourceUnits && len(observedNative) == want.NativeUnits, fmt.Sprintf("observed %d source and %d native units, case expects %d and %d", len(observedSource), len(observedNative), want.SourceUnits, want.NativeUnits)},
+		{len(vanished) == 0, fmt.Sprintf("every native launch retained from the earlier process is still present (vanished %v)", vanished)},
 	}
 }
 
@@ -744,11 +771,67 @@ func (e *e2eEnv) seal() {
 	data, _ := json.MarshalIndent(e.result, "", "  ")
 	e.mu.Unlock()
 	if directory := os.Getenv("SFL_E2E_EVIDENCE"); directory != "" {
-		if err := os.WriteFile(filepath.Join(directory, e.scenario+".json"), append(data, '\n'), 0600); err != nil {
+		if err := e2eWriteEvidence(directory, e.scenario, append(data, '\n')); err != nil {
 			e.t.Error("evidence", err)
 		}
 	}
 	e.report()
+}
+
+// e2eClearEvidence removes an earlier result for scenario before a run, so a
+// run that later cannot write its own result leaves no result at all.
+func e2eClearEvidence(directory, scenario string) error {
+	if directory == "" {
+		return nil
+	}
+	if err := os.Remove(filepath.Join(directory, scenario+".json")); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	return e2eSyncDirectory(directory)
+}
+
+// e2eWriteEvidence replaces <scenario>.json whole: a private temporary in the
+// same directory is written, synced and renamed over the result, and the
+// directory is synced. A failure leaves neither a partial result nor the
+// temporary, and a result whose rename is not durable is removed again.
+func e2eWriteEvidence(directory, scenario string, data []byte) (err error) {
+	file, err := os.CreateTemp(directory, "."+scenario+".json.*")
+	if err != nil {
+		return err
+	}
+	temp, result := file.Name(), filepath.Join(directory, scenario+".json")
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, os.Remove(temp))
+		}
+	}()
+	if _, err = file.Write(data); err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err = os.Rename(temp, result); err != nil {
+		return err
+	}
+	if err = e2eSyncDirectory(directory); err != nil {
+		return errors.Join(err, os.Remove(result))
+	}
+	return nil
+}
+
+func e2eSyncDirectory(directory string) error {
+	d, err := os.Open(directory)
+	if err != nil {
+		return err
+	}
+	return errors.Join(d.Sync(), d.Close())
 }
 
 func (e *e2eEnv) report() {
@@ -1024,6 +1107,37 @@ func e2eNativeUnitFrom(provider r.Provider, policy r.EgressPolicy, launch string
 	}
 	u.AuditPresent, u.Complete, u.AuthExported, u.AuthReturned = true, audit.Complete, audit.AuthExported, audit.AuthReturned
 	return u
+}
+
+// e2eRetainedLaunches proves the native launch a root attached after
+// close-provider must hold, and returns it as the only pre-existing launch:
+// exactly one launch, captured and whole-unit stopped, with a bound stopped
+// audit recording the auth as exported, not returned and the session not
+// complete. Its provider and session must be the retained job's outstanding
+// attempt, and the job must hold that attempt's durably recorded stopped
+// provider evidence. A missing or unreadable launch directory yields no
+// launch and is refused, so the fence cannot pass without its interrupted
+// launch.
+func e2eRetainedLaunches(units []e2eNativeUnit, j *r.DurableJob) (map[string]bool, error) {
+	if j == nil {
+		return nil, errors.New("no retained job")
+	}
+	if len(units) != 1 {
+		return nil, fmt.Errorf("%d native launches retained, want the one interrupted launch", len(units))
+	}
+	u := units[0]
+	if !u.Captured || !u.Stopped || !u.AuditPresent || !u.AuthExported || u.AuthReturned || u.Complete {
+		return nil, fmt.Errorf("retained launch %s lacks a captured whole-unit stop with a stopped audit of exported, unreturned auth: %+v", u.Launch, u)
+	}
+	if !j.Outstanding || u.Provider != string(j.AttemptProvider) || u.SessionHash != j.AttemptInputHash {
+		return nil, fmt.Errorf("retained launch %s is not job %s's outstanding attempt", u.Launch, j.Job.ID)
+	}
+	for _, a := range j.ProviderAttempts {
+		if a.ID == j.AttemptID && a.Evidence != nil && a.Evidence.Access.Stopped && a.Evidence.Access.SessionHash == u.SessionHash {
+			return map[string]bool{u.Launch: true}, nil
+		}
+	}
+	return nil, fmt.Errorf("job %s holds no stopped provider evidence for retained launch %s", j.Job.ID, u.Launch)
 }
 
 // ---------------------------------------------------------------- fake models
@@ -2100,7 +2214,7 @@ func e2eCloseProvider(e *e2eEnv) {
 		e.service = nil
 	}
 	e.check(closeErr == nil || errors.Is(closeErr, r.ErrWorkerStopPending), "Close either proved completion or reported ErrWorkerStopPending (%v)", closeErr)
-	e.store.Close()
+	e.closeStore("close-provider", e.store)
 	e.store = nil
 	d := e.reopenState()
 	j := e2eJobFor(d, 1)
@@ -2109,6 +2223,8 @@ func e2eCloseProvider(e *e2eEnv) {
 		return
 	}
 	e.note("after provider-session close: job state %s, consumed %d, artifacts %d, lease %v, outstanding %v, provider attempts %d", j.State, j.Checkpoint.ConsumedSessions, len(j.Checkpoint.Artifacts), j.LeaseToken != "", j.Outstanding, len(j.ProviderAttempts))
+	e.result.Requests = e2eRequests(d)
+	e.checkAll(e2eRequestVerdicts("after provider close", e.result.Requests, map[int]e2eRequest{1: e2eAdmittedOpened(1, j.RequestID)}))
 	e.check(j.Checkpoint.ConsumedSessions == 1 && len(j.Checkpoint.Artifacts) == 0, "the interrupted session stays charged and produced no artifact")
 	units := e2eReadNativeUnits(e.native, e.policies)
 	e.check(len(units) == 1 && units[0].Captured && units[0].Stopped && !units[0].Complete, "the interrupted native unit was captured and whole-unit stopped without completion")
@@ -2166,10 +2282,17 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.github.addPR(2, 4242, e.github.epoch.Add(-time.Minute))
 	e.github.addComment(2, r.OwnerID, "@sfl review", time.Now().Add(-time.Second))
-	before := e2eJobFor(e.reopenState(), 1)
+	retained := e.reopenState()
+	before := e2eJobFor(retained, 1)
 	if before == nil || before.LeaseToken == "" {
 		e.t.Fatal("attached root has no retained lease")
 	}
+	launches, err := e2eRetainedLaunches(e2eReadNativeUnits(e.native, e.policies), before)
+	if err != nil {
+		e.t.Fatal("attached root does not hold the interrupted launch and its stopped audit:", err)
+	}
+	e.nativeBefore = launches
+	e.check(true, "the attached root holds the interrupted launch, captured, stopped and audited with exported unreturned auth, bound to the retained attempt's stopped provider evidence")
 	codexFenced := !e2eAuthUsable(e.auth, r.Codex)
 	e.check(codexFenced, "codex auth is still fenced in the restarted process")
 	e.open("restart")
@@ -2189,10 +2312,80 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 	e.check(e.github.reviewPosts(1) == 0 && e.github.reviewPosts(2) == 0, "nothing was published while fenced")
 	e.check(e.github.gitExchanges() == 0, "no source capture ran while fenced")
 	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth stays fenced; claude auth stays usable")
+	// The fence holds every request back; none may have been duplicated
+	// behind it, or releasing the lease could admit a second review.
+	e.result.Requests = e2eRequests(d)
+	e.checkAll(e2eRequestVerdicts("fenced after restart", e.result.Requests, map[int]e2eRequest{1: e2eAdmittedOpened(1, before.RequestID), 2: e2ePendingComment(2)}))
 	e.snapshotJobs("fenced after restart")
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(final))
 	e.wedged = true
 	e.close("final")
+}
+
+// e2eRequest is a nonsecret projection of one retained native request.
+type e2eRequest struct {
+	PR                int
+	ID, ActorID       int64
+	Kind, ActorRole   string
+	Admitted, Removed bool
+}
+
+// e2eRequests projects every native request every PR retains.
+func e2eRequests(d r.DurableState) []e2eRequest {
+	out := []e2eRequest{}
+	for _, key := range slices.Sorted(maps.Keys(d.PRs)) {
+		p := d.PRs[key]
+		for _, q := range p.Requests {
+			s := e2eRequest{PR: p.Scope.PR, ID: q.ID, Admitted: q.Admitted, Removed: q.Removed}
+			if q.Origin != nil {
+				s.ActorID, s.Kind, s.ActorRole = q.Origin.ActorID, q.Origin.Kind, q.Origin.ActorRole
+			}
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// e2eAdmittedOpened is the automatic PR-open request of an owner-authored PR,
+// admitted as the request of job request id.
+func e2eAdmittedOpened(pr int, id int64) e2eRequest {
+	return e2eRequest{PR: pr, ID: id, ActorID: r.OwnerID, Kind: "opened", ActorRole: "pr_author", Admitted: true}
+}
+
+// e2ePendingComment is an owner @sfl review request not yet admitted.
+func e2ePendingComment(pr int) e2eRequest {
+	return e2eRequest{PR: pr, ActorID: r.OwnerID, Kind: "comment", ActorRole: "commenter"}
+}
+
+// e2eRequestVerdicts requires each PR in want to retain exactly one request
+// equal to its want entry (an ID of 0 matches any ID), and every other PR to
+// retain none. While a lease fences admission, a duplicate request cannot
+// become a job, but it would once the fence is released.
+func e2eRequestVerdicts(label string, requests []e2eRequest, want map[int]e2eRequest) []e2eVerdict {
+	byPR := map[int][]e2eRequest{}
+	for _, q := range requests {
+		byPR[q.PR] = append(byPR[q.PR], q)
+	}
+	v := []e2eVerdict{}
+	for _, pr := range slicesSortedInts(want) {
+		w, got := want[pr], byPR[pr]
+		ok := len(got) == 1
+		if ok {
+			g := got[0]
+			if w.ID == 0 {
+				g.ID = 0
+			}
+			ok = g == w
+		}
+		v = append(v, e2eVerdict{ok, fmt.Sprintf("%s: PR %d retains exactly its one %s request (%+v)", label, pr, w.Kind, got)})
+	}
+	others := []e2eRequest{}
+	for _, pr := range slicesSortedInts(byPR) {
+		if _, ok := want[pr]; !ok {
+			others = append(others, byPR[pr]...)
+		}
+	}
+	return append(v, e2eVerdict{len(others) == 0, fmt.Sprintf("%s: no other PR retains a request (%+v)", label, others)})
 }
 
 func e2eAuthUsable(directory string, provider r.Provider) bool {
@@ -2206,7 +2399,7 @@ func e2eAuthUsable(directory string, provider r.Provider) bool {
 }
 
 // e2eProbeRelease attempts ReleaseStopped on a private copy of the store.
-func e2eProbeRelease(e *e2eEnv, j *r.DurableJob) error {
+func e2eProbeRelease(e *e2eEnv, j *r.DurableJob) (err error) {
 	directory := filepath.Join(e.root, "probe")
 	if err := os.Mkdir(directory, 0700); err != nil {
 		return err
@@ -2229,7 +2422,7 @@ func e2eProbeRelease(e *e2eEnv, j *r.DurableJob) error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() { err = errors.Join(err, store.Close()) }()
 	return store.ReleaseStopped(context.Background(), j.Job.ID, j.LeaseToken, "auth_failed")
 }
 
@@ -2279,8 +2472,8 @@ func (e *e2eEnv) reopenState() r.DurableState {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	defer store.Close()
 	d, err := store.Snapshot(context.Background())
+	e.closeStore("reopened state read", store)
 	if err != nil {
 		e.t.Fatal(err)
 	}
@@ -2431,6 +2624,10 @@ func TestE2EFinalVerdicts(t *testing.T) {
 		"no source acquisition":                 {e2eUnitRun("", n1, n2, n3, n4), review, nil, false},
 		"new launch after restart": {mutate(e2eUnitRun("", n1, n2), func(res *e2eResult) {
 			res.SystemdUnits = res.SystemdUnits[1:]
+			res.AuthRecoveryClear["codex"] = false
+		}), e2eExpectations["close-provider-reopen"], map[string]bool{n1: true}, true},
+		"retained launch vanished": {mutate(e2eUnitRun("", n1), func(res *e2eResult) {
+			res.SystemdUnits, res.NativeUnits = nil, nil
 			res.AuthRecoveryClear["codex"] = false
 		}), e2eExpectations["close-provider-reopen"], map[string]bool{n1: true}, true},
 		"codex auth fenced after success": {mutate(e2eUnitRun(source, n1, n2, n3, n4), func(res *e2eResult) { res.AuthRecoveryClear["codex"] = false }), review, nil, false},
@@ -2729,6 +2926,228 @@ func TestE2ESessionsBound(t *testing.T) {
 		sessions := run()
 		edit(sessions)
 		if _, unbound := e2eSessionsBound(sessions, j1, j2); len(unbound) == 0 {
+			t.Error(name, "accepted")
+		}
+	}
+}
+
+// e2eCloser is a store handle whose Close result is scripted.
+type e2eCloser struct {
+	err   error
+	calls int
+}
+
+func (c *e2eCloser) Close() error { c.calls++; return c.err }
+
+func TestE2ECloseStoreReported(t *testing.T) {
+	t.Setenv("SFL_E2E_EVIDENCE", "")
+	for _, failing := range []bool{false, true} {
+		tb := &e2eCleanupTB{T: t}
+		e := &e2eEnv{t: tb, scenario: "review", finished: true, result: &e2eResult{Case: "review"}}
+		closer := &e2eCloser{}
+		if failing {
+			closer.err = errors.New("synthetic SQLite checkpoint failure")
+		}
+		e.closeStore("final", closer)
+		e.seal()
+		if closer.calls != 1 || e.result.Passed == failing || tb.Failed() != failing {
+			t.Errorf("store Close failure %v: calls %d, sealed Passed %v, errors %v", failing, closer.calls, e.result.Passed, tb.errors)
+		}
+	}
+}
+
+func TestE2EStaleEvidence(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores the read-only evidence directory")
+	}
+	t.Setenv("SFL_E2E_KEEP_FAILED", "")
+	list := func() (map[string]string, error) { return map[string]string{}, nil }
+	stalePass := func(t *testing.T) (string, string) {
+		evidence := t.TempDir()
+		stale := filepath.Join(evidence, "review.json")
+		if err := os.WriteFile(stale, []byte("{\"Case\": \"review\", \"Passed\": true}\n"), 0400); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("SFL_E2E_EVIDENCE", evidence)
+		t.Cleanup(func() { _ = os.Chmod(evidence, 0700) })
+		return evidence, stale
+	}
+	allocated := func(t *testing.T, e *e2eEnv) {
+		t.Cleanup(func() {
+			if e != nil {
+				e.units.stop(0)
+				_ = os.RemoveAll(e.root)
+			}
+		})
+	}
+	t.Run("unwritable after setup", func(t *testing.T) {
+		evidence, stale := stalePass(t)
+		tb := &e2eSetupTB{e2eCleanupTB: e2eCleanupTB{T: t}}
+		var e *e2eEnv
+		tb.run(func() {
+			e = e2eAllocate(tb, "review", "", list)
+			if err := os.Chmod(evidence, 0500); err != nil {
+				t.Error(err)
+			}
+			tb.Fatal("synthetic run failure after the evidence directory became unwritable")
+		})
+		allocated(t, e)
+		var sealed e2eResult
+		if raw, err := os.ReadFile(stale); err == nil && json.Unmarshal(raw, &sealed) == nil && sealed.Passed {
+			t.Error("an earlier passing result survived a failed run that could not write its own")
+		}
+		if entries, _ := os.ReadDir(evidence); len(entries) != 0 {
+			t.Error("evidence directory not empty after a failed write", len(entries))
+		}
+	})
+	t.Run("irremovable before setup", func(t *testing.T) {
+		evidence, _ := stalePass(t)
+		if err := os.Chmod(evidence, 0500); err != nil {
+			t.Fatal(err)
+		}
+		tb := &e2eSetupTB{e2eCleanupTB: e2eCleanupTB{T: t}}
+		var e *e2eEnv
+		tb.run(func() { e = e2eAllocate(tb, "review", "", list) })
+		allocated(t, e)
+		if e != nil || !tb.Failed() {
+			t.Error("run started beside an earlier passing result it could not remove", tb.errors)
+		}
+	})
+}
+
+func TestE2EWriteEvidence(t *testing.T) {
+	directory := t.TempDir()
+	names := func() []string {
+		entries, _ := os.ReadDir(directory)
+		out := []string{}
+		for _, entry := range entries {
+			out = append(out, entry.Name())
+		}
+		return out
+	}
+	for _, body := range []string{"{\"Passed\": true}\n", "{\"Passed\": false}\n"} {
+		if err := e2eWriteEvidence(directory, "review", []byte(body)); err != nil {
+			t.Fatal(err)
+		}
+		raw, err := os.ReadFile(filepath.Join(directory, "review.json"))
+		info, _ := os.Stat(filepath.Join(directory, "review.json"))
+		if err != nil || string(raw) != body || info.Mode().Perm() != 0600 || !slices.Equal(names(), []string{"review.json"}) {
+			t.Fatal("evidence not replaced whole", string(raw), err, names())
+		}
+	}
+	// A destination that cannot be replaced fails without leaving a temporary.
+	occupied := filepath.Join(directory, "close-publish.json")
+	if os.Mkdir(occupied, 0700) != nil || os.WriteFile(filepath.Join(occupied, "x"), nil, 0600) != nil {
+		t.Fatal("fixture")
+	}
+	if err := e2eWriteEvidence(directory, "close-publish", []byte("{}\n")); err == nil {
+		t.Error("write over an occupied destination reported success")
+	}
+	if got := names(); !slices.Equal(got, []string{"close-publish.json", "review.json"}) {
+		t.Error("failed write left", got)
+	}
+}
+
+func TestE2ERetainedLaunches(t *testing.T) {
+	session, launch := strings.Repeat("5", 64), strings.Repeat("6", 32)
+	unit := func() e2eNativeUnit {
+		return e2eNativeUnit{Provider: "codex", Launch: launch, SessionHash: session, Captured: true, Stopped: true, AuditPresent: true, AuthExported: true}
+	}
+	job := func() *r.DurableJob {
+		return &r.DurableJob{LeaseToken: "lease", Outstanding: true, AttemptProvider: r.Codex, AttemptID: "attempt", AttemptInputHash: session, ProviderAttempts: []r.ProviderAttempt{{ID: "attempt", Evidence: &r.ProviderEvidence{Access: r.ProviderAccess{Version: 1, SessionHash: session, Stopped: true}}}}}
+	}
+	if before, err := e2eRetainedLaunches([]e2eNativeUnit{unit()}, job()); err != nil || !maps.Equal(before, map[string]bool{launch: true}) {
+		t.Fatal("retained interrupted launch refused", before, err)
+	}
+	type input struct {
+		units []e2eNativeUnit
+		job   *r.DurableJob
+	}
+	edit := func(u func(*e2eNativeUnit), j func(*r.DurableJob)) input {
+		in := input{[]e2eNativeUnit{unit()}, job()}
+		if u != nil {
+			u(&in.units[0])
+		}
+		if j != nil {
+			j(in.job)
+		}
+		return in
+	}
+	for name, in := range map[string]input{
+		"launch directory missing":     {nil, job()},
+		"launch directory unreadable":  {[]e2eNativeUnit{{Provider: "codex", Launch: launch}}, job()},
+		"second retained launch":       {[]e2eNativeUnit{unit(), unit()}, job()},
+		"no retained job":              {[]e2eNativeUnit{unit()}, nil},
+		"unit not captured":            edit(func(u *e2eNativeUnit) { u.Captured = false }, nil),
+		"unit not stopped":             edit(func(u *e2eNativeUnit) { u.Stopped = false }, nil),
+		"stopped audit missing":        edit(func(u *e2eNativeUnit) { u.AuditPresent = false }, nil),
+		"auth never exported":          edit(func(u *e2eNativeUnit) { u.AuthExported = false }, nil),
+		"auth returned":                edit(func(u *e2eNativeUnit) { u.AuthReturned = true }, nil),
+		"session completed":            edit(func(u *e2eNativeUnit) { u.Complete = true }, nil),
+		"launch of another session":    edit(func(u *e2eNativeUnit) { u.SessionHash = strings.Repeat("7", 64) }, nil),
+		"launch of another provider":   edit(func(u *e2eNativeUnit) { u.Provider = "claude" }, nil),
+		"attempt not outstanding":      edit(nil, func(j *r.DurableJob) { j.Outstanding = false }),
+		"no provider evidence":         edit(nil, func(j *r.DurableJob) { j.ProviderAttempts = nil }),
+		"evidence of another attempt":  edit(nil, func(j *r.DurableJob) { j.ProviderAttempts[0].ID = "other" }),
+		"evidence of another session":  edit(nil, func(j *r.DurableJob) { j.ProviderAttempts[0].Evidence.Access.SessionHash = strings.Repeat("7", 64) }),
+		"evidence not stopped":         edit(nil, func(j *r.DurableJob) { j.ProviderAttempts[0].Evidence.Access.Stopped = false }),
+		"evidence record without body": edit(nil, func(j *r.DurableJob) { j.ProviderAttempts[0].Evidence = nil }),
+	} {
+		if _, err := e2eRetainedLaunches(in.units, in.job); err == nil {
+			t.Error(name, "accepted as the retained interrupted launch")
+		}
+	}
+}
+
+func TestE2ERequestVerdicts(t *testing.T) {
+	origin := func(kind, role string, actor int64) *r.RequestOrigin {
+		return &r.RequestOrigin{Kind: kind, ActorID: actor, ActorRole: role}
+	}
+	state := func() r.DurableState {
+		return r.DurableState{PRs: map[string]*r.PRRecord{
+			e2eScopeKey(1): {Scope: r.Scope{PR: 1}, Requests: []r.NativeRequest{{ID: 1, Admitted: true, Origin: origin("opened", "pr_author", r.OwnerID)}}},
+			e2eScopeKey(2): {Scope: r.Scope{PR: 2}, Requests: []r.NativeRequest{{ID: 1, Origin: origin("comment", "commenter", r.OwnerID)}}},
+		}}
+	}
+	want := map[int]e2eRequest{1: e2eAdmittedOpened(1, 1), 2: e2ePendingComment(2)}
+	failures := func(d r.DurableState) []string {
+		out := []string{}
+		for _, v := range e2eRequestVerdicts("fenced", e2eRequests(d), want) {
+			if !v.OK {
+				out = append(out, v.Message)
+			}
+		}
+		return out
+	}
+	if f := failures(state()); len(f) != 0 {
+		t.Fatal("one request per PR refused:", f)
+	}
+	pr := func(d r.DurableState, n int) *r.PRRecord { return d.PRs[e2eScopeKey(n)] }
+	for name, edit := range map[string]func(r.DurableState){
+		"second automatic request on PR 1": func(d r.DurableState) {
+			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("synchronize", "pr_author", r.OwnerID)})
+		},
+		"repeated open request on PR 1": func(d r.DurableState) {
+			pr(d, 1).Requests = append(pr(d, 1).Requests, r.NativeRequest{ID: 2, Origin: origin("opened", "pr_author", r.OwnerID)})
+		},
+		"second owner comment on PR 2": func(d r.DurableState) {
+			pr(d, 2).Requests = append(pr(d, 2).Requests, r.NativeRequest{ID: 2, Origin: origin("comment", "commenter", r.OwnerID)})
+		},
+		"PR 1 request not the leased job's": func(d r.DurableState) { pr(d, 1).Requests[0].ID = 3 },
+		"PR 1 request without origin":       func(d r.DurableState) { pr(d, 1).Requests[0].Origin = nil },
+		"PR 1 request removed":              func(d r.DurableState) { pr(d, 1).Requests[0].Removed = true },
+		"PR 2 request admitted":             func(d r.DurableState) { pr(d, 2).Requests[0].Admitted = true },
+		"PR 2 request automatic":            func(d r.DurableState) { pr(d, 2).Requests[0].Origin = origin("opened", "pr_author", 4242) },
+		"PR 2 comment by another actor":     func(d r.DurableState) { pr(d, 2).Requests[0].Origin.ActorID = 4242 },
+		"PR 2 request lost":                 func(d r.DurableState) { pr(d, 2).Requests = nil },
+		"PR 2 record lost":                  func(d r.DurableState) { delete(d.PRs, e2eScopeKey(2)) },
+		"request on another PR": func(d r.DurableState) {
+			d.PRs[e2eScopeKey(3)] = &r.PRRecord{Scope: r.Scope{PR: 3}, Requests: []r.NativeRequest{{ID: 1, Origin: origin("comment", "commenter", r.OwnerID)}}}
+		},
+	} {
+		d := state()
+		edit(d)
+		if len(failures(d)) == 0 {
 			t.Error(name, "accepted")
 		}
 	}
