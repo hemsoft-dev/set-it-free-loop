@@ -383,8 +383,15 @@ attempt, still charged for its one interrupted session, with no artifact and
 no source access. It must record exactly one provider attempt, the leased
 one, whose evidence equals the interrupted launch's audit evidence by digest,
 and exactly one recovery receipt of that attempt, round, launch and evidence
-digest, with the auth retired. PR 1 received no POST and holds no remote
-review. The owner journal holds exactly two source records, PR 1's retained
+digest, with the auth retired, recorded at a recovery time. As production's
+recovery changes nothing else, the job must equal the retained job with only
+its state, lease, deadline, reservation and pending charge released and that
+receipt appended. The interrupted launch's audit must still bind the
+recovered attempt: its derived request, the zero report, no source receipt,
+the wait for its result record as its final stage and the `auth-return`
+failure. PR 2's job holds exactly its four artifact attempts and no recovery
+receipt, and no completed job of any case carries one. PR 1 received no POST
+and holds no remote review. The owner journal holds exactly two source records, PR 1's retained
 one and PR 2's, each bound to its own job's snapshot, the current release and
 source VM runtime hashes and the release's source stub hash. PR 2's record
 must pass the source lifecycle order from the journal sampled at its one
@@ -446,10 +453,10 @@ rule that refuses an extra entry.
 | Record | Validator applied | Fields compared | Unconstrained (reason) | Exact set |
 | --- | --- | --- | --- | --- |
 | Native `unit.json` | production `readUnit`: private read, strict decode, payload, stub, possible lifecycle | version, binding (launch, derived containment), unit, payload, stub, manifest hash, boot ID, process boot ID, all five lifecycle flags | manager owner, start and stop jobs, PID, cgroup (host-assigned; `readUnit` checks their shape and the unit cgroup); invocation ID and start ticks beyond shape (systemd- and kernel-assigned) | one per launch directory; every root entry projected |
-| `native-audit.json` | exact `persistAudit` encoding; production request validity, code host and native-result predicates, guest stages, failure kinds | version, binding, request, manifest, report and source hashes, provider evidence (digest), completion, stage, failure, auth exported and returned | code host hashes and sizes, native result hash, guest stage and boot diagnostics beyond production's predicates (guest-internal, not derivable on the host) | one per launch |
+| `native-audit.json` | exact `persistAudit` encoding (version 2); production request validity, code host and native-result predicates, guest stages, failure kinds | version (2), binding, attempt ID (the job's recording attempt), request, manifest, report and source hashes, provider evidence (digest), completion, stage, failure, auth exported and returned | code host hashes and sizes, native result hash, guest stage and boot diagnostics beyond production's predicates (guest-internal, not derivable on the host) | one per launch |
 | Provider evidence (audit, artifact, attempt) | production stopped and completed receipt checks; stored-artifact evidence check | policy (release), session, inference and metadata counts (backend), digest across audit, artifact and attempt | byte, forwarded, response, negotiation and refresh counters within production's bounds (transport timing) | one per attempt |
 | Source receipts (artifact, attempt) | production `SourceAccess.validate` for the derived session | version, session, tool calls, every read (fixture bytes at head), no exhaustion or omission, digest across artifact, attempt and audit | reader calls and bytes within production's bounds (search reads every allowlisted path) | one per artifact attempt; at most one for an interrupted attempt |
-| Durable job | none in production's loader | the whole job against the expected job (ID, requester, complete origin of the retained request, configuration and version 1 from the harness, fake upstream snapshot, current release), scope, request, state, checkpoint hash and count, lease, deadline, reservation, pending charge, charge days (distinct dates), audited providers, last attempt (ID, provider, round, session, evidence requirement) | generation (production's per-PR counter; the intent repeats it), packet (capture output; the staged export binds its digest), creation time and charge-day values (wall clock) | one per expected PR, no other job |
+| Durable job | none in production's loader | the whole job against the expected job (ID, requester, complete origin of the retained request, configuration and version 1 from the harness, fake upstream snapshot, current release), scope, request, state, checkpoint hash and count, lease, deadline, reservation, pending charge, charge days (distinct dates), audited providers, last attempt (ID, provider, round, session, evidence requirement), no recovery receipt | generation (production's per-PR counter; the intent repeats it), packet (capture output; the staged export binds its digest), creation time and charge-day values (wall clock) | one per expected PR, no other job |
 | Artifacts | engine session derivation; stored-artifact evidence check | job hash, session and report (derived from the expected job; report canned), coverage (none), validation reads (one), source receipt, provider evidence, evidence requirement | report usage (provider accounting, never published) | exactly Codex R1, Claude R1, Codex R2, Claude R2 |
 | Provider and source attempts | production receipt checks | ID (an artifact's or the interrupted launch's), evidence and receipt by digest | none | the artifacts' attempts plus the allowed interrupted one |
 | Write intents | none | ID, kind, scope, request, generation, job and checkpoint hashes, snapshot, document (canned render for the expected job), body hash, marker, state, receipt ID | creation and receipt times (wall clock) | one review intent per PR, no other write |
@@ -457,6 +464,10 @@ rule that refuses an extra entry.
 | Source owner records | production strict canonical journal reader | attempt, unit, invocation, request and source request hashes, stub, release, runtime, snapshot, lifecycle flags, grant, empty `StopBoot`, boot ID | channel ID and generation (per-attempt nonces, distinct per job in `isolation`); manager owner, start job, birth, process and cgroup (host-assigned; production checks their consistency) | one per expected job |
 | Archive exports | production archive journal reader | attempt, state (`staged`), request hash, release, runtime, snapshot, packet hash (job packet) | wire hash and size (restore verifies them against the payload) | one per source record |
 | Released private copy | production store reread | the whole job: only state, lease, deadline, reservation and pending charge differ | none | one job, no write |
+| Recovered job (`close-provider-recover`) | production `releaseRecoveredProviderAttempt` before the reread; none in production's loader | the whole job against the retained job: only state (`auth_failed`), lease, deadline, reservation and pending charge differ, and exactly one recovery receipt is appended; still charged for its one session | none | PR 1's one job; exactly the leased attempt (the interrupted launch's evidence) and no source attempt; PR 2's job exactly its four artifact attempts |
+| Provider recovery receipt (`ProviderRecoveries`) | production `releaseRecoveredProviderAttempt`: attempt, provider, round and cloned-evidence digest must match the outstanding attempt under its lease | attempt ID (leased), launch ID (interrupted), provider (Codex), round, evidence hash (the audit's evidence digest), auth (`retired`), state (`auth_failed`), recovery time set and not before the job's creation | recovery time value (wall clock) | exactly one on PR 1's job, none on any other job |
+| Operator recovery candidates | production `ProviderRecoveryCandidates` scan (version 2 receipts naming the attempt) | the whole candidate: job, attempt ID, provider, round, session, outstanding, evidence recorded, launches | none | exactly one candidate with exactly the interrupted launch |
+| Provider auth stores | production `AuthStore` refresh | disposition (`fenced`, `retired`, `usable`, `invalid`); usable only with the original synthetic tokens; after re-provisioning, exactly the re-supplied seed bytes | none | one store per provider |
 | Fake GitHub, model and Git observations | harness-owned | POSTs, reviews (marker, canonical document hash, inline), Git exchanges (operation, wants, status, journal sample), session checks and backend counts, every API route against its role's production capability | token mints, API request counts, and API tallies after settling (a wedged handle keeps its owner) | per-role route set equals the case's; settled observations equal the judged ones |
 
 ## Admission rule
@@ -707,9 +718,10 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    retains only its admitted automatic `opened` request, and no other PR has
    a request.
 2. The service is opened, but not refreshed or run.
-   `ProviderRecoveryCandidates` lists the job, its attempt ID, recorded
-   stopped evidence and exactly the one original launch, whose stopped
-   audit receipt binds that attempt ID. A root retained by a build whose
+   `ProviderRecoveryCandidates` lists exactly one candidate, equal field for
+   field to the leased attempt's: its job, attempt ID, provider, round and
+   session, outstanding with recorded stopped evidence, and exactly the one
+   original launch, whose stopped audit receipt binds that attempt ID. A root retained by a build whose
    receipts lack the attempt ID cannot be recovered.
 3. A wrong attempt ID is refused with `ErrFenced`. The correct request without
    `RetireUnreturnedAuth` is refused with `ErrAuthRecoveryRequired`. After
@@ -778,8 +790,14 @@ enumeration and source lifecycle order) applied to recovery, and the round 9
 rules (PR 2's reports and document judged against the canned reports and
 production's renderer, the quiesced unit sampler, the settled re-read of the
 recovery process's fake servers, and the exact fenced, retired and usable
-auth dispositions) applied to recovery, has not run on a host. The
-[`daac99c` run](#measured-at-daac99c) predates operator recovery and the
+auth dispositions) applied to recovery, and the round 10 rules (every
+durable record read through production's own readers and validators, the
+version 2 audit read as `persistAudit`'s exact encoding with its attempt ID,
+exact attempt sets, the recovered job equal to the retained job but for its
+released fields and one recovery receipt, the interrupted launch's audit
+bound to the recovered attempt, and the exact operator candidate view)
+applied to recovery, has not run on a host. The
+[`89382c7` run](#measured-at-89382c7) predates operator recovery and the
 version 2 receipts and is not evidence for them. Every case, including
 `close-provider` followed by `close-provider-recover` in one lock hold, needs
 to be rerun from images, stub and test binary built from one clean commit,
