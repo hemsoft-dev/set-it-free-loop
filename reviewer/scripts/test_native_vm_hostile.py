@@ -31,7 +31,9 @@ def running(pid):
     zombies where PID 1 does not reap them; they can no longer execute."""
     try:
         state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-    except (FileNotFoundError, IndexError):
+    except (OSError, IndexError):
+        # FileNotFoundError or ProcessLookupError: the process exited,
+        # possibly between opening and reading its stat file.
         return False
     return state != "Z"
 
