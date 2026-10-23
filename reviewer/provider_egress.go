@@ -422,6 +422,20 @@ func (b *ProviderEgress) admit() bool {
 	b.intake <- struct{}{}
 	return true
 }
+
+// denyRoute records an ingress refusal and fails the session. After stop has
+// been attested nothing can change the receipt; such a request was refused
+// after the session ended.
+func (b *ProviderEgress) denyRoute() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.audit.Stopped {
+		return
+	}
+	b.audit.RouteDenials++
+	b.audit.Failed = true
+	b.cancel()
+}
 func (b *ProviderEgress) finishIntake() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -434,21 +448,25 @@ func (b *ProviderEgress) finishIntake() {
 
 func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	route, ok := b.route(r)
-	if !ok {
-		b.mu.Lock()
-		b.audit.RouteDenials++
-		b.mu.Unlock()
-		b.fail(false)
-		http.Error(w, "provider route denied", http.StatusForbidden)
-		return
-	}
 	// Bound waiting headers without reading their bodies or dialing upstream.
 	// Actual pinned clients overlap startup metadata; forwarding stays serial.
+	// A denied route is admitted too, so Close cannot attest stop while its
+	// refusal is still being recorded.
 	if !b.admit() {
+		if !ok {
+			b.denyRoute()
+			http.Error(w, "provider route denied", http.StatusForbidden)
+			return
+		}
 		http.Error(w, "provider intake stopped or exhausted", http.StatusTooManyRequests)
 		return
 	}
 	defer b.finishIntake()
+	if !ok {
+		b.denyRoute()
+		http.Error(w, "provider route denied", http.StatusForbidden)
+		return
+	}
 	closeBody := sync.OnceFunc(func() {
 		if r.Body != nil {
 			_ = r.Body.Close()

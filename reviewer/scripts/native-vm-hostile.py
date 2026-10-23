@@ -12,6 +12,8 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
+import signal
 import sys
 
 # Kept in the same order as internal/nativefixture hostileCases. The Go runner
@@ -53,6 +55,10 @@ def verdict(name, result):
     return "fail"
 
 
+# native-vm-fake.py may take two 120 s build steps plus its 125 s runner bound.
+CASE_TIMEOUT = 420
+
+
 def unit_stopped(unit, props, anchor=Path("/sys/fs/cgroup")):
     """Independent stop proof: the manager has no live main PID and the
     captured cgroup is gone or empty with its original inode."""
@@ -63,11 +69,14 @@ def unit_stopped(unit, props, anchor=Path("/sys/fs/cgroup")):
     if props.get("LoadState") != "not-found" and props.get("InvocationID") != unit["Identity"]["invocation_id"]:
         return False
     group = anchor/unit["Cgroup"]["Path"].lstrip("/")
-    if not group.exists():
+    # systemd may remove an empty group between these reads; disappearance is
+    # the gone state. A different inode is never accepted as the original.
+    try:
+        if group.stat().st_ino != unit["Cgroup"]["Inode"]:
+            return False
+        return "populated 0" in (group/"cgroup.events").read_text() and not (group/"cgroup.procs").read_text().strip()
+    except FileNotFoundError:
         return True
-    if group.stat().st_ino != unit["Cgroup"]["Inode"]:
-        return False
-    return "populated 0" in (group/"cgroup.events").read_text() and not (group/"cgroup.procs").read_text().strip()
 
 
 def manager_properties(name):
@@ -76,13 +85,55 @@ def manager_properties(name):
     return dict(line.split("=", 1) for line in raw.splitlines() if "=" in line)
 
 
+def native_units():
+    """Loaded native VM containment units, by name."""
+    raw = subprocess.check_output(["systemctl", "--user", "list-units", "sfl-alpha-*", "--all", "--plain",
+                                   "--no-legend"], text=True, timeout=10)
+    names = {line.split()[0] for line in raw.splitlines() if line.strip()}
+    found = set()
+    for name in names:
+        show = subprocess.check_output(["systemctl", "--user", "show", name, "--property=Description"],
+                                       text=True, timeout=10)
+        if show.strip().startswith("Description=SFL native VM containment "):
+            found.add(name)
+    return found
+
+
+def stop_new_units(before, deadline=30):
+    """After a timed-out case, kill native units it started through their
+    cgroup and require them inactive. Returns True only when all stopped."""
+    stopped = True
+    for name in sorted(native_units() - before):
+        subprocess.run(["systemctl", "--user", "kill", "--signal=SIGKILL", name], timeout=10)
+        end = time.monotonic() + deadline
+        while time.monotonic() < end:
+            props = manager_properties(name)
+            if props.get("MainPID") == "0" and props.get("ActiveState") in ("inactive", "failed"):
+                break
+            time.sleep(0.2)
+        else:
+            stopped = False
+    return stopped
+
+
 def run_case(script, args, provider, name, output):
     command = [sys.executable, "-B", str(script), "--run-fake-only", "--image", str(args.image),
                "--output", str(output), "--provider", provider, "--go", args.go,
                "--module-cache", str(args.module_cache)]
     command += ["--case", "forbidden"] if name == "forbidden" else ["--case", "hostile", "--hostile", name]
+    before = native_units()
     with output.with_suffix(".log").open("xb") as log:
-        completed = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, timeout=240)
+        process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        try:
+            returncode = process.wait(timeout=CASE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            # Kill the whole case, not only the wrapper, then prove its units
+            # stopped before the matrix reports and stops.
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            return {"provider": provider, "case": name, "verdict": "fail", "timed_out": True,
+                    "exit_code": None, "unit_stopped_independently": stop_new_units(before), "abort": True}
+    completed = subprocess.CompletedProcess(command, returncode)
     receipt = json.loads((output/"receipt.json").read_text())
     root = Path(receipt["state_directory"])
     result_path = root/"result.json"
@@ -124,6 +175,8 @@ def main():
             json.dump(rows, stream, indent=2)
             stream.write("\n")
         print(json.dumps(rows[-1]), flush=True)
+        if rows[-1].get("abort"):
+            break
     verdicts = {row["verdict"] for row in rows}
     # 3 records a contained client capability failure; it blocks that provider.
     raise SystemExit(1 if "fail" in verdicts else 3 if "client-failure" in verdicts else 0)

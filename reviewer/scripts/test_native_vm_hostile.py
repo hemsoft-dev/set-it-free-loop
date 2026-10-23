@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 import re
+import time
+import os
 import subprocess
 import sys
 import tempfile
@@ -67,6 +69,48 @@ class HostileMatrixTests(unittest.TestCase):
             self.assertTrue(module.unit_stopped(unit, gone, anchor))
             (group/"cgroup.procs").write_text("123\n")
             self.assertFalse(module.unit_stopped(unit, gone, anchor))
+
+    def test_group_removed_during_the_stop_check_is_gone(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-hostile-cgroup-") as directory:
+            anchor = Path(directory)
+            group = anchor/"app.slice"/"sfl-alpha-x.service"
+            group.mkdir(parents=True)
+            unit = {"Captured": True, "Stopped": True, "PayloadKind": "native-vm", "Identity": {"invocation_id": "abc"},
+                    "Cgroup": {"Path": "/app.slice/sfl-alpha-x.service", "Inode": group.stat().st_ino}}
+            gone = {"LoadState": "not-found", "MainPID": "0", "ActiveState": "inactive", "InvocationID": ""}
+            # The original group exists at stat but its files vanish before read.
+            self.assertTrue(module.unit_stopped(unit, gone, anchor))
+
+    def test_timed_out_case_kills_its_process_group_and_aborts(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-hostile-timeout-") as directory:
+            root = Path(directory)
+            marker = root/"child.pid"
+            script = root/"slow.py"
+            script.write_text("import os,subprocess,sys,time\n"
+                              "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\n"
+                              f"open({str(marker)!r},'w').write(str(child.pid))\n"
+                              "time.sleep(60)\n")
+            args = type("Args", (), {"image": root, "go": "go", "module_cache": root})()
+            saved = (module.CASE_TIMEOUT, module.native_units, module.stop_new_units)
+            stopped = []
+            module.CASE_TIMEOUT = 2
+            module.native_units = lambda: set()
+            module.stop_new_units = lambda before: stopped.append(before) or True
+            try:
+                row = module.run_case(script, args, "codex", "codex-shell", root/"case")
+            finally:
+                module.CASE_TIMEOUT, module.native_units, module.stop_new_units = saved
+            self.assertEqual((row["verdict"], row["timed_out"], row["abort"], row["unit_stopped_independently"]), ("fail", True, True, True))
+            self.assertEqual(stopped, [set()])
+            child = int(marker.read_text())
+            for _ in range(50):
+                try:
+                    os.kill(child, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.05)
+            else:
+                self.fail("timed-out case left its child running")
 
     def test_fake_runner_refuses_mixed_or_unnamed_hostile_selection(self):
         script = Path(__file__).with_name("native-vm-fake.py")

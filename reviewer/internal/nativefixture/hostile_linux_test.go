@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
 )
@@ -367,5 +368,48 @@ func TestHostileEgressDestinationsNeverReachTheTransport(t *testing.T) {
 		if transport.calls != 0 || access.Forwarded != 0 || !access.Failed || access.RouteDenials != 7 {
 			t.Fatal("forbidden destination reached the transport", provider, transport.calls, access)
 		}
+	}
+}
+
+// A forbidden request arriving while Close waits for an in-flight handler is
+// recorded before stop is attested, never after a clean receipt.
+func TestHostileDenialDuringCloseIsInTheStopReceipt(t *testing.T) {
+	s := hostileSession(t, r.Claude)
+	_, policy, err := New(s, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	transport := &handlerTransport{handler: http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		close(entered)
+		<-release
+		http.Error(w, "released", http.StatusServiceUnavailable)
+	})}
+	guard, err := r.NewProviderEgress(context.Background(), s, policy, transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inflight := make(chan struct{})
+	go func() { defer close(inflight); guard.ServeHTTP(httptest.NewRecorder(), inferenceRequest(s, "")) }()
+	<-entered
+	closed := make(chan r.ProviderAccess, 1)
+	go func() { access, _ := guard.Close(context.Background()); closed <- access }()
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		if !guard.Snapshot().Stopped && guard.Snapshot().Failed {
+			break
+		}
+	}
+	q := inferenceRequest(s, "")
+	q.Host = "10.0.0.1"
+	w := httptest.NewRecorder()
+	guard.ServeHTTP(w, q)
+	if w.Code != http.StatusForbidden {
+		t.Fatal("forbidden destination during close not refused", w.Code)
+	}
+	close(release)
+	<-inflight
+	access := <-closed
+	if !access.Stopped || access.RouteDenials != 1 || !access.Failed {
+		t.Fatal("denial during close missing from the stop receipt", access)
 	}
 }
