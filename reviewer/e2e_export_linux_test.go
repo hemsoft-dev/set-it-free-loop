@@ -196,11 +196,12 @@ func E2EReadNativeUnitJournal(directory, stubHash string) (E2ENativeUnitJournal,
 	return s.readUnit(&authLock{root: root}, named.Binding)
 }
 
-// E2ENativeAudit is the native-audit.json receipt persistAudit writes, field
-// for field and in its order.
+// E2ENativeAudit is the version 2 native-audit.json receipt persistAudit
+// writes (nativeVMAuditReceipt), field for field and in its order.
 type E2ENativeAudit struct {
 	Version                                           int
 	Binding                                           AuthBinding
+	AttemptID                                         string
 	RequestHash, ManifestHash, ReportHash, SourceHash string
 	Provider                                          *ProviderEvidence
 	CodeHost                                          *nativeVMCodeHostAccess
@@ -669,13 +670,15 @@ func TestE2ENativeManifestHash(t *testing.T) {
 
 // TestE2ENativeLaunchReceipts proves the native launch seams against the
 // records production itself writes for a stopped phase: the unit journal
-// reads back through readUnit, the audit decodes strictly and re-encodes to
-// its own bytes, and its request, report and source hashes are the digests of
+// reads back through readUnit, the audit decodes strictly as version 2 naming
+// the phase's durable attempt and re-encodes to its own bytes, and its
+// request, report and source hashes are the digests of
 // the request reviewTaskAudited builds, the zero report a failed phase
 // records and the source receipt the phase returned. Any other request, a
 // changed receipt shape or an impossible lifecycle is refused.
 func TestE2ENativeLaunchReceipts(t *testing.T) {
 	p, _ := nativeHostPhaseFixture(t)
+	p.attempt = strings.Repeat("a", 32)
 	q := p.request
 	p.finished = &nativeVMFinished{Version: 1, Binding: q.Binding, RequestHash: Digest(q), State: "invalid_output", SourceAudit: nativeHostAuditFixture(t, q)}
 	attachIdleNativeProviderBridge(t, p)
@@ -692,7 +695,7 @@ func TestE2ENativeLaunchReceipts(t *testing.T) {
 		t.Error("unit journal of another stub accepted")
 	}
 	a, err := E2EReadNativeAudit(directory)
-	if err != nil || a.Binding != q.Binding || a.Complete || a.Failure == "" || a.Stage != "" {
+	if err != nil || a.Version != 2 || a.Binding != q.Binding || a.AttemptID != p.attempt || a.Complete || a.Failure == "" || a.Stage != "" {
 		t.Fatal("production audit not read back whole", a, err)
 	}
 	if err := E2EValidateNativeAudit(a, q.Session, q.Paths, q.Policy, q.ProfileHints); err != nil {
@@ -741,6 +744,7 @@ func TestE2ENativeLaunchReceipts(t *testing.T) {
 	for name, edit := range map[string]func(map[string]any){
 		"extra field":       func(m map[string]any) { m["Extra"] = true },
 		"missing field":     func(m map[string]any) { delete(m, "SourceHash") },
+		"missing attempt":   func(m map[string]any) { delete(m, "AttemptID") },
 		"missing diagnosis": func(m map[string]any) { delete(m, "BootDiagnostics") },
 	} {
 		var m map[string]any

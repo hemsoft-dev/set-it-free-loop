@@ -210,10 +210,12 @@ native release therefore proves nothing. The audit is read as production's
 exact encoding of its receipt (`E2EReadNativeAudit`): a private file whose
 fields are exactly `persistAudit`'s, in its order, and whose re-encoding is
 its bytes, so an unknown, missing, duplicated or reordered field is refused.
-It counts only as a version 1 receipt with the same binding and manifest hash,
-and its auth lifecycle must be possible: auth is returned only after it was
-exported, and a completed session has returned it. A completed audit ends at
-`result-validation` with no failure kind; an interrupted one records one.
+It counts only as a version 2 receipt with the same binding and manifest hash
+and a well-formed durable attempt ID (32 lowercase hex characters). A version
+1 receipt names no attempt; production recovery refuses it, and so does the
+harness. Its auth lifecycle must be possible: auth is returned only after it
+was exported, and a completed session has returned it. A completed audit ends
+at `result-validation` with no failure kind; an interrupted one records one.
 Once auth was exported or the session completed, the
 audit must carry provider evidence: the stopped receipt of that session under
 the release's egress policy for that provider. The receipt must also pass the
@@ -224,18 +226,18 @@ response and byte counters, and no exhaustion or denial without failure. The
 receipt of a completed session must also pass the completed-receipt validation
 an artifact requires: not failed or exhausted, at least one inference, every
 forwarded request answered and no denial. The receipt's counters are recorded
-as `Access`, and the digest of the complete provider evidence as
-`EvidenceHash`, for each native unit. A copied, foreign, regenerated, failed
-or impossible audit therefore proves nothing about the launch, and every
-native unit at the end must have a bound audit. In `isolation`, every session
-from the first onward must carry one of the two job IDs, and its PR and head
-must be that job's PR and the fake upstream's head of it, as must each source
-attempt's head. Each restore probe must report exactly its
-five reads in order. Both own reads must return the fake upstream's exact
-bytes from both the materialized store and the model-facing reader, each
-judged by the SHA-256 of what it returned (`StoreHash`, `ReaderHash`), not
-merely by its success. Every foreign read must be refused by both and return
-nothing.
+as `Access`, the named attempt as `AttemptID` and the digest of the complete
+provider evidence as `EvidenceHash`, for each native unit. A copied, foreign,
+regenerated, retried, failed or impossible audit therefore proves nothing
+about the launch, and every native unit at the end must have a bound audit.
+In `isolation`, every session from the first onward must carry one of the two
+job IDs, and its PR and head must be that job's PR and the fake upstream's
+head of it, as must each source attempt's head. Each restore probe must
+report exactly its five reads in order. Both own reads must return the fake
+upstream's exact bytes from both the materialized store and the model-facing
+reader, each judged by the SHA-256 of what it returned (`StoreHash`,
+`ReaderHash`), not merely by its success. Every foreign read must be refused
+by both and return nothing.
 
 ### Evidence bindings
 
@@ -286,15 +288,17 @@ and `close-provider` if it reopens) judges its completed PRs together:
   repeats.
 - **Launches.** Each artifact session ran in exactly one completed native
   launch of the artifact's provider whose audit evidence equals the
-  artifact's by digest, with auth exported and returned and a whole-unit stop.
-  Its audit's request hash is the digest of the request production builds for
-  that phase (the derived session, the job's sorted diff paths, the release
-  policy and the provider's profile hints), its report and source hashes are
-  the artifact's report and source receipt, and its code host receipt, native
-  result, guest stage and boot diagnostics pass production's predicates. No
-  other launch exists except an allowed interrupted one, bound to the one job
-  attempt that records its evidence, with the zero report and exactly that
-  attempt's recorded source receipt, or none.
+  artifact's by digest and whose receipt names the attempt that recorded it,
+  with auth exported and returned and a whole-unit stop. Its audit's request
+  hash is the digest of the request production builds for that phase (the
+  derived session, the job's sorted diff paths, the release policy and the
+  provider's profile hints), its report and source hashes are the artifact's
+  report and source receipt, and its code host receipt, native result, guest
+  stage and boot diagnostics pass production's predicates. No other launch
+  exists except an allowed interrupted one, bound to the one job attempt that
+  records its evidence, which its receipt names and no artifact used, with
+  the zero report and exactly that attempt's recorded source receipt, or
+  none. An attempt ID recorded more than once binds no launch.
 - **Backend checks.** Each artifact session was checked exactly once outside a
   fault hold by its own provider's fake backend, for its job, round, PR and
   head. Any other check of the job must be one a fault hook held.
@@ -639,8 +643,8 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
 
 1. Before startup, the job is `running` with its lease and one charged
    session. The only native launch is a Codex unit whose stopped audit
-   records exported, unreturned auth. Codex auth is fenced and Claude auth is
-   usable.
+   records exported, unreturned auth and names the leased attempt. Codex auth
+   is fenced and Claude auth is usable.
 2. The service is opened, but not refreshed or run.
    `ProviderRecoveryCandidates` lists the job, its attempt ID, recorded
    stopped evidence and exactly the one original launch, whose stopped
@@ -660,8 +664,10 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    PR 2 is admitted, recovery is refused with `ErrLiveBlocked`.
 6. The PR 2 `@sfl review` request is captured by one upload-pack wanting
    exactly its head and the base. It runs four native sessions, each in one
-   completed launch with auth returned. It is published as one marked
-   COMMENT with the inline comment at `source.go:1`, then confirmed.
+   completed launch with auth returned whose receipt names PR 2's recorded
+   attempt for that session. The interrupted launch still names PR 1's
+   recovered attempt, which no PR 2 artifact uses. It is published as one
+   marked COMMENT with the inline comment at `source.go:1`, then confirmed.
 7. PR 1 stays `auth_failed` with no new job, write or POST. PR 2 has exactly
    one review intent, and it is `confirmed`. The only GitHub POSTs were two
    role token mints and one review POST for PR 2. The owner journal holds two
@@ -674,6 +680,15 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    PR 1 attempt and interrupted launch belong to `close-provider` and are not
    counted. Both auth stores are usable at the end: the re-provisioned Codex
    auth was returned by PR 2's sessions.
+
+### Pre-rebase history: recovery runs at `098261f`, `483b17a` and `34c9d96`
+
+None of these commits is an ancestor of the current branch. All three predate
+the version 2 audit receipt: their native audits are version 1 and name no
+attempt, which production recovery and the current harness both refuse. They
+also predate the attestation and binding rules above. They are history, not
+evidence for the current head; that run is recorded under
+[Measured at `<head>`](#measured-at-head).
 
 Measured on mini on 2026-10-22 with code, test binary, stub and both images
 from commit `098261f` (release digest `4861b9df…cfb6`), under the shared VM
