@@ -157,7 +157,19 @@ func settleStoppedAttemptAuth(ctx context.Context, auth *AuthStore, stopped Auth
 			return "", ErrAuthRecoveryRequired
 		}
 		return ProviderAuthReturned, nil
-	case j.Stage == "committing" || j.Stage == "committed":
+	case (j.Stage == "committing" || j.Stage == "committed") && j.TransferStage == "":
+		// An interrupted Complete of a never-exported lease.
+		if receipt.AuthExported {
+			return "", ErrAuthRecoveryRequired
+		}
+		if profile.Complete(ctx, stopped) != nil {
+			return "", ErrAuthRecoveryRequired
+		}
+		return ProviderAuthUnexported, nil
+	case (j.Stage == "committing" || j.Stage == "committed") && j.TransferStage == "returned":
+		if !receipt.AuthExported {
+			return "", ErrAuthRecoveryRequired
+		}
 		if profile.Complete(ctx, stopped) != nil {
 			return "", ErrAuthRecoveryRequired
 		}

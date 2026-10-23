@@ -324,6 +324,56 @@ func TestProviderRecoveryRefusesAnotherAttemptsLaunch(t *testing.T) {
 	}
 }
 
+// A retry after an unexported lease's Complete was interrupted past its
+// commit point must still report that no auth was exported or returned.
+func TestProviderRecoveryKeepsUnexportedAcrossInterruptedCommit(t *testing.T) {
+	ctx := context.Background()
+	for _, stage := range []string{"committing", "committed"} {
+		t.Run(stage, func(t *testing.T) {
+			f := newWedgeFixture(t, "unexported")
+			profile, err := f.auth.RecoverProfile(ctx, f.phase.request.Binding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := profile.held.root
+			next, err := readAuth(r, profile.store.authRelative(), false)
+			if err == nil {
+				err = writeAuth(r, "pending.json", next)
+			}
+			j := profile.journal
+			j.Stage, j.NextHash = "committing", authHash(next)
+			if err == nil {
+				err = writeAuthJournal(r, j)
+			}
+			if err == nil && stage == "committed" {
+				j.Stage = "committed"
+				if err = writeAuth(r, "state.json", next); err == nil {
+					err = writeAuthJournal(r, j)
+				}
+			}
+			if err != nil || profile.Close() != nil {
+				t.Fatal("stage interrupted commit", err)
+			}
+			request := f.request()
+			request.RetireUnreturnedAuth = false
+			result, err := f.service.RecoverStoppedProvider(ctx, request)
+			if err != nil || result.Auth != ProviderAuthUnexported || result.State != "provider_unavailable" {
+				t.Fatal("interrupted unexported commit reported as another auth history", result, err)
+			}
+			d, _ := f.store.Snapshot(ctx)
+			if recoveries := d.Jobs[f.job.ID].ProviderRecoveries; len(recoveries) != 1 || recoveries[0].Auth != ProviderAuthUnexported {
+				t.Fatal("recovery receipt misstates the auth history", recoveries)
+			}
+			if raw, err := os.ReadFile(filepath.Join(f.auth.directory, "state.json")); err != nil || string(raw) != "synthetic-seed" {
+				t.Fatal("canonical auth is not the unchanged seed", err)
+			}
+			if _, err = os.Stat(filepath.Join(f.auth.directory, "lease.json")); !os.IsNotExist(err) {
+				t.Fatal("auth lease remains", err)
+			}
+		})
+	}
+}
+
 func TestProviderRecoveryRefusesWithoutDurableChange(t *testing.T) {
 	ctx := context.Background()
 	rewriteAudit := func(t *testing.T, f *wedgeFixture, change func(*nativeVMAuditReceipt)) {

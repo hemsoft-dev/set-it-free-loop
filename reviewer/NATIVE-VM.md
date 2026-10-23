@@ -366,7 +366,8 @@ journal rules, with a fresh `ConfirmAuthStopped` on each mutation:
 | active, never exported | `Complete` (unchanged seed) | `unexported` | `provider_unavailable` |
 | exported, no return | `Retire`, only with `RetireUnreturnedAuth` | `retired` | `auth_failed` |
 | receiving or returned | `ResumeAuthReturn`, then `Complete` | `returned` | `provider_unavailable` |
-| committing or committed | `Complete` | `returned` | `provider_unavailable` |
+| committing or committed, never exported | `Complete` | `unexported` | `provider_unavailable` |
+| committing or committed, returned | `Complete` | `returned` | `provider_unavailable` |
 | retiring | `Retire` | `retired` | `auth_failed` |
 
 An exported seed is never committed or reused without its durable return.
