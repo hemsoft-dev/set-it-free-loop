@@ -183,30 +183,32 @@ For `close-provider`, run `close-provider-reopen` next in a new process with
 the same lock hold. State lives under a fresh `/tmp/sfl-e2e-<nonce>` root,
 which a passing run removes. `SFL_E2E_KEEP_FAILED=1` retains a failed root.
 
-## Measured at `c29e563`
+## Measured at `3bbf701`
 
 On October 23, 2026, each case ran once on mini under the shared VM lock, from
 source and native images, a source stub and a `reviewer.test` all built from
-`c29e563`. Both binaries carried `vcs.revision=c29e563…` and
-`vcs.modified=false`, and the release hash was `74c59736d5af`. Every case
+`3bbf701`. Both binaries carried `vcs.revision=3bbf701…` and
+`vcs.modified=false`, and the release hash was `be62d79cec3d`. Every case
 passed with no failures, every observed unit matched a recorded launch, and no
-unit or E2E root remained afterwards. Only this document changed after
-`c29e563` until the checks were tightened in `909e33c`; the cases are to be
-re-measured at the new head.
+unit or E2E root remained afterwards. After the restart, PR 1 held exactly its
+admitted automatic `opened` request and PR 2 exactly one unadmitted owner
+`comment` request. Only this document changed after `3bbf701`.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
-| `review` | yes | 26.6 | 30 | 1 / 4 |
-| `close-publish` | yes | 27.6 | 33 | 1 / 4 |
-| `close-provider` | yes | 13.2 | 19 | 1 / 1 |
-| `close-provider-reopen` | yes | 38.6 | 18 | 0 / 0 |
-| `close-capture` | yes | 26.4 | 35 | 1 / 4 |
-| `isolation` | yes | 51.8 | 59 | 2 / 8 |
+| `review` | yes | 27.6 | 31 | 1 / 4 |
+| `close-publish` | yes | 28.6 | 34 | 1 / 4 |
+| `close-provider` | yes | 13.8 | 22 | 1 / 1 |
+| `close-provider-reopen` | yes | 38.6 | 23 | 0 / 0 |
+| `close-capture` | yes | 25.7 | 36 | 1 / 4 |
+| `isolation` | yes | 50.7 | 60 | 2 / 8 |
 
-`close-provider` took the branch where `Close` reports `ErrWorkerStopPending`;
-the branch where it proves completion has not run on a host. The sections below
-are pre-rebase history only: the commits they name are not ancestors of this
-branch, and their checks predate the attestation and binding rules above.
+An earlier run at `c29e563`, before the checks in `909e33c`, also passed every
+case. `close-provider` took the branch where `Close` reports
+`ErrWorkerStopPending`; the branch where it proves completion has not run on a
+host. The sections below are pre-rebase history only: the commits they name
+are not ancestors of this branch, and their checks predate the attestation and
+binding rules above.
 
 ## Pre-rebase history: measured results at `3140f0a`
 
