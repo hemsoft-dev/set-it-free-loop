@@ -76,10 +76,14 @@ type pollWork struct {
 // PollingController holds one OS owner lock for this SQLite service directory.
 // It polls while a single stopped-worker invocation runs in the background.
 // Construction does not start a daemon, provider, HTTP request or deployment.
+// Lock order is tick, then observing. Neither is acquired while holding mu.
 type PollingController struct {
-	options    PollOptions
-	owner      *authLock
-	tick       chan struct{}
+	options PollOptions
+	owner   *authLock
+	tick    chan struct{}
+	// observing serializes each local snapshot, trigger compare-and-set and fence
+	// against the stored PR records. It is never held across capture or work.
+	observing  chan struct{}
 	mu         sync.Mutex
 	closed     bool
 	active     *pollWork
@@ -118,7 +122,7 @@ func OpenPollingController(ctx context.Context, o PollOptions) (*PollingControll
 	o.Publisher.Now = o.Now
 	tick := make(chan struct{}, 1)
 	tick <- struct{}{}
-	return &PollingController{options: o, owner: owner, tick: tick}, nil
+	return &PollingController{options: o, owner: owner, tick: tick, observing: make(chan struct{}, 1)}, nil
 }
 
 func (c *PollingController) now() time.Time {
@@ -231,6 +235,18 @@ func (c *PollingController) fenceRemote(ctx context.Context, scope Scope, remote
 	})
 }
 
+// exclusive runs fn without a concurrent Poll or worker observation. Otherwise a
+// newer committed cursor fails the other's hash fence and discards its capture.
+func (c *PollingController) exclusive(ctx context.Context, fn func() error) error {
+	select {
+	case c.observing <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	defer func() { <-c.observing }()
+	return fn()
+}
+
 func (c *PollingController) observe(ctx context.Context, scope Scope) (RemoteState, error) {
 	remote, batch, err := c.options.Discovery.PollScope(ctx, scope)
 	if err != nil {
@@ -312,11 +328,13 @@ func (c *PollingController) flushWrites(ctx context.Context) (bool, error) {
 			}
 			acks++
 		}
-		if w.State == "prepared" {
-			err = c.options.Publisher.Dispatch(ctx, w.ID)
-		} else {
-			err = c.options.Publisher.Reconcile(ctx, w.ID)
-		}
+		// Publication reads and commits the same trigger state as observe.
+		err = c.exclusive(ctx, func() error {
+			if w.State == "prepared" {
+				return c.options.Publisher.Dispatch(ctx, w.ID)
+			}
+			return c.options.Publisher.Reconcile(ctx, w.ID)
+		})
 		if err != nil {
 			failures = errors.Join(failures, err)
 		}
@@ -432,31 +450,35 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound 
 			return nil, Job{}, ErrDeferred
 		}
 	}
-	remote, err := c.observe(ctx, w.scope)
-	if err != nil {
-		return nil, Job{}, err
-	}
-	if !remote.Access || !remote.Open || remote.Snapshot != w.snapshot {
-		return nil, Job{}, ErrFenced
-	}
-	if w.job != "" {
-		d, err := c.options.Store.Snapshot(ctx)
+	// Admission also marks the request, so it shares the observation's exclusion.
+	err := c.exclusive(ctx, func() error {
+		remote, err := c.observe(ctx, w.scope)
 		if err != nil {
-			return nil, Job{}, err
+			return err
 		}
-		j := d.Jobs[w.job]
-		if j == nil {
-			return nil, Job{}, ErrFenced
+		if !remote.Access || !remote.Open || remote.Snapshot != w.snapshot {
+			return ErrFenced
 		}
-		job = j.Job
-	} else {
+		if w.job != "" {
+			d, err := c.options.Store.Snapshot(ctx)
+			if err != nil {
+				return err
+			}
+			j := d.Jobs[w.job]
+			if j == nil {
+				return ErrFenced
+			}
+			job = j.Job
+			return nil
+		}
 		if remote.Request.ID != w.request {
-			return nil, Job{}, ErrFenced
+			return ErrFenced
 		}
 		job, err = c.options.Store.Admit(ctx, w.scope, w.request, c.options.Release, evidence.Packet(), c.now())
-		if err != nil {
-			return nil, Job{}, err
-		}
+		return err
+	})
+	if err != nil {
+		return nil, Job{}, err
 	}
 	if job.Release != c.options.Release {
 		if qualification := c.options.Check(ctx, c.options.Enrollment, job.Release); qualification != nil {
@@ -751,7 +773,11 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 	remote := map[string]RemoteState{}
 	var failures error
 	for _, scope := range ordered {
-		r, readErr := c.observe(ctx, scope)
+		var r RemoteState
+		readErr := c.exclusive(ctx, func() (err error) {
+			r, err = c.observe(ctx, scope)
+			return err
+		})
 		if readErr != nil {
 			failures = errors.Join(failures, readErr)
 			continue
