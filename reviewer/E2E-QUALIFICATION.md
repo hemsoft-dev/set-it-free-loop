@@ -643,7 +643,9 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    usable.
 2. The service is opened, but not refreshed or run.
    `ProviderRecoveryCandidates` lists the job, its attempt ID, recorded
-   stopped evidence and exactly the one original launch.
+   stopped evidence and exactly the one original launch, whose stopped
+   audit receipt binds that attempt ID. A root retained by a build whose
+   receipts lack the attempt ID cannot be recovered.
 3. A wrong attempt ID is refused with `ErrFenced`. The correct request without
    `RetireUnreturnedAuth` is refused with `ErrAuthRecoveryRequired`. After
    both, the lease, job state and auth fence are unchanged.

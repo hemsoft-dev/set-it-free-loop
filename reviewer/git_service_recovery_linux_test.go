@@ -31,9 +31,17 @@ type wedgeFixture struct {
 	opened  atomic.Int32
 }
 
-// auth: "exported" (lost return), "returned" (durable return, not committed)
-// or "unexported" (leased, never exported).
+// auth: "exported" (lost return), "returned" (durable return, not committed),
+// "unexported" (leased, never exported) or "none" (never leased).
 func newWedgeFixture(t *testing.T, auth string) *wedgeFixture {
+	t.Helper()
+	return newWedgeFixtureLaunches(t, auth, false)
+}
+
+// newWedgeFixtureLaunches with prior first leaves an earlier attempt's
+// complete-looking stopped launch for the same session and evidence under the
+// same provider root, as a resumed job's retry would.
+func newWedgeFixtureLaunches(t *testing.T, auth string, prior bool) *wedgeFixture {
 	t.Helper()
 	ctx := context.Background()
 	o, _, _, _, _ := gitServiceFixture(t)
@@ -49,16 +57,41 @@ func newWedgeFixture(t *testing.T, auth string) *wedgeFixture {
 	f.job = job
 	engine := testEngine(t, nil)
 	calls := 0
-	reviewer := auditedReviewFunc(func(ctx context.Context, s Session) (Report, *SourceAccess, *ProviderEvidence, error) {
+	reviewer := attemptReviewFunc(func(ctx context.Context, s Session, attempt string) (Report, *SourceAccess, *ProviderEvidence, error) {
 		calls++
 		if calls > 1 {
 			t.Error("wedged attempt was followed by another session")
 			return Report{}, nil, nil, ErrLiveBlocked
 		}
-		p := wedgeNativePhase(t, s)
+		systemd, manager, _ := systemdSupervisorFixture(t)
+		systemd.payloadKind = "native-vm"
+		supervisor := &NativeVMSupervisor{systemd}
+		if prior {
+			old := wedgeNativeLaunch(t, supervisor, manager, s, strings.Repeat("c", 32))
+			old.attempt = strings.Repeat("e", 32)
+			if err := old.supervisor.AbortAndWait(ctx, old.request.Binding); err != nil {
+				t.Fatal(err)
+			}
+			if err := old.persistAudit(ctx, nil, nil, wedgeEvidence(t, ctx, s, old.request.Policy), errors.Join(context.Canceled, ErrSourceAuditPending)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		p := wedgeNativeLaunch(t, supervisor, manager, s, strings.Repeat("a", 32))
+		p.attempt = attempt
 		f.phase = p
 		f.manager = nil
 		f.auth = authTestStore(t, s.Identity.Provider)
+		if auth == "none" {
+			if err := p.supervisor.AbortAndWait(ctx, p.request.Binding); err != nil {
+				t.Fatal(err)
+			}
+			evidence := wedgeEvidence(t, ctx, s, p.request.Policy)
+			failure := errors.Join(context.Canceled, ErrSourceAuditPending)
+			if err := p.persistAudit(ctx, nil, nil, evidence, failure); err != nil {
+				t.Fatal(err)
+			}
+			return Report{}, nil, evidence, errors.Join(PhaseError{State: "cancelled"}, failure)
+		}
 		profile, err := f.auth.LeaseProfile(ctx, p.request.Binding)
 		if err != nil {
 			t.Fatal(err)
@@ -85,18 +118,7 @@ func newWedgeFixture(t *testing.T, auth string) *wedgeFixture {
 		if err = p.supervisor.AbortAndWait(ctx, p.request.Binding); err != nil {
 			t.Fatal(err)
 		}
-		egress, err := NewProviderEgress(ctx, s, p.request.Policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
-			t.Error("wedge fixture reached a provider")
-			return nil, ErrLiveBlocked
-		}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		access, err := egress.Close(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		evidence := &ProviderEvidence{p.request.Policy, access}
+		evidence := wedgeEvidence(t, ctx, s, p.request.Policy)
 		failure := errors.Join(context.Canceled, ErrAuthRecoveryRequired, ErrSourceAuditPending)
 		if err = p.persistAudit(ctx, nil, nil, evidence, failure); err != nil {
 			t.Fatal(err)
@@ -138,6 +160,19 @@ func newWedgeFixture(t *testing.T, auth string) *wedgeFixture {
 	}
 	f.service = service
 	return f
+}
+
+// attemptReviewFunc receives the durable attempt ID like NativeVMReviewer.
+type attemptReviewFunc func(context.Context, Session, string) (Report, *SourceAccess, *ProviderEvidence, error)
+
+func (f attemptReviewFunc) ReviewAudited(ctx context.Context, s Session) (Report, *SourceAccess, *ProviderEvidence, error) {
+	return f(ctx, s, "")
+}
+func (f attemptReviewFunc) reviewAttemptAudited(ctx context.Context, s Session, attempt string) (Report, *SourceAccess, *ProviderEvidence, error) {
+	return f(ctx, s, attempt)
+}
+func (f attemptReviewFunc) Review(context.Context, Session) (Report, error) {
+	return Report{}, errors.New("unguarded reviewer entrypoint")
 }
 
 func (f *wedgeFixture) request() ProviderRecoveryRequest {
@@ -257,6 +292,38 @@ func TestProviderRecoveryFinishesDurableReturnAndUnexportedLease(t *testing.T) {
 	}
 }
 
+// A resumed job's retry has the same session hash and stopped evidence as
+// its earlier attempt, so only the attempt ID binds a launch to the lease.
+func TestProviderRecoveryRefusesAnotherAttemptsLaunch(t *testing.T) {
+	ctx := context.Background()
+	f := newWedgeFixtureLaunches(t, "none", true)
+	token := f.token(t)
+	request := f.request()
+	request.LaunchID = strings.Repeat("c", 32)
+	// The fake kernel proves either launch's original cgroup empty, as a real
+	// kernel does once a stopped unit's cgroup is gone.
+	kernel := f.phase.supervisor.supervisor.manager.(*fakeContainmentManager).kernel
+	current := kernel.group
+	kernel.group.Path = "/user.slice/user-1000.slice/sfl-alpha-" + request.LaunchID + ".service"
+	result, err := f.service.RecoverStoppedProvider(ctx, request)
+	if !errors.Is(err, ErrProviderRecovery) {
+		t.Fatal("recovery accepted an earlier attempt's launch", result, err)
+	}
+	kernel.group = current
+	d, _ := f.store.Snapshot(ctx)
+	if j := d.Jobs[f.job.ID]; j.LeaseToken != token || !j.Outstanding || j.AttemptID != f.attempt || j.State != "running" || len(j.ProviderRecoveries) != 0 {
+		t.Fatal("refused recovery changed the durable job", j.State)
+	}
+	candidates, err := f.service.ProviderRecoveryCandidates(ctx)
+	if err != nil || len(candidates) != 1 || len(candidates[0].Launches) != 1 || candidates[0].Launches[0] != f.phase.request.Binding.LaunchID {
+		t.Fatal("candidate view offers another attempt's launch", candidates, err)
+	}
+	result, err = f.service.RecoverStoppedProvider(ctx, f.request())
+	if err != nil || result.Auth != ProviderAuthNone || result.State != "provider_unavailable" || result.LaunchID != f.phase.request.Binding.LaunchID {
+		t.Fatal("recovery refused the attempt's own launch", result, err)
+	}
+}
+
 func TestProviderRecoveryRefusesWithoutDurableChange(t *testing.T) {
 	ctx := context.Background()
 	rewriteAudit := func(t *testing.T, f *wedgeFixture, change func(*nativeVMAuditReceipt)) {
@@ -289,6 +356,12 @@ func TestProviderRecoveryRefusesWithoutDurableChange(t *testing.T) {
 		}, ErrProviderRecovery},
 		{"audit-claims-complete", func(t *testing.T, f *wedgeFixture, _ *ProviderRecoveryRequest) {
 			rewriteAudit(t, f, func(r *nativeVMAuditReceipt) { r.Complete, r.Failure = true, "" })
+		}, ErrProviderRecovery},
+		{"audit-for-other-attempt", func(t *testing.T, f *wedgeFixture, _ *ProviderRecoveryRequest) {
+			rewriteAudit(t, f, func(r *nativeVMAuditReceipt) { r.AttemptID = strings.Repeat("e", 32) })
+		}, ErrProviderRecovery},
+		{"audit-without-attempt", func(t *testing.T, f *wedgeFixture, _ *ProviderRecoveryRequest) {
+			rewriteAudit(t, f, func(r *nativeVMAuditReceipt) { r.Version, r.AttemptID = 1, "" })
 		}, ErrProviderRecovery},
 		{"audit-evidence-differs", func(t *testing.T, f *wedgeFixture, _ *ProviderRecoveryRequest) {
 			rewriteAudit(t, f, func(r *nativeVMAuditReceipt) { r.Provider.Access.ResponseBytes++ })
@@ -422,19 +495,38 @@ func TestProviderRecoveryStoreReleaseBindsAttemptAndEvidence(t *testing.T) {
 	f.requireWedged(t, token, "exported")
 }
 
-// wedgeNativePhase is evaluationNativePhase with the production launch
+// wedgeEvidence is the stopped provider evidence of a session that made no
+// provider request.
+func wedgeEvidence(t *testing.T, ctx context.Context, s Session, policy EgressPolicy) *ProviderEvidence {
+	t.Helper()
+	egress, err := NewProviderEgress(ctx, s, policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
+		t.Error("wedge fixture reached a provider")
+		return nil, ErrLiveBlocked
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	access, err := egress.Close(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &ProviderEvidence{policy, access}
+}
+
+// wedgeNativeLaunch is evaluationNativePhase with the production launch
 // binding derivation, so recovery can rederive it from the durable session.
-func wedgeNativePhase(t *testing.T, capability Session) *nativeVMHostPhase {
+func wedgeNativeLaunch(t *testing.T, supervisor *NativeVMSupervisor, manager *fakeContainmentManager, capability Session, launch string) *nativeVMHostPhase {
 	t.Helper()
 	q := nativeRequestFixture(t, capability.Identity.Provider)
 	q.Session = capability
-	q.Binding = nativeLaunchBinding(Digest(capability), strings.Repeat("a", 32))
+	q.Binding = nativeLaunchBinding(Digest(capability), launch)
 	if !q.valid() {
 		t.Fatal("invalid wedge native request")
 	}
-	s, manager, _ := systemdSupervisorFixture(t)
-	s.payloadKind = "native-vm"
-	supervisor := &NativeVMSupervisor{s}
+	s := supervisor.supervisor
+	manager.observation.ActiveState = "active"
+	manager.observation.MainPID = uint32(os.Getpid())
+	manager.kernel.populated = true
 	manager.observation.MemoryMax = 3 << 30
 	manager.observation.TasksMax = 128
 	manager.observation.Description = payloadDescription("native-vm", q.Binding)

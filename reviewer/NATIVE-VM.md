@@ -354,7 +354,10 @@ construct a reviewer, start a unit or send a request. Before changing
 anything, it requires the launch's unit journal (native, captured, aborted,
 stopped), the aborted gate and the private `native-audit.json` stopped receipt.
 That receipt must bind the derived binding, unit manifest, a failure and the
-exact provider evidence recorded in SQLite. Auth then follows the existing
+exact provider evidence recorded in SQLite. Its version 2 also records the
+durable attempt ID that `DurableReviewer` passed to the launch, and recovery
+requires it to equal the job's outstanding attempt. A version 1 receipt or
+one with another attempt's ID refuses. Auth then follows the existing
 journal rules, with a fresh `ConfirmAuthStopped` on each mutation:
 
 | Auth journal for this launch | Action | Disposition | Job state |

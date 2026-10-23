@@ -32,6 +32,7 @@ const (
 // audited native attempt plus the operator-selected original launch.
 type nativeStoppedAttempt struct {
 	Provider    Provider
+	AttemptID   string
 	SessionHash string
 	LaunchID    string
 	Limits      Limits
@@ -45,16 +46,17 @@ func nativeLaunchBinding(sessionHash, launchID string) AuthBinding {
 
 // stoppedAttemptReceipt reads only durable host records of the original
 // launch: its unit journal, aborted gate and private stopped audit receipt.
-// The receipt must bind the same session, manifest and recorded provider
-// evidence, and must not claim completion. It stops, imports and retires
-// nothing. A missing receipt, such as after a host process kill before the
-// stopped audit, refuses recovery.
+// The receipt must bind the same attempt ID, session, manifest and recorded
+// provider evidence, and must not claim completion. An earlier attempt's
+// launch for the same session and evidence therefore refuses. It stops,
+// imports and retires nothing. A missing receipt, such as after a host
+// process kill before the stopped audit, refuses recovery.
 func (v *NativeVMSupervisor) stoppedAttemptReceipt(ctx context.Context, a nativeStoppedAttempt) (AuthBinding, nativeVMAuditReceipt, error) {
 	fail := func() (AuthBinding, nativeVMAuditReceipt, error) {
 		return AuthBinding{}, nativeVMAuditReceipt{}, ErrProviderRecovery
 	}
 	binding := nativeLaunchBinding(a.SessionHash, a.LaunchID)
-	if ctx == nil || ctx.Err() != nil || v == nil || v.supervisor == nil || v.supervisor.payloadKind != "native-vm" || !a.Provider.Valid() || !binding.valid() || a.Evidence.validateStoppedCaptured(a.Provider, a.Limits, a.SessionHash) != nil {
+	if ctx == nil || ctx.Err() != nil || v == nil || v.supervisor == nil || v.supervisor.payloadKind != "native-vm" || !a.Provider.Valid() || a.AttemptID == "" || !binding.valid() || a.Evidence.validateStoppedCaptured(a.Provider, a.Limits, a.SessionHash) != nil {
 		return fail()
 	}
 	policy := a.Evidence.Policy.ResponsePolicy
@@ -88,7 +90,7 @@ func (v *NativeVMSupervisor) stoppedAttemptReceipt(ctx context.Context, a native
 	if err != nil || !bytes.Equal(canonical, raw) {
 		return fail()
 	}
-	if receipt.Version != 1 || receipt.Binding != binding || receipt.ManifestHash != unit.ManifestHash || !validAuthHash(receipt.RequestHash) || receipt.Complete || receipt.Failure == "" || (receipt.AuthReturned && !receipt.AuthExported) {
+	if receipt.Version != 2 || receipt.AttemptID != a.AttemptID || receipt.Binding != binding || receipt.ManifestHash != unit.ManifestHash || !validAuthHash(receipt.RequestHash) || receipt.Complete || receipt.Failure == "" || (receipt.AuthReturned && !receipt.AuthExported) {
 		return fail()
 	}
 	if receipt.Provider.validateStoppedCaptured(a.Provider, a.Limits, a.SessionHash) != nil || Digest(cloneProviderEvidence(receipt.Provider)) != Digest(cloneProviderEvidence(a.Evidence)) {

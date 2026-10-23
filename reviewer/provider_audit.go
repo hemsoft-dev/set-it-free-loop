@@ -48,13 +48,30 @@ func (e *ProviderEvidence) validateCompletedCaptured(provider Provider, limits L
 	return e.Access.validateCompletedCaptured(provider, limits, inputHash, e.Policy)
 }
 
-func reviewPhase(ctx context.Context, reviewer Reviewer, s Session) (Report, *SourceAccess, *ProviderEvidence, bool, error) {
+// attemptAuditedReviewer binds the durable attempt ID into its private
+// stopped launch receipt. A resumed job's retry can repeat the session hash
+// and stopped evidence, so only that ID ties a launch to the current lease.
+type attemptAuditedReviewer interface {
+	AuditedReviewer
+	reviewAttemptAudited(context.Context, Session, string) (Report, *SourceAccess, *ProviderEvidence, error)
+}
+
+// reviewPhase passes attemptID, when known, to an attempt-binding reviewer.
+func reviewPhase(ctx context.Context, reviewer Reviewer, s Session, attemptID string) (Report, *SourceAccess, *ProviderEvidence, bool, error) {
 	worker, required := reviewer.(AuditedReviewer)
 	if !required {
 		r, source, err := reviewSource(ctx, reviewer, s)
 		return r, source, nil, false, err
 	}
-	r, source, evidence, err := worker.ReviewAudited(ctx, s)
+	var r Report
+	var source *SourceAccess
+	var evidence *ProviderEvidence
+	var err error
+	if bound, ok := reviewer.(attemptAuditedReviewer); ok && attemptID != "" {
+		r, source, evidence, err = bound.reviewAttemptAudited(ctx, s, attemptID)
+	} else {
+		r, source, evidence, err = worker.ReviewAudited(ctx, s)
+	}
 	r, source, err = sourceReviewResult(r, source, err, s)
 	evidence = cloneProviderEvidence(evidence)
 	var pe PhaseError

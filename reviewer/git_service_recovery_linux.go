@@ -35,8 +35,9 @@ type ProviderRecoveryResult struct {
 
 // ProviderRecoveryCandidate is a nonsecret view of a job that holds a durable
 // lease. Launches lists launch directories under the release's provider root
-// whose unit journal binds the attempt's session. They are hints only;
-// recovery reverifies everything under locks.
+// whose unit journal binds the attempt's session and whose stopped audit
+// receipt binds its attempt ID. They are hints only; recovery reverifies
+// everything under locks.
 type ProviderRecoveryCandidate struct {
 	JobID, AttemptID         string
 	Provider                 Provider
@@ -130,7 +131,7 @@ func (s *gitReviewerService) RecoverStoppedProvider(ctx context.Context, request
 		return ProviderRecoveryResult{}, errors.Join(ErrProviderRecovery, err)
 	}
 	defer supervisor.Close()
-	attempt := nativeStoppedAttempt{Provider: j.AttemptProvider, SessionHash: j.AttemptInputHash, LaunchID: request.LaunchID, Limits: limits, Evidence: evidence}
+	attempt := nativeStoppedAttempt{Provider: j.AttemptProvider, AttemptID: j.AttemptID, SessionHash: j.AttemptInputHash, LaunchID: request.LaunchID, Limits: limits, Evidence: evidence}
 	binding, receipt, err := supervisor.stoppedAttemptReceipt(phase, attempt)
 	if err != nil {
 		return ProviderRecoveryResult{}, err
@@ -177,7 +178,7 @@ func (s *gitReviewerService) ProviderRecoveryCandidates(ctx context.Context) ([]
 		_, recordErr := recordedStoppedAttempt(j)
 		c := ProviderRecoveryCandidate{JobID: j.Job.ID, AttemptID: j.AttemptID, Provider: j.AttemptProvider, Round: j.AttemptRound, SessionHash: j.AttemptInputHash, Outstanding: j.Outstanding, ProviderEvidenceRecorded: j.AttemptProviderEvidenceRequired && recordErr == nil, Launches: []string{}}
 		if options, ok := s.options.NativeReleases[j.Job.Release][j.AttemptProvider]; ok && j.Outstanding && validAuthHash(j.AttemptInputHash) {
-			c.Launches = nativeLaunchesForSession(options.Root, j.AttemptInputHash)
+			c.Launches = nativeLaunchesForAttempt(options.Root, j.AttemptInputHash, j.AttemptID)
 		}
 		candidates = append(candidates, c)
 	}
@@ -185,8 +186,8 @@ func (s *gitReviewerService) ProviderRecoveryCandidates(ctx context.Context) ([]
 	return candidates, nil
 }
 
-// nativeLaunchesForSession is a bounded, read-only scan for operator hints.
-func nativeLaunchesForSession(root, sessionHash string) []string {
+// nativeLaunchesForAttempt is a bounded, read-only scan for operator hints.
+func nativeLaunchesForAttempt(root, sessionHash, attemptID string) []string {
 	launches := []string{}
 	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return launches
@@ -206,17 +207,34 @@ func nativeLaunchesForSession(root, sessionHash string) []string {
 		if !binding.valid() {
 			continue
 		}
-		file, err := os.OpenFile(filepath.Join(root, name, "unit.json"), os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-		if err != nil {
+		var unit struct{ Binding AuthBinding }
+		var audit struct {
+			Binding   AuthBinding
+			AttemptID string
+		}
+		if readLaunchHint(filepath.Join(root, name, "unit.json"), &unit) != nil || unit.Binding != binding {
 			continue
 		}
-		raw, err := io.ReadAll(io.LimitReader(file, 65537))
-		file.Close()
-		var unit struct{ Binding AuthBinding }
-		if err != nil || len(raw) > 65536 || json.Unmarshal(raw, &unit) != nil || unit.Binding != binding {
+		if readLaunchHint(filepath.Join(root, name, "native-audit.json"), &audit) != nil || audit.Binding != binding || audit.AttemptID != attemptID {
 			continue
 		}
 		launches = append(launches, name)
 	}
 	return launches
+}
+
+func readLaunchHint(path string, value any) error {
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return err
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, 65537))
+	file.Close()
+	if err != nil {
+		return err
+	}
+	if len(raw) > 65536 {
+		return errors.New("launch record too large")
+	}
+	return json.Unmarshal(raw, value)
 }

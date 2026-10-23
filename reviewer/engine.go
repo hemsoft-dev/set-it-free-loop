@@ -252,7 +252,7 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 				}
 				out.ExecutedSessions++
 				out.ConsumedSessions++
-				report, access, providerEvidence, providerRequired, callErr := reviewPhase(phase, reviewer, session)
+				report, access, providerEvidence, providerRequired, callErr := reviewPhase(phase, reviewer, session, "")
 				deadlineErr := phase.Err()
 				if callErr != nil {
 					out.FailedSourceAccess = cloneSourceAccess(access)

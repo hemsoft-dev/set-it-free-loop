@@ -143,7 +143,8 @@ process restart, on a service that was opened but not yet refreshed or run:
 1. `ProviderRecoveryCandidates` lists each leased job with its attempt ID,
    provider, round, session hash, whether stopped provider evidence is
    recorded, and the launch directories under that release's provider root
-   whose unit journal binds the session. It changes nothing.
+   whose unit journal binds the session and whose stopped audit receipt
+   binds the attempt ID. It changes nothing.
 2. `RecoverStoppedProvider(ProviderRecoveryRequest{JobID, AttemptID,
    LaunchID, RetireUnreturnedAuth})` names one attempt and its original launch.
 
@@ -158,10 +159,13 @@ It refuses, without changing the job or auth, unless all of these hold:
 - The launch binding, rederived from the attempt's session hash and launch
   ID, matches the original unit journal. The journal must be native, captured,
   aborted and stopped. The gate must be aborted for the same manifest and
-  identity, and the private stopped audit receipt must bind the same session,
-  manifest and provider evidence without claiming completion
-  (`ErrProviderRecovery`). A host process kill before that receipt was
-  written therefore cannot be recovered through this path.
+  identity, and the private stopped audit receipt must bind the same attempt
+  ID, session, manifest and provider evidence without claiming completion
+  (`ErrProviderRecovery`). A resumed job's retry can repeat the session hash
+  and evidence, so the attempt ID is what rejects an earlier attempt's
+  launch. A receipt without an attempt ID refuses. A host process kill
+  before that receipt was written therefore cannot be recovered through
+  this path.
 - The auth journal of that provider either belongs to this launch or does
   not exist, and is consistent with the receipt (`ErrAuthRecoveryRequired`).
 

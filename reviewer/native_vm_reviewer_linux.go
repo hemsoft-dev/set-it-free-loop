@@ -107,13 +107,21 @@ type nativeVMHostPhase struct {
 	stage             string
 	bootDiagnostics   []string
 	authReturned      bool
+	// attempt is the durable attempt ID bound into the stopped receipt, or
+	// empty outside a durable attempt.
+	attempt string
 }
 
+var _ attemptAuditedReviewer = (*NativeVMReviewer)(nil)
+
 func (r *NativeVMReviewer) ReviewAudited(ctx context.Context, s Session) (Report, *SourceAccess, *ProviderEvidence, error) {
-	report, access, evidence, err := r.reviewTaskAudited(ctx, s, nil)
+	return r.reviewAttemptAudited(ctx, s, "")
+}
+func (r *NativeVMReviewer) reviewAttemptAudited(ctx context.Context, s Session, attempt string) (Report, *SourceAccess, *ProviderEvidence, error) {
+	report, access, evidence, err := r.reviewTaskAudited(ctx, s, nil, attempt)
 	return report.review, access, evidence, err
 }
-func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, control *ControlSession) (report nativeVMTaskReport, access *SourceAccess, evidence *ProviderEvidence, result error) {
+func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, control *ControlSession, attempt string) (report nativeVMTaskReport, access *SourceAccess, evidence *ProviderEvidence, result error) {
 	blocked := func() (nativeVMTaskReport, *SourceAccess, *ProviderEvidence, error) {
 		return nativeVMTaskReport{}, nil, nil, errors.Join(PhaseError{State: "blocked", BeforeWork: true}, ErrLiveBlocked)
 	}
@@ -196,7 +204,7 @@ func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, con
 	defer channels.Close()
 	stopControl := channels.interruptControlOnCancel(ctx)
 	defer stopControl()
-	phase := &nativeVMHostPhase{request: request, manifest: manifest, reader: reader, supervisor: supervisor, channels: channels, stage: "provider-bridge"}
+	phase := &nativeVMHostPhase{request: request, manifest: manifest, reader: reader, supervisor: supervisor, channels: channels, stage: "provider-bridge", attempt: attempt}
 	// Every later return drains the concrete containment and private transports.
 	defer func() { report, access, evidence, result = phase.finishTask(ctx, report, result) }()
 	phase.bridge, err = startNativeProviderBridge(ctx, s, request.Policy, r.options.Transport, channels.host[2])
@@ -474,7 +482,7 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report any, access
 	if p.finished != nil {
 		host = p.finished.CodeHost
 	}
-	receipt := nativeVMAuditReceipt{1, p.request.Binding, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, failure == nil, p.stage, p.exported, p.authReturned, "", nil, nativeVMFailureKind(failure), p.bootDiagnostics}
+	receipt := nativeVMAuditReceipt{2, p.request.Binding, p.attempt, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, failure == nil, p.stage, p.exported, p.authReturned, "", nil, nativeVMFailureKind(failure), p.bootDiagnostics}
 	if p.finished != nil && nativeVMGuestStage(p.finished.GuestStage) {
 		receipt.GuestStage = p.finished.GuestStage
 	}
@@ -490,9 +498,11 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report any, access
 
 // nativeVMAuditReceipt is the host's private stopped receipt in the launch
 // directory, written only after the whole unit is aborted and stopped.
+// Version 2 adds AttemptID, the durable attempt that ran the launch.
 type nativeVMAuditReceipt struct {
 	Version                                           int
 	Binding                                           AuthBinding
+	AttemptID                                         string
 	RequestHash, ManifestHash, ReportHash, SourceHash string
 	Provider                                          *ProviderEvidence
 	CodeHost                                          *nativeVMCodeHostAccess

@@ -926,7 +926,7 @@ func (r DurableReviewer) review(ctx context.Context, session Session, capture fu
 		}
 		return Report{}, err
 	}
-	report, access, providerEvidence, providerRequired, err := reviewPhase(ctx, r.Inner, session)
+	report, access, providerEvidence, providerRequired, err := reviewPhase(ctx, r.Inner, session, attemptID)
 	capture(access, providerEvidence, providerRequired)
 	if errors.Is(err, ErrWorkerStopPending) || errors.Is(err, ErrProviderAuditPending) || errors.Is(err, ErrProviderEgressPending) {
 		// No stopped-worker write, refund or lease release is safe until the
