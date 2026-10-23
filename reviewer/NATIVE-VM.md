@@ -344,3 +344,31 @@ cancels, even if the original phase deadline remains in the future. Cleanup
 then stops the entire unit and keeps uncertain exported auth held. A blocked
 source read exposed a seventy-second wait for the original deadline; a stopped
 source channel alone did not wake the host's guest-result read.
+
+## Operator recovery of a stopped attempt
+
+`GitReviewerService.RecoverStoppedProvider` (see
+[startup](GIT-STARTUP.md#stopped-provider-recovery)) reopens the original
+native supervisor root of the job's release and provider. It does not
+construct a reviewer, start a unit or send a request. Before changing
+anything, it requires the launch's unit journal (native, captured, aborted,
+stopped), the aborted gate and the private `native-audit.json` stopped receipt.
+That receipt must bind the derived binding, unit manifest, a failure and the
+exact provider evidence recorded in SQLite. Auth then follows the existing
+journal rules, with a fresh `ConfirmAuthStopped` on each mutation:
+
+| Auth journal for this launch | Action | Disposition | Job state |
+| --- | --- | --- | --- |
+| none | stop proof only | `none` | `auth_failed` if the receipt shows an unreturned export, else `provider_unavailable` |
+| active, never exported | `Complete` (unchanged seed) | `unexported` | `provider_unavailable` |
+| exported, no return | `Retire`, only with `RetireUnreturnedAuth` | `retired` | `auth_failed` |
+| receiving or returned | `ResumeAuthReturn`, then `Complete` | `returned` | `provider_unavailable` |
+| committing or committed | `Complete` | `returned` | `provider_unavailable` |
+| retiring | `Retire` | `retired` | `auth_failed` |
+
+An exported seed is never committed or reused without its durable return.
+Without consent, the lost-return case refuses with `ErrAuthRecoveryRequired`
+and leaves the fence intact. A journal bound to another launch, or one that
+contradicts the receipt, also refuses. `CleanupRuntime` then removes only
+the recorded runtime directory before the lease is released.
+

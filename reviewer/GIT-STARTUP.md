@@ -128,6 +128,59 @@ Operators must retain and investigate such artifacts; automatic crash-artifact
 collection is not implemented. This bound and retained artifacts belong in the
 full host disk/resource qualification.
 
+## Stopped provider recovery
+
+A shutdown or failure during a native provider session can leave the durable
+job leased: the unit is proven stopped, but the guest never returned its
+result record, so the source audit is missing and an exported provider auth
+stays fenced. The controller then admits nothing, and `Close` keeps reporting
+`ErrWorkerStopPending`. Nothing releases that lease automatically, on a timer
+or from polling, GitHub or model input.
+
+`RecoverStoppedProvider` is the explicit operator path. Call it after a
+process restart, on a service that was opened but not yet refreshed or run:
+
+1. `ProviderRecoveryCandidates` lists each leased job with its attempt ID,
+   provider, round, session hash, whether stopped provider evidence is
+   recorded, and the launch directories under that release's provider root
+   whose unit journal binds the session. It changes nothing.
+2. `RecoverStoppedProvider(ProviderRecoveryRequest{JobID, AttemptID,
+   LaunchID, RetireUnreturnedAuth})` names one attempt and its original launch.
+
+It refuses, without changing the job or auth, unless all of these hold:
+
+- The service has started and is idle. `Run` was never called, and no
+  `Close` or other operation is in progress (`ErrLiveBlocked` or
+  `ErrFenced`).
+- The job holds its lease with that outstanding audited attempt ID, and its
+  stopped provider evidence is durably recorded (`ErrFenced`,
+  `ErrProviderRecovery`).
+- The launch binding, rederived from the attempt's session hash and launch
+  ID, matches the original unit journal. The journal must be native, captured,
+  aborted and stopped. The gate must be aborted for the same manifest and
+  identity, and the private stopped audit receipt must bind the same session,
+  manifest and provider evidence without claiming completion
+  (`ErrProviderRecovery`). A host process kill before that receipt was
+  written therefore cannot be recovered through this path.
+- The auth journal of that provider either belongs to this launch or does
+  not exist, and is consistent with the receipt (`ErrAuthRecoveryRequired`).
+
+The [native supervisor](NATIVE-VM.md#operator-recovery-of-a-stopped-attempt)
+then repeats a fresh whole-unit stop proof through every auth step and
+settles auth by the existing stopped-worker rules. It removes the attempt's
+recorded runtime residue. Finally, the store releases the lease under the
+same nonce, rechecking the attempt, provider, round and evidence digest in
+one transaction. It appends a `ProviderRecoveryReceipt`. The session stays
+charged, no source access is invented, and no artifact is created. The job
+becomes `auth_failed` when the exported auth was lost and retired. It becomes
+`provider_unavailable` when auth was unexported or durably returned. Neither
+state is a review. Only an explicit `ResumeUnavailable` can requeue the same
+request, within its remaining session budget. Other requests proceed
+immediately.
+
+A retired provider has no canonical auth. Its sessions fail before work as
+`auth_failed` until the operator establishes new auth outside the reviewer.
+
 ## Qualification limits
 
 Positive startup tests use fake manager/kernel evidence and local TLS with
