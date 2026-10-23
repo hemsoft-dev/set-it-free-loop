@@ -3721,8 +3721,11 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	}
 	e.check(err == nil && e2eAuthUsable(e.auth, r.Codex), "operator re-provisioned synthetic codex auth: %v", err)
 	e.startRun("after recovery")
-	_, err = e.service.RecoverStoppedProvider(ctx, request)
-	e.check(errors.Is(err, r.ErrLiveBlocked), "recovery is refused while the service runs: %v", err)
+	// Once Run has admitted PR 2, the service is certainly running.
+	if e.wait("PR 2 admitted after recovery", 3*time.Minute, func(d r.DurableState) bool { return e2eJobFor(d, 2) != nil }) {
+		_, err = e.service.RecoverStoppedProvider(ctx, request)
+		e.check(errors.Is(err, r.ErrLiveBlocked), "recovery is refused while the service runs: %v", err)
+	}
 	if !e.wait("PR 2 review confirmed after recovery", 6*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 2) }) {
 		e.snapshotJobs("timeout")
 		return
