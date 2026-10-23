@@ -63,20 +63,37 @@ projections of the source VM owner journal and archive, and a restore probe.
 
 ## Cases
 
-| Case | Scenario |
-| --- | --- |
-| `review` | PR 1 automatic request through capture, four sessions and one confirmed COMMENT. |
-| `isolation` | PR 1 (automatic) and PR 2 (owner comment) pending together. |
-| `close-capture` | Close the whole service after capture and admission, inside the first session's host check, before any VM launch. Reopen and finish. |
-| `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. |
-| `close-provider-reopen` | A second process attached to the root retained by `close-provider` (`SFL_E2E_ATTACH`), as a restarted service. |
-| `close-publish` | The fake GitHub commits the review POST but withholds its response; close the whole service; reopen and reconcile. |
+| Case | Scenario | Source / native units | Source records | Auth at end |
+| --- | --- | --- | --- | --- |
+| `review` | PR 1 automatic request through capture, four sessions and one confirmed COMMENT. | 1 / 4 | 1 | both usable |
+| `isolation` | PR 1 (automatic) and PR 2 (owner comment) pending together. | 2 / 8 | 2 | both usable |
+| `close-capture` | Close the whole service after capture and admission, inside the first session's host check, before any VM launch. Reopen and finish. | 1 / 4 | 1 | both usable |
+| `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. | 1 / 1 | not asserted | Codex fenced, Claude usable |
+| `close-provider-reopen` | A second process attached to the root retained by `close-provider` (`SFL_E2E_ATTACH`), as a restarted service. | 0 / 0 | 1 (retained) | Codex fenced, Claude usable |
+| `close-publish` | The fake GitHub commits the review POST but withholds its response; close the whole service; reopen and reconcile. | 1 / 4 | 1 | both usable |
+
+If `close-provider`'s `Close` proves completion instead of reporting
+`ErrWorkerStopPending`, the case reopens and expects one source unit, one
+native unit for the interrupted launch plus one per artifact of the reopened
+job, and both auth stores usable. No host run has taken this branch.
 
 Every case also observes `systemctl --user list-units 'sfl-alpha-*'` every 200
 ms, excluding units that existed before the run, and requires that every unit
-it saw is gone at the end. It reads each native launch's `unit.json` and
-`native-audit.json`, checks provider auth disposition by reopening the
-protected stores, and writes a nonsecret JSON result to `SFL_E2E_EVIDENCE`.
+it saw is gone at the end. Each observed unit must correlate with a launch the
+run recorded: a source unit with a source VM owner journal record's unit, a
+native unit with `sfl-alpha-<launch>.service` for a native launch directory
+created by this process. Every launch recorded by this process must have been
+observed, and the observed source and native counts must equal the case's
+expectation in the table. An attached process may hold the earlier process's
+source records, which it need not observe. Every check of source stop receipts
+first requires the expected nonzero number of owner journal records, each with
+exactly one archive export of the same attempt and snapshot. Each reviewed PR
+must have exactly one review intent, and it must be `confirmed`. The case reads
+each native launch's `unit.json` and `native-audit.json` and checks provider
+auth disposition by reopening the protected stores. It writes a nonsecret JSON
+result to `SFL_E2E_EVIDENCE` only after cleanup has closed every handle and
+removed (or deliberately retained) the root, so a cleanup failure is recorded
+as `Passed: false`.
 
 ## Admission rule
 
