@@ -145,6 +145,26 @@ func E2EValidateProviderReceipt(evidence *ProviderEvidence, provider Provider, l
 	return nil
 }
 
+// E2ENativeManifestHash is the ManifestHash a native launch's unit journal
+// and audit must carry for binding under provider release p: the digest of
+// the NativeVMManifest that VMBootImages.NativeManifest derives from the
+// release's pinned QEMU, kernel, initrd, firmware, runtime artifact,
+// namespace helper and bootstrap libraries for that launch and session.
+func E2ENativeManifestHash(p GitReviewerProviderRelease, provider Provider, binding AuthBinding) (string, error) {
+	libraries, err := nativeBootstrapLibraryPins(p.Runtime.BootstrapLibraries)
+	if err != nil {
+		return "", err
+	}
+	m := NativeVMManifest{Version: 3, Purpose: "native-review", Binding: binding, SessionHash: binding.SessionHash, Provider: provider, BootstrapLibraries: libraries}
+	for _, a := range []VMBootAsset{p.QEMU, p.Kernel, p.Initrd, p.Firmware, p.Runtime.Artifact, p.Runtime.NamespaceHelper} {
+		m.Assets = append(m.Assets, VMAssetPin{a.SHA256, a.Bytes})
+	}
+	if !m.valid() {
+		return "", ErrVMBoot
+	}
+	return Digest(m), nil
+}
+
 // E2ESourceRuntimeHash is the RuntimeHash every source VM materialization
 // binding of release vm carries: the digest of the source VM manifest the
 // release derives, as startup derives it.
@@ -171,13 +191,15 @@ func E2ERemoteReview(body string, inline []InlineComment) (marker, documentHash 
 type E2ESourceRecord struct {
 	Attempt, Unit, InvocationID, RequestHash string
 	SourceRequestHash                        string
-	ReleaseHash, RuntimeHash                 string
-	ChannelID                                string
-	Generation                               uint64
-	Snapshot                                 Snapshot
-	StartIntent, StartSettled, Captured      bool
-	Revoked, Stopped                         bool
-	GrantHash, StopBoot                      string
+	// StubHash is the source stub image the owner recorded for the unit.
+	StubHash                            string
+	ReleaseHash, RuntimeHash            string
+	ChannelID                           string
+	Generation                          uint64
+	Snapshot                            Snapshot
+	StartIntent, StartSettled, Captured bool
+	Revoked, Stopped                    bool
+	GrantHash, StopBoot                 string
 }
 
 // E2EExportRecord projects one source VM archive record: its source request
@@ -196,6 +218,26 @@ func (s *GitReviewerService) e2eFactory() *gitVMSourceFactory {
 	return factory
 }
 
+// E2ESourceJournal reads only the owner journal, under its operation token,
+// which every journal write holds only for that write. It reports an error
+// once the service has closed the journal.
+func (s *GitReviewerService) E2ESourceJournal() ([]E2ESourceRecord, error) {
+	factory := s.e2eFactory()
+	if factory == nil {
+		return nil, ErrLiveBlocked
+	}
+	journal, err := factory.owner.journal.read()
+	if err != nil {
+		return nil, err
+	}
+	records := []E2ESourceRecord{}
+	for _, r := range journal.Records {
+		b := r.Request.Source.Binding
+		records = append(records, E2ESourceRecord{Attempt: b.Attempt, Unit: r.Unit, InvocationID: r.Birth.InvocationID, RequestHash: r.RequestHash, SourceRequestHash: Digest(r.Request.Source), StubHash: r.StubHash, ReleaseHash: b.ReleaseHash, RuntimeHash: b.RuntimeHash, ChannelID: r.Request.Read.ChannelID, Generation: r.Request.Read.Generation, Snapshot: b.Snapshot, StartIntent: r.StartIntent, StartSettled: r.StartSettled, Captured: r.Captured, Revoked: r.Revoked, Stopped: r.Stopped, GrantHash: r.GrantHash, StopBoot: r.StopBoot})
+	}
+	return records, nil
+}
+
 // E2ESourceRecords reads the owner journal and archive under their own
 // operation tokens. It reports an error once the service has closed them.
 func (s *GitReviewerService) E2ESourceRecords(ctx context.Context) ([]E2ESourceRecord, []E2EExportRecord, error) {
@@ -203,14 +245,9 @@ func (s *GitReviewerService) E2ESourceRecords(ctx context.Context) ([]E2ESourceR
 	if factory == nil {
 		return nil, nil, ErrLiveBlocked
 	}
-	journal, err := factory.owner.journal.read()
+	records, err := s.E2ESourceJournal()
 	if err != nil {
 		return nil, nil, err
-	}
-	records := []E2ESourceRecord{}
-	for _, r := range journal.Records {
-		b := r.Request.Source.Binding
-		records = append(records, E2ESourceRecord{Attempt: b.Attempt, Unit: r.Unit, InvocationID: r.Birth.InvocationID, RequestHash: r.RequestHash, SourceRequestHash: Digest(r.Request.Source), ReleaseHash: b.ReleaseHash, RuntimeHash: b.RuntimeHash, ChannelID: r.Request.Read.ChannelID, Generation: r.Request.Read.Generation, Snapshot: b.Snapshot, StartIntent: r.StartIntent, StartSettled: r.StartSettled, Captured: r.Captured, Revoked: r.Revoked, Stopped: r.Stopped, GrantHash: r.GrantHash, StopBoot: r.StopBoot})
 	}
 	archived, _, err := factory.archive.records(ctx)
 	if err != nil {
@@ -225,16 +262,19 @@ func (s *GitReviewerService) E2ESourceRecords(ctx context.Context) ([]E2ESourceR
 
 // E2EProbe is one isolation read against a restored job's retained source.
 // Store is the raw materialized object store; Reader is the model-facing
-// reader bound to the job's snapshot and allowed paths.
+// reader bound to the job's snapshot and allowed paths. StoreHash and
+// ReaderHash are the SHA-256 of the bytes each returned.
 type E2EProbe struct {
 	Revision, Path       string
 	StoreOK, ReaderOK    bool
 	StoreHash, ReaderErr string
+	ReaderHash           string
 }
 
 // E2ERestoreProbe restores a durable job from retained bytes only, performs
-// the requested reads and releases it. Restore never fetches upstream.
-func (s *GitReviewerService) E2ERestoreProbe(ctx context.Context, job Job, reads [][2]string) ([]E2EProbe, error) {
+// the requested reads and releases it. Restore never fetches upstream. A
+// failed release fails the probe.
+func (s *GitReviewerService) E2ERestoreProbe(ctx context.Context, job Job, reads [][2]string) (_ []E2EProbe, err error) {
 	factory := s.e2eFactory()
 	if factory == nil {
 		return nil, ErrLiveBlocked
@@ -243,7 +283,7 @@ func (s *GitReviewerService) E2ERestoreProbe(ctx context.Context, job Job, reads
 	if err != nil {
 		return nil, err
 	}
-	defer factory.ReleaseJob(context.WithoutCancel(ctx), bound)
+	defer func() { err = errors.Join(err, factory.ReleaseJob(context.WithoutCancel(ctx), bound)) }()
 	reader, err := bound.Reader(job.Snapshot)
 	if err != nil {
 		return nil, err
@@ -255,8 +295,9 @@ func (s *GitReviewerService) E2ERestoreProbe(ctx context.Context, job Job, reads
 			sum := sha256.Sum256(object.Data)
 			p.StoreOK, p.StoreHash = true, hex.EncodeToString(sum[:])
 		}
-		if _, err := reader.Read(ctx, read[0], read[1]); err == nil {
-			p.ReaderOK = true
+		if text, err := reader.Read(ctx, read[0], read[1]); err == nil {
+			sum := sha256.Sum256([]byte(text))
+			p.ReaderOK, p.ReaderHash = true, hex.EncodeToString(sum[:])
 		} else {
 			p.ReaderErr = err.Error()
 		}
@@ -378,5 +419,66 @@ func TestE2ERecordedCommit(t *testing.T) {
 		if got, err := e2eRecordedCommit(in.manifest, gitVMGuestRelease{SourceHead: in.head}); err == nil {
 			t.Error(name, "accepted as release revision", got)
 		}
+	}
+}
+
+// TestE2ENativeManifestHash proves the harness derives exactly the manifest
+// production's VMBootImages.NativeManifest builds for a launch's session from
+// the same release pins, and that every pin, the launch and the provider
+// change it.
+func TestE2ENativeManifestHash(t *testing.T) {
+	snapshot := Snapshot{RepositoryID: RepositoryID, HeadRepositoryID: RepositoryID, PR: 1, Head: strings.Repeat("a", 40), Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("b", 40)}
+	s, err := NewSession("e2e-native-manifest", snapshot, Digest("config"), Codex, 1, "packet", nil, nil, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	launch := strings.Repeat("6", 32)
+	binding := AuthBinding{SessionHash: Digest(s), LaunchID: launch, ContainmentID: Digest(struct{ Session, Launch string }{Digest(s), launch})}
+	asset := func(path string) VMBootAsset { return VMBootAsset{Path: path, SHA256: Digest(path), Bytes: 4096} }
+	p := GitReviewerProviderRelease{Stub: asset("/fixture/nativevmstub"), QEMU: asset("/fixture/qemu"), Kernel: asset("/fixture/vmlinuz"), Initrd: asset("/fixture/native.cpio.gz"), Firmware: asset("/fixture/bios.bin"), Runtime: NativeVMRuntimeSpec{Artifact: asset("/fixture/native-qemu-runtime.bin"), NamespaceHelper: asset("/fixture/namespace-helper"), BootstrapLibraries: []VMBootAsset{asset("/lib/x86_64-linux-gnu/libc.so.6"), asset("/lib64/ld-linux-x86-64.so.2")}}}
+	pins, err := nativeBootstrapLibraryPins(p.Runtime.BootstrapLibraries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// NativeManifest reads only the pins; the descriptors need only exist.
+	file, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	images := &VMBootImages{spec: VMBootSpec{Version: 1, Binding: binding, QEMU: p.QEMU, Kernel: p.Kernel, Initrd: p.Initrd}, firmware: file, firmwareAsset: p.Firmware, runtimeArtifact: file, runtimeAsset: p.Runtime.Artifact, namespaceHelper: file, namespaceHelperAsset: p.Runtime.NamespaceHelper, bootstrapLibraries: pins}
+	m, err := images.NativeManifest(s)
+	if err != nil {
+		t.Fatal("production manifest", err)
+	}
+	got, err := E2ENativeManifestHash(p, Codex, binding)
+	if err != nil || got != Digest(m) {
+		t.Fatal("harness manifest differs from production's", got, Digest(m), err)
+	}
+	edits := map[string]func(*GitReviewerProviderRelease, *AuthBinding, *Provider){
+		"other QEMU":     func(p *GitReviewerProviderRelease, _ *AuthBinding, _ *Provider) { p.QEMU.SHA256 = Digest("other") },
+		"other kernel":   func(p *GitReviewerProviderRelease, _ *AuthBinding, _ *Provider) { p.Kernel.Bytes++ },
+		"other initrd":   func(p *GitReviewerProviderRelease, _ *AuthBinding, _ *Provider) { p.Initrd.SHA256 = Digest("other") },
+		"other firmware": func(p *GitReviewerProviderRelease, _ *AuthBinding, _ *Provider) { p.Firmware.SHA256 = Digest("other") },
+		"other runtime": func(p *GitReviewerProviderRelease, _ *AuthBinding, _ *Provider) {
+			p.Runtime.Artifact.SHA256 = Digest("other")
+		},
+		"other helper": func(p *GitReviewerProviderRelease, _ *AuthBinding, _ *Provider) { p.Runtime.NamespaceHelper.Bytes++ },
+		"other libraries": func(p *GitReviewerProviderRelease, _ *AuthBinding, _ *Provider) {
+			p.Runtime.BootstrapLibraries[0].SHA256 = Digest("other")
+		},
+		"other launch":   func(_ *GitReviewerProviderRelease, b *AuthBinding, _ *Provider) { b.LaunchID = strings.Repeat("7", 32) },
+		"other provider": func(_ *GitReviewerProviderRelease, _ *AuthBinding, provider *Provider) { *provider = Claude },
+	}
+	for name, edit := range edits {
+		q, b, provider := p, binding, Codex
+		q.Runtime.BootstrapLibraries = slices.Clone(p.Runtime.BootstrapLibraries)
+		edit(&q, &b, &provider)
+		if other, err := E2ENativeManifestHash(q, provider, b); err == nil && other == got {
+			t.Error(name, "derived the same manifest")
+		}
+	}
+	if _, err := E2ENativeManifestHash(GitReviewerProviderRelease{}, Codex, binding); err == nil {
+		t.Error("release without pins derived a manifest")
 	}
 }
