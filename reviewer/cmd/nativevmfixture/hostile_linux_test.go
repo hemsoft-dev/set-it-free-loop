@@ -36,7 +36,9 @@ func TestCapturedCodeModeProbeIsContainedAndMutationsAreNot(t *testing.T) {
 	if json.Unmarshal(raw, &probe) != nil || !probeContained(probe) {
 		t.Fatal("captured contained probe rejected")
 	}
-	for key, value := range map[string]string{"typeof:require": "function", "typeof:process": "object", "import:node:fs": "loaded:12", "fetch:http://10.0.0.1/": "status:200", "tool:shell": "function", "tools": "mcp__sfl_source__read,mcp__sfl_source__search,shell", "env": "PATH", "image:profile": "returned:undefined", "load:profile": `returned:"secret"`} {
+	// A present network or compute global is a capability even when sampled
+	// calls throw.
+	for key, value := range map[string]string{"typeof:fetch": "function", "typeof:WebAssembly": "object", "typeof:SharedArrayBuffer": "function", "typeof:navigator": "object", "typeof:require": "function", "typeof:process": "object", "import:node:fs": "loaded:12", "fetch:http://10.0.0.1/": "status:200", "tool:shell": "function", "tools": "mcp__sfl_source__read,mcp__sfl_source__search,shell", "env": "PATH", "image:profile": "returned:undefined", "load:profile": `returned:"secret"`} {
 		changed := map[string]string{}
 		for k, v := range probe {
 			changed[k] = v
@@ -69,5 +71,25 @@ func TestHostileOutcomeHelpers(t *testing.T) {
 	}
 	if errorText(nil) != "" || len(errorText(errors.New(strings.Repeat("x", 600)))) != 512 || errorText(errors.Join(errors.New("a"), errors.New("b"))) != "a; b" {
 		t.Fatal("error diagnostic not bounded")
+	}
+}
+
+// The returned profile must still hold the original synthetic tokens; any
+// other nonempty payload means the client corrupted or replaced it.
+func TestHostileAuthReturnRequiresOriginalSyntheticTokens(t *testing.T) {
+	codex := []byte(`{"auth_mode":"chatgpt","OPENAI_API_KEY":null,"tokens":{"id_token":"x","access_token":"sfl-fake-access","refresh_token":"sfl-fake-refresh","account_id":"sfl-fake-account"},"last_refresh":"2026-10-22T00:00:00Z"}`)
+	claude := []byte(`{"claudeAiOauth":{"accessToken":"sfl-fake-access","refreshToken":"sfl-fake-refresh","expiresAt":4102444800000}}`)
+	if !syntheticTokensReturned(r.Codex, codex) || !syntheticTokensReturned(r.Claude, claude) {
+		t.Fatal("original synthetic profile rejected")
+	}
+	for provider, bad := range map[r.Provider][][]byte{
+		r.Codex:  {[]byte("{}"), []byte("x"), []byte(`{"auth_mode":"apikey","tokens":{"access_token":"sfl-fake-access","refresh_token":"sfl-fake-refresh"}}`), codex[:40], claude},
+		r.Claude: {[]byte("{}"), []byte("truncated"), []byte(`{"claudeAiOauth":{"accessToken":"other","refreshToken":"sfl-fake-refresh"}}`), codex},
+	} {
+		for _, raw := range bad {
+			if syntheticTokensReturned(provider, raw) {
+				t.Fatal("corrupt or replaced profile accepted", provider, string(raw))
+			}
+		}
 	}
 }

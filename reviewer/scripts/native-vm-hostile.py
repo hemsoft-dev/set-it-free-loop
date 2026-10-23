@@ -134,7 +134,22 @@ def run_case(script, args, provider, name, output):
             return {"provider": provider, "case": name, "verdict": "fail", "timed_out": True,
                     "exit_code": None, "unit_stopped_independently": stop_new_units(before), "abort": True}
     completed = subprocess.CompletedProcess(command, returncode)
-    receipt = json.loads((output/"receipt.json").read_text())
+    try:
+        receipt = json.loads((output/"receipt.json").read_text())
+        if not isinstance(receipt, dict) or not isinstance(receipt.get("state_directory"), str):
+            raise ValueError("malformed receipt")
+    except (OSError, ValueError):
+        # The runner exited without a usable receipt: record the failure,
+        # prove any unit it started is stopped, and end the matrix.
+        return {"provider": provider, "case": name, "verdict": "fail", "timed_out": False,
+                "exit_code": returncode, "receipt": "missing-or-malformed",
+                "unit_stopped_independently": stop_new_units(before), "abort": True}
+    if receipt.get("timed_out"):
+        # The inner runner killed only its direct fixture process; its unit
+        # may still run. Stop it as for an outer timeout and end the matrix.
+        return {"provider": provider, "case": name, "verdict": "fail", "timed_out": True,
+                "exit_code": returncode, "runner_head": receipt.get("source_commit"),
+                "unit_stopped_independently": stop_new_units(before), "abort": True}
     root = Path(receipt["state_directory"])
     result_path = root/"result.json"
     result = json.loads(result_path.read_text()) if result_path.exists() else {}

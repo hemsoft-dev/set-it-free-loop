@@ -83,7 +83,9 @@ func probeContained(probe map[string]string) bool {
 	if len(probe) == 0 || probe["tools"] != "mcp__sfl_source__read,mcp__sfl_source__search" || probe["all_tools"] != probe["tools"] || probe["env"] != "absent" {
 		return false
 	}
-	for _, name := range []string{"require", "process", "Deno", "Bun", "XMLHttpRequest", "WebSocket", "Worker", "importScripts"} {
+	// A network or compute global must stay absent even if sampled calls
+	// happen to throw: its presence alone is a new capability.
+	for _, name := range []string{"require", "process", "Deno", "Bun", "fetch", "XMLHttpRequest", "WebSocket", "Worker", "importScripts", "SharedArrayBuffer", "WebAssembly", "navigator"} {
 		if probe["typeof:"+name] != "undefined" {
 			return false
 		}
@@ -221,7 +223,12 @@ func runNativeHostile(c config) error {
 	counts, obs := backend.Counts(), backend.Hostile()
 	secrets := canaries.Secrets(c.Provider)
 	returned := false
-	authErr := store.Refresh(context.WithoutCancel(ctx), func(current []byte) ([]byte, error) { returned = len(current) > 0; return current, nil })
+	// No refresh path is configured, so the returned profile must still hold
+	// the original synthetic tokens, not just some nonempty payload.
+	authErr := store.Refresh(context.WithoutCancel(ctx), func(current []byte) ([]byte, error) {
+		returned = syntheticTokensReturned(c.Provider, current)
+		return current, nil
+	})
 	paths, globErr := filepath.Glob(filepath.Join(c.Root, "launches", "*", "unit.json"))
 	var unit cancellationUnitReceipt
 	var audit hostileAudit
@@ -327,4 +334,29 @@ func runNativeHostile(c config) error {
 		return errors.New("native hostile qualification incomplete")
 	}
 	return nil
+}
+
+// syntheticTokensReturned reports whether a returned profile still carries
+// the original synthetic access and refresh tokens for its provider.
+func syntheticTokensReturned(provider r.Provider, raw []byte) bool {
+	switch provider {
+	case r.Codex:
+		var profile struct {
+			AuthMode string `json:"auth_mode"`
+			Tokens   struct {
+				AccessToken  string `json:"access_token"`
+				RefreshToken string `json:"refresh_token"`
+			} `json:"tokens"`
+		}
+		return json.Unmarshal(raw, &profile) == nil && profile.AuthMode == "chatgpt" && profile.Tokens.AccessToken == "sfl-fake-access" && profile.Tokens.RefreshToken == "sfl-fake-refresh"
+	case r.Claude:
+		var profile struct {
+			OAuth struct {
+				AccessToken  string `json:"accessToken"`
+				RefreshToken string `json:"refreshToken"`
+			} `json:"claudeAiOauth"`
+		}
+		return json.Unmarshal(raw, &profile) == nil && profile.OAuth.AccessToken == "sfl-fake-access" && profile.OAuth.RefreshToken == "sfl-fake-refresh"
+	}
+	return false
 }

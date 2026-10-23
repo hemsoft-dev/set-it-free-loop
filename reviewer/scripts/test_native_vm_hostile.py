@@ -20,6 +20,16 @@ def result(name, **changes):
     return value
 
 
+def running(pid):
+    """A process that exists and is not a zombie. Orphaned children may stay
+    zombies where PID 1 does not reap them; they can no longer execute."""
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except (FileNotFoundError, IndexError):
+        return False
+    return state != "Z"
+
+
 class HostileMatrixTests(unittest.TestCase):
     def test_case_list_matches_the_go_fixture(self):
         source = (Path(__file__).resolve().parent.parent/"internal"/"nativefixture"/"hostile_linux.go").read_text()
@@ -104,13 +114,37 @@ class HostileMatrixTests(unittest.TestCase):
             self.assertEqual(stopped, [set()])
             child = int(marker.read_text())
             for _ in range(50):
-                try:
-                    os.kill(child, 0)
-                except ProcessLookupError:
+                if not running(child):
                     break
                 time.sleep(0.05)
             else:
                 self.fail("timed-out case left its child running")
+
+    def test_missing_or_timed_out_receipt_cleans_up_and_aborts(self):
+        for kind in ["missing", "malformed", "inner-timeout"]:
+            with tempfile.TemporaryDirectory(prefix="sfl-hostile-receipt-") as directory:
+                root = Path(directory)
+                output = root/"case"
+                script = root/"runner.py"
+                if kind == "missing":
+                    body = "pass\n"
+                elif kind == "malformed":
+                    body = f"import os; os.makedirs({str(output)!r}, exist_ok=True); open({str(output/'receipt.json')!r},'w').write('[1]')\n"
+                else:
+                    body = (f"import json,os; os.makedirs({str(output)!r}, exist_ok=True); "
+                            f"json.dump({{'state_directory':'/nonexistent','timed_out':True,'source_commit':'x'}}, open({str(output/'receipt.json')!r},'w'))\n")
+                script.write_text(body)
+                args = type("Args", (), {"image": root, "go": "go", "module_cache": root})()
+                saved = (module.native_units, module.stop_new_units)
+                stopped = []
+                module.native_units = lambda: {"sfl-alpha-before.service"}
+                module.stop_new_units = lambda before: stopped.append(before) or True
+                try:
+                    row = module.run_case(script, args, "codex", "codex-shell", output)
+                finally:
+                    module.native_units, module.stop_new_units = saved
+                self.assertEqual((row["verdict"], row["abort"], row["unit_stopped_independently"]), ("fail", True, True), kind)
+                self.assertEqual(stopped, [{"sfl-alpha-before.service"}], kind)
 
     def test_fake_runner_refuses_mixed_or_unnamed_hostile_selection(self):
         script = Path(__file__).with_name("native-vm-fake.py")
