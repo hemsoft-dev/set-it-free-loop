@@ -102,7 +102,7 @@ func TestCapturedNativeCodeModeSourceResults(t *testing.T) {
 		t.Fatal("invalid native fixture")
 	}
 	for _, item := range captured {
-		if !verifiedSourceOutput(item.Output, item.ID) {
+		if !verifiedSourceOutput(item.Output, item.ID, head) {
 			t.Fatal("actual source output rejected", item.ID)
 		}
 	}
@@ -132,7 +132,7 @@ func TestCapturedNativeCodeModeSourceResults(t *testing.T) {
 				encoded, _ := json.Marshal(wrapper)
 				part["text"] = string(encoded)
 			}
-			if verifiedSourceOutput(output, "fixture_search") {
+			if verifiedSourceOutput(output, "fixture_search", head) {
 				t.Fatal("mismatched result accepted", kind)
 			}
 		})
@@ -163,7 +163,7 @@ func TestNativeSourceResultsRemainDistinctAndNonError(t *testing.T) {
 		return map[string]any{"messages": []any{map[string]any{"role": "user", "content": []any{result}}}}
 	}
 	for _, result := range captured {
-		if !claudeResult(wrap(result), result["tool_use_id"].(string)) {
+		if !claudeResult(wrap(result), result["tool_use_id"].(string), head) {
 			t.Fatal("actual native source result rejected")
 		}
 	}
@@ -193,9 +193,55 @@ func TestNativeSourceResultsRemainDistinctAndNonError(t *testing.T) {
 			if kind == "wrong-role" {
 				body["messages"].([]any)[0].(map[string]any)["role"] = "assistant"
 			}
-			if claudeResult(body, result["tool_use_id"].(string)) {
+			if claudeResult(body, result["tool_use_id"].(string), head) {
 				t.Fatal("mismatched native result accepted")
 			}
 		})
+	}
+}
+
+// A source VM acquisition yields a real commit, not the fixed fixture head.
+// NewForSnapshot keeps the canned protocol and source text but binds every
+// tool call, verification and finding anchor to the captured revision.
+func TestNativeBackendFollowsCapturedSnapshotRevision(t *testing.T) {
+	captured := strings.Repeat("d", 40)
+	snap := r.Snapshot{RepositoryID: r.RepositoryID, HeadRepositoryID: r.RepositoryID, PR: 2, Head: captured, Base: strings.Repeat("b", 40), MergeBase: strings.Repeat("c", 40)}
+	for _, provider := range []r.Provider{r.Codex, r.Claude} {
+		s, err := r.NewSession("native-snapshot-test", snap, r.Digest("config"), provider, 1, source, nil, nil, r.DefaultLimits())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := New(s, false); err == nil {
+			t.Fatal("fixed-head constructor accepted a foreign revision", provider)
+		}
+		backend, policy, err := NewForSnapshot(s)
+		if err != nil || r.Digest(policy) != r.Digest(Policy(s)) || policy.Provider != provider {
+			t.Fatal("snapshot backend policy differs", provider, err)
+		}
+		report := sourceReport(s)
+		if r.ValidateReport(report, s) != nil || len(report.Findings) != 1 || report.Findings[0].Anchor.Revision != captured {
+			t.Fatal("finding not anchored at the captured revision", provider, report)
+		}
+		if provider == r.Claude {
+			body, _ := json.Marshal(map[string]any{"model": s.Identity.Model, "tools": []any{map[string]any{"name": "mcp__sfl-source__read"}, map[string]any{"name": "mcp__sfl-source__search"}, map[string]any{"name": "StructuredOutput"}}})
+			q := httptest.NewRequest("POST", "/v1/messages?beta=true", strings.NewReader(string(body)))
+			q.Header.Set("Authorization", "Bearer sfl-fake-access")
+			w := httptest.NewRecorder()
+			backend.ServeHTTP(w, q)
+			if w.Code != 200 || !strings.Contains(w.Body.String(), captured) || strings.Contains(w.Body.String(), head) {
+				t.Fatal("Claude read did not target the captured revision", w.Code)
+			}
+		}
+		matches, _ := json.Marshal([]r.Anchor{{Path: "source.go", Line: 1, Quote: strings.TrimSpace(source), Revision: captured}})
+		block := map[string]any{"type": "text", "text": string(matches)}
+		result := map[string]any{"type": "tool_result", "tool_use_id": "sfl_fixture_search_1", "content": []any{block}}
+		body := map[string]any{"messages": []any{map[string]any{"role": "user", "content": []any{result}}}}
+		if !claudeResult(body, "sfl_fixture_search_1", captured) || claudeResult(body, "sfl_fixture_search_1", head) {
+			t.Fatal("search verification ignored the bound revision")
+		}
+	}
+	invalid := r.Session{}
+	if _, _, err := NewForSnapshot(invalid); err == nil {
+		t.Fatal("invalid session accepted")
 	}
 }
