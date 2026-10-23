@@ -82,7 +82,7 @@ func prepareNativeRuntimeOwned(parentPath string, input io.Reader, program VMAss
 		if root.MkdirAll(filepath.Dir(file.Path), 0700) != nil {
 			return ErrNativeRuntime
 		}
-		output, err := root.OpenFile(file.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
+		output, err := openRootNoFollow(root, file.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
 		if err != nil {
 			return ErrNativeRuntime
 		}
@@ -165,7 +165,7 @@ func (r *nativeRuntimeRoot) verify() error {
 		}
 	}
 	for _, pin := range r.files {
-		file, err := r.root.OpenFile(pin.Path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		file, err := openRootNoFollow(r.root, pin.Path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return fmt.Errorf("%w: file open", ErrNativeRuntime)
 		}
@@ -193,7 +193,7 @@ func (r *nativeRuntimeRoot) directoryFD() (*os.File, error) {
 	if r.verify() != nil {
 		return nil, ErrNativeRuntime
 	}
-	file, err := r.root.OpenFile(".", os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	file, err := openRootNoFollow(r.root, ".", os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, ErrNativeRuntime
 	}

@@ -54,7 +54,7 @@ func verifyGitRuntimeDirectory(ctx context.Context, directory *os.File, pins Git
 	if err != nil || !os.SameFile(info, opened) {
 		return zero, errGitRuntime
 	}
-	file, err := root.OpenFile(gitRuntimeMetadata, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	file, err := openRootNoFollow(root, gitRuntimeMetadata, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return zero, errGitRuntime
 	}
@@ -109,7 +109,7 @@ func verifyGitRuntimeDirectory(ctx context.Context, directory *os.File, pins Git
 	var size int64 = int64(len(gitRuntimeMagic) + 4 + len(raw))
 	buffer := make([]byte, 32<<10)
 	for _, pin := range m.Files {
-		file, err := root.OpenFile(pin.Path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		file, err := openRootNoFollow(root, pin.Path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return zero, errGitRuntime
 		}

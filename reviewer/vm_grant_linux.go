@@ -357,7 +357,7 @@ func VMFixtureStub(ctx context.Context, endpoint string, binding AuthBinding, in
 		return errors.Join(ErrVMBoot, images.Close(), kvm.Close())
 	}
 	defer root.Close()
-	serial, err := root.OpenFile("vm-serial.log", os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
+	serial, err := openRootNoFollow(root, "vm-serial.log", os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
 	if err != nil {
 		return errors.Join(ErrVMBoot, images.Close(), kvm.Close())
 	}

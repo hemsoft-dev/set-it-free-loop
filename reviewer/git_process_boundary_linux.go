@@ -66,7 +66,7 @@ func retainGitProcessBoundaryIDs(ctx context.Context, worker GateIdentity, origi
 	}
 	defer view.Close()
 	for _, pin := range m.Files {
-		file, err := view.OpenFile(pin.Path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		file, err := openRootNoFollow(view, pin.Path, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return nil, errGitUnit
 		}

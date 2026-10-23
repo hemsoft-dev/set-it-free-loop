@@ -193,7 +193,7 @@ func CreateReleasePromotionRegistry(ctx context.Context, directory string, enrol
 }
 func (r *ReleasePromotionRegistry) read(root *os.Root) (ReleasePromotionState, error) {
 	empty := ReleasePromotionState{Version: 1, Enrollment: r.enrollment, Changes: []ReleasePromotionRequest{}}
-	file, err := root.OpenFile("promotion.json", os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	file, err := openRootNoFollow(root, "promotion.json", os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return empty, ErrFenced
 	}
@@ -262,7 +262,7 @@ func (r *ReleasePromotionRegistry) lockFile(ctx context.Context, name string) (*
 		root.Close()
 		return nil, ErrFenced
 	}
-	file, err := root.OpenFile(name, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
+	file, err := openRootNoFollow(root, name, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
 	if err != nil {
 		root.Close()
 		return nil, ErrFenced

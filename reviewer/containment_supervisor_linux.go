@@ -88,7 +88,7 @@ func openContainmentCgroupAt(anchor, group string, expected cgroupHierarchy) (*o
 	return child, hierarchy, err
 }
 func cgroupFile(root *os.Root, name string) (string, error) {
-	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := openRootNoFollow(root, name, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return "", err
 	}

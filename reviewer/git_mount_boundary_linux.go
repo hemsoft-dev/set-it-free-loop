@@ -224,7 +224,7 @@ func checkGitMountBoundaryIDs(ctx context.Context, b *gitProcessBoundary, broker
 		if name == "" {
 			name = "."
 		}
-		file, err := view.OpenFile(name, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		file, err := openRootNoFollow(view, name, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 		if err != nil {
 			return errGitUnit
 		}
@@ -251,7 +251,7 @@ func checkGitMountBoundaryIDs(ctx context.Context, b *gitProcessBoundary, broker
 			if stat.Uid != b.uid || stat.Mode&0777 != 0700 {
 				return errGitUnit
 			}
-			file, err := view.OpenFile(name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+			file, err := openRootNoFollow(view, name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 			if err != nil {
 				return errGitUnit
 			}

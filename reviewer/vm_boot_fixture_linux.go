@@ -93,7 +93,7 @@ func VMBootFixtureMain(ctx context.Context, args []string, output io.Writer) int
 			return ErrVMBoot
 		}
 		defer root.Close()
-		serial, err := root.OpenFile("serial.log", os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
+		serial, err := openRootNoFollow(root, "serial.log", os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
 		if err != nil {
 			return ErrVMBoot
 		}

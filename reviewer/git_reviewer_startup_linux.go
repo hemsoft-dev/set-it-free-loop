@@ -327,7 +327,7 @@ func gitReviewerPersistPolicy(ctx context.Context, directory string, e Enrollmen
 		return ErrLiveBlocked
 	}
 	const name = "reviewer-trigger-policy.json"
-	f, err := root.OpenFile(name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	f, err := openRootNoFollow(root, name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err == nil {
 		defer f.Close()
 		if privateAuthFile(f) != nil {
@@ -349,7 +349,7 @@ func gitReviewerPersistPolicy(ctx context.Context, directory string, e Enrollmen
 	// The caller holds the startup flock. Use its existing exact, validated
 	// replacement namespace so the next lock acquisition removes a crash fragment.
 	tmp := ".replace-" + hex.EncodeToString(nonce[:])
-	f, err = root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0600)
+	f, err = openRootNoFollow(root, tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0600)
 	if err != nil {
 		return ErrLiveBlocked
 	}

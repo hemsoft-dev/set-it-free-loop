@@ -32,7 +32,7 @@ func (a *gitExportArchive) discardStoppedIntake(ctx context.Context, unit *gitUn
 	}
 	var payload *os.File
 	if _, err := root.Lstat("payload.bin"); err == nil {
-		payload, err = root.OpenFile("payload.bin", os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		payload, err = openRootNoFollow(root, "payload.bin", os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return errGitExportArchive
 		}

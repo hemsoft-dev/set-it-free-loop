@@ -80,7 +80,7 @@ func (p *nativeVMHostPhase) persistReturnedAuthIntent(ctx context.Context, evide
 	return nil
 }
 func readNativeEvidenceFile(root *os.Root, name string, limit int) ([]byte, error) {
-	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	file, err := openRootNoFollow(root, name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, ErrEvaluationRecovery
 	}

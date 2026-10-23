@@ -107,7 +107,7 @@ func gitRetirementDirectory(root *os.Root, names map[string]bool) (gitKernelFile
 		if !names[entry.Name()] || !entry.Type().IsRegular() {
 			return id, nil, errGitUnit
 		}
-		file, err := root.OpenFile(entry.Name(), os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		file, err := openRootNoFollow(root, entry.Name(), os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return id, nil, errGitUnit
 		}
@@ -277,7 +277,7 @@ func removeGitRetirementDirectory(ctx context.Context, archive *gitExportArchive
 		}
 		// Recheck the original object immediately before each unlink. No
 		// recursive removal can follow a newly inserted file or symlink.
-		file, err := directory.OpenFile(name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		file, err := openRootNoFollow(directory, name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return errGitUnit
 		}

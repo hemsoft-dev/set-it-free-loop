@@ -570,7 +570,7 @@ func nativeGuestReadProfileFile(root string, provider Provider, uid int) ([]byte
 		return nil, ErrAuthTransfer
 	}
 	defer profile.Close()
-	f, err := profile.OpenFile(filepath.Join(string(provider), filepath.Base(nativeGuestAuthPath(root, provider))), os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	f, err := openRootNoFollow(profile, filepath.Join(string(provider), filepath.Base(nativeGuestAuthPath(root, provider))), os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, ErrAuthTransfer
 	}
