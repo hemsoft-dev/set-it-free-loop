@@ -223,6 +223,9 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 	manifest := e2eNativeManifest(t, nativeImage)
 	e.nativeRevision = manifest.Commit
 	e.result.NativeImageCommit = manifest.Commit
+	if manifest.Commit != commit {
+		t.Fatalf("native image commit %s differs from the source image and release commit %s", manifest.Commit, commit)
+	}
 	hosts := map[r.Provider]r.GitReviewerProviderHost{}
 	for _, provider := range []r.Provider{r.Codex, r.Claude} {
 		identity, _ := r.PinnedIdentity(provider)
@@ -230,7 +233,7 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 		if err != nil {
 			t.Fatal(err)
 		}
-		release.Providers[provider] = r.GitReviewerProviderRelease{Identity: identity, Stub: e2eHash(filepath.Join(nativeImage, "nativevmstub")), QEMU: manifest.QEMU, Kernel: e2eHash(filepath.Join(nativeImage, "vmlinuz")), Initrd: e2eHash(filepath.Join(nativeImage, "native.cpio.gz")), Firmware: e2eHash(filepath.Join(nativeImage, "bios.bin")), Runtime: manifest.Runtime, Policy: f.Policy(probe)}
+		release.Providers[provider] = r.GitReviewerProviderRelease{Identity: identity, Stub: manifest.Stub, QEMU: manifest.QEMU, Kernel: manifest.Kernel, Initrd: manifest.Initrd, Firmware: manifest.Firmware, Runtime: manifest.Runtime, Policy: f.Policy(probe)}
 		e.native[provider] = filepath.Join(root, "n", string(provider)[:2])
 		if !e.attached {
 			if err := os.Mkdir(e.native[provider], 0700); err != nil {
@@ -284,9 +287,9 @@ func newE2EEnv(t *testing.T, scenario, sourceImage, sourceStub, nativeImage stri
 }
 
 type e2eNativeImage struct {
-	Commit  string
-	QEMU    r.VMBootAsset
-	Runtime r.NativeVMRuntimeSpec
+	Commit                               string
+	QEMU, Stub, Kernel, Initrd, Firmware r.VMBootAsset
+	Runtime                              r.NativeVMRuntimeSpec
 }
 
 func e2eNativeManifest(t *testing.T, image string) e2eNativeImage {
@@ -299,6 +302,11 @@ func e2eNativeManifest(t *testing.T, image string) e2eNativeImage {
 		Commit         string `json:"source_commit"`
 		Dirty          bool   `json:"source_dirty"`
 		QEMU           r.VMBootAsset
+		KernelSHA256   string            `json:"kernel_sha256"`
+		InitrdSHA256   string            `json:"initrd_sha256"`
+		InitrdBytes    int64             `json:"initrd_bytes"`
+		BIOSSHA256     string            `json:"bios_sha256"`
+		Programs       map[string]string `json:"programs"`
 		Host           struct {
 			Artifact     r.VMBootAsset
 			Helper       r.VMBootAsset   `json:"namespace_helper"`
@@ -320,7 +328,21 @@ func e2eNativeManifest(t *testing.T, image string) e2eNativeImage {
 	if qemu.SHA256 != probe.QEMU.SHA256 {
 		t.Fatal("native QEMU changed")
 	}
-	return e2eNativeImage{Commit: m.Commit, QEMU: qemu, Runtime: r.NativeVMRuntimeSpec{Artifact: artifact, NamespaceHelper: m.Host.Helper, BootstrapLibraries: m.Host.Dependencies}}
+	// Every release asset must match the pin the image build recorded. The
+	// release is built from these verified hashes, never from whatever bytes
+	// happen to sit in the directory now.
+	pinned := func(name, sha string, size int64) r.VMBootAsset {
+		asset := e2eHash(filepath.Join(image, name))
+		if len(sha) != 64 || asset.SHA256 != sha || (size != 0 && asset.Bytes != size) {
+			t.Fatalf("native image asset %s does not match its recorded pin", name)
+		}
+		return asset
+	}
+	stub := pinned("nativevmstub", m.Programs["nativevmstub"], 0)
+	kernel := pinned("vmlinuz", m.KernelSHA256, 0)
+	initrd := pinned("native.cpio.gz", m.InitrdSHA256, m.InitrdBytes)
+	firmware := pinned("bios.bin", m.BIOSSHA256, 0)
+	return e2eNativeImage{Commit: m.Commit, QEMU: qemu, Stub: stub, Kernel: kernel, Initrd: initrd, Firmware: firmware, Runtime: r.NativeVMRuntimeSpec{Artifact: artifact, NamespaceHelper: m.Host.Helper, BootstrapLibraries: m.Host.Dependencies}}
 }
 
 // open composes the public startup from fresh store/journal handles, as a
@@ -410,6 +432,7 @@ func (e *e2eEnv) close(label string) {
 	select {
 	case runErr := <-e.runDone:
 		e.result.RunErrors = append(e.result.RunErrors, fmt.Sprintf("%s: %v", label, runErr))
+		e.check(e2eRunErrorExpected(runErr, e.wedged), "%s: Run returned only the expected shutdown result (wedged %v): %v", label, e.wedged, runErr)
 	case <-time.After(10 * time.Second):
 		e.check(false, "%s: Run did not return after Close", label)
 	}
@@ -422,6 +445,28 @@ func (e *e2eEnv) close(label string) {
 		e.store.Close()
 		e.store = nil
 	}
+}
+
+// e2eRunErrorExpected accepts only the cancellation that Close causes, plus
+// ErrWorkerStopPending when the case expects a retained uncertain lease.
+// Any other joined cause is an unexpected Run failure.
+func e2eRunErrorExpected(err error, wedged bool) bool {
+	if !errors.Is(err, context.Canceled) || errors.Is(err, r.ErrWorkerStopPending) != wedged {
+		return false
+	}
+	var leaves func(error) bool
+	leaves = func(err error) bool {
+		if joined, ok := err.(interface{ Unwrap() []error }); ok {
+			for _, cause := range joined.Unwrap() {
+				if !leaves(cause) {
+					return false
+				}
+			}
+			return true
+		}
+		return err == context.Canceled || (wedged && err == r.ErrWorkerStopPending)
+	}
+	return leaves(err)
 }
 
 func (e *e2eEnv) state() r.DurableState {
@@ -1463,7 +1508,7 @@ func (e *e2eEnv) assertReviewed(pr int) *r.DurableJob {
 		return nil
 	}
 	e.check(j.State == "dual_complete", "PR %d job %s reached dual_complete (got %s)", pr, j.Job.ID, j.State)
-	e.check(j.Job.Config.Mode == r.Adversarial && len(j.Checkpoint.Artifacts) == 4 && j.Checkpoint.ConsumedSessions >= 4, "PR %d adversarial engine stored 4 artifacts (consumed %d)", pr, j.Checkpoint.ConsumedSessions)
+	e.check(j.Job.Config.Mode == r.Adversarial && len(j.Checkpoint.Artifacts) == 4 && j.Checkpoint.ConsumedSessions == 4, "PR %d adversarial engine stored 4 artifacts and consumed exactly 4 sessions (consumed %d)", pr, j.Checkpoint.ConsumedSessions)
 	e.check(j.Job.Snapshot.Head == e.github.commits[strconv.Itoa(pr)] && j.Job.Release == e.options.Current, "PR %d job binds its own head and the current release", pr)
 	providers := map[r.Provider]int{}
 	for _, a := range j.Checkpoint.Artifacts {
@@ -1484,6 +1529,11 @@ func (e *e2eEnv) assertReviewed(pr int) *r.DurableJob {
 	summary := e.github.summary()
 	reviews := summary.Reviews[pr]
 	e.check(len(reviews) == 1 && reviews[0]["state"] == "COMMENTED" && reviews[0]["commit_id"] == j.Job.Snapshot.Head && reviews[0]["marker"] != "", "PR %d remote review is one marked COMMENT on its head", pr)
+	var inline []string
+	if len(reviews) == 1 {
+		inline, _ = reviews[0]["inline"].([]string)
+	}
+	e.check(slices.Contains(inline, "source.go:1"), "PR %d remote review carries the inline comment at source.go:1 (%v)", pr, inline)
 	return j
 }
 
@@ -1510,15 +1560,36 @@ func (e *e2eEnv) assertSourceStopped(label string) {
 	e.mu.Unlock()
 }
 
-func (e *e2eEnv) assertNativeSessions(job *r.DurableJob, expectComplete int) {
-	units := e2eReadNativeUnits(e.native)
-	complete := 0
-	for _, u := range units {
-		if u.Captured && u.Stopped && u.Complete && u.AuthReturned {
-			complete++
+// assertNativeSessions requires exactly one completed native launch per
+// artifact session of the given jobs, with auth returned and whole-unit
+// stop, and no other launch except the listed extra session hashes.
+func (e *e2eEnv) assertNativeSessions(jobs []*r.DurableJob, extra ...string) {
+	expected := map[string]bool{}
+	for _, j := range jobs {
+		for _, a := range j.Checkpoint.Artifacts {
+			expected[a.InputHash] = true
 		}
 	}
-	e.check(complete >= expectComplete, "at least %d native units completed with auth returned and whole-unit stop (got %d of %d)", expectComplete, complete, len(units))
+	allowed := map[string]int{}
+	for _, hash := range extra {
+		allowed[hash]++
+	}
+	seen := map[string]int{}
+	unexpected := 0
+	for _, u := range e2eReadNativeUnits(e.native) {
+		if expected[u.SessionHash] && u.Captured && u.Stopped && u.AuditPresent && u.Complete && u.AuthReturned {
+			seen[u.SessionHash]++
+		} else if allowed[u.SessionHash] > 0 {
+			allowed[u.SessionHash]--
+		} else {
+			unexpected++
+		}
+	}
+	once := len(seen) == len(expected)
+	for _, n := range seen {
+		once = once && n == 1
+	}
+	e.check(once && unexpected == 0, "each of %d job-bound sessions ran in exactly one completed native launch with auth returned, and no other launch exists (%d matched, %d unexpected)", len(expected), len(seen), unexpected)
 }
 
 // ---------------------------------------------------------------- scenarios
@@ -1535,7 +1606,7 @@ func e2eReview(e *e2eEnv) {
 	e.snapshotJobs("confirmed")
 	job := e.assertReviewed(1)
 	e.assertSourceStopped("after review")
-	e.assertNativeSessions(job, 4)
+	e.assertNativeSessions([]*r.DurableJob{job})
 	d := e.state()
 	request := d.PRs[e2eScopeKey(1)]
 	e.check(request != nil && len(request.Requests) == 1 && request.Requests[0].Origin != nil && request.Requests[0].Origin.Kind == "opened", "PR 1 request came from an automatic PR-open observation")
@@ -1564,7 +1635,7 @@ func e2eIsolation(e *e2eEnv) {
 	d := e.state()
 	e.check(d.PRs[e2eScopeKey(2)].Requests[0].Origin.Kind == "comment", "PR 2 request came from the owner @sfl review comment")
 	e.assertSourceStopped("after both reviews")
-	e.assertNativeSessions(j1, 8)
+	e.assertNativeSessions([]*r.DurableJob{j1, j2})
 	// Admission: sessions of the two jobs never interleave.
 	sessions := append(e.models[r.Codex].sessionsCopy(), e.models[r.Claude].sessionsCopy()...)
 	sort.Slice(sessions, func(i, j int) bool { return sessions[i].CheckedAt.Before(sessions[j].CheckedAt) })
@@ -1587,13 +1658,24 @@ func e2eIsolation(e *e2eEnv) {
 	e.check(a1.Attempt != "" && a2.Attempt != "" && a1.Attempt != a2.Attempt && a1.Unit != a2.Unit && a1.ChannelID != a2.ChannelID && a1.InvocationID != a2.InvocationID, "distinct source attempts, units, invocations and read channels per job")
 	e.check(a1.Snapshot.Head == j1.Job.Snapshot.Head && a2.Snapshot.Head == j2.Job.Snapshot.Head, "each source attempt binds its own job snapshot")
 	h1, h2 := e.github.commits["1"], e.github.commits["2"]
-	mixed := 0
+	// Each acquisition's upload-pack wants exactly its own head and the base.
+	uploads := map[string]int{}
+	other := 0
 	for _, x := range e.github.summary().GitExchanges {
-		if slices.Contains(x.Wants, h1) && slices.Contains(x.Wants, h2) {
-			mixed++
+		if x.Operation != "upload-pack" {
+			continue
+		}
+		wants := slices.Sorted(slices.Values(x.Wants))
+		switch {
+		case slices.Equal(wants, slices.Sorted(slices.Values([]string{h1, e.github.baseSHA}))):
+			uploads[h1]++
+		case slices.Equal(wants, slices.Sorted(slices.Values([]string{h2, e.github.baseSHA}))):
+			uploads[h2]++
+		default:
+			other++
 		}
 	}
-	e.check(mixed == 0, "no upload-pack exchange wanted both PR heads")
+	e.check(other == 0 && uploads[h1] == 1 && uploads[h2] == 1, "each job's single upload-pack wanted exactly its own head and the base (PR1 %d, PR2 %d, other %d)", uploads[h1], uploads[h2], other)
 	// Restore each job from retained bytes and probe the other job's objects.
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -1654,7 +1736,7 @@ func e2eCloseCapture(e *e2eEnv) {
 	e.snapshotJobs("confirmed")
 	job := e.assertReviewed(1)
 	e.check(e.github.gitExchanges() == exchanges, "reopened service restored retained source without refetching (%d exchanges)", e.github.gitExchanges())
-	e.assertNativeSessions(job, 4)
+	e.assertNativeSessions([]*r.DurableJob{job})
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(job))
 	e.collectWrites()
 }
@@ -1692,13 +1774,14 @@ func e2eCloseProvider(e *e2eEnv) {
 		time.Sleep(2 * time.Second)
 	}
 	e.runCancel()
+	e.wedged = closeErr != nil
 	select {
 	case runErr := <-e.runDone:
 		e.result.RunErrors = append(e.result.RunErrors, fmt.Sprintf("close-provider: %v", runErr))
+		e.check(e2eRunErrorExpected(runErr, e.wedged), "close-provider: Run returned only the expected shutdown result (wedged %v): %v", e.wedged, runErr)
 	case <-time.After(10 * time.Second):
 		e.check(false, "Run did not return after Close")
 	}
-	e.wedged = closeErr != nil
 	if !e.wedged {
 		e.service = nil
 	}
@@ -1716,6 +1799,7 @@ func e2eCloseProvider(e *e2eEnv) {
 	units := e2eReadNativeUnits(e.native)
 	e.check(len(units) == 1 && units[0].Captured && units[0].Stopped && !units[0].Complete, "the interrupted native unit was captured and whole-unit stopped without completion")
 	returned := len(units) == 1 && units[0].AuthReturned
+	e.check(len(units) == 1 && units[0].AuditPresent, "the interrupted native unit has a well-formed stopped audit receipt")
 	for _, u := range units {
 		e.note("interrupted native unit %s: audit %v complete %v exported %v returned %v", u.Launch, u.AuditPresent, u.Complete, u.AuthExported, u.AuthReturned)
 	}
@@ -1734,11 +1818,12 @@ func e2eCloseProvider(e *e2eEnv) {
 	}
 	e.check(j.LeaseToken != "" && j.Outstanding && j.State == "running", "the uncertain provider attempt keeps its durable lease and outstanding reservation")
 	e.check(!returned && !usable[r.Codex], "the unreturned exported auth is fenced for recovery")
+	e.check(len(units) == 1 && units[0].AuditPresent && units[0].AuthExported && !units[0].AuthReturned, "the stopped audit records the auth as exported and not returned")
 	// ReleaseStopped is the explicit trusted-supervisor path. Probe it on a
 	// private copy: it is accepted only with durably recorded stopped
 	// provider evidence, and the service itself never calls it.
 	err := e2eProbeRelease(e, j)
-	e.note("ReleaseStopped(auth_failed) on a private copy of the retained state: %v", err)
+	e.check(err == nil, "the trusted ReleaseStopped(auth_failed) succeeds on a private copy of the retained state: %v", err)
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(j))
 	e.keepRoot = true
 	e.note("retained root %s for close-provider-reopen; this process exits holding the wedged handle", e.root)
@@ -1856,7 +1941,7 @@ func e2eClosePublish(e *e2eEnv) {
 	job := e.assertReviewed(1)
 	e.check(e.github.reviewPosts(1) == 1, "reconciliation after reopen never POSTed again")
 	e.assertSourceStopped("after reconciliation")
-	e.assertNativeSessions(job, 4)
+	e.assertNativeSessions([]*r.DurableJob{job})
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(job))
 	e.collectWrites()
 }
