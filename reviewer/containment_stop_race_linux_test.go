@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // This replacement happens after Observe returns the original identity, at
@@ -220,8 +221,11 @@ func TestOriginalCgroupRemovedAfterOpenIsStopped(t *testing.T) {
 				case "kill":
 					return killOpenedCgroup(context.Background(), root, binding)
 				case "terminate":
-					// Removed before Terminate's own first identity check.
-					return linuxContainmentKernel{}.terminateOpened(context.Background(), root, binding)
+					// Removed before Terminate's own first identity check. A
+					// replacement keeps Terminate waiting, so bound it.
+					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+					defer cancel()
+					return linuxContainmentKernel{}.terminateOpened(ctx, root, binding)
 				}
 				// Removed after cgroup.events was opened, before it was read.
 				if _, err := readCgroupFile(events); err != nil {
