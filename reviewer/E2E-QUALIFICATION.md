@@ -65,6 +65,10 @@ ledger, and a restore probe.
    the end, each case must have served exactly its own per-role route set:
    every case the qualification and reader routes, a publishing case also the
    review POST and its receipt read, and `close-publish` also the review scan.
+   Operator recovery uses no GitHub route, so `close-provider-recover`, which
+   publishes PR 2's review, serves exactly the publishing set, and the
+   `close-provider` process before it exactly the qualification and reader
+   routes.
 3. **Source acquisition.** The same server answers smart-HTTP
    `info/refs` and `git-upload-pack` with the installed Git producer over a
    synthetic bare upstream, through the reader installation credential that
@@ -123,9 +127,11 @@ source records, which it need not observe. Before `close-provider-reopen` or
 `close-provider-recover` accepts an attached root, the root must hold exactly
 one durable job: PR 1's, still leased, bound to PR 1's scope and the
 deterministic fake upstream's snapshot, and admitted under the current release
-revision. A root retained by another revision's `close-provider` is refused,
-so its interrupted job and launch are never recorded as this revision's
-restart or recovery. Before either case treats a native launch as the earlier
+revision, and that job must be exactly the one admission derives from its
+retained request and the harness's inputs (see **Job** under
+[Evidence bindings](#evidence-bindings)). A root retained by another
+revision's `close-provider` is refused, so its interrupted job and launch are
+never recorded as this revision's restart or recovery. Before either case treats a native launch as the earlier
 process's, its root must hold exactly one launch: started, settled, captured,
 aborted and stopped, with a bound version 2 stopped audit that records the
 auth as exported and not returned and the session as incomplete. Its provider
@@ -377,6 +383,15 @@ each of PRs 1 and 2, no PR 1 intent, one PR 2 intent and no other write. PR 2
 must pass every rule above, including its stored reports judged against the
 canned backend reports and its confirmed document against the one
 production's renderer builds from them; PR 1 has no artifact and no document.
+Both jobs are held to the jobs admission derives from the harness's inputs
+(the fake upstream's snapshot, the configuration the harness opened the store
+with at version 1 and the current release): PR 1's to the job derived from
+its retained automatic `opened` request, PR 2's to the job derived from the
+owner `comment` request whose pull and comment IDs are the fake upstream's.
+Every derived expectation of either job (sessions, source records, launch
+bindings and the interrupted Codex R1 session, the one extra launch allowed)
+comes from those expected jobs, and PR 2's remote review must be on the fake
+upstream's head of PR 2 with the document rendered under its fixture diff.
 PR 1's job must be the retained job itself (same
 ID, job, scope and request), `auth_failed` with no lease or outstanding
 attempt, still charged for its one interrupted session, with no artifact and
@@ -384,9 +399,9 @@ no source access. It must record exactly one provider attempt, the leased
 one, whose evidence equals the interrupted launch's audit evidence by digest,
 and exactly one recovery receipt of that attempt, round, launch and evidence
 digest, with the auth retired, recorded at a recovery time. As production's
-recovery changes nothing else, the job must equal the retained job with only
-its state, lease, deadline, reservation and pending charge released and that
-receipt appended. The interrupted launch's audit must still bind the
+recovery changes nothing else, the job must equal the retained job, holding
+the expected job, with only its state, lease, deadline, reservation and
+pending charge released and that receipt appended. The interrupted launch's audit must still bind the
 recovered attempt: its derived request, the zero report, no source receipt,
 the wait for its result record as its final stage and the `auth-return`
 failure. PR 2's job holds exactly its four artifact attempts and no recovery
@@ -464,10 +479,10 @@ rule that refuses an extra entry.
 | Source owner records | production strict canonical journal reader | attempt, unit, invocation, request and source request hashes, stub, release, runtime, snapshot, lifecycle flags, grant, empty `StopBoot`, boot ID | channel ID and generation (per-attempt nonces, distinct per job in `isolation`); manager owner, start job, birth, process and cgroup (host-assigned; production checks their consistency) | one per expected job |
 | Archive exports | production archive journal reader | attempt, state (`staged`), request hash, release, runtime, snapshot, packet hash (job packet) | wire hash and size (restore verifies them against the payload) | one per source record |
 | Released private copy | production store reread | the whole job: only state, lease, deadline, reservation and pending charge differ | none | one job, no write |
-| Recovered job (`close-provider-recover`) | production `releaseRecoveredProviderAttempt` before the reread; none in production's loader | the whole job against the retained job: only state (`auth_failed`), lease, deadline, reservation and pending charge differ, and exactly one recovery receipt is appended; still charged for its one session | none | PR 1's one job; exactly the leased attempt (the interrupted launch's evidence) and no source attempt; PR 2's job exactly its four artifact attempts |
+| Recovered job (`close-provider-recover`) | production `releaseRecoveredProviderAttempt` before the reread; none in production's loader | the whole job against the retained job holding the expected job (ID, requester, complete origin of PR 1's retained `opened` request, configuration and version 1 from the harness, fake upstream snapshot, current release): only state (`auth_failed`), lease, deadline, reservation and pending charge differ, and exactly one recovery receipt is appended; still charged for its one session, the expected job's Codex R1 session | generation and packet (as for any durable job, repeated from the retained job) | PR 1's one job; exactly the leased attempt (the interrupted launch's evidence) and no source attempt; PR 2's job exactly its four artifact attempts |
 | Provider recovery receipt (`ProviderRecoveries`) | production `releaseRecoveredProviderAttempt`: attempt, provider, round and cloned-evidence digest must match the outstanding attempt under its lease | attempt ID (leased), launch ID (interrupted), provider (Codex), round, evidence hash (the audit's evidence digest), auth (`retired`), state (`auth_failed`), recovery time set and not before the job's creation | recovery time value (wall clock) | exactly one on PR 1's job, none on any other job |
 | Operator recovery candidates | production `ProviderRecoveryCandidates` scan (version 2 receipts naming the attempt) | the whole candidate: job, attempt ID, provider, round, session, outstanding, evidence recorded, launches | none | exactly one candidate with exactly the interrupted launch |
-| Provider auth stores | production `AuthStore` refresh | disposition (`fenced`, `retired`, `usable`, `invalid`); usable only with the original synthetic tokens; after re-provisioning, exactly the re-supplied seed bytes | none | one store per provider |
+| Provider auth stores | production `AuthStore` refresh | disposition (`usable`, `invalid`, `retired`, `fenced`, `unavailable`): usable only with the original synthetic tokens; retired only with no state, lease, profile or pending journal, as production's retirement leaves it; fenced only on `ErrAuthRecoveryRequired`; any other refusal before the store yields state is unavailable; after re-provisioning, exactly the re-supplied seed bytes | none | one store per provider |
 | Fake GitHub, model and Git observations | harness-owned | POSTs, reviews (marker, canonical document hash, inline), Git exchanges (operation, wants, status, journal sample), session checks and backend counts, every API route against its role's production capability | token mints, API request counts, and API tallies after settling (a wedged handle keeps its owner) | per-role route set equals the case's; settled observations equal the judged ones |
 
 ## Admission rule
@@ -706,8 +721,10 @@ new process attached to the root retained by `close-provider`, inside the
 same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
 
 1. Before startup, the job is `running` with its lease, an outstanding
-   attempt and one charged session, and was admitted under the current
-   release (a root from another revision stops the run). The root holds
+   attempt and one charged session, and is exactly the job admission derives
+   from its retained request, the fake upstream's snapshot, the harness
+   configuration at version 1 and the current release (a root from another
+   revision or configuration stops the run). The root holds
    exactly one native launch, which passes the
    retained-launch rule above (a missing launch or a version 1 receipt stops
    the run). It is a Codex unit whose version 2 stopped audit records
@@ -732,10 +749,11 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    no source attempt and one recovery receipt bound to the launch. A repeated
    call is refused. Codex auth is retired: the store holds no state and no
    lease, exactly as production's retirement leaves it, so it is neither
-   usable, invalid nor fenced. Claude auth is untouched and usable. The
+   usable, invalid, fenced nor unavailable. Claude auth is untouched and usable. The
    durable state holds only that job and no write, the job
    passes the recovered-job rule under [Evidence bindings](#evidence-bindings),
-   and PR 1 still retains only its admitted `opened` request. Neither startup
+   and PR 1 still retains only its admitted `opened` request, the one its
+   expected job derives from. Neither startup
    nor recovery has started a source or native unit, and the interrupted
    launch is still the only one.
 5. The test re-provisions the retired store, which must yield no state, with
@@ -752,14 +770,17 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    completed launch with auth returned whose receipt names PR 2's recorded
    attempt for that session. The interrupted launch still names PR 1's
    recovered attempt, which no PR 2 artifact uses. It is published as one
-   marked COMMENT with the inline comment at `source.go:1`, then confirmed.
+   marked COMMENT on the fake upstream's head of PR 2 with the inline comment
+   at `source.go:1`, then confirmed.
 7. The end state passes the `close-provider-recover` rules under
    [Evidence bindings](#evidence-bindings). PR 1 stays `auth_failed` with no
    new job, write or POST. PR 2 has exactly one review intent, and it is
    `confirmed`, bound to its job and the remote review. PR 1 retains only its admitted
    `opened` request, PR 2 only the owner `comment` request admitted as its
-   job's request, and no other PR any request. The only GitHub POSTs were two
-   role token mints and one review POST for PR 2. The owner journal holds two
+   job's request, with the fake upstream's pull and comment IDs, and no other
+   PR any request. The only GitHub POSTs were two role token mints and one
+   review POST for PR 2, and the fake GitHub served exactly the publishing
+   per-role route set: recovery itself used no route. The owner journal holds two
    stopped source records, PR 1's retained attempt and PR 2's, each with one
    staged export repeating its record's source request digest and complete
    materialization binding. Final `Close` succeeded, `Run` returned only
@@ -796,9 +817,13 @@ version 2 audit read as `persistAudit`'s exact encoding with its attempt ID,
 exact attempt sets, the recovered job equal to the retained job but for its
 released fields and one recovery receipt, the interrupted launch's audit
 bound to the recovered attempt, and the exact operator candidate view)
-applied to recovery, has not run on a host. The
-[`89382c7` run](#measured-at-89382c7) predates operator recovery and the
-version 2 receipts and is not evidence for them. Every case, including
+applied to recovery, and the round 11 rules (both recovery jobs held to the
+jobs expected from harness inputs, `fenced` only on
+`ErrAuthRecoveryRequired` with `unavailable` kept distinct from `retired`,
+the per-role route allowlist and exact route sets for both processes, and
+PR 2's remote review bound to the fake upstream) applied to recovery, has
+not run on a host. The [`13251e3` run](#measured-at-13251e3) predates
+operator recovery and the version 2 receipts and is not evidence for them. Every case, including
 `close-provider` followed by `close-provider-recover` in one lock hold, needs
 to be rerun from images, stub and test binary built from one clean commit,
 and the results recorded here.
