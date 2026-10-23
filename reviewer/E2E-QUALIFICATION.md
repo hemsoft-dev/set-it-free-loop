@@ -545,7 +545,7 @@ set. No unit or E2E root remained afterwards. Only this document changed after
 `13251e3` predates the operator recovery and the version 2 audit receipts
 that this branch adds, so its native audits were version 1, which the current
 harness refuses, and it did not run `close-provider-recover`. That run is not
-evidence for this head; see [Measured at `<head>`](#measured-at-head).
+evidence for this head; see [Measured at `d1b5d72`](#measured-at-d1b5d72).
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
@@ -799,34 +799,35 @@ refuses that case because the receipt is required evidence, and it remains
 fenced. Re-provisioning provider auth after retirement is an operator action
 outside the reviewer, and the test only simulates it with a synthetic seed.
 
-### Measured at `<head>`
+### Measured at `d1b5d72`
 
-Not yet measured. The current head, with operator recovery, version 2 audit
-receipts bound to attempt IDs and checked by the production provider-receipt
-validators, the attached-release check, the retained-launch rule, the source
-export binding, the exact request checks and the round 7 evidence bindings
-applied to the recovered end state, and the round 8 rules (pinned launch
-manifest and stub, exact exchange counts, served bytes, whole native root
-enumeration and source lifecycle order) applied to recovery, and the round 9
-rules (PR 2's reports and document judged against the canned reports and
-production's renderer, the quiesced unit sampler, the settled re-read of the
-recovery process's fake servers, and the exact fenced, retired and usable
-auth dispositions) applied to recovery, and the round 10 rules (every
-durable record read through production's own readers and validators, the
-version 2 audit read as `persistAudit`'s exact encoding with its attempt ID,
-exact attempt sets, the recovered job equal to the retained job but for its
-released fields and one recovery receipt, the interrupted launch's audit
-bound to the recovered attempt, and the exact operator candidate view)
-applied to recovery, and the round 11 rules (both recovery jobs held to the
-jobs expected from harness inputs, `fenced` only on
-`ErrAuthRecoveryRequired` with `unavailable` kept distinct from `retired`,
-the per-role route allowlist and exact route sets for both processes, and
-PR 2's remote review bound to the fake upstream) applied to recovery, has
-not run on a host. The [`13251e3` run](#measured-at-13251e3) predates
-operator recovery and the version 2 receipts and is not evidence for them. Every case, including
-`close-provider` followed by `close-provider-recover` in one lock hold, needs
-to be rerun from images, stub and test binary built from one clean commit,
-and the results recorded here.
+On October 23, 2026, every case ran on mini under the shared VM lock, one VM at
+a time and only with at least 2.5 GB of memory available, from source and
+native images, a source stub and a `reviewer.test` all built from `d1b5d72`,
+which is operator recovery on `main` with #249, #250, #252, #253 and #254. Both
+binaries carried `vcs.revision=d1b5d72…` and `vcs.modified=false`, and the
+release hash was `1ec49cbb906e`. `close-provider` ran twice: once followed by
+`close-provider-reopen`, and once followed by `close-provider-recover` in the
+same lock hold. Every case passed with no failures under all the rules above,
+including the round 11 rules applied to recovery, and no unit or E2E root
+remained afterwards. Only this document changed after `d1b5d72`.
+
+| Case | Passed | Seconds | Checks | Source / native units |
+| --- | --- | --- | --- | --- |
+| `review` | yes | 22.5 | 52 | 1 / 4 |
+| `close-publish` | yes | 22.5 | 59 | 1 / 4 |
+| `close-capture` | yes | 21.4 | 64 | 1 / 4 |
+| `isolation` | yes | 42.7 | 91 | 2 / 8 |
+| `close-provider` | yes | 12.1 | 34 | 1 / 1 |
+| `close-provider-reopen` | yes | 38.6 | 29 | 0 / 0 |
+| `close-provider` (before recovery) | yes | 12.1 | 34 | 1 / 1 |
+| `close-provider-recover` | yes | 21.6 | 101 | 1 / 4 |
+
+In `close-provider-recover`, Codex auth was `fenced` before recovery, `retired`
+after it, and `usable` at the end after the re-supplied synthetic seed was
+returned by PR 2's sessions; Claude auth stayed `usable`. PR 1's recovered job
+equalled the retained job but for its released fields and one recovery
+receipt, and PR 2 was reviewed in exactly four sessions and published once.
 
 ### Pre-rebase history: recovery runs at `098261f`, `483b17a` and `34c9d96`
 
@@ -836,7 +837,7 @@ attempt, which production recovery and the current harness both refuse. They
 also predate the attestation and binding rules above, the retained-launch
 rule and the exact request checks in steps 1, 4 and 7. They are history, not
 evidence for the current head; that run is recorded under
-[Measured at `<head>`](#measured-at-head).
+[Measured at `d1b5d72`](#measured-at-d1b5d72).
 
 Measured on mini on 2026-10-22 with code, test binary, stub and both images
 from commit `098261f` (release digest `4861b9df…cfb6`), under the shared VM
