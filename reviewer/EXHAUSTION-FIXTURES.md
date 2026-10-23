@@ -44,6 +44,10 @@ incomplete audit and a `phase-*`, deadline or `auth-recovery` error class; an
 unproven stop never counts. An honest partial report is complete only if its
 authoritative coverage lists the omission.
 
+The matrix runner accepts a result only with kind `exhaustion` and exactly
+these common checks plus the case's own checks from `exhaustionChecks`. A
+missing or extra check fails the case, as in the hostile matrix.
+
 ## Measured results
 
 On October 22, 2026, all 12 cases ran serially on mini. The runner and image

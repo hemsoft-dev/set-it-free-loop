@@ -62,10 +62,35 @@ REQUIRED_CHECKS = {
     "metadata": [COMMON_CHECKS | {"metadata-delivered", "complete-report", "only-allowed-reads", "planned-inferences"},
                  COMMON_CHECKS | {"metadata-delivered"} | GUARD_CHECKS],
 }
-# Case kinds, matching internal/nativefixture hostileCases.
+# Exhaustion cases may leave auth fenced for recovery instead of returned,
+# and each case adds its own bound checks, matching exhaustionChecks.
+EXHAUSTION_COMMON = COMMON_CHECKS - {"auth-returned"} | {"auth-returned-or-fenced", "provider-bounds-held", "usage-not-claimed"}
+FLOOD_CHECKS = {"typed-failure", "flood-passed-bound", "egress-exhausted", "single-inference", "no-source-access"}
+STALL_CHECKS = {"typed-failure", "guard-cancelled-stall", "unaccepted-upstream-recorded", "deadline-bounded",
+                "single-inference", "no-source-access"}
+TURN_CHECKS = {"typed-failure", "turn-bound-reached", "every-turn-used-source"}
+OVERSIZE_CHECKS = {"first-read-delivered", "second-read-denied", "byte-bound", "honest-outcome"}
+EXHAUSTION_CHECKS = {
+    "claude-response-flood": FLOOD_CHECKS, "codex-response-flood": FLOOD_CHECKS,
+    "claude-stall": STALL_CHECKS, "codex-stall": STALL_CHECKS,
+    "claude-turn-flood": TURN_CHECKS, "codex-turn-flood": TURN_CHECKS,
+    "claude-source-oversize": OVERSIZE_CHECKS, "codex-source-oversize": OVERSIZE_CHECKS,
+    "codex-source-flood": {"tool-call-bound", "client-saw-bound", "honest-outcome"},
+    "codex-code-spin": {"cell-yielded", "code-host-stopped", "ended-before-deadline", "typed-or-validated", "no-source-access"},
+    "codex-code-memory": {"typed-failure", "code-host-not-accepted", "no-source-access"},
+    "codex-code-output-flood": {"typed-failure", "relay-limit-reached", "no-source-access"},
+}
+# Case kinds, matching internal/nativefixture hostileCases and exhaustionCases.
 CASE_KINDS = {name: "source-reader" if name.endswith("-source-mcp") else "code-host" if name == "codex-code-probe"
               else "metadata" if name in ("codex-metadata", "codex-settings") else "response-guard"
-              for _, name in HOSTILE}
+              for _, name in HOSTILE} | {name: "exhaustion" for _, name in EXHAUSTION}
+
+
+def required_checks(name):
+    """Every check set a result for this case may carry."""
+    if CASE_KINDS.get(name) == "exhaustion":
+        return [EXHAUSTION_COMMON | EXHAUSTION_CHECKS[name]]
+    return REQUIRED_CHECKS.get(CASE_KINDS.get(name), [])
 
 
 def cases(matrix="hostile"):
@@ -82,7 +107,7 @@ def verdict(name, result):
         return "pass" if result.get("Passed") is True and result.get("Negative") is True else "fail"
     checks, kind = result.get("Checks"), CASE_KINDS.get(name)
     if not isinstance(checks, dict) or result.get("Case") != name or result.get("Kind") != kind \
-            or set(checks) not in REQUIRED_CHECKS.get(kind, []):
+            or set(checks) not in required_checks(name):
         return "fail"
     failed = {key for key, ok in checks.items() if ok is not True}
     if not failed and result.get("Passed") is True and result.get("HostContained") is True:
