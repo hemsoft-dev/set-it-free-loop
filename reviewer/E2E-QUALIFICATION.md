@@ -91,7 +91,7 @@ ledger, and a restore probe.
 | `close-capture` | Close the whole service after capture and admission, inside the first session's host check, before any VM launch. Reopen and finish. | 1 / 4 | 1 | both usable |
 | `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. | 1 / 1 | lifecycle order only | Codex fenced, Claude usable |
 | `close-provider-reopen` | A second process attached to the root retained by `close-provider` (`SFL_E2E_ATTACH`), as a restarted service. | 0 / 0 | 1 (retained) | Codex fenced, Claude usable |
-| `close-provider-recover` | Instead of `close-provider-reopen`: a restarted process recovers the retained attempt through the operator API, then reviews and publishes the next request. | TBD | TBD | TBD |
+| `close-provider-recover` | Instead of `close-provider-reopen`: a restarted process recovers the retained attempt through the operator API, then reviews and publishes the next request. | 1 / 4 | 2 (1 retained) | both usable (Codex re-provisioned) |
 | `close-publish` | The fake GitHub commits the review POST but withholds its response; close the whole service; reopen and reconcile. | 1 / 4 | 1 | both usable |
 
 If `close-provider`'s `Close` proves completion instead of reporting
@@ -653,7 +653,8 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    has no lease, no outstanding attempt, one consumed session, no artifact,
    no source attempt and one recovery receipt bound to the launch. A repeated
    call is refused. Codex auth is retired (unusable), and Claude auth is
-   untouched.
+   untouched. Neither startup nor recovery has started a source or native
+   unit, and the interrupted launch is still the only one.
 5. The test re-provisions a synthetic Codex seed, standing in for the
    operator's separate auth repair, then calls `Refresh` and `Run`. Once
    PR 2 is admitted, recovery is refused with `ErrLiveBlocked`.
@@ -661,9 +662,18 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    exactly its head and the base. It runs four native sessions, each in one
    completed launch with auth returned. It is published as one marked
    COMMENT with the inline comment at `source.go:1`, then confirmed.
-7. PR 1 stays `auth_failed` with no new job, write or POST. The only GitHub
-   POSTs were two role token mints and one review POST for PR 2. Final
-   `Close` succeeded, `Run` returned only cancellation, and no unit remained.
+7. PR 1 stays `auth_failed` with no new job, write or POST. PR 2 has exactly
+   one review intent, and it is `confirmed`. The only GitHub POSTs were two
+   role token mints and one review POST for PR 2. The owner journal holds two
+   stopped source records, PR 1's retained attempt and PR 2's, each with one
+   staged export. Final `Close` succeeded, `Run` returned only cancellation,
+   and no unit remained.
+8. The process observed exactly one source unit, PR 2's acquisition, and
+   four native units, one per PR 2 session. Every one correlates with a
+   recorded attempt or a launch directory this process created. The retained
+   PR 1 attempt and interrupted launch belong to `close-provider` and are not
+   counted. Both auth stores are usable at the end: the re-provisioned Codex
+   auth was returned by PR 2's sessions.
 
 Measured on mini on 2026-10-22 with code, test binary, stub and both images
 from commit `098261f` (release digest `4861b9df…cfb6`), under the shared VM
@@ -675,6 +685,11 @@ startup completed, and PR 2 was confirmed 26.4 s after startup with receipt 5002
 observer saw one source VM unit and four native units in the recovery
 process, and none remained. Evidence is kept outside the repository in the
 merge-mission directory `e2e-174/recovery/run-098261f-close-provider-recover2/`.
+That run predates the per-case unit, source record, auth and sole-intent
+checks in steps 4, 7 and 8. Its `close-provider-recover` evidence, and that of
+the later runs at `483b17a` and `34c9d96`, meet them when re-evaluated with the
+same helpers. Those runs did not take the step 4 observer sample, but in each
+the first unit was first seen after recovery returned.
 An earlier run at `ac57673` passed every check except one: its
 running-service refusal raced `Run`'s start and got `ErrFenced`. The check
 now waits for admission.

@@ -227,6 +227,9 @@ var e2eExpectations = map[string]e2eExpect{
 	"close-publish":         {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2eReconciledRoutes},
 	"close-provider":        {SourceUnits: 1, NativeUnits: 1, Routes: e2eQualifiedRoutes},
 	"close-provider-reopen": {Routes: e2eQualifiedRoutes},
+	// Recovery launches nothing; PR 2's review is one acquisition and four
+	// sessions, and the re-provisioned Codex auth is returned by its last one.
+	"close-provider-recover": {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2ePublishedRoutes},
 }
 
 func (e *e2eEnv) event(kind, format string, args ...any) {
@@ -1149,6 +1152,17 @@ func (o *e2eUnitObserver) sample() (map[string]string, error) {
 		}
 	}
 	return units, nil
+}
+
+// observed samples once and counts the units first seen by this run. A
+// failed listing is returned, never read as an empty one.
+func (o *e2eUnitObserver) observed() (int, error) {
+	if _, err := o.sample(); err != nil {
+		return 0, err
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return len(o.seen), nil
 }
 
 // stop first stops and joins the periodic sampler, so no listing still in
@@ -3675,7 +3689,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	if before == nil || before.LeaseToken == "" || !before.Outstanding {
 		e.t.Fatal("attached root has no retained lease")
 	}
-	units := e2eReadNativeUnits(e.native)
+	units := e2eReadNativeUnits(e.native, e.policies)
 	e.check(len(units) == 1 && units[0].Provider == string(r.Codex) && units[0].AuditPresent && units[0].AuthExported && !units[0].AuthReturned, "the retained root has one interrupted Codex launch with exported, unreturned auth")
 	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "codex auth is fenced and claude auth usable before recovery")
 	if len(units) != 1 {
@@ -3707,6 +3721,9 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	recovered := e2eJobFor(e.state(), 1)
 	e.check(recovered.LeaseToken == "" && !recovered.Outstanding && recovered.State == "auth_failed" && recovered.Checkpoint.ConsumedSessions == before.Checkpoint.ConsumedSessions && len(recovered.Checkpoint.Artifacts) == 0 && len(recovered.SourceAttempts) == 0 && len(recovered.ProviderRecoveries) == 1 && recovered.ProviderRecoveries[0].LaunchID == interrupted.Launch, "the recovered job is charged, incomplete, unreviewed and carries one recovery receipt")
 	e.check(!e2eAuthUsable(e.auth, r.Codex) && e2eAuthUsable(e.auth, r.Claude), "the lost codex auth is retired, never reused; claude auth is untouched")
+	observed, listing := e.units.observed()
+	launches := len(e2eReadNativeUnits(e.native, e.policies))
+	e.check(listing == nil && observed == 0 && launches == 1, "startup and recovery started no source or native unit (%d observed, %d launches, listing %v)", observed, launches, listing)
 	// The operator re-establishes synthetic Codex auth outside the reviewer.
 	codex, err := r.NewAuthStore(r.Codex, e.auth)
 	if err == nil {
@@ -3756,7 +3773,8 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 		}
 	}
 	e.check(uploads == 1 && other == 0, "PR 2 was captured by one upload-pack for its own head (%d, other %d)", uploads, other)
-	e.assertSourceStopped("after recovery review")
+	// The journal keeps PR 1's retained attempt beside PR 2's own.
+	e.assertSourceStopped("after recovery review", 2)
 	if j2 != nil {
 		e.assertNativeSessions([]*r.DurableJob{j2}, interrupted.SessionHash)
 		e.result.Jobs = append(e.result.Jobs, e2eJobSummary(j1), e2eJobSummary(j2))
@@ -4186,6 +4204,23 @@ func TestE2EFinalVerdicts(t *testing.T) {
 	if f := failures(fenced, e2eExpectations["close-provider"], nil, false); len(f) != 0 {
 		t.Fatal("fenced provider close refused:", f)
 	}
+	// recovered is close-provider-recover's end state: the retained PR 1
+	// attempt and interrupted launch beside PR 2's own acquisition and four
+	// launches, Codex auth re-provisioned and returned.
+	interrupted, next := id("0"), id("b")
+	recovered := func() *e2eResult {
+		res := e2eUnitRun(next, n1, n2, n3, n4)
+		retained := r.E2ESourceRecord{Attempt: source, Unit: "sfl-alpha-" + source + ".service"}
+		for i := range res.SourceRecords {
+			res.SourceRecords[i] = append([]r.E2ESourceRecord{retained}, res.SourceRecords[i]...)
+		}
+		res.NativeUnits = append([]e2eNativeUnit{{Launch: interrupted, Captured: true, Stopped: true}}, res.NativeUnits...)
+		return res
+	}
+	recovery, retainedLaunch := e2eExpectations["close-provider-recover"], map[string]bool{interrupted: true}
+	if f := failures(recovered(), recovery, retainedLaunch, true); len(f) != 0 {
+		t.Fatal("attached recovery and next review refused:", f)
+	}
 	type input struct {
 		res      *e2eResult
 		want     e2eExpect
@@ -4232,6 +4267,24 @@ func TestE2EFinalVerdicts(t *testing.T) {
 		"fenced provider published": {mutate(e2eUnitRun(source, n1), func(res *e2eResult) {
 			res.AuthRecoveryClear["codex"] = false
 		}), e2eExpectations["close-provider"], nil, false},
+		"recovery launched a native unit": {mutate(recovered(), func(res *e2eResult) {
+			res.NativeUnits = append(res.NativeUnits, e2eNativeUnit{Launch: id("5"), Captured: true, Stopped: true})
+			res.SystemdUnits = append(res.SystemdUnits, e2eSystemdUnit{Name: "sfl-alpha-" + id("5") + ".service"})
+		}), recovery, retainedLaunch, true},
+		"recovery acquired source again": {mutate(recovered(), func(res *e2eResult) {
+			again := r.E2ESourceRecord{Attempt: id("c"), Unit: "sfl-alpha-" + id("c") + ".service"}
+			res.SourceRecords[len(res.SourceRecords)-1] = append(res.SourceRecords[len(res.SourceRecords)-1], again)
+			res.SystemdUnits = append(res.SystemdUnits, e2eSystemdUnit{Name: again.Unit, Source: true})
+		}), recovery, retainedLaunch, true},
+		"retained attempt observed in the recovery process": {mutate(recovered(), func(res *e2eResult) {
+			res.SystemdUnits = append(res.SystemdUnits, e2eSystemdUnit{Name: "sfl-alpha-" + source + ".service", Source: true})
+		}), recovery, retainedLaunch, true},
+		"next request never acquired source": {mutate(recovered(), func(res *e2eResult) {
+			res.SourceRecords = [][]r.E2ESourceRecord{res.SourceRecords[0][:1]}
+			res.SystemdUnits = res.SystemdUnits[1:]
+		}), recovery, retainedLaunch, true},
+		"interrupted launch claimed by the recovery process": {recovered(), recovery, nil, true},
+		"codex auth not re-provisioned after recovery":       {mutate(recovered(), func(res *e2eResult) { res.AuthRecoveryClear["codex"] = false }), recovery, retainedLaunch, true},
 	} {
 		if f := failures(in.res, in.want, in.before, in.attached); len(f) == 0 {
 			t.Error(name, "accepted")
