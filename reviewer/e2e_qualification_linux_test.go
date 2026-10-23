@@ -598,16 +598,17 @@ func (e *e2eEnv) cleanup() {
 		}
 		e.units.stop(30 * time.Second)
 	}
-	if e.service != nil {
+	// A wedged handle already reported ErrWorkerStopPending and its store
+	// handle is closed. It keeps its startup and credential locks until this
+	// process exits, exactly like a crashed service process.
+	if e.service != nil && !e.wedged {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		err := e.service.Close(ctx)
 		cancel()
-		if err != nil && !(e.wedged && errors.Is(err, r.ErrWorkerStopPending)) {
+		if err != nil {
 			e.t.Error("cleanup could not prove service stop; retaining", e.root, err)
 			return
 		}
-		// A wedged handle keeps its startup and credential locks until this
-		// process exits, exactly like a crashed service process.
 	}
 	if e.keepRoot && !e.t.Failed() {
 		e.t.Log("retaining E2E root for the attached phase", e.root)
