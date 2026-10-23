@@ -22,7 +22,8 @@ fake-only model producers in `internal/nativefixture`, which themselves import
 this package. A small in-package bridge,
 [e2e_export_linux_test.go](e2e_export_linux_test.go), exposes read-only test
 seams: deriving the source VM release from a measured image, nonsecret
-projections of the source VM owner journal and archive, and a restore probe.
+projections of the source VM owner journal and archive, the production
+provider receipt validators, and a restore probe.
 
 1. **Startup.** The public `OpenGitReviewerService` is called with a version 2
    `GitReviewerRelease`: the measured source image and exact-head
@@ -103,31 +104,54 @@ created by this process. Every launch recorded by this process must have been
 observed, and the observed source and native counts must equal the case's
 expectation in the table. An attached process may hold the earlier process's
 source records, which it need not observe. Before `close-provider-reopen`
-treats a native launch as the earlier process's, its root must hold exactly
-one launch: captured and whole-unit stopped, with a bound stopped audit that
-records the auth as exported and not returned and the session as incomplete.
+accepts an attached root, the root's PR 1 job must still hold its lease and
+must have been admitted under the current release revision. A root retained
+by another revision's `close-provider` is refused, so its interrupted job and
+launch are never recorded as this revision's restart. Before
+`close-provider-reopen` treats a native launch as the earlier process's, its
+root must hold exactly one launch: captured and whole-unit stopped, with a
+bound stopped audit that records the auth as exported and not returned and
+the session as incomplete.
 Its provider and session must be the retained job's outstanding attempt, and
 the job must hold that attempt's stopped provider evidence. A missing or
 unreadable launch directory fails setup, and a retained launch must still be
 present at the end. Every check of source stop receipts
 first requires the expected nonzero number of owner journal records, each with
-exactly one archive export of the same attempt and snapshot. Each reviewed PR
-must have exactly one review intent, and it must be `confirmed`. After the
-provider close, PR 1 must retain exactly one request: the admitted automatic
-`opened` request of its job. At the end of `close-provider-reopen`, PR 1 must
-still retain only that request, PR 2 exactly one unadmitted owner `comment`
-request, and no other PR any request. A duplicate held back by the lease
-would otherwise become a second job once the lease is released. These
-requests are recorded as `Requests` in the JSON result. The case reads
-each native launch's `unit.json` and `native-audit.json` and checks provider
-auth disposition by reopening the protected stores. A unit journal counts only
+exactly one archive export of the same attempt. As production recovery
+requires, the export's request hash must be the digest of the record's source
+request, and its binding (attempt, release hash, runtime hash and snapshot)
+must equal the record's complete materialization binding. Each reviewed PR
+must have exactly one review intent, and it must be `confirmed`. Once
+`review`, `close-capture` and `close-publish` confirm the review, PR 1 must
+retain exactly one request, the admitted automatic `opened` request its job
+came from, and no other PR may retain any request. In `isolation`, PR 1 must
+retain exactly its job's admitted `opened` request, PR 2 exactly its job's
+admitted owner `comment` request, and no other PR any request. A further
+request could otherwise still be admitted after the reviews are confirmed and
+produce a duplicate review. After the provider close, PR 1 must retain
+exactly one request: the admitted automatic `opened` request of its job. At
+the end of `close-provider-reopen`, PR 1 must still retain only that request,
+PR 2 exactly one unadmitted owner `comment` request, and no other PR any
+request. A duplicate held back by the lease would otherwise become a second
+job once the lease is released. Every case records the requests it judged as
+`Requests` in the JSON result. The case reads each native launch's
+`unit.json` and `native-audit.json` and checks provider auth disposition by
+reopening the protected stores. A unit journal counts only
 as version 1 for its own directory's launch. It must name
 `sfl-alpha-<launch>.service`, and its binding must derive the containment ID
 from its session and launch. The audit counts only as a version 1 receipt
 with the same binding. Once auth was exported or the session completed, the
 audit must carry provider evidence: the stopped receipt of that session under
-the release's egress policy for that provider. A copied, foreign or
-regenerated audit therefore proves nothing about the launch. In `isolation`,
+the release's egress policy for that provider. The receipt must also pass the
+production provider receipt validators under the session limits. Every
+receipt must meet the stopped-receipt invariants that recovery requires before
+recording a stopped attempt: consistent, nonnegative and in-budget request,
+response and byte counters, and no exhaustion or denial without failure. The
+receipt of a completed session must also pass the completed-receipt validation
+an artifact requires: not failed or exhausted, at least one inference, every
+forwarded request answered and no denial. The receipt's counters are recorded
+as `Access` for each native unit. A copied, foreign, regenerated, failed or
+impossible audit therefore proves nothing about the launch. In `isolation`,
 every session from the first onward must carry one of the two job IDs, and
 its PR and head must equal that job's snapshot.
 
@@ -192,7 +216,11 @@ source and native images, a source stub and a `reviewer.test` all built from
 passed with no failures, every observed unit matched a recorded launch, and no
 unit or E2E root remained afterwards. After the restart, PR 1 held exactly its
 admitted automatic `opened` request and PR 2 exactly one unadmitted owner
-`comment` request. Only this document changed after `3bbf701`.
+`comment` request. The checks were tightened afterwards in `ce91ba7`, which
+validates native provider receipts, binds the attached root to the current
+release, binds source exports to their source request and complete binding
+and requires exact request sets in every confirmed case. The cases are
+re-measured at the new head.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
