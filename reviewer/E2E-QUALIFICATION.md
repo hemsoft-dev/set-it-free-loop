@@ -22,10 +22,11 @@ fake-only model producers in `internal/nativefixture`, which themselves import
 this package. A small in-package bridge,
 [e2e_export_linux_test.go](e2e_export_linux_test.go), exposes read-only test
 seams: deriving the source VM release and its manifest's runtime hash from a
-measured image, nonsecret projections of the source VM owner journal and
-archive, the production provider receipt validators, production's projection
-of a remote review into its marker and canonical document hash, and a restore
-probe.
+measured image, the native manifest hash production derives from a provider
+release for one launch, nonsecret projections of the source VM owner journal
+and archive, the production provider receipt validators, production's
+projection of a remote review into its marker and canonical document hash, and
+a restore probe.
 
 1. **Startup.** The public `OpenGitReviewerService` is called with a version 2
    `GitReviewerRelease`: the measured source image and exact-head
@@ -78,7 +79,7 @@ probe.
 | `review` | PR 1 automatic request through capture, four sessions and one confirmed COMMENT. | 1 / 4 | 1 | both usable |
 | `isolation` | PR 1 (automatic) and PR 2 (owner comment) pending together. | 2 / 8 | 2 | both usable |
 | `close-capture` | Close the whole service after capture and admission, inside the first session's host check, before any VM launch. Reopen and finish. | 1 / 4 | 1 | both usable |
-| `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. | 1 / 1 | not asserted | Codex fenced, Claude usable |
+| `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. | 1 / 1 | lifecycle order only | Codex fenced, Claude usable |
 | `close-provider-reopen` | A second process attached to the root retained by `close-provider` (`SFL_E2E_ATTACH`), as a restarted service. | 0 / 0 | 1 (retained) | Codex fenced, Claude usable |
 | `close-publish` | The fake GitHub commits the review POST but withholds its response; close the whole service; reopen and reconcile. | 1 / 4 | 1 | both usable |
 
@@ -95,7 +96,9 @@ Every case also observes `systemctl --user list-units 'sfl-alpha-*'` every 200
 ms, excluding units that existed before the run. At the end it requires a
 successful listing that shows none of the units it saw. A failed listing never
 counts as an empty one. It keeps the last successful residual, or every unit
-seen before any successful final listing. If the 30-second grace ends without
+seen before any successful final listing. A listing line that is not one
+`sfl-alpha-*` unit with its three states, or that repeats a unit, fails that
+listing rather than dropping a unit. If the 30-second grace ends without
 a later successful listing, the run fails and records the error as
 `UnitListingError`. Each observed unit must correlate with a launch the
 run recorded: a source unit with a source VM owner journal record's unit, a
@@ -118,8 +121,9 @@ job must hold exactly one record of that attempt ID, and its recorded stopped
 provider evidence must equal the audit's complete provider evidence by
 digest; another valid stopped receipt of the same session is refused. The
 first `close-provider` process applies the same check before it retains the
-root. A missing or unreadable launch directory fails setup, and a retained
-launch must still be present at the end. Every check of source stop receipts
+root. A missing launch, an unreadable launch directory or any other entry in
+the native root fails setup, and a retained launch must still be present at
+the end. Every check of source stop receipts
 first requires exactly one owner journal record per expected job, each with
 exactly one archive export of the same attempt. As production recovery
 requires, the export's request hash must be the digest of the record's source
@@ -127,10 +131,13 @@ request, and its binding (attempt, release hash, runtime hash and snapshot)
 must equal the record's complete materialization binding. Record and export
 agreeing is not enough: the record must name `sfl-alpha-<attempt>.service`,
 carry the current release package hash and the runtime hash of the source VM
-manifest that release derives, and bind the snapshot of exactly one expected
-job, each job's once. This holds for the attached restart too, whose record
-must bind the retained job. Each record must also show the unit's start as
-recorded, settled and captured before its granted stop. Once
+manifest that release derives, record the release's source stub hash, and
+bind the snapshot of exactly one expected job, each job's once. This holds for
+the attached restart too, whose record must bind the retained job. Each final
+record must hold the start intent, the settled start, the capture, the grant,
+the revocation and the durable stop. That conjunction says nothing about
+order, so the process that acquires the source also proves it (see Source
+lifecycle order below). Once
 `review`, `close-capture` and `close-publish` confirm the review, PR 1 must
 retain exactly one request, the admitted automatic `opened` request its job
 came from, and no other PR may retain any request. In `isolation`, PR 1 must
@@ -145,14 +152,24 @@ request. A duplicate held back by the lease would otherwise become a second
 job once the lease is released. Every case records the requests it judged as
 `Requests` in the JSON result. The fence states (`close-capture` after close,
 both `close-provider` processes) must hold PR 1's job as the only job and no
-write intent. The case reads each native launch's
-`unit.json` and `native-audit.json` and checks provider auth disposition by
-reopening the protected stores. A unit journal counts only
+write intent. The case enumerates every entry of each provider's native root
+except the supervisor's `executables` directory, reads each launch's
+`unit.json` and `native-audit.json`, and checks provider auth disposition by
+reopening the protected stores. A directory without a readable `unit.json`,
+any other entry and an unreadable root each count as a failed launch, which
+no check accepts. A unit journal counts only
 as version 1 for its own directory's launch. It must name
 `sfl-alpha-<launch>.service`, and its binding must derive the containment ID
-from its session and launch. The audit counts only as a version 1 receipt
-with the same binding, and its auth lifecycle must be possible: auth is
-returned only after it was exported, and a completed session has returned it.
+from its session and launch. It must also be the pinned native payload:
+payload kind `native-vm`, the release's stub hash, and the manifest hash that
+production's `VMBootImages.NativeManifest` derives from the release's QEMU,
+kernel, initrd, firmware, runtime artifact, namespace helper and bootstrap
+library pins for that launch and session. A test checks that the harness
+derives exactly production's manifest. A journal of another payload, stub or
+native release therefore proves nothing. The audit counts only as a version 1
+receipt with the same binding and manifest hash, and its auth lifecycle must be
+possible: auth is returned only after it was exported, and a completed session
+has returned it.
 Once auth was exported or the session completed, the
 audit must carry provider evidence: the stopped receipt of that session under
 the release's egress policy for that provider. The receipt must also pass the
@@ -169,9 +186,11 @@ or impossible audit therefore proves nothing about the launch, and every
 native unit at the end must have a bound audit. In `isolation`, every session
 from the first onward must carry one of the two job IDs, and its PR and head
 must equal that job's snapshot. Each restore probe must report exactly its
-five reads in order; both own reads must return the fake upstream's exact
-bytes, and every foreign read must be refused by both the store and the
-reader.
+five reads in order. Both own reads must return the fake upstream's exact
+bytes from both the materialized store and the model-facing reader, each
+judged by the SHA-256 of what it returned (`StoreHash`, `ReaderHash`), not
+merely by its success. Every foreign read must be refused by both and return
+nothing.
 
 ### Evidence bindings
 
@@ -198,6 +217,17 @@ and `close-provider` if it reopens) judges its completed PRs together:
 - **Backend checks.** Each artifact session was checked exactly once outside a
   fault hold by its own provider's fake backend, for its job, round, PR and
   head. Any other check of the job must be one a fault hook held.
+- **Exchanges.** Each artifact session met the exchange contract the native
+  fixtures require of a canned phase: its backend answered exactly three
+  inferences with no failure and no telemetry, and for Codex captured every
+  mandatory metadata route with no negotiation reaching it. The phase made the
+  canned read and search (two tool calls). The artifact's stopped receipt
+  counts exactly the inference and metadata requests the backend observed.
+  Every object the source service served the phase is the fake upstream's
+  exact bytes of that path at the job head, and `source.go` is among them.
+  The reader call count is not fixed: search reads every allowlisted path of
+  the job. Backend counts are read from each session's own backend whenever
+  the sessions are collected, so they include every request it served.
 - **Intent.** The sole intent is `confirmed`. Its scope, request, generation,
   snapshot, job hash and checkpoint hash are the job's; its marker names its
   own ID; its body hash is its document's digest; and its document carries
@@ -209,13 +239,35 @@ and `close-provider` if it reopens) judges its completed PRs together:
   intent's body hash. Its inline anchors are exactly `source.go:1`.
 - **Upstream.** Each acquisition made exactly one successful advertisement and
   one successful upload-pack wanting exactly its head and the base, and
-  nothing else reached the fake upstream.
+  nothing else reached the fake upstream. Every want line counts: a want-ref
+  or malformed object ID is kept as an unrecognized want, which fails the set.
+- **Source lifecycle order.** While serving each Git exchange, before it
+  answers, the fake upstream samples the source owner journal through the
+  open service. Production rechecks the live, granted, unrevoked instance
+  before every upstream read. The sample taken at an attempt's one upload-pack
+  must hold exactly one record of that attempt: start recorded and settled,
+  unit captured and granted under the final record's unit, invocation and
+  grant hash, and neither revoked nor stopped. The final record must be
+  revoked and stopped. Start, settle, capture and grant therefore precede the
+  upstream read, and revocation and the durable stop follow it. The order
+  among start intent, settle and capture is not sampled. It is the journal's
+  own invariant, which production enforces on every write: a capture requires
+  a settled start, a settled start requires the start intent, a stop requires
+  the revocation, and a grant is written only for a captured, unrevoked
+  record. `TestGitVMOwnerJournalRejectsUnboundLifecycleStates`,
+  `TestGitVMOwnerDurableStartCaptureAndOriginalStop` and
+  `TestGitVMGrantRefusesBeforeDurableAuthority` cover it. `close-provider`
+  judges this order before it retains its root. The attached
+  `close-provider-reopen` process did not acquire the source, so it judges the
+  final records only.
 
 In `close-publish`, the confirmed intent must be the one the closed POST left
 `unknown` or `dispatched`, with the same ID, marker, body hash, job,
 checkpoint, request and snapshot. The JSON result records each write's
 `Marker` and `BodyHash`, each remote review's `document_hash`, each job's
-`ArtifactSessions` and the run's `SourceRuntimeHash`.
+`ArtifactSessions` and `ArtifactSourceCalls`, each native unit's
+`ManifestHash`, each restore probe's `ReaderHash`, each Git exchange's
+`Journal` sample, and the run's `SourceRuntimeHash` and `SourceStubHash`.
 
 The root is owned as soon as it is created (or, for an attached run, once its
 layout is checked), before the unit observer starts. A setup failure after
@@ -236,7 +288,10 @@ while any durable job holds a lease, and `Poll` starts at most one background
 worker, so a second pending request is captured and reviewed only after the
 first job's invocation ends. Publication of the first job runs in a later
 outbox cycle and can overlap the second job's work. The `isolation` case
-therefore proves isolation between sequential jobs, not concurrent ones.
+therefore proves isolation between sequential jobs, not concurrent ones. It
+observes that the two jobs' session checks (session starts) do not interleave.
+That whole sessions do not overlap follows from this rule; the case does not
+observe it.
 
 ## Running
 
@@ -275,13 +330,14 @@ On October 23, 2026, each case ran on mini under the shared VM lock, one VM at
 a time and only with at least 2.5 GB of memory available, from source and
 native images, a source stub and a `reviewer.test` all built from `0cd2152`.
 Both binaries carried `vcs.revision=0cd2152…` and `vcs.modified=false`, and
-the release hash was `ece473a3e880`. Every case passed with no failures under the
-evidence bindings above: every observed unit matched a recorded launch, every
-native receipt passed the production provider-receipt validation and matched
-its artifact's provider and evidence digest, each PR held exactly its expected
-job, intent and requests, the remote review matched its confirmed document,
-and no unit or E2E root remained afterwards. Only this document changed after
-`0cd2152`.
+the release hash was `ece473a3e880`. Every case passed with no failures under
+the evidence bindings in force at `0cd2152`: every observed unit matched a
+recorded launch, every native receipt passed the production provider-receipt
+validation and matched its artifact's provider and evidence digest, each PR
+held exactly its expected job, intent and requests, the remote review matched
+its confirmed document, and no unit or E2E root remained afterwards. The
+checks were tightened afterwards in `d4c14f6` (review round 8), so these
+results predate them, and the cases are re-measured at the new head.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
@@ -424,7 +480,11 @@ design, and the case confirms it end to end:
   publication occurs.
 - `ReleaseStopped` succeeds on a private copy of that state. The attempt's
   durably recorded stopped provider evidence satisfies the store, so an
-  explicit trusted supervisor could release the lease. The service composition
+  explicit trusted supervisor could release the lease. A nil error is not
+  taken as the release: the copy is reread through a fresh handle and must
+  hold the job as `auth_failed`, unleased and not outstanding, with its job,
+  charged session, attempt ID and recorded attempt evidence unchanged, and no
+  other job or write. The service composition
   never calls it, and the Codex auth fence would still need an explicit
   stopped-return or retirement path.
 
