@@ -161,6 +161,45 @@ attempt had a durable granted stop receipt and a staged export.
   the marked review and confirmed receipt 5001 within 0.5 s. GitHub received
   exactly one POST.
 
+### Rerun with tightened checks
+
+Review of this qualification tightened its checks. The native image commit
+must equal the source image and release commit. Every native release asset
+must match the image's recorded pins. The `close-provider` stopped audit must
+record an exported, unreturned auth, and the private-copy `ReleaseStopped`
+probe must succeed. The remote review must carry the inline comment at
+`source.go:1`. Each isolation acquisition must want exactly its own head and
+the base. A successful job must consume exactly four sessions, each in
+exactly one completed native launch, with no other launch. `Run` may return
+only the cancellation caused by `Close`, plus `ErrWorkerStopPending` when the
+lease is expected to remain.
+
+All cases were rerun on mini on 2026-10-22 under the same constraints, with
+code, test binary, stub and images from commit `7b6b668` (release digest
+`a15cb324…9ede`). Every case passed with no failed check, no fake GitHub
+violation and no remaining unit:
+
+| Case | Wall time | Source VM units | Native units | Upstream Git exchanges | Review POSTs | Final state |
+| --- | --- | --- | --- | --- | --- | --- |
+| `review` | 23.5 s | 1 | 4 (4.1–4.9 s) | 2 | 1 | `dual_complete`, `confirmed` |
+| `isolation` | 54.8 s | 2 | 8 (4.9–6.2 s) | 4 | 1 per PR | both `dual_complete`, both `confirmed` |
+| `close-capture` | 27.5 s | 1 | 4 | 2 | 1 | `dual_complete`, `confirmed` |
+| `close-provider` | 14.0 s | 1 | 1 (stopped, incomplete) | 2 | 0 | `running`, lease retained |
+| `close-provider-reopen` | 38.6 s | 0 | 0 | 0 | 0 | `running`, lease retained |
+| `close-publish` | 26.5 s | 1 | 4 | 2 | 1 | `dual_complete`, `confirmed` |
+
+The first `review` attempt at this commit failed and is retained as
+`run-7b6b668-review-fix1`. It ran while two native image builds were running
+on the same host outside the VM lock, with memory under pressure. The first
+Codex unit was SIGKILLed 6 s after start with a 1.1 GiB memory peak. Its
+journal then recorded `Aborted` but not `Stopped`. The native reviewer
+returned `ErrWorkerStopPending`, the job kept its lease with no recorded
+provider evidence, and `Close` kept reporting `ErrWorkerStopPending`. This is
+the documented fail-closed path when a stop cannot be proved, not a
+qualification of behavior under load. The cause of the early unit failure
+and of the missing stop proof was not isolated. The rerun without concurrent
+builds passed. Host resource pressure remains outside this qualification.
+
 The nonsecret JSON results, logs, build logs, summary and run scripts are
 kept outside the repository in the merge-mission evidence directory
 `e2e-174/`.
