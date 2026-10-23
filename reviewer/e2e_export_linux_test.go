@@ -165,6 +165,163 @@ func E2ENativeManifestHash(p GitReviewerProviderRelease, provider Provider, bind
 	return Digest(m), nil
 }
 
+// E2ENativeUnitJournal is production's native unit journal record
+// (unit.json), field for field.
+type E2ENativeUnitJournal = unitJournal
+
+// E2EReadNativeUnitJournal reads directory's unit.json exactly as the native
+// supervisor reads its own journal (readUnit): a private, owned, singly linked
+// file of at most 64 KiB, upgraded from the legacy shape, strictly decoded,
+// version 1 of the native-vm payload under stubHash, naming the unit of a
+// valid binding, with a manager owner and boot ID, and with a possible
+// lifecycle: a settled start was started, a capture was started, settled and
+// bound to a process and the unit's own cgroup, and a stop was aborted. The
+// binding checked is the one the record names; the caller binds it to the
+// launch directory.
+func E2EReadNativeUnitJournal(directory, stubHash string) (E2ENativeUnitJournal, error) {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return E2ENativeUnitJournal{}, err
+	}
+	defer root.Close()
+	raw, err := readAuth(root, "unit.json", false)
+	if err != nil {
+		return E2ENativeUnitJournal{}, err
+	}
+	var named struct{ Binding AuthBinding }
+	if err := json.Unmarshal(raw, &named); err != nil {
+		return E2ENativeUnitJournal{}, err
+	}
+	s := &SystemdSupervisor{stubHash: stubHash, payloadKind: "native-vm"}
+	return s.readUnit(&authLock{root: root}, named.Binding)
+}
+
+// E2ENativeAudit is the native-audit.json receipt persistAudit writes, field
+// for field and in its order.
+type E2ENativeAudit struct {
+	Version                                           int
+	Binding                                           AuthBinding
+	RequestHash, ManifestHash, ReportHash, SourceHash string
+	Provider                                          *ProviderEvidence
+	CodeHost                                          *nativeVMCodeHostAccess
+	Complete                                          bool
+	Stage                                             string
+	AuthExported, AuthReturned                        bool
+	GuestStage                                        string
+	Native                                            *nativeResultObservation
+	Failure                                           string
+	BootDiagnostics                                   []string
+}
+
+// E2EReadNativeAudit reads directory's native-audit.json as production
+// writes it: a private, owned, singly linked file of at most 64 KiB holding
+// exactly one receipt with no unknown field, whose re-encoding is the file's
+// bytes. A missing, extra, duplicated or reordered field is refused.
+func E2EReadNativeAudit(directory string) (E2ENativeAudit, error) {
+	root, err := os.OpenRoot(directory)
+	if err != nil {
+		return E2ENativeAudit{}, err
+	}
+	defer root.Close()
+	raw, err := readAuth(root, "native-audit.json", false)
+	if err != nil {
+		return E2ENativeAudit{}, err
+	}
+	var a E2ENativeAudit
+	d := json.NewDecoder(bytes.NewReader(raw))
+	d.DisallowUnknownFields()
+	if err := d.Decode(&a); err != nil || d.Decode(new(any)) == nil {
+		return E2ENativeAudit{}, errors.New("native audit is not one known receipt")
+	}
+	canonical, err := json.Marshal(a)
+	if err != nil || !bytes.Equal(canonical, raw) {
+		return E2ENativeAudit{}, errors.New("native audit is not production's encoding of its receipt")
+	}
+	return a, nil
+}
+
+// E2ENativeRequestHash is the RequestHash a native audit records for the
+// launch of binding: the digest of the version 1 review request
+// reviewTaskAudited builds for session under the job's source paths (sorted),
+// the release's egress policy, with its slices copied as NewNativeVMReviewer
+// copies them, and the provider's profile hints. An invalid request has none.
+func E2ENativeRequestHash(binding AuthBinding, session Session, paths []string, policy EgressPolicy, hints NativeVMProfileHints) (string, error) {
+	policy.Routes = append([]EgressRoute{}, policy.Routes...)
+	policy.Headers = append([]string{}, policy.Headers...)
+	q := nativeVMRequest{Version: 1, Binding: binding, Session: session, Paths: append([]string{}, paths...), Policy: policy, ProfileHints: hints}
+	if !q.valid() {
+		return "", ErrLiveBlocked
+	}
+	return Digest(q), nil
+}
+
+// E2ECodeHostFixture is the code host relay receipt finished.valid requires
+// of a completed Codex phase of session, for harness verdict fixtures.
+func E2ECodeHostFixture(session Session) *nativeVMCodeHostAccess {
+	return &nativeVMCodeHostAccess{Version: 2, SessionHash: Digest(session), UID: nativeVMCodeHostUID, InputHash: Digest("code host input"), OutputHash: Digest("code host output"), Stopped: true, RelayComplete: true, Stage: "complete"}
+}
+
+// E2EValidateNativeAudit binds audit a to the launch request reviewTaskAudited
+// builds for session (E2ENativeRequestHash). Its guest-reported parts must be what
+// persistAudit records: a valid guest stage or none, a valid native result
+// observation or none, at most eight diag- boot diagnostics, and a failure
+// kind nativeVMFailureKind derives exactly when the phase did not complete. A
+// completed phase passed finished.valid: Codex relayed a complete, stopped
+// code host session of this session, Claude none, and a native result, if
+// observed, completed without an exit failure.
+func E2EValidateNativeAudit(a E2ENativeAudit, session Session, paths []string, policy EgressPolicy, hints NativeVMProfileHints) error {
+	if request, err := E2ENativeRequestHash(a.Binding, session, paths, policy, hints); err != nil || a.RequestHash != request {
+		return errors.New("audit request is not the launch's request")
+	}
+	if a.GuestStage != "" && !nativeVMGuestStage(a.GuestStage) || a.Native != nil && !a.Native.valid(session) || len(a.BootDiagnostics) > 8 {
+		return errors.New("audit guest stage, native observation or diagnostics are not production's")
+	}
+	for _, stage := range a.BootDiagnostics {
+		if !strings.HasPrefix(stage, "diag-") || !nativeVMGuestStage(stage) {
+			return errors.New("audit boot diagnostic is not production's")
+		}
+	}
+	if a.Complete {
+		codeHost := a.CodeHost == nil
+		if session.Identity.Provider == Codex {
+			codeHost = a.CodeHost.valid(session)
+		}
+		if a.Failure != "" || !codeHost || a.Native != nil && (a.Native.Kind != "complete" || a.Native.ExitFailed) {
+			return errors.New("completed audit is not a validated phase's")
+		}
+		return nil
+	}
+	for _, cause := range []error{ErrWorkerStopPending, ErrAuthRecoveryRequired, ErrSourceAuditPending, ErrSourceService, ErrProviderAuditPending, ErrProviderEgressPending, ErrProviderEgressFailed, context.DeadlineExceeded, context.Canceled, errors.New("other")} {
+		if a.Failure == nativeVMFailureKind(cause) {
+			return nil
+		}
+	}
+	return errors.New("interrupted audit records no production failure kind")
+}
+
+// E2EProtocolLimits is the session limits production's engine derives for
+// job (protocolLimits).
+func E2EProtocolLimits(job Job) (Limits, error) { return protocolLimits(job) }
+
+// E2EValidateSourceAccess applies production's source receipt validation for
+// session (SourceAccess.validate) to a receipt that must exist: version,
+// session, tool and reader call bounds, byte bounds and running total, every
+// read's path, revision, hash and size, and the coverage bound and records.
+func E2EValidateSourceAccess(access *SourceAccess, session Session) error {
+	if access == nil {
+		return errors.New("no source receipt")
+	}
+	return access.validate(session)
+}
+
+// E2EValidateArtifactProviderEvidence applies the check production runs on
+// every stored artifact before recovering or publishing a completed job
+// (validateArtifactProviderEvidence): the artifact's completed provider
+// receipt under the job's protocol limits, recorded by a provider attempt.
+func E2EValidateArtifactProviderEvidence(j *DurableJob, a Artifact) error {
+	return validateArtifactProviderEvidence(j, a)
+}
+
 // E2ESourceRuntimeHash is the RuntimeHash every source VM materialization
 // binding of release vm carries: the digest of the source VM manifest the
 // release derives, as startup derives it.
@@ -223,14 +380,18 @@ type E2ESourceRecord struct {
 	StartIntent, StartSettled, Captured bool
 	Revoked, Stopped                    bool
 	GrantHash, StopBoot                 string
+	// BootID is the boot the owner recorded the unit's request in.
+	BootID string
 }
 
 // E2EExportRecord projects one source VM archive record: its source request
-// hash and complete materialization binding.
+// hash and complete materialization binding, and for a staged export the
+// packet hash restore requires to be the digest of the restored job's packet.
 type E2EExportRecord struct {
 	Attempt, State, RequestHash string
 	ReleaseHash, RuntimeHash    string
 	Snapshot                    Snapshot
+	PacketHash                  string
 }
 
 func (s *GitReviewerService) e2eFactory() *gitVMSourceFactory {
@@ -256,7 +417,7 @@ func (s *GitReviewerService) E2ESourceJournal() ([]E2ESourceRecord, error) {
 	records := []E2ESourceRecord{}
 	for _, r := range journal.Records {
 		b := r.Request.Source.Binding
-		records = append(records, E2ESourceRecord{Attempt: b.Attempt, Unit: r.Unit, InvocationID: r.Birth.InvocationID, RequestHash: r.RequestHash, SourceRequestHash: Digest(r.Request.Source), StubHash: r.StubHash, ReleaseHash: b.ReleaseHash, RuntimeHash: b.RuntimeHash, ChannelID: r.Request.Read.ChannelID, Generation: r.Request.Read.Generation, Snapshot: b.Snapshot, StartIntent: r.StartIntent, StartSettled: r.StartSettled, Captured: r.Captured, Revoked: r.Revoked, Stopped: r.Stopped, GrantHash: r.GrantHash, StopBoot: r.StopBoot})
+		records = append(records, E2ESourceRecord{Attempt: b.Attempt, Unit: r.Unit, InvocationID: r.Birth.InvocationID, RequestHash: r.RequestHash, SourceRequestHash: Digest(r.Request.Source), StubHash: r.StubHash, ReleaseHash: b.ReleaseHash, RuntimeHash: b.RuntimeHash, ChannelID: r.Request.Read.ChannelID, Generation: r.Request.Read.Generation, Snapshot: b.Snapshot, StartIntent: r.StartIntent, StartSettled: r.StartSettled, Captured: r.Captured, Revoked: r.Revoked, Stopped: r.Stopped, GrantHash: r.GrantHash, StopBoot: r.StopBoot, BootID: r.BootID})
 	}
 	return records, nil
 }
@@ -272,13 +433,13 @@ func (s *GitReviewerService) E2ESourceRecords(ctx context.Context) ([]E2ESourceR
 	if err != nil {
 		return nil, nil, err
 	}
-	archived, _, err := factory.archive.records(ctx)
+	archived, packets, err := factory.archive.records(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	exports := []E2EExportRecord{}
 	for _, r := range archived {
-		exports = append(exports, E2EExportRecord{Attempt: r.Binding.Attempt, State: r.State, RequestHash: r.RequestHash, ReleaseHash: r.Binding.ReleaseHash, RuntimeHash: r.Binding.RuntimeHash, Snapshot: r.Binding.Snapshot})
+		exports = append(exports, E2EExportRecord{Attempt: r.Binding.Attempt, State: r.State, RequestHash: r.RequestHash, ReleaseHash: r.Binding.ReleaseHash, RuntimeHash: r.Binding.RuntimeHash, Snapshot: r.Binding.Snapshot, PacketHash: packets[r.Binding.Attempt]})
 	}
 	return records, exports, nil
 }
@@ -503,5 +664,110 @@ func TestE2ENativeManifestHash(t *testing.T) {
 	}
 	if _, err := E2ENativeManifestHash(GitReviewerProviderRelease{}, Codex, binding); err == nil {
 		t.Error("release without pins derived a manifest")
+	}
+}
+
+// TestE2ENativeLaunchReceipts proves the native launch seams against the
+// records production itself writes for a stopped phase: the unit journal
+// reads back through readUnit, the audit decodes strictly and re-encodes to
+// its own bytes, and its request, report and source hashes are the digests of
+// the request reviewTaskAudited builds, the zero report a failed phase
+// records and the source receipt the phase returned. Any other request, a
+// changed receipt shape or an impossible lifecycle is refused.
+func TestE2ENativeLaunchReceipts(t *testing.T) {
+	p, _ := nativeHostPhaseFixture(t)
+	q := p.request
+	p.finished = &nativeVMFinished{Version: 1, Binding: q.Binding, RequestHash: Digest(q), State: "invalid_output", SourceAudit: nativeHostAuditFixture(t, q)}
+	attachIdleNativeProviderBridge(t, p)
+	_, access, _, err := p.finish(context.Background(), Report{}, PhaseError{State: "invalid_output"})
+	if err == nil || access == nil {
+		t.Fatal("fixture phase did not fail with a source receipt", err)
+	}
+	directory := filepath.Join(p.supervisor.supervisor.root, q.Binding.LaunchID)
+	unit, err := E2EReadNativeUnitJournal(directory, p.supervisor.supervisor.stubHash)
+	if err != nil || unit.Binding != q.Binding || !unit.Started || !unit.StartSettled || !unit.Captured || !unit.Aborted || !unit.Stopped || unit.ManifestHash != Digest(p.manifest) {
+		t.Fatal("production unit journal not read back whole", unit, err)
+	}
+	if _, err := E2EReadNativeUnitJournal(directory, Digest("another stub")); err == nil {
+		t.Error("unit journal of another stub accepted")
+	}
+	a, err := E2EReadNativeAudit(directory)
+	if err != nil || a.Binding != q.Binding || a.Complete || a.Failure == "" || a.Stage != "" {
+		t.Fatal("production audit not read back whole", a, err)
+	}
+	if err := E2EValidateNativeAudit(a, q.Session, q.Paths, q.Policy, q.ProfileHints); err != nil {
+		t.Fatal("production audit not bound to its own request", err)
+	}
+	if a.ReportHash != Digest(Report{}) || a.SourceHash != Digest(access) || a.ManifestHash != Digest(p.manifest) {
+		t.Fatal("audit hashes are not the failed phase's zero report, returned source receipt and manifest", a)
+	}
+	other := testSession(Claude)
+	otherPolicy := q.Policy
+	otherPolicy.Headers = append(slices.Clone(q.Policy.Headers), "X-Other")
+	for name, check := range map[string]func() error{
+		"another session": func() error { return E2EValidateNativeAudit(a, other, q.Paths, q.Policy, q.ProfileHints) },
+		"other paths": func() error {
+			return E2EValidateNativeAudit(a, q.Session, []string{"other.go"}, q.Policy, q.ProfileHints)
+		},
+		"another policy": func() error { return E2EValidateNativeAudit(a, q.Session, q.Paths, otherPolicy, q.ProfileHints) },
+		"unknown failure": func() error {
+			b := a
+			b.Failure = "unknown"
+			return E2EValidateNativeAudit(b, q.Session, q.Paths, q.Policy, q.ProfileHints)
+		},
+		"completed with a failure": func() error {
+			b := a
+			b.Complete = true
+			return E2EValidateNativeAudit(b, q.Session, q.Paths, q.Policy, q.ProfileHints)
+		},
+	} {
+		if check() == nil {
+			t.Error("audit accepted for", name)
+		}
+	}
+	raw, err := os.ReadFile(filepath.Join(directory, "native-audit.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unitRaw, err := os.ReadFile(filepath.Join(directory, "unit.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rewrite := func(name string, data []byte) {
+		if err := os.WriteFile(filepath.Join(directory, name), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, edit := range map[string]func(map[string]any){
+		"extra field":       func(m map[string]any) { m["Extra"] = true },
+		"missing field":     func(m map[string]any) { delete(m, "SourceHash") },
+		"missing diagnosis": func(m map[string]any) { delete(m, "BootDiagnostics") },
+	} {
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		edit(m)
+		edited, _ := json.Marshal(m)
+		rewrite("native-audit.json", edited)
+		if _, err := E2EReadNativeAudit(directory); err == nil {
+			t.Error("audit with", name, "accepted")
+		}
+	}
+	rewrite("native-audit.json", append(slices.Clone(raw), ' '))
+	if _, err := E2EReadNativeAudit(directory); err == nil {
+		t.Error("audit not in production's encoding accepted")
+	}
+	for _, field := range []string{"Started", "StartSettled", "Aborted"} {
+		var m map[string]any
+		if err := json.Unmarshal(unitRaw, &m); err != nil {
+			t.Fatal(err)
+		}
+		m[field] = false
+		edited, _ := json.Marshal(m)
+		rewrite("unit.json", edited)
+		if _, err := E2EReadNativeUnitJournal(directory, p.supervisor.supervisor.stubHash); err == nil {
+			t.Error("captured and stopped unit journal without", field, "accepted")
+		}
 	}
 }
