@@ -108,7 +108,62 @@ which a passing run removes. `SFL_E2E_KEEP_FAILED=1` retains a failed root.
 
 ## Measured results
 
-MEASURED-RESULTS-PLACEHOLDER
+Measured on mini on 2026-10-22, one case at a time under the shared VM lock,
+with `GOMAXPROCS=2` and `nice -n 10`. Code, test binary, stub and both images
+come from commit `3140f0a`; that commit is also the release revision, and the
+package digest is `12d1adf7…88d3`. Only this document changed afterwards.
+Every case passed with no failed check and no fake GitHub violation. The
+observer saw no remaining unit from any run.
+
+| Case | Wall time | Source VM units | Native units | Upstream Git exchanges | Review POSTs | Final state |
+| --- | --- | --- | --- | --- | --- | --- |
+| `review` | 30.6 s | 1 (1.4 s) | 4 (5.3–6.8 s) | 2 | 1 | `dual_complete`, write `confirmed` |
+| `isolation` | 51.9 s | 2 (1.2 s each) | 8 (4.6–6.2 s) | 4 | 1 per PR | both `dual_complete`, both `confirmed` |
+| `close-capture` | 25.4 s | 1 | 4 | 2 (none after reopen) | 1 | `dual_complete`, `confirmed` |
+| `close-provider` | 13.1 s | 1 | 1 (stopped, incomplete) | 2 | 0 | `running`, lease retained |
+| `close-provider-reopen` | 38.6 s | 0 | 0 | 0 | 0 | `running`, lease retained |
+| `close-publish` | 29.6 s | 1 | 4 | 2 | 1 | `dual_complete`, `confirmed` |
+
+Unit times are first-to-last observation by the 200 ms observer, not exact
+lifetimes. Each `review` and `isolation` session was a real native VM with a
+`Captured`, `Stopped`, `Complete` and `AuthReturned` receipt. Each source
+attempt had a durable granted stop receipt and a staged export.
+
+- **review.** An automatic `opened` request reached a confirmed COMMENT on the
+  captured head, with one inline comment at `source.go:1`, 30.4 s after
+  startup. One reader token and one publisher token were minted.
+- **isolation.** The owner-comment request on PR 2 ran first because its
+  comment predates PR 1's observation. All eight sessions ran as two
+  uninterrupted blocks with one job switch. The two source attempts had
+  distinct attempt IDs, units, invocations and read channels, and each
+  upload-pack wanted only its own head and the base. Each job was restored
+  from retained bytes with no upstream exchange. It read its own `source.go`
+  and `prN-only.go`. Its materialized store and reader refused the other PR's
+  path at its own head, and both files at the other head.
+- **close-capture.** When the hold began, the job was `running` with one
+  reserved session and a lease. `Close` returned in 13 ms. The cancelled check
+  counted as a trusted before-work failure, so the job returned to `queued`
+  with no consumed session and no lease. The reopened service restored the
+  retained source without refetching, ran four sessions and published once.
+- **close-provider.** The withheld Codex R1 request was cancelled by `Close`.
+  The unit was `Captured`, `Aborted` and `Stopped`. Its audit recorded the
+  auth as exported but not returned (`auth-return`). The job stayed `running`
+  with one consumed session, its lease and an outstanding reservation. All
+  three `Close` attempts returned `ErrWorkerStopPending`. Codex auth refused
+  further use; Claude auth stayed usable.
+- **close-provider-reopen.** The restarted process opened the service in
+  217 ms, proved the source attempt stopped and discovered the new PR 2
+  `@sfl review` request. Over 30 s it captured nothing, started no session,
+  published nothing and kept the same lease. `Close` again reported
+  `ErrWorkerStopPending`.
+- **close-publish.** The intent was `dispatched` when the POST was held, and
+  `unknown` after `Close` (15 ms). After reopen, the full-collection scan found
+  the marked review and confirmed receipt 5001 within 0.5 s. GitHub received
+  exactly one POST.
+
+The nonsecret JSON results, logs, build logs, summary and run scripts are
+kept outside the repository in the merge-mission evidence directory
+`e2e-174/`.
 
 ## Findings
 
