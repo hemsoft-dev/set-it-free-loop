@@ -25,8 +25,9 @@ seams: deriving the source VM release and its manifest's runtime hash from a
 measured image, the native manifest hash production derives from a provider
 release for one launch, nonsecret projections of the source VM owner journal
 and archive, the production provider receipt validators, production's
-projection of a remote review into its marker and canonical document hash, and
-a restore probe.
+projection of a remote review into its marker and canonical document hash,
+production's rendering of a completed review document from given reports and
+ledger, and a restore probe.
 
 1. **Startup.** The public `OpenGitReviewerService` is called with a version 2
    `GitReviewerRelease`: the measured source image and exact-head
@@ -93,9 +94,11 @@ with the interrupted launch, stopped, audited and incomplete, as the only
 other launch. No host run has taken this branch.
 
 Every case also observes `systemctl --user list-units 'sfl-alpha-*'` every 200
-ms, excluding units that existed before the run. At the end it requires a
-successful listing that shows none of the units it saw. A failed listing never
-counts as an empty one. It keeps the last successful residual, or every unit
+ms, excluding units that existed before the run. At the end it first stops
+and joins the periodic sampler, so no listing still in flight can record a
+unit afterwards, and then requires a successful listing of its own that shows
+none of the units it saw. The last listing is therefore the last observation.
+A failed listing never counts as an empty one. It keeps the last successful residual, or every unit
 seen before any successful final listing. A listing line that is not one
 `sfl-alpha-*` unit with its three states, or that repeats a unit, fails that
 listing rather than dropping a unit. If the 30-second grace ends without
@@ -155,7 +158,13 @@ both `close-provider` processes) must hold PR 1's job as the only job and no
 write intent. The case enumerates every entry of each provider's native root
 except the supervisor's `executables` directory, reads each launch's
 `unit.json` and `native-audit.json`, and checks provider auth disposition by
-reopening the protected stores. A directory without a readable `unit.json`,
+reopening the protected stores. The store itself accepts any nonempty state,
+so a store is usable only when it is unfenced and holds the provider's
+original synthetic credential, judged by the hostile fixture's rule: the
+original synthetic access and refresh tokens, and for Codex the `chatgpt` auth
+mode. Corrupted, cross-provider or substituted auth is invalid, which is
+neither usable nor fenced. A store is fenced only when it refuses the refresh
+before yielding its state. A directory without a readable `unit.json`,
 any other entry and an unreadable root each count as a failed launch, which
 no check accepts. A unit journal counts only
 as version 1 for its own directory's launch. It must name
@@ -206,6 +215,14 @@ and `close-provider` if it reopens) judges its completed PRs together:
 - **Artifacts.** The checkpoint holds exactly Codex R1, Claude R1, Codex R2
   and Claude R2, once each. Each artifact's job hash, report job ID, snapshot
   hash and config hash are the job's, and no two artifacts share a session.
+- **Reports.** Each artifact holds exactly the canned backend's report for its
+  phase, restated in the harness rather than read back from the run: in R1
+  the provider's one synthetic finding at `source.go:1` (title, body, severity
+  2, quote and the head revision), in R2 a confirmation of the peer's R1
+  finding with that anchor as evidence, no retraction and no coverage, under
+  the job's policy, packet, snapshot and config headers. Usage is provider
+  accounting, is never published and is not compared. No artifact carries
+  engine-added coverage.
 - **Attempts.** The job records each artifact's provider evidence in exactly
   one provider attempt, of the artifact's session and provider, and the
   artifact's source access in exactly one source attempt of that same attempt
@@ -232,6 +249,14 @@ and `close-provider` if it reopens) judges its completed PRs together:
   snapshot, job hash and checkpoint hash are the job's; its marker names its
   own ID; its body hash is its document's digest; and its document carries
   exactly one inline finding, at `source.go:1`.
+- **Document.** The intent's document is exactly the one production's
+  renderer builds from the canned reports, the harness's own expected ledger
+  (each finding corroborated by its peer's R2 confirmation and linked to the
+  other provider's exact duplicate) and the PR's trusted diff, with the
+  intent's marker, in canonical comment order. Its inline comment and summary
+  state the canned finding literally: `P2`, its title and body, and the source
+  link to `source.go#L1` at the head. Intent and remote review agreeing with
+  each other is therefore not enough; both must be the known output.
 - **Remote review.** The PR received exactly one POST and holds one COMMENT on
   the head, whose ID is the intent's receipt ID, whose sole marker is the
   intent's, and whose canonical document hash, computed as production computes
@@ -273,7 +298,13 @@ The root is owned as soon as it is created (or, for an attached run, once its
 layout is checked), before the unit observer starts. A setup failure after
 that point still stops the observer, closes the fake servers after any open
 service and removes a fresh root unless `SFL_E2E_KEEP_FAILED` is set. A
-failed SQLite close or checkpoint of any store handle is a failed check. Each
+failed SQLite close or checkpoint of any store handle is a failed check. After
+closing the fake servers, whose `Close` waits for every handler to return, a
+finished run re-reads them: any violation, review POST, remote review, Git
+exchange, model session or backend request that the final judgment did not
+see is a failed check. Token mints and the API request tally are not
+compared, since a wedged handle keeps its credential owner until the process
+exits. Each
 run first removes an earlier `<case>.json` from `SFL_E2E_EVIDENCE`, and does
 not start if it cannot. It writes the nonsecret JSON result only after cleanup
 has closed every handle and removed (or deliberately retained) the root, so a
@@ -332,10 +363,17 @@ native images, a source stub and a `reviewer.test` all built from `b876290`,
 which is this branch rebased onto `main` with #252, #253 and #254. Both
 binaries carried `vcs.revision=b876290…` and `vcs.modified=false`, and the
 release hash was `67a0b7a9557e`. Every case passed with no failures under the
-checks above, including the launch manifest and stub binding, the exact model
+checks in place at `b876290`, including the launch manifest and stub binding, the exact model
 exchange counts, the served reader bytes, the re-read `ReleaseStopped` state
 and the source lifecycle order sampled at the upload-pack. No unit or E2E root
-remained afterwards. Only this document changed after `b876290`.
+remained afterwards. The checks were tightened afterwards in `13541a4`
+(review round 9: canned report and document content, the joined unit
+sampler, the quiesced fake servers and semantic auth disposition), so the
+cases are re-measured at the new head. The canned document the new check
+expects reproduces the body hash of every confirmed intent recorded at
+`b876290` (`review`, `close-capture`, `close-publish` and both `isolation`
+PRs), with the trigger's polling sequence or comment ID, which the result does
+not record, supplied as 1 and 5001.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
