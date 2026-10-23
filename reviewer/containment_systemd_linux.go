@@ -92,6 +92,9 @@ type systemdJobs struct {
 	pending   map[string]bool
 	waiting   map[string]string
 	invalid   map[string]bool
+	// foreign marks an owned unit on which another job settled. It never
+	// fails WaitJob; it only refuses the settled-job birth correlation.
+	foreign map[string]bool
 }
 type jobResult struct{ Unit, Result string }
 
@@ -110,6 +113,9 @@ func (j *systemdJobs) begin(unit string) error {
 	if j.waiting == nil {
 		j.waiting = map[string]string{}
 	}
+	if j.foreign == nil {
+		j.foreign = map[string]bool{}
+	}
 	// A later operation for this owned unit supersedes an abandoned result.
 	// Tracking an abandoned start must not poison later owned job observations.
 	for p, owner := range j.waiting {
@@ -122,6 +128,7 @@ func (j *systemdJobs) begin(unit string) error {
 		return ErrAuthRecoveryRequired
 	}
 	delete(j.invalid, unit)
+	delete(j.foreign, unit)
 	j.pending[unit] = true
 	j.notify()
 	return nil
@@ -137,6 +144,7 @@ func (j *systemdJobs) bind(unit, p string) error {
 	for old, result := range j.completed {
 		if result.Unit == unit && old != p {
 			delete(j.completed, old)
+			j.foreign[unit] = true
 		}
 	}
 	return nil
@@ -146,6 +154,7 @@ func (j *systemdJobs) end(unit string) {
 	defer j.mu.Unlock()
 	delete(j.pending, unit)
 	delete(j.invalid, unit)
+	delete(j.foreign, unit)
 	for p, owner := range j.waiting {
 		if owner == unit {
 			delete(j.waiting, p)
@@ -170,6 +179,7 @@ func (j *systemdJobs) endJob(unit, p string) {
 		}
 		if !other {
 			delete(j.invalid, unit)
+			delete(j.foreign, unit)
 		}
 	}
 }
@@ -186,7 +196,17 @@ func (j *systemdJobs) DeliverSignal(iface, name string, s *dbus.Signal) {
 	}
 	unit, ok := s.Body[2].(string)
 	path, validPath := s.Body[1].(dbus.ObjectPath)
-	if !ok || !validPath || (!j.pending[unit] && j.waiting[string(path)] != unit) {
+	if !ok || !validPath {
+		return
+	}
+	if !j.pending[unit] && j.waiting[string(path)] != unit {
+		// Another job on a unit whose accepted job we still track.
+		for _, owner := range j.waiting {
+			if owner == unit {
+				j.foreign[unit] = true
+				break
+			}
+		}
 		return
 	}
 	var id uint32
@@ -208,6 +228,20 @@ func (j *systemdJobs) DeliverSignal(iface, name string, s *dbus.Signal) {
 	j.notify()
 }
 func (j *systemdJobs) notify() { close(j.changed); j.changed = make(chan struct{}) }
+
+// settled reports, without waiting or consuming the result, that the accepted
+// job p was already removed with result done and that no other job settled on
+// unit since StartTransientUnit. systemd sends JobRemoved before it detaches a
+// job from its unit, and godbus delivers that signal before any later reply, so
+// a later job-free observation of the unit follows every such signal.
+func (j *systemdJobs) settled(p, unit string) error {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.invalid[unit] || j.foreign[unit] || j.pending[unit] || j.waiting[p] != unit || j.completed[p] != (jobResult{unit, "done"}) {
+		return ErrAuthRecoveryRequired
+	}
+	return nil
+}
 func (j *systemdJobs) wait(ctx context.Context, p, unit string) error {
 	defer j.endJob(unit, p)
 	if !dbus.ObjectPath(p).IsValid() || !strings.HasPrefix(p, "/org/freedesktop/systemd1/job/") {
@@ -551,6 +585,12 @@ func (m *dbusContainmentManager) startProperties(ctx context.Context, unit strin
 }
 func (m *dbusContainmentManager) WaitJob(ctx context.Context, job, unit string) error {
 	return m.jobs.wait(ctx, job, unit)
+}
+func (m *dbusContainmentManager) JobSettled(job, unit string) error {
+	if m.jobs == nil {
+		return ErrAuthRecoveryRequired
+	}
+	return m.jobs.settled(job, unit)
 }
 func (m *dbusContainmentManager) UnitForPIDFD(ctx context.Context, fd int) (string, string, error) {
 	body, err := m.calls.Call(ctx, systemdManagerPath, systemdManagerInterface+".GetUnitByPIDFD", dbus.UnixFD(fd))

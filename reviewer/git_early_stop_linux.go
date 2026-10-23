@@ -81,9 +81,10 @@ func (o *gitUnitOwner) captureBirth(ctx context.Context, r gitUnitRecord) (gitUn
 		}
 		if !missingInvocation {
 			// A stable unit name/object path survives restarts. The first
-			// invocation must be observed with our accepted job still attached;
-			// a later job-free invocation cannot establish that correlation.
-			if invocation == "" && before.Job.ID == 0 {
+			// invocation must be observed with our accepted job still attached,
+			// or after that job was removed done with no other job on the unit.
+			// Any other job-free invocation cannot establish that correlation.
+			if invocation == "" && before.Job.ID == 0 && o.manager.JobSettled(r.StartJob, r.Unit) != nil {
 				return r, errGitUnit
 			}
 			invocation = before.InvocationID

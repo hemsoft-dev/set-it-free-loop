@@ -474,27 +474,104 @@ func TestGitBirthPendingInitializationRejectsChangedInvocation(t *testing.T) {
 	}
 }
 
+// A job-free first invocation is adopted only when the tracker proves our own
+// accepted job was removed done with no other job settled on the unit.
 func TestGitBirthRejectsSettledJobBeforeAnyInvocationWasCorrelated(t *testing.T) {
-	for _, phase := range []string{"first-observation", "after-empty-properties"} {
-		t.Run(phase, func(t *testing.T) {
+	for _, kind := range []string{"unproven", "other-job", "foreign-job", "failed-job", "own-done"} {
+		for _, phase := range []string{"first-observation", "after-empty-properties"} {
+			t.Run(kind+"/"+phase, func(t *testing.T) {
+				f := newGitUnitFixture(t)
+				if f.owner.prepare(context.Background(), f.binding) != nil {
+					t.Fatal("prepare")
+				}
+				r, err := f.owner.read(f.binding.Attempt)
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.Started = true
+				r.StartJob = "/org/freedesktop/systemd1/job/1"
+				f.manager.observation.Description = gitUnitDescriptionPrefix + Digest(f.binding)
+				f.manager.observation.InvocationID = strings.Repeat("d", 32)
+				switch kind {
+				case "unproven":
+					f.manager.settledErr = errors.New("no removed result for the accepted job")
+				case "other-job":
+					r.StartJob = "/org/freedesktop/systemd1/job/2"
+				case "foreign-job":
+					f.manager.settledErr = errors.New("another job removed on the owned unit")
+				case "failed-job":
+					f.manager.waitErr = errors.New("accepted job failed")
+				}
+				if phase == "after-empty-properties" {
+					f.owner.manager = &gitBirthInitializingManager{gitUnitManager: f.manager, remaining: 1}
+				}
+				got, err := f.owner.captureBirth(context.Background(), r)
+				if kind == "own-done" {
+					if err != nil || got.Birth == nil || got.Birth.StartJob != r.StartJob || got.Birth.Unit.InvocationID != strings.Repeat("d", 32) || got.Captured || f.owner.grantEligible[f.binding.Attempt] {
+						t.Fatal("own settled job not correlated", got, err)
+					}
+					return
+				}
+				if err == nil || got.Birth != nil || got.Captured || f.owner.grantEligible[f.binding.Attempt] {
+					t.Fatal("settled replacement invocation adopted as original", got, err)
+				}
+			})
+		}
+	}
+}
+
+// gitJobSettledBeforeObserve models systemd running the accepted Type=exec job
+// to completion before a starved owner makes its first observation.
+type gitJobSettledBeforeObserve struct{ *fakeContainmentManager }
+
+func (m gitJobSettledBeforeObserve) StartGit(ctx context.Context, unit, stub string, args []string, description string, imageFD, supervisorFD int) (string, error) {
+	job, err := m.fakeContainmentManager.StartGit(ctx, unit, stub, args, description, imageFD, supervisorFD)
+	m.mu.Lock()
+	m.observation.Job = unitJob{}
+	m.mu.Unlock()
+	return job, err
+}
+
+func TestGitBirthStartAdoptsOwnJobSettledBeforeFirstObservation(t *testing.T) {
+	for _, kind := range []string{"settled", "settled-between-polls", "foreign-job", "failed-job"} {
+		t.Run(kind, func(t *testing.T) {
 			f := newGitUnitFixture(t)
+			f.owner.manager = gitJobSettledBeforeObserve{f.manager}
+			switch kind {
+			case "settled-between-polls":
+				f.owner.manager = &gitBirthInitializingManager{gitUnitManager: gitJobSettledBeforeObserve{f.manager}, remaining: 1}
+			case "foreign-job":
+				// Another job settled on the unit: the invocation may be a replacement.
+				f.manager.settledErr = errors.New("foreign job removed on owned unit")
+			case "failed-job":
+				f.manager.waitErr = errors.New("job failed")
+			}
 			if f.owner.prepare(context.Background(), f.binding) != nil {
 				t.Fatal("prepare")
 			}
-			r, err := f.owner.read(f.binding.Attempt)
-			if err != nil {
-				t.Fatal(err)
+			err := f.owner.start(context.Background(), f.binding, "/private/git-gate.sock")
+			r, readErr := f.owner.read(f.binding.Attempt)
+			if readErr != nil || !r.Started || r.StartJob == "" || f.manager.starts != 1 {
+				t.Fatal("start intent", r, readErr)
 			}
-			r.Started = true
-			r.StartJob = "/org/freedesktop/systemd1/job/1"
-			f.manager.observation.Description = gitUnitDescriptionPrefix + Digest(f.binding)
-			f.manager.observation.InvocationID = strings.Repeat("d", 32)
-			if phase == "after-empty-properties" {
-				f.owner.manager = &gitBirthInitializingManager{gitUnitManager: f.manager, remaining: 1}
+			if kind != "settled" && kind != "settled-between-polls" {
+				if err == nil || r.Birth != nil || r.StartSettled || r.Captured || f.owner.grantEligible[f.binding.Attempt] {
+					t.Fatal("uncorrelated job-free invocation adopted", r, err)
+				}
+				// Recovery may capture and stop the live root. It never arms a
+				// grant or repeats the start.
+				stopErr := f.owner.stop(context.Background(), f.binding)
+				r, readErr = f.owner.read(f.binding.Attempt)
+				if stopErr != nil || readErr != nil || !r.Stopped || r.Birth != nil || f.owner.grantEligible[f.binding.Attempt] || f.manager.starts != 1 || f.owner.Close() != nil {
+					t.Fatal("unborn started attempt recovery", r, stopErr, readErr)
+				}
+				return
 			}
-			got, err := f.owner.captureBirth(context.Background(), r)
-			if err == nil || got.Birth != nil || got.Captured || f.owner.grantEligible[f.binding.Attempt] {
-				t.Fatal("settled replacement invocation adopted as original", got, err)
+			if err != nil || r.Birth == nil || !r.StartSettled || !r.Captured || r.Birth.Unit.InvocationID != r.Identity.InvocationID || !f.owner.grantEligible[f.binding.Attempt] {
+				t.Fatal("own settled start refused", r, err)
+			}
+			if f.owner.stop(context.Background(), f.binding) != nil || f.owner.Close() != nil {
+				t.Fatal("settled start cleanup")
 			}
 		})
 	}

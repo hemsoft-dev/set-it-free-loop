@@ -257,3 +257,60 @@ func TestSystemdReferenceWaiterCancellationDoesNotWaitForOtherPoll(t *testing.T)
 		t.Fatalf("canceled waiter blocked=%v outcome=%v", blocked, got)
 	}
 }
+
+// settled correlates a job-free first invocation only with our own completed
+// job. Any other job removed on the unit refuses the correlation without
+// failing WaitJob, and settled never consumes the cached result.
+func TestSystemdJobSettledRequiresOwnDoneJobAndNoForeignJob(t *testing.T) {
+	if (&dbusContainmentManager{}).JobSettled("/org/freedesktop/systemd1/job/1", "sfl-alpha-"+strings.Repeat("b", 32)+".service") == nil {
+		t.Fatal("settled correlation without a job tracker")
+	}
+	for _, kind := range []string{"done", "done-before-bind", "unsettled", "failed", "foreign-after-bind", "foreign-before-bind", "other-unit"} {
+		t.Run(kind, func(t *testing.T) {
+			j := &systemdJobs{owner: ":1.2", completed: map[string]jobResult{}, changed: make(chan struct{})}
+			unit := "sfl-alpha-" + strings.Repeat("b", 32) + ".service"
+			p, foreign := "/org/freedesktop/systemd1/job/1", "/org/freedesktop/systemd1/job/9"
+			deliver := func(job, u, result string) {
+				j.DeliverSignal(systemdManagerInterface, "JobRemoved", jobSignal(":1.2", job, u, result))
+			}
+			if j.begin(unit) != nil {
+				t.Fatal("begin")
+			}
+			switch kind {
+			case "done-before-bind":
+				deliver(p, unit, "done")
+			case "foreign-before-bind":
+				deliver(foreign, unit, "done")
+			}
+			if j.bind(unit, p) != nil {
+				t.Fatal("bind")
+			}
+			switch kind {
+			case "done", "foreign-before-bind":
+				deliver(p, unit, "done")
+			case "failed":
+				deliver(p, unit, "failed")
+			case "foreign-after-bind":
+				deliver(p, unit, "done")
+				deliver(foreign, unit, "done")
+			case "other-unit":
+				deliver(p, unit, "done")
+				deliver(foreign, "sfl-alpha-"+strings.Repeat("c", 32)+".service", "done")
+			}
+			err := j.settled(p, unit)
+			want := kind == "done" || kind == "done-before-bind" || kind == "other-unit"
+			if (err == nil) != want {
+				t.Fatal("settled correlation", kind, err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+			defer cancel()
+			waitErr := j.wait(ctx, p, unit)
+			if (waitErr == nil) != (kind != "unsettled" && kind != "failed") {
+				t.Fatal("settled changed WaitJob", kind, waitErr)
+			}
+			if len(j.completed) != 0 || len(j.waiting) != 0 || len(j.foreign) != 0 {
+				t.Fatal("tracker leaked", j.completed, j.waiting, j.foreign)
+			}
+		})
+	}
+}

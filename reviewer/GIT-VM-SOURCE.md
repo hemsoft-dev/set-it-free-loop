@@ -139,8 +139,10 @@ denies io_uring and is limited to 2 GiB with no swap, 96 tasks, one CPU and
 
 The owner stores lifecycle metadata in the ownership journal before each
 manager call and never retries an uncertain start. A fresh start binds the
-original invocation and cgroup while its accepted job is still attached, waits
-for the job, then captures the stub's pidfd, process identity and executable.
+original invocation and cgroup while its accepted job is still attached, or
+job-free only when the job tracker already proves that job removed `done` with
+no other job on the unit, as for host Git units. It then waits for the job and
+captures the stub's pidfd, process identity and executable.
 Only that fresh start becomes grant eligible; reopening never re-arms it.
 
 Stop durably revokes first. It terminates the captured cgroup, requires that

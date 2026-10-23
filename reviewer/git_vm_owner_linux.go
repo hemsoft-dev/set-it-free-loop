@@ -20,6 +20,7 @@ import (
 type gitVMUnitManager interface {
 	containmentManager
 	StartGitVM(context.Context, string, string, []string, string, int, int) (string, error)
+	JobSettled(string, string) error
 }
 
 // The source VM unit has its own fixed cgroup limits, separate from host Git
@@ -322,8 +323,10 @@ func (o *gitVMUnitOwner) captureBirth(ctx context.Context, r gitVMUnitRecord) (g
 			return r, errGitVMOwner
 		}
 		if !missingInvocation {
-			// The first invocation must be observed with our job attached.
-			if invocation == "" && before.Job.ID == 0 {
+			// The first invocation must be observed with our job attached,
+			// or after our job was removed done with no other job on the
+			// unit. A Type=exec job can settle before a starved owner looks.
+			if invocation == "" && before.Job.ID == 0 && o.manager.JobSettled(r.StartJob, r.Unit) != nil {
 				return r, errGitVMOwner
 			}
 			invocation = before.InvocationID

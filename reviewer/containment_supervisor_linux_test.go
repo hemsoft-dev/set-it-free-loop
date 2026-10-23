@@ -86,6 +86,7 @@ type fakeContainmentManager struct {
 	observation                      unitObservation
 	kernel                           *fakeContainmentKernel
 	startErr, observeErr, waitErr    error
+	settledErr                       error
 	starts, stops                    int
 	holdStart                        chan struct{}
 	entered                          chan struct{}
@@ -155,6 +156,18 @@ func (m *fakeContainmentManager) WaitJob(context.Context, string, string) error 
 		m.afterWait()
 	}
 	return m.waitErr
+}
+
+// JobSettled models the tracker: the only job this fake accepts was removed
+// with result done and no other job settled on the unit. It never waits or
+// consumes the result.
+func (m *fakeContainmentManager) JobSettled(job, unit string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if job != "/org/freedesktop/systemd1/job/1" || unit != m.observation.Unit || m.observation.Job.ID != 0 || m.waitErr != nil || m.settledErr != nil {
+		return ErrAuthRecoveryRequired
+	}
+	return nil
 }
 func (m *fakeContainmentManager) Observe(context.Context, string) (unitObservation, error) {
 	m.mu.Lock()
