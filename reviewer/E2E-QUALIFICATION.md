@@ -27,9 +27,16 @@ projections of the source VM owner journal and archive, and a restore probe.
 1. **Startup.** The public `OpenGitReviewerService` is called with a version 2
    `GitReviewerRelease`: the measured source image and exact-head
    `gitsourcevmstub`, plus both native providers pinned to a measured native
-   image. The stub's embedded Go build info must record `vcs=git`,
-   `vcs.revision` equal to the image's recorded commit and
-   `vcs.modified=false`; a stub without that stamp is refused. The public
+   image. The source image's embedded guest release must name its recorded
+   commit as `SourceHead`, so a guest built from another commit cannot run
+   under this commit's release revision. The stub's embedded Go build info must
+   record `vcs=git`, `vcs.revision` equal to that commit and
+   `vcs.modified=false`; a stub without that stamp is refused. The running
+   `reviewer.test` binary is attested the same way through
+   `debug.ReadBuildInfo`: its program path must be this package's test
+   binary, with one `vcs=git`, `vcs.revision` equal to the release commit and
+   `vcs.modified=false`. The stamp is recorded as `TestBinary` in the JSON
+   result, and an unstamped or mismatched binary fails the run. The public
    constructor uses the real user-systemd source VM owner
    (`openGitVMUnitOwner`); no private opener or internal composition is used.
    The credentials are an installation journal over the controller SQLite
@@ -75,11 +82,21 @@ projections of the source VM owner journal and archive, and a restore probe.
 If `close-provider`'s `Close` proves completion instead of reporting
 `ErrWorkerStopPending`, the case reopens and expects one source unit, one
 native unit for the interrupted launch plus one per artifact of the reopened
-job, and both auth stores usable. No host run has taken this branch.
+job, and both auth stores usable. After the reopen it runs the same
+completed-review checks as the other successful cases: exactly one confirmed
+review intent, one POST, one marked COMMENT on the head with the inline
+comment, four artifacts from four consumed sessions, stopped source receipts
+with staged exports, and one completed native launch with returned auth per
+artifact, with the interrupted launch as the only other launch. No host run
+has taken this branch.
 
 Every case also observes `systemctl --user list-units 'sfl-alpha-*'` every 200
-ms, excluding units that existed before the run, and requires that every unit
-it saw is gone at the end. Each observed unit must correlate with a launch the
+ms, excluding units that existed before the run. At the end it requires a
+successful listing that shows none of the units it saw. A failed listing never
+counts as an empty one. It keeps the last successful residual, or every unit
+seen before any successful final listing. If the 30-second grace ends without
+a later successful listing, the run fails and records the error as
+`UnitListingError`. Each observed unit must correlate with a launch the
 run recorded: a source unit with a source VM owner journal record's unit, a
 native unit with `sfl-alpha-<launch>.service` for a native launch directory
 created by this process. Every launch recorded by this process must have been
@@ -90,10 +107,24 @@ first requires the expected nonzero number of owner journal records, each with
 exactly one archive export of the same attempt and snapshot. Each reviewed PR
 must have exactly one review intent, and it must be `confirmed`. The case reads
 each native launch's `unit.json` and `native-audit.json` and checks provider
-auth disposition by reopening the protected stores. It writes a nonsecret JSON
-result to `SFL_E2E_EVIDENCE` only after cleanup has closed every handle and
-removed (or deliberately retained) the root, so a cleanup failure is recorded
-as `Passed: false`.
+auth disposition by reopening the protected stores. A unit journal counts only
+as version 1 for its own directory's launch. It must name
+`sfl-alpha-<launch>.service`, and its binding must derive the containment ID
+from its session and launch. The audit counts only as a version 1 receipt
+with the same binding. Once auth was exported or the session completed, the
+audit must carry provider evidence: the stopped receipt of that session under
+the release's egress policy for that provider. A copied, foreign or
+regenerated audit therefore proves nothing about the launch. In `isolation`,
+every session from the first onward must carry one of the two job IDs, and
+its PR and head must equal that job's snapshot.
+
+The root is owned as soon as it is created (or, for an attached run, once its
+layout is checked), before the unit observer starts. A setup failure after
+that point still stops the observer, closes the fake servers after any open
+service and removes a fresh root unless `SFL_E2E_KEEP_FAILED` is set. It
+writes a nonsecret JSON result to `SFL_E2E_EVIDENCE` only after cleanup has
+closed every handle and removed (or deliberately retained) the root, so a
+cleanup failure is recorded as `Passed: false`.
 
 ## Admission rule
 
@@ -108,20 +139,23 @@ therefore proves isolation between sequential jobs, not concurrent ones.
 
 Build exact-head images from a clean commit (see
 `scripts/git-source-vm-image.py` and `scripts/native-vm-image.py`), then build
-the stub and test binary from the same head. Go does not stamp VCS build info
-in a linked worktree, so build the stub from a fresh clone of that head. Run
-each case under the shared VM lock, with a bounded timeout:
+the stub and the test binary from one fresh clone of the same head. Go does not
+stamp VCS build info in a linked worktree, and `go test -c` stamps it only
+with `-buildvcs=true`. Check both stamps, then run each case under the shared
+VM lock, with a bounded timeout:
 
 ```sh
-STUB_SRC=$(mktemp -d)
-git clone --quiet --no-hardlinks --no-checkout . "$STUB_SRC"
-git -C "$STUB_SRC" checkout --quiet --detach "$(git rev-parse HEAD)"
-go -C "$STUB_SRC/reviewer" build -buildvcs=true -o "$OUT/gitsourcevmstub" ./cmd/gitsourcevmstub
-rm -rf "$STUB_SRC"
-go version -m "$OUT/gitsourcevmstub" | grep -E 'vcs\.(revision|modified)'
-chmod 0500 "$OUT/gitsourcevmstub"
-go -C reviewer test -c -o "$OUT/reviewer.test" .
-flock ~/.cache/sfl-vm.lock env GOMAXPROCS=2 \
+SRC=$(mktemp -d)
+git clone --quiet --no-hardlinks --no-checkout . "$SRC"
+git -C "$SRC" checkout --quiet --detach "$(git rev-parse HEAD)"
+go -C "$SRC/reviewer" build -buildvcs=true -o "$OUT/gitsourcevmstub" ./cmd/gitsourcevmstub
+go -C "$SRC/reviewer" test -c -buildvcs=true -o "$OUT/reviewer.test" .
+rm -rf "$SRC"
+for binary in gitsourcevmstub reviewer.test; do
+  go version -m "$OUT/$binary" | grep -E '^\s+(path|build\s+vcs(\.revision|\.modified)?=)'
+done
+chmod 0500 "$OUT/gitsourcevmstub" "$OUT/reviewer.test"
+flock -o ~/.cache/sfl-vm.lock env GOMAXPROCS=2 \
   SFL_E2E_SOURCE_IMAGE="$SOURCE_IMAGE" SFL_E2E_SOURCE_STUB="$OUT/gitsourcevmstub" \
   SFL_E2E_NATIVE_IMAGE="$NATIVE_IMAGE" SFL_E2E_CASE=review SFL_E2E_EVIDENCE="$EVIDENCE" \
   timeout 600 nice -n 10 "$OUT/reviewer.test" -test.run '^TestE2EQualification$' -test.v -test.timeout 590s
@@ -132,14 +166,24 @@ For `close-provider`, run `close-provider-reopen` next in a new process with
 the same lock hold. State lives under a fresh `/tmp/sfl-e2e-<nonce>` root,
 which a passing run removes. `SFL_E2E_KEEP_FAILED=1` retains a failed root.
 
-## Measured results
+## Measured at `<head>`
+
+The current-head run is recorded here after the final validation run. Until
+then, the sections below are pre-rebase history only: the commits they name
+are not ancestors of this branch, and their checks predate the attestation and
+binding rules above.
+
+## Pre-rebase history: measured results at `3140f0a`
+
+This section records a run before the branch was rebased. Commit `3140f0a` is
+not an ancestor of the current branch.
 
 Measured on mini on 2026-10-22, one case at a time under the shared VM lock,
 with `GOMAXPROCS=2` and `nice -n 10`. Code, test binary, stub and both images
 come from commit `3140f0a`; that commit is also the release revision, and the
-package digest is `12d1adf7…88d3`. Only this document changed afterwards.
-Every case passed with no failed check and no fake GitHub violation. The
-observer saw no remaining unit from any run.
+package digest is `12d1adf7…88d3`. At that time only this document changed
+afterwards. Every case passed with no failed check and no fake GitHub
+violation. The observer saw no remaining unit from any run.
 
 | Case | Wall time | Source VM units | Native units | Upstream Git exchanges | Review POSTs | Final state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -187,7 +231,10 @@ attempt had a durable granted stop receipt and a staged export.
   the marked review and confirmed receipt 5001 within 0.5 s. GitHub received
   exactly one POST.
 
-### Rerun with tightened checks
+### Pre-rebase history: rerun with tightened checks at `7b6b668`
+
+This rerun also predates the rebase. Commit `7b6b668` is not an ancestor of
+the current branch.
 
 Review of this qualification tightened its checks. The native image commit
 must equal the source image and release commit. Every native release asset
