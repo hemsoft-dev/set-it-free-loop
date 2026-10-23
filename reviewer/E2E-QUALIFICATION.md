@@ -102,10 +102,23 @@ native unit with `sfl-alpha-<launch>.service` for a native launch directory
 created by this process. Every launch recorded by this process must have been
 observed, and the observed source and native counts must equal the case's
 expectation in the table. An attached process may hold the earlier process's
-source records, which it need not observe. Every check of source stop receipts
+source records, which it need not observe. Before `close-provider-reopen`
+treats a native launch as the earlier process's, its root must hold exactly
+one launch: captured and whole-unit stopped, with a bound stopped audit that
+records the auth as exported and not returned and the session as incomplete.
+Its provider and session must be the retained job's outstanding attempt, and
+the job must hold that attempt's stopped provider evidence. A missing or
+unreadable launch directory fails setup, and a retained launch must still be
+present at the end. Every check of source stop receipts
 first requires the expected nonzero number of owner journal records, each with
 exactly one archive export of the same attempt and snapshot. Each reviewed PR
-must have exactly one review intent, and it must be `confirmed`. The case reads
+must have exactly one review intent, and it must be `confirmed`. After the
+provider close, PR 1 must retain exactly one request: the admitted automatic
+`opened` request of its job. At the end of `close-provider-reopen`, PR 1 must
+still retain only that request, PR 2 exactly one unadmitted owner `comment`
+request, and no other PR any request. A duplicate held back by the lease
+would otherwise become a second job once the lease is released. These
+requests are recorded as `Requests` in the JSON result. The case reads
 each native launch's `unit.json` and `native-audit.json` and checks provider
 auth disposition by reopening the protected stores. A unit journal counts only
 as version 1 for its own directory's launch. It must name
@@ -121,10 +134,14 @@ its PR and head must equal that job's snapshot.
 The root is owned as soon as it is created (or, for an attached run, once its
 layout is checked), before the unit observer starts. A setup failure after
 that point still stops the observer, closes the fake servers after any open
-service and removes a fresh root unless `SFL_E2E_KEEP_FAILED` is set. It
-writes a nonsecret JSON result to `SFL_E2E_EVIDENCE` only after cleanup has
-closed every handle and removed (or deliberately retained) the root, so a
-cleanup failure is recorded as `Passed: false`.
+service and removes a fresh root unless `SFL_E2E_KEEP_FAILED` is set. A
+failed SQLite close or checkpoint of any store handle is a failed check. Each
+run first removes an earlier `<case>.json` from `SFL_E2E_EVIDENCE`, and does
+not start if it cannot. It writes the nonsecret JSON result only after cleanup
+has closed every handle and removed (or deliberately retained) the root, so a
+cleanup failure is recorded as `Passed: false`. The result goes to a synced
+temporary in the same directory, which is renamed over `<case>.json`; a failed
+write leaves no result rather than an earlier one.
 
 ## Admission rule
 
@@ -174,7 +191,8 @@ source and native images, a source stub and a `reviewer.test` all built from
 `vcs.modified=false`, and the release hash was `74c59736d5af`. Every case
 passed with no failures, every observed unit matched a recorded launch, and no
 unit or E2E root remained afterwards. Only this document changed after
-`c29e563`.
+`c29e563` until the checks were tightened in `909e33c`; the cases are to be
+re-measured at the new head.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
