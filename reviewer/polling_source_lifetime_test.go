@@ -270,3 +270,126 @@ func TestPollingSkipsRetentionWhileCaptureHoldsSource(t *testing.T) {
 		t.Fatal("active capture polling recorded spurious failure", err, calls.Load())
 	}
 }
+
+// raceTriggerDiscovery pauses the worker's post-capture observation after its
+// local trigger snapshot, letting a concurrent Poll observe the same scope.
+type raceTriggerDiscovery struct {
+	*triggerPollingRemote
+	armed        atomic.Bool
+	read, resume chan struct{}
+}
+
+func (d *raceTriggerDiscovery) PollScope(ctx context.Context, scope Scope) (RemoteState, Discovery, error) {
+	r, b, err := d.triggerPollingRemote.PollScope(ctx, scope)
+	if d.armed.CompareAndSwap(true, false) {
+		close(d.read)
+		<-d.resume
+	}
+	return r, b, err
+}
+
+func TestPollingConcurrentObservationKeepsCapturedSource(t *testing.T) {
+	for _, mode := range []string{"local-observation", "head-moved", "closed"} {
+		t.Run(mode, func(t *testing.T) {
+			old, f, calls := pollControllerFixture(t, nil)
+			options := old.options
+			if old.Close(context.Background()) != nil {
+				t.Fatal("old controller close")
+			}
+			remote := &triggerPollingRemote{pollingFixture: f, policy: TriggerPolicy{EnabledAt: controlTime}}
+			discovery := &raceTriggerDiscovery{triggerPollingRemote: remote, read: make(chan struct{}), resume: make(chan struct{})}
+			var resumed sync.Once
+			resume := func() { resumed.Do(func() { close(discovery.resume) }) }
+			t.Cleanup(resume)
+			source := &pollingOwnedSource{options: options, pending: map[*SnapshotEvidence]bool{}, active: map[*JobEvidence]bool{}}
+			var captures atomic.Int32
+			source.afterCapture = func() {
+				if captures.Add(1) != 1 {
+					return
+				}
+				f.mu.Lock()
+				switch mode {
+				case "head-moved":
+					f.remote.Snapshot.Head = f.remote.Snapshot.Base
+					f.remote.Snapshot.MergeBase = f.remote.Snapshot.Base
+				case "closed":
+					f.remote.Open = false
+				}
+				f.mu.Unlock()
+				discovery.armed.Store(true)
+			}
+			options.Source, options.Capture, options.Restore = source, nil, nil
+			options.Discovery, options.Publisher.Remote = discovery, remote
+			c, err := OpenPollingController(context.Background(), options)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close(context.Background())
+			if result, err := pollOnce(t, c); err != nil || !result.Active {
+				t.Fatal(result, err)
+			}
+			c.mu.Lock()
+			w := c.active
+			c.mu.Unlock()
+			select {
+			case <-discovery.read:
+			case <-time.After(3 * time.Second):
+				t.Fatal("worker did not observe after capture")
+			}
+			// A later Date second commits a new cursor between the worker's local
+			// snapshot and its Discover unless observation is serialized.
+			f.clock.Advance(time.Second)
+			polled := make(chan error, 1)
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				defer cancel()
+				_, err := c.Poll(ctx)
+				polled <- err
+			}()
+			var pollErr error
+			select {
+			case pollErr = <-polled:
+				polled <- pollErr
+			case <-time.After(200 * time.Millisecond):
+			}
+			resume()
+			awaitPollWorker(t, c)
+			if pollErr = <-polled; pollErr != nil {
+				t.Error("concurrent poll", pollErr)
+			}
+			c.mu.Lock()
+			workErr := w.err
+			c.mu.Unlock()
+			source.mu.Lock()
+			released, pending := source.capturesReleased, len(source.pending)
+			source.mu.Unlock()
+			if released != 1 || pending != 0 {
+				t.Fatal("capture not released exactly once", released, pending)
+			}
+			if mode != "local-observation" {
+				d, _ := f.store.Snapshot(context.Background())
+				if (!errors.Is(workErr, ErrFenced) && !errors.Is(workErr, context.Canceled)) || len(d.Jobs) != 0 || calls.Load() != 0 {
+					t.Fatal("remote change after capture was not fenced", workErr, len(d.Jobs), calls.Load())
+				}
+				return
+			}
+			if workErr != nil {
+				t.Error("local observation discarded captured source", workErr)
+			}
+			for i := 0; i < 3; i++ {
+				f.clock.Advance(time.Second)
+				result, err := pollOnce(t, c)
+				if err != nil {
+					t.Error("follow-up poll", err)
+				}
+				if result.Active {
+					awaitPollWorker(t, c)
+				}
+			}
+			d, _ := f.store.Snapshot(context.Background())
+			if captures.Load() != 1 || len(d.Jobs) != 1 || calls.Load() != 4 || f.posts != 1 {
+				t.Fatal("captured source not admitted once", captures.Load(), len(d.Jobs), calls.Load(), f.posts)
+			}
+		})
+	}
+}
