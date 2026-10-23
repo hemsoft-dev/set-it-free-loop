@@ -374,6 +374,47 @@ func TestProviderRecoveryKeepsUnexportedAcrossInterruptedCommit(t *testing.T) {
 	}
 }
 
+// A cancellation or replacement can fence the job while its stopped attempt
+// still holds the lease. Recovery must report the job's final state.
+func TestProviderRecoveryReportsFencedJobState(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range []struct {
+		state string
+		fence func(*testing.T, *wedgeFixture)
+	}{
+		{"cancelled", func(t *testing.T, f *wedgeFixture) {
+			mustCapture(t, f.store, []CommandEvent{commandEvent(2, "/sfl cancel", controlTime.Add(5*time.Minute))}, controlTime.Add(6*time.Minute))
+		}},
+		{"stale", func(t *testing.T, f *wedgeFixture) {
+			if err := f.store.RecordRequest(ctx, alphaScope(), native(2, controlTime.Add(5*time.Minute)), true); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(c.state, func(t *testing.T) {
+			f := newWedgeFixture(t, "exported")
+			token := f.token(t)
+			c.fence(t, f)
+			d, _ := f.store.Snapshot(ctx)
+			if j := d.Jobs[f.job.ID]; j.State != c.state || j.LeaseToken != token || !j.Outstanding {
+				t.Fatal("fixture did not fence the leased job", j.State)
+			}
+			result, err := f.service.RecoverStoppedProvider(ctx, f.request())
+			if err != nil {
+				t.Fatal(err)
+			}
+			d, _ = f.store.Snapshot(ctx)
+			j := d.Jobs[f.job.ID]
+			if j.LeaseToken != "" || j.Outstanding || j.State != c.state {
+				t.Fatal("fenced job did not keep its fence state", j.State)
+			}
+			if result.State != j.State || len(j.ProviderRecoveries) != 1 || j.ProviderRecoveries[0].State != j.State || result.Auth != ProviderAuthRetired {
+				t.Fatal("recovery reported a state the job never ended in", result, j.ProviderRecoveries, j.State)
+			}
+		})
+	}
+}
+
 func TestProviderRecoveryRefusesWithoutDurableChange(t *testing.T) {
 	ctx := context.Background()
 	rewriteAudit := func(t *testing.T, f *wedgeFixture, change func(*nativeVMAuditReceipt)) {
@@ -535,11 +576,11 @@ func TestProviderRecoveryStoreReleaseBindsAttemptAndEvidence(t *testing.T) {
 	} {
 		receipt := good
 		change(&receipt)
-		if err := f.store.releaseRecoveredProviderAttempt(ctx, f.job.ID, token, receipt, controlTime); err == nil {
+		if _, err := f.store.releaseRecoveredProviderAttempt(ctx, f.job.ID, token, receipt, controlTime); err == nil {
 			t.Fatal("store released a mismatched recovery", name)
 		}
 	}
-	if err := f.store.releaseRecoveredProviderAttempt(ctx, f.job.ID, "other-token", good, controlTime); !errors.Is(err, ErrFenced) {
+	if _, err := f.store.releaseRecoveredProviderAttempt(ctx, f.job.ID, "other-token", good, controlTime); !errors.Is(err, ErrFenced) {
 		t.Fatal("store released under another lease nonce", err)
 	}
 	f.requireWedged(t, token, "exported")

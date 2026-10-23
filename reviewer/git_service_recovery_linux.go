@@ -95,6 +95,7 @@ func (s *gitReviewerService) openNativeSupervisor(ctx context.Context, o NativeV
 // whole-unit stop proof succeeds. Auth then follows the stopped-worker rules
 // (settleStoppedAttemptAuth), runtime residue is removed, and the lease is
 // released as auth_failed or provider_unavailable with the session charged.
+// A job fenced meanwhile keeps cancelled or stale; State reports the final one.
 func (s *gitReviewerService) RecoverStoppedProvider(ctx context.Context, request ProviderRecoveryRequest) (ProviderRecoveryResult, error) {
 	phase, finish, err := s.recoveryPhase(ctx)
 	if err != nil {
@@ -144,7 +145,6 @@ func (s *gitReviewerService) RecoverStoppedProvider(ctx context.Context, request
 		return ProviderRecoveryResult{}, errors.Join(ErrProviderRecovery, err)
 	}
 	state := recoveredAttemptState(auth, receipt)
-	result := ProviderRecoveryResult{JobID: j.Job.ID, AttemptID: j.AttemptID, LaunchID: request.LaunchID, Provider: j.AttemptProvider, Round: j.AttemptRound, Auth: auth, State: state}
 	now := time.Now
 	if s.options.Credentials.Journal.now != nil {
 		now = s.options.Credentials.Journal.now
@@ -152,10 +152,10 @@ func (s *gitReviewerService) RecoverStoppedProvider(ctx context.Context, request
 	release := ProviderRecoveryReceipt{AttemptID: j.AttemptID, LaunchID: request.LaunchID, Provider: j.AttemptProvider, Round: j.AttemptRound, EvidenceHash: Digest(cloneProviderEvidence(evidence)), Auth: auth, State: state}
 	durable, cancel := context.WithTimeout(context.WithoutCancel(phase), 10*time.Second)
 	defer cancel()
-	if err = store.releaseRecoveredProviderAttempt(durable, j.Job.ID, j.LeaseToken, release, now()); err != nil {
+	if state, err = store.releaseRecoveredProviderAttempt(durable, j.Job.ID, j.LeaseToken, release, now()); err != nil {
 		return ProviderRecoveryResult{}, err
 	}
-	return result, nil
+	return ProviderRecoveryResult{JobID: j.Job.ID, AttemptID: j.AttemptID, LaunchID: request.LaunchID, Provider: j.AttemptProvider, Round: j.AttemptRound, Auth: auth, State: state}, nil
 }
 
 // ProviderRecoveryCandidates lists every job holding a durable lease. It is

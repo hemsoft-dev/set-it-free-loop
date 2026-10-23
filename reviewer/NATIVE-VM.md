@@ -370,6 +370,10 @@ journal rules, with a fresh `ConfirmAuthStopped` on each mutation:
 | committing or committed, returned | `Complete` | `returned` | `provider_unavailable` |
 | retiring | `Retire` | `retired` | `auth_failed` |
 
+The job state column applies to an unfenced job. A job already fenced by a
+cancellation or newer request stays `cancelled` or `stale`, and the result
+and receipt record that final state.
+
 An exported seed is never committed or reused without its durable return.
 Without consent, the lost-return case refuses with `ErrAuthRecoveryRequired`
 and leaves the fence intact. A journal bound to another launch, or one that

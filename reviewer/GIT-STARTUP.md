@@ -177,10 +177,12 @@ same nonce, rechecking the attempt, provider, round and evidence digest in
 one transaction. It appends a `ProviderRecoveryReceipt`. The session stays
 charged, no source access is invented, and no artifact is created. The job
 becomes `auth_failed` when the exported auth was lost and retired. It becomes
-`provider_unavailable` when auth was unexported or durably returned. Neither
-state is a review. Only an explicit `ResumeUnavailable` can requeue the same
-request, within its remaining session budget. Other requests proceed
-immediately.
+`provider_unavailable` when auth was unexported or durably returned. A job
+that a cancellation or newer request fenced while it held the lease stays
+`cancelled` or `stale`; the result and the receipt report that final state.
+None of these states is a review. Only an explicit `ResumeUnavailable` can
+requeue the same unfenced request, within its remaining session budget.
+Other requests proceed immediately.
 
 A retired provider has no canonical auth. Its sessions fail before work as
 `auth_failed` until the operator establishes new auth outside the reviewer.

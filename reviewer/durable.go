@@ -115,7 +115,8 @@ type DurableJob struct {
 // ProviderRecoveryReceipt records one explicit operator recovery of a stopped
 // provider attempt. It contains no auth bytes, model output or source text.
 // The attempt stays charged. Its source access remains unknown, and its
-// recorded provider evidence is never promoted to a review artifact.
+// recorded provider evidence is never promoted to a review artifact. State is
+// the job's final state after release, including a cancellation fence.
 type ProviderRecoveryReceipt struct {
 	AttemptID, LaunchID string
 	Provider            Provider
@@ -717,14 +718,17 @@ func releaseStoppedJob(d *DurableState, j *DurableJob, state string) {
 // stopped evidence matches evidenceHash, under the unchanged lease nonce. The
 // session stays charged, no source access is invented and the job becomes
 // auth_failed or provider_unavailable, which only ResumeUnavailable can requeue.
-func (s *Store) releaseRecoveredProviderAttempt(ctx context.Context, id, token string, receipt ProviderRecoveryReceipt, now time.Time) error {
+// A job already fenced by a cancellation or replacement stays cancelled or
+// stale. It returns the job's final state, which the receipt also records.
+func (s *Store) releaseRecoveredProviderAttempt(ctx context.Context, id, token string, receipt ProviderRecoveryReceipt, now time.Time) (string, error) {
 	if receipt.State != "auth_failed" && receipt.State != "provider_unavailable" {
-		return errors.New("invalid recovery state")
+		return "", errors.New("invalid recovery state")
 	}
 	if !validAuthHash(receipt.EvidenceHash) || receipt.AttemptID == "" || !receipt.Provider.Valid() || receipt.Auth == "" {
-		return ErrFenced
+		return "", ErrFenced
 	}
-	return s.update(ctx, func(d *DurableState) error {
+	final := ""
+	err := s.update(ctx, func(d *DurableState) error {
 		j := d.Jobs[id]
 		if j == nil || token == "" || j.LeaseToken != token || !j.Outstanding || !j.AttemptProviderEvidenceRequired || j.AttemptID != receipt.AttemptID || j.AttemptProvider != receipt.Provider || j.AttemptRound != receipt.Round || d.PRs[j.Scope.key()] == nil {
 			return ErrFenced
@@ -740,10 +744,16 @@ func (s *Store) releaseRecoveredProviderAttempt(ctx context.Context, id, token s
 			return errors.New("provider recovery retention cap reached")
 		}
 		receipt.RecoveredAt = now.UTC()
-		j.ProviderRecoveries = append(j.ProviderRecoveries, receipt)
 		releaseStoppedJob(d, j, receipt.State)
+		receipt.State = j.State
+		j.ProviderRecoveries = append(j.ProviderRecoveries, receipt)
+		final = j.State
 		return nil
 	})
+	if err != nil {
+		return "", err
+	}
+	return final, nil
 }
 
 // RefundStoppedBeforeWork refunds only the exact outstanding attempt. The trusted
