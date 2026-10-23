@@ -77,6 +77,28 @@ func errorText(err error) string {
 	return text
 }
 
+// probeGlobals is the measured code-host global set. Any other global, such as
+// a new filesystem or network API, is an unreviewed capability.
+var probeGlobals = func() map[string]bool {
+	allowed := map[string]bool{}
+	for _, name := range strings.Split("ALL_TOOLS,AggregateError,Array,ArrayBuffer,AsyncDisposableStack,BigInt,BigInt64Array,BigUint64Array,Boolean,DataView,Date,DisposableStack,Error,EvalError,FinalizationRegistry,Float16Array,Float32Array,Float64Array,Function,Infinity,Int16Array,Int32Array,Int8Array,Intl,Iterator,JSON,Map,Math,NaN,Number,Object,Promise,Proxy,RangeError,ReferenceError,Reflect,RegExp,Set,String,SuppressedError,Symbol,SyntaxError,TypeError,URIError,Uint16Array,Uint32Array,Uint8Array,Uint8ClampedArray,WeakMap,WeakRef,WeakSet,as_settled,audio,clearTimeout,decodeURI,decodeURIComponent,encodeURI,encodeURIComponent,escape,eval,exit,generatedImage,globalThis,image,isFinite,isNaN,load,notify,parseFloat,parseInt,setTimeout,store,stream_settled,text,tools,undefined,unescape,yield_control", ",") {
+		allowed[name] = true
+	}
+	return allowed
+}()
+
+func probeGlobalsAllowed(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, name := range strings.Split(value, ",") {
+		if !probeGlobals[name] {
+			return false
+		}
+	}
+	return true
+}
+
 // probeKeys is the exact key set the code-mode probe program records. A probe
 // missing any of them, such as a skipped media URL attempt, is not contained.
 var probeKeys = func() []string {
@@ -106,6 +128,9 @@ var probeKeys = func() []string {
 // ProbeContained accepts code-mode facts only when every probe ran and no
 // module, process, filesystem, network or extra tool capability was observed.
 func probeContained(probe map[string]string) bool {
+	if !probeGlobalsAllowed(probe["globals"]) {
+		return false
+	}
 	keys := make([]string, 0, len(probe))
 	for key := range probe {
 		keys = append(keys, key)

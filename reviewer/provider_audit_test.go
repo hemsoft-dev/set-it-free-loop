@@ -127,3 +127,41 @@ func TestProviderAttemptRecoveryIsIdempotentAndKeepsChargedLeaseOnWriteFailure(t
 		t.Fatal("recovery replayed/refunded or lost receipt", state, err)
 	}
 }
+
+// Denial counters must agree with the recorded outcome: a completed receipt
+// carries none, and a stopped receipt's counters are in range and failed.
+func TestProviderEvidenceValidatesDenialCounters(t *testing.T) {
+	for _, provider := range []Provider{Codex, Claude} {
+		s := testSession(provider)
+		clean := actualProviderEvidence(t, s, false)
+		for _, mutate := range []func(*ProviderAccess){
+			func(a *ProviderAccess) { a.ResponseDenials = 1 },
+			func(a *ProviderAccess) { a.RouteDenials = 1 },
+		} {
+			changed := cloneProviderEvidence(clean)
+			mutate(&changed.Access)
+			if changed.Access.ValidateCompleted(s, changed.Policy) == nil {
+				t.Fatal("completed receipt with a denial accepted", provider, changed.Access)
+			}
+			if changed.validateStoppedCaptured(provider, s.Limits, Digest(s)) == nil {
+				t.Fatal("unfailed stopped receipt with a denial accepted", provider, changed.Access)
+			}
+			changed.Access.Failed = true
+			if err := changed.validateStoppedCaptured(provider, s.Limits, Digest(s)); err != nil {
+				t.Fatal("consistent failed receipt with a denial rejected", provider, err)
+			}
+		}
+		for _, mutate := range []func(*ProviderAccess){
+			func(a *ProviderAccess) { a.RouteDenials = -1 },
+			func(a *ProviderAccess) { a.ResponseDenials = -1 },
+			func(a *ProviderAccess) { a.ResponseDenials = a.Forwarded + 1 },
+		} {
+			changed := cloneProviderEvidence(clean)
+			changed.Access.Failed = true
+			mutate(&changed.Access)
+			if changed.validateStoppedCaptured(provider, s.Limits, Digest(s)) == nil {
+				t.Fatal("out-of-range denial counter accepted", provider, changed.Access)
+			}
+		}
+	}
+}

@@ -7,6 +7,7 @@ through the user manager and cgroup filesystem. No provider account, public
 backend, App or deployment route is available here.
 """
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -99,11 +100,41 @@ def native_units():
     return found
 
 
-def stop_new_units(before, deadline=30):
-    """After a timed-out case, kill native units it started through their
-    cgroup and require them inactive. Returns True only when all stopped."""
+FIXTURE_LOCK = Path.home()/".cache"/"sfl-native-fixture.lock"
+LOCK_ENV = "SFL_NATIVE_FIXTURE_LOCKED"
+STATE_GLOB = "sfl-nvm-*"
+
+
+def hold_fixture_lock():
+    """Hold the cross-process native fixture lock for this process, unless an
+    ancestor runner already holds it and said so through the environment."""
+    if os.environ.get(LOCK_ENV):
+        return None
+    FIXTURE_LOCK.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(FIXTURE_LOCK, "a")
+    fcntl.flock(handle, fcntl.LOCK_EX)
+    os.environ[LOCK_ENV] = str(os.getpid())
+    return handle
+
+
+def state_roots(anchor=Path("/tmp")):
+    return set(anchor.glob(STATE_GLOB))
+
+
+def owned_units(roots):
+    """Units this run launched: each launch directory names its unit, and the
+    directory exists before the unit starts."""
+    return {f"sfl-alpha-{launch.name}.service" for root in roots
+            for launch in (root/"launches").glob("*") if launch.is_dir()}
+
+
+def stop_new_units(before, owned, deadline=30):
+    """After an abnormal case exit, kill only native units that appeared
+    during the case AND belong to its own state root, then require them
+    inactive. Any other unit is never touched. Returns True only when every
+    owned unit stopped."""
     stopped = True
-    for name in sorted(native_units() - before):
+    for name in sorted((native_units() - before) & set(owned)):
         subprocess.run(["systemctl", "--user", "kill", "--signal=SIGKILL", name], timeout=10)
         end = time.monotonic() + deadline
         while time.monotonic() < end:
@@ -121,7 +152,8 @@ def run_case(script, args, provider, name, output):
                "--output", str(output), "--provider", provider, "--go", args.go,
                "--module-cache", str(args.module_cache)]
     command += ["--case", "forbidden"] if name == "forbidden" else ["--case", "hostile", "--hostile", name]
-    before = native_units()
+    before, roots_before = native_units(), state_roots()
+    owned = lambda: owned_units(state_roots() - roots_before)
     with output.with_suffix(".log").open("xb") as log:
         process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         try:
@@ -132,7 +164,7 @@ def run_case(script, args, provider, name, output):
             os.killpg(process.pid, signal.SIGKILL)
             process.wait()
             return {"provider": provider, "case": name, "verdict": "fail", "timed_out": True,
-                    "exit_code": None, "unit_stopped_independently": stop_new_units(before), "abort": True}
+                    "exit_code": None, "unit_stopped_independently": stop_new_units(before, owned()), "abort": True}
     completed = subprocess.CompletedProcess(command, returncode)
     try:
         receipt = json.loads((output/"receipt.json").read_text())
@@ -143,13 +175,13 @@ def run_case(script, args, provider, name, output):
         # prove any unit it started is stopped, and end the matrix.
         return {"provider": provider, "case": name, "verdict": "fail", "timed_out": False,
                 "exit_code": returncode, "receipt": "missing-or-malformed",
-                "unit_stopped_independently": stop_new_units(before), "abort": True}
+                "unit_stopped_independently": stop_new_units(before, owned()), "abort": True}
     if receipt.get("timed_out"):
         # The inner runner killed only its direct fixture process; its unit
         # may still run. Stop it as for an outer timeout and end the matrix.
         return {"provider": provider, "case": name, "verdict": "fail", "timed_out": True,
                 "exit_code": returncode, "runner_head": receipt.get("source_commit"),
-                "unit_stopped_independently": stop_new_units(before), "abort": True}
+                "unit_stopped_independently": stop_new_units(before, owned()), "abort": True}
     root = Path(receipt["state_directory"])
     result_path = root/"result.json"
     units = list(root.glob("launches/*/unit.json"))
@@ -165,7 +197,7 @@ def run_case(script, args, provider, name, output):
         # record the failure, stop what the case started and end the matrix.
         return {"provider": provider, "case": name, "verdict": "fail", "timed_out": False,
                 "exit_code": returncode, "result": "malformed", "runner_head": receipt.get("source_commit"),
-                "unit_stopped_independently": stop_new_units(before), "abort": True}
+                "unit_stopped_independently": stop_new_units(before, owned()), "abort": True}
     stopped = False
     if unit is not None:
         try:
@@ -178,7 +210,7 @@ def run_case(script, args, provider, name, output):
         return {"provider": provider, "case": name, "kind": result.get("Kind", "baseline-denial"), "verdict": "fail",
                 "timed_out": False, "exit_code": returncode, "runner_head": receipt.get("source_commit"),
                 "state": result.get("State"), "error_class": result.get("ErrorClass"),
-                "unit_stopped_independently": False, "cleanup_stopped_units": stop_new_units(before),
+                "unit_stopped_independently": False, "cleanup_stopped_units": stop_new_units(before, owned()),
                 "result": str(result_path), "abort": True}
     outcome = verdict(name, result)
     return {"provider": provider, "case": name, "kind": result.get("Kind", "baseline-denial"),
@@ -204,6 +236,7 @@ def main():
     if not selected:
         parser.error("no matching case")
     args.output.mkdir(mode=0o700, parents=False, exist_ok=False)
+    lock = hold_fixture_lock()
     script = Path(__file__).with_name("native-vm-fake.py")
     rows = []
     for provider, name in selected:

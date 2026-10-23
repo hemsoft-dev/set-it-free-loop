@@ -119,7 +119,7 @@ class HostileMatrixTests(unittest.TestCase):
             stopped = []
             module.CASE_TIMEOUT = 15
             module.native_units = lambda: set()
-            module.stop_new_units = lambda before: stopped.append(before) or True
+            module.stop_new_units = lambda before, owned: stopped.append(before) or True
             start = time.monotonic()
             try:
                 row = module.run_case(script, args, "codex", "codex-shell", root/"case")
@@ -149,7 +149,7 @@ class HostileMatrixTests(unittest.TestCase):
         saved = (module.native_units, module.stop_new_units, module.manager_properties)
         stopped = []
         module.native_units = lambda: {"sfl-alpha-before.service"}
-        module.stop_new_units = lambda before: stopped.append(before) or True
+        module.stop_new_units = lambda before, owned: stopped.append(before) or True
         module.manager_properties = lambda name: unit_props or {}
         try:
             row = module.run_case(script, args, "codex", "codex-shell", output)
@@ -206,7 +206,7 @@ class HostileMatrixTests(unittest.TestCase):
                               "time.sleep(120)\n")
             calls = []
             units = type("Units", (), {"native_units": staticmethod(lambda: {"sfl-alpha-before.service"}),
-                                       "stop_new_units": staticmethod(lambda before: calls.append(before) or True)})
+                                       "stop_new_units": staticmethod(lambda before, owned: calls.append(before) or True)})
             with (root/"log").open("xb") as log:
                 exit_code, timed_out, stopped = fake.run_fixture([sys.executable, str(script)], dict(os.environ), log, 15, units)
             self.assertEqual((exit_code, timed_out, stopped), (None, True, True))
@@ -242,13 +242,32 @@ class HostileMatrixTests(unittest.TestCase):
                 saved = (module.native_units, module.stop_new_units)
                 stopped = []
                 module.native_units = lambda: {"sfl-alpha-before.service"}
-                module.stop_new_units = lambda before: stopped.append(before) or True
+                module.stop_new_units = lambda before, owned: stopped.append(before) or True
                 try:
                     row = module.run_case(script, args, "codex", "codex-shell", output)
                 finally:
                     module.native_units, module.stop_new_units = saved
                 self.assertEqual((row["verdict"], row["abort"], row["unit_stopped_independently"]), ("fail", True, True), kind)
                 self.assertEqual(stopped, [{"sfl-alpha-before.service"}], kind)
+
+    def test_cleanup_kills_only_units_owned_by_the_case_state_root(self):
+        with tempfile.TemporaryDirectory(prefix="sfl-hostile-owned-") as directory:
+            anchor = Path(directory)
+            mine = anchor/"sfl-nvm-aaaa"
+            (mine/"launches"/"0123456789abcdef0123456789abcdef").mkdir(parents=True)
+            (anchor/"sfl-nvm-bbbb"/"launches").mkdir(parents=True)
+            owned = module.owned_units({mine})
+            self.assertEqual(owned, {"sfl-alpha-0123456789abcdef0123456789abcdef.service"})
+            killed = []
+            saved = (module.native_units, module.manager_properties, module.subprocess.run)
+            module.native_units = lambda: {"sfl-alpha-old.service", "sfl-alpha-foreign.service", *owned}
+            module.manager_properties = lambda name: {"MainPID": "0", "ActiveState": "inactive"}
+            module.subprocess.run = lambda command, **kwargs: killed.append(command[-1])
+            try:
+                self.assertTrue(module.stop_new_units({"sfl-alpha-old.service"}, owned))
+            finally:
+                module.native_units, module.manager_properties, module.subprocess.run = saved
+            self.assertEqual(killed, sorted(owned), "a foreign or pre-existing unit was signalled")
 
     def test_fake_runner_refuses_mixed_or_unnamed_hostile_selection(self):
         script = Path(__file__).with_name("native-vm-fake.py")

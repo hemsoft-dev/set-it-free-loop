@@ -38,6 +38,17 @@ func TestCapturedCodeModeProbeIsContainedAndMutationsAreNot(t *testing.T) {
 	}
 	// A present network or compute global is a capability even when sampled
 	// calls throw.
+	// A new global outside the measured set is an unreviewed capability.
+	for _, extra := range []string{"readFile", "connect"} {
+		changed := map[string]string{}
+		for k, v := range probe {
+			changed[k] = v
+		}
+		changed["globals"] = probe["globals"] + "," + extra
+		if probeContained(changed) {
+			t.Fatal("unrecognized code-host global accepted", extra)
+		}
+	}
 	for key, value := range map[string]string{"typeof:fetch": "function", "typeof:WebAssembly": "object", "typeof:SharedArrayBuffer": "function", "typeof:navigator": "object", "typeof:require": "function", "typeof:process": "object", "import:node:fs": "loaded:12", "fetch:http://10.0.0.1/": "status:200", "tool:shell": "function", "tools": "mcp__sfl_source__read,mcp__sfl_source__search,shell", "env": "PATH", "image:profile": "returned:undefined", "audio:file-url": "returned:undefined", "audio:lan-url": `returned:"x"`, "load:profile": `returned:"secret"`} {
 		changed := map[string]string{}
 		for k, v := range probe {

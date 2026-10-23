@@ -62,12 +62,12 @@ def runtime_spec(image, manifest):
             "BootstrapLibraries": captured["bootstrap_dependencies"]}
 
 
-def run_fixture(command, environment, log, timeout, units=None):
+def run_fixture(command, environment, log, timeout, units=None, state=None):
     """Run the fixture in its own process group. The native unit runs under the
-    user manager, outside that group, so a timeout also kills every native unit
-    started during the run and requires each inactive. Callers hold the shared
-    VM lock, so a new unit belongs to this run. Returns (exit code or None,
-    timed out, units stopped or None when there was no timeout)."""
+    user manager, outside that group, so a timeout also kills the native units
+    launched from this run's own state root and requires each inactive; no
+    other unit is touched. Returns (exit code or None, timed out, units
+    stopped or None when there was no timeout)."""
     units = units or sibling("native-vm-hostile")
     before = units.native_units()
     process = subprocess.Popen(command, env=environment, stdout=log, stderr=subprocess.STDOUT,
@@ -80,7 +80,7 @@ def run_fixture(command, environment, log, timeout, units=None):
         except ProcessLookupError:
             pass
         process.wait()
-        return None, True, units.stop_new_units(before)
+        return None, True, units.stop_new_units(before, units.owned_units([state]) if state else set())
 
 
 def main():
@@ -156,9 +156,12 @@ def main():
     # No inherited proxy, provider auth, profile paths or GitHub token.
     environment = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "SFL_NATIVE_VM_FAKE_ONLY": "1"}
     timeout = 425 if args.case == "self-critique" else 225 if args.case == "refresh" else 125 if args.case != "adversarial" else 2*(1+args.peer_rounds)*100+25
+    # Standalone runs hold the cross-process fixture lock themselves; the
+    # matrix runner passes its held lock down through the environment.
+    lock = sibling("native-vm-hostile").hold_fixture_lock()
     with (output/"runner.log").open("xb") as log:
         exit_code, timed_out, units_stopped = run_fixture([str(program), "--run-fake-only", str(configuration)],
-                                                          environment, log, timeout)
+                                                          environment, log, timeout, state=state)
     receipt = {**source, "image_source_commit": manifest["source_commit"], "state_directory": str(state),
                "program_sha256": common.digest(program), "exit_code": exit_code, "timed_out": timed_out,
                "elapsed_seconds": round(time.monotonic()-start, 3), "fake_only": True,
