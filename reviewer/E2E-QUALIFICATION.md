@@ -366,6 +366,23 @@ and `close-provider` if it reopens) judges its completed PRs together:
   `close-provider-reopen` process did not acquire the source, so it judges the
   final records only.
 
+`close-provider-recover` judges its end state with the same rules, with PR 1
+recovered instead of reviewed. The durable state holds exactly one job for
+each of PRs 1 and 2, no PR 1 intent, one PR 2 intent and no other write. PR 2
+must pass every rule above. PR 1's job must be the retained job itself (same
+ID, job, scope and request), `auth_failed` with no lease or outstanding
+attempt, still charged for its one interrupted session, with no artifact and
+no source access. It must record exactly one provider attempt, the leased
+one, whose evidence equals the interrupted launch's audit evidence by digest,
+and exactly one recovery receipt of that attempt, round, launch and evidence
+digest, with the auth retired. PR 1 received no POST and holds no remote
+review. The owner journal holds exactly two source records, PR 1's retained
+one and PR 2's, each bound to its own job's snapshot and the current release
+and source VM runtime hashes. The interrupted launch is still present with
+its receipt unchanged, still names PR 1's recorded attempt, and is the only
+launch besides PR 2's four. The only upstream exchanges are PR 2's
+acquisition.
+
 In `close-publish`, the confirmed intent must be the one the closed POST left
 `unknown` or `dispatched`, with the same ID, marker, body hash, job,
 checkpoint, request and snapshot. The JSON result records each write's
@@ -675,20 +692,25 @@ same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
    has no lease, no outstanding attempt, one consumed session, no artifact,
    no source attempt and one recovery receipt bound to the launch. A repeated
    call is refused. Codex auth is retired (unusable), and Claude auth is
-   untouched. PR 1 still retains only its admitted `opened` request.
-   Neither startup nor recovery has started a source or native unit, and the
-   interrupted launch is still the only one.
+   untouched. The durable state holds only that job and no write, the job
+   passes the recovered-job rule under [Evidence bindings](#evidence-bindings),
+   and PR 1 still retains only its admitted `opened` request. Neither startup
+   nor recovery has started a source or native unit, and the interrupted
+   launch is still the only one.
 5. The test re-provisions a synthetic Codex seed, standing in for the
    operator's separate auth repair, then calls `Refresh` and `Run`. Once
    PR 2 is admitted, recovery is refused with `ErrLiveBlocked`.
-6. The PR 2 `@sfl review` request is captured by one upload-pack wanting
-   exactly its head and the base. It runs four native sessions, each in one
+6. The PR 2 `@sfl review` request is captured by one advertisement and one
+   upload-pack wanting exactly its head and the base, the only upstream
+   exchanges of the process. It runs four native sessions, each in one
    completed launch with auth returned whose receipt names PR 2's recorded
    attempt for that session. The interrupted launch still names PR 1's
    recovered attempt, which no PR 2 artifact uses. It is published as one
    marked COMMENT with the inline comment at `source.go:1`, then confirmed.
-7. PR 1 stays `auth_failed` with no new job, write or POST. PR 2 has exactly
-   one review intent, and it is `confirmed`. PR 1 retains only its admitted
+7. The end state passes the `close-provider-recover` rules under
+   [Evidence bindings](#evidence-bindings). PR 1 stays `auth_failed` with no
+   new job, write or POST. PR 2 has exactly one review intent, and it is
+   `confirmed`, bound to its job and the remote review. PR 1 retains only its admitted
    `opened` request, PR 2 only the owner `comment` request admitted as its
    job's request, and no other PR any request. The only GitHub POSTs were two
    role token mints and one review POST for PR 2. The owner journal holds two
@@ -714,12 +736,13 @@ outside the reviewer, and the test only simulates it with a synthetic seed.
 Not yet measured. The current head, with operator recovery, version 2 audit
 receipts bound to attempt IDs and checked by the production provider-receipt
 validators, the attached-release check, the retained-launch rule, the source
-export binding and the exact request checks, has not run on a host. The
+export binding, the exact request checks and the round 7 evidence bindings
+applied to the recovered end state, has not run on a host. The
 [`0cd2152` run](#measured-at-0cd2152) predates operator recovery and the
-version 2 receipts and is not evidence for them. Every case, including `close-provider` followed by
-`close-provider-recover` in one lock hold, needs to be rerun from images,
-stub and test binary built from one clean commit, and the results recorded
-here.
+version 2 receipts and is not evidence for them. Every case, including
+`close-provider` followed by `close-provider-recover` in one lock hold, needs
+to be rerun from images, stub and test binary built from one clean commit,
+and the results recorded here.
 
 ### Pre-rebase history: recovery runs at `098261f`, `483b17a` and `34c9d96`
 
