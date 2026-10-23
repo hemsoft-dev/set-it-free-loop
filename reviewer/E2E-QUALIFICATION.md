@@ -56,6 +56,15 @@ ledger, and a restore probe.
    the epoch). It records every request by role and flags any credential that
    crosses the app, reader or publisher boundary, any write with a reader
    token, any Git read without the reader token and any unexpected destination.
+   Each role may use only the routes production's credential split gives it:
+   the App JWT qualifies the installation and mints tokens; each installation
+   token requalifies the installation, the bot user and the repository; then
+   only the reader polls, discovers and reads triggers and Git objects, and
+   only the publisher posts, scans, reads receipts and annotates. Any other
+   route is a violation and is refused, even on the role's own transport. At
+   the end, each case must have served exactly its own per-role route set:
+   every case the qualification and reader routes, a publishing case also the
+   review POST and its receipt read, and `close-publish` also the review scan.
 3. **Source acquisition.** The same server answers smart-HTTP
    `info/refs` and `git-upload-pack` with the installed Git producer over a
    synthetic bare upstream, through the reader installation credential that
@@ -153,7 +162,10 @@ lifecycle order below). Once
 retain exactly one request, the admitted automatic `opened` request its job
 came from, and no other PR may retain any request. In `isolation`, PR 1 must
 retain exactly its job's admitted `opened` request, PR 2 exactly its job's
-admitted owner `comment` request, and no other PR any request. A further
+admitted owner `comment` request, and no other PR any request. Each request's
+origin must carry the fake upstream's pull request ID, and a comment request
+the ID of the fake upstream's owner comment: both appear in the published
+trigger line. A further
 request could otherwise still be admitted after the reviews are confirmed and
 produce a duplicate review. After the provider close, PR 1 must retain
 exactly one request: the admitted automatic `opened` request of its job. At
@@ -172,7 +184,10 @@ original synthetic credential, judged by the hostile fixture's rule: the
 original synthetic access and refresh tokens, and for Codex the `chatgpt` auth
 mode. Corrupted, cross-provider or substituted auth is invalid, which is
 neither usable nor fenced. A store is fenced only when it refuses the refresh
-before yielding its state. A directory without a readable `unit.json`,
+with `ErrAuthRecoveryRequired` before yielding its state, as it does while an
+exported profile awaits recovery. Any other refusal (a malformed or unsafe
+state file, an invalid lock file or a filesystem error) leaves it
+unavailable, which is neither usable nor fenced. A directory without a readable `unit.json`,
 any other entry and an unreadable root each count as a failed launch, which
 no check accepts. The unit journal is read only through production's own
 reader (`readUnit`, exported to the test as `E2EReadNativeUnitJournal`): a
@@ -213,7 +228,8 @@ as `Access`, and the digest of the complete provider evidence as
 or impossible audit therefore proves nothing about the launch, and every
 native unit at the end must have a bound audit. In `isolation`, every session
 from the first onward must carry one of the two job IDs, and its PR and head
-must equal that job's snapshot. Each restore probe must report exactly its
+must be that job's PR and the fake upstream's head of it, as must each source
+attempt's head. Each restore probe must report exactly its
 five reads in order. Both own reads must return the fake upstream's exact
 bytes from both the materialized store and the model-facing reader, each
 judged by the SHA-256 of what it returned (`StoreHash`, `ReaderHash`), not
@@ -228,15 +244,25 @@ and `close-provider` if it reopens) judges its completed PRs together:
 - **Jobs and intents.** The durable state holds exactly one job and exactly
   one review intent for each reviewed PR, and no other job or write of any
   kind. A second job for a PR is refused, not resolved by picking the newest.
-- **Job.** The job is bound to the PR's scope, the fake upstream's head, base
-  and merge base, and the current release; its checkpoint is of that job and
+- **Job.** The job is exactly the one admission derives from the harness's
+  own inputs, restated rather than read back from the job: the ID of its
+  retained request, the owner as requester, the retained request's complete
+  origin, the configuration the harness opened the store with at its initial
+  version 1, the PR's scope, the fake upstream's head, base and merge base,
+  and the current release. Only its generation, which the intent must repeat,
+  and its packet, whose digest the staged export must carry, are the job's
+  own. Every later expectation (sessions, reports, launches, source records
+  and document) is derived from this expected job, so a job admitted with
+  another valid origin or configuration cannot shape its own expectation.
+  `close-provider`, `close-capture`'s recovery and the attached restart hold
+  their job to the same expected job. Its checkpoint is of the job and
   consumed exactly four sessions. It holds no lease, deadline, reservation or
   pending charge, its charge days are distinct dates, Codex then Claude were
   audited, and its last attempt is the Claude R2 artifact's attempt and
   session, requiring provider evidence.
 - **Artifacts.** The checkpoint holds exactly Codex R1, Claude R1, Codex R2
   and Claude R2, once each. Each artifact's job hash, report job ID, snapshot
-  hash and config hash are the job's, and no two artifacts share a session.
+  hash and config hash are the expected job's, and no two artifacts share a session.
   Each artifact's session is the one the job derives for its phase, as the
   engine does: `NewSession` under the job's protocol limits, an R2 session
   freezing the stored R1 reports.
@@ -290,7 +316,9 @@ and `close-provider` if it reopens) judges its completed PRs together:
   own ID; its body hash is its document's digest; and its document carries
   exactly one inline finding, at `source.go:1`.
 - **Document.** The intent's document is exactly the one production's
-  renderer builds from the canned reports, the harness's own expected ledger
+  renderer builds for the expected job (its trigger line from the retained
+  request's origin, its configuration and version from the harness) from the
+  canned reports, the harness's own expected ledger
   (each finding corroborated by its peer's R2 confirmation and linked to the
   other provider's exact duplicate) and the PR's trusted diff, with the
   intent's marker, in canonical comment order. Its inline comment and summary
@@ -298,7 +326,7 @@ and `close-provider` if it reopens) judges its completed PRs together:
   link to `source.go#L1` at the head. Intent and remote review agreeing with
   each other is therefore not enough; both must be the known output.
 - **Remote review.** The PR received exactly one POST and holds one COMMENT on
-  the head, whose ID is the intent's receipt ID, whose sole marker is the
+  the fake upstream's head, whose ID is the intent's receipt ID, whose sole marker is the
   intent's, and whose canonical document hash, computed as production computes
   a remote receipt (body plus inline comments in comment order), equals the
   intent's body hash. Its inline anchors are exactly `source.go:1`.
@@ -346,8 +374,9 @@ return, a
 finished run re-reads them: any violation, review POST, remote review, Git
 exchange, model session or backend request that the final judgment did not
 see is a failed check. Token mints and the API request tally are not
-compared, since a wedged handle keeps its credential owner until the process
-exits. Each
+compared after settling, since a wedged handle keeps its credential owner
+until the process exits; the final judgment holds the tally's per-role route
+set to the case's. Each
 run first removes an earlier `<case>.json` from `SFL_E2E_EVIDENCE`, and does
 not start if it cannot. It writes the nonsecret JSON result only after cleanup
 has closed every handle and removed (or deliberately retained) the root, so a
@@ -367,15 +396,15 @@ rule that refuses an extra entry.
 | `native-audit.json` | exact `persistAudit` encoding; production request validity, code host and native-result predicates, guest stages, failure kinds | version, binding, request, manifest, report and source hashes, provider evidence (digest), completion, stage, failure, auth exported and returned | code host hashes and sizes, native result hash, guest stage and boot diagnostics beyond production's predicates (guest-internal, not derivable on the host) | one per launch |
 | Provider evidence (audit, artifact, attempt) | production stopped and completed receipt checks; stored-artifact evidence check | policy (release), session, inference and metadata counts (backend), digest across audit, artifact and attempt | byte, forwarded, response, negotiation and refresh counters within production's bounds (transport timing) | one per attempt |
 | Source receipts (artifact, attempt) | production `SourceAccess.validate` for the derived session | version, session, tool calls, every read (fixture bytes at head), no exhaustion or omission, digest across artifact, attempt and audit | reader calls and bytes within production's bounds (search reads every allowlisted path) | one per artifact attempt; at most one for an interrupted attempt |
-| Durable job | none in production's loader | job, scope, request, state, checkpoint hash and count, lease, deadline, reservation, pending charge, charge days (distinct dates), audited providers, last attempt (ID, provider, round, session, evidence requirement) | creation time and charge-day values (wall clock) | one per expected PR, no other job |
-| Artifacts | engine session derivation; stored-artifact evidence check | job hash, session (derived), report (canned), coverage (none), validation reads (one), source receipt, provider evidence, evidence requirement | report usage (provider accounting, never published) | exactly Codex R1, Claude R1, Codex R2, Claude R2 |
+| Durable job | none in production's loader | the whole job against the expected job (ID, requester, complete origin of the retained request, configuration and version 1 from the harness, fake upstream snapshot, current release), scope, request, state, checkpoint hash and count, lease, deadline, reservation, pending charge, charge days (distinct dates), audited providers, last attempt (ID, provider, round, session, evidence requirement) | generation (production's per-PR counter; the intent repeats it), packet (capture output; the staged export binds its digest), creation time and charge-day values (wall clock) | one per expected PR, no other job |
+| Artifacts | engine session derivation; stored-artifact evidence check | job hash, session and report (derived from the expected job; report canned), coverage (none), validation reads (one), source receipt, provider evidence, evidence requirement | report usage (provider accounting, never published) | exactly Codex R1, Claude R1, Codex R2, Claude R2 |
 | Provider and source attempts | production receipt checks | ID (an artifact's or the interrupted launch's), evidence and receipt by digest | none | the artifacts' attempts plus the allowed interrupted one |
-| Write intents | none | ID, kind, scope, request, generation, job and checkpoint hashes, snapshot, document (canned render), body hash, marker, state, receipt ID | creation and receipt times (wall clock) | one review intent per PR, no other write |
-| Native requests | none | PR, ID, origin actor, kind and role, admitted, removed | requester, bot, snapshot, creation time and the origin's policy, pull, comment, body hash and event times (trigger provenance production checks at admission) | the expected request per PR, none elsewhere |
+| Write intents | none | ID, kind, scope, request, generation, job and checkpoint hashes, snapshot, document (canned render for the expected job), body hash, marker, state, receipt ID | creation and receipt times (wall clock) | one review intent per PR, no other write |
+| Native requests | none | PR, ID, origin actor, kind, role, pull ID and comment ID (fake upstream), admitted, removed; the complete origin equals the admitted job's | requester, bot, snapshot, creation time and the origin's policy, sequence, body hash and event times (trigger provenance production checks at admission) | the expected request per PR, none elsewhere |
 | Source owner records | production strict canonical journal reader | attempt, unit, invocation, request and source request hashes, stub, release, runtime, snapshot, lifecycle flags, grant, empty `StopBoot`, boot ID | channel ID and generation (per-attempt nonces, distinct per job in `isolation`); manager owner, start job, birth, process and cgroup (host-assigned; production checks their consistency) | one per expected job |
 | Archive exports | production archive journal reader | attempt, state (`staged`), request hash, release, runtime, snapshot, packet hash (job packet) | wire hash and size (restore verifies them against the payload) | one per source record |
 | Released private copy | production store reread | the whole job: only state, lease, deadline, reservation and pending charge differ | none | one job, no write |
-| Fake GitHub, model and Git observations | harness-owned | POSTs, reviews (marker, canonical document hash, inline), Git exchanges (operation, wants, status, journal sample), session checks and backend counts | token mints and API tallies after settling (a wedged handle keeps its owner) | settled observations equal the judged ones |
+| Fake GitHub, model and Git observations | harness-owned | POSTs, reviews (marker, canonical document hash, inline), Git exchanges (operation, wants, status, journal sample), session checks and backend counts, every API route against its role's production capability | token mints, API request counts, and API tallies after settling (a wedged handle keeps its owner) | per-role route set equals the case's; settled observations equal the judged ones |
 
 ## Admission rule
 
@@ -427,10 +456,15 @@ a time and only with at least 2.5 GB of memory available, from source and
 native images, a source stub and a `reviewer.test` all built from `89382c7`,
 which is this branch on `main` with #249, #252, #253 and #254. Both binaries
 carried `vcs.revision=89382c7…` and `vcs.modified=false`, and the release hash
-was `493f5c23a2e0`. Every case passed with no failures under the checks above,
-including every durable record read through production's own readers and
-validators and held to the exact sets in the record inventory. No unit or E2E
-root remained afterwards. Only this document changed after `89382c7`.
+was `493f5c23a2e0`. Every case passed with no failures under the checks of
+`89382c7`, including every durable record read through production's own
+readers and validators and held to the exact sets in the record inventory. No
+unit or E2E root remained afterwards. The checks were tightened afterwards in
+`c660ce3` (review round 11: the expected job, the auth fence classification
+and the per-role GitHub routes), and the cases are re-measured at the new
+head; the table below records `89382c7` only. Every passing recorded run,
+`89382c7`'s included, served exactly its case's per-role route set and no
+route outside its role's capability.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
