@@ -449,38 +449,35 @@ For `close-provider`, run `close-provider-reopen` next in a new process with
 the same lock hold. State lives under a fresh `/tmp/sfl-e2e-<nonce>` root,
 which a passing run removes. `SFL_E2E_KEEP_FAILED=1` retains a failed root.
 
-## Measured at `89382c7`
+## Measured at `13251e3`
 
 On October 23, 2026, each case ran on mini under the shared VM lock, one VM at
 a time and only with at least 2.5 GB of memory available, from source and
-native images, a source stub and a `reviewer.test` all built from `89382c7`,
+native images, a source stub and a `reviewer.test` all built from `13251e3`,
 which is this branch on `main` with #249, #252, #253 and #254. Both binaries
-carried `vcs.revision=89382c7…` and `vcs.modified=false`, and the release hash
-was `493f5c23a2e0`. Every case passed with no failures under the checks of
-`89382c7`, including every durable record read through production's own
-readers and validators and held to the exact sets in the record inventory. No
-unit or E2E root remained afterwards. The checks were tightened afterwards in
-`c660ce3` (review round 11: the expected job, the auth fence classification
-and the per-role GitHub routes), and the cases are re-measured at the new
-head; the table below records `89382c7` only. Every passing recorded run,
-`89382c7`'s included, served exactly its case's per-role route set and no
-route outside its role's capability.
+carried `vcs.revision=13251e3…` and `vcs.modified=false`, and the release hash
+was `13e1372d6849`. Every case passed with no failures under the checks above,
+including every durable record judged through production's readers and the
+record inventory, each job held to the job expected from harness inputs, and
+each GitHub credential role held to its endpoint allowlist and exact route
+set. No unit or E2E root remained afterwards. Only this document changed after
+`13251e3`.
 
 | Case | Passed | Seconds | Checks | Source / native units |
 | --- | --- | --- | --- | --- |
-| `review` | yes | 23.6 | 48 | 1 / 4 |
-| `close-publish` | yes | 23.6 | 55 | 1 / 4 |
-| `close-provider` | yes | 12.2 | 31 | 1 / 1 |
-| `close-provider-reopen` | yes | 38.6 | 28 | 0 / 0 |
-| `close-capture` | yes | 22.4 | 60 | 1 / 4 |
-| `isolation` | yes | 42.7 | 84 | 2 / 8 |
+| `review` | yes | 26.6 | 52 | 1 / 4 |
+| `close-publish` | yes | 24.4 | 59 | 1 / 4 |
+| `close-provider` | yes | 12.5 | 33 | 1 / 1 |
+| `close-provider-reopen` | yes | 38.6 | 29 | 0 / 0 |
+| `close-capture` | yes | 25.4 | 64 | 1 / 4 |
+| `isolation` | yes | 43.2 | 91 | 2 / 8 |
 
-Earlier runs at `c29e563`, `3bbf701`, `e144bc5`, `0cd2152`, `b876290` and
-`daac99c`, before the later checks, also passed every case. `close-provider`
-took the branch where `Close` reports `ErrWorkerStopPending`; the branch where
-it proves completion has not run on a host. The sections below are pre-rebase
-history only: the commits they name are not ancestors of this branch, and their
-checks predate the attestation and binding rules above.
+Earlier runs at `c29e563`, `3bbf701`, `e144bc5`, `0cd2152`, `b876290`,
+`daac99c` and `89382c7`, before the later checks, also passed every case.
+`close-provider` took the branch where `Close` reports `ErrWorkerStopPending`;
+the branch where it proves completion has not run on a host. The sections below
+are pre-rebase history only: the commits they name are not ancestors of this
+branch, and their checks predate the attestation and binding rules above.
 
 ## Pre-rebase history: measured results at `3140f0a`
 
