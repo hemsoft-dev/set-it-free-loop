@@ -374,7 +374,7 @@ func TestPollingRecordsProductionFactoryRefusal(t *testing.T) {
 					t.Fatal("production refusal blocked admission or backed off", pr.Requests, d.Polling)
 				}
 				statuses := statusWrites(t, f)
-				if captures.Load() != 1 || calls.Load() != 0 || len(statuses) != 1 || statuses[0].Status != "capture_refused" || !strings.Contains(statuses[0].Document.Summary, captureRefusalCauses[c.reason]) {
+				if captures.Load() != 1 || calls.Load() != 0 || len(statuses) != 1 || statuses[0].Status != "capture_refused" || captureRefusalCause(c.reason) == "" || !strings.Contains(statuses[0].Document.Summary, captureRefusalCause(c.reason)) {
 					t.Fatal("production refusal not published once", captures.Load(), calls.Load(), len(statuses))
 				}
 				retired()

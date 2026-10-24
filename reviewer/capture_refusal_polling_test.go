@@ -22,6 +22,18 @@ var captureRefusalCauses = map[string]string{
 	"inventory_limit":   "INCOMPLETE: this snapshot changes more than 128 files, over the capture inventory limit, so its changes could not be captured.",
 }
 
+// historyLimitCause is the leading status words of history_limit, which only
+// acquisition quarantine verification answers, never in-process capture.
+const historyLimitCause = "INCOMPLETE: the fetched history of this snapshot is over an object, commit or byte limit of the acquisition quarantine, so its changes could not be captured."
+
+// captureRefusalCause returns the leading status words of any known reason.
+func captureRefusalCause(reason string) string {
+	if reason == "history_limit" {
+		return historyLimitCause
+	}
+	return captureRefusalCauses[reason]
+}
+
 // refusedSnapshot returns a snapshot of git whose capture the trusted object
 // store refuses for reason. Every case is real Git history, not a fake error.
 func refusedSnapshot(t *testing.T, git snapshotGitFixture, reason string) Snapshot {

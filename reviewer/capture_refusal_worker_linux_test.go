@@ -24,6 +24,7 @@ var workerRefusalCases = []struct{ name, reason string }{
 	{"criss-cross merge base", CaptureAmbiguousHistory},
 	{"differing merge base", CaptureAmbiguousHistory},
 	{"inventory over limit", CaptureInventoryLimit},
+	{"history over commit bound", CaptureHistoryLimit},
 }
 
 // refusedWorkerFixture moves the synthetic repository's HEAD and snapshot to a
@@ -55,6 +56,9 @@ func refusedWorkerFixture(t *testing.T, name string) snapshotGitFixture {
 		f.run(t, "add", "--all")
 		f.run(t, "commit", "--quiet", "-m", "too many paths")
 		s.Head = f.run(t, "rev-parse", "HEAD")
+	case "history over commit bound":
+		// More commits than the default quarantine commit bound.
+		return historyLimitFixture(t, "commits over bound")
 	default:
 		t.Fatal("unknown refusal case", name)
 	}
@@ -115,11 +119,11 @@ func TestGitQuarantineClassifiesDefiniteHistoryRefusals(t *testing.T) {
 			if _, err := verifyGitQuarantine(cancelled, store, snapshot, DefaultGitAcquisitionBounds()); !errors.Is(err, ErrGitQuarantine) {
 				t.Fatal("cancelled verification reported", err)
 			}
-			// A bound overrun still refuses as an opaque quarantine failure.
+			// A bound overrun is answered before any history question.
 			bounds := DefaultGitAcquisitionBounds()
 			bounds.Objects = 1
-			if _, err := verifyGitQuarantine(context.Background(), store, snapshot, bounds); !errors.Is(err, ErrGitQuarantine) {
-				t.Fatal("bounded verification reported", err)
+			if _, err := verifyGitQuarantine(context.Background(), store, snapshot, bounds); err != (CaptureRefusal{CaptureHistoryLimit}) {
+				t.Fatal("bounded verification not refused as history_limit", err)
 			}
 		})
 	}
