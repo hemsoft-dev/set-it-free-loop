@@ -32,6 +32,12 @@ killed or cancelled process and every transport, access or VM failure remain
 plain errors. The [polling controller](POLLING.md#capture-refusals) records a
 refusal as a terminal job and keeps the deferred backoff for everything else.
 
+In production these answers come from inside the acquisition boundary. The
+worker runs this capture on its fetched quarantine, whose
+[verification](GIT-QUARANTINE.md) classifies the merge-base answers the same
+way, and exports a [refusal record](GIT-MATERIALIZATION.md#capture-refusal-record)
+instead of source.
+
 Git produces the NUL-delimited raw inventory with full object IDs and renames
 disabled. A rename appears as deletion and addition. Modes, status, object IDs,
 paths and cardinality are validated. Unsafe paths or incomplete inventories

@@ -116,9 +116,34 @@ during the capture, the refusal is fenced and nothing is recorded.
 
 A transient capture failure keeps the deferred backoff and the same request is
 captured again once it ends. So do a wrapped or joined refusal and a refusal
-with an unknown reason. The production source factories report every capture
-failure as their own opaque error, so a refusal inside the acquisition worker
-is still deferred there until that worker protocol carries the typed reason.
+with an unknown reason.
+
+Both production source factories carry the refusal out of the acquisition
+boundary. The host acquisition unit's worker and the source VM guest classify
+Git's definite answers about the history they fetched
+([quarantine verification](GIT-QUARANTINE.md), [capture](SNAPSHOT-EVIDENCE.md#permanent-refusals))
+and export a [refusal record](GIT-MATERIALIZATION.md#capture-refusal-record)
+bound to the attempt instead of source. The host accepts only the exact
+canonical record for its own attempt with a known reason and no data, and the
+VM run also requires the guest's finished record to measure it. The factory
+returns the bare `CaptureRefusal` only after the attempt's proved stop,
+generation release and the same retirement as a failed capture
+([host](GIT-FACTORY.md#worker-capture-refusals),
+[source VM](GIT-VM-SOURCE.md#source-vm-factory-and-archive-retirement-implemented)).
+A malformed or foreign record, an unknown stop, cancellation and every other
+failure remain the factory's opaque error and keep the backoff.
+
+The reason comes from the confined worker, which parses the PR's untrusted
+objects, so a compromised worker could report a refusal it never observed.
+That is bounded. The record names one of three fixed reasons and binds one
+attempt of one snapshot. At worst it ends that request with an INCOMPLETE
+status that names the reason on the PR, visible to the owner. It cannot admit
+source, mark a review clean, or touch another PR, a new head or a fresh
+request, which is captured again by a new attempt. A worker that fails its
+capture already denies review of that snapshot. The PR author can also cause
+each reason honestly with unrelated or criss-cross history or more than 128
+changed files. The record therefore grants no power beyond what the worker
+and the author already had.
 
 Candidate enumeration uses the [documented open default for GitHub's PR list](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests),
 with strict same-collection pagination and explicit repository-ID validation.

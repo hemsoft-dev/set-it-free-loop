@@ -62,7 +62,10 @@ journal, original pidfds and unit-stop recovery retain ownership across crashes;
 the workspace marker is an additional local rejection, not a crash-proof
 replacement for that journal.
 
-Only bounded plain [materialization data](GIT-UNIT.md) crosses the export pipe.
+Only bounded plain [materialization data](GIT-UNIT.md), or instead a
+[capture refusal record](GIT-MATERIALIZATION.md#capture-refusal-record),
+crosses the export pipe. A refusal is a complete export, after which the
+worker exits normally.
 The worker does not return a host Git directory or publish an ObjectStore. The
 supervisor must authenticate the producer and binding, revoke and join the
 broker, prove whole-unit termination, and retain the stopped archive authority

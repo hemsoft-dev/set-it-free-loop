@@ -47,6 +47,11 @@ must decide how to resolve an incomplete attempt; no force-delete/retry API is
 provided here. The archive can reopen a different complete staged record, but
 only the real factory can decide whether global recovery permits its use.
 
+An exact [refusal record](GIT-MATERIALIZATION.md#capture-refusal-record) is
+received the same way. Its attempt stays `receiving` and `stage` returns the
+bare refusal instead of source, so the factory discards it after proved stop
+like any failed intake and it can never reopen.
+
 ## Reopen and lifetime
 
 `reopen` checks the exact trusted binding, canonical staged record and owned

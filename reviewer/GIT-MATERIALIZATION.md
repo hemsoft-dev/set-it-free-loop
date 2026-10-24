@@ -44,6 +44,33 @@ memfd with mode 0400 and a non-executable seal. The maximum retained raw data is
 32 MiB and descriptor count is 384; these host costs also need factory admission
 and concurrency accounting.
 
+## Capture refusal record
+
+A worker whose [quarantine verification](GIT-QUARANTINE.md) or capture reaches
+a [permanent refusal](SNAPSHOT-EVIDENCE.md#permanent-refusals) exports a
+refusal record instead of a materialization, before any materialization byte.
+The record is the fixed `SFL-GIT-CAPTURE-REFUSAL-1\n` marker, which has the
+materialization marker's length, then a big-endian length and the canonical
+JSON `{"Version":1,"Binding":…,"Reason":…}` of at most 4 KiB, then EOF. The
+worker writes it only for a bare, uncancelled refusal with a known reason; any
+other failure exports nothing.
+
+The receiver reads the same fixed prefix and accepts the record only if:
+
+- It decodes strictly and re-encodes byte for byte, so no unknown, duplicate,
+  missing, escaped or reordered field and no second value is accepted.
+- Its version is 1 and its binding equals the receiver's exact attempt,
+  release, runtime and snapshot binding.
+- Its reason is `missing_history`, `ambiguous_history` or `inventory_limit`.
+- Exact EOF follows before cancellation.
+
+It then returns the bare `CaptureRefusal` and no materialization. The record
+has no manifest, packet or blob field, so a reason never arrives with source
+data. Trailing bytes, a manifest after the refusal marker, a refusal after the
+materialization marker and every other shape are opaque materialization
+errors. Tests cover each refusal through an actual fetch, verification and
+export, and each malformed shape.
+
 Later reads use those retained descriptors and recheck seals, mode, length,
 SHA-256 and Git blob identity. They use no Git subprocess, zlib, pack/index,
 commit or tree parser. The bounded Go packet/hunk validator reproduces included

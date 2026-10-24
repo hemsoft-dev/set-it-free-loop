@@ -52,6 +52,14 @@ not authenticate a guest or prove shutdown, broker drain or source eligibility.
 Neither the existing host receiver nor provider result decoder accepts this
 source envelope. No existing host journal or release changes mechanism.
 
+When acquisition reaches a permanent refusal, the guest worker writes
+`writeGitVMRefusal` instead: the same request-bound header followed by the
+host [refusal record](GIT-MATERIALIZATION.md#capture-refusal-record), then a
+normal exit so the guest root still reports a finished record. A refusal from
+capture after verification produces the same bytes through `writeGitVMExport`.
+`receiveGitVMExport` returns the bare `CaptureRefusal` only for the exact record
+after a valid header for this request.
+
 Tests use the actual installed Git producer against small synthetic SHA-1 and
 SHA-256 repositories, then read sealed exported blobs. They reject request,
 release, snapshot, purpose and pin mismatches, provider-shaped records, bare host
@@ -194,7 +202,9 @@ a check that requires the exact binding, an unrevoked run and the owner's live
 original-instance recheck before each upstream exchange and after each body
 closes. The export is staged through the source archive while the host measures
 the actual wire bytes; the guest's finished record must match that byte count
-and hash. `stop` revokes, closes the channels, joins acquisition and the read
+and hash. A refusal record is staged the same way, stays `receiving`, and is
+returned only after that finished record matches; an unmeasured refusal is the
+`guest-finished` failure. `stop` revokes, closes the channels, joins acquisition and the read
 server, then requires the owner's original-instance stop. `close` removes the
 runtime root and listener only after that stop. Each refusal records a fixed,
 non-secret stage name.
@@ -253,9 +263,14 @@ fences the factory. `Restore` revalidates the owner's durable stop receipt
 boot change) before reopening retained bytes, with no fetch or fallback.
 If a completed acquisition's evidence cannot be built, its records are
 retired at once under an uncancelled bound, or the factory is fenced for
-recovery. `PruneSource` retires attempts no longer referenced by pending
-captures, active jobs or controller jobs: archive bytes first, then the owner
-record. Archive retirement is idempotent once complete, so an interrupted
+recovery. A guest refusal takes the failed-capture path: after the run's
+proved stop and generation release, the intake and owner record are retired
+and the run directory removed, so nothing of the attempt remains in either
+journal. Only then does `Capture` return the bare refusal to the
+[poll worker](POLLING.md#capture-refusals); a failed retirement fences the
+factory and stays opaque. `PruneSource` retires attempts no longer referenced
+by pending captures, active jobs or controller jobs: archive bytes first, then
+the owner record. Archive retirement is idempotent once complete, so an interrupted
 prune finishes on retry; any failed step fences the factory until recovery.
 
 [Archive retirement](git_vm_archive_retire_linux.go) marks a record
