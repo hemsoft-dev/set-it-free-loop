@@ -143,7 +143,7 @@ func renderOutcome(out Outcome, diffLines map[string]map[int]bool) (Document, er
 	}
 	b.WriteString("\n</details>\n\n")
 	if !complete {
-		fmt.Fprintf(&b, "%s No substantive partial findings are published. Completed phases: %d of %d.\n", safeText(statusCause(out.Job, out.State)), len(out.Artifacts), out.Job.Config.MaxSessions())
+		fmt.Fprintf(&b, "%s No substantive partial findings are published. Completed phases: %d of %d.\n", safeText(statusBudgetCause(out.Job, out.State, out.ConsumedSessions, out.Artifacts)), len(out.Artifacts), out.Job.Config.MaxSessions())
 		doc.Summary = b.String()
 		return doc, nil
 	}
@@ -287,6 +287,25 @@ func statusCause(job Job, state string) string {
 		return "SUPERSEDED: a newer review request or head replaced this job before it completed. This status does not describe or fulfill the newer request."
 	}
 	return "INCOMPLETE: " + state + "."
+}
+
+// statusBudgetCause is statusCause, except that a job whose remaining session
+// budget can no longer finish its schedule says so: it cannot resume, and an
+// expired job names the charged sessions that produced no result.
+func statusBudgetCause(job Job, state string, consumed int, artifacts []Artifact) string {
+	if sessionBudgetFits(job, Checkpoint{ConsumedSessions: consumed, Artifacts: artifacts}) {
+		return statusCause(job, state)
+	}
+	short := fmt.Sprintf("%d of its %d captured sessions are charged, %d of them without a result, so the remaining sessions cannot complete every required phase.", consumed, job.Config.MaxSessions(), consumed-len(artifacts))
+	switch state {
+	case "incomplete_expired":
+		return "INCOMPLETE: the captured session budget is exhausted. " + short + " It ended without a review and starts no further session."
+	case "auth_failed":
+		return "INCOMPLETE: provider authentication is unavailable. " + short + " This job cannot be resumed and ended without a review."
+	case "provider_unavailable":
+		return "INCOMPLETE: a selected provider is unavailable. " + short + " This job cannot be resumed and ended without a review."
+	}
+	return statusCause(job, state)
 }
 
 // Exact duplicate allegations share one conservative status and all history.

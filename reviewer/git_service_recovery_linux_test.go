@@ -251,9 +251,13 @@ func TestProviderRecoveryRetiresLostAuthAndReleasesChargedLease(t *testing.T) {
 	if _, err := f.auth.LeaseProfile(ctx, authTestBinding()); err == nil {
 		t.Fatal("retired auth could still be leased")
 	}
-	// Only an explicit resume can requeue the charged job; nothing reviewed it.
-	if err = f.store.ResumeUnavailable(ctx, f.job.ID, controlTime.Add(5*time.Minute)); err != nil {
-		t.Fatal("documented resume path refused the recovered job", err)
+	// The charged session produced no result, so the remaining budget cannot
+	// finish the schedule: even an explicit resume refuses to requeue it.
+	if err = f.store.ResumeUnavailable(ctx, f.job.ID, controlTime.Add(5*time.Minute)); !errors.Is(err, ErrSessionBudgetExhausted) {
+		t.Fatal("an unfinishable recovered job was requeued", err)
+	}
+	if d, _ = f.store.Snapshot(ctx); d.Jobs[f.job.ID].State != "auth_failed" {
+		t.Fatal("refused resume changed the recovered job", d.Jobs[f.job.ID].State)
 	}
 	if _, err = f.service.RecoverStoppedProvider(ctx, f.request()); !errors.Is(err, ErrFenced) {
 		t.Fatal("repeated recovery was accepted", err)

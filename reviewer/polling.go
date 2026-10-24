@@ -68,6 +68,7 @@ type pollWork struct {
 	job                      string
 	snapshot                 Snapshot
 	cancel                   context.CancelFunc
+	drain                    *shutdownDrain
 	done                     chan struct{}
 	err                      error
 	qualificationInterrupted bool
@@ -88,6 +89,8 @@ type PollingController struct {
 	closed     bool
 	active     *pollWork
 	pollCancel context.CancelFunc
+	// after is a private fake-clock seam for the shutdown grace timer.
+	after func(time.Duration) <-chan time.Time
 }
 
 func OpenPollingController(ctx context.Context, o PollOptions) (*PollingController, error) {
@@ -122,7 +125,7 @@ func OpenPollingController(ctx context.Context, o PollOptions) (*PollingControll
 	o.Publisher.Now = o.Now
 	tick := make(chan struct{}, 1)
 	tick <- struct{}{}
-	return &PollingController{options: o, owner: owner, tick: tick, observing: make(chan struct{}, 1)}, nil
+	return &PollingController{options: o, owner: owner, tick: tick, observing: make(chan struct{}, 1), after: time.After}, nil
 }
 
 func (c *PollingController) now() time.Time {
@@ -532,6 +535,17 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound 
 
 func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 	defer close(w.done)
+	// A retained job that can no longer finish its schedule ends incomplete
+	// before restoration, a runtime or a claim. A failed qualification instead
+	// takes the ordinary path below.
+	if w.job != "" && c.options.Check(ctx, c.options.Enrollment, c.options.Release) == nil {
+		if expired, err := c.options.Store.expireUnfinishable(ctx, w.job); err != nil || expired {
+			c.mu.Lock()
+			w.err = err
+			c.mu.Unlock()
+			return
+		}
+	}
 	bound, job, err := c.beforeWork(ctx, w)
 	refused := err == errCaptureRefused
 	if refused {
@@ -874,18 +888,20 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 	w := c.selectWork(d, remote)
 	if w != nil {
 		worker, cancel := context.WithCancel(context.Background())
-		w.cancel = cancel
+		w.cancel, w.drain = cancel, newShutdownDrain()
 		c.active = w
 		result.Active = true
 		result.RecoveryRequired = false
-		go c.runWork(worker, w)
+		go c.runWork(withShutdownDrain(worker, w.drain), w)
 	}
 	return result, nil
 }
 
 func (c *PollingController) Run(ctx context.Context) (result error) {
 	defer func() {
-		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		// Close may first spend the provider shutdown grace, then keeps the
+		// earlier ten seconds for the cancelled worker's stop.
+		cleanup, cancel := context.WithTimeout(context.Background(), providerShutdownGrace+10*time.Second)
 		defer cancel()
 		result = errors.Join(result, c.Close(cleanup))
 	}()
@@ -923,6 +939,11 @@ func (c *PollingController) Run(ctx context.Context) (result error) {
 // Close cancels/drains the active invocation before releasing controller
 // ownership. An uncertain physical worker keeps its durable lease for explicit
 // supervisor recovery. A Close timeout keeps the owner lock held for a retry.
+//
+// Close first signals the invocation's shutdown drain. Only when a provider
+// session already holds exported auth does the first Close wait, at most
+// providerShutdownGrace or its own deadline, for the invocation to end before
+// cancelling it. Every other phase is cancelled at once, as before.
 func (c *PollingController) Close(ctx context.Context) error {
 	c.mu.Lock()
 	c.closed = true
@@ -930,11 +951,16 @@ func (c *PollingController) Close(ctx context.Context) error {
 		c.pollCancel()
 	}
 	active := c.active
-	if active != nil {
-		active.cancel()
-	}
 	c.mu.Unlock()
 	if active != nil {
+		if active.drain != nil && active.drain.begin() {
+			select {
+			case <-active.done:
+			case <-c.after(providerShutdownGrace):
+			case <-ctx.Done():
+			}
+		}
+		active.cancel()
 		select {
 		case <-active.done:
 		case <-ctx.Done():

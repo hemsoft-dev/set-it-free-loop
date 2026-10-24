@@ -55,7 +55,7 @@ func TestPollingPublishesOneStatusForEachNonCompleteOutcome(t *testing.T) {
 		"auth_failed":          "INCOMPLETE: provider authentication is unavailable.",
 		"provider_unavailable": "INCOMPLETE: a selected provider is unavailable.",
 		"invalid_output":       "INCOMPLETE: a provider returned output that failed validation.",
-		"incomplete_expired":   "INCOMPLETE: this job expired before every required phase completed.",
+		"incomplete_expired":   "INCOMPLETE: the captured session budget is exhausted. 2 of its 4 captured sessions are charged, 1 of them without a result",
 	} {
 		t.Run(state, func(t *testing.T) {
 			c, f, _ := pollControllerFixture(t, func(_ context.Context, s Session) (Report, error) {

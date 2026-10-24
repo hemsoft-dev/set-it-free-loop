@@ -368,12 +368,13 @@ func E2ECompletedDocument(job Job, reports []Report, ledger []Entry, diff map[st
 // E2EStatusDocument renders the canonical status document production
 // publishes for job in non-complete state after completed validated phases:
 // production's renderer, the intent's marker appended as newIntent appends
-// it, with no inline comment. It reads no durable state.
-func E2EStatusDocument(job Job, state string, completed int, marker string) (Document, error) {
-	if !statusStates[state] || completed < 0 {
+// it, with no inline comment. consumed is the job's charged sessions, which
+// name a budget that can no longer finish. It reads no durable state.
+func E2EStatusDocument(job Job, state string, completed, consumed int, marker string) (Document, error) {
+	if !statusStates[state] || completed < 0 || consumed < completed {
 		return Document{}, ErrIgnored
 	}
-	doc, err := renderOutcome(Outcome{Job: job, State: state, Artifacts: make([]Artifact, completed)}, nil)
+	doc, err := renderOutcome(Outcome{Job: job, State: state, Artifacts: make([]Artifact, completed), ConsumedSessions: consumed}, nil)
 	if err != nil {
 		return Document{}, err
 	}

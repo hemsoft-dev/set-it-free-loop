@@ -179,9 +179,14 @@ func TestFailedSessionsCannotExceedBudgetAcrossResume(t *testing.T) {
 		t.Fatal("uncertain session was refunded")
 	}
 	fail = false
+	// The charged failure leaves two sessions for three phases: the resume
+	// starts none and ends incomplete at once.
+	calls := 0
+	e.Reviewers[Codex] = reviewFunc(func(_ context.Context, s Session) (Report, error) { calls++; return protocolReport(s), nil })
+	e.Reviewers[Claude] = e.Reviewers[Codex]
 	next, err := e.Run(context.Background(), testJob(), out.Checkpoint())
-	if err == nil || next.State != "incomplete_expired" || next.ConsumedSessions != 4 {
-		t.Fatal("session ceiling bypassed", err)
+	if !errors.Is(err, ErrSessionBudgetExhausted) || next.State != "incomplete_expired" || next.ConsumedSessions != 2 || next.ExecutedSessions != 0 || calls != 0 {
+		t.Fatal("an unfinishable resume spent sessions", next.State, next.ConsumedSessions, next.ExecutedSessions, calls, err)
 	}
 }
 

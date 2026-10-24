@@ -128,14 +128,61 @@ Operators must retain and investigate such artifacts; automatic crash-artifact
 collection is not implemented. This bound and retained artifacts belong in the
 full host disk/resource qualification.
 
+## Shutdown grace
+
+`Close` gives an in-flight native provider session a bounded chance to return
+its auth before the session is cancelled
+([#264](https://github.com/hemsoft-dev/set-it-free-loop/issues/264)).
+The controller's active invocation carries a private shutdown drain. A native launch holds it
+immediately before exporting auth, and no launch exports once the drain has
+begun. When `Close` begins the drain:
+
+- Without a held export, `Close` cancels at once, exactly as before. This
+  covers capture, admission, restoration, the host check, boot before export,
+  publication and work outside a controller invocation.
+- With a held export, the launch closes its provider intake: the private
+  provider stream and any in-flight request close. The guest's client proxy
+  already stops its owned CLI when a private exchange fails, so the client
+  ends, and guest PID1 stops its roles and returns auth and the source audit
+  in its ordinary result record. The first `Close` waits for the invocation
+  to end for at most `providerShutdownGrace` (ten seconds) or its own earlier
+  deadline, then cancels as before. The grace is granted once; a retried
+  `Close` cancels at once. The session's own deadline is never extended.
+
+The stop proof and the auth rules do not change. The host still reads the
+result record only under the session deadline and the later cancellation,
+proves whole-unit stop before any auth step, and commits auth only through the
+durable stopped return. A refresh-uncertain return is still fenced. A session
+that fails after the drain reports `cancelled`, so the stopped job is requeued
+with its artifacts and consumed budget; a latched route or response refusal,
+or exhaustion, keeps its own classification. A session that completes within
+the grace keeps its artifact, and the engine starts no further phase. A
+requeued job whose interrupted session left no artifact can no longer finish
+its schedule, so the next controller ends it `incomplete_expired` without
+another session and publishes one INCOMPLETE status naming the exhausted
+budget ([CONTROLLER.md](CONTROLLER.md)).
+
+The ten seconds cover the guest's bounded cleanup after its client ends (at
+most twelve seconds, normally well under one) and its result record. If the
+grace expires, cancellation interrupts the result read and the native host's
+fifteen-second stop path runs, so grace and stop stay inside the 30-second
+`Close` ceiling. The deferred `Close` in `PollingController.Run` has the grace
+plus its earlier ten seconds. When the guest does not return in time, the
+outcome is the one described below: the unit is still proved stopped, the
+stopped receipt records the unreturned export, the lease stays and `Close`
+reports `ErrWorkerStopPending`.
+
+The grace applies only to `Close`. A host process kill gets none.
+
 ## Stopped provider recovery
 
-A shutdown or failure during a native provider session can leave the durable
-job leased: the unit is proven stopped, but the guest never returned its
-result record, so the source audit is missing and an exported provider auth
-stays fenced. The controller then admits nothing, and `Close` keeps reporting
-`ErrWorkerStopPending`. Nothing releases that lease automatically, on a timer
-or from polling, GitHub or model input.
+A failure during a native provider session, a shutdown whose session does not
+return within the [grace](#shutdown-grace), or a host process kill can leave
+the durable job leased: the unit is proven stopped, but the guest never
+returned its result record, so the source audit is missing and an exported
+provider auth stays fenced. The controller then admits nothing, and `Close`
+keeps reporting `ErrWorkerStopPending`. Nothing releases that lease
+automatically, on a timer or from polling, GitHub or model input.
 
 `RecoverStoppedProvider` is the explicit operator path. Call it after a
 process restart, on a service that was opened but not yet refreshed or run:
@@ -165,7 +212,10 @@ It refuses, without changing the job or auth, unless all of these hold:
   and evidence, so the attempt ID is what rejects an earlier attempt's
   launch. A receipt without an attempt ID refuses. A host process kill
   before that receipt was written therefore cannot be recovered through
-  this path.
+  this path. Whether such a lease may ever be recovered, and on what
+  alternative evidence, is an open owner decision in
+  [#264](https://github.com/hemsoft-dev/set-it-free-loop/issues/264).
+  Until it is decided, that lease stays fenced.
 - The auth journal of that provider either belongs to this launch or does
   not exist, and is consistent with the receipt (`ErrAuthRecoveryRequired`).
 
@@ -181,8 +231,11 @@ becomes `auth_failed` when the exported auth was lost and retired. It becomes
 that a cancellation or newer request fenced while it held the lease stays
 `cancelled` or `stale`; the result and the receipt report that final state.
 None of these states is a review. Only an explicit `ResumeUnavailable` can
-requeue the same unfenced request, within its remaining session budget.
-Other requests proceed immediately.
+requeue the same unfenced request, and only while its remaining session
+budget can still finish the schedule. The recovered session stays charged
+without a result, so for a job with no spare session, which the default
+configuration is, it refuses with `ErrSessionBudgetExhausted` and the status
+says the job cannot be resumed. Other requests proceed immediately.
 
 A retired provider has no canonical auth. Its sessions fail before work as
 `auth_failed` until the operator establishes new auth outside the reviewer.

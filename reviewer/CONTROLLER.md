@@ -59,6 +59,10 @@ sessions begin, including jobs queued on earlier dates.
 
 Only one lease may exist. Expiration does not authorize stealing it. A separately
 qualified supervisor must prove the worker has stopped before `ReleaseStopped`.
+Service shutdown gives a provider session that already exported auth a bounded
+grace to stop and return it before cancellation
+([POLLING.md](POLLING.md#shutdown-and-recovery)). The lease and stop rules are
+unchanged, and a session that does not return in time keeps its lease.
 Drivers supplied to `RunStopped` must return only after worker termination.
 
 Broker-equipped drivers also return trusted per-attempt source receipts, kept
@@ -140,6 +144,28 @@ budget. It does no inference, is never called by configuration comments, and
 rejects expired/exhausted, cancelled, superseded or paused jobs. Unknown provider
 work remains charged; this recovery cannot create additional session capacity.
 
+A job's captured session budget equals its schedule: one session per provider
+and round. Every charged session without a validated artifact (an
+interrupted, failed or shutdown-ended phase) therefore leaves the schedule one
+session short, and the job can never complete. `sessionBudgetFits` states that
+rule from the job's configuration and checkpoint exactly as the engine plans
+phases. Such a job spends no further provider session:
+
+- The polling controller ends a retained queued or quota-waiting job that does
+  not fit as `incomplete_expired` before it restores evidence, builds a
+  runtime or claims it.
+- The claim ends it the same way before any lease, quota wait or session, so
+  a direct `RunStopped` caller cannot spend one either.
+- The engine refuses to start a phase of a schedule that does not fit
+  (`ErrSessionBudgetExhausted`).
+- `ResumeUnavailable` refuses to requeue it with `ErrSessionBudgetExhausted`
+  and leaves its state unchanged. This covers an `auth_failed` or
+  `provider_unavailable` job after a charged failure and the job that
+  [operator recovery](GIT-STARTUP.md#stopped-provider-recovery) releases.
+
+A before-work refund keeps the budget whole, so `quota_wait` and other
+refunded attempts still fit.
+
 A lease claim returns its captured job/checkpoint from the claiming transaction.
 There is no fallible post-commit read that can hide the committed lease nonce.
 `RunStopped` uses that atomic result directly. Superseded/cancelled generations
@@ -173,15 +199,15 @@ published states and their leading words are:
 | Job state | Status |
 | --- | --- |
 | `quota_wait` | INCOMPLETE: daily quota exhausted; resumes by itself until the configured quota wait expires |
-| `auth_failed` | INCOMPLETE: provider authentication unavailable; stopped until an operator repairs it and resumes the job |
-| `provider_unavailable` | INCOMPLETE: a selected provider is unavailable; stopped until an operator resumes the job |
+| `auth_failed` | INCOMPLETE: provider authentication unavailable; stopped until an operator repairs it and resumes the job, or, when its budget no longer fits, cannot be resumed |
+| `provider_unavailable` | INCOMPLETE: a selected provider is unavailable; stopped until an operator resumes the job, or, when its budget no longer fits, cannot be resumed |
 | `invalid_output` | INCOMPLETE: provider output failed validation; ended without a review |
-| `incomplete_expired` | INCOMPLETE: expired before every required phase completed |
+| `incomplete_expired` | INCOMPLETE: expired before every required phase completed, or the captured session budget is exhausted, naming the charged sessions without a result |
 | `cancelled` | CANCELLED: the request was cancelled before the job completed |
 | `capture_refused` | INCOMPLETE: missing history, ambiguous merge base or over the 128-file inventory limit; the request ended without a review |
 
-The text is fixed controller wording keyed by the durable state and the
-captured configuration. It passes through `safeText` and known-secret
+The text is fixed controller wording keyed by the durable state, the captured
+configuration and the checkpoint's session counts. It passes through `safeText` and known-secret
 redaction like every document, names the reviewed revisions and the completed
 phase count, and never includes a finding. `queued` and `running` are
 transient. `blocked` is the operator qualification gate, not a review
