@@ -85,7 +85,7 @@ reviews against the captured commit, never approvals or change requests.
 Intent is persisted before POST. A lost response becomes unknown. Reconciliation
 requires complete pagination and exactly one matching App author, unique marker
 and whole-document hash. Empty or delayed scans never authorize blind retry.
-ACKs use the same recovery boundary. A transport returning before a remote write
+ACKs and statuses use the same recovery boundary. A transport returning before a remote write
 is visible does not prove no write happened.
 
 Before dispatch and after completion, publication checks access, open state,
@@ -103,7 +103,7 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-The failure fixtures cover uncertain ACK and review writes, restart, incomplete
+The failure fixtures cover uncertain ACK, review and status writes, restart, incomplete
 pagination, spoofed receipts, reversed discovery, configuration timestamps,
 concurrent SQLite handles, crash session accounting, lease expiration, stale
 base, cancel fencing and the adverse A/B outcome. These are simulated transport
@@ -123,7 +123,9 @@ state for `Reconcile`. Supersession annotations use `annotation_pending` and an
 idempotent update of the known review ID. They never append a new review/comment.
 A trusted before-work failure refunds both the session and any day charge first
 introduced by that attempt. A resumed job hitting the daily cap remains in
-`quota_wait`. Final secret redaction covers raw and rendered encodings.
+`quota_wait`. A job not yet started whose claim meets the daily cap enters
+`quota_wait` without a lease, session or day charge. Final secret redaction
+covers raw and rendered encodings.
 
 A crash after the final phase and before outbox preparation can recover through
 `RecoverCompleted`. It reconstructs the deterministic outcome using cached
@@ -161,3 +163,61 @@ Duplicate refunds and a different phase are rejected. Unknown provider work is
 still charged. This controller component supplies no supervisor or automatic repair. The
 [native VM assembly](NATIVE-VM.md) and [service](GIT-SERVICE.md) compose explicit
 workers; their complete physical qualification remains open.
+
+## Status writes
+
+`Publisher.PrepareStatuses` gives a non-complete job a `status` write: an
+advisory COMMENT review on its captured head with no inline comment. The
+published states and their leading words are:
+
+| Job state | Status |
+| --- | --- |
+| `quota_wait` | INCOMPLETE: daily quota exhausted; resumes by itself until the configured quota wait expires |
+| `auth_failed` | INCOMPLETE: provider authentication unavailable; stopped until an operator repairs it and resumes the job |
+| `provider_unavailable` | INCOMPLETE: a selected provider is unavailable; stopped until an operator resumes the job |
+| `invalid_output` | INCOMPLETE: provider output failed validation; ended without a review |
+| `incomplete_expired` | INCOMPLETE: expired before every required phase completed |
+| `cancelled` | CANCELLED: the request was cancelled before the job completed |
+
+The text is fixed controller wording keyed by the durable state and the
+captured configuration. It passes through `safeText` and known-secret
+redaction like every document, names the reviewed revisions and the completed
+phase count, and never includes a finding. `queued` and `running` are
+transient. `blocked` is the operator qualification gate, not a review
+outcome, and publishes nothing.
+
+Each job publishes at most one status per state. A newly admitted job that
+meets the daily review limit at its first claim enters `quota_wait` there, so
+it publishes the same status before any phase runs. A `quota_wait` job is
+reclaimed every cycle and returns to `quota_wait` without a second status,
+including after quota frees and the job waits again mid-run. A job that later
+expires publishes its `incomplete_expired` status once. A
+status is prepared only while its job passes the review preparation fences:
+no lease or outstanding attempt, not paused, and its own request and
+generation still current. The one exception is cancellation: when the owner
+cancels, or the latest request is removed, before that request's job
+completes, its `cancelled` status is bound to the cancelling generation,
+which has no current request. A job whose review was published or is in
+flight gets no cancellation status. An older request's job gets none.
+
+Before its POST, a status must pass the review's checks: access (lost access
+defers), open PR, the job's exact head and base, and the status's own owner
+request for this bot. Only a cancellation status accepts no pending request,
+and none accepts a different one. Locally, the PR must not be paused, its
+generation must be the status's, and the job must still be unleased in the
+reported state. A status failing any check before its POST becomes `stale`
+without a POST and changes neither the PR nor the job. After the POST, the
+review postcheck runs unchanged, with the cancellation exception for the
+local request. A status fenced during its POST is handled like a review: the
+PR pauses, a later request B stays unresolved and the status is annotated
+superseded. A status never marks, admits or fulfills a request, and never
+counts as a review for `selectWork`.
+
+A superseded job is never current, so it gets no fresh status. Instead, a
+confirmed `quota_wait`, `auth_failed` or `provider_unavailable` status, which
+promises later work, is marked `annotation_pending` once its job becomes
+`stale` or `cancelled`, unless a later review or status of that job already
+replaced it. `Reconcile` then idempotently annotates the known status review
+in place with the fixed supersession marker while access permits. It never
+appends a comment. Terminal statuses, like reviews, stay as records of the
+revisions they name.

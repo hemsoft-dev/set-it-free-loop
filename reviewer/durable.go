@@ -131,11 +131,14 @@ type SourceAttempt struct {
 	Access *SourceAccess
 }
 type WriteIntent struct {
-	ID, Kind                string
-	Scope                   Scope
-	RequestID, Generation   int64
-	JobHash                 string
-	CheckpointHash          string `json:",omitempty"`
+	ID, Kind              string
+	Scope                 Scope
+	RequestID, Generation int64
+	JobHash               string
+	CheckpointHash        string `json:",omitempty"`
+	// Status is the durable job state a status write reports. It is empty for
+	// acknowledgments and reviews.
+	Status                  string `json:",omitempty"`
 	Snapshot                Snapshot
 	Document                Document
 	BodyHash, Marker, State string
@@ -622,8 +625,16 @@ func (s *Store) claimJob(ctx context.Context, id string, now time.Time) (*Durabl
 				daily++
 			}
 		}
+		// A job that cannot start because the daily limit is reached waits for
+		// quota durably, as a resumed job reaching the limit does, so its wait
+		// is published. It holds no lease, session or day charge, and an
+		// unchanged wait is not rewritten.
 		if j.Checkpoint.ConsumedSessions == 0 && daily >= j.Job.Config.DailyReviews {
-			return ErrDeferred
+			if j.State == "quota_wait" {
+				return ErrDeferred
+			}
+			j.State = "quota_wait"
+			return nil
 		}
 		j.LeaseToken = token
 		j.LeaseUntil = now.Add(j.Job.Config.Limits.Timeout)

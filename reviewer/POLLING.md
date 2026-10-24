@@ -60,7 +60,9 @@ failure counts defer. Enrollment/default changes still require explicit migratio
    complete batch transactionally, then cancel a locally fenced worker. Access,
    closed-state or revision changes pause the old request; they do not create
    replacement inference. Empty pending state alone never removes history.
-4. Reconcile uncertain/recovering writes and dispatch prepared writes through
+4. Prepare status intents for non-complete jobs and mark replaced statuses
+   for annotation ([status writes](CONTROLLER.md#status-writes)). Reconcile
+   uncertain/recovering writes and dispatch prepared writes through
    the publisher's existing checks. Never POST an unknown intent again. FIFO
    command acknowledgments are limited to one new ACK per cycle; remaining ACKs
    defer admission. Prune only records already eligible under retention policy.
@@ -132,8 +134,11 @@ recovery without inference, recoverable qualification interruption in both
 factory, provider and evidence-restoration work, early admitted-job qualification
 failure, owner fencing during restoration, repository lookup access loss with active and
 prepared work, all-scope repository fences, recoverable pre-work factory deadlines,
-joined server delays, and packet restoration after
-an omitted real Git blob becomes available. The loop itself is exercised with bounded cancellation.
+joined server delays, packet restoration after
+an omitted real Git blob becomes available, one status per non-complete
+outcome without a repost on quota resume, a lost status response reconciled
+by marker, an owner-cancelled status and annotation of a replaced job's
+status. The loop itself is exercised with bounded cancellation.
 
 This supplies the polling lifecycle source for #176. The
 [service assembly](GIT-SERVICE.md), [trusted startup packages](GIT-STARTUP.md),

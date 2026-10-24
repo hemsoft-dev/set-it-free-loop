@@ -365,6 +365,22 @@ func E2ECompletedDocument(job Job, reports []Report, ledger []Entry, diff map[st
 	return canonicalPublicationDocument(doc), nil
 }
 
+// E2EStatusDocument renders the canonical status document production
+// publishes for job in non-complete state after completed validated phases:
+// production's renderer, the intent's marker appended as newIntent appends
+// it, with no inline comment. It reads no durable state.
+func E2EStatusDocument(job Job, state string, completed int, marker string) (Document, error) {
+	if !statusStates[state] || completed < 0 {
+		return Document{}, ErrIgnored
+	}
+	doc, err := renderOutcome(Outcome{Job: job, State: state, Artifacts: make([]Artifact, completed)}, nil)
+	if err != nil {
+		return Document{}, err
+	}
+	doc.Summary += "\n\n" + marker
+	return canonicalPublicationDocument(doc), nil
+}
+
 // E2ESourceRecord is a nonsecret projection of one source VM ownership record.
 // RequestHash binds the whole unit request; SourceRequestHash is the digest of
 // its source request, which an archive entry repeats. Attempt, ReleaseHash,

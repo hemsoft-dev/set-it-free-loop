@@ -38,7 +38,7 @@ See [SOURCE.md](SOURCE.md) for capability, budget, recovery and live-boundary li
 
 ## Rendering and validation
 
-`Render` produces a bounded summary and inline candidates. It combines exact duplicate allegations while preserving their IDs and assessments, neutralizes mentions, removes external model links and escapes model HTML/Markdown. Only trusted snapshot source links are generated. Inline eligibility comes from a trusted diff-line map; other valid locations remain in the summary. Revisions, selected models, CLI/auth mappings, config and release provenance are recorded in generated metadata.
+`Render` produces a bounded summary and inline candidates. A non-complete outcome renders as an SFL advisory review status: the revisions and configuration, a fixed cause for its state, the completed phase count and no finding. Cancelled and superseded outcomes have their own CANCELLED and SUPERSEDED wording. It combines exact duplicate allegations while preserving their IDs and assessments, neutralizes mentions, removes external model links and escapes model HTML/Markdown. Only trusted snapshot source links are generated. Inline eligibility comes from a trusted diff-line map; other valid locations remain in the summary. Revisions, selected models, CLI/auth mappings, config and release provenance are recorded in generated metadata.
 
 Model text cannot produce GitHub reference autolinks. `@` and `#` become fullwidth `＠` and `＃`, which removes mentions, `#N`, `owner/repo#N`, `owner@SHA` and `owner/repo@SHA`. `GH-N` in any case, unless glued to a preceding ASCII letter or digit, becomes `GH－N` with a fullwidth hyphen-minus. Each maximal run of 7 or more ASCII hexadecimal digits, in any case, that is not glued to an ASCII letter or digit on either side gets an invisible U+2060 word joiner after every 6 digits, so no piece can match a commit SHA. Runs glued to other letters or digits are left alone because GitHub's word-boundary match cannot select them either. HTML escaping uses named entities only, so escaping never reintroduces `#` followed by digits. The same rules apply inside code spans. Trusted revisions and snapshot source links are not passed through this filter. Known-secret redaction tolerates the joiners and fullwidth hyphen-minus that this filter inserts depending on neighbouring text.
 
@@ -49,8 +49,8 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-The reviewed Markdown fixture is synthetic and proves no App eligibility, live model quality or actual GitHub publication. To intentionally regenerate it after inspecting a format change:
+The reviewed Markdown fixtures are synthetic and prove no App eligibility, live model quality or actual GitHub publication. They cover a corroborated review, a disputed review with a late unverified allegation, every published status, the superseded status and the superseded annotation. To intentionally regenerate them after inspecting a format change:
 
 ```sh
-go -C reviewer test -run TestReviewMarkdownGolden -args -update-golden
+go -C reviewer test -run 'TestReviewMarkdownGolden|TestDisputedLateReviewMarkdownGolden|TestStatusMarkdownGolden|TestSupersededStatusMarkdownGolden' -args -update-golden
 ```

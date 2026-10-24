@@ -232,7 +232,9 @@ var e2eExpectations = map[string]e2eExpect{
 	// with the original synthetic tokens, is returned by its last one.
 	// Recovery uses no GitHub route (RecoverStoppedProvider reads and writes
 	// only the store, the native roots and the auth store), so the process
-	// serves exactly an attached restart's routes plus PR 2's publication.
+	// serves exactly an attached restart's routes plus publication: PR 1's
+	// auth_failed status and PR 2's review share the review POST and receipt
+	// routes.
 	"close-provider-recover": {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2ePublishedRoutes},
 }
 
@@ -2628,6 +2630,40 @@ func e2eReviewedVerdicts(c e2eCompletion, pr int) ([]e2eVerdict, *r.DurableJob) 
 	return v, j
 }
 
+// e2eStatusVerdicts judges the status PR pr's non-complete job j publishes
+// in state. The PR must hold exactly one status intent, confirmed, bound to
+// j's scope, request, generation, snapshot, job, checkpoint and state, with a
+// receipt, carrying exactly the status document production renders for the
+// expected job (e2eExpectedJob) in that state with j's completed phases and
+// the intent's marker, and no inline comment. The fake GitHub must have
+// received exactly one review POST for the PR and hold exactly one remote
+// COMMENT on the PR's head without inline comments, which is the intent's:
+// its receipt ID, marker and canonical document hash.
+func e2eStatusVerdicts(c e2eCompletion, pr int, j *r.DurableJob, state string) []e2eVerdict {
+	writes := e2eWritesFor(c.State, pr, "status")
+	w := e2eSoleConfirmed(writes)
+	v := []e2eVerdict{{w != nil, fmt.Sprintf("PR %d has exactly one status intent and it is confirmed (%d writes)", pr, len(writes))}}
+	if w != nil && j != nil {
+		expect := e2eExpectedFor(c, pr, j).Job
+		want, err := r.E2EStatusDocument(expect, state, len(j.Checkpoint.Artifacts), w.Marker)
+		v = append(v,
+			e2eVerdict{w.Status == state && j.State == state && w.Scope == j.Scope && w.RequestID == j.RequestID && w.Generation == j.Job.Generation && w.Snapshot == j.Job.Snapshot && w.JobHash == r.Digest(j.Job) && w.CheckpointHash == r.Digest(j.Checkpoint) && w.ReceiptID > 0, fmt.Sprintf("PR %d confirmed status reports %s and binds its job's request, generation, snapshot, job and checkpoint, and a receipt (status %s)", pr, state, w.Status)},
+			e2eVerdict{w.Marker == "<!-- sfl-alpha:"+w.ID+" -->" && w.BodyHash == r.Digest(w.Document) && len(w.Document.Inline) == 0, fmt.Sprintf("PR %d confirmed status's marker names its own ID, its body hash is its document's and it has no inline comment", pr)},
+			e2eVerdict{err == nil && r.Digest(w.Document) == r.Digest(want), fmt.Sprintf("PR %d confirmed status document is exactly the one rendered for its expected job in state %s: %v", pr, state, err)})
+	}
+	v = append(v, e2eVerdict{c.Posts[pr] == 1, fmt.Sprintf("PR %d received exactly one status POST (got %d)", pr, c.Posts[pr])})
+	reviews := c.Reviews[pr]
+	var inline []string
+	if len(reviews) == 1 {
+		inline, _ = reviews[0]["inline"].([]string)
+	}
+	v = append(v, e2eVerdict{len(reviews) == 1 && reviews[0]["state"] == "COMMENTED" && c.Heads[pr] != "" && reviews[0]["commit_id"] == c.Heads[pr] && reviews[0]["marker"] != "" && len(inline) == 0, fmt.Sprintf("PR %d remote status is one marked inline-free COMMENT on its head (%d reviews, inline %v)", pr, len(reviews), inline)})
+	if w != nil {
+		v = append(v, e2eVerdict{len(reviews) == 1 && reviews[0]["id"] == any(w.ReceiptID) && reviews[0]["marker"] == any(w.Marker) && reviews[0]["document_hash"] == any(w.BodyHash), fmt.Sprintf("PR %d remote status is the confirmed status intent's: its receipt ID, exact marker and canonical document hash", pr)})
+	}
+	return v
+}
+
 // e2eReleasedAttempts requires completed job j's own attempt bookkeeping:
 // its lease and deadline released, no reservation outstanding and no charge
 // pending, charged on at least one distinct UTC day, created at a recorded
@@ -2909,47 +2945,51 @@ func e2eCannedDocument(job r.Job, w *r.WriteIntent) error {
 
 // e2eDurableSetVerdicts requires the durable state to hold exactly one job
 // and exactly one review intent for each of prs, and no other job or write
-// of any kind. A further job or intent could still run or publish later.
+// of any kind, status included. A further job or intent could still run or
+// publish later.
 func e2eDurableSetVerdicts(label string, d r.DurableState, prs ...int) []e2eVerdict {
 	want := map[int]int{}
 	for _, pr := range prs {
 		want[pr] = 1
 	}
-	jobs, writes, other := e2eDurableCounts(d)
+	jobs, writes, statuses, other := e2eDurableCounts(d)
 	return []e2eVerdict{
 		{maps.Equal(jobs, want), fmt.Sprintf("%s: durable state holds exactly one job for each of PRs %v and no other job (%v)", label, prs, jobs)},
-		{maps.Equal(writes, want) && other == 0, fmt.Sprintf("%s: durable state holds exactly one review intent for each of PRs %v and no other write (%v, %d other)", label, prs, writes, other)},
+		{maps.Equal(writes, want) && len(statuses) == 0 && other == 0, fmt.Sprintf("%s: durable state holds exactly one review intent for each of PRs %v and no other write (%v, statuses %v, %d other)", label, prs, writes, statuses, other)},
 	}
 }
 
 // e2eDurableCountVerdicts requires the durable state to hold exactly
-// jobs[pr] jobs and intents[pr] review intents for each PR, none for any PR
-// either map omits, and no write of another kind. A case whose PRs did not
-// all publish states its exact counts: an extra job or intent could still
-// run or publish later.
-func e2eDurableCountVerdicts(label string, d r.DurableState, jobs, intents map[int]int) []e2eVerdict {
-	gotJobs, gotIntents, other := e2eDurableCounts(d)
+// jobs[pr] jobs, intents[pr] review intents and statuses[pr] status intents
+// for each PR, none for any PR a map omits, and no write of another kind. A
+// case whose PRs did not all publish states its exact counts: an extra job
+// or intent could still run or publish later.
+func e2eDurableCountVerdicts(label string, d r.DurableState, jobs, intents, statuses map[int]int) []e2eVerdict {
+	gotJobs, gotIntents, gotStatuses, other := e2eDurableCounts(d)
 	return []e2eVerdict{
 		{maps.Equal(gotJobs, jobs), fmt.Sprintf("%s: durable state holds exactly the jobs %v per PR and no other job (%v)", label, jobs, gotJobs)},
-		{maps.Equal(gotIntents, intents) && other == 0, fmt.Sprintf("%s: durable state holds exactly the review intents %v per PR and no other write (%v, %d other)", label, intents, gotIntents, other)},
+		{maps.Equal(gotIntents, intents) && maps.Equal(gotStatuses, statuses) && other == 0, fmt.Sprintf("%s: durable state holds exactly the review intents %v and status intents %v per PR and no other write (%v, %v, %d other)", label, intents, statuses, gotIntents, gotStatuses, other)},
 	}
 }
 
-// e2eDurableCounts counts the durable jobs and review intents of each PR, and
-// the writes of any other kind.
-func e2eDurableCounts(d r.DurableState) (jobs, intents map[int]int, other int) {
-	jobs, intents = map[int]int{}, map[int]int{}
+// e2eDurableCounts counts the durable jobs, review intents and status
+// intents of each PR, and the writes of any other kind.
+func e2eDurableCounts(d r.DurableState) (jobs, intents, statuses map[int]int, other int) {
+	jobs, intents, statuses = map[int]int{}, map[int]int{}, map[int]int{}
 	for _, j := range d.Jobs {
 		jobs[j.Scope.PR]++
 	}
 	for _, w := range d.Writes {
-		if w.Kind == "review" {
+		switch w.Kind {
+		case "review":
 			intents[w.Scope.PR]++
-		} else {
+		case "status":
+			statuses[w.Scope.PR]++
+		default:
 			other++
 		}
 	}
-	return jobs, intents, other
+	return jobs, intents, statuses, other
 }
 
 // e2eSoleConfirmed returns a PR's review intent when it is the only one and
@@ -3760,9 +3800,10 @@ func e2eRequestVerdicts(label string, requests []e2eRequest, want map[int]e2eReq
 // reviewed. Codex auth is fenced until recovery and retired after it: the
 // store holds no state and no lease, as production's retirement leaves it.
 // After the operator re-provisions it with exactly a fresh synthetic seed,
-// which carries the original synthetic tokens, Run must capture, review and
-// publish the next request (PR 2) with exactly one review POST and nothing
-// for PR 1. finish then requires both stores usable: Codex holding the
+// which carries the original synthetic tokens, Run must publish PR 1's
+// auth_failed status exactly once, as an inline-free COMMENT with no
+// findings, and capture, review and publish the next request (PR 2) with
+// exactly one review POST. finish then requires both stores usable: Codex holding the
 // original synthetic tokens as PR 2's sessions returned the re-supplied
 // seed, Claude its untouched original.
 func e2eCloseProviderRecover(e *e2eEnv) {
@@ -3781,7 +3822,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 		e.t.Fatal("attached root does not hold the interrupted job:", err)
 	}
 	e.check(true, "the attached root holds only PR 1's leased job with an outstanding attempt, exactly the one admission derives from its retained request, PR 1's fake upstream snapshot, the harness configuration at version 1 and the current release")
-	e.checkAll(e2eDurableCountVerdicts("attached before recovery", retained, map[int]int{1: 1}, map[int]int{}))
+	e.checkAll(e2eDurableCountVerdicts("attached before recovery", retained, map[int]int{1: 1}, map[int]int{}, map[int]int{}))
 	units := e2eReadNativeUnits(e.native, e.releases, e.config.Limits, e2eBootID())
 	kept, err := e2eRetainedLaunches(units, before)
 	if err != nil {
@@ -3821,7 +3862,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	_, err = e.service.RecoverStoppedProvider(ctx, request)
 	e.check(errors.Is(err, r.ErrFenced), "a repeated recovery is refused: %v", err)
 	recoveredState := e.state()
-	e.checkAll(e2eDurableCountVerdicts("after recovery", recoveredState, map[int]int{1: 1}, map[int]int{}))
+	e.checkAll(e2eDurableCountVerdicts("after recovery", recoveredState, map[int]int{1: 1}, map[int]int{}, map[int]int{}))
 	recovered, _ := e2eRecoveredJobVerdicts("after recovery", recoveredState, before, interrupted, e.github.snapshot(1), e.config, e.options.Current)
 	e.checkAll(recovered)
 	// Production retirement removes the lost auth's state and lease, so the
@@ -3886,7 +3927,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 			posts[key] = n
 		}
 	}
-	e.check(len(posts) == 2 && posts["app POST /app/installations/N/access_tokens"] == 2 && posts["publisher POST /pulls/N/reviews"] == 1, "the only GitHub POSTs are two role token mints and one review (%v)", posts)
+	e.check(len(posts) == 2 && posts["app POST /app/installations/N/access_tokens"] == 2 && posts["publisher POST /pulls/N/reviews"] == 2, "the only GitHub POSTs are two role token mints, PR 1's status and PR 2's review (%v)", posts)
 	// PR 2's acquisition is the only upstream exchange: the retained PR 1
 	// attempt was captured by close-provider and is never fetched again.
 	e.checkUploads(e.github.commits["2"])
@@ -3958,9 +3999,10 @@ func e2eRecoveredJobVerdicts(label string, d r.DurableState, before *r.DurableJo
 // (e2eExpectedJob): PR 1's from its retained open request, PR 2's from the
 // fake upstream's owner comment, and every derived expectation (sessions,
 // source records, launches) is taken from those expected jobs. Exactly
-// one job per PR, no PR 1 intent and one PR 2 intent, and no other write;
-// PR 1's recovered job (e2eRecoveredJobVerdicts) with no review POST or remote
-// review; PR 2's full review (e2eReviewedVerdicts), whose four sessions must
+// one job per PR, one PR 1 status intent and one PR 2 review intent, and no
+// other write; PR 1's recovered job (e2eRecoveredJobVerdicts) with exactly
+// its one auth_failed status, POSTed once and held as one inline-free remote
+// COMMENT (e2eStatusVerdicts); PR 2's full review (e2eReviewedVerdicts), whose four sessions must
 // each make exactly the fixture's exchanges and be served only the fake
 // upstream's bytes; one stopped source record per job, PR 1's retained one
 // and PR 2's, each bound to its own job's snapshot, the current release and
@@ -3980,12 +4022,12 @@ func e2eRecoveredJobVerdicts(label string, d r.DurableState, before *r.DurableJo
 // PR 2 jobs, nil for a PR without exactly one.
 func e2eRecoveredVerdicts(c e2eCompletion, before *r.DurableJob, interrupted e2eNativeUnit) ([]e2eVerdict, *r.DurableJob, *r.DurableJob) {
 	const label = "after recovery review"
-	verdicts := e2eDurableCountVerdicts(label, c.State, map[int]int{1: 1, 2: 1}, map[int]int{2: 1})
+	verdicts := e2eDurableCountVerdicts(label, c.State, map[int]int{1: 1, 2: 1}, map[int]int{2: 1}, map[int]int{1: 1})
 	recovered, j1 := e2eRecoveredJobVerdicts(label, c.State, before, interrupted, e2eCompletionSnapshot(c, 1), c.Config, c.Release)
 	reviewed, j2 := e2eReviewedVerdicts(c, 2)
 	verdicts = append(append(verdicts, recovered...), reviewed...)
+	verdicts = append(verdicts, e2eStatusVerdicts(c, 1, j1, "auth_failed")...)
 	verdicts = append(verdicts,
-		e2eVerdict{c.Posts[1] == 0 && len(c.Reviews[1]) == 0, fmt.Sprintf("%s: PR 1 received no review POST and holds no remote review (%d POSTs, %d reviews)", label, c.Posts[1], len(c.Reviews[1]))},
 		e2eVerdict{interrupted.Launch != "" && e2eLaunchUnchanged(c.Units, interrupted), fmt.Sprintf("%s: the interrupted launch %s is still present with its unchanged stopped receipt", label, interrupted.Launch)})
 	held := interrupted.Access
 	verdicts = append(verdicts, e2eVerdict{interrupted.AuditPresent && held.InferenceRequests == 1 && held.Failed && !held.Exhausted && held.Forwarded == held.Responses+1, fmt.Sprintf("%s: PR 1's interrupted session's stopped receipt counts exactly its one held inference, forwarded and never answered (%d inferences, %d forwarded, %d responses, failed %v)", label, held.InferenceRequests, held.Forwarded, held.Responses, held.Failed)})
@@ -5946,7 +5988,9 @@ func TestE2ENativeSessionRecovery(t *testing.T) {
 // completed review (e2eReviewFixture) beside PR 1's recovered job, which is
 // close-provider's retained job (e2eRetainedFixture) released as auth_failed
 // with one recovery receipt appended, so it records only its leased attempt
-// with the interrupted launch's stopped evidence; the interrupted launch,
+// with the interrupted launch's stopped evidence; that job's one confirmed
+// auth_failed status intent, POSTed once and held as the matching
+// inline-free remote COMMENT; the interrupted launch,
 // whose version 2 receipt names that attempt, counts its one held inference,
 // forwarded and never answered, and records the attempt's request, the zero
 // report and no source receipt; and PR 1's retained source record and
@@ -5976,7 +6020,20 @@ func e2eRecoveredFixtureOf(edit1, edit2 func(*r.Job)) (e2eCompletion, *r.Durable
 	// Recovery released the job, not the admitted request it came from.
 	request := e2eFixtureRequest(e2eFixtureJob())
 	c.State.PRs[e2eScopeKey(1)] = &r.PRRecord{Scope: e2eScope(1), Generation: 1, Requests: []r.NativeRequest{request}, CurrentRequest: request.ID}
-	c.Heads[1], c.Posts[1] = head, 0
+	// Run then published the recovered job's auth_failed status once, as an
+	// inline-free COMMENT on PR 1's head.
+	id := strings.Repeat("e", 32)
+	marker := "<!-- sfl-alpha:" + id + " -->"
+	// An edited job admission cannot validate may not render; its status then
+	// carries only the marker, which its other refusals do not depend on.
+	document, err := r.E2EStatusDocument(j1.Job, "auth_failed", len(j1.Checkpoint.Artifacts), marker)
+	if err != nil {
+		document = r.Document{Summary: "\n\n" + marker, Inline: []r.InlineComment{}}
+	}
+	c.State.Writes[id] = &r.WriteIntent{ID: id, Kind: "status", Status: "auth_failed", Scope: j1.Scope, RequestID: j1.RequestID, Generation: j1.Job.Generation, JobHash: r.Digest(j1.Job), CheckpointHash: r.Digest(j1.Checkpoint), Snapshot: j1.Job.Snapshot, Document: document, BodyHash: r.Digest(document), Marker: marker, State: "confirmed", ReceiptID: 5002}
+	remoteMarker, remoteHash := r.E2ERemoteReview(document.Summary, document.Inline)
+	c.Reviews[1] = []map[string]any{{"id": int64(5002), "state": "COMMENTED", "commit_id": head, "marker": remoteMarker, "document_hash": remoteHash, "inline": []string{}}}
+	c.Heads[1], c.Posts[1] = head, 1
 	c.Units = append(c.Units, interrupted)
 	c.Attached = true
 	c.Records = append(c.Records, r.E2ESourceRecord{Attempt: source, Unit: "sfl-alpha-" + source + ".service", InvocationID: strings.Repeat("8", 32), RequestHash: strings.Repeat("4", 64), SourceRequestHash: strings.Repeat("5", 64), StubHash: c.Source.Stub, ReleaseHash: c.Source.Release, RuntimeHash: c.Source.Runtime, Snapshot: snapshot, StartIntent: true, StartSettled: true, Captured: true, Stopped: true, Revoked: true, GrantHash: "grant", BootID: e2eTestBootID})
@@ -6018,6 +6075,14 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 		}
 		return nil
 	}
+	s1 := func(in *recovery) *r.WriteIntent {
+		for _, w := range in.c.State.Writes {
+			if w.Scope == e2eScope(1) && w.Kind == "status" {
+				return w
+			}
+		}
+		return nil
+	}
 	last := func(in *recovery) int { return len(in.c.Units) - 1 }
 	refusal := map[string]string{
 		"PR 1 review intent":                      "exactly the review intents",
@@ -6042,8 +6107,19 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 		"recovery receipt of other evidence":      "recovery receipt",
 		"recovery receipt of another round":       "recovery receipt",
 		"recovery receipt with auth returned":     "recovery receipt",
-		"PR 1 review POSTed":                      "PR 1 received no review POST",
-		"PR 1 remote review":                      "PR 1 received no review POST",
+		"PR 1 review POSTed":                      "PR 1 received exactly one status POST",
+		"second PR 1 remote review":               "PR 1 remote status is one marked inline-free COMMENT",
+		"PR 1 status missing":                     "exactly the review intents",
+		"second PR 1 status":                      "exactly the review intents",
+		"PR 1 status unconfirmed":                 "PR 1 has exactly one status intent and it is confirmed",
+		"PR 1 status of another state":            "PR 1 confirmed status reports auth_failed",
+		"PR 1 status of another generation":       "PR 1 confirmed status reports auth_failed",
+		"PR 1 status of another job":              "PR 1 confirmed status reports auth_failed",
+		"PR 1 status with an inline finding":      "PR 1 confirmed status's marker names its own ID",
+		"PR 1 status with a partial finding":      "PR 1 confirmed status document is exactly the one rendered",
+		"PR 1 remote status with inline":          "PR 1 remote status is one marked inline-free COMMENT",
+		"PR 1 remote status on another commit":    "PR 1 remote status is one marked inline-free COMMENT",
+		"PR 1 remote status of another receipt":   "PR 1 remote status is the confirmed status intent's",
 		"interrupted launch gone":                 "still present",
 		"interrupted receipt rewritten":           "still present",
 		"retained source record missing":          "source records with matching",
@@ -6200,12 +6276,37 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 		"recovery receipt with auth returned": func(in *recovery) {
 			j1(in).ProviderRecoveries[0].Auth = r.ProviderAuthReturned
 		},
-		"PR 1 review POSTed": func(in *recovery) { in.c.Posts[1] = 1 },
-		"PR 1 remote review": func(in *recovery) {
-			in.c.Reviews[1] = []map[string]any{{"state": "COMMENTED", "commit_id": in.c.Heads[1]}}
+		"PR 1 review POSTed": func(in *recovery) { in.c.Posts[1] = 2 },
+		"second PR 1 remote review": func(in *recovery) {
+			in.c.Reviews[1] = append(in.c.Reviews[1], map[string]any{"state": "COMMENTED", "commit_id": in.c.Heads[1]})
 		},
-		"interrupted launch gone":       func(in *recovery) { in.c.Units = in.c.Units[:last(in)] },
-		"interrupted receipt rewritten": func(in *recovery) { in.c.Units[last(in)].AuthReturned = true },
+		"PR 1 status missing": func(in *recovery) { delete(in.c.State.Writes, s1(in).ID) },
+		"second PR 1 status": func(in *recovery) {
+			in.c.State.Writes["w1"] = &r.WriteIntent{ID: "w1", Kind: "status", Status: "auth_failed", Scope: e2eScope(1), State: "prepared"}
+		},
+		"PR 1 status unconfirmed":           func(in *recovery) { s1(in).State = "unknown" },
+		"PR 1 status of another state":      func(in *recovery) { s1(in).Status = "quota_wait" },
+		"PR 1 status of another generation": func(in *recovery) { s1(in).Generation++ },
+		"PR 1 status of another job":        func(in *recovery) { s1(in).JobHash = r.Digest("another job") },
+		// The intent and the remote review agree on each altered document,
+		// so only the status's own shape and rendering can refuse it.
+		"PR 1 status with an inline finding": func(in *recovery) {
+			w := s1(in)
+			w.Document.Inline = []r.InlineComment{{Path: "source.go", Line: 1, Body: e2eCannedBody}}
+			w.BodyHash = r.Digest(w.Document)
+			_, in.c.Reviews[1][0]["document_hash"] = r.E2ERemoteReview(w.Document.Summary, w.Document.Inline)
+		},
+		"PR 1 status with a partial finding": func(in *recovery) {
+			w := s1(in)
+			w.Document.Summary = strings.Replace(w.Document.Summary, "No substantive partial findings are published.", e2eCannedBody, 1)
+			w.BodyHash = r.Digest(w.Document)
+			_, in.c.Reviews[1][0]["document_hash"] = r.E2ERemoteReview(w.Document.Summary, w.Document.Inline)
+		},
+		"PR 1 remote status with inline":        func(in *recovery) { in.c.Reviews[1][0]["inline"] = []string{"source.go:1"} },
+		"PR 1 remote status on another commit":  func(in *recovery) { in.c.Reviews[1][0]["commit_id"] = strings.Repeat("9", 40) },
+		"PR 1 remote status of another receipt": func(in *recovery) { in.c.Reviews[1][0]["id"] = int64(9999) },
+		"interrupted launch gone":               func(in *recovery) { in.c.Units = in.c.Units[:last(in)] },
+		"interrupted receipt rewritten":         func(in *recovery) { in.c.Units[last(in)].AuthReturned = true },
 		"retained source record missing": func(in *recovery) {
 			in.c.Records, in.c.Exports = in.c.Records[:1], in.c.Exports[:1]
 		},
@@ -6352,12 +6453,12 @@ func TestE2ERecoveredVerdicts(t *testing.T) {
 
 // TestE2ESettledRecoveredVerdicts applies the round 9 settled re-read to
 // close-provider-recover. The attached process's fake servers are its own:
-// they hold only PR 2's acquisition, its four sessions and its one review
-// POST, and nothing of what close-provider observed, since PR 1's retained
-// attempt and interrupted session were judged by that process. Once
-// quiesced they must hold exactly what finish recorded, so a late rerun of
-// PR 1's interrupted session, a late PR 1 review or refetch, or a late PR 2
-// request is refused.
+// they hold only PR 1's one status POST and PR 2's acquisition, its four
+// sessions and its one review POST, and nothing of what close-provider
+// observed, since PR 1's retained attempt and interrupted session were
+// judged by that process. Once quiesced they must hold exactly what finish
+// recorded, so a late rerun of PR 1's interrupted session, a late PR 1
+// review, status change or refetch, or a late PR 2 request is refused.
 func TestE2ESettledRecoveredVerdicts(t *testing.T) {
 	judged := func() (*e2eResult, e2eGitHubSummary, map[r.Provider][]e2eModelSession, e2eNativeUnit) {
 		c, _, interrupted := e2eRecoveredFixture()
@@ -6377,8 +6478,8 @@ func TestE2ESettledRecoveredVerdicts(t *testing.T) {
 		return res, settled, copies, interrupted
 	}
 	res, github, models, _ := judged()
-	if len(github.GitExchanges) == 0 || len(models[r.Codex]) != 2 || len(models[r.Claude]) != 2 || github.ReviewPosts[2] != 1 || github.ReviewPosts[1] != 0 {
-		t.Fatal("recovered observations are not PR 2's acquisition, four sessions and one review POST", github.ReviewPosts, len(github.GitExchanges), len(models[r.Codex]), len(models[r.Claude]))
+	if len(github.GitExchanges) == 0 || len(models[r.Codex]) != 2 || len(models[r.Claude]) != 2 || github.ReviewPosts[2] != 1 || github.ReviewPosts[1] != 1 || len(github.Reviews[1]) != 1 {
+		t.Fatal("recovered observations are not PR 2's acquisition, four sessions and one review POST beside PR 1's one status POST", github.ReviewPosts, len(github.GitExchanges), len(models[r.Codex]), len(models[r.Claude]))
 	}
 	if f := e2eFailures(e2eSettledVerdicts(res, github, models)); len(f) != 0 {
 		t.Fatal("settled recovery refused:", f)
@@ -6388,10 +6489,13 @@ func TestE2ESettledRecoveredVerdicts(t *testing.T) {
 			m[r.Codex] = append(m[r.Codex], e2eModelSession{JobID: "request-1-1", Provider: r.Codex, Round: 1, PR: 1, Head: strings.Repeat("1", 40), SessionHash: u.SessionHash})
 		},
 		"PR 1 review POST after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
-			g.ReviewPosts[1] = 1
+			g.ReviewPosts[1] = 2
 		},
 		"PR 1 remote review after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
-			g.Reviews[1] = []map[string]any{{"id": int64(5002)}}
+			g.Reviews[1] = append(g.Reviews[1], map[string]any{"id": int64(5003)})
+		},
+		"PR 1 status annotated after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
+			g.Reviews[1][0]["document_hash"] = r.Digest("annotated status")
 		},
 		"PR 1 refetched after finish": func(g *e2eGitHubSummary, _ map[r.Provider][]e2eModelSession, _ e2eNativeUnit) {
 			g.GitExchanges = append(g.GitExchanges, e2eGitExchange{Operation: "upload-pack", Wants: []string{strings.Repeat("1", 40), strings.Repeat("e", 40)}, Status: 200})
