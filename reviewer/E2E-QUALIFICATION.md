@@ -94,19 +94,34 @@ ledger, and a restore probe.
 | `review` | PR 1 automatic request through capture, four sessions and one confirmed COMMENT. | 1 / 4 | 1 | both usable |
 | `isolation` | PR 1 (automatic) and PR 2 (owner comment) pending together. | 2 / 8 | 2 | both usable |
 | `close-capture` | Close the whole service after capture and admission, inside the first session's host check, before any VM launch. Reopen and finish. | 1 / 4 | 1 | both usable |
-| `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. | 1 / 1 | lifecycle order only | Codex fenced, Claude usable |
+| `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. With the shutdown grace, reopen and run the requeued job. | 1 / 4 (grace) or 1 / 1 (fenced) | 1 (grace) or lifecycle order only (fenced) | both usable (grace), or Codex fenced and Claude usable |
 | `close-provider-reopen` | A second process attached to the root retained by `close-provider` (`SFL_E2E_ATTACH`), as a restarted service. | 0 / 0 | 1 (retained) | Codex fenced, Claude usable |
 | `close-provider-recover` | Instead of `close-provider-reopen`: a restarted process recovers the retained attempt through the operator API, publishes PR 1's `auth_failed` status, then reviews and publishes the next request. | 1 / 4 | 2 (1 retained) | both usable (Codex re-provisioned) |
 | `close-publish` | The fake GitHub commits the review POST but withholds its response; close the whole service; reopen and reconcile. | 1 / 4 | 1 | both usable |
 
-If `close-provider`'s `Close` proves completion instead of reporting
-`ErrWorkerStopPending`, the case reopens and expects one source unit, one
-native unit for the interrupted launch plus one per artifact of the reopened
-job, and both auth stores usable. The job must record the interrupted
-launch's complete stopped audit evidence. After the reopen it runs the same
-completed-review checks as the other successful cases (see Evidence bindings),
-with the interrupted launch, stopped, audited and incomplete, as the only
-other launch. No host run has taken this branch.
+Since the [shutdown grace](GIT-STARTUP.md#shutdown-grace) ([#264](https://github.com/hemsoft-dev/set-it-free-loop/issues/264)),
+the expected `close-provider` branch is a `Close` that proves completion.
+`Close` revokes the withheld session's provider intake, the guest's client
+proxy stops the CLI, and the guest returns auth in its result record within
+the ten-second grace. The case then requires a queued, unleased job with one
+charged session and no artifact, and Codex auth usable. The stopped audit must
+record the auth as exported and returned, end at the result record's
+validation and fail as `cancelled`. The job must record that launch as its
+attempt, with its complete stopped evidence and the source receipt its result
+returned. The case then reopens. The requeued job keeps that charged session,
+so its captured four-session budget leaves three. It reruns Codex R1, Claude
+R1 and Codex R2, each in one completed launch holding the canned report, and
+expires (`incomplete_expired`) before Claude R2, unleased, with no intent,
+POST or remote review. The case therefore expects one source unit, four
+native units (the interrupted launch and three reruns), both auth stores
+usable and only the qualified routes. The interrupted launch is the only
+launch outside the job's artifacts. No host run has taken this branch. Its
+earlier form expected a published review after the reopen, which the
+captured budget cannot allow.
+
+If the guest does not return within the grace, `Close` cancels as before and
+the case takes the fenced branch below. Only that branch retains a root for
+`close-provider-reopen` and `close-provider-recover`.
 
 Every case also observes `systemctl --user list-units 'sfl-alpha-*'` every 200
 ms, excluding units that existed before the run. At the end it first stops
@@ -533,10 +548,11 @@ flock -o ~/.cache/sfl-vm.lock env GOMAXPROCS=2 \
   timeout 600 nice -n 10 "$OUT/reviewer.test" -test.run '^TestE2EQualification$' -test.v -test.timeout 590s
 ```
 
-For `close-provider`, run `close-provider-reopen` next in a new process with
-`SFL_E2E_ATTACH` set to the `Root` recorded in `close-provider.json`, inside
-the same lock hold. State lives under a fresh `/tmp/sfl-e2e-<nonce>` root,
-which a passing run removes. `SFL_E2E_KEEP_FAILED=1` retains a failed root.
+When `close-provider` took the fenced branch and retained its root, run
+`close-provider-reopen` next in a new process with `SFL_E2E_ATTACH` set to the
+`Root` recorded in `close-provider.json`, inside the same lock hold. State
+lives under a fresh `/tmp/sfl-e2e-<nonce>` root, which a passing run removes.
+`SFL_E2E_KEEP_FAILED=1` retains a failed root.
 
 ## Measured at `13251e3`
 
@@ -716,7 +732,8 @@ and return auth. Both change security-relevant recovery behavior, so neither
 was implemented in the commits measured above. The operator path was added
 later and is qualified in
 [Operator recovery after a provider-session close](#operator-recovery-after-a-provider-session-close).
-The bounded shutdown grace is not implemented.
+The bounded [shutdown grace](GIT-STARTUP.md#shutdown-grace) was added after
+that, and its `close-provider` branch has not run on a host.
 
 A shutdown before a session's work, while the host check runs, is
 different. The native reviewer reports a trusted before-work failure, the
@@ -879,10 +896,13 @@ now waits for admission.
   [GIT-VM-SOURCE.md](GIT-VM-SOURCE.md), and native supervisor process loss by
   [NATIVE-VM-CRASH.md](NATIVE-VM-CRASH.md). A `SIGKILL` between session
   reservation and stopped receipt would leave the same durable fence as
-  `close-provider`, without the in-process stop proof.
+  `close-provider`, without the in-process stop proof. The shutdown grace
+  applies only to `Close`; a process kill gets none.
 - Operator recovery covers a provider attempt stopped with a durable
   stopped audit receipt (see the recovery section). An attempt without that
   receipt, such as after a host process kill mid-session, stays fenced.
+  Whether it may ever be recovered, and on what alternative evidence, is an
+  open owner decision in [#264](https://github.com/hemsoft-dev/set-it-free-loop/issues/264).
 - Isolation is between sequential jobs because admission is serial. Both jobs
   share the per-provider auth stores by design; each session exports and
   returns them, and the case checks returns but cannot observe a concurrent

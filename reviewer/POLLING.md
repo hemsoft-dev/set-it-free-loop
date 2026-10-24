@@ -155,15 +155,21 @@ App history consistency remains a separate qualification gate.
 
 ## Shutdown and recovery
 
-`Close` cancels in-progress polling and the active invocation, waits for them,
-then releases controller ownership. A timeout retains the owner lock for a later
-close attempt. An uncertain physical worker retains its original SQLite lease
-and reports `ErrWorkerStopPending`. Expiration and process restart never permit
-lease stealing; a separately qualified supervisor must prove stopped recovery.
+`Close` cancels in-progress polling and signals the active invocation's
+shutdown drain. Only when a provider session already holds exported auth does
+the first `Close` wait, at most the ten-second provider shutdown grace or its
+own deadline, for that invocation to end
+([GIT-STARTUP.md](GIT-STARTUP.md#shutdown-grace)). It then cancels the
+invocation, waits for it and releases controller ownership. A timeout retains
+the owner lock for a later close attempt. An uncertain physical worker retains
+its original SQLite lease and reports `ErrWorkerStopPending`. Expiration and
+process restart never permit lease stealing; a separately qualified supervisor
+must prove stopped recovery.
 
 Known-stopped work interrupted only by service shutdown may return to `queued`
-with its exact artifacts and consumed budget. Owner cancellation, generation
-changes and uncertain stop cannot use that path. Factory errors become durable
+with its exact artifacts and consumed budget. A phase that completes during the
+grace keeps its artifact, and the engine starts no further phase. Owner
+cancellation, generation changes and uncertain stop cannot use that path. Factory errors become durable
 unavailable/blocked states. A failed qualification check cancels active work;
 all admitted paths, including discovery/restoration and pre-work qualification,
 share one finalization step. An otherwise current queued or cancelled job

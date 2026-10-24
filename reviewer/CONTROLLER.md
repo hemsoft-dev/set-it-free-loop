@@ -59,6 +59,10 @@ sessions begin, including jobs queued on earlier dates.
 
 Only one lease may exist. Expiration does not authorize stealing it. A separately
 qualified supervisor must prove the worker has stopped before `ReleaseStopped`.
+Service shutdown gives a provider session that already exported auth a bounded
+grace to stop and return it before cancellation
+([POLLING.md](POLLING.md#shutdown-and-recovery)). The lease and stop rules are
+unchanged, and a session that does not return in time keeps its lease.
 Drivers supplied to `RunStopped` must return only after worker termination.
 
 Broker-equipped drivers also return trusted per-attempt source receipts, kept

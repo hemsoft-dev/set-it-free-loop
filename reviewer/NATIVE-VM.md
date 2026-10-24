@@ -349,6 +349,24 @@ then stops the entire unit and keeps uncertain exported auth held. A blocked
 source read exposed a seventy-second wait for the original deadline; a stopped
 source channel alone did not wake the host's guest-result read.
 
+A controller shutdown drains a launch that already exported auth before it
+cancels it (see the [shutdown grace](GIT-STARTUP.md#shutdown-grace)). The
+launch holds the drain from just before export until its stopped receipt is
+written, and exports nothing once the drain has begun. The drain closes the
+host provider bridge's HTTP server, which closes the private provider stream
+and any in-flight request; the guard records an aborted request as failed.
+The guest protocol is unchanged. Its client proxy already stops the owned CLI
+when a private exchange fails (`provider-transport`), and guest PID1 then
+returns auth and the source audit in its finished record. The host reads that
+record under the session deadline until the controller's grace expires and
+cancels it. Whole-unit stop, auth import, the conservative refresh rule and
+the stopped receipt are unchanged; the receipt of a drained session that
+failed reports `cancelled`. Offline tests cover the host bridge, the guest
+proxy handler and the host result handling with fakes. Whether the guest sees
+the closed virtio port as end of stream promptly is a host property they do
+not exercise; if it does not, the grace expires into the cancellation path
+above.
+
 ## Operator recovery of a stopped attempt
 
 `GitReviewerService.RecoverStoppedProvider` (see
