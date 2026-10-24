@@ -156,7 +156,11 @@ durable stopped return. A refresh-uncertain return is still fenced. A session
 that fails after the drain reports `cancelled`, so the stopped job is requeued
 with its artifacts and consumed budget; a latched route or response refusal,
 or exhaustion, keeps its own classification. A session that completes within
-the grace keeps its artifact, and the engine starts no further phase.
+the grace keeps its artifact, and the engine starts no further phase. A
+requeued job whose interrupted session left no artifact can no longer finish
+its schedule, so the next controller ends it `incomplete_expired` without
+another session and publishes one INCOMPLETE status naming the exhausted
+budget ([CONTROLLER.md](CONTROLLER.md)).
 
 The ten seconds cover the guest's bounded cleanup after its client ends (at
 most twelve seconds, normally well under one) and its result record. If the
@@ -227,8 +231,11 @@ becomes `auth_failed` when the exported auth was lost and retired. It becomes
 that a cancellation or newer request fenced while it held the lease stays
 `cancelled` or `stale`; the result and the receipt report that final state.
 None of these states is a review. Only an explicit `ResumeUnavailable` can
-requeue the same unfenced request, within its remaining session budget.
-Other requests proceed immediately.
+requeue the same unfenced request, and only while its remaining session
+budget can still finish the schedule. The recovered session stays charged
+without a result, so for a job with no spare session, which the default
+configuration is, it refuses with `ErrSessionBudgetExhausted` and the status
+says the job cannot be resumed. Other requests proceed immediately.
 
 A retired provider has no canonical auth. Its sessions fail before work as
 `auth_failed` until the operator establishes new auth outside the reviewer.

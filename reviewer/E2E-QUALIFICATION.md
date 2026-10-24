@@ -94,7 +94,7 @@ ledger, and a restore probe.
 | `review` | PR 1 automatic request through capture, four sessions and one confirmed COMMENT. | 1 / 4 | 1 | both usable |
 | `isolation` | PR 1 (automatic) and PR 2 (owner comment) pending together. | 2 / 8 | 2 | both usable |
 | `close-capture` | Close the whole service after capture and admission, inside the first session's host check, before any VM launch. Reopen and finish. | 1 / 4 | 1 | both usable |
-| `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. With the shutdown grace, reopen and run the requeued job. | 1 / 4 (grace) or 1 / 1 (fenced) | 1 (grace) or lifecycle order only (fenced) | both usable (grace), or Codex fenced and Claude usable |
+| `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. With the shutdown grace, reopen: the requeued job ends incomplete and publishes one status. | 1 / 1 | 1 (grace) or lifecycle order only (fenced) | both usable (grace), or Codex fenced and Claude usable |
 | `close-provider-reopen` | A second process attached to the root retained by `close-provider` (`SFL_E2E_ATTACH`), as a restarted service. | 0 / 0 | 1 (retained) | Codex fenced, Claude usable |
 | `close-provider-recover` | Instead of `close-provider-reopen`: a restarted process recovers the retained attempt through the operator API, publishes PR 1's `auth_failed` status, then reviews and publishes the next request. | 1 / 4 | 2 (1 retained) | both usable (Codex re-provisioned) |
 | `close-publish` | The fake GitHub commits the review POST but withholds its response; close the whole service; reopen and reconcile. | 1 / 4 | 1 | both usable |
@@ -108,16 +108,20 @@ charged session and no artifact, and Codex auth usable. The stopped audit must
 record the auth as exported and returned, end at the result record's
 validation and fail as `cancelled`. The job must record that launch as its
 attempt, with its complete stopped evidence and the source receipt its result
-returned. The case then reopens. The requeued job keeps that charged session,
-so its captured four-session budget leaves three. It reruns Codex R1, Claude
-R1 and Codex R2, each in one completed launch holding the canned report, and
-expires (`incomplete_expired`) before Claude R2, unleased, with no intent,
-POST or remote review. The case therefore expects one source unit, four
-native units (the interrupted launch and three reruns), both auth stores
-usable and only the qualified routes. The interrupted launch is the only
-launch outside the job's artifacts. No host run has taken this branch. Its
-earlier form expected a published review after the reopen, which the
-captured budget cannot allow.
+returned. The case then reopens. The requeued job keeps that charged session
+without a result, so its captured four-session budget can no longer finish
+the schedule. The reopened controller ends it `incomplete_expired` before
+restoring evidence or starting a session, unleased, with one charged session
+and no artifact. It publishes exactly one status for PR 1, which must be
+confirmed, bound to the job and checkpoint, carry the document production
+renders for that state and checkpoint (the exhausted-budget wording) and
+match its one inline-free remote COMMENT on the head (`e2eStatusVerdicts`).
+There is no review intent and no other write. The case therefore expects one
+source unit, one native unit (the interrupted launch, the only launch), both
+auth stores usable, and the publishing route set: the qualified routes plus
+the publisher's review POST and receipt read. No host run has taken this
+branch. Its earlier forms expected a published review, then three reruns
+that expired, which spent sessions on a certain incomplete.
 
 If the guest does not return within the grace, `Close` cancels as before and
 the case takes the fenced branch below. Only that branch retains a root for

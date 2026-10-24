@@ -169,7 +169,11 @@ must prove stopped recovery.
 Known-stopped work interrupted only by service shutdown may return to `queued`
 with its exact artifacts and consumed budget. A phase that completes during the
 grace keeps its artifact, and the engine starts no further phase. Owner
-cancellation, generation changes and uncertain stop cannot use that path. Factory errors become durable
+cancellation, generation changes and uncertain stop cannot use that path.
+Before restoring evidence for a retained job, the controller ends one whose
+remaining session budget can no longer finish its schedule as
+`incomplete_expired`, with no runtime, claim or session
+([CONTROLLER.md](CONTROLLER.md)). Factory errors become durable
 unavailable/blocked states. A failed qualification check cancels active work;
 all admitted paths, including discovery/restoration and pre-work qualification,
 share one finalization step. An otherwise current queued or cancelled job
