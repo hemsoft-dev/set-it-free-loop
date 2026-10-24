@@ -231,6 +231,15 @@ embedded `bytes.Buffer`, whose `ReadFrom` let the pipe copy bypass the cap, so
 an oversized blob was read whole and refused only by the reader's size check.
 The cap now holds for every capped Git command.
 
+Measured on October 23, 2026 at `8139070` on mini, from a native image, a
+source stub and a `reviewer.test` built from that commit, one VM at a time:
+the exhaustion matrix passed 12 of 12, with both `claude-source-oversize` and
+`codex-source-oversize` holding exactly `{big.go, source byte limit
+exhausted}` in `byte-bound` and `honest-outcome`; the hostile matrix gave 19
+passes and the contained `codex-metadata` client failure; and every E2E case,
+including `close-provider-recover`, passed. The E2E source acquisitions also
+ran with the capped `git fetch` output enforced.
+
 ## Remaining limitations
 
 - **Deadline fences auth.** A stall or a hung client always ends with auth fenced
@@ -247,9 +256,6 @@ The cap now holds for every capped Git command.
   meeting an exited client, but that is not confirmed. The guest records no
   frame-level observation on the Claude path. It is still a typed failure, not
   success.
-- **Byte-limit reason not yet measured natively.** The reason above is
-  covered by unit and fixture-check tests. No native run has used an image
-  with it yet.
 - **Request floods.** More than `ReaderCalls + 32` MCP requests still close the
   source connection, with the pre-fix effect: lost audit and fenced auth.
 - **Unreachable pressure.** Guest task pressure cannot be induced through
