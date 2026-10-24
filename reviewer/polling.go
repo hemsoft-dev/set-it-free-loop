@@ -72,6 +72,29 @@ type pollWork struct {
 	done                     chan struct{}
 	err                      error
 	qualificationInterrupted bool
+	// captured and captureFailed record this invocation's own capture: it
+	// returned evidence, or it failed transiently before cancellation.
+	captured, captureFailed bool
+}
+
+// pollRequestKey names one request of one PR generation and head.
+type pollRequestKey struct {
+	scope      string
+	request    int64
+	generation int64
+	snapshot   Snapshot
+}
+
+func (w *pollWork) requestKey() pollRequestKey {
+	return pollRequestKey{w.scope.key(), w.request, w.generation, w.snapshot}
+}
+
+// pollCaptureRetry is the controller-memory backoff of one request whose
+// capture failed transiently: consecutive failures and the time before which
+// selection passes it over. See noteCapture.
+type pollCaptureRetry struct {
+	failures int
+	until    time.Time
 }
 
 // PollingController holds one OS owner lock for this SQLite service directory.
@@ -89,6 +112,9 @@ type PollingController struct {
 	closed     bool
 	active     *pollWork
 	pollCancel context.CancelFunc
+	// captureRetry holds the backoff of unadmitted requests whose capture
+	// failed transiently. It is guarded by mu and never persisted.
+	captureRetry map[pollRequestKey]pollCaptureRetry
 	// after is a private fake-clock seam for the shutdown grace timer.
 	after func(time.Duration) <-chan time.Time
 }
@@ -125,7 +151,7 @@ func OpenPollingController(ctx context.Context, o PollOptions) (*PollingControll
 	o.Publisher.Now = o.Now
 	tick := make(chan struct{}, 1)
 	tick <- struct{}{}
-	return &PollingController{options: o, owner: owner, tick: tick, observing: make(chan struct{}, 1), after: time.After}, nil
+	return &PollingController{options: o, owner: owner, tick: tick, observing: make(chan struct{}, 1), after: time.After, captureRetry: map[pollRequestKey]pollCaptureRetry{}}, nil
 }
 
 func (c *PollingController) now() time.Time {
@@ -283,19 +309,60 @@ func (c *PollingController) cancelFenced(d DurableState) {
 }
 
 func (c *PollingController) drainWork() error {
+	_, err := c.drainFinished()
+	return err
+}
+
+// drainFinished clears and returns a finished invocation with its error.
+func (c *PollingController) drainFinished() (*pollWork, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.active == nil {
-		return nil
+		return nil, nil
 	}
 	select {
 	case <-c.active.done:
-		err := c.active.err
+		w, err := c.active, c.active.err
 		c.active = nil
-		return err
+		return w, err
 	default:
-		return nil
+		return nil, nil
 	}
+}
+
+// noteCapture keeps one finished request's capture backoff. A transient
+// capture failure counts once more for that request and sets its own delay,
+// Interval doubled per consecutive failure up to MaxBackoff, from next, the
+// end of the controller-wide backoff the failure set. A successful capture
+// clears it. The state lives in controller memory only: a restart forgets
+// it, while the durable schedule still defers the first poll, so a failing
+// request gets at most one fresh attempt per controller start.
+func (c *PollingController) noteCapture(w *pollWork, err error, next time.Time) {
+	if w == nil || w.job != "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := w.requestKey()
+	if w.captured || !w.captureFailed || err == nil {
+		if w.captured {
+			delete(c.captureRetry, key)
+		}
+		return
+	}
+	if c.captureRetry == nil {
+		c.captureRetry = map[pollRequestKey]pollCaptureRetry{}
+	}
+	r := c.captureRetry[key]
+	if r.failures < 16 {
+		r.failures++
+	}
+	delay := c.options.Interval
+	for i := 1; i < r.failures && delay < c.options.MaxBackoff; i++ {
+		delay = min(delay*2, c.options.MaxBackoff)
+	}
+	r.until = next.Add(delay)
+	c.captureRetry[key] = r
 }
 
 func pollWrites(d DurableState) []*WriteIntent {
@@ -353,6 +420,9 @@ func (c *PollingController) flushWrites(ctx context.Context) (bool, error) {
 	return pending, failures
 }
 
+// selectWork runs with mu held. Among unadmitted requests it takes the oldest
+// whose own capture backoff has passed, so a request whose capture keeps
+// failing transiently never holds back another ready request.
 func (c *PollingController) selectWork(d DurableState, remote map[string]RemoteState) *pollWork {
 	// A durable lease survives expiry and controller restart. Only a separately
 	// qualified stopped-worker recovery may release it, never this polling loop.
@@ -401,6 +471,8 @@ func (c *PollingController) selectWork(d DurableState, remote map[string]RemoteS
 		scope   Scope
 	}
 	requests := []candidate{}
+	now := c.now()
+	waiting := map[pollRequestKey]pollCaptureRetry{}
 	for _, pr := range d.PRs {
 		r, ok := remote[pr.Scope.key()]
 		if !ok || !r.Access || !r.Open || pr.Paused || r.Request.ID == 0 || r.Request.ID != pr.CurrentRequest {
@@ -408,10 +480,19 @@ func (c *PollingController) selectWork(d DurableState, remote map[string]RemoteS
 		}
 		for _, request := range pr.Requests {
 			if request.ID == pr.CurrentRequest && !request.Removed && !request.Admitted && request.Snapshot == r.Snapshot {
+				key := pollRequestKey{pr.Scope.key(), request.ID, pr.Generation, request.Snapshot}
+				if retry, failed := c.captureRetry[key]; failed {
+					waiting[key] = retry
+					if now.Before(retry.until) {
+						continue
+					}
+				}
 				requests = append(requests, candidate{request, pr.Scope})
 			}
 		}
 	}
+	// Forget requests that were admitted, replaced, fenced or removed.
+	c.captureRetry = waiting
 	sort.Slice(requests, func(i, j int) bool {
 		a, b := requests[i].request, requests[j].request
 		if a.CreatedAt.Equal(b.CreatedAt) {
@@ -456,6 +537,18 @@ func (c *PollingController) refuseCapture(ctx context.Context, w *pollWork, reas
 	return errCaptureRefused
 }
 
+// captureFailed marks a transient capture failure of w's request. A
+// cancelled invocation (fence, qualification, shutdown) is not the request's
+// failure and keeps no backoff of its own.
+func (c *PollingController) captureFailed(ctx context.Context, w *pollWork) {
+	if ctx.Err() != nil {
+		return
+	}
+	c.mu.Lock()
+	w.captureFailed = true
+	c.mu.Unlock()
+}
+
 func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound *JobEvidence, job Job, result error) {
 	if err := c.options.Check(ctx, c.options.Enrollment, c.options.Release); err != nil {
 		return nil, Job{}, errors.Join(ErrLiveBlocked, err)
@@ -483,11 +576,16 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound 
 			if refusal, ok := captureErr.(CaptureRefusal); ok && evidence == nil && ctx.Err() == nil && refusal.known() {
 				return nil, Job{}, c.refuseCapture(ctx, w, refusal.Reason)
 			}
+			c.captureFailed(ctx, w)
 			return nil, Job{}, captureErr
 		}
 		if evidence == nil {
+			c.captureFailed(ctx, w)
 			return nil, Job{}, ErrDeferred
 		}
+		c.mu.Lock()
+		w.captured = true
+		c.mu.Unlock()
 	}
 	// Admission also marks the request, so it shares the observation's exclusion.
 	err := c.exclusive(ctx, func() error {
@@ -709,7 +807,7 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 		return result, ErrIgnored
 	}
 	c.cancelFenced(d)
-	workErr := c.drainWork()
+	finished, workErr := c.drainFinished()
 	if workErr != nil {
 		if latest, readErr := c.options.Store.Snapshot(ctx); readErr == nil {
 			for _, j := range latest.Jobs {
@@ -721,8 +819,14 @@ func (c *PollingController) Poll(ctx context.Context) (result PollResult, err er
 			workErr = errors.Join(workErr, readErr)
 		}
 		result.Next, err = c.schedule(ctx, now, workErr)
+		next := result.Next
+		if next.IsZero() {
+			next = now
+		}
+		c.noteCapture(finished, workErr, next)
 		return result, errors.Join(workErr, err)
 	}
+	c.noteCapture(finished, nil, now)
 	if d.Polling != nil {
 		if d.Polling.Version != 1 || d.Polling.Failures < 0 || d.Polling.Failures > 16 || d.Polling.Next.After(now.Add(time.Hour)) {
 			return result, ErrDeferred
