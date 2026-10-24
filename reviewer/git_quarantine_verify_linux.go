@@ -81,9 +81,17 @@ func gitQuarantinePath(name string, directory bool, hashLength int) bool {
 	stem, extension, ok := strings.Cut(parts[2], ".")
 	return ok && strings.HasPrefix(stem, "pack-") && gitQuarantineHex(strings.TrimPrefix(stem, "pack-"), hashLength) && (extension == "pack" || extension == "idx" || extension == "rev")
 }
-func gitQuarantineFiles(root *os.Root, s Snapshot, b GitAcquisitionBounds) (int, int64, error) {
+
+// gitQuarantineFiles enumerates the complete repository layout. A file that
+// would take the total over DiskBytes sets over; enumeration still checks the
+// rest of the layout, so an overrun is reported only for an otherwise valid
+// repository. The filesystem entry bound stays an opaque failure: with
+// fetch.unpackLimit=1 the layout of an honest fetch is a few fixed paths and
+// one pack, so too many entries never describe the fetched history.
+func gitQuarantineFiles(root *os.Root, s Snapshot, b GitAcquisitionBounds) (int, int64, bool, error) {
 	count := 0
 	var size int64
+	over := false
 	var visit func(*os.Root, string, int) error
 	visit = func(directory *os.Root, prefix string, depth int) error {
 		if depth > 8 {
@@ -133,10 +141,14 @@ func gitQuarantineFiles(root *os.Root, s Snapshot, b GitAcquisitionBounds) (int,
 						return err
 					}
 				} else {
-					if !info.Mode().IsRegular() || stat.Nlink != 1 || info.Size() < 0 || info.Size() > b.DiskBytes-size {
+					if !info.Mode().IsRegular() || stat.Nlink != 1 || info.Size() < 0 {
 						return ErrGitQuarantine
 					}
-					size += info.Size()
+					if over || info.Size() > b.DiskBytes-size {
+						over = true
+					} else {
+						size += info.Size()
+					}
 				}
 			}
 			if err == io.EOF {
@@ -145,7 +157,7 @@ func gitQuarantineFiles(root *os.Root, s Snapshot, b GitAcquisitionBounds) (int,
 		}
 	}
 	err := visit(root, "", 0)
-	return count, size, err
+	return count, size, over, err
 }
 func gitQuarantineFileEquals(root *os.Root, name string, want string) bool {
 	file, err := openRootNoFollow(root, name, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
@@ -157,6 +169,77 @@ func gitQuarantineFileEquals(root *os.Root, name string, want string) bool {
 	return err == nil && bytes.Equal(raw, []byte(want))
 }
 
+// gitQuarantineMetadata is the parsed cat-file --batch-all-objects inventory.
+type gitQuarantineMetadata struct {
+	objects  map[string]string
+	rows     []string
+	commits  int
+	expanded int64
+}
+
+// parseGitQuarantineMetadata validates every complete line of raw and counts
+// it against b. truncated marks raw as the exact prefix of output that was
+// over its ceiling; its last partial line is dropped. over reports a definite
+// object, commit, object-byte or expanded-byte overrun among well-formed
+// lines. Any malformed or duplicate line is an error, even after an overrun,
+// and a truncated inventory without an overrun is an error too, since it is
+// no complete answer.
+func parseGitQuarantineMetadata(raw []byte, truncated bool, s Snapshot, b GitAcquisitionBounds) (gitQuarantineMetadata, bool, error) {
+	m := gitQuarantineMetadata{objects: map[string]string{}}
+	if truncated {
+		end := bytes.LastIndexByte(raw, '\n')
+		if end < 0 {
+			return gitQuarantineMetadata{}, false, ErrGitQuarantine
+		}
+		raw = raw[:end+1]
+	}
+	if len(raw) == 0 {
+		return gitQuarantineMetadata{}, false, ErrGitQuarantine
+	}
+	over := false
+	for _, line := range strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || len(fields[0]) != len(s.Head) || !objectID.MatchString(fields[0]) || m.objects[fields[0]] != "" {
+			return gitQuarantineMetadata{}, false, ErrGitQuarantine
+		}
+		switch fields[1] {
+		case "commit", "tree", "blob", "tag":
+		default:
+			return gitQuarantineMetadata{}, false, ErrGitQuarantine
+		}
+		amount, err := strconv.ParseInt(fields[2], 10, 64)
+		if err != nil || amount < 0 {
+			return gitQuarantineMetadata{}, false, ErrGitQuarantine
+		}
+		if over || amount > b.ObjectBytes || amount > b.ExpandedBytes-m.expanded {
+			over = true
+		} else {
+			m.expanded += amount
+		}
+		m.objects[fields[0]] = fields[1]
+		m.rows = append(m.rows, line)
+		if fields[1] == "commit" {
+			m.commits++
+		}
+		if len(m.objects) > b.Objects || m.commits > b.Commits {
+			over = true
+		}
+	}
+	if truncated && !over {
+		return gitQuarantineMetadata{}, false, ErrGitQuarantine
+	}
+	return m, over, nil
+}
+
+// gitQuarantineOverrun answers a definite bound overrun as the permanent
+// history_limit refusal. A cancelled or expired context is never an answer.
+func gitQuarantineOverrun(ctx context.Context) error {
+	if ctx.Err() != nil {
+		return ErrGitQuarantine
+	}
+	return CaptureRefusal{CaptureHistoryLimit}
+}
+
 // verifyGitQuarantine is worker-side plumbing, not a host qualification API.
 // Every command parses untrusted Git objects and MUST run within the measured
 // acquisition unit's aggregate resource/filesystem/egress boundary. The factory
@@ -165,6 +248,8 @@ func gitQuarantineFileEquals(root *os.Root, name string, want string) bool {
 // Current direct tests use only trusted synthetic repos and prove algorithms.
 // After every other check passes, Git's definite answer that the snapshot's
 // merge base is missing, ambiguous or different returns a CaptureRefusal.
+// A definite overrun of an object, commit or byte bound, by a well-formed
+// layout or inventory, returns the history_limit refusal.
 func verifyGitQuarantine(ctx context.Context, store GitStore, s Snapshot, b GitAcquisitionBounds) (GitAcquisitionInventory, error) {
 	zero := GitAcquisitionInventory{}
 	if ctx == nil || ctx.Err() != nil || s.Validate() != nil || !b.valid() || !filepath.IsAbs(store.Git) || !filepath.IsAbs(store.GitDir) || filepath.Clean(store.GitDir) != store.GitDir || privateDirectory(store.GitDir) != nil {
@@ -179,49 +264,39 @@ func verifyGitQuarantine(ctx context.Context, store GitStore, s Snapshot, b GitA
 		return zero, ErrGitQuarantine
 	}
 	defer root.Close()
-	files, disk, err := gitQuarantineFiles(root, s, b)
+	files, disk, diskOver, err := gitQuarantineFiles(root, s, b)
 	if err != nil {
 		return zero, ErrGitQuarantine
 	}
 	if !gitQuarantineFileEquals(root, "config", gitAcquisitionConfig(s)) || !gitQuarantineFileEquals(root, "HEAD", s.Head+"\n") || !gitQuarantineFileEquals(root, "refs/sfl/head", s.Head+"\n") || !gitQuarantineFileEquals(root, "refs/sfl/base", s.Base+"\n") {
 		return zero, ErrGitQuarantine
 	}
+	// A complete, valid layout over the disk bound is a definite answer about
+	// the fetched pack. No Git command parses an oversized repository.
+	if diskOver {
+		return zero, gitQuarantineOverrun(ctx)
+	}
+	fixed := []string{"-c", "core.commitGraph=false", "-c", "core.multiPackIndex=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 	run := func(max int, args ...string) ([]byte, error) {
-		fixed := []string{"-c", "core.commitGraph=false", "-c", "core.multiPackIndex=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 		return store.command(ctx, max, append(fixed, args...)...)
 	}
-	metadata, err := run(2<<20, "cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype) %(objectsize)")
-	if err != nil || len(metadata) == 0 {
+	// Output over the 2-MiB ceiling keeps its exact prefix. Even the longest
+	// well-formed line within the object-byte bound fits more than 25,000
+	// times in that prefix, over the largest object bound, so a well-formed
+	// prefix is itself a definite object overrun.
+	metadata, err := store.boundedCommand(ctx, 2<<20, append(fixed, "cat-file", "--batch-all-objects", "--batch-check=%(objectname) %(objecttype) %(objectsize)")...)
+	truncated := errors.Is(err, errGitOutputLimit) && ctx.Err() == nil
+	if err != nil && !truncated {
 		return zero, ErrGitQuarantine
 	}
-	objects := map[string]string{}
-	rows := []string{}
-	commits := 0
-	var expanded int64
-	for _, line := range strings.Split(strings.TrimSuffix(string(metadata), "\n"), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 3 || len(fields[0]) != len(s.Head) || !objectID.MatchString(fields[0]) || objects[fields[0]] != "" {
-			return zero, ErrGitQuarantine
-		}
-		switch fields[1] {
-		case "commit", "tree", "blob", "tag":
-		default:
-			return zero, ErrGitQuarantine
-		}
-		amount, err := strconv.ParseInt(fields[2], 10, 64)
-		if err != nil || amount < 0 || amount > b.ObjectBytes || amount > b.ExpandedBytes-expanded {
-			return zero, ErrGitQuarantine
-		}
-		expanded += amount
-		objects[fields[0]] = fields[1]
-		rows = append(rows, line)
-		if fields[1] == "commit" {
-			commits++
-		}
-		if len(objects) > b.Objects || commits > b.Commits {
-			return zero, ErrGitQuarantine
-		}
+	inventory, over, err := parseGitQuarantineMetadata(metadata, truncated, s, b)
+	if err != nil {
+		return zero, ErrGitQuarantine
 	}
+	if over {
+		return zero, gitQuarantineOverrun(ctx)
+	}
+	objects, rows, commits, expanded := inventory.objects, inventory.rows, inventory.commits, inventory.expanded
 	for _, id := range []string{s.Head, s.Base} {
 		if objects[id] != "commit" {
 			return zero, ErrGitQuarantine
@@ -237,6 +312,11 @@ func verifyGitQuarantine(ctx context.Context, store GitStore, s Snapshot, b GitA
 		return zero, ErrGitQuarantine
 	}
 	graph, err := run(2<<20, "rev-list", "--parents", s.Base, s.Head, "--")
+	if errors.Is(err, errGitOutputLimit) && ctx.Err() == nil {
+		// The objects passed strict fsck and the commit bound, so a parent
+		// graph over its ceiling is a definite answer about this history.
+		return zero, gitQuarantineOverrun(ctx)
+	}
 	if err != nil || len(graph) == 0 {
 		return zero, ErrGitQuarantine
 	}

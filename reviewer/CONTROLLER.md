@@ -204,7 +204,7 @@ published states and their leading words are:
 | `invalid_output` | INCOMPLETE: provider output failed validation; ended without a review |
 | `incomplete_expired` | INCOMPLETE: expired before every required phase completed, or the captured session budget is exhausted, naming the charged sessions without a result |
 | `cancelled` | CANCELLED: the request was cancelled before the job completed |
-| `capture_refused` | INCOMPLETE: missing history, ambiguous merge base or over the 128-file inventory limit; the request ended without a review |
+| `capture_refused` | INCOMPLETE: missing history, ambiguous merge base, over the 128-file inventory limit or over a quarantine object, commit or byte limit; the request ended without a review |
 
 The text is fixed controller wording keyed by the durable state, the captured
 configuration and the checkpoint's session counts. It passes through `safeText` and known-secret

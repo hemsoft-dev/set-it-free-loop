@@ -108,9 +108,11 @@ func TestGitAcquisitionActualFetchVerifyAndExport(t *testing.T) {
 }
 
 func TestGitAcquisitionFailedFetchAndVerificationAreSpentWithoutExport(t *testing.T) {
-	// A merge base that is a complete, different Git answer is a permanent
-	// refusal record instead (TestGitAcquisitionRefusalCrossesWorkerExport).
-	for _, kind := range []string{"missing-tip", "non-commit-merge-base", "object-limit"} {
+	// A merge base that is a complete, different Git answer, and an object,
+	// commit or byte overrun, are permanent refusal records instead
+	// (TestGitAcquisitionRefusalCrossesWorkerExport). The filesystem entry
+	// bound stays opaque.
+	for _, kind := range []string{"missing-tip", "non-commit-merge-base", "file-limit"} {
 		t.Run(kind, func(t *testing.T) {
 			fixture := snapshotGitFixtureFormat(t, "sha1")
 			endpoint, finish := gitAcquisitionBackend(t, fixture)
@@ -121,8 +123,8 @@ func TestGitAcquisitionFailedFetchAndVerificationAreSpentWithoutExport(t *testin
 				binding.Snapshot.Head = strings.Repeat("a", 40)
 			case "non-commit-merge-base":
 				binding.Snapshot.MergeBase = fixture.run(t, "rev-parse", binding.Snapshot.Head+"^{tree}")
-			case "object-limit":
-				bounds.Objects = 1
+			case "file-limit":
+				bounds.Files = 1
 			}
 			workspace := t.TempDir()
 			os.Chmod(workspace, 0700)

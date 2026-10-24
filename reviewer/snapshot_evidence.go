@@ -19,25 +19,33 @@ const snapshotObjectBytes = 2 << 20
 
 // Capture refusal reasons. Each is Git's definite answer about a snapshot's
 // immutable commits in the trusted object store, so that snapshot can never
-// be captured there.
+// be captured there. Only acquisition quarantine verification answers
+// CaptureHistoryLimit; in-process capture has no quarantine bounds.
 const (
 	CaptureMissingHistory   = "missing_history"
 	CaptureAmbiguousHistory = "ambiguous_history"
 	CaptureInventoryLimit   = "inventory_limit"
+	CaptureHistoryLimit     = "history_limit"
 )
 
 // CaptureRefusal is a permanent refusal to capture one snapshot: its head,
 // base or merge-base commit is missing, or head and base share no ancestor;
-// its merge base is ambiguous or differs from the snapshot's; or its
-// changed-path inventory is over snapshotFileLimit. A failed, killed or
-// cancelled Git process, and transport, access, rate-limit and VM failures,
-// are never refusals and keep the poll loop's deferred backoff.
+// its merge base is ambiguous or differs from the snapshot's; its
+// changed-path inventory is over snapshotFileLimit; or its fetched history
+// overruns an acquisition quarantine object, commit or byte bound. A failed,
+// killed, timed-out or cancelled Git process, and transport, access,
+// rate-limit and VM failures, are never refusals and keep the poll loop's
+// deferred backoff.
 type CaptureRefusal struct{ Reason string }
 
 func (e CaptureRefusal) Error() string { return "snapshot capture refused: " + e.Reason }
 
 func (e CaptureRefusal) known() bool {
-	return e.Reason == CaptureMissingHistory || e.Reason == CaptureAmbiguousHistory || e.Reason == CaptureInventoryLimit
+	switch e.Reason {
+	case CaptureMissingHistory, CaptureAmbiguousHistory, CaptureInventoryLimit, CaptureHistoryLimit:
+		return true
+	}
+	return false
 }
 
 // bareCaptureRefusal returns err only when it is itself a refusal with a known

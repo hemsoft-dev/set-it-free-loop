@@ -67,7 +67,8 @@ failure counts defer. Enrollment/default changes still require explicit migratio
    command acknowledgments are limited to one new ACK per cycle; remaining ACKs
    defer admission. Prune only records already eligible under retention policy.
 5. If no physical invocation or unresolved durable lease exists, select the
-   oldest runnable job or authorized comment/automatic request. For a new request, capture source
+   oldest runnable job or authorized comment/automatic request whose capture
+   is not [backing off](#transient-capture-failures). For a new request, capture source
    and reobserve before admission. One controller exclusion covers each
    observation, publication refresh and the worker's reobservation through
    admission, never capture or work. A concurrent poll therefore cannot make the
@@ -91,7 +92,8 @@ failure counts defer. Enrollment/default changes still require explicit migratio
 One invocation runs at a time and selection takes the oldest runnable
 request. A capture that failed every cycle was therefore selected again
 every cycle, with only a generic `deferred` backoff, and held back every
-later PR.
+later PR. A permanent refusal now ends its request, and a transient failure
+[backs off per request](#transient-capture-failures).
 
 A bare `CaptureRefusal` from the trusted capture, returned without evidence
 and before cancellation, is permanent for that snapshot
@@ -114,9 +116,10 @@ job that is captured again. The refused job then becomes `stale` and its
 terminal status is neither reposted nor annotated. If the remote state changed
 during the capture, the refusal is fenced and nothing is recorded.
 
-A transient capture failure keeps the deferred backoff and the same request is
-captured again once it ends. So do a wrapped or joined refusal and a refusal
-with an unknown reason.
+A transient capture failure keeps the deferred backoff, and the same request
+is captured again after its own backoff without holding back other requests
+([transient capture failures](#transient-capture-failures)). So do a wrapped
+or joined refusal and a refusal with an unknown reason.
 
 Both production source factories carry the refusal out of the acquisition
 boundary. The host acquisition unit's worker and the source VM guest classify
@@ -135,15 +138,50 @@ failure remain the factory's opaque error and keep the backoff.
 
 The reason comes from the confined worker, which parses the PR's untrusted
 objects, so a compromised worker could report a refusal it never observed.
-That is bounded. The record names one of three fixed reasons and binds one
+That is bounded. The record names one of four fixed reasons and binds one
 attempt of one snapshot. At worst it ends that request with an INCOMPLETE
 status that names the reason on the PR, visible to the owner. It cannot admit
 source, mark a review clean, or touch another PR, a new head or a fresh
 request, which is captured again by a new attempt. A worker that fails its
 capture already denies review of that snapshot. The PR author can also cause
-each reason honestly with unrelated or criss-cross history or more than 128
-changed files. The record therefore grants no power beyond what the worker
-and the author already had.
+each reason honestly with unrelated or criss-cross history, more than 128
+changed files or a history over the quarantine's object, commit or byte
+bounds. The record therefore grants no power beyond what the worker and the
+author already had.
+
+## Transient capture failures
+
+Any other capture failure of a new request is transient: an opaque factory
+error, an unknown stop, a source VM or network failure, a rate limit, a
+wall-clock deadline, and a wrapped, joined or unknown refusal. Its invocation
+still ends with the error, so the next cycle records the controller-wide
+`deferred` backoff exactly as before and starts no work.
+
+The controller also keeps a backoff for that request alone: its scope,
+request, generation and head. Each consecutive transient failure counts once
+more, and its delay is the poll interval doubled per failure up to the
+maximum backoff, counted from the end of the controller-wide backoff the
+failure set. Until it passes, selection skips the request and takes the next
+ready request in the same oldest-first order. One that keeps failing
+therefore never holds back another PR. When its backoff ends it is the oldest
+again and is captured first. With nothing else ready, a cycle starts no work
+and polling continues at the normal interval, so there is no busy retry. A
+successful capture clears the backoff. An admitted, replaced, fenced or
+removed request leaves selection and its backoff is forgotten. A cancelled
+invocation (fence, qualification interruption or shutdown) is not the
+request's failure and sets no backoff of its own. Failures before or after
+capture, such as qualification, source retention or admission's
+reobservation, keep only the controller-wide backoff.
+
+The request backoff lives in controller memory and is never persisted. The
+durable schedule is one bounded, strictly decoded record of fixed size for
+the whole controller, and request records are compared during discovery and
+admission, so neither is a place for per-request retry state. A restart
+forgets the request backoffs, but the persisted controller-wide schedule
+still defers the first cycle. After that each failing request is captured
+once more as a first failure and backs off again, at most one extra attempt
+per request and controller start. A restart usually follows an operator fix
+or upgrade, so that one attempt is wanted.
 
 Candidate enumeration uses the [documented open default for GitHub's PR list](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests),
 with strict same-collection pagination and explicit repository-ID validation.
@@ -212,8 +250,14 @@ by marker, an owner-cancelled status and annotation of a replaced job's
 status, each permanent capture refusal from real Git history recorded once
 with one status and no retry, transient and wrapped capture failures that
 still back off, a refused head retried on a new head, a refusal fenced by a
-head change during capture, and a refused older PR that no longer blocks a
-later PR's admission. The loop itself is exercised with bounded cancellation.
+head change during capture, a refused older PR that no longer blocks a
+later PR's admission, including an older PR whose history overruns a
+quarantine bound through each production source factory, an older PR whose
+capture keeps failing transiently while a later PR is admitted and the failing
+one is still retried after each doubling backoff, and a failing request alone
+that keeps the controller-wide backoff, starts no work during its own backoff
+and gets one fresh attempt after a restart. The loop itself is exercised with
+bounded cancellation.
 
 This supplies the polling lifecycle source for #176. The
 [service assembly](GIT-SERVICE.md), [trusted startup packages](GIT-STARTUP.md),

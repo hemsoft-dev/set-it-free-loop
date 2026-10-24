@@ -278,6 +278,18 @@ func gitExited(err error, code int) bool {
 }
 
 func (g GitStore) command(ctx context.Context, max int, args ...string) ([]byte, error) {
+	out, err := g.boundedCommand(ctx, max, args...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// boundedCommand is command, except that output over max returns
+// errGitOutputLimit together with the exact prefix of Git's output that fit:
+// cappedOutput refuses a whole write that does not fit and keeps every earlier
+// one. Quarantine verification counts complete lines of that prefix.
+func (g GitStore) boundedCommand(ctx context.Context, max int, args ...string) ([]byte, error) {
 	if !filepath.IsAbs(g.Git) || !filepath.IsAbs(g.GitDir) || max <= 0 || max > 2<<20 {
 		return nil, errors.New("invalid trusted git reader configuration")
 	}
@@ -291,7 +303,7 @@ func (g GitStore) command(ctx context.Context, max int, args ...string) ([]byte,
 	c.Stderr = &cappedOutput{max: 2048}
 	if err := c.Run(); err != nil {
 		if b.exceeded {
-			return nil, errGitOutputLimit
+			return b.buffer.Bytes(), errGitOutputLimit
 		}
 		var exit *exec.ExitError
 		if ctx.Err() == nil && errors.As(err, &exit) && exit.Exited() {

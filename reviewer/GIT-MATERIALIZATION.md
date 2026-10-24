@@ -61,7 +61,8 @@ The receiver reads the same fixed prefix and accepts the record only if:
   missing, escaped or reordered field and no second value is accepted.
 - Its version is 1 and its binding equals the receiver's exact attempt,
   release, runtime and snapshot binding.
-- Its reason is `missing_history`, `ambiguous_history` or `inventory_limit`.
+- Its reason is `missing_history`, `ambiguous_history`, `inventory_limit` or
+  `history_limit`, byte for byte.
 - Exact EOF follows before cancellation.
 
 It then returns the bare `CaptureRefusal` and no materialization. The record
@@ -69,7 +70,9 @@ has no manifest, packet or blob field, so a reason never arrives with source
 data. Trailing bytes, a manifest after the refusal marker, a refusal after the
 materialization marker and every other shape are opaque materialization
 errors. Tests cover each refusal through an actual fetch, verification and
-export, and each malformed shape.
+export, including `history_limit` for each object, commit and byte bound, and
+each malformed shape, including near-miss, escaped and foreign
+`history_limit` records.
 
 Later reads use those retained descriptors and recheck seals, mode, length,
 SHA-256 and Git blob identity. They use no Git subprocess, zlib, pack/index,

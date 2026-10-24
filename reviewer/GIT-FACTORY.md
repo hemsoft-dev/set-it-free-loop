@@ -105,7 +105,12 @@ is no network refetch, host Git parser, recapture or label-based fallback.
 ## Worker capture refusals
 
 A worker [refusal record](GIT-MATERIALIZATION.md#capture-refusal-record) is
-staged as incomplete intake and takes the same stop path as source.
+staged as incomplete intake and takes the same stop path as source. The
+`gitacquire` worker writes one for each
+[permanent refusal](SNAPSHOT-EVIDENCE.md#permanent-refusals), including
+`history_limit` when its [quarantine verification](GIT-QUARANTINE.md) finds a
+definite object, commit or byte bound overrun under the default acquisition
+bounds.
 `runGitFactoryAcquisition` returns the bare `CaptureRefusal` only after the
 stop capability proved whole-unit stop, the run closed and the credential
 owner released the generation, and only with no materialization and before
@@ -117,7 +122,11 @@ factory and returns the opaque error. The attempt's unit record is stopped and
 revoked like any failed attempt's, and `PruneSource` retires it because no job
 references it. The nonce stays spent; the next capture uses a fresh one. A
 record for another attempt, an unknown reason, trailing data, an unknown stop
-and cancellation all stay `errGitUnit`.
+and cancellation all stay `errGitUnit`. Every other worker failure, including a
+fetch that does not complete within the unit's wall-clock, memory, task or
+CPU limits, also stays `errGitUnit`; the poll loop then
+[backs off that request](POLLING.md#transient-capture-failures) without
+holding back other PRs.
 
 The private `capture` method takes the acquisition constructor, so tests
 replace only the worker side of a real run and keep its real stop, close and

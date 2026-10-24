@@ -4,6 +4,7 @@ package reviewer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -148,6 +149,10 @@ func TestGitQuarantineRejectsMetadataAndObjectStoreEscapeRoutes(t *testing.T) {
 		})
 	}
 }
+
+// A definite object, commit or byte overrun of a lowered bound is the
+// permanent history_limit refusal. The filesystem entry bound and invalid
+// bounds stay opaque. No case yields a partial inventory.
 func TestGitQuarantineBoundsAndCanceledInputRefusePartialInventory(t *testing.T) {
 	store, snapshot := gitQuarantineFixture(t)
 	for _, kind := range []string{"objects", "commits", "files", "object-bytes", "expanded", "disk", "invalid"} {
@@ -169,8 +174,18 @@ func TestGitQuarantineBoundsAndCanceledInputRefusePartialInventory(t *testing.T)
 			case "invalid":
 				bounds.Objects++
 			}
-			if result, err := verifyGitQuarantine(context.Background(), store, snapshot, bounds); err == nil || result != (GitAcquisitionInventory{}) {
+			result, err := verifyGitQuarantine(context.Background(), store, snapshot, bounds)
+			if err == nil || result != (GitAcquisitionInventory{}) {
 				t.Fatal("excess quarantine accepted", kind, result, err)
+			}
+			opaque := kind == "files" || kind == "invalid"
+			if opaque && !errors.Is(err, ErrGitQuarantine) || !opaque && err != (CaptureRefusal{"history_limit"}) {
+				t.Fatal("bound overrun misclassified", kind, err)
+			}
+			cancelled, cancel := context.WithCancel(context.Background())
+			cancel()
+			if _, err := verifyGitQuarantine(cancelled, store, snapshot, bounds); !errors.Is(err, ErrGitQuarantine) {
+				t.Fatal("cancelled overrun reported", kind, err)
 			}
 		})
 	}

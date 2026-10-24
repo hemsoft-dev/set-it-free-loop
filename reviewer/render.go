@@ -279,6 +279,8 @@ func statusCause(job Job, state string) string {
 			cause = "the merge base of this snapshot is ambiguous or differs from the recorded merge base, so its changes could not be captured"
 		case CaptureInventoryLimit:
 			cause = fmt.Sprintf("this snapshot changes more than %d files, over the capture inventory limit, so its changes could not be captured", snapshotFileLimit)
+		case CaptureHistoryLimit:
+			cause = "the fetched history of this snapshot is over an object, commit or byte limit of the acquisition quarantine, so its changes could not be captured"
 		}
 		return "INCOMPLETE: " + cause + ". No source was reviewed and this request ended without a review. A new head or a fresh authorized request is captured again."
 	case "cancelled":

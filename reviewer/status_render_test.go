@@ -54,7 +54,7 @@ func TestStatusMarkdownGolden(t *testing.T) {
 // Each permanent capture refusal renders its own INCOMPLETE cause with no
 // completed phase and none of a completed review's wording.
 func TestCaptureRefusalStatusMarkdownGolden(t *testing.T) {
-	for _, reason := range []string{CaptureMissingHistory, CaptureAmbiguousHistory, CaptureInventoryLimit} {
+	for _, reason := range []string{CaptureMissingHistory, CaptureAmbiguousHistory, CaptureInventoryLimit, CaptureHistoryLimit} {
 		t.Run(reason, func(t *testing.T) {
 			job := testJob()
 			packet, err := newCaptureRefusalPacket(job.Snapshot, reason)
