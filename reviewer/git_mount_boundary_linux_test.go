@@ -153,11 +153,12 @@ func TestGitMountReadUsesOriginalLivePIDFD(t *testing.T) {
 		t.Fatal(err)
 	}
 	pidfd := gitTestPIDFD(t, child.Process.Pid)
-	before := gitPacketFDCount(t)
+	watch := gitWatchFDs(t, gitFDProcfs(t, child.Process.Pid), gitFDPIDFDs(child.Process.Pid))
 	got, err := gitReadMountInfo(context.Background(), identity, int(pidfd.Fd()))
+	leaked := watch.leaked(t)
 	want, readErr := os.ReadFile(fmt.Sprintf("/proc/%d/mountinfo", child.Process.Pid))
-	if err != nil || readErr != nil || len(got) == 0 || string(got) != string(want) || gitPacketFDCount(t) != before {
-		t.Fatal("actual mount observation changed bytes or leaked descriptors", err, readErr)
+	if err != nil || readErr != nil || len(got) == 0 || string(got) != string(want) || len(leaked) != 0 {
+		t.Fatal("actual mount observation changed bytes or leaked descriptors", err, readErr, leaked)
 	}
 	wrong := identity
 	wrong.StartTicks++

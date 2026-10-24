@@ -92,13 +92,13 @@ func TestGitSupervisorPeerUsesPidfsIdentityAndRejectsAnonymousOrWrongPeers(t *te
 		t.Fatal("different live process shares pidfs identity", err)
 	}
 	for _, candidate := range []*os.File{nil, wrong, gitPacketFile(t)} {
-		before := gitPacketFDCount(t)
+		watch := gitWatchFDs(t, gitFDFiles(t, candidate), gitFDConns(t, left), gitFDPIDFDs(os.Getpid(), child.Process.Pid))
 		if peer, err := authenticateGitSupervisor(context.Background(), left, candidate); err == nil {
 			peer.Close()
 			t.Fatal("wrong trusted descriptor accepted")
 		}
-		if gitPacketFDCount(t) != before {
-			t.Fatal("refusal leaked descriptors")
+		if leaked := watch.leaked(t); len(leaked) != 0 {
+			t.Fatal("refusal leaked descriptors", leaked)
 		}
 	}
 	unnamed, _ := gitPacketPair(t, unix.SOCK_SEQPACKET)

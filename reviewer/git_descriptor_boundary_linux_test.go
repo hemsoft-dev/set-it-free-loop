@@ -143,7 +143,8 @@ func TestGitDescriptorOriginalPidfdAndNoLocalDescriptorMutation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer unix.Close(pidfd)
-	before := gitPacketFDCount(t)
+	// Duplicates taken through the pidfd name the child's null streams.
+	watch := gitWatchFDs(t, gitFDProcfs(t, child.Process.Pid), gitFDPIDFDs(child.Process.Pid), gitFDPaths(t, os.DevNull))
 	rows, err := observeGitDescriptors(context.Background(), identity, pidfd)
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("actual inert child descriptor read: %+v %v", rows, err)
@@ -163,7 +164,7 @@ func TestGitDescriptorOriginalPidfdAndNoLocalDescriptorMutation(t *testing.T) {
 	if rows, err := observeGitDescriptors(ctx, identity, pidfd); err == nil || rows != nil {
 		t.Fatal("canceled observation accepted")
 	}
-	if after := gitPacketFDCount(t); before != after {
-		t.Fatalf("descriptor leak: %d -> %d", before, after)
+	if leaked := watch.leaked(t); len(leaked) != 0 {
+		t.Fatalf("descriptor leak: %+v", leaked)
 	}
 }

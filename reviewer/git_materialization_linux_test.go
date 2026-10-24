@@ -530,26 +530,14 @@ func TestGitMaterializationFileDirectoryTransitionsAndOmissions(t *testing.T) {
 	}
 }
 
-func materializationBlobFDCount(t *testing.T) int {
-	t.Helper()
-	entries, err := os.ReadDir("/proc/self/fd")
-	if err != nil {
-		t.Fatal(err)
-	}
-	count := 0
-	for _, entry := range entries {
-		target, _ := os.Readlink("/proc/self/fd/" + entry.Name())
-		if strings.Contains(target, "memfd:sfl-source-blob") {
-			count++
-		}
-	}
-	return count
-}
+// gitMaterializationBlobTarget is the descriptor link of a sealed source blob.
+const gitMaterializationBlobTarget = "/memfd:sfl-source-blob"
+
 func TestGitMaterializationFailedIntakeClosesPreviouslySealedBlobs(t *testing.T) {
 	raw, binding, _ := gitMaterializationFixture(t, "sha1")
 	// A last-record failure occurs after earlier records have acquired memfds.
 	raw[len(raw)-1] ^= 1
-	baseline := materializationBlobFDCount(t)
+	watch := gitWatchFDs(t, gitFDTargets(gitMaterializationBlobTarget))
 	for i := 0; i < 12; i++ {
 		m, err := receiveGitMaterialization(context.Background(), io.NopCloser(bytes.NewReader(raw)), binding)
 		if err == nil || m != nil {
@@ -558,8 +546,8 @@ func TestGitMaterializationFailedIntakeClosesPreviouslySealedBlobs(t *testing.T)
 			}
 			t.Fatal("late corruption admitted")
 		}
-		if count := materializationBlobFDCount(t); count != baseline {
-			t.Fatalf("retained failed intake descriptors: before %d after %d", baseline, count)
+		if leaked := watch.leaked(t); len(leaked) != 0 {
+			t.Fatalf("retained failed intake descriptors: %+v", leaked)
 		}
 	}
 }

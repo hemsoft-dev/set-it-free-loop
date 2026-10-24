@@ -12,12 +12,41 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+// gitProcessLineage lists from and its ancestors up to and including to: every
+// process a helper ancestry check may retain or observe.
+func gitProcessLineage(t *testing.T, from, to int) []int {
+	t.Helper()
+	var lineage []int
+	for pid := from; ; {
+		lineage = append(lineage, pid)
+		if pid == to {
+			return lineage
+		}
+		if pid <= 1 || len(lineage) > 8 {
+			t.Fatal("process is not below the expected ancestor", from, to)
+		}
+		stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		end := bytes.LastIndexByte(stat, ')')
+		if err != nil || end < 0 {
+			t.Fatal("process ancestry", pid, err)
+		}
+		fields := strings.Fields(string(stat[end+1:]))
+		if len(fields) < 2 {
+			t.Fatal("process ancestry", pid)
+		}
+		if pid, err = strconv.Atoi(fields[1]); err != nil {
+			t.Fatal("process ancestry", pid, err)
+		}
+	}
+}
 
 func TestGitProcessObservationUsesActualKernelIdentityAndBorrowedFiles(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -49,7 +78,7 @@ func TestGitProcessObservationUsesActualKernelIdentityAndBorrowedFiles(t *testin
 	pin := VMAssetPin{gitRawHash(body), int64(len(body))}
 	wantRoot, _ := gitStatFileID(root)
 	wantExe, _ := gitStatFileID(exe)
-	before := gitPacketFDCount(t)
+	watch := gitWatchFDs(t, gitFDFiles(t, root, exe), gitFDProcfs(t, child.Process.Pid), gitFDPIDFDs(child.Process.Pid))
 	got, err := observeGitProcess(ctx, identity, int(pidfd.Fd()), root, exe, pin)
 	if err != nil {
 		t.Fatal("live executable observation", err)
@@ -87,8 +116,8 @@ func TestGitProcessObservationUsesActualKernelIdentityAndBorrowedFiles(t *testin
 			t.Fatal("ordinary child unexpectedly changed namespace", name, statErr)
 		}
 	}
-	if gitPacketFDCount(t) != before {
-		t.Fatal("observation leaked descriptors")
+	if leaked := watch.leaked(t); len(leaked) != 0 {
+		t.Fatal("observation leaked descriptors", leaked)
 	}
 	if _, err := root.Stat(); err != nil {
 		t.Fatal("borrowed root was closed", err)
@@ -142,13 +171,13 @@ func TestGitProcessObservationUsesActualKernelIdentityAndBorrowedFiles(t *testin
 			case "cancelled":
 				ctx = cancelled
 			}
-			before := gitPacketFDCount(t)
+			watch := gitWatchFDs(t, gitFDFiles(t, root, exe, copied, wrongRoot, wrongPIDFD), gitFDProcfs(t, child.Process.Pid), gitFDPIDFDs(child.Process.Pid, os.Getpid()))
 			got, err := observeGitProcess(ctx, identity, fd, root, exe, pin)
 			if err == nil || !reflect.DeepEqual(got, gitProcessObservation{}) {
 				t.Fatal("bad process evidence returned an observation", got, err)
 			}
-			if gitPacketFDCount(t) != before {
-				t.Fatal("refusal leaked descriptors")
+			if leaked := watch.leaked(t); len(leaked) != 0 {
+				t.Fatal("refusal leaked descriptors", leaked)
 			}
 		})
 	}
@@ -453,13 +482,14 @@ func TestGitProcessObservationActualPrivateRootAndFinalPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer helper.kernel.Close()
-			before := gitPacketFDCount(t)
+			lineage := gitProcessLineage(t, helper.PID, identity.PID)
+			watch := gitWatchFDs(t, gitFDFiles(t, boundary.root, boundary.image, boundary.git, boundary.http), gitFDProcfs(t, lineage...), gitFDPIDFDs(lineage...))
 			err = boundary.checkHelper(ctx, helper)
 			if role == "git" && err != nil || role == "helper" && err == nil {
 				t.Fatal("actual helper ancestry policy", role, err)
 			}
-			if gitPacketFDCount(t) != before {
-				t.Fatal("ancestry leaked descriptors")
+			if leaked := watch.leaked(t); len(leaked) != 0 {
+				t.Fatal("ancestry leaked descriptors", leaked)
 			}
 			for _, forged := range []GitReadPeer{{PID: helper.PID, UID: helper.UID, GID: helper.GID}, {PID: helper.PID + 1, UID: helper.UID, GID: helper.GID, kernel: helper.kernel}} {
 				if boundary.checkHelper(ctx, forged) == nil {

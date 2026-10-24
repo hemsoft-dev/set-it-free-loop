@@ -6,6 +6,7 @@ import (
 	"context"
 	"golang.org/x/sys/unix"
 	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -22,7 +23,7 @@ func TestGitVMGuestPortLossCancelsAndJoinsOriginalDescriptors(t *testing.T) {
 			writers = append(writers, w)
 		}
 		ctx, cancel := context.WithCancel(context.Background())
-		before := gitPacketFDCount(t)
+		watch := gitWatchFDs(t, gitFDFiles(t, slices.Concat(readers, writers)...))
 		join, err := gitVMGuestWatchPorts(ctx, cancel, readers...)
 		if err != nil {
 			t.Fatal(err)
@@ -39,8 +40,8 @@ func TestGitVMGuestPortLossCancelsAndJoinsOriginalDescriptors(t *testing.T) {
 			t.Fatal("lost peer did not cancel")
 		}
 		join()
-		if gitPacketFDCount(t) != before-1 {
-			t.Fatal("port watcher leaked a retained descriptor")
+		if leaked := watch.leaked(t); len(leaked) != 0 {
+			t.Fatal("port watcher leaked a retained descriptor", leaked)
 		}
 		closeVMFiles(readers)
 		closeVMFiles(writers)
@@ -57,13 +58,13 @@ func TestGitVMGuestPortWatchPartialFailureRetainsNoDescriptors(t *testing.T) {
 	defer w.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	before := gitPacketFDCount(t)
+	watch := gitWatchFDs(t, gitFDFiles(t, r, w))
 	if join, err := gitVMGuestWatchPorts(ctx, cancel, r, nil, r); err == nil {
 		join()
 		t.Fatal("missing port accepted")
 	}
-	if gitPacketFDCount(t) != before {
-		t.Fatal("failed watch leaked retained descriptors")
+	if leaked := watch.leaked(t); len(leaked) != 0 {
+		t.Fatal("failed watch leaked retained descriptors", leaked)
 	}
 }
 

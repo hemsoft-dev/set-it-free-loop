@@ -106,24 +106,28 @@ func TestGitVMAssetsRetainSealedOriginalsAfterInputReplacementAndClose(t *testin
 
 func TestGitVMAssetsRefuseForeignPurposeAndRuntimeProgramWithoutLeaks(t *testing.T) {
 	spec, q := gitVMAssetsFixture(t)
-	before := gitPacketFDCount(t)
+	// A valid outer digest cannot conceal a different inner QEMU program pin.
+	m, body := nativeRuntimeFixture(t)
+	wrongRuntime := spec
+	wrongRuntime.QEMURuntime = vmAsset(t, filepath.Join(t.TempDir(), "wrong-runtime"), nativeRuntimeFrame(t, m, body))
+	wrongRuntime.Manifest.QEMURuntime = gitVMAssetPin(wrongRuntime.QEMURuntime)
+	paths := []string{spec.QEMU.Path, spec.Kernel.Path, spec.Initrd.Path, spec.BIOS.Path, spec.QEMURuntime.Path, wrongRuntime.QEMURuntime.Path, spec.NamespaceHelper.Path}
+	for _, library := range spec.BootstrapLibraries {
+		paths = append(paths, library.Path)
+	}
+	watch := gitWatchFDs(t, gitFDPaths(t, paths...), gitFDTargets("/memfd:sfl-vm-boot"))
 	bad := spec
 	bad.Manifest.Purpose = "native-review"
 	if a, err := openGitVMAssets(context.Background(), bad); err == nil {
 		a.Close()
 		t.Fatal("provider purpose accepted")
 	}
-	// A valid outer digest cannot conceal a different inner QEMU program pin.
-	m, body := nativeRuntimeFixture(t)
-	bad = spec
-	bad.QEMURuntime = vmAsset(t, filepath.Join(t.TempDir(), "wrong-runtime"), nativeRuntimeFrame(t, m, body))
-	bad.Manifest.QEMURuntime = gitVMAssetPin(bad.QEMURuntime)
-	if a, err := openGitVMAssets(context.Background(), bad); err == nil {
+	if a, err := openGitVMAssets(context.Background(), wrongRuntime); err == nil {
 		a.Close()
 		t.Fatal("foreign runtime program accepted")
 	}
-	if gitPacketFDCount(t) != before {
-		t.Fatal("refused asset opener leaked descriptors")
+	if leaked := watch.leaked(t); len(leaked) != 0 {
+		t.Fatal("refused asset opener leaked descriptors", leaked)
 	}
 	a, err := openGitVMAssets(context.Background(), spec)
 	if err != nil {

@@ -169,10 +169,7 @@ func TestVMGrantFragmentedFramesAndHostileAncillaryData(t *testing.T) {
 	for _, kind := range []string{"fragmented", "missing-fd", "extra-fd", "truncated-rights", "oversized", "bad-json", "duplicate", "wrong-version", "extra-asset"} {
 		t.Run(kind, func(t *testing.T) {
 			server, client := vmSocketPair(t)
-			before, err := os.ReadDir("/proc/self/fd")
-			if err != nil {
-				t.Fatal(err)
-			}
+			watch := gitWatchFDs(t, gitFDFiles(t, files...), gitFDConns(t, server, client))
 			body := append([]byte(nil), raw...)
 			fds := []int{}
 			for _, f := range files {
@@ -229,9 +226,8 @@ func TestVMGrantFragmentedFramesAndHostileAncillaryData(t *testing.T) {
 			if err := <-sent; err != nil {
 				t.Fatal(err)
 			}
-			after, err := os.ReadDir("/proc/self/fd")
-			if err != nil || len(after) != len(before) {
-				t.Fatal("rejected grant leaked descriptors", len(before), len(after), err)
+			if leaked := watch.leaked(t); len(leaked) != 0 {
+				t.Fatal("rejected grant leaked descriptors", leaked)
 			}
 		})
 	}

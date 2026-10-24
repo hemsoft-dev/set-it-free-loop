@@ -108,13 +108,13 @@ func TestGitVMGuestExplicitSupervisorCredentials(t *testing.T) {
 	expected := gitTestPIDFD(t, os.Getpid())
 	uid, gid := uint32(os.Geteuid()), uint32(os.Getegid())
 	for _, ids := range [][2]uint32{{uid + 1, gid}, {uid, gid + 1}} {
-		before := gitPacketFDCount(t)
+		watch := gitWatchFDs(t, gitFDFiles(t, expected), gitFDConns(t, left), gitFDPIDFDs(os.Getpid()))
 		peer, err := authenticateGitSupervisorIDs(context.Background(), left, expected, ids[0], ids[1])
 		if peer != nil {
 			peer.Close()
 		}
-		if err == nil || gitPacketFDCount(t) != before {
-			t.Fatal("wrong explicit credentials accepted or descriptor leaked")
+		if leaked := watch.leaked(t); err == nil || len(leaked) != 0 {
+			t.Fatal("wrong explicit credentials accepted or descriptor leaked", leaked)
 		}
 	}
 	peer, err := authenticateGitSupervisorIDs(context.Background(), left, expected, uid, gid)
