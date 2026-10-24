@@ -319,7 +319,11 @@ func validHTTPIntent(w WriteIntent) bool {
 	if w.Kind == "ack" {
 		return len(w.Document.Inline) == 0
 	}
-	if w.Kind != "review" || w.RequestID <= 0 || w.Snapshot.Validate() != nil || w.Snapshot.RepositoryID != w.Scope.RepositoryID || w.Snapshot.PR != w.Scope.PR {
+	if (w.Kind != "review" && w.Kind != "status") || w.RequestID <= 0 || w.Snapshot.Validate() != nil || w.Snapshot.RepositoryID != w.Scope.RepositoryID || w.Snapshot.PR != w.Scope.PR {
+		return false
+	}
+	// A status is a COMMENT review on the captured head without inline comments.
+	if w.Kind == "status" && (len(w.Document.Inline) != 0 || !statusStates[w.Status]) {
 		return false
 	}
 	for _, c := range w.Document.Inline {
@@ -383,7 +387,7 @@ func (g *GitHubPublicationHTTP) Scan(ctx context.Context, scope Scope, kind stri
 func (g *GitHubPublicationHTTP) scan(ctx context.Context, scope Scope, kind, marker string) ([]RemoteReceipt, bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, githubScanTimeout)
 	defer cancel()
-	if !g.enrollment.accepts(scope) || (kind != "ack" && kind != "review") {
+	if !g.enrollment.accepts(scope) || (kind != "ack" && kind != "review" && kind != "status") {
 		return nil, false, ErrIgnored
 	}
 	if err := g.repository(ctx, scope); err != nil {
@@ -423,6 +427,8 @@ func (g *GitHubPublicationHTTP) scan(ctx context.Context, scope Scope, kind, mar
 			return err
 		})
 	} else {
+		// Reviews and statuses share the PR review collection; the marker and
+		// whole-document hash, not the kind, identify an intent's receipt.
 		err = visitGitHubPages(ctx, g, githubPR(scope)+"/reviews", func(v githubReview) error {
 			ok, err := candidate(v.ID, v.User.ID, v.Body)
 			if err != nil || !ok {
@@ -439,6 +445,12 @@ func (g *GitHubPublicationHTTP) scan(ctx context.Context, scope Scope, kind, mar
 		return nil, false, err
 	}
 	return result, true, nil
+}
+
+// supersessionAnnotation is the fixed suffix Annotate appends to the summary of
+// a known review or status, with the sanitized reason.
+func supersessionAnnotation(reason string) string {
+	return "\n\n<!-- sfl-alpha-supersession -->\nSUPERSEDED: " + safeText(reason)
 }
 
 func (g *GitHubPublicationHTTP) Annotate(ctx context.Context, scope Scope, id int64, reason string) error {
@@ -458,7 +470,7 @@ func (g *GitHubPublicationHTTP) Annotate(ctx context.Context, scope Scope, id in
 	if review.ID != id || review.User.ID != g.enrollment.BotID || review.PullRequestURL != githubOrigin+githubPR(scope) || review.State != "COMMENTED" || documentMarker(review.Body) == "" {
 		return ErrDeferred
 	}
-	annotation := "\n\n<!-- sfl-alpha-supersession -->\nSUPERSEDED: " + safeText(reason)
+	annotation := supersessionAnnotation(reason)
 	if strings.HasSuffix(review.Body, annotation) {
 		return nil
 	}

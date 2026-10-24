@@ -312,6 +312,11 @@ func pollWrites(d DurableState) []*WriteIntent {
 }
 
 func (c *PollingController) flushWrites(ctx context.Context) (bool, error) {
+	// Persist status intents, retirements and annotation marks before reading
+	// the outbox, under the same exclusion as observation and publication.
+	if err := c.exclusive(ctx, func() error { return c.options.Publisher.PrepareStatuses(ctx) }); err != nil {
+		return false, err
+	}
 	d, err := c.options.Store.Snapshot(ctx)
 	if err != nil {
 		return false, err

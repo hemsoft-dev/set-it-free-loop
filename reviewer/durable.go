@@ -131,11 +131,14 @@ type SourceAttempt struct {
 	Access *SourceAccess
 }
 type WriteIntent struct {
-	ID, Kind                string
-	Scope                   Scope
-	RequestID, Generation   int64
-	JobHash                 string
-	CheckpointHash          string `json:",omitempty"`
+	ID, Kind              string
+	Scope                 Scope
+	RequestID, Generation int64
+	JobHash               string
+	CheckpointHash        string `json:",omitempty"`
+	// Status is the durable job state a status write reports. It is empty for
+	// acknowledgments and reviews.
+	Status                  string `json:",omitempty"`
 	Snapshot                Snapshot
 	Document                Document
 	BodyHash, Marker, State string

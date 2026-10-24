@@ -123,8 +123,13 @@ func renderOutcome(out Outcome, diffLines map[string]map[int]bool) (Document, er
 	if err := out.Job.Validate(); err != nil {
 		return doc, err
 	}
+	complete := out.State == "dual_complete" || out.State == "single_complete"
 	var b strings.Builder
-	fmt.Fprintf(&b, "## SFL advisory review\n\nMode: `%s`.\n\n", out.Job.Config.Mode)
+	title := "SFL advisory review"
+	if !complete {
+		title = "SFL advisory review status"
+	}
+	fmt.Fprintf(&b, "## %s\n\nMode: `%s`.\n\n", title, out.Job.Config.Mode)
 	b.WriteString(triggerDescription(out.Job.Origin))
 	b.WriteString("<details>\n<summary>Reviewed revisions and configuration</summary>\n\n")
 	fmt.Fprintf(&b, "Head: `%s`. Base: `%s`. Merge base: `%s`.\n\nConfiguration: `%s`, version %d. Trusted release: `%s`.\n\n", out.Job.Snapshot.Head, out.Job.Snapshot.Base, out.Job.Snapshot.MergeBase, out.Job.Config.Hash(), out.Job.ConfigVersion, out.Job.Release)
@@ -137,8 +142,8 @@ func renderOutcome(out Outcome, diffLines map[string]map[int]bool) (Document, er
 		fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", i.Provider, i.Model, i.ClientVersion, i.AuthMode)
 	}
 	b.WriteString("\n</details>\n\n")
-	if out.State != "dual_complete" && out.State != "single_complete" {
-		fmt.Fprintf(&b, "INCOMPLETE: %s. No substantive partial findings are published. Completed phases: %d of %d.\n", safeText(out.State), len(out.Artifacts), out.Job.Config.MaxSessions())
+	if !complete {
+		fmt.Fprintf(&b, "%s No substantive partial findings are published. Completed phases: %d of %d.\n", safeText(statusCause(out.Job, out.State)), len(out.Artifacts), out.Job.Config.MaxSessions())
 		doc.Summary = b.String()
 		return doc, nil
 	}
@@ -247,6 +252,30 @@ func renderOutcome(out Outcome, diffLines map[string]map[int]bool) (Document, er
 		}
 	}
 	return doc, nil
+}
+
+// statusCause names why a job has no review. It is fixed controller text keyed
+// by the durable job state and the captured configuration, never model output,
+// and the caller still passes it through safeText. Cancellation and supersession
+// have their own leading word; every other non-complete state is INCOMPLETE.
+func statusCause(job Job, state string) string {
+	switch state {
+	case "quota_wait":
+		return fmt.Sprintf("INCOMPLETE: the daily review quota is exhausted. This job waits for quota and resumes by itself until its %s quota wait expires.", job.Config.QuotaWait)
+	case "auth_failed":
+		return "INCOMPLETE: provider authentication is unavailable. This job stays stopped until an operator repairs authentication and explicitly resumes it."
+	case "provider_unavailable":
+		return "INCOMPLETE: a selected provider is unavailable. This job stays stopped until an operator explicitly resumes it."
+	case "invalid_output":
+		return "INCOMPLETE: a provider returned output that failed validation. This job ended without a review."
+	case "incomplete_expired":
+		return "INCOMPLETE: this job expired before every required phase completed. It ended without a review."
+	case "cancelled":
+		return "CANCELLED: this review request was cancelled before the job completed. A new review needs a fresh authorized request."
+	case "stale":
+		return "SUPERSEDED: a newer review request or head replaced this job before it completed. This status does not describe or fulfill the newer request."
+	}
+	return "INCOMPLETE: " + state + "."
 }
 
 // Exact duplicate allegations share one conservative status and all history.
