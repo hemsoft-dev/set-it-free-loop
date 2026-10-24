@@ -265,8 +265,14 @@ state other than `invalid_output`:
   unit before the guest's record arrives.
 - The complete cases are unchanged.
 
-These are expectations from the code, not measurements. They need a guest
-image and runner built after the fix.
+Measured on October 23, 2026 at `a3c8dbd` on mini, with a native image and
+runner built from that commit: the exhaustion matrix passed 12 of 12.
+`claude-turn-flood` now records `phase-incomplete_expired` (Claude's
+`error_max_turns`), where it previously recorded the host's
+`phase-invalid_output`. The response floods, `codex-turn-flood` and
+`codex-code-output-flood` record `phase-invalid_output` as the guest's own
+classification. The stalls and `codex-code-memory` stay `auth-recovery`, and
+the complete cases are unchanged.
 
 ## Remaining limitations
 

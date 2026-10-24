@@ -145,8 +145,12 @@ the host refused every non-complete finished record as invalid output
 refused case now records the guest's typed state, for example
 `phase-provider_unavailable` when the client ends its turn with a provider
 failure, and its `ErrorText` no longer carries the VM boot error. No check
-or verdict depends on the class. The new classes need a guest image and
-runner built after the fix and have not been measured yet.
+or verdict depends on the class. Measured at `a3c8dbd` with a guest image and
+runner built from that commit, the hostile matrix gave the same verdicts (19
+pass and the contained `codex-metadata` client failure). Every refused case,
+including `codex-metadata`, still records `phase-invalid_output`, now as the
+guest's own classification of the refused response rather than the host's
+rejection of the finished record.
 
 An earlier full run, `matrix-r1` at `24ccb25`, matched these verdicts except
 for one `claude-foreign-mcp` run. That run ended `stop-pending`: the host
