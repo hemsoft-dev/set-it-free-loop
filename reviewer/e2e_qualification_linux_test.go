@@ -28,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -45,9 +46,10 @@ import (
 //
 // Required: SFL_E2E_SOURCE_IMAGE, SFL_E2E_SOURCE_STUB, SFL_E2E_NATIVE_IMAGE and
 // SFL_E2E_CASE (review, isolation, close-capture, close-provider,
-// close-provider-reopen, close-provider-recover, close-publish).
-// close-provider-reopen and close-provider-recover are second processes that
-// attach to the root retained by close-provider through SFL_E2E_ATTACH, as a
+// close-provider-fenced, close-provider-reopen, close-provider-recover,
+// close-publish). close-provider-reopen and close-provider-recover are second
+// processes that attach to a root retained by close-provider-fenced (or by a
+// close-provider that took its fenced branch) through SFL_E2E_ATTACH, as a
 // restarted service would; run one of them per retained root. SFL_E2E_EVIDENCE optionally
 // names an existing private directory that receives a nonsecret JSON result.
 // Run under the shared VM lock.
@@ -57,8 +59,7 @@ func TestE2EQualification(t *testing.T) {
 	if sourceImage == "" || sourceStub == "" || nativeImage == "" || scenario == "" {
 		t.Skip("explicit source image, exact-head source stub, native image and case required")
 	}
-	cases := map[string]func(*e2eEnv){"review": e2eReview, "isolation": e2eIsolation, "close-capture": e2eCloseCapture, "close-provider": e2eCloseProvider, "close-provider-reopen": e2eCloseProviderReopen, "close-provider-recover": e2eCloseProviderRecover, "close-publish": e2eClosePublish}
-	run, ok := cases[scenario]
+	run, ok := e2eCases[scenario]
 	if !ok {
 		t.Fatal("unknown E2E case", scenario)
 	}
@@ -68,6 +69,9 @@ func TestE2EQualification(t *testing.T) {
 	env.result.ElapsedSeconds = time.Since(started).Seconds()
 	env.finish()
 }
+
+// e2eCases is every case SFL_E2E_CASE may name.
+var e2eCases = map[string]func(*e2eEnv){"review": e2eReview, "isolation": e2eIsolation, "close-capture": e2eCloseCapture, "close-provider": e2eCloseProvider, "close-provider-fenced": e2eCloseProviderFenced, "close-provider-reopen": e2eCloseProviderReopen, "close-provider-recover": e2eCloseProviderRecover, "close-publish": e2eClosePublish}
 
 // ---------------------------------------------------------------- harness
 
@@ -226,6 +230,7 @@ var e2eExpectations = map[string]e2eExpect{
 	"close-capture":         {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2ePublishedRoutes},
 	"close-publish":         {SourceUnits: 1, NativeUnits: 4, AuthUsable: true, Routes: e2eReconciledRoutes},
 	"close-provider":        {SourceUnits: 1, NativeUnits: 1, Routes: e2eQualifiedRoutes},
+	"close-provider-fenced": {SourceUnits: 1, NativeUnits: 1, Routes: e2eQualifiedRoutes},
 	"close-provider-reopen": {Routes: e2eQualifiedRoutes},
 	// Recovery launches nothing; PR 2's review is one acquisition and four
 	// sessions, and the re-provisioned Codex auth, a fresh synthetic seed
@@ -1498,10 +1503,10 @@ func e2eInterruptedLaunch(u e2eNativeUnit, j *r.DurableJob) (string, error) {
 }
 
 // e2eRetainedLaunches proves the native launch a root attached after
-// close-provider must hold, and returns it as the only pre-existing launch:
-// exactly one launch, production-whole stopped, with a bound version 2
-// stopped audit recording the auth as exported, not returned and the session
-// not complete. Its provider and session must be the retained job's
+// close-provider-fenced or a fenced close-provider must hold, and returns it
+// as the only pre-existing launch: exactly one launch, production-whole
+// stopped, with a bound version 2 stopped audit recording the auth as
+// exported, not returned and the session not complete. Its provider and session must be the retained job's
 // outstanding attempt, which is the session the job derives for that
 // attempt's provider and round and the job's only charged session beyond its
 // artifacts, and its receipt must name that attempt's durable ID. The job
@@ -3493,13 +3498,33 @@ func e2eCloseCapture(e *e2eEnv) {
 
 // close-provider: the service closes while the first native session's pinned
 // client waits for a withheld fake inference response. The unit must be
-// proved stopped and the exported auth returned or fenced. Within the
-// shutdown grace the expected outcome is a returned auth and a Close that
-// proves completion; the case then reopens and judges the requeued job. If
-// the attempt stays uncertain, its durable lease is retained and Close keeps
-// reporting ErrWorkerStopPending; the root is then retained for
-// close-provider-reopen, which a separate process runs as a restarted service.
-func e2eCloseProvider(e *e2eEnv) {
+// proved stopped and the exported auth returned. Within the shutdown grace
+// the guest returns its auth and Close proves completion; the case then
+// reopens and judges the requeued job. A Close that reports
+// ErrWorkerStopPending fails the case, since that means the grace regressed;
+// close-provider-fenced owns the fenced branch and retains the root for
+// close-provider-reopen and close-provider-recover.
+func e2eCloseProvider(e *e2eEnv) { e2eCloseProviderSession(e, false) }
+
+// close-provider-fenced is close-provider with the guest frozen from outside
+// just before Close (e2eFreezeNativeLaunch), so it deterministically takes
+// the fenced branch the shutdown grace otherwise makes unreachable: no
+// production bound or behaviour changes. Every process of the interrupted
+// launch's unit is stopped with SIGSTOP, so the guest cannot run, end its
+// client or write its result record, and the host's wait for that record
+// outlasts the grace. Close then cancels as before: the host stop path
+// terminates the captured cgroup with cgroup.kill, whose SIGKILL ends stopped
+// processes too, and proves it empty and the unit stopped; with no result
+// record the exported auth is fenced and the lease kept, so Close reports
+// ErrWorkerStopPending. The case requires that branch, judges it with
+// close-provider's fenced checks and declared end state, and retains its root
+// for close-provider-reopen or close-provider-recover.
+func e2eCloseProviderFenced(e *e2eEnv) { e2eCloseProviderSession(e, true) }
+
+// e2eCloseProviderSession runs close-provider, or with fenced
+// close-provider-fenced, under e's scenario name.
+func e2eCloseProviderSession(e *e2eEnv, fenced bool) {
+	label := e.scenario
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.models[r.Codex].mu.Lock()
 	e.models[r.Codex].holdInference = true
@@ -3512,14 +3537,22 @@ func e2eCloseProvider(e *e2eEnv) {
 		return
 	}
 	e.snapshotJobs("held during provider session")
-	e.snapshotSource("close-provider before close")
+	e.snapshotSource(label + " before close")
 	// The source unit is stopped before any provider session starts. Only
 	// this process sampled its acquisition, so it judges the order now; the
 	// attached restart judges only the final records.
 	if c := e.completion(); c.SourceErr != nil {
-		e.check(false, "close-provider: source records readable: %v", c.SourceErr)
+		e.check(false, "%s: source records readable: %v", label, c.SourceErr)
 	} else {
-		e.checkAll(e2eSourceOrderVerdicts("close-provider", c.Records, c.Exchanges))
+		e.checkAll(e2eSourceOrderVerdicts(label, c.Records, c.Exchanges))
+	}
+	if fenced {
+		unit, stopped, err := e2eFreezeNativeLaunch(e.native[r.Codex])
+		e.event("freeze", "%s stopped processes %v of %s before Close: %v", label, stopped, unit, err)
+		e.check(err == nil, "every process of the interrupted launch's native unit %s was stopped from outside before Close, so its guest cannot return within the grace (%d processes): %v", unit, len(stopped), err)
+		if err != nil {
+			return
+		}
 	}
 	var closeErr error
 	for attempt := 1; attempt <= 3; attempt++ {
@@ -3527,19 +3560,29 @@ func e2eCloseProvider(e *e2eEnv) {
 		started := time.Now()
 		closeErr = e.service.Close(ctx)
 		cancel()
-		e.event("close", "close-provider Close attempt %d returned %v in %s", attempt, closeErr, time.Since(started).Round(time.Millisecond))
+		e.event("close", "%s Close attempt %d returned %v in %s", label, attempt, closeErr, time.Since(started).Round(time.Millisecond))
 		if closeErr == nil {
 			break
 		}
 		time.Sleep(2 * time.Second)
 	}
 	e.wedged = closeErr != nil
-	e.awaitRun("close-provider", 10*time.Second)
+	e.awaitRun(label, 10*time.Second)
 	if !e.wedged {
 		e.service = nil
 	}
 	e.check(closeErr == nil || errors.Is(closeErr, r.ErrWorkerStopPending), "Close either proved completion or reported ErrWorkerStopPending (%v)", closeErr)
-	e.closeStore("close-provider", e.store)
+	if fenced {
+		// The frozen guest wrote no result record within the grace, so the
+		// cancelled launch keeps its lease and every Close reports it.
+		e.check(errors.Is(closeErr, r.ErrWorkerStopPending), "with its guest frozen, Close took the fenced branch and kept reporting ErrWorkerStopPending (%v)", closeErr)
+	} else {
+		// The guest runs, so it returns within the grace; a fenced Close here
+		// means the shutdown grace regressed. close-provider-fenced owns the
+		// fenced branch.
+		e.check(closeErr == nil, "with its guest running, Close proved completion within the shutdown grace (%v)", closeErr)
+	}
+	e.closeStore(label, e.store)
 	e.store = nil
 	d := e.reopenState()
 	j := e2eJobFor(d, 1)
@@ -3570,11 +3613,15 @@ func e2eCloseProvider(e *e2eEnv) {
 	e.check(auth[r.Claude] == "usable", "the untouched provider's auth remains usable (%s)", auth[r.Claude])
 	e.check((returned && auth[r.Codex] == "usable") || (!returned && auth[r.Codex] == "fenced"), "codex auth is usable exactly when its stopped return was committed, and fenced otherwise (returned %v, %s)", returned, auth[r.Codex])
 	e.check(e.github.reviewPosts(1) == 0, "nothing was published for the interrupted job")
+	if fenced != e.wedged {
+		// Already failed above; this branch is the other case's.
+		return
+	}
 	if !e.wedged {
 		// The expected branch since the shutdown grace (#264): Close revoked
 		// the withheld session's provider intake, the guest stopped its client
 		// and returned auth, and the stopped launch was released and requeued
-		// with its charged session. Not yet observed on a host.
+		// with its charged session.
 		e.check(j.LeaseToken == "" && !j.Outstanding && j.State == "queued" && returned, "a completed Close leaves a queued, unleased job with no outstanding reservation and returned auth (state %s)", j.State)
 		failure := ""
 		if len(units) == 1 {
@@ -3638,11 +3685,224 @@ func e2eCloseProvider(e *e2eEnv) {
 	e.check(err == nil, "the trusted ReleaseStopped(auth_failed) succeeds on a private copy of the retained state: %v", err)
 	e.result.Jobs = append(e.result.Jobs, e2eJobSummary(j))
 	e.keepRoot = true
-	e.note("retained root %s for close-provider-reopen; this process exits holding the wedged handle", e.root)
+	e.note("retained root %s for close-provider-reopen or close-provider-recover; this process exits holding the wedged handle", e.root)
 }
 
-// close-provider-reopen is a fresh process attached to the retained root. The
-// restarted service must prove the source unit stopped, discover new requests
+// e2eFreezeNativeLaunch stops, from outside, every process of the one native
+// launch under root: the unit sfl-alpha-<launch>.service production names
+// for the root's only launch directory, which must be an active native VM
+// containment unit. Its processes are every process in its control group's
+// subtree (e2eCgroupProcesses), which holds the unit's stub and QEMU and so
+// every vCPU of the guest. It returns the unit and the stopped processes.
+//
+// Nothing in production is changed or hooked. The host's later stop path
+// never needs these processes to run: AbortAndWait revokes the gate on the
+// host, writes cgroup.kill on the captured cgroup and waits for the cgroup to
+// empty and the unit to settle (containment_supervisor_linux.go AbortAndWait,
+// containment_stop_linux.go Terminate), and the kernel's SIGKILL wakes and
+// ends stopped tasks.
+func e2eFreezeNativeLaunch(root string) (string, []int, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", nil, err
+	}
+	launches, directory := []string{}, false
+	for _, entry := range entries {
+		if entry.Name() != "executables" {
+			launches, directory = append(launches, entry.Name()), entry.IsDir()
+		}
+	}
+	if len(launches) != 1 || !directory || !regexp.MustCompile(`^[0-9a-f]{32}$`).MatchString(launches[0]) {
+		return "", nil, fmt.Errorf("native root holds %q, want one launch directory", launches)
+	}
+	unit := "sfl-alpha-" + launches[0] + ".service"
+	out, err := exec.Command("systemctl", "--user", "show", unit, "--property=ActiveState,Description,ControlGroup,MainPID").Output()
+	if err != nil {
+		return unit, nil, err
+	}
+	show, err := e2eParseShow(string(out))
+	if err != nil {
+		return unit, nil, err
+	}
+	group := show["ControlGroup"]
+	if show["ActiveState"] != "active" || !strings.HasPrefix(show["Description"], "SFL native VM containment ") || !strings.HasPrefix(group, "/user.slice/") || filepath.Clean(group) != group || show["MainPID"] == "" || show["MainPID"] == "0" {
+		return unit, nil, fmt.Errorf("%s is not an active native VM containment unit with a control group and main process (%v)", unit, show)
+	}
+	main, err := strconv.Atoi(show["MainPID"])
+	if err != nil {
+		return unit, nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	stopped, err := e2eStopProcesses(ctx, func() ([]int, error) { return e2eCgroupProcesses(filepath.Join("/sys/fs/cgroup", group)) },
+		func(pid int) error { return syscall.Kill(pid, syscall.SIGSTOP) }, e2eProcessStopped)
+	if err == nil && !slices.Contains(stopped, main) {
+		err = fmt.Errorf("main process %d of %s was not among the stopped processes", main, unit)
+	}
+	return unit, stopped, err
+}
+
+// e2eParseShow parses systemctl show's key=value lines. A line without "="
+// or a repeated key fails rather than being dropped.
+func e2eParseShow(out string) (map[string]string, error) {
+	values := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		key, value, ok := strings.Cut(line, "=")
+		if _, repeated := values[key]; !ok || repeated {
+			return nil, fmt.Errorf("malformed systemctl show line %q", line)
+		}
+		values[key] = value
+	}
+	return values, nil
+}
+
+// e2eCgroupProcesses lists, sorted and once each, the processes of the
+// cgroup at directory and of every descendant cgroup.
+func e2eCgroupProcesses(directory string) ([]int, error) {
+	pids := []int{}
+	err := filepath.WalkDir(directory, func(path string, d os.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(filepath.Join(path, "cgroup.procs"))
+		if err != nil {
+			return err
+		}
+		for _, field := range strings.Fields(string(raw)) {
+			pid, err := strconv.Atoi(field)
+			if err != nil || pid <= 0 {
+				return fmt.Errorf("malformed cgroup.procs entry %q", field)
+			}
+			pids = append(pids, pid)
+		}
+		return nil
+	})
+	slices.Sort(pids)
+	return slices.Compact(pids), err
+}
+
+// e2eStopProcesses signals (stop) every process list reports, listing again
+// until a listing reports none it has not signalled, since a process listed
+// before its signal may have forked a child the earlier listing missed. A
+// process gone before its signal (ESRCH) is dropped. It then waits until each
+// signalled process is stopped (stopped) and a final listing reports exactly
+// those processes, so none was missed or replaced, and returns them sorted.
+// It never signals this process.
+func e2eStopProcesses(ctx context.Context, list func() ([]int, error), stop func(int) error, stopped func(int) (bool, error)) ([]int, error) {
+	signalled, gone := map[int]bool{}, map[int]bool{}
+	for fresh := true; fresh; {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		pids, err := list()
+		if err != nil {
+			return nil, err
+		}
+		fresh = false
+		for _, pid := range pids {
+			if signalled[pid] || gone[pid] {
+				continue
+			}
+			if pid == os.Getpid() {
+				return nil, fmt.Errorf("process %d is this harness", pid)
+			}
+			fresh = true
+			switch err := stop(pid); {
+			case errors.Is(err, syscall.ESRCH):
+				gone[pid] = true
+			case err != nil:
+				return nil, fmt.Errorf("stop process %d: %w", pid, err)
+			default:
+				signalled[pid] = true
+			}
+		}
+	}
+	pids := slices.Sorted(maps.Keys(signalled))
+	if len(pids) == 0 {
+		return nil, errors.New("no process to stop")
+	}
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for _, pid := range pids {
+		for {
+			ok, err := stopped(pid)
+			if err != nil {
+				return nil, fmt.Errorf("process %d: %w", pid, err)
+			}
+			if ok {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("process %d did not stop: %w", pid, ctx.Err())
+			case <-ticker.C:
+			}
+		}
+	}
+	final, err := list()
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Equal(final, pids) {
+		return nil, fmt.Errorf("stopped processes %v, but the unit now holds %v", pids, final)
+	}
+	return pids, nil
+}
+
+// e2ePFIOWorker is the kernel's PF_IO_WORKER task flag. The kernel never
+// group-stops an io_uring worker (task_set_jobctl_pending); such a worker
+// only completes its owner's queued I/O and runs no guest code.
+const e2ePFIOWorker = 0x10
+
+// e2eProcessStopped reports whether every task of process pid but its I/O
+// workers is in the stopped state, as /proc/<pid>/task/<tid>/stat reports
+// it. A vanished process is an error, not a stopped one.
+func e2eProcessStopped(pid int) (bool, error) {
+	tasks, err := os.ReadDir(fmt.Sprintf("/proc/%d/task", pid))
+	if err != nil {
+		return false, err
+	}
+	for _, task := range tasks {
+		raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/task/%s/stat", pid, task.Name()))
+		if err != nil {
+			return false, err
+		}
+		state, flags, err := e2eTaskState(string(raw))
+		if err != nil {
+			return false, err
+		}
+		if state != "T" && flags&e2ePFIOWorker == 0 {
+			return false, nil
+		}
+	}
+	return len(tasks) > 0, nil
+}
+
+// e2eTaskState returns the state and flags fields of one /proc stat line.
+// The command name may hold spaces and parentheses, so the fields are read
+// after its last closing parenthesis.
+func e2eTaskState(stat string) (string, uint64, error) {
+	end := strings.LastIndexByte(stat, ')')
+	if end < 0 {
+		return "", 0, fmt.Errorf("malformed stat %q", stat)
+	}
+	fields := strings.Fields(stat[end+1:])
+	if len(fields) < 7 {
+		return "", 0, fmt.Errorf("malformed stat %q", stat)
+	}
+	flags, err := strconv.ParseUint(fields[6], 10, 64)
+	if err != nil {
+		return "", 0, fmt.Errorf("malformed stat flags %q", fields[6])
+	}
+	return fields[0], flags, nil
+}
+
+// close-provider-reopen is a fresh process attached to the root retained by
+// close-provider-fenced, or by a close-provider that took its fenced branch;
+// both leave the same state. The restarted service must prove the source unit stopped, discover new requests
 // and admit nothing while the uncertain lease remains, including a new PR.
 func e2eCloseProviderReopen(e *e2eEnv) {
 	if !e.attached {
@@ -3701,8 +3961,9 @@ func e2eCloseProviderReopen(e *e2eEnv) {
 // e2eAttachedJob returns the PR 1 job an attached root retains, which must
 // be its only job, still hold its durable lease, be bound to PR 1's scope and
 // the deterministic fake upstream's snapshot, and have been admitted under
-// the current release. A root retained by another revision's close-provider would
-// otherwise be judged, and its result recorded, as this revision's restart.
+// the current release. A root retained by another revision's close-provider
+// or close-provider-fenced would otherwise be judged, and its result
+// recorded, as this revision's restart.
 // The job must be exactly the one admission derives from its retained request
 // and the harness's inputs (e2eExpectedJob, under config), and is returned as
 // that expected job, so the retained launch is judged against a session
@@ -3846,7 +4107,7 @@ func e2eRequestVerdicts(label string, requests []e2eRequest, want map[int]e2eReq
 }
 
 // close-provider-recover is a fresh process attached to the root retained by
-// close-provider. Before Run, the operator lists the leased attempt, is
+// close-provider-fenced (or a fenced close-provider). Before Run, the operator lists the leased attempt, is
 // refused for a wrong attempt and without consent to retire the lost auth,
 // then recovers it. The job must end auth_failed and charged, never
 // reviewed. Codex auth is fenced until recovery and retired after it: the
@@ -3981,7 +4242,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	}
 	e.check(len(posts) == 2 && posts["app POST /app/installations/N/access_tokens"] == 2 && posts["publisher POST /pulls/N/reviews"] == 2, "the only GitHub POSTs are two role token mints, PR 1's status and PR 2's review (%v)", posts)
 	// PR 2's acquisition is the only upstream exchange: the retained PR 1
-	// attempt was captured by close-provider and is never fetched again.
+	// attempt was captured by close-provider-fenced and is never fetched again.
 	e.checkUploads(e.github.commits["2"])
 	if j1 != nil && j2 != nil {
 		e.result.Jobs = append(e.result.Jobs, e2eJobSummary(j1), e2eJobSummary(j2))
@@ -4066,7 +4327,7 @@ func e2eRecoveredJobVerdicts(label string, d r.DurableState, before *r.DurableJo
 // This attached process acquired only PR 2's source attempt, so only that
 // attempt's lifecycle order is judged here, from the journal sampled at its
 // upload-pack; PR 1's retained attempt was acquired, and its order judged,
-// by close-provider, and is judged here by its final record only. PR 1's
+// by close-provider-fenced, and is judged here by its final record only. PR 1's
 // interrupted session is never run again: this process's backends must have
 // checked exactly PR 2's artifact sessions, none held, and the interrupted
 // session is judged by its retained stopped receipt, which must count its one
@@ -4563,8 +4824,10 @@ func TestE2EFinalVerdicts(t *testing.T) {
 	fenced := e2eUnitRun(source, n1)
 	fenced.GitHub.Requests = e2eRouteTally(e2eQualifiedRoutes)
 	fenced.AuthRecoveryClear["codex"] = false
-	if f := failures(fenced, e2eExpectations["close-provider"], nil, false); len(f) != 0 {
-		t.Fatal("fenced provider close refused:", f)
+	for _, scenario := range []string{"close-provider", "close-provider-fenced"} {
+		if f := failures(fenced, e2eExpectations[scenario], nil, false); len(f) != 0 {
+			t.Fatal(scenario, "fenced provider close refused:", f)
+		}
 	}
 	// recovered is close-provider-recover's end state: the retained PR 1
 	// attempt and interrupted launch beside PR 2's own acquisition and four
@@ -4629,6 +4892,13 @@ func TestE2EFinalVerdicts(t *testing.T) {
 		"fenced provider published": {mutate(e2eUnitRun(source, n1), func(res *e2eResult) {
 			res.AuthRecoveryClear["codex"] = false
 		}), e2eExpectations["close-provider"], nil, false},
+		"frozen provider published": {mutate(e2eUnitRun(source, n1), func(res *e2eResult) {
+			res.AuthRecoveryClear["codex"] = false
+		}), e2eExpectations["close-provider-fenced"], nil, false},
+		"frozen provider relaunched": {mutate(e2eUnitRun(source, n1, n2), func(res *e2eResult) {
+			res.GitHub.Requests = e2eRouteTally(e2eQualifiedRoutes)
+			res.AuthRecoveryClear["codex"] = false
+		}), e2eExpectations["close-provider-fenced"], nil, false},
 		"recovery launched a native unit": {mutate(recovered(), func(res *e2eResult) {
 			res.NativeUnits = append(res.NativeUnits, e2eNativeUnit{Launch: id("5"), Started: true, StartSettled: true, Captured: true, Aborted: true, Stopped: true, AuditPresent: true})
 			res.SystemdUnits = append(res.SystemdUnits, e2eSystemdUnit{Name: "sfl-alpha-" + id("5") + ".service"})
@@ -7604,6 +7874,213 @@ func TestE2EParseUnits(t *testing.T) {
 		if units, err := e2eParseUnits(out); err == nil {
 			t.Error(name, "parsed as", units)
 		}
+	}
+}
+
+// TestE2ECases declares an end state for every case SFL_E2E_CASE may name,
+// and gives close-provider-fenced exactly close-provider's declared fenced
+// end state, whose root close-provider-reopen and close-provider-recover
+// attach to.
+func TestE2ECases(t *testing.T) {
+	if !slices.Equal(slices.Sorted(maps.Keys(e2eCases)), slices.Sorted(maps.Keys(e2eExpectations))) {
+		t.Fatal("cases and declared end states differ", slices.Sorted(maps.Keys(e2eCases)), slices.Sorted(maps.Keys(e2eExpectations)))
+	}
+	fenced, provider := e2eExpectations["close-provider-fenced"], e2eExpectations["close-provider"]
+	if fenced.SourceUnits != provider.SourceUnits || fenced.NativeUnits != provider.NativeUnits || fenced.AuthUsable || provider.AuthUsable || !slices.Equal(fenced.Routes, provider.Routes) || !slices.Equal(fenced.Routes, e2eQualifiedRoutes) {
+		t.Fatal("close-provider-fenced does not declare close-provider's fenced end state", fenced, provider)
+	}
+}
+
+// TestE2EStopProcesses holds the outside freeze of close-provider-fenced to
+// every process of the unit: a child forked before its parent's signal is
+// found by the next listing, a process gone before its signal is dropped,
+// and the freeze fails rather than proceed when a process never stops, the
+// unit gains or replaces a process, a signal or listing fails, there is no
+// process, or a listing names the harness itself.
+func TestE2EStopProcesses(t *testing.T) {
+	type fake struct {
+		listings [][]int
+		calls    int
+		signals  []int
+		gone     map[int]bool
+		never    map[int]bool
+		fail     map[int]bool
+	}
+	run := func(f *fake) ([]int, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		list := func() ([]int, error) {
+			if f.listings == nil {
+				return nil, errors.New("listing failed")
+			}
+			n := min(f.calls, len(f.listings)-1)
+			f.calls++
+			return f.listings[n], nil
+		}
+		stop := func(pid int) error {
+			switch {
+			case f.gone[pid]:
+				return syscall.ESRCH
+			case f.fail[pid]:
+				return syscall.EPERM
+			}
+			f.signals = append(f.signals, pid)
+			return nil
+		}
+		stopped := func(pid int) (bool, error) { return !f.never[pid], nil }
+		return e2eStopProcesses(ctx, list, stop, stopped)
+	}
+	// The stub's listing misses the QEMU child it forked before its signal.
+	f := &fake{listings: [][]int{{10}, {10, 11}, {10, 11}}}
+	if pids, err := run(f); err != nil || !slices.Equal(pids, []int{10, 11}) || !slices.Equal(f.signals, []int{10, 11}) || f.calls != 4 {
+		t.Fatal("forked child not stopped", pids, f.signals, f.calls, err)
+	}
+	f = &fake{listings: [][]int{{10, 12}, {10}}, gone: map[int]bool{12: true}}
+	if pids, err := run(f); err != nil || !slices.Equal(pids, []int{10}) {
+		t.Fatal("exited process not dropped", pids, err)
+	}
+	for name, f := range map[string]*fake{
+		"process never stops":       {listings: [][]int{{10, 11}}, never: map[int]bool{11: true}},
+		"process gained after stop": {listings: [][]int{{10}, {10}, {10, 13}}},
+		"process replaced":          {listings: [][]int{{10, 11}, {10, 11}, {10, 14}}},
+		"exited process still held": {listings: [][]int{{10, 12}}, gone: map[int]bool{12: true}},
+		"signal refused":            {listings: [][]int{{10}}, fail: map[int]bool{10: true}},
+		"listing failed":            {},
+		"no process":                {listings: [][]int{{}}},
+		"harness listed":            {listings: [][]int{{os.Getpid()}}},
+	} {
+		if pids, err := run(f); err == nil {
+			t.Error(name, "accepted as frozen", pids)
+		}
+	}
+}
+
+// TestE2EProcessStopped observes a real process, stopped with SIGSTOP from
+// outside, through the stat states the freeze waits on.
+func TestE2EProcessStopped(t *testing.T) {
+	child := exec.Command("sleep", "30")
+	if err := child.Start(); err != nil {
+		t.Skip("no sleep process", err)
+	}
+	pid := child.Process.Pid
+	t.Cleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
+	if ok, err := e2eProcessStopped(pid); err != nil || ok {
+		t.Fatal("running process reported stopped", ok, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	pids, err := e2eStopProcesses(ctx, func() ([]int, error) { return []int{pid}, nil }, func(pid int) error { return syscall.Kill(pid, syscall.SIGSTOP) }, e2eProcessStopped)
+	if err != nil || !slices.Equal(pids, []int{pid}) {
+		t.Fatal("process not stopped from outside", pids, err)
+	}
+	// SIGKILL, as cgroup.kill sends, still ends the stopped process.
+	if err := child.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Wait(); err == nil {
+		t.Fatal("stopped process survived SIGKILL")
+	}
+	if _, err := e2eProcessStopped(pid); err == nil {
+		t.Fatal("reaped process reported")
+	}
+}
+
+func TestE2ETaskState(t *testing.T) {
+	for stat, want := range map[string]struct {
+		state string
+		flags uint64
+	}{
+		"42 (qemu-system-x86) T 1 42 42 0 -1 4194560 100 0": {"T", 4194560},
+		"43 (a b) (c)) S 1 42 42 0 -1 4210752 7 0 0":        {"S", 4210752},
+		"44 (iou-wrk-42) S 1 42 42 0 -1 4210768 0 0 0 0 0":  {"S", 4210768},
+	} {
+		state, flags, err := e2eTaskState(stat)
+		if err != nil || state != want.state || flags != want.flags {
+			t.Error(stat, "misparsed", state, flags, err)
+		}
+	}
+	if _, flags, _ := e2eTaskState("44 (iou-wrk-42) S 1 42 42 0 -1 4210768 0"); flags&e2ePFIOWorker == 0 {
+		t.Error("io worker flag not read")
+	}
+	for _, stat := range []string{"", "42 qemu T 1 42 42 0 -1 1", "42 (qemu) T 1 42", "42 (qemu) T 1 42 42 0 -1 flags"} {
+		if state, flags, err := e2eTaskState(stat); err == nil {
+			t.Error(stat, "parsed as", state, flags)
+		}
+	}
+}
+
+func TestE2EParseShow(t *testing.T) {
+	show, err := e2eParseShow("ActiveState=active\nDescription=SFL native VM containment a=b\nControlGroup=\nMainPID=42\n")
+	if err != nil || len(show) != 4 || show["Description"] != "SFL native VM containment a=b" || show["ControlGroup"] != "" || show["MainPID"] != "42" {
+		t.Fatal("well-formed show misparsed", show, err)
+	}
+	for _, out := range []string{"ActiveState\n", "MainPID=1\nMainPID=2\n"} {
+		if show, err := e2eParseShow(out); err == nil {
+			t.Error(out, "parsed as", show)
+		}
+	}
+}
+
+// TestE2ECgroupProcesses lists the processes of a unit's whole cgroup
+// subtree once each, and refuses a malformed or unreadable listing.
+func TestE2ECgroupProcesses(t *testing.T) {
+	root := t.TempDir()
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(root, path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, path, "cgroup.procs"), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(".", "12\n10\n")
+	write("payload", "11\n10\n")
+	write("payload/inner", "")
+	if pids, err := e2eCgroupProcesses(root); err != nil || !slices.Equal(pids, []int{10, 11, 12}) {
+		t.Fatal("cgroup subtree misread", pids, err)
+	}
+	write("bad", "x\n")
+	if pids, err := e2eCgroupProcesses(root); err == nil {
+		t.Fatal("malformed cgroup.procs accepted", pids)
+	}
+	if err := os.Remove(filepath.Join(root, "bad", "cgroup.procs")); err != nil {
+		t.Fatal(err)
+	}
+	if pids, err := e2eCgroupProcesses(root); err == nil {
+		t.Fatal("cgroup without cgroup.procs accepted", pids)
+	}
+}
+
+// TestE2EFreezeNativeLaunchRoot freezes only the unit of a native root's one
+// launch directory, refusing any other root before any unit is named.
+func TestE2EFreezeNativeLaunchRoot(t *testing.T) {
+	launch := strings.Repeat("6", 32)
+	for name, entries := range map[string][]string{
+		"no launch":        {"executables/"},
+		"two launches":     {"executables/", launch + "/", strings.Repeat("7", 32) + "/"},
+		"launch not a hex": {"executables/", "launch/"},
+		"launch file":      {"executables/", launch},
+		"short launch":     {strings.Repeat("6", 31) + "/"},
+	} {
+		root := t.TempDir()
+		for _, entry := range entries {
+			var err error
+			if strings.HasSuffix(entry, "/") {
+				err = os.Mkdir(filepath.Join(root, entry), 0700)
+			} else {
+				err = os.WriteFile(filepath.Join(root, entry), nil, 0600)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		if unit, pids, err := e2eFreezeNativeLaunch(root); err == nil || unit != "" || len(pids) != 0 {
+			t.Error(name, "accepted as", unit, pids, err)
+		}
+	}
+	if _, _, err := e2eFreezeNativeLaunch(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Error("missing native root accepted")
 	}
 }
 

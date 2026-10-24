@@ -170,7 +170,9 @@ fifteen-second stop path runs, so grace and stop stay inside the 30-second
 plus its earlier ten seconds. When the guest does not return in time, the
 outcome is the one described below: the unit is still proved stopped, the
 stopped receipt records the unreturned export, the lease stays and `Close`
-reports `ErrWorkerStopPending`.
+reports `ErrWorkerStopPending`. The E2E case `close-provider-fenced` qualifies
+that outcome with real VMs by stopping the guest's unit from outside before
+`Close` ([E2E-QUALIFICATION.md](E2E-QUALIFICATION.md#cases)).
 
 The grace applies only to `Close`. A host process kill gets none.
 
