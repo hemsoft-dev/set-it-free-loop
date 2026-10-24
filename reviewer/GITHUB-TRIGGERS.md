@@ -109,7 +109,8 @@ no credentials or destination control.
 
 Focused tests cover original/edited/unauthorized commands, namespaces after edits,
 open/duplicate/completed-push/manual runs, observed ABA, same-second serialized
-head observations, base-only moves, cancellation, config ACK uncertainty/order,
+head observations, fork heads, head-repository-only and mid-read head-repository
+changes, base-only moves, cancellation, config ACK uncertainty/order,
 restart, scope/identity/epoch changes, partial/foreign pages, actual retained PR
 metadata, and stale A publication during B discovery. Real synthetic Git objects
 feed the controller's evidence path; provider outputs and GitHub writes are fake.

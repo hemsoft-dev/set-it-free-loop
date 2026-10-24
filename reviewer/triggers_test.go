@@ -795,3 +795,162 @@ func TestPollingTriggersClosedHistoryPreservesHeadForReopen(t *testing.T) {
 		})
 	}
 }
+
+// A fork head is provenance, not a second source. The selected reader records
+// its repository ID in the pinned snapshot and otherwise reads, requests and
+// admits exactly as for a same-repository head: canonical routes only, the same
+// immutable revisions and no extra GitHub reads or writes.
+func TestPollingTriggersForkHeadRecordsHeadRepository(t *testing.T) {
+	const forkRepositoryID = int64(5555)
+	observe := func(t *testing.T, headRepositoryID int64) (RemoteState, Job, *discoveryFixture, *DurableState) {
+		ctx := context.Background()
+		g, f, s := triggerFixture(t)
+		f.snapshot.HeadRepositoryID = headRepositoryID
+		state, err := g.Current(ctx, alphaScope())
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := s.Admit(ctx, alphaScope(), state.Request.ID, testJob().Release, "same immutable evidence", f.through)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, _ := s.Snapshot(ctx)
+		return state, job, f, &d
+	}
+	fork, forkJob, f, d := observe(t, forkRepositoryID)
+	if forkRepositoryID == RepositoryID || fork.Snapshot != f.snapshot || fork.Snapshot.HeadRepositoryID != forkRepositoryID || fork.Snapshot.RepositoryID != RepositoryID || fork.Snapshot.Validate() != nil {
+		t.Fatal("fork head not recorded", fork.Snapshot)
+	}
+	if fork.Request.ID != 1 || fork.Request.Origin.Kind != "opened" || fork.Request.Origin.ActorRole != "pr_author" || fork.Request.Snapshot != fork.Snapshot {
+		t.Fatal("fork head changed request handling", fork.Request)
+	}
+	if forkJob.Snapshot != fork.Snapshot || forkJob.Origin == nil || *forkJob.Origin != *fork.Request.Origin {
+		t.Fatal("admitted job lost fork provenance", forkJob)
+	}
+	pr := d.PRs[alphaScope().key()]
+	if pr.Triggers == nil || pr.Triggers.Snapshot != fork.Snapshot || pr.Triggers.PendingHead {
+		t.Fatal("cursor did not pin fork head", pr.Triggers)
+	}
+	f.mu.Lock()
+	forkCalls, forkWrites, forkPRReads, forkRefReads := f.calls, f.writes, f.prReads, f.refReads
+	f.mu.Unlock()
+
+	same, sameJob, plain, _ := observe(t, RepositoryID)
+	plain.mu.Lock()
+	defer plain.mu.Unlock()
+	if forkWrites != 0 || plain.writes != 0 || forkCalls != plain.calls || forkPRReads != plain.prReads || forkRefReads != plain.refReads {
+		t.Fatal("fork head changed GitHub reads", forkCalls, plain.calls, forkPRReads, plain.prReads, forkRefReads, plain.refReads, forkWrites)
+	}
+	// Apart from the recorded head repository, source and request are identical:
+	// acquisition still names only the canonical repository and immutable IDs.
+	expected := fork
+	expected.Snapshot.HeadRepositoryID = RepositoryID
+	expected.Request.Snapshot.HeadRepositoryID = RepositoryID
+	if Digest(same) != Digest(expected) {
+		t.Fatal("fork head handled differently", same, fork)
+	}
+	forkJob.Snapshot.HeadRepositoryID = RepositoryID
+	if Digest(sameJob) != Digest(forkJob) {
+		t.Fatal("fork job handled differently", sameJob, forkJob)
+	}
+}
+
+// A head-repository change with an unchanged head SHA is a new observation. It
+// fences old work and creates a synchronize request; it is never merged into
+// the earlier capture, and a repeated observation cannot rerun it.
+func TestPollingTriggersHeadRepositoryOnlyChangeIsNewObservation(t *testing.T) {
+	ctx := context.Background()
+	g, f, s := triggerFixture(t)
+	first, err := g.Current(ctx, alphaScope())
+	if err != nil || first.Request.ID != 1 || first.Request.Origin.Kind != "opened" {
+		t.Fatal(first, err)
+	}
+	job, err := s.Admit(ctx, alphaScope(), first.Request.ID, testJob().Release, "same immutable evidence", f.through)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.through = f.through.Add(time.Minute)
+	f.snapshot.HeadRepositoryID = 5555
+	moved := f.snapshot
+	f.mu.Unlock()
+	if moved.Head != first.Snapshot.Head || moved.Base != first.Snapshot.Base || moved.MergeBase != first.Snapshot.MergeBase {
+		t.Fatal("fixture changed more than the head repository")
+	}
+	second, err := g.Current(ctx, alphaScope())
+	if err != nil || second.Request.ID != 2 || second.Request.Origin.Kind != "synchronize" || second.Request.Origin.Sequence != 2 || !second.Request.Origin.EventAt.IsZero() {
+		t.Fatal("head-repository change not observed", second, err)
+	}
+	if second.Snapshot != moved || second.Request.Snapshot != moved {
+		t.Fatal("head-repository change merged into old capture", second)
+	}
+	d, _ := s.Snapshot(ctx)
+	pr := d.PRs[alphaScope().key()]
+	if d.Jobs[job.ID].State != "stale" || pr.Generation <= job.Generation || pr.CurrentRequest != second.Request.ID {
+		t.Fatal("head-repository change did not fence old work", d.Jobs[job.ID], pr)
+	}
+	if pr.Requests[0].Snapshot != first.Snapshot || pr.Triggers.Snapshot != moved || pr.Triggers.PendingHead {
+		t.Fatal("earlier capture rewritten or cursor not advanced", pr.Requests, pr.Triggers)
+	}
+	f.mu.Lock()
+	f.through = f.through.Add(time.Minute)
+	f.mu.Unlock()
+	again, err := g.Current(ctx, alphaScope())
+	if err != nil || again.Request.ID != second.Request.ID {
+		t.Fatal("repeated head-repository observation reran", again, err)
+	}
+	// Returning to the original head repository is another observation, not a
+	// deduplication against the first capture.
+	f.mu.Lock()
+	f.through = f.through.Add(time.Minute)
+	f.snapshot.HeadRepositoryID = first.Snapshot.HeadRepositoryID
+	f.mu.Unlock()
+	third, err := g.Current(ctx, alphaScope())
+	if err != nil || third.Request.ID != 3 || third.Request.Origin.Kind != "synchronize" || third.Request.Origin.Sequence != 3 || third.Request.Snapshot != first.Snapshot {
+		t.Fatal("head-repository ABA deduplicated", third, err)
+	}
+}
+
+// A head repository that moves between the two captures of one read is a torn
+// read. It defers without a request or cursor, before and after a durable
+// observation, even when an owner review comment is present.
+func TestPollingTriggersHeadRepositoryChangeDuringReadDefers(t *testing.T) {
+	for _, kind := range []string{"first-observation", "established-cursor"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx := context.Background()
+			g, f, s := triggerFixture(t)
+			if kind == "established-cursor" {
+				if _, err := g.Current(ctx, alphaScope()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, _ := s.Snapshot(ctx)
+			native := f.alter
+			f.mu.Lock()
+			f.through = f.through.Add(time.Minute)
+			f.comments = []map[string]any{reviewComment(991, f.through.Add(-time.Second))}
+			reads := f.prReads
+			f.alter = func(f *discoveryFixture, q *http.Request) {
+				native(f, q)
+				// Move only the head repository on the second capture of this read.
+				if q.URL.Path == githubPR(alphaScope()) && f.prReads == reads+1 {
+					f.snapshot.HeadRepositoryID = 5555
+				}
+			}
+			head := f.snapshot.Head
+			f.mu.Unlock()
+			if _, batch, err := g.PollScope(ctx, alphaScope()); !errors.Is(err, ErrDeferred) || batch.Triggers != nil || len(batch.Requests) != 0 {
+				t.Fatal("torn head-repository read produced a batch", batch, err)
+			}
+			f.mu.Lock()
+			if f.prReads != reads+2 || f.snapshot.Head != head || f.writes != 0 {
+				t.Fatal("fixture did not tear only the head repository", f.prReads, f.snapshot, f.writes)
+			}
+			f.mu.Unlock()
+			after, _ := s.Snapshot(ctx)
+			if Digest(after) != Digest(before) {
+				t.Fatal("torn read mutated durable state")
+			}
+		})
+	}
+}
