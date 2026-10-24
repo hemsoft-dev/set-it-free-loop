@@ -3217,13 +3217,37 @@ func e2eNativeSessionVerdict(units []e2eNativeUnit, jobs []*r.DurableJob, extra 
 }
 
 // e2eProviderReopenVerdicts judges close-provider after a Close that proved
-// completion and a reopen with the same assertions as every other completed
-// review: one confirmed intent, one POST and the expected remote COMMENT,
-// stopped source receipts, and one completed native launch per artifact. The
-// interrupted launch is the only other launch allowed.
+// completion (the shutdown grace returned the interrupted launch's auth) and
+// a reopen. The requeued job keeps that launch's charged session, so its
+// captured four-session budget leaves three: it reruns Codex R1, Claude R1
+// and Codex R2, each in one completed launch holding the canned report, then
+// expires before Claude R2, unleased, with no intent, POST or remote review.
+// Its source receipts must still be stopped, and the interrupted launch,
+// bound to its recorded attempt, is the only other launch allowed. It returns
+// PR 1's job, or nil when it is not the only job.
 func e2eProviderReopenVerdicts(c e2eCompletion, interrupted string) ([]e2eVerdict, *r.DurableJob) {
-	verdicts, jobs := e2eCompletedVerdicts("after reopen", c, []int{1}, interrupted)
-	return verdicts, jobs[0]
+	const label = "after reopen"
+	j := e2eJobFor(c.State, 1)
+	if j == nil || len(c.State.Jobs) != 1 {
+		return []e2eVerdict{{false, fmt.Sprintf("%s: PR 1's job is the only job (%d jobs)", label, len(c.State.Jobs))}}, nil
+	}
+	expected := e2eExpectedFor(c, 1, j)
+	phases := []string{}
+	for _, a := range j.Checkpoint.Artifacts {
+		phases = append(phases, fmt.Sprintf("%s R%d", a.Report.Provider, a.Report.Round))
+	}
+	canned := e2eCannedArtifacts(expected)
+	v := []e2eVerdict{
+		{r.Digest(j.Job) == r.Digest(expected.Job), fmt.Sprintf("%s: PR 1's job is exactly the one admission derives from its retained request and the harness's inputs", label)},
+		{j.State == "incomplete_expired" && j.LeaseToken == "" && !j.Outstanding, fmt.Sprintf("%s: the requeued job expired its captured budget, unleased and with no outstanding reservation (state %s)", label, j.State)},
+		{j.Checkpoint.ConsumedSessions == c.Config.MaxSessions() && j.Checkpoint.JobHash == r.Digest(j.Job), fmt.Sprintf("%s: the job consumed exactly its %d captured sessions, the interrupted one included (consumed %d)", label, c.Config.MaxSessions(), j.Checkpoint.ConsumedSessions)},
+		{slices.Equal(phases, []string{"codex R1", "claude R1", "codex R2"}), fmt.Sprintf("%s: the job stored exactly Codex R1, Claude R1 and Codex R2 (%v)", label, phases)},
+		{canned == nil, fmt.Sprintf("%s: the stored artifacts hold exactly the canned backend's reports for their phases: %v", label, canned)},
+		{len(c.State.Writes) == 0, fmt.Sprintf("%s: the expired job prepared no write intent (%d)", label, len(c.State.Writes))},
+		{c.Posts[1] == 0 && len(c.Reviews[1]) == 0, fmt.Sprintf("%s: PR 1 received no review POST and holds no remote review (%d POSTs, %d reviews)", label, c.Posts[1], len(c.Reviews[1]))},
+	}
+	v = append(v, e2eSourceVerdicts(label, c, []*r.DurableJob{expected})...)
+	return append(v, e2eAttemptSetVerdict(c.Units, []*r.DurableJob{expected}, interrupted), e2eNativeSessionVerdict(c.Units, []*r.DurableJob{expected}, interrupted)), j
 }
 
 // e2eCompletedVerdicts judges a completed case's evidence for the reviewed
@@ -3468,10 +3492,12 @@ func e2eCloseCapture(e *e2eEnv) {
 
 // close-provider: the service closes while the first native session's pinned
 // client waits for a withheld fake inference response. The unit must be
-// proved stopped and the exported auth returned or fenced. If the attempt
-// stays uncertain, its durable lease is retained and Close keeps reporting
-// ErrWorkerStopPending; the root is then retained for close-provider-reopen,
-// which a separate process runs as a restarted service.
+// proved stopped and the exported auth returned or fenced. Within the
+// shutdown grace the expected outcome is a returned auth and a Close that
+// proves completion; the case then reopens and judges the requeued job. If
+// the attempt stays uncertain, its durable lease is retained and Close keeps
+// reporting ErrWorkerStopPending; the root is then retained for
+// close-provider-reopen, which a separate process runs as a restarted service.
 func e2eCloseProvider(e *e2eEnv) {
 	e.github.addPR(1, r.OwnerID, e.github.epoch.Add(time.Minute))
 	e.models[r.Codex].mu.Lock()
@@ -3544,15 +3570,28 @@ func e2eCloseProvider(e *e2eEnv) {
 	e.check((returned && auth[r.Codex] == "usable") || (!returned && auth[r.Codex] == "fenced"), "codex auth is usable exactly when its stopped return was committed, and fenced otherwise (returned %v, %s)", returned, auth[r.Codex])
 	e.check(e.github.reviewPosts(1) == 0, "nothing was published for the interrupted job")
 	if !e.wedged {
-		e.check(j.LeaseToken == "" && j.State == "queued" && returned, "a completed Close leaves a queued job with returned auth (state %s)", j.State)
-		// Not yet observed on a host: the stopped receipt the job records for
-		// the interrupted attempt is the launch's audit evidence.
+		// The expected branch since the shutdown grace (#264): Close revoked
+		// the withheld session's provider intake, the guest stopped its client
+		// and returned auth, and the stopped launch was released and requeued
+		// with its charged session. Not yet observed on a host.
+		e.check(j.LeaseToken == "" && !j.Outstanding && j.State == "queued" && returned, "a completed Close leaves a queued, unleased job with no outstanding reservation and returned auth (state %s)", j.State)
+		failure := ""
 		if len(units) == 1 {
-			_, err := e2eRecordedEvidence(expected, units[0])
-			e.check(err == nil, "the job durably records the interrupted launch's complete stopped audit evidence: %v", err)
+			failure = units[0].Failure
+		}
+		e.check(len(units) == 1 && units[0].AuthExported && units[0].AuthReturned && failure == "cancelled", "the stopped audit records the auth as exported and returned and the session as ended by shutdown (failure %q)", failure)
+		if len(units) == 1 {
+			_, err := e2eInterruptedLaunch(units[0], expected)
+			e.check(err == nil, "the job durably records the interrupted launch as its attempt, with its complete stopped audit evidence and the source receipt its result returned: %v", err)
 		}
 		e.open("reopen")
-		e.wait("PR 1 review after reopen", 6*time.Minute, func(d r.DurableState) bool { return e2eConfirmed(d, 1) })
+		// The requeued job keeps the interrupted session's charge, so its
+		// captured four-session budget cannot finish the adversarial
+		// protocol: it reruns three phases and expires before Claude R2.
+		e.wait("PR 1 job settles after reopen", 6*time.Minute, func(d r.DurableState) bool {
+			j := e2eJobFor(d, 1)
+			return j != nil && j.LeaseToken == "" && !j.Outstanding && j.State != "queued" && j.State != "running"
+		})
 		e.snapshotJobs("after reopen")
 		// The one allowed extra launch is the Codex R1 session the expected
 		// job derives, not whichever session the interrupted launch recorded.
@@ -3561,13 +3600,16 @@ func e2eCloseProvider(e *e2eEnv) {
 			interrupted = r.Digest(session)
 		}
 		e.check(interrupted != "" && len(units) == 1 && units[0].SessionHash == interrupted, "the interrupted launch ran the Codex R1 session the expected job derives")
-		verdicts, reopened := e2eProviderReopenVerdicts(e.completion(), interrupted)
+		c := e.completion()
+		c.Heads[1] = e.github.commits["1"]
+		verdicts, reopened := e2eProviderReopenVerdicts(c, interrupted)
 		e.checkAll(verdicts)
-		// Not yet observed on a host: the interrupted launch plus one completed
-		// launch per adversarial phase, restated rather than counted from the
-		// reopened job's artifacts, still one acquisition, both auth stores
-		// usable, and the review published.
-		e.expect = e2eExpect{SourceUnits: 1, NativeUnits: 1 + len(e2eAdversarialRounds), AuthUsable: true, Routes: e2ePublishedRoutes}
+		e.result.Requests = e2eRequests(c.State)
+		e.checkAll(e2eRequestVerdicts("after reopen", e.result.Requests, map[int]e2eRequest{1: e2eAdmittedOpened(1, j.RequestID)}))
+		// The interrupted launch plus the three rerun phases, restated rather
+		// than counted from the reopened job's artifacts, still one
+		// acquisition, both auth stores usable, and nothing published.
+		e.expect = e2eExpect{SourceUnits: 1, NativeUnits: 1 + 3, AuthUsable: true, Routes: e2eQualifiedRoutes}
 		if reopened != nil {
 			e.result.Jobs = append(e.result.Jobs, e2eJobSummary(reopened))
 		}
@@ -5203,6 +5245,9 @@ func e2eLaunchFixture(j *r.DurableJob, session r.Session, launch, attempt string
 	if returned {
 		audit.Failure = "cancelled"
 	}
+	if access != nil && !complete {
+		audit.Stage = "result-validation"
+	}
 	if complete {
 		audit.Stage, audit.Failure = "result-validation", ""
 		if provider == r.Codex {
@@ -5306,21 +5351,33 @@ func e2eAcquisition(rec r.E2ESourceRecord) []e2eGitExchange {
 	}
 }
 
-// e2eReopenFixture is a valid completion after close-provider's reopen: the
-// completed review plus the interrupted launch of the first session, whose
-// version 2 receipt names the attempt under which the job also records its
-// stopped evidence, and its held backend check. The interrupted launch is the
-// last unit. The interrupted phase returned its auth, read no result and so recorded no
-// report and no source receipt.
+// e2eReopenFixture is a valid end state of close-provider's reopen after a
+// Close that proved completion: PR 1's only job, requeued with the
+// interrupted launch's charged session, reran Codex R1, Claude R1 and Codex
+// R2 and expired before Claude R2, with no intent, POST or remote review. The
+// interrupted launch of the first session is the last unit. Its version 2
+// receipt names the attempt under which the job records its stopped evidence
+// and source receipt; it returned its auth in the result record, so its
+// audit ends at that record's validation and reports the shutdown.
 func e2eReopenFixture() (e2eCompletion, string) {
 	c := e2eCompletedFixture()
 	job := e2eJobFor(c.State, 1)
+	job.Checkpoint.Artifacts = job.Checkpoint.Artifacts[:3]
+	job.ProviderAttempts, job.SourceAttempts = job.ProviderAttempts[:3], job.SourceAttempts[:3]
+	last := job.Checkpoint.Artifacts[2]
+	job.AttemptProvider, job.AttemptRound, job.AttemptID, job.AttemptInputHash = r.Codex, 2, job.ProviderAttempts[2].ID, last.InputHash
+	job.State, job.Checkpoint.ConsumedSessions = "incomplete_expired", 4
+	c.Units, c.Sessions = c.Units[:3], c.Sessions[:3]
+	c.State.Writes, c.Posts, c.Reviews = map[string]*r.WriteIntent{}, map[int]int{}, map[int][]map[string]any{}
 	session := e2eFixtureSession(job, r.Codex, 1)
 	first := r.Digest(session)
 	evidence := e2eFixtureEvidence(session, false)
 	interrupted := strings.Repeat("b", 32)
+	access := &r.SourceAccess{Version: 1, SessionHash: first, Reads: []r.ReadRecord{}, Coverage: []r.Coverage{}}
+	recorded := *access
 	job.ProviderAttempts = append([]r.ProviderAttempt{{ID: interrupted, Evidence: evidence}}, job.ProviderAttempts...)
-	c.Units = append(c.Units, e2eLaunchFixture(job, session, strings.Repeat("9", 32), interrupted, evidence, r.Report{}, nil, false, true))
+	job.SourceAttempts = append([]r.SourceAttempt{{ID: interrupted, Access: &recorded}}, job.SourceAttempts...)
+	c.Units = append(c.Units, e2eLaunchFixture(job, session, strings.Repeat("9", 32), interrupted, evidence, r.Report{}, access, false, true))
 	c.Sessions = append([]e2eModelSession{{JobID: job.Job.ID, Provider: r.Codex, Round: 1, PR: 1, Head: job.Job.Snapshot.Head, SessionHash: first, HeldInference: true}}, c.Sessions...)
 	return c, first
 }
@@ -5342,54 +5399,71 @@ func TestE2EProviderReopenVerdicts(t *testing.T) {
 		return e2eFailures(verdicts)
 	}
 	if f := failures(e2eReopenFixture()); len(f) != 0 {
-		t.Fatal("completed reopen refused:", f)
+		t.Fatal("budget-expired reopen refused:", f)
 	}
+	const last = 3 // the interrupted launch
 	for name, edit := range map[string]func(*e2eCompletion){
-		"duplicate unknown intent": func(c *e2eCompletion) {
+		"review intent prepared": func(c *e2eCompletion) {
 			c.State.Writes["w2"] = &r.WriteIntent{ID: "w2", Kind: "review", Scope: e2eScope(1), State: "unknown"}
 		},
-		"second review POST":                        func(c *e2eCompletion) { c.Posts[1] = 2 },
-		"remote review without inline":              func(c *e2eCompletion) { c.Reviews[1][0]["inline"] = []string{} },
-		"remote review on another head":             func(c *e2eCompletion) { c.Reviews[1][0]["commit_id"] = strings.Repeat("9", 40) },
+		"review POST":             func(c *e2eCompletion) { c.Posts[1] = 1 },
+		"remote review":           func(c *e2eCompletion) { c.Reviews[1] = []map[string]any{{"id": int64(5001)}} },
+		"job completed":           func(c *e2eCompletion) { e2eJobFor(c.State, 1).State = "dual_complete" },
+		"job requeued again":      func(c *e2eCompletion) { e2eJobFor(c.State, 1).State = "queued" },
+		"lease retained":          func(c *e2eCompletion) { e2eJobFor(c.State, 1).LeaseToken = "lease" },
+		"reservation outstanding": func(c *e2eCompletion) { e2eJobFor(c.State, 1).Outstanding = true },
+		"interrupted refunded":    func(c *e2eCompletion) { e2eJobFor(c.State, 1).Checkpoint.ConsumedSessions = 3 },
+		"session beyond budget":   func(c *e2eCompletion) { e2eJobFor(c.State, 1).Checkpoint.ConsumedSessions = 5 },
+		"missing Codex R2": func(c *e2eCompletion) {
+			j := e2eJobFor(c.State, 1)
+			j.Checkpoint.Artifacts = j.Checkpoint.Artifacts[:2]
+		},
+		"second job": func(c *e2eCompletion) { c.State.Jobs["other"] = e2eJobFor(c.State, 1) },
+		"artifact not canned": func(c *e2eCompletion) {
+			e2eJobFor(c.State, 1).Checkpoint.Artifacts[1].Report.Retractions = []string{"changed"}
+		},
 		"completed launch kept its auth":            func(c *e2eCompletion) { c.Units[1].AuthReturned = false },
 		"completed launch audit unbound":            func(c *e2eCompletion) { c.Units[2].AuditPresent = false },
 		"completed launch names an unknown attempt": func(c *e2eCompletion) { c.Units[2].AttemptID = strings.Repeat("f", 32) },
 		"completed launch names the interrupted attempt": func(c *e2eCompletion) {
-			c.Units[0].AttemptID, c.Units[0].EvidenceHash = c.Units[4].AttemptID, c.Units[4].EvidenceHash
+			c.Units[0].AttemptID, c.Units[0].EvidenceHash = c.Units[last].AttemptID, c.Units[last].EvidenceHash
 		},
 		"completed launch names another session's attempt": func(c *e2eCompletion) {
 			c.Units[1].AttemptID, c.Units[1].EvidenceHash = c.Units[2].AttemptID, c.Units[2].EvidenceHash
 		},
-		"completed launch repeats other evidence": func(c *e2eCompletion) { c.Units[3].EvidenceHash = c.Units[4].EvidenceHash },
+		"completed launch repeats other evidence": func(c *e2eCompletion) { c.Units[2].EvidenceHash = c.Units[last].EvidenceHash },
 		"artifact attempt unrecorded": func(c *e2eCompletion) {
 			j := e2eJobFor(c.State, 1)
 			j.ProviderAttempts = slices.Delete(j.ProviderAttempts, 2, 3)
 		},
 		"artifact without provider evidence": func(c *e2eCompletion) { e2eJobFor(c.State, 1).Checkpoint.Artifacts[1].ProviderEvidence = nil },
-		"second interrupted launch":          func(c *e2eCompletion) { c.Units = append(c.Units, c.Units[4]) },
-		"source attempt not stopped":         func(c *e2eCompletion) { c.Records[0].Stopped = false },
-		"source records unreadable":          func(c *e2eCompletion) { c.SourceErr = r.ErrLiveBlocked },
-		"interrupted session recharged":      func(c *e2eCompletion) { e2eJobFor(c.State, 1).Checkpoint.ConsumedSessions = 5 },
+		"second interrupted launch":          func(c *e2eCompletion) { c.Units = append(c.Units, c.Units[last]) },
+		"launch for Claude R2": func(c *e2eCompletion) {
+			full := e2eCompletedFixture()
+			c.Units = append(c.Units, full.Units[3])
+		},
+		"source attempt not stopped": func(c *e2eCompletion) { c.Records[0].Stopped = false },
+		"source records unreadable":  func(c *e2eCompletion) { c.SourceErr = r.ErrLiveBlocked },
 		"interrupted launch completed": func(c *e2eCompletion) {
 			// A completed launch with a foreign receipt must not pass as the
 			// interrupted one.
-			c.Units[4].Complete = true
+			c.Units[last].Complete = true
 		},
-		"interrupted launch without its audit": func(c *e2eCompletion) { c.Units[4].AuditPresent = false },
+		"interrupted launch without its audit": func(c *e2eCompletion) { c.Units[last].AuditPresent = false },
 		"interrupted launch names a completed attempt": func(c *e2eCompletion) {
-			c.Units[4].AttemptID, c.Units[4].EvidenceHash = c.Units[1].AttemptID, c.Units[1].EvidenceHash
+			c.Units[last].AttemptID, c.Units[last].EvidenceHash = c.Units[1].AttemptID, c.Units[1].EvidenceHash
 		},
-		"interrupted launch names an unknown attempt": func(c *e2eCompletion) { c.Units[4].AttemptID = strings.Repeat("f", 32) },
-		"interrupted launch repeats other evidence":   func(c *e2eCompletion) { c.Units[4].EvidenceHash = c.Units[1].EvidenceHash },
+		"interrupted launch names an unknown attempt": func(c *e2eCompletion) { c.Units[last].AttemptID = strings.Repeat("f", 32) },
+		"interrupted launch repeats other evidence":   func(c *e2eCompletion) { c.Units[last].EvidenceHash = c.Units[1].EvidenceHash },
 		"interrupted attempt recorded twice": func(c *e2eCompletion) {
 			j := e2eJobFor(c.State, 1)
 			j.ProviderAttempts = append(j.ProviderAttempts, j.ProviderAttempts[0])
 		},
-		// Round 10: the interrupted launch is the job's one interrupted
-		// attempt, and its audit records that attempt's request, no report
-		// and exactly the source receipt the job recorded for it (none).
 		"interrupted attempt never recorded": func(c *e2eCompletion) {
 			e2eJobFor(c.State, 1).ProviderAttempts = e2eJobFor(c.State, 1).ProviderAttempts[1:]
+		},
+		"interrupted source receipt never recorded": func(c *e2eCompletion) {
+			e2eJobFor(c.State, 1).SourceAttempts = e2eJobFor(c.State, 1).SourceAttempts[1:]
 		},
 		"second interrupted provider attempt": func(c *e2eCompletion) {
 			j := e2eJobFor(c.State, 1)
@@ -5398,15 +5472,15 @@ func TestE2EProviderReopenVerdicts(t *testing.T) {
 			j.ProviderAttempts = append(j.ProviderAttempts, r.ProviderAttempt{ID: "interrupted-again", Evidence: &other})
 		},
 		"interrupted audit of a report": func(c *e2eCompletion) {
-			c.Units[len(c.Units)-1].Audit.ReportHash = r.Digest(e2eJobFor(c.State, 1).Checkpoint.Artifacts[0].Report)
+			c.Units[last].Audit.ReportHash = r.Digest(e2eJobFor(c.State, 1).Checkpoint.Artifacts[0].Report)
 		},
-		"interrupted audit of an unrecorded source receipt": func(c *e2eCompletion) {
-			c.Units[len(c.Units)-1].Audit.SourceHash = r.Digest(e2eJobFor(c.State, 1).Checkpoint.Artifacts[0].SourceAccess)
+		"interrupted audit of another source receipt": func(c *e2eCompletion) {
+			c.Units[last].Audit.SourceHash = r.Digest(e2eJobFor(c.State, 1).Checkpoint.Artifacts[0].SourceAccess)
 		},
-		"interrupted audit of another request": func(c *e2eCompletion) { c.Units[len(c.Units)-1].Audit.RequestHash = r.Digest("another request") },
-		"interrupted audit at another stage":   func(c *e2eCompletion) { c.Units[len(c.Units)-1].Audit.Stage = "auth-export" },
-		"interrupted audit without a failure":  func(c *e2eCompletion) { c.Units[len(c.Units)-1].Audit.Failure = "" },
-		"interrupted unit never aborted":       func(c *e2eCompletion) { c.Units[len(c.Units)-1].Aborted = false },
+		"interrupted audit of another request": func(c *e2eCompletion) { c.Units[last].Audit.RequestHash = r.Digest("another request") },
+		"interrupted audit before its result":  func(c *e2eCompletion) { c.Units[last].Audit.Stage = "result" },
+		"interrupted audit without a failure":  func(c *e2eCompletion) { c.Units[last].Audit.Failure = "" },
+		"interrupted unit never aborted":       func(c *e2eCompletion) { c.Units[last].Aborted = false },
 	} {
 		c, interrupted := e2eReopenFixture()
 		edit(&c)

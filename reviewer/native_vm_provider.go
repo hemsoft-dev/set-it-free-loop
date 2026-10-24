@@ -145,6 +145,10 @@ func startNativeProviderBridge(ctx context.Context, s Session, policy EgressPoli
 	return bridge, nil
 }
 
+// revoke ends provider intake early: it closes the private stream and any
+// in-flight request. It attests nothing; close remains the only receipt.
+func (b *nativeProviderBridge) revoke() { b.server.Close() }
+
 // close waits for both HTTP intake and all guarded upstream/body work. This is
 // an HTTP receipt, never a substitute for the native unit's whole-VM stop proof.
 func (b *nativeProviderBridge) close(ctx context.Context) (*ProviderEvidence, error) {

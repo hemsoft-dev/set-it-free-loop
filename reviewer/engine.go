@@ -223,6 +223,10 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 			if err := ctx.Err(); err != nil {
 				return fail("cancelled", err)
 			}
+			// A shutdown drain lets only the in-flight phase finish.
+			if shutdownDraining(ctx) {
+				return fail("cancelled", context.Canceled)
+			}
 			// Serialization gives each invocation its own frozen peer data.
 			peerBytes, _ := json.Marshal(peers)
 			var frozen []Report

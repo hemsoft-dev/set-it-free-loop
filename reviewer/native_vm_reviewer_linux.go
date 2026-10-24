@@ -110,6 +110,11 @@ type nativeVMHostPhase struct {
 	// attempt is the durable attempt ID bound into the stopped receipt, or
 	// empty outside a durable attempt.
 	attempt string
+	// drain is the controller invocation's shutdown drain this launch holds
+	// from auth export until its stopped receipt; see holdShutdownGrace.
+	drain        *shutdownDrain
+	releaseGrace func()
+	stopGrace    func() bool
 }
 
 var _ attemptAuditedReviewer = (*NativeVMReviewer)(nil)
@@ -249,6 +254,10 @@ func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, con
 	if nativeCheckLeasedAuth(ctx, phase.profile, nativeVMExportGate{supervisor, manifest, request, ready}) != nil {
 		return nativeVMTaskReport{}, nil, nil, PhaseError{State: "auth_failed", BeforeWork: true}
 	}
+	// Once service shutdown drains this invocation no auth is exported.
+	if !phase.holdShutdownGrace(ctx) {
+		return nativeVMTaskReport{}, nil, nil, workerLauncherError(context.Canceled, true)
+	}
 	phase.stage = "auth-export"
 	seed, err := phase.profile.ExportAuth(ctx, nativeVMExportGate{supervisor, manifest, request, ready})
 	if err != nil {
@@ -287,6 +296,11 @@ func (p *nativeVMHostPhase) finish(ctx context.Context, report Report, primary e
 	return result.review, access, evidence, err
 }
 func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskReport, primary error) (nativeVMTaskReport, *SourceAccess, *ProviderEvidence, error) {
+	// The grace hold lasts until the stopped receipt below is written.
+	if p.releaseGrace != nil {
+		defer p.releaseGrace()
+	}
+	drained := p.shutdownDrained()
 	if p.profile != nil {
 		defer p.profile.Close()
 	}
@@ -395,6 +409,13 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 		}
 	}
 
+	// A failure after shutdown revoked provider intake reports the shutdown,
+	// so the controller may requeue the stopped job under its consumed
+	// budget. A latched route or response refusal, or exhaustion, keeps its
+	// own classification.
+	if primary != nil && drained && !nativeProviderRefused(evidence) {
+		primary = errors.Join(primary, context.Canceled)
+	}
 	if p.started && p.persistAudit(cleanup, report.value(), access, evidence, primary) != nil {
 		primary = errors.Join(primary, ErrProviderAuditPending)
 	}
@@ -408,6 +429,47 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 		return nativeVMTaskReport{}, access, evidence, errors.Join(PhaseError{State: phaseState(primary), BeforeWork: before}, nativeVMCauses(primary))
 	}
 	return report, access, evidence, nil
+}
+
+// holdShutdownGrace registers this launch with its controller invocation's
+// shutdown drain before auth export, and reports false once that drain has
+// begun. While the hold lasts, a drain revokes provider intake: the private
+// provider stream and any in-flight request close, the guest's client proxy
+// stops its CLI on the failed exchange, and guest PID1 returns auth in its
+// ordinary finished record. Nothing else changes. The host still reads that
+// record only under the session deadline and Close's later cancellation,
+// proves whole-unit stop first, and commits auth only through its stopped
+// return. Launches outside a controller invocation hold nothing.
+func (p *nativeVMHostPhase) holdShutdownGrace(ctx context.Context) bool {
+	drain := shutdownDrainOf(ctx)
+	if drain == nil {
+		return true
+	}
+	release, ok := drain.hold()
+	if !ok {
+		return false
+	}
+	p.drain, p.releaseGrace = drain, release
+	bridge := p.bridge
+	p.stopGrace = context.AfterFunc(drain.signal, func() {
+		if bridge != nil {
+			bridge.revoke()
+		}
+	})
+	return !drain.draining()
+}
+
+// shutdownDrained ends the revocation hook and reports whether shutdown had
+// begun draining this held launch.
+func (p *nativeVMHostPhase) shutdownDrained() bool {
+	if p.stopGrace != nil {
+		p.stopGrace()
+	}
+	return p.releaseGrace != nil && p.drain.draining()
+}
+
+func nativeProviderRefused(evidence *ProviderEvidence) bool {
+	return evidence != nil && (evidence.Access.RouteDenials > 0 || evidence.Access.ResponseDenials > 0 || evidence.Access.Exhausted)
 }
 
 // A stopped CLI can return its old file after the provider already rotated it.
