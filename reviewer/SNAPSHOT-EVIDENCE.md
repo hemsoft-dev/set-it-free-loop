@@ -9,13 +9,33 @@ attest installation permissions or which repository supplied it.
 
 Capture requires all three revisions to be commits and the captured merge base
 to be the unique merge base of the base tip and head. Missing or ambiguous
-history defers the entire capture. The comparison is merge-base to head, even
+history refuses the entire capture. The comparison is merge-base to head, even
 when an independently advanced base tip has the same tree as head.
+
+## Permanent refusals
+
+Some failures are Git's definite answer about the snapshot's immutable
+commits in this object store. Capture returns them as a typed
+`CaptureRefusal` with a fixed reason:
+
+| Reason | Git's answer |
+| --- | --- |
+| `missing_history` | `cat-file -e` exits 1 for the head, base or merge-base commit, or `merge-base` exits 1 because head and base share no ancestor |
+| `ambiguous_history` | `merge-base --all` completes with more than one merge base, more than its bounded output holds, or one that differs from the snapshot's |
+| `inventory_limit` | the complete raw inventory has more than 128 paths or exceeds the two-MiB output cap |
+
+`GitStore` reports a nonzero exit status only for a Git process that exited by
+itself before cancellation, and refusals also require the capture deadline to
+be unexpired. A corrupt or unreadable store (exit 128), a missing intermediate
+ancestor (exit 255), an object that is not a commit, a malformed inventory, a
+killed or cancelled process and every transport, access or VM failure remain
+plain errors. The [polling controller](POLLING.md#capture-refusals) records a
+refusal as a terminal job and keeps the deferred backoff for everything else.
 
 Git produces the NUL-delimited raw inventory with full object IDs and renames
 disabled. A rename appears as deletion and addition. Modes, status, object IDs,
 paths and cardinality are validated. Unsafe paths or incomplete inventories
-defer capture. Both SHA-1 and SHA-256 object formats are supported. Packet data
+defer capture; an inventory over the cap is refused. Both SHA-1 and SHA-256 object formats are supported. Packet data
 includes every changed path, mode, old/new object identity and status within the
 128-file cap. No truncated inventory is admitted.
 

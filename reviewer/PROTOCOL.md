@@ -49,8 +49,8 @@ go -C reviewer vet ./...
 go -C reviewer test -race -count=1 ./...
 ```
 
-The reviewed Markdown fixtures are synthetic and prove no App eligibility, live model quality or actual GitHub publication. They cover a corroborated review, a disputed review with a late unverified allegation, every published status, the superseded status and the superseded annotation. To intentionally regenerate them after inspecting a format change:
+The reviewed Markdown fixtures are synthetic and prove no App eligibility, live model quality or actual GitHub publication. They cover a corroborated review, a disputed review with a late unverified allegation, every published status including each capture refusal reason, the superseded status and the superseded annotation. To intentionally regenerate them after inspecting a format change:
 
 ```sh
-go -C reviewer test -run 'TestReviewMarkdownGolden|TestDisputedLateReviewMarkdownGolden|TestStatusMarkdownGolden|TestSupersededStatusMarkdownGolden' -args -update-golden
+go -C reviewer test -run 'TestReviewMarkdownGolden|TestDisputedLateReviewMarkdownGolden|TestStatusMarkdownGolden|TestCaptureRefusalStatusMarkdownGolden|TestSupersededStatusMarkdownGolden' -args -update-golden
 ```

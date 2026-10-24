@@ -78,11 +78,47 @@ failure counts defer. Enrollment/default changes still require explicit migratio
    Originally omitted patches retain their coverage and cannot gain inline
    anchors when a missing blob later becomes available. Included patches must
    still reproduce their retained blobs; unavailable evidence defers recovery. Providers run sequentially under the captured configuration.
+   A permanent [capture refusal](#capture-refusals) is admitted instead as a
+   terminal job, and the request is never captured again.
 6. A background invocation stores completion and prepares its typed publication
    intent. The polling thread remains free to discover cancellation/replacement.
    Publication runs only through a later outbox cycle, with fresh remote/local
    fences. A crash before preparation recovers cached completion without calling
    providers again.
+
+## Capture refusals
+
+One invocation runs at a time and selection takes the oldest runnable
+request. A capture that failed every cycle was therefore selected again
+every cycle, with only a generic `deferred` backoff, and held back every
+later PR.
+
+A bare `CaptureRefusal` from the trusted capture, returned without evidence
+and before cancellation, is permanent for that snapshot
+([reasons](SNAPSHOT-EVIDENCE.md#permanent-refusals)). The worker then repeats
+admission's exclusion and fences: it reobserves the scope, requires access,
+an open PR, the same snapshot and the same request, and calls
+`Store.RefuseCapture`. That passes every `Admit` fence, requires the request's
+own snapshot, marks the request admitted and stores a terminal
+`capture_refused` job. Its packet is the canonical
+`{"Version":"sfl-capture-refusal-1","Snapshot":…,"Reason":…}` record instead of
+evidence, so it can never restore, bind a reader or claim a provider session.
+The invocation ends without error, so the poll schedule is not deferred. The
+next cycle publishes exactly one INCOMPLETE status naming the reason
+([status writes](CONTROLLER.md#status-writes)), and selection moves on to the
+next request. A refusal never counts as a review.
+
+A refusal is bound to its request and generation, not to the PR. A new head
+pauses the old request like any revision change, and a fresh request is a new
+job that is captured again. The refused job then becomes `stale` and its
+terminal status is neither reposted nor annotated. If the remote state changed
+during the capture, the refusal is fenced and nothing is recorded.
+
+A transient capture failure keeps the deferred backoff and the same request is
+captured again once it ends. So do a wrapped or joined refusal and a refusal
+with an unknown reason. The production source factories report every capture
+failure as their own opaque error, so a refusal inside the acquisition worker
+is still deferred there until that worker protocol carries the typed reason.
 
 Candidate enumeration uses the [documented open default for GitHub's PR list](https://docs.github.com/en/rest/pulls/pulls#list-pull-requests),
 with strict same-collection pagination and explicit repository-ID validation.
@@ -138,7 +174,11 @@ joined server delays, packet restoration after
 an omitted real Git blob becomes available, one status per non-complete
 outcome without a repost on quota resume, a lost status response reconciled
 by marker, an owner-cancelled status and annotation of a replaced job's
-status. The loop itself is exercised with bounded cancellation.
+status, each permanent capture refusal from real Git history recorded once
+with one status and no retry, transient and wrapped capture failures that
+still back off, a refused head retried on a new head, a refusal fenced by a
+head change during capture, and a refused older PR that no longer blocks a
+later PR's admission. The loop itself is exercised with bounded cancellation.
 
 This supplies the polling lifecycle source for #176. The
 [service assembly](GIT-SERVICE.md), [trusted startup packages](GIT-STARTUP.md),

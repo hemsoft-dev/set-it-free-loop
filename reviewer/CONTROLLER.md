@@ -178,13 +178,17 @@ published states and their leading words are:
 | `invalid_output` | INCOMPLETE: provider output failed validation; ended without a review |
 | `incomplete_expired` | INCOMPLETE: expired before every required phase completed |
 | `cancelled` | CANCELLED: the request was cancelled before the job completed |
+| `capture_refused` | INCOMPLETE: missing history, ambiguous merge base or over the 128-file inventory limit; the request ended without a review |
 
 The text is fixed controller wording keyed by the durable state and the
 captured configuration. It passes through `safeText` and known-secret
 redaction like every document, names the reviewed revisions and the completed
 phase count, and never includes a finding. `queued` and `running` are
 transient. `blocked` is the operator qualification gate, not a review
-outcome, and publishes nothing.
+outcome, and publishes nothing. A `capture_refused` job is a request whose
+snapshot was [permanently refused](POLLING.md#capture-refusals) before any
+source was captured. Its status names the recorded reason and reports no
+completed phase. It is terminal, so once replaced it is not annotated.
 
 Each job publishes at most one status per state. A newly admitted job that
 meets the daily review limit at its first claim enters `quota_wait` there, so
