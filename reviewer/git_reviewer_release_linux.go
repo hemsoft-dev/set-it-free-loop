@@ -118,7 +118,7 @@ func (r GitReviewerRelease) Validate() error {
 		if _, err := validateEgressPolicy(provider, DefaultLimits(), p.Policy); err != nil {
 			return ErrLiveBlocked
 		}
-		if provider == Codex && p.Policy.ResponsePolicy != CodexSourceResponses || provider == Claude && p.Policy.ResponsePolicy != ClaudeSourceMessages {
+		if !nativeSourcePolicies(provider, p.Policy) {
 			return ErrLiveBlocked
 		}
 	}

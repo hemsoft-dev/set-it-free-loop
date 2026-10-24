@@ -232,6 +232,7 @@ func TestNativeVMUncertainRefreshCannotReleaseReturnedOldAuth(t *testing.T) {
 			guest, host := vmSocketPair(t)
 			policy := egressTestPolicy(Codex)
 			policy.ResponsePolicy = CodexSourceResponses
+			withCodexRequestPolicy(&policy)
 			committed := make(chan struct{}, 1)
 			p.bridge, err = startNativeProviderBridge(context.Background(), p.request.Session, policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
 				committed <- struct{}{}
@@ -318,6 +319,7 @@ func TestNativeVMReviewerChecksAuthorityBeforeAnyFilesystemOrTransport(t *testin
 	}
 	policy := egressTestPolicy(Codex)
 	policy.ResponsePolicy = CodexSourceResponses
+	withCodexRequestPolicy(&policy)
 	checks, calls := 0, 0
 	o := NativeVMOptions{Provider: Codex, Root: "/unopened/native-root", Stub: "/unopened/native-stub", StubHash: strings.Repeat("a", 64), Auth: &AuthStore{provider: Codex, directory: "/unopened/auth"}, Reader: reader, Policy: policy, Transport: egressRoundTrip(func(*http.Request) (*http.Response, error) { calls++; return nil, ErrLiveBlocked }), Check: func(context.Context, Session) error { checks++; return ErrLiveBlocked }}
 	r, err := NewNativeVMReviewer(o)

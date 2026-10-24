@@ -17,6 +17,7 @@ func nativeRequestFixture(t *testing.T, p Provider) nativeVMRequest {
 	policy := egressTestPolicy(p)
 	if p == Codex {
 		policy.ResponsePolicy = CodexSourceResponses
+		withCodexRequestPolicy(&policy)
 	} else {
 		policy.ResponsePolicy = ClaudeSourceMessages
 	}

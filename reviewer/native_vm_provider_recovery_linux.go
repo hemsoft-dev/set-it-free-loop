@@ -59,8 +59,7 @@ func (v *NativeVMSupervisor) stoppedAttemptReceipt(ctx context.Context, a native
 	if ctx == nil || ctx.Err() != nil || v == nil || v.supervisor == nil || v.supervisor.payloadKind != "native-vm" || !a.Provider.Valid() || a.AttemptID == "" || !binding.valid() || a.Evidence.validateStoppedCaptured(a.Provider, a.Limits, a.SessionHash) != nil {
 		return fail()
 	}
-	policy := a.Evidence.Policy.ResponsePolicy
-	if (a.Provider == Codex && policy != CodexSourceResponses) || (a.Provider == Claude && policy != ClaudeSourceMessages) {
+	if !nativeSourcePolicies(a.Provider, a.Evidence.Policy) {
 		return fail()
 	}
 	s := v.supervisor

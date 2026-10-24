@@ -86,6 +86,7 @@ func TestFrozenPeerReportsHaveIndependentVerificationBudgets(t *testing.T) {
 				expected = 178
 				policy := egressTestPolicy(Codex)
 				policy.ResponsePolicy = CodexSourceResponses
+				withCodexRequestPolicy(&policy)
 				worker, err := NewNativeVMReviewer(NativeVMOptions{Provider: Codex, Root: "/unopened/native-root", Stub: "/unopened/stub", StubHash: strings.Repeat("a", 64), Auth: &AuthStore{provider: Codex, directory: "/unopened/auth"}, Reader: reader, Policy: policy, Transport: egressRoundTrip(func(*http.Request) (*http.Response, error) {
 					t.Fatal("preflight reached HTTP")
 					return nil, ErrLiveBlocked

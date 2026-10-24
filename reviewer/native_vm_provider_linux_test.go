@@ -4,7 +4,6 @@ package reviewer
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -22,6 +21,7 @@ func nativeProviderFixture(t *testing.T, output string, configure ...func(*Egres
 	s := testSession(Codex)
 	policy := egressTestPolicy(Codex)
 	policy.ResponsePolicy = CodexSourceResponses
+	withCodexRequestPolicy(&policy)
 	for _, edit := range configure {
 		edit(&policy)
 	}
@@ -31,6 +31,9 @@ func nativeProviderFixture(t *testing.T, output string, configure ...func(*Egres
 		if q.Header.Get("Authorization") != "Bearer synthetic-native-access" {
 			t.Error("credential changed")
 		}
+		// Read the whole measured request before answering. A closing
+		// server that leaves request bytes unread can reset the connection.
+		io.Copy(io.Discard, q.Body)
 		w.Header().Set("Content-Type", "text/event-stream")
 		io.WriteString(w, output)
 	}))
@@ -106,7 +109,7 @@ func TestNativeVMProviderNegotiationSharesTheMetadataAndInferenceStream(t *testi
 
 func nativeProviderCall(t *testing.T, client *http.Client, model string) (int, string) {
 	t.Helper()
-	raw, _ := json.Marshal(map[string]any{"model": model, "input": "synthetic immutable evidence"})
+	raw := codexMeasuredBody(t, model)
 	q, err := http.NewRequest("POST", "http://sfl-private.invalid/infer", io.NopCloser(strings.NewReader(string(raw))))
 	if err != nil {
 		t.Fatal(err)
@@ -180,7 +183,7 @@ func TestNativeVMGuestProviderDenialStopsClient(t *testing.T) {
 	var stopped atomic.Int32
 	proxy := httptest.NewServer(nativeGuestProviderHandler(nativeVMRequest{Policy: bridge.policy}, client.Transport, func() { stopped.Add(1) }))
 	defer proxy.Close()
-	raw, _ := json.Marshal(map[string]any{"model": s.Identity.Model})
+	raw := codexMeasuredBody(t, s.Identity.Model)
 	q, _ := http.NewRequest("POST", proxy.URL+"/infer", strings.NewReader(string(raw)))
 	q.Header.Set("Authorization", "Bearer synthetic-native-access")
 	q.Header.Set("Content-Type", "application/json")
@@ -224,6 +227,7 @@ func TestNativeVMGuestProviderPreservesUpstreamAuthHandling(t *testing.T) {
 	s := testSession(Codex)
 	policy := egressTestPolicy(Codex)
 	policy.ResponsePolicy = CodexSourceResponses
+	withCodexRequestPolicy(&policy)
 	upstream := egressRoundTrip(func(*http.Request) (*http.Response, error) {
 		// An upstream server cannot forge the private host's fatal marker.
 		return &http.Response{StatusCode: 401, Header: http.Header{"Content-Type": {"application/json"}, nativeProviderFatalHeader: {"1"}}, Body: io.NopCloser(strings.NewReader(`{"error":{"message":"synthetic expired auth"}}`))}, nil
@@ -242,7 +246,7 @@ func TestNativeVMGuestProviderPreservesUpstreamAuthHandling(t *testing.T) {
 	var stopped atomic.Int32
 	proxy := httptest.NewServer(nativeGuestProviderHandler(nativeVMRequest{Policy: policy}, transport, func() { stopped.Add(1) }))
 	defer proxy.Close()
-	raw, _ := json.Marshal(map[string]any{"model": s.Identity.Model})
+	raw := codexMeasuredBody(t, s.Identity.Model)
 	q, _ := http.NewRequest("POST", proxy.URL+"/infer", strings.NewReader(string(raw)))
 	q.Header.Set("Authorization", "Bearer synthetic-native-access")
 	q.Header.Set("Content-Type", "application/json")
@@ -262,6 +266,7 @@ func TestNativeVMGuestClientCloseDoesNotRetirePrivateRefreshStream(t *testing.T)
 	s := testSession(Codex)
 	policy := egressTestPolicy(Codex)
 	policy.ResponsePolicy = CodexSourceResponses
+	withCodexRequestPolicy(&policy)
 	var calls atomic.Int32
 	bridge, err := startNativeProviderBridge(context.Background(), s, policy, egressRoundTrip(func(*http.Request) (*http.Response, error) {
 		calls.Add(1)
@@ -364,7 +369,7 @@ func TestNativeVMProviderNeverDialsOutsideItsSingleChannel(t *testing.T) {
 func TestNativeVMProviderCancelledWaitDoesNotCloseTheActiveResponse(t *testing.T) {
 	_, client, calls, s := nativeProviderFixture(t, codexToolStream("exec"))
 	makeRequest := func(ctx context.Context) *http.Request {
-		raw, _ := json.Marshal(map[string]any{"model": s.Identity.Model, "input": "immutable"})
+		raw := codexMeasuredBody(t, s.Identity.Model)
 		q, _ := http.NewRequestWithContext(ctx, "POST", "http://sfl-private.invalid/infer", io.NopCloser(strings.NewReader(string(raw))))
 		q.Host = "provider.example"
 		q.Header.Set("Authorization", "Bearer synthetic-native-access")
@@ -408,7 +413,7 @@ func TestNativeVMProviderCancelledWaitDoesNotCloseTheActiveResponse(t *testing.T
 
 func TestNativeVMProviderPartialResponseCloseRetiresTheStream(t *testing.T) {
 	_, client, calls, s := nativeProviderFixture(t, codexToolStream("exec"))
-	raw, _ := json.Marshal(map[string]any{"model": s.Identity.Model, "input": "immutable"})
+	raw := codexMeasuredBody(t, s.Identity.Model)
 	q, _ := http.NewRequest("POST", "http://sfl-private.invalid/infer", io.NopCloser(strings.NewReader(string(raw))))
 	q.Host = "provider.example"
 	q.Header.Set("Authorization", "Bearer synthetic-native-access")

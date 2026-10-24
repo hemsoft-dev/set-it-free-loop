@@ -6,7 +6,7 @@ import r "github.com/hemsoft-dev/set-it-free-loop/reviewer"
 
 func codexPolicy(s r.Session) r.EgressPolicy {
 	const authority = "fixture.provider.example"
-	policy := r.EgressPolicy{Provider: r.Codex, Limits: r.DefaultEgressLimits(s), ResponsePolicy: r.CodexSourceResponses,
+	policy := r.EgressPolicy{Provider: r.Codex, Limits: r.DefaultEgressLimits(s), ResponsePolicy: r.CodexSourceResponses, RequestPolicy: r.CodexSourceRequests,
 		Routes: []r.EgressRoute{
 			{Authority: authority, Method: "POST", Path: "/v1/responses", Kind: "inference"},
 			{Authority: authority, Method: "GET", Path: "/v1/responses", Kind: "local_negotiation"},

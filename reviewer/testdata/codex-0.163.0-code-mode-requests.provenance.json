@@ -1,0 +1,16 @@
+{
+  "producer": "Codex CLI 0.163.0, executable SHA256 399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215 (the pinned native image client)",
+  "files": {
+    "codex-0.163.0-code-mode-requests.json": {
+      "sha256": "c99b8a42c2536e9736197cbe46dc4f1d927d7245f2fa28d47933bf73f8a0c55e",
+      "source": "Local fake-only Codex fixture run codehost-merged-main-r9 (2026-10-20), artifacts/http.jsonl SHA256 8d8b98fda062e1fe07a6e1e3464f163ce537eb0f95078fc64ce9a5c2fd3f8bd6: first and third POST /v1/responses bodies, source-enabled flags from source_config.go",
+      "transformation": "input[0] (the additional_tools inventory item) and every top-level key are kept unchanged. client_metadata values become \"synthetic\", prompt_cache_key a fixed UUID, and each message's input_text parts synthetic text. custom_tool_call and custom_tool_call_output items are kept; they hold fixture programs and fixture output only. No auth, header or credential data."
+    },
+    "codex-0.163.0-widened-code-mode-tools.json": {
+      "sha256": "9e1d054e1041d4214c901b3861f9ebb2682f9797aea440ec948bf2b4f26ecd2a",
+      "source": "Local fake-only native-dual-probe run (2026-10-20) without the code-mode namespace exclusions, codex-158c7ad0897945f19793a5983a48937e/http.jsonl SHA256 b563fba2ff466b42cb686648d140bb75e02bde53653f3da78c6470eaf08a2b15: input[0] of the first POST /v1/responses body",
+      "transformation": "None. The item is kept unchanged as a measured widened inventory: clock and collaboration namespaces, request_user_input tools and nested exec tools such as apply_patch, read_mcp_resource and view_image."
+    }
+  },
+  "measured": "130 POST /v1/responses bodies in 48 local fixture captures of this client. All 130 omit a top-level tools key and carry exactly one additional_tools item, at input[0]. The 109 captures with source-enabled flags advertise only functions.exec and functions.wait, and exec declares only mcp__sfl_source__read and mcp__sfl_source__search. The 21 captures without the namespace exclusions are widened as in the second file."
+}

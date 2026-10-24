@@ -1,0 +1,864 @@
+[
+ {
+  "client_metadata": {
+   "mcp_attribution": "synthetic",
+   "root_turn_id": "synthetic",
+   "session_id": "synthetic",
+   "thread_id": "synthetic",
+   "turn_id": "synthetic",
+   "x-codex-installation-id": "synthetic",
+   "x-codex-turn-metadata": "synthetic",
+   "x-codex-window-id": "synthetic"
+  },
+  "include": [
+   "reasoning.encrypted_content"
+  ],
+  "input": [
+   {
+    "id": "at_d6a592b5-199a-5252-9ceb-f03032148b5b",
+    "role": "developer",
+    "tools": [
+     {
+      "description": "",
+      "name": "functions",
+      "tools": [
+       {
+        "description": "Run JavaScript code to orchestrate/compose tool calls\n- Evaluates the provided JavaScript code in a fresh V8 isolate as an async module.\n- All nested tools are available on the global `tools` object, for example `await tools.exec_command(...)`. Tool names are exposed as normalized JavaScript identifiers, for example `await tools.mcp__ologs__get_profile(...)`.\n- Nested tool methods take either a string or an object as their input argument.\n- Nested tools return either an object or a string, based on the description.\n- Runs raw JavaScript -- no Node, no file system, no network access, no console.\n- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.\n- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.\n- `yield_time_ms` asks `exec` to yield early if the script is still running. Defaults to 30000 ms.\n- `max_output_tokens` sets the token budget for direct `exec` results. Defaults to 10000 tokens.\n- When the JS code is fully evaluated, the isolate's lifetime ends and unawaited promises are silently discarded.\n\n- Global helpers:\n- `exit()`: Immediately ends the current script successfully (like an early return from the top level).\n- `text(value: string | number | boolean | undefined | null)`: Appends a text item. Non-string values are stringified with `JSON.stringify(...)` when possible.\n- `image(imageUrlOrItem: string | { image_url: string; detail?: \"auto\" | \"low\" | \"high\" | \"original\" | null } | ImageContent, detail?: \"auto\" | \"low\" | \"high\" | \"original\" | null)`: Appends an image item. `image_url` should be a base64-encoded `data:` URL. To forward an MCP tool image, pass an individual `ImageContent` block from `result.content`, for example `image(result.content[0])`. MCP image blocks may request detail with `_meta: { \"codex/imageDetail\": \"original\" }`. When provided, the second `detail` argument overrides any detail embedded in the first argument.\n- `audio(audioUrlOrItem: string | { audio_url: string } | AudioContent)`: Appends an audio item. `audio_url` should be a base64-encoded `data:` URL. To forward an MCP tool audio block, pass an individual `AudioContent` block from `result.content`, for example `audio(result.content[0])`.\n- `generatedImage(result: { image_url: string; output_hint?: string })`: Appends an image-generation result and its optional output hint. HTTP(S) URLs are not supported.\n- `store(key: string, value: any)`: stores a serializable value under a string key for later `exec` calls in the same session.\n- `load(key: string)`: returns the stored value for a string key, or `undefined` if it is missing.\n- `notify(value: string | number | boolean | undefined | null)`: immediately injects an extra `custom_tool_call_output` for the current `exec` call. Values are stringified like `text(...)`.\n- `setTimeout(callback: () => void, delayMs?: number)`: schedules a callback to run later and returns a timeout id. Pending timeouts do not keep `exec` alive by themselves; await an explicit promise if you need to wait for one.\n- `clearTimeout(timeoutId?: number)`: cancels a timeout created by `setTimeout`.\n- `ALL_TOOLS`: metadata for the enabled nested tools as `{ name, description }` entries.\n- `yield_control()`: yields the accumulated output to the model immediately while the script keeps running.\n\nSome deferred nested tools may be omitted from this description. They are still available on the global `tools` object and listed in `ALL_TOOLS`.\nTo find one, filter `ALL_TOOLS` by `name` and `description`.\n\nTool availability can change between calls.\n\nShared MCP Types:\n```ts\ntype Role = \"user\" | \"assistant\";\ntype MetaObject = Record<string, unknown>;\ntype Annotations = {\n  audience?: Role[];\n  priority?: number;\n  lastModified?: string;\n};\ntype Icon = {\n  src: string;\n  mimeType?: string;\n  sizes?: string[];\n  theme?: \"light\" | \"dark\";\n};\ntype TextResourceContents = {\n  uri: string;\n  mimeType?: string;\n  _meta?: MetaObject;\n  text: string;\n};\ntype BlobResourceContents = {\n  uri: string;\n  mimeType?: string;\n  _meta?: MetaObject;\n  blob: string;\n};\ntype TextContent = {\n  type: \"text\";\n  text: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ImageContent = {\n  type: \"image\";\n  data: string;\n  mimeType: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype AudioContent = {\n  type: \"audio\";\n  data: string;\n  mimeType: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ResourceLink = {\n  icons?: Icon[];\n  name: string;\n  title?: string;\n  uri: string;\n  description?: string;\n  mimeType?: string;\n  annotations?: Annotations;\n  size?: number;\n  _meta?: MetaObject;\n  type: \"resource_link\";\n};\ntype EmbeddedResource = {\n  type: \"resource\";\n  resource: TextResourceContents | BlobResourceContents;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ContentBlock =\n  | TextContent\n  | ImageContent\n  | AudioContent\n  | ResourceLink\n  | EmbeddedResource;\ntype CallToolResult<TStructured = { [key: string]: unknown }> = {\n  _meta?: MetaObject;\n  content: ContentBlock[];\n  isError?: boolean;\n  structuredContent?: TStructured;\n  [key: string]: unknown;\n};\n```\n\n### `mcp__sfl_source__read`\nRead an allowed path at one captured immutable revision.\n\nexec tool declaration:\n```ts\ndeclare const tools: { mcp__sfl_source__read(args: { path: string; revision: string; }): Promise<CallToolResult>; };\n```\n\n### `mcp__sfl_source__search`\nSearch allowed immutable source with a bounded literal needle.\n\nexec tool declaration:\n```ts\ndeclare const tools: { mcp__sfl_source__search(args: { max_results: number; needle: string; revision: string; }): Promise<CallToolResult>; };\n```",
+        "format": {
+         "definition": "\nstart: pragma_source | plain_source\npragma_source: PRAGMA_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nPRAGMA_LINE: /[ \\t]*\\/\\/ @exec:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n",
+         "syntax": "lark",
+         "type": "grammar"
+        },
+        "name": "exec",
+        "type": "custom"
+       },
+       {
+        "description": "Waits on a yielded `exec` cell and returns new output or completion.\n- Use `wait` only after `exec` returns `Script running with cell ID ...`.\n- `cell_id` identifies the running `exec` cell to resume.\n- `yield_time_ms` controls how long to wait for more output before yielding again. Defaults to 10000 ms.\n- `max_tokens` limits how much new output this wait call returns. Defaults to 10000 tokens.\n- `terminate: true` stops the running cell; false or omitted waits for output.\n- `wait` returns only the new output since the last yield, or the final completion or termination result for that cell.\n- If the cell is still running, `wait` may yield again with the same `cell_id`.\n- If the cell has already finished, `wait` returns the completed result and closes the cell.",
+        "name": "wait",
+        "parameters": {
+         "additionalProperties": false,
+         "properties": {
+          "cell_id": {
+           "description": "Identifier of the running exec cell.",
+           "type": "string"
+          },
+          "max_tokens": {
+           "description": "Output token budget for this wait call. Defaults to 10000 tokens.",
+           "type": "number"
+          },
+          "terminate": {
+           "description": "True stops the running exec cell; false or omitted waits for output.",
+           "type": "boolean"
+          },
+          "yield_time_ms": {
+           "description": "Wait before yielding more output. Defaults to 10000 ms.",
+           "type": "number"
+          }
+         },
+         "required": [
+          "cell_id"
+         ],
+         "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+       }
+      ],
+      "type": "namespace"
+     }
+    ],
+    "type": "additional_tools"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_21f6aaa0-4e98-5784-ac03-3618abd0048e",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "model.base_instructions"
+     ]
+    },
+    "role": "developer",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     },
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     },
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6f7634d58e59",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "host_skills.instructions",
+      "permissions.instructions",
+      "collaboration_mode.instructions"
+     ],
+     "create_time": 1792510787.476716,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "developer",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6f83ee416131",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "multi_agent.role_instructions"
+     ],
+     "create_time": 1792510787.4767172,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "developer",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6f91576a4b24",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "multi_agent.mode_instructions"
+     ],
+     "create_time": 1792510787.4767175,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "developer",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic user message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6fa2a12694dd",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "environments.environment_context"
+     ],
+     "create_time": 1792510787.4767175,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "user",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic user message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6fc7606970e0",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "user.text"
+     ],
+     "create_time": 1792510787.4769628,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "user",
+    "type": "message"
+   }
+  ],
+  "model": "gpt-6-astra",
+  "parallel_tool_calls": false,
+  "prompt_cache_key": "00000000-0000-4000-8000-000000000000",
+  "reasoning": {
+   "context": "all_turns",
+   "effort": "low"
+  },
+  "store": false,
+  "stream": true,
+  "text": {
+   "format": {
+    "name": "codex_output_schema",
+    "schema": {
+     "additionalProperties": false,
+     "properties": {
+      "config_hash": {
+       "type": "string"
+      },
+      "coverage": {
+       "items": {
+        "additionalProperties": false,
+        "properties": {
+         "path": {
+          "type": "string"
+         },
+         "reason": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "path",
+         "reason"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "findings": {
+       "items": {
+        "additionalProperties": false,
+        "properties": {
+         "anchor": {
+          "additionalProperties": false,
+          "properties": {
+           "line": {
+            "type": "integer"
+           },
+           "path": {
+            "type": "string"
+           },
+           "quote": {
+            "type": "string"
+           },
+           "revision": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "path",
+           "line",
+           "quote",
+           "revision"
+          ],
+          "type": "object"
+         },
+         "body": {
+          "type": "string"
+         },
+         "id": {
+          "type": "string"
+         },
+         "severity": {
+          "type": "integer"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "id",
+         "title",
+         "body",
+         "severity",
+         "anchor"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "job_id": {
+       "type": "string"
+      },
+      "judgments": {
+       "items": {
+        "additionalProperties": false,
+        "properties": {
+         "evidence": {
+          "items": {
+           "additionalProperties": false,
+           "properties": {
+            "line": {
+             "type": "integer"
+            },
+            "path": {
+             "type": "string"
+            },
+            "quote": {
+             "type": "string"
+            },
+            "revision": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "path",
+            "line",
+            "quote",
+            "revision"
+           ],
+           "type": "object"
+          },
+          "type": "array"
+         },
+         "finding_id": {
+          "type": "string"
+         },
+         "reason": {
+          "type": "string"
+         },
+         "verdict": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "finding_id",
+         "verdict",
+         "reason",
+         "evidence"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "packet_hash": {
+       "type": "string"
+      },
+      "policy_version": {
+       "type": "string"
+      },
+      "provider": {
+       "type": "string"
+      },
+      "retractions": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "round": {
+       "type": "integer"
+      },
+      "snapshot_hash": {
+       "type": "string"
+      },
+      "usage": {
+       "additionalProperties": false,
+       "properties": {
+        "input_tokens": {
+         "type": "integer"
+        },
+        "known": {
+         "type": "boolean"
+        },
+        "output_tokens": {
+         "type": "integer"
+        },
+        "turns": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "input_tokens",
+        "output_tokens",
+        "known",
+        "turns"
+       ],
+       "type": "object"
+      }
+     },
+     "required": [
+      "job_id",
+      "policy_version",
+      "packet_hash",
+      "provider",
+      "round",
+      "snapshot_hash",
+      "config_hash",
+      "findings",
+      "judgments",
+      "retractions",
+      "coverage",
+      "usage"
+     ],
+     "type": "object"
+    },
+    "strict": true,
+    "type": "json_schema"
+   },
+   "verbosity": "low"
+  },
+  "tool_choice": "auto"
+ },
+ {
+  "client_metadata": {
+   "mcp_attribution": "synthetic",
+   "root_turn_id": "synthetic",
+   "session_id": "synthetic",
+   "thread_id": "synthetic",
+   "turn_id": "synthetic",
+   "x-codex-installation-id": "synthetic",
+   "x-codex-turn-metadata": "synthetic",
+   "x-codex-window-id": "synthetic"
+  },
+  "include": [
+   "reasoning.encrypted_content"
+  ],
+  "input": [
+   {
+    "id": "at_d6a592b5-199a-5252-9ceb-f03032148b5b",
+    "role": "developer",
+    "tools": [
+     {
+      "description": "",
+      "name": "functions",
+      "tools": [
+       {
+        "description": "Run JavaScript code to orchestrate/compose tool calls\n- Evaluates the provided JavaScript code in a fresh V8 isolate as an async module.\n- All nested tools are available on the global `tools` object, for example `await tools.exec_command(...)`. Tool names are exposed as normalized JavaScript identifiers, for example `await tools.mcp__ologs__get_profile(...)`.\n- Nested tool methods take either a string or an object as their input argument.\n- Nested tools return either an object or a string, based on the description.\n- Runs raw JavaScript -- no Node, no file system, no network access, no console.\n- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.\n- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.\n- `yield_time_ms` asks `exec` to yield early if the script is still running. Defaults to 30000 ms.\n- `max_output_tokens` sets the token budget for direct `exec` results. Defaults to 10000 tokens.\n- When the JS code is fully evaluated, the isolate's lifetime ends and unawaited promises are silently discarded.\n\n- Global helpers:\n- `exit()`: Immediately ends the current script successfully (like an early return from the top level).\n- `text(value: string | number | boolean | undefined | null)`: Appends a text item. Non-string values are stringified with `JSON.stringify(...)` when possible.\n- `image(imageUrlOrItem: string | { image_url: string; detail?: \"auto\" | \"low\" | \"high\" | \"original\" | null } | ImageContent, detail?: \"auto\" | \"low\" | \"high\" | \"original\" | null)`: Appends an image item. `image_url` should be a base64-encoded `data:` URL. To forward an MCP tool image, pass an individual `ImageContent` block from `result.content`, for example `image(result.content[0])`. MCP image blocks may request detail with `_meta: { \"codex/imageDetail\": \"original\" }`. When provided, the second `detail` argument overrides any detail embedded in the first argument.\n- `audio(audioUrlOrItem: string | { audio_url: string } | AudioContent)`: Appends an audio item. `audio_url` should be a base64-encoded `data:` URL. To forward an MCP tool audio block, pass an individual `AudioContent` block from `result.content`, for example `audio(result.content[0])`.\n- `generatedImage(result: { image_url: string; output_hint?: string })`: Appends an image-generation result and its optional output hint. HTTP(S) URLs are not supported.\n- `store(key: string, value: any)`: stores a serializable value under a string key for later `exec` calls in the same session.\n- `load(key: string)`: returns the stored value for a string key, or `undefined` if it is missing.\n- `notify(value: string | number | boolean | undefined | null)`: immediately injects an extra `custom_tool_call_output` for the current `exec` call. Values are stringified like `text(...)`.\n- `setTimeout(callback: () => void, delayMs?: number)`: schedules a callback to run later and returns a timeout id. Pending timeouts do not keep `exec` alive by themselves; await an explicit promise if you need to wait for one.\n- `clearTimeout(timeoutId?: number)`: cancels a timeout created by `setTimeout`.\n- `ALL_TOOLS`: metadata for the enabled nested tools as `{ name, description }` entries.\n- `yield_control()`: yields the accumulated output to the model immediately while the script keeps running.\n\nSome deferred nested tools may be omitted from this description. They are still available on the global `tools` object and listed in `ALL_TOOLS`.\nTo find one, filter `ALL_TOOLS` by `name` and `description`.\n\nTool availability can change between calls.\n\nShared MCP Types:\n```ts\ntype Role = \"user\" | \"assistant\";\ntype MetaObject = Record<string, unknown>;\ntype Annotations = {\n  audience?: Role[];\n  priority?: number;\n  lastModified?: string;\n};\ntype Icon = {\n  src: string;\n  mimeType?: string;\n  sizes?: string[];\n  theme?: \"light\" | \"dark\";\n};\ntype TextResourceContents = {\n  uri: string;\n  mimeType?: string;\n  _meta?: MetaObject;\n  text: string;\n};\ntype BlobResourceContents = {\n  uri: string;\n  mimeType?: string;\n  _meta?: MetaObject;\n  blob: string;\n};\ntype TextContent = {\n  type: \"text\";\n  text: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ImageContent = {\n  type: \"image\";\n  data: string;\n  mimeType: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype AudioContent = {\n  type: \"audio\";\n  data: string;\n  mimeType: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ResourceLink = {\n  icons?: Icon[];\n  name: string;\n  title?: string;\n  uri: string;\n  description?: string;\n  mimeType?: string;\n  annotations?: Annotations;\n  size?: number;\n  _meta?: MetaObject;\n  type: \"resource_link\";\n};\ntype EmbeddedResource = {\n  type: \"resource\";\n  resource: TextResourceContents | BlobResourceContents;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ContentBlock =\n  | TextContent\n  | ImageContent\n  | AudioContent\n  | ResourceLink\n  | EmbeddedResource;\ntype CallToolResult<TStructured = { [key: string]: unknown }> = {\n  _meta?: MetaObject;\n  content: ContentBlock[];\n  isError?: boolean;\n  structuredContent?: TStructured;\n  [key: string]: unknown;\n};\n```\n\n### `mcp__sfl_source__read`\nRead an allowed path at one captured immutable revision.\n\nexec tool declaration:\n```ts\ndeclare const tools: { mcp__sfl_source__read(args: { path: string; revision: string; }): Promise<CallToolResult>; };\n```\n\n### `mcp__sfl_source__search`\nSearch allowed immutable source with a bounded literal needle.\n\nexec tool declaration:\n```ts\ndeclare const tools: { mcp__sfl_source__search(args: { max_results: number; needle: string; revision: string; }): Promise<CallToolResult>; };\n```",
+        "format": {
+         "definition": "\nstart: pragma_source | plain_source\npragma_source: PRAGMA_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nPRAGMA_LINE: /[ \\t]*\\/\\/ @exec:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n",
+         "syntax": "lark",
+         "type": "grammar"
+        },
+        "name": "exec",
+        "type": "custom"
+       },
+       {
+        "description": "Waits on a yielded `exec` cell and returns new output or completion.\n- Use `wait` only after `exec` returns `Script running with cell ID ...`.\n- `cell_id` identifies the running `exec` cell to resume.\n- `yield_time_ms` controls how long to wait for more output before yielding again. Defaults to 10000 ms.\n- `max_tokens` limits how much new output this wait call returns. Defaults to 10000 tokens.\n- `terminate: true` stops the running cell; false or omitted waits for output.\n- `wait` returns only the new output since the last yield, or the final completion or termination result for that cell.\n- If the cell is still running, `wait` may yield again with the same `cell_id`.\n- If the cell has already finished, `wait` returns the completed result and closes the cell.",
+        "name": "wait",
+        "parameters": {
+         "additionalProperties": false,
+         "properties": {
+          "cell_id": {
+           "description": "Identifier of the running exec cell.",
+           "type": "string"
+          },
+          "max_tokens": {
+           "description": "Output token budget for this wait call. Defaults to 10000 tokens.",
+           "type": "number"
+          },
+          "terminate": {
+           "description": "True stops the running exec cell; false or omitted waits for output.",
+           "type": "boolean"
+          },
+          "yield_time_ms": {
+           "description": "Wait before yielding more output. Defaults to 10000 ms.",
+           "type": "number"
+          }
+         },
+         "required": [
+          "cell_id"
+         ],
+         "type": "object"
+        },
+        "strict": false,
+        "type": "function"
+       }
+      ],
+      "type": "namespace"
+     }
+    ],
+    "type": "additional_tools"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_21f6aaa0-4e98-5784-ac03-3618abd0048e",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "model.base_instructions"
+     ]
+    },
+    "role": "developer",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     },
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     },
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6f7634d58e59",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "host_skills.instructions",
+      "permissions.instructions",
+      "collaboration_mode.instructions"
+     ],
+     "create_time": 1792510787.476716,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "developer",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6f83ee416131",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "multi_agent.role_instructions"
+     ],
+     "create_time": 1792510787.4767172,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "developer",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic developer message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6f91576a4b24",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "multi_agent.mode_instructions"
+     ],
+     "create_time": 1792510787.4767175,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "developer",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic user message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6fa2a12694dd",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "environments.environment_context"
+     ],
+     "create_time": 1792510787.4767175,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "user",
+    "type": "message"
+   },
+   {
+    "content": [
+     {
+      "text": "synthetic user message",
+      "type": "input_text"
+     }
+    ],
+    "id": "msg_01a159f7-ff94-7803-8009-6fc7606970e0",
+    "internal_chat_message_metadata_passthrough": {
+     "content_item_kinds": [
+      "user.text"
+     ],
+     "create_time": 1792510787.4769628,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "role": "user",
+    "type": "message"
+   },
+   {
+    "call_id": "fixture_read",
+    "id": "ctc_01a159f7-ff99-7cc3-9161-c69bc7d990e0",
+    "input": "text(ALL_TOOLS.map(t=>t.name));text(await tools.mcp__sfl_source__read({revision:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",path:\"source.go\"}));",
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "name": "exec",
+    "namespace": "functions",
+    "type": "custom_tool_call"
+   },
+   {
+    "call_id": "fixture_read",
+    "id": "ctco_01a159f7-ffce-7643-a04b-ceeab8861904",
+    "internal_chat_message_metadata_passthrough": {
+     "create_time": 1792510787.5343535,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "output": [
+     {
+      "text": "Script completed\nWall time 0.0 seconds\nOutput:\n",
+      "type": "input_text"
+     },
+     {
+      "text": "[\"mcp__sfl_source__read\",\"mcp__sfl_source__search\"]",
+      "type": "input_text"
+     },
+     {
+      "text": "{\"content\":[{\"type\":\"text\",\"text\":\"immutable source evidence\\n\"}],\"isError\":false}",
+      "type": "input_text"
+     }
+    ],
+    "type": "custom_tool_call_output"
+   },
+   {
+    "call_id": "fixture_search",
+    "id": "ctc_01a159f7-ffd3-7591-8bee-f809e120a007",
+    "input": "text(await tools.mcp__sfl_source__search({revision:\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",needle:\"immutable\",max_results:5}));",
+    "internal_chat_message_metadata_passthrough": {
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "name": "exec",
+    "namespace": "functions",
+    "type": "custom_tool_call"
+   },
+   {
+    "call_id": "fixture_search",
+    "id": "ctco_01a159f7-ffd7-79a0-8490-1ec1b606a083",
+    "internal_chat_message_metadata_passthrough": {
+     "create_time": 1792510787.5437744,
+     "turn_id": "01a159f7-ff90-70e2-b206-eda037c6bc10"
+    },
+    "output": [
+     {
+      "text": "Script completed\nWall time 0.0 seconds\nOutput:\n",
+      "type": "input_text"
+     },
+     {
+      "text": "{\"content\":[{\"type\":\"text\",\"text\":\"[{\\\"path\\\":\\\"source.go\\\",\\\"line\\\":1,\\\"quote\\\":\\\"immutable source evidence\\\",\\\"revision\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\"}]\"}],\"isError\":false}",
+      "type": "input_text"
+     }
+    ],
+    "type": "custom_tool_call_output"
+   }
+  ],
+  "model": "gpt-6-astra",
+  "parallel_tool_calls": false,
+  "prompt_cache_key": "00000000-0000-4000-8000-000000000000",
+  "reasoning": {
+   "context": "all_turns",
+   "effort": "low"
+  },
+  "store": false,
+  "stream": true,
+  "text": {
+   "format": {
+    "name": "codex_output_schema",
+    "schema": {
+     "additionalProperties": false,
+     "properties": {
+      "config_hash": {
+       "type": "string"
+      },
+      "coverage": {
+       "items": {
+        "additionalProperties": false,
+        "properties": {
+         "path": {
+          "type": "string"
+         },
+         "reason": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "path",
+         "reason"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "findings": {
+       "items": {
+        "additionalProperties": false,
+        "properties": {
+         "anchor": {
+          "additionalProperties": false,
+          "properties": {
+           "line": {
+            "type": "integer"
+           },
+           "path": {
+            "type": "string"
+           },
+           "quote": {
+            "type": "string"
+           },
+           "revision": {
+            "type": "string"
+           }
+          },
+          "required": [
+           "path",
+           "line",
+           "quote",
+           "revision"
+          ],
+          "type": "object"
+         },
+         "body": {
+          "type": "string"
+         },
+         "id": {
+          "type": "string"
+         },
+         "severity": {
+          "type": "integer"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "id",
+         "title",
+         "body",
+         "severity",
+         "anchor"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "job_id": {
+       "type": "string"
+      },
+      "judgments": {
+       "items": {
+        "additionalProperties": false,
+        "properties": {
+         "evidence": {
+          "items": {
+           "additionalProperties": false,
+           "properties": {
+            "line": {
+             "type": "integer"
+            },
+            "path": {
+             "type": "string"
+            },
+            "quote": {
+             "type": "string"
+            },
+            "revision": {
+             "type": "string"
+            }
+           },
+           "required": [
+            "path",
+            "line",
+            "quote",
+            "revision"
+           ],
+           "type": "object"
+          },
+          "type": "array"
+         },
+         "finding_id": {
+          "type": "string"
+         },
+         "reason": {
+          "type": "string"
+         },
+         "verdict": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "finding_id",
+         "verdict",
+         "reason",
+         "evidence"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      "packet_hash": {
+       "type": "string"
+      },
+      "policy_version": {
+       "type": "string"
+      },
+      "provider": {
+       "type": "string"
+      },
+      "retractions": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "round": {
+       "type": "integer"
+      },
+      "snapshot_hash": {
+       "type": "string"
+      },
+      "usage": {
+       "additionalProperties": false,
+       "properties": {
+        "input_tokens": {
+         "type": "integer"
+        },
+        "known": {
+         "type": "boolean"
+        },
+        "output_tokens": {
+         "type": "integer"
+        },
+        "turns": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "input_tokens",
+        "output_tokens",
+        "known",
+        "turns"
+       ],
+       "type": "object"
+      }
+     },
+     "required": [
+      "job_id",
+      "policy_version",
+      "packet_hash",
+      "provider",
+      "round",
+      "snapshot_hash",
+      "config_hash",
+      "findings",
+      "judgments",
+      "retractions",
+      "coverage",
+      "usage"
+     ],
+     "type": "object"
+    },
+    "strict": true,
+    "type": "json_schema"
+   },
+   "verbosity": "low"
+  },
+  "tool_choice": "auto"
+ }
+]

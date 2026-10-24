@@ -14,6 +14,7 @@ import (
 func gitServiceNativeOptions(provider Provider, checks, calls *atomic.Int32) NativeVMOptions {
 	policy := egressTestPolicy(provider)
 	policy.ResponsePolicy = CodexSourceResponses
+	withCodexRequestPolicy(&policy)
 	if provider == Claude {
 		policy.ResponsePolicy = ClaudeSourceMessages
 	}

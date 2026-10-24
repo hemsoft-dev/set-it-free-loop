@@ -41,6 +41,11 @@ func fixtureEgressPolicy(s r.Session, backend http.Handler, responsePolicy strin
 		},
 		Headers: []string{"Accept", "Accept-Encoding", "Authorization", "Chatgpt-Account-Id", "Content-Type", "Originator", "Openai-Beta", "User-Agent", "Version", "Session-Id", "Thread-Id", "X-Codex-Beta-Features", "X-Codex-Turn-Metadata", "X-Codex-Routing-Hint", "X-Codex-Window-Id", "X-Client-Request-Id", "Cache-Control", "X-Openai-Internal-Codex-Responses-Lite"},
 	}
+	if responsePolicy == r.CodexSourceResponses {
+		// The guarded fixture also checks each request's tool inventory, as
+		// a native Codex launch requires. The unguarded baseline keeps neither.
+		policy.RequestPolicy = r.CodexSourceRequests
+	}
 	upstream := httptest.NewTLSServer(backend)
 	target, _ := url.Parse(upstream.URL)
 	guard, err := r.NewProviderEgress(context.Background(), s, policy, fixtureTransport{target, upstream.Client().Transport})

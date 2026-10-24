@@ -104,6 +104,7 @@ func TestNativeControlGatesAndInvalidHistoryPrecedeAssetsAuthAndTransport(t *tes
 		}
 		policy := egressTestPolicy(provider)
 		policy.ResponsePolicy = CodexSourceResponses
+		withCodexRequestPolicy(&policy)
 		if provider == Claude {
 			policy.ResponsePolicy = ClaudeSourceMessages
 		}
@@ -305,6 +306,7 @@ func TestNativeControlHistoryDoesNotRepeatSlowImmutableReads(t *testing.T) {
 			}
 			policy := egressTestPolicy(Codex)
 			policy.ResponsePolicy = CodexSourceResponses
+			withCodexRequestPolicy(&policy)
 			worker, err := NewNativeVMControlReviewer(NativeVMOptions{Provider: Codex, Root: "/unopened/native-root", Stub: "/unopened/stub", StubHash: strings.Repeat("a", 64), Auth: &AuthStore{provider: Codex, directory: "/unopened/auth"}, Reader: reader, Policy: policy, Transport: egressRoundTrip(func(*http.Request) (*http.Response, error) {
 				t.Fatal("history check reached HTTP")
 				return nil, ErrLiveBlocked
@@ -358,6 +360,7 @@ func TestNativeControlHistoryHasPerReportVerificationBudget(t *testing.T) {
 	}
 	policy := egressTestPolicy(Codex)
 	policy.ResponsePolicy = CodexSourceResponses
+	withCodexRequestPolicy(&policy)
 	checks := 0
 	worker, err := NewNativeVMControlReviewer(NativeVMOptions{Provider: Codex, Root: "/unopened/native-root", Stub: "/unopened/stub", StubHash: strings.Repeat("a", 64), Auth: &AuthStore{provider: Codex, directory: "/unopened/auth"}, Reader: reader, Policy: policy, Transport: egressRoundTrip(func(*http.Request) (*http.Response, error) {
 		t.Fatal("history check reached HTTP")
