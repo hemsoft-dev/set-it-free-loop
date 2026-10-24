@@ -89,7 +89,7 @@ EXHAUSTION_CHECKS = {
     "claude-turn-flood": TURN_CHECKS, "codex-turn-flood": TURN_CHECKS,
     "claude-source-oversize": OVERSIZE_CHECKS, "codex-source-oversize": OVERSIZE_CHECKS,
     "codex-source-flood": {"tool-call-bound", "client-saw-bound", "honest-outcome"},
-    "codex-request-flood": {"typed-phase-failure", "request-bound", "client-saw-refusal"} | RETURNED_CHECKS,
+    "codex-request-flood": {"typed-phase-failure", "flood-cause", "request-bound", "client-saw-refusal"} | RETURNED_CHECKS,
     "codex-code-spin": {"cell-yielded", "code-host-stopped", "ended-before-deadline", "typed-or-validated", "no-source-access"},
     "codex-code-memory": {"typed-phase-failure", "allocation-dispatched", "memory-bound-ended-cell",
                           "no-source-access"} | RETURNED_CHECKS,

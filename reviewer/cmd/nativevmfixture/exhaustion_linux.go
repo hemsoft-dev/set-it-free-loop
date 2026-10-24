@@ -184,6 +184,9 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 		closed, closedErr := strconv.Atoi(probe["closed"])
 		counted := okErr == nil && deniedErr == nil && closedErr == nil && ok+denied+closed == f.RequestFloodCalls
 		checks["typed-phase-failure"] = in.typedPhase("")
+		// The guest already refused the flooded report; the host must still
+		// name the flood as the cause.
+		checks["flood-cause"] = errors.Is(in.Err, r.ErrSourceRequestFlood)
 		checks["request-bound"] = in.Source != nil && in.Source.ToolCalls == calls && in.Source.Exhausted && coverageHas(in.Source.Coverage, "source request limit exhausted") && coverageHas(in.Source.Coverage, "source tool-call limit exhausted")
 		// The client saw every bound in order: the served reads, denials past
 		// the tool-call bound within the request budget, then closed intake.

@@ -357,9 +357,13 @@ closes, the broker records `source request limit exhausted` once, and the
 reader seals a valid stopped audit. Guest PID1 keeps it and downgrades a
 complete report. The host refuses any phase whose audit records the flood, so
 the fake model's report fails as `phase-invalid_output` with the audit and the
-returned auth (see [MCP.md](MCP.md)).
+returned auth (see [MCP.md](MCP.md)). Because the guest has already refused
+the report, the host adds the flood as a cause to the guest's typed failure
+rather than replacing it: the error carries `ErrSourceRequestFlood` and the
+stopped receipt records failure `source-flood`.
 
-The case requires `request-bound` (128 served tool calls, the tool-call
+The case requires `flood-cause` (the reviewer error names the flood),
+`request-bound` (128 served tool calls, the tool-call
 exhaustion and the flood both recorded in the returned audit),
 `client-saw-refusal` (exactly 128 served reads, then at least one denial within
 the budget, then at least one failed read after intake ended, 200 in all) and a

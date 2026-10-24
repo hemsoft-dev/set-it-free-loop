@@ -124,3 +124,36 @@ func TestNativeVMRequestFloodReturnsAuthAndAuditButNeverCompletes(t *testing.T) 
 		t.Fatal("stopped receipt does not record the refused flooded session", r)
 	}
 }
+
+// A real flood reaches the host as a guest-refused record: guest PID1 already
+// downgraded the report, so the host has a typed failure before it judges the
+// audit. The flood must still be the recorded cause, with the guest's class.
+func TestNativeVMGuestRefusedRequestFloodKeepsItsCause(t *testing.T) {
+	p, store, _, info := nativeDrainedPhase(t, false)
+	returned, err := NewAuthReturn(info, []byte("synthetic-returned-after-refused-flood"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	code := &nativeVMCodeHostAccess{Version: 2, SessionHash: Digest(p.request.Session), UID: nativeVMCodeHostUID, InputHash: Digest("input"), OutputHash: Digest("output"), Stopped: true, RelayComplete: true, Stage: "complete"}
+	p.finished = &nativeVMFinished{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), State: "invalid_output", CodeHost: code, AuthReturn: authWire(t, returned), SourceAudit: nativeHostAuditWith(t, p.request, []Coverage{{Reason: sourceRequestFloodReason}})}
+	refused := p.finished.failure(p.request)
+	var guest PhaseError
+	if !errors.As(refused, &guest) || guest.State != "invalid_output" {
+		t.Fatal("fixture record is not a guest-refused record", refused)
+	}
+	_, access, _, err := p.finishTask(context.Background(), nativeVMTaskReport{}, refused)
+	var pe PhaseError
+	if !errors.As(err, &pe) || pe.State != "invalid_output" || !errors.Is(err, ErrSourceRequestFlood) {
+		t.Fatal("guest-refused flood lost its cause or class", err)
+	}
+	if errors.Is(err, ErrAuthRecoveryRequired) || access == nil || !access.requestFlooded() || !p.authReturned {
+		t.Fatal("guest-refused flood lost its audit or auth return", err, access, p.authReturned)
+	}
+	state, err := os.ReadFile(filepath.Join(store.directory, "state.json"))
+	if err != nil || string(state) != "synthetic-returned-after-refused-flood" {
+		t.Fatal("stopped return not committed", err)
+	}
+	if r := readNativeDrainReceipt(t, p); r.Complete || !r.AuthReturned || r.Failure != "source-flood" {
+		t.Fatal("stopped receipt does not record the flood", r)
+	}
+}

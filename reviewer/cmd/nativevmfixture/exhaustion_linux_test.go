@@ -378,6 +378,7 @@ func TestRequestFloodChecks(t *testing.T) {
 	flood.Source = &r.SourceAccess{Version: 1, ToolCalls: 128, Exhausted: true, Coverage: []r.Coverage{{Reason: "source tool-call limit exhausted"}, {Reason: "source request limit exhausted"}}}
 	flood.Observation.Probe = map[string]string{"ok": "128", "denied": "29", "closed": "43", "first_closed": "throw:Transport closed"}
 	flood.Provider.Failed = false
+	flood.Err = errors.Join(r.PhaseError{State: "invalid_output"}, r.ErrSourceRequestFlood)
 	if !allPass(exhaustionChecks(flood)) {
 		t.Fatal("recorded request flood rejected", exhaustionChecks(flood))
 	}
@@ -392,6 +393,7 @@ func TestRequestFloodChecks(t *testing.T) {
 			in.Err = errors.Join(r.PhaseError{State: "invalid_output"}, r.ErrAuthRecoveryRequired)
 		},
 		"flood-unrecorded": func(in *exhaustionInput) { in.Source.Coverage = in.Source.Coverage[:1] },
+		"flood-cause-lost": func(in *exhaustionInput) { in.Err = r.PhaseError{State: "invalid_output"} },
 		"bound-unreached":  func(in *exhaustionInput) { in.Source.ToolCalls, in.Source.Exhausted = 100, false },
 		"never-closed":     func(in *exhaustionInput) { in.Observation.Probe["closed"], in.Observation.Probe["denied"] = "0", "72" },
 		"never-denied":     func(in *exhaustionInput) { in.Observation.Probe["denied"], in.Observation.Probe["closed"] = "0", "72" },

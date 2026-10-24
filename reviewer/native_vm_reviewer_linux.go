@@ -406,6 +406,11 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 	} else if p.exported {
 		primary = errors.Join(primary, ErrSourceAuditPending)
 	}
+	if primary != nil && access.requestFlooded() && !errors.Is(primary, ErrSourceRequestFlood) {
+		// The guest already refused the flooded report, so the phase keeps
+		// its class; the flood stays the recorded cause.
+		primary = errors.Join(primary, ErrSourceRequestFlood)
+	}
 	if primary == nil {
 		switch {
 		case p.finished == nil || !p.finished.valid(p.request):
