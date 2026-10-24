@@ -138,6 +138,16 @@ injection text came back as data. The next request had the same tool
 inventory, with no tool or MCP handle added. The store never saw a
 path outside the allowlist.
 
+The `phase-invalid_output` class in these runs is the host's, not the guest's.
+Through `a3f665b` the guest encoded an absent report as `"Report":null`, and
+the host refused every non-complete finished record as invalid output
+([#255](https://github.com/hemsoft-dev/set-it-free-loop/issues/255)). A
+refused case now records the guest's typed state, for example
+`phase-provider_unavailable` when the client ends its turn with a provider
+failure, and its `ErrorText` no longer carries the VM boot error. No check
+or verdict depends on the class. The new classes need a guest image and
+runner built after the fix and have not been measured yet.
+
 An earlier full run, `matrix-r1` at `24ccb25`, matched these verdicts except
 for one `claude-foreign-mcp` run. That run ended `stop-pending`: the host
 could not attest stop within its cleanup window. It kept the auth lease for
