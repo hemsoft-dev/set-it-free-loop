@@ -5,10 +5,13 @@ package reviewer
 import (
 	"context"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -260,31 +263,77 @@ func TestOpenRootNoFollowKernelViewShapes(t *testing.T) {
 
 // os.Root.OpenFile silently ignores O_NOFOLLOW for in-root links. Every
 // production site that asks for O_NOFOLLOW on a root must use the helper.
+// TestRootOpenFileNoFollowSitesUseHelper parses every production file, so a call
+// wrapped across lines or with its flags in a variable cannot hide. Every
+// OpenFile call on a receiver other than package os must spell its flags as an
+// OR of O_* constants, and those flags must not include O_NOFOLLOW: such opens
+// belong in openRootNoFollow.
 func TestRootOpenFileNoFollowSitesUseHelper(t *testing.T) {
-	call := regexp.MustCompile(`\b([A-Za-z_][A-Za-z0-9_.]*)\.OpenFile\(`)
+	fset := token.NewFileSet()
 	checked := 0
 	err := filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
 		}
-		raw, err := os.ReadFile(path)
+		file, err := parser.ParseFile(fset, path, nil, parser.SkipObjectResolution)
 		if err != nil {
 			return err
 		}
-		for index, line := range strings.Split(string(raw), "\n") {
-			if !strings.Contains(line, "O_NOFOLLOW") {
-				continue
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
 			}
-			for _, match := range call.FindAllStringSubmatch(line, -1) {
-				checked++
-				if match[1] != "os" {
-					t.Errorf("%s:%d: %s.OpenFile with O_NOFOLLOW follows in-root symlinks; use openRootNoFollow", path, index+1, match[1])
-				}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || sel.Sel.Name != "OpenFile" {
+				return true
 			}
-		}
+			if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "os" {
+				return true
+			}
+			checked++
+			at := fset.Position(call.Pos())
+			if len(call.Args) != 3 {
+				t.Errorf("%s: OpenFile with %d arguments", at, len(call.Args))
+				return true
+			}
+			names, explicit := openFlagNames(call.Args[1])
+			if !explicit {
+				t.Errorf("%s: OpenFile flags must be an OR of O_* constants so the symlink rule can be checked", at)
+			} else if slices.Contains(names, "O_NOFOLLOW") {
+				t.Errorf("%s: OpenFile with O_NOFOLLOW follows in-root symlinks; use openRootNoFollow", at)
+			}
+			return true
+		})
 		return nil
 	})
 	if err != nil || checked == 0 {
 		t.Fatal("source scan", err, checked)
 	}
+}
+
+// openFlagNames returns the O_* constant names an OpenFile flag expression ORs
+// together, and false unless the expression is only such constants.
+func openFlagNames(expr ast.Expr) ([]string, bool) {
+	switch e := expr.(type) {
+	case *ast.ParenExpr:
+		return openFlagNames(e.X)
+	case *ast.BinaryExpr:
+		if e.Op != token.OR {
+			return nil, false
+		}
+		left, ok := openFlagNames(e.X)
+		if !ok {
+			return nil, false
+		}
+		right, ok := openFlagNames(e.Y)
+		return append(left, right...), ok
+	case *ast.SelectorExpr:
+		pkg, ok := e.X.(*ast.Ident)
+		if !ok || (pkg.Name != "os" && pkg.Name != "syscall" && pkg.Name != "unix") || !strings.HasPrefix(e.Sel.Name, "O_") {
+			return nil, false
+		}
+		return []string{e.Sel.Name}, true
+	}
+	return nil, false
 }

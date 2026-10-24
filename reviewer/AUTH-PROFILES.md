@@ -88,13 +88,17 @@ target stays inside it, even when the caller passes `O_NOFOLLOW`. Go 1.25.14 and
 Every production `*os.Root` open that asks for `O_NOFOLLOW` now goes through
 `openRootNoFollow` (`root_nofollow_unix.go`). It takes the root's own directory
 descriptor and opens each path component with `openat(O_NOFOLLOW)`, so the
-kernel refuses an intermediate or final link with `ELOOP`. With `O_PATH`, the
+kernel refuses a link instead of following it: `ENOTDIR` for an intermediate
+component (opened with `O_DIRECTORY`) or a final open that passes
+`O_DIRECTORY`, and `ELOOP` for any other final component. With `O_PATH`, the
 call returns the link itself. `O_CREATE` without `O_EXCL` cannot create a
 dangling link's target. `writeAuth` creates its replacement the same way and
 renames it with `renameat` into a parent opened without following links. It
 refuses a destination that is already a symlink. `os.Root.Rename` would have
-followed an intermediate link. `TestRootOpenFileNoFollowSitesUseHelper` fails if
-a new `*os.Root` `OpenFile` call passes `O_NOFOLLOW`.
+followed an intermediate link. `TestRootOpenFileNoFollowSitesUseHelper` parses
+every production file and fails if any `OpenFile` call on a receiver other than
+package `os` passes `O_NOFOLLOW`, or passes flags that are not an explicit OR of
+`O_*` constants, so a wrapped call or a flag variable cannot hide one.
 
 | Site | Opens | Result |
 | --- | --- | --- |

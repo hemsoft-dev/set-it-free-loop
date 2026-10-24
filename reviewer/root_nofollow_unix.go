@@ -16,8 +16,10 @@ import (
 // os.Root.OpenFile confines resolution to the root but deliberately follows a
 // symlink whose target stays inside it, even when the caller passes O_NOFOLLOW
 // (Go 1.25 and 1.26; issue #257). This walks every component with openat and
-// O_NOFOLLOW from the root's own directory descriptor, so the kernel refuses an
-// intermediate or final symlink with ELOOP instead of resolving its target. With
+// O_NOFOLLOW from the root's own directory descriptor, so the kernel refuses a
+// symlink instead of resolving its target: ENOTDIR for an intermediate
+// component (opened with O_DIRECTORY) or a final open that passes O_DIRECTORY,
+// and ELOOP for any other final component. With
 // O_PATH the final symlink itself is returned, never its target. O_CREATE
 // without O_EXCL therefore cannot create the target of a dangling link either.
 // Errors keep the kernel errno inside an *os.PathError for os.IsNotExist checks.
