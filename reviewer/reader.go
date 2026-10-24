@@ -24,6 +24,17 @@ type ObjectStore interface {
 	Read(context.Context, string, string, int) (Object, error)
 }
 
+// sourceByteLimitReason is the coverage reason for a read refused because the
+// object does not fit the remaining reader byte budget. It matches the broker's
+// "source tool-call limit exhausted", so coverage tells an exhausted budget
+// apart from a missing or unreadable object.
+const sourceByteLimitReason = "source byte limit exhausted"
+
+// ErrSourceByteLimit is returned, possibly wrapped, by an ObjectStore that
+// refuses an object larger than the byte limit it was given. It carries no
+// store detail or host path.
+var ErrSourceByteLimit = errors.New(sourceByteLimitReason)
+
 type ReadRecord struct {
 	Revision, Path, Hash string
 	Bytes                int
@@ -92,8 +103,11 @@ func (r *Reader) Read(ctx context.Context, revision, p string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if r.calls >= r.limits.ReaderCalls || r.used >= r.limits.ReaderBytes {
+	if r.calls >= r.limits.ReaderCalls {
 		return fail("reader limit exhausted")
+	}
+	if r.used >= r.limits.ReaderBytes {
+		return fail(sourceByteLimitReason)
 	}
 	r.calls++
 	if !validPath(p) || !r.paths[p] {
@@ -104,6 +118,9 @@ func (r *Reader) Read(ctx context.Context, revision, p string) (string, error) {
 	}
 	remaining := r.limits.ReaderBytes - r.used
 	obj, err := r.store.Read(ctx, revision, p, remaining)
+	if errors.Is(err, ErrSourceByteLimit) {
+		return fail(sourceByteLimitReason)
+	}
 	if err != nil {
 		return fail("missing or unreadable object")
 	}
@@ -111,7 +128,7 @@ func (r *Reader) Read(ctx context.Context, revision, p string) (string, error) {
 		return fail("symlink, submodule or non-file omitted")
 	}
 	if len(obj.Data) > remaining {
-		return fail("reader byte limit exceeded")
+		return fail(sourceByteLimitReason)
 	}
 	r.used += len(obj.Data)
 	if bytes.IndexByte(obj.Data, 0) >= 0 || !utf8.Valid(obj.Data) {
@@ -226,17 +243,23 @@ func (r *Reader) Evidence() ([]ReadRecord, []Coverage) {
 // caller supplies a trusted absolute git binary and bare/object repository path.
 type GitStore struct{ Git, GitDir string }
 
+// cappedOutput does not embed bytes.Buffer: its promoted ReadFrom would let
+// exec's pipe copy bypass Write and the cap.
 type cappedOutput struct {
-	bytes.Buffer
-	max int
+	buffer   bytes.Buffer
+	max      int
+	exceeded bool
 }
 
 func (b *cappedOutput) Write(p []byte) (int, error) {
-	if len(p) > b.max-b.Len() {
+	if len(p) > b.max-b.buffer.Len() {
+		b.exceeded = true
 		return 0, errors.New("git output limit")
 	}
-	return b.Buffer.Write(p)
+	return b.buffer.Write(p)
 }
+
+var errGitOutputLimit = errors.New("immutable git object output limit exceeded")
 
 func (g GitStore) command(ctx context.Context, max int, args ...string) ([]byte, error) {
 	if !filepath.IsAbs(g.Git) || !filepath.IsAbs(g.GitDir) || max <= 0 || max > 2<<20 {
@@ -251,9 +274,12 @@ func (g GitStore) command(ctx context.Context, max int, args ...string) ([]byte,
 	c.Stdout = b
 	c.Stderr = &cappedOutput{max: 2048}
 	if err := c.Run(); err != nil {
+		if b.exceeded {
+			return nil, errGitOutputLimit
+		}
 		return nil, errors.New("immutable git object unavailable or output limit exceeded")
 	}
-	return b.Bytes(), nil
+	return b.buffer.Bytes(), nil
 }
 
 func (g GitStore) Read(ctx context.Context, revision, p string, max int) (Object, error) {
@@ -279,5 +305,9 @@ func (g GitStore) Read(ctx context.Context, revision, p string, max int) (Object
 		return Object{}, fmt.Errorf("invalid blob identity")
 	}
 	data, err := g.command(ctx, max, "cat-file", "blob", fields[2])
+	if errors.Is(err, errGitOutputLimit) {
+		// Blob output past max is the caller's byte budget, not a missing object.
+		return Object{}, ErrSourceByteLimit
+	}
 	return Object{fields[0], data}, err
 }

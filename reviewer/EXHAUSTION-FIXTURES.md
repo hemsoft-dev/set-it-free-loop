@@ -51,6 +51,42 @@ missing or extra check fails the case, as in the hostile matrix.
 
 ## Measured results
 
+### Measured at a6e1b5f
+
+On October 23, 2026, `matrix-r9-a6e1b5f` ran all 12 cases with runner and
+native image (`image-r8`) both built from `a6e1b5f`, the merged head of
+[#249](https://github.com/hemsoft-dev/set-it-free-loop/pull/249). Every case
+passed with no failed check, and every unit was stopped independently. The
+hostile matrix at the same head, `hostile-r7-a6e1b5f`, had 19 passes and the
+one contained `codex-metadata` client failure
+([validation comment](https://github.com/hemsoft-dev/set-it-free-loop/pull/249#issuecomment-6370501871)).
+Columns are from the run's `matrix.json`. Seconds, Peak and Result mean the
+same as in the history table below.
+
+| Case | Verdict | State | Error class | Seconds | Peak | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| `claude-response-flood` | pass | failed | `phase-invalid_output` | 6.5 | 1.1G | `17e4b671ae91` |
+| `claude-turn-flood` | pass | failed | `phase-invalid_output` | 7.2 | 1.1G | `93163db7f916` |
+| `claude-stall` | pass | failed | `auth-recovery` | 75.4 | 1.1G | `eb4c9ed40823` |
+| `claude-source-oversize` | pass | complete | none | 5.7 | 1.1G | `2ab98803f47a` |
+| `codex-response-flood` | pass | failed | `phase-invalid_output` | 4.9 | 1.1G | `e31938914b78` |
+| `codex-turn-flood` | pass | failed | `phase-invalid_output` | 5.2 | 1.2G | `9e213c724218` |
+| `codex-stall` | pass | failed | `auth-recovery` | 75.3 | 1.1G | `d43983d6375a` |
+| `codex-source-flood` | pass | complete | none | 5.0 | 1.1G | `99d5db207e57` |
+| `codex-source-oversize` | pass | complete | none | 5.3 | 1.1G | `70c73413adf2` |
+| `codex-code-memory` | pass | failed | `auth-recovery` | 75.3 | 1.1G | `af4c51352a89` |
+| `codex-code-output-flood` | pass | failed | `phase-invalid_output` | 5.1 | 1.1G | `42c2ad2494a8` |
+| `codex-code-spin` | pass | complete | none | 36.4 | 1.1G | `ac8ad7b3b069` |
+
+This run predates the byte-limit reason below. Its oversize cases passed the
+earlier `byte-bound` check, which did not assert the reason. The new reason
+changes the guest reader, so it needs a new image and is re-measured
+separately.
+
+### History: first run at 5c9f757
+
+The table and details below are from the first runs and are kept as history.
+
 On October 22, 2026, all 12 cases ran serially on mini. The runner and image
 were built from `5c9f757`, as `exhaustion-174/image-r1`; the only guest change
 from `native-guest-stop-image-r1` is the fix below. The run was split into
@@ -104,10 +140,12 @@ Details:
   both intervals, so its cancellation cannot pass the case.
 - **Oversized object.** The first read was served and counted at 1,572,864
   bytes. The second read was refused by the host object stream's own budget
-  before the reader's check, and was listed as an omission of `big.go`. Claude
-  Code itself rejected the 1.5 MiB tool result as exceeding its token limit,
-  so the model never saw it. Codex code mode received all of it. Both reports
-  completed with the omission in their authoritative coverage.
+  before the reader's check, and was listed as an omission of `big.go` with
+  the reason `missing or unreadable object` (see the byte-limit reason
+  below). Claude Code itself rejected the 1.5 MiB tool result as exceeding
+  its token limit, so the model never saw it. Codex code mode received all of
+  it. Both reports completed with the omission in their authoritative
+  coverage.
 - **Code-host memory.** The host unit's peak stayed at 1.1G, so the pressure
   stayed inside the guest. The Codex client never returned the exec result and
   never sent a second inference, so the phase deadline ended the session and
@@ -169,6 +207,39 @@ recorded `source tool-call limit exhausted` in report coverage, and auth was
 returned. `TestSourceMCPToolCallBoundDeniesWithoutDroppingTheAudit` failed before
 the fix (`missing MCP response`) and passes after it.
 
+## Byte-limit reason
+
+Through `a6e1b5f`, a byte-budget refusal was recorded as `missing or
+unreadable object` whenever the store or the object stream refused it, so
+coverage could not tell an exhausted budget from a missing file. The object
+stream and the stores returned untyped errors for oversized objects.
+
+The reader now records `source byte limit exhausted` for every byte-budget
+refusal: its own checks, and a store that returns `ErrSourceByteLimit`.
+`GitStore` and the sealed Git materialization return it for a blob past the
+requested limit. The private object reply carries a `ByteLimit` flag, valid
+only on a denial, so the host reports a budget refusal without forwarding a
+store error or any object byte. The oversize cases' `byte-bound` and
+`honest-outcome` checks now require exactly that omission of `big.go`.
+`TestVMObjectsCarryByteBudgetRefusalToTheGuestReader` and
+`TestReaderRecordsByteBudgetApartFromMissingObjects` failed before the change
+and pass after it. `SourceAccess.Exhausted` still describes only the tool-call
+bound, so it stays false for a byte-budget refusal.
+
+While testing this, `GitStore`'s output cap turned out not to hold: its buffer
+embedded `bytes.Buffer`, whose `ReadFrom` let the pipe copy bypass the cap, so
+an oversized blob was read whole and refused only by the reader's size check.
+The cap now holds for every capped Git command.
+
+Measured on October 23, 2026 at `8139070` on mini, from a native image, a
+source stub and a `reviewer.test` built from that commit, one VM at a time:
+the exhaustion matrix passed 12 of 12, with both `claude-source-oversize` and
+`codex-source-oversize` holding exactly `{big.go, source byte limit
+exhausted}` in `byte-bound` and `honest-outcome`; the hostile matrix gave 19
+passes and the contained `codex-metadata` client failure; and every E2E case,
+including `close-provider-recover`, passed. The E2E source acquisitions also
+ran with the capped `git fetch` output enforced.
+
 ## Remaining limitations
 
 - **Deadline fences auth.** A stall or a hung client always ends with auth fenced
@@ -185,11 +256,6 @@ the fix (`missing MCP response`) and passes after it.
   meeting an exited client, but that is not confirmed. The guest records no
   frame-level observation on the Claude path. It is still a typed failure, not
   success.
-- **Byte-budget reason.** A refusal for the byte budget is recorded as
-  `missing or unreadable object`, not `reader byte limit exceeded`, and
-  `SourceAccess.Exhausted` stays false. The object stream and the stores return
-  untyped errors for oversized objects. The bound held. A consumer reading the
-  coverage cannot tell a missing file from an exhausted budget.
 - **Request floods.** More than `ReaderCalls + 32` MCP requests still close the
   source connection, with the pre-fix effect: lost audit and fenced auth.
 - **Unreachable pressure.** Guest task pressure cannot be induced through
@@ -201,8 +267,8 @@ the fix (`missing MCP response`) and passes after it.
 - **Observation limits.** Peaks are whole-unit host accounting. Guest-internal
   memory, OOM kills and task counts are not exported. The memory case is
   attributed by its control cell, not by an observed OOM kill.
-- **Image provenance.** The image was built from `5c9f757`. Later commits on
-  this branch change only the fixture runner, its tests and documentation.
+- **Image provenance.** The current run used an image built from `a6e1b5f`.
+  The history table's image was built from `5c9f757`.
 - These results do not establish production resource limits, live-account
   behavior or provider eligibility.
 

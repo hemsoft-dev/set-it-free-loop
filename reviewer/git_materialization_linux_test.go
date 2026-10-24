@@ -428,6 +428,20 @@ func TestGitMaterializationConcurrentReadCloseAndJobFencing(t *testing.T) {
 	if _, err := m.Read(context.Background(), binding.Snapshot.Head, "safe.go", 1); err == nil {
 		t.Fatal("read budget ignored")
 	}
+	// A sealed blob beyond the remaining reader budget is the byte limit, not
+	// a missing object.
+	limits := DefaultLimits()
+	limits.ReaderBytes = 1
+	reader, err := NewReader(m, binding.Snapshot, []string{"safe.go"}, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reader.Read(context.Background(), binding.Snapshot.Head, "safe.go"); err == nil {
+		t.Fatal("reader budget ignored")
+	}
+	if _, coverage := reader.Evidence(); len(coverage) != 1 || coverage[0] != (Coverage{"safe.go", "source byte limit exhausted"}) {
+		t.Fatal("byte budget refusal not told apart from a missing object", coverage)
+	}
 	var wait sync.WaitGroup
 	for i := 0; i < 8; i++ {
 		wait.Add(1)

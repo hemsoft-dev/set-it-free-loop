@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -57,8 +58,8 @@ func TestVMObjectsActualUnixProducerAndBoundedImmutableStore(t *testing.T) {
 	if err != nil || string(object.Data) != "hello" {
 		t.Fatal("bounded remaining read failed", object, err)
 	}
-	if _, err = stream.Read(context.Background(), s.Snapshot.Head, "safe.go", 10); err != ErrVMObjects {
-		t.Fatal("exhausted host budget returned data", err)
+	if _, err = stream.Read(context.Background(), s.Snapshot.Head, "safe.go", 10); err != ErrSourceByteLimit {
+		t.Fatal("exhausted host budget returned data or hid the byte limit", err)
 	}
 	stream.Close()
 	if err = <-done; err != nil {
@@ -66,6 +67,60 @@ func TestVMObjectsActualUnixProducerAndBoundedImmutableStore(t *testing.T) {
 	}
 	if calls != 3 || len(requests) != 3 || requests[0] != 10 || requests[1] != 5 || requests[2] != 5 {
 		t.Fatal("store bytes/calls exceeded captured limits", calls, requests)
+	}
+}
+
+// The guest reader records a host byte-budget refusal as the byte limit, not as
+// a missing object, and the stream stays usable for later in-budget reads.
+func TestVMObjectsCarryByteBudgetRefusalToTheGuestReader(t *testing.T) {
+	client, server := vmSocketPair(t)
+	s := testSession(Codex)
+	s.Limits.ReaderBytes = 10
+	s.Limits.ReaderCalls = 5
+	store := vmObjectStoreFunc(func(_ context.Context, _, path string, limit int) (Object, error) {
+		switch path {
+		case "big.go":
+			// Deliberately ignores limit: the object stream owns the bound.
+			return Object{"100644", []byte("0123456789a")}, nil
+		case "capped.go":
+			return Object{}, fmt.Errorf("private-host-path-secret: %w", ErrSourceByteLimit)
+		case "safe.go":
+			return Object{"100644", []byte("hello")}, nil
+		}
+		return Object{}, errors.New("private-host-path-secret")
+	})
+	paths := []string{"big.go", "capped.go", "safe.go", "gone.go"}
+	done := make(chan error, 1)
+	go func() { done <- ServeVMObjects(context.Background(), server, s, paths, store) }()
+	stream, err := NewVMObjectStream(client, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, err := NewReader(stream, s.Snapshot, paths, s.Limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	head := s.Snapshot.Head
+	if _, err = reader.Read(context.Background(), head, "big.go"); err == nil {
+		t.Fatal("oversized object served")
+	}
+	if _, err = reader.Read(context.Background(), head, "capped.go"); err == nil {
+		t.Fatal("store-capped object served")
+	}
+	if _, err = reader.Read(context.Background(), head, "gone.go"); err == nil {
+		t.Fatal("missing object served")
+	}
+	if text, err := reader.Read(context.Background(), head, "safe.go"); err != nil || text != "hello" {
+		t.Fatal("stream unusable after a byte-budget refusal", text, err)
+	}
+	reads, coverage := reader.Evidence()
+	want := []Coverage{{"big.go", "source byte limit exhausted"}, {"capped.go", "source byte limit exhausted"}, {"gone.go", "missing or unreadable object"}}
+	if len(reads) != 1 || fmt.Sprint(coverage) != fmt.Sprint(want) {
+		t.Fatal("byte budget refusal not told apart from a missing object", reads, coverage)
+	}
+	stream.Close()
+	if err = <-done; err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -125,7 +180,7 @@ func TestVMObjectsRejectForeignScopeBeforeStoreReads(t *testing.T) {
 }
 
 func TestVMObjectStreamRejectsForgedReplyAndNeverReplays(t *testing.T) {
-	for _, kind := range []string{"session", "sequence", "oversized-object", "denied-data", "noncanonical"} {
+	for _, kind := range []string{"session", "sequence", "oversized-object", "denied-data", "limit-without-denial", "limit-with-data", "noncanonical"} {
 		t.Run(kind, func(t *testing.T) {
 			client, server := vmSocketPair(t)
 			s := testSession(Codex)
@@ -151,6 +206,10 @@ func TestVMObjectStreamRejectsForgedReplyAndNeverReplays(t *testing.T) {
 					reply.Object.Data = make([]byte, 11)
 				case "denied-data":
 					reply.Denied = true
+				case "limit-without-denial":
+					reply.ByteLimit = true
+				case "limit-with-data":
+					reply.Denied, reply.ByteLimit = true, true
 				}
 				if kind == "noncanonical" {
 					raw, _ := json.Marshal(reply)

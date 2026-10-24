@@ -35,7 +35,10 @@ type vmObjectReply struct {
 	SessionHash string
 	Sequence    int
 	Denied      bool
-	Object      Object
+	// ByteLimit marks a denial by the byte budget, not an unavailable object.
+	// It is valid only on a denied reply.
+	ByteLimit bool
+	Object    Object
 }
 
 func NewVMObjectStream(channel io.ReadWriteCloser, s Session) (*VMObjectStream, error) {
@@ -121,10 +124,13 @@ func (s *VMObjectStream) Read(ctx context.Context, revision, path string, maxByt
 		return Object{}, ErrVMObjects
 	}
 	reply, err := readVMRecord[vmObjectReply](s.channel, 4<<20)
-	if err != nil || ctx.Err() != nil || reply.Version != 1 || reply.SessionHash != s.session || reply.Sequence != s.sequence || len(reply.Object.Data) > maxBytes || len(reply.Object.Mode) > 6 || (reply.Denied && (reply.Object.Mode != "" || len(reply.Object.Data) != 0)) {
+	if err != nil || ctx.Err() != nil || reply.Version != 1 || reply.SessionHash != s.session || reply.Sequence != s.sequence || len(reply.Object.Data) > maxBytes || len(reply.Object.Mode) > 6 || (reply.Denied && (reply.Object.Mode != "" || len(reply.Object.Data) != 0)) || (reply.ByteLimit && !reply.Denied) {
 		return Object{}, ErrVMObjects
 	}
 	s.failed = false
+	if reply.ByteLimit {
+		return Object{}, ErrSourceByteLimit
+	}
 	if reply.Denied {
 		return Object{}, ErrVMObjects
 	}
@@ -170,13 +176,17 @@ func ServeVMObjects(ctx context.Context, channel io.ReadWriteCloser, s Session, 
 			return ErrVMObjects
 		}
 		maximum := min(q.MaxBytes, s.Limits.ReaderBytes-used)
-		reply := vmObjectReply{Version: 1, SessionHash: sessionHash, Sequence: sequence, Denied: true}
+		reply := vmObjectReply{Version: 1, SessionHash: sessionHash, Sequence: sequence, Denied: true, ByteLimit: maximum <= 0}
 		if maximum > 0 {
 			object, err := store.Read(ctx, q.Revision, q.Path, maximum)
 			if err == nil && len(object.Data) <= maximum && len(object.Mode) <= 6 {
 				reply.Object = object
 				reply.Denied = false
 				used += len(object.Data)
+			} else {
+				// Only the budget outcome crosses the channel, never the store
+				// error or any byte of the refused object.
+				reply.ByteLimit = err == nil && len(object.Data) > maximum || errors.Is(err, ErrSourceByteLimit)
 			}
 		}
 		if ctx.Err() != nil || writeVMRecord(channel, reply, 4<<20) != nil {
