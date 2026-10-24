@@ -40,6 +40,8 @@ See [SOURCE.md](SOURCE.md) for capability, budget, recovery and live-boundary li
 
 `Render` produces a bounded summary and inline candidates. It combines exact duplicate allegations while preserving their IDs and assessments, neutralizes mentions, removes external model links and escapes model HTML/Markdown. Only trusted snapshot source links are generated. Inline eligibility comes from a trusted diff-line map; other valid locations remain in the summary. Revisions, selected models, CLI/auth mappings, config and release provenance are recorded in generated metadata.
 
+Model text cannot produce GitHub reference autolinks. `@` and `#` become fullwidth `＠` and `＃`, which removes mentions, `#N`, `owner/repo#N`, `owner@SHA` and `owner/repo@SHA`. `GH-N` in any case, unless glued to a preceding ASCII letter or digit, becomes `GH－N` with a fullwidth hyphen-minus. Each maximal run of 7 or more ASCII hexadecimal digits, in any case, that is not glued to an ASCII letter or digit on either side gets an invisible U+2060 word joiner after every 6 digits, so no piece can match a commit SHA. Runs glued to other letters or digits are left alone because GitHub's word-boundary match cannot select them either. HTML escaping uses named entities only, so escaping never reintroduces `#` followed by digits. The same rules apply inside code spans. Trusted revisions and snapshot source links are not passed through this filter. Known-secret redaction tolerates the joiners and fullwidth hyphen-minus that this filter inserts depending on neighbouring text.
+
 Run the declared gates from the repository root:
 
 ```sh

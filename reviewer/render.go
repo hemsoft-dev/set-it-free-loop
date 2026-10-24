@@ -2,7 +2,6 @@ package reviewer
 
 import (
 	"fmt"
-	"html"
 	"net/url"
 	"regexp"
 	"strings"
@@ -23,19 +22,82 @@ var credentialText = regexp.MustCompile(`(?i)\b(?:gh[pousr]_|github_pat_|sk-(?:p
 var externalLink = regexp.MustCompile(`(?i)(?:https?://|ftp://|www\.)[^\s]+`)
 var markdownEscaper = strings.NewReplacer("\\", "\\\\", "`", "\\`", "*", "\\*", "_", "\\_", "[", "\\[", "]", "\\]", "(", "\\(", ")", "\\)", "!", "\\!", "#", "\\#", "|", "\\|", "~", "\\~")
 
+// htmlEscaper uses named entities only. Numeric entities such as &#39; would
+// put an ASCII '#' followed by digits back into the published text.
+var htmlEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;", "'", "&apos;")
+
+// issueKeyReference matches GitHub's GH-<number> issue key unless the key is glued
+// to a preceding ASCII letter or digit, where GitHub cannot match it either.
+var issueKeyReference = regexp.MustCompile(`(^|[^A-Za-z0-9])([Gg][Hh])-([0-9])`)
+
+// commitRunJoiner splits commit-shaped hexadecimal runs. U+2060 WORD JOINER is
+// invisible and does not allow a line break.
+const commitRunJoiner = "\u2060"
+
+// commitRunChunk is one less than the shortest commit SHA GitHub autolinks.
+const commitRunChunk = 6
+
+func asciiAlphanumeric(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
+}
+
+func hexDigit(c byte) bool {
+	return c >= '0' && c <= '9' || c >= 'A' && c <= 'F' || c >= 'a' && c <= 'f'
+}
+
+// neutralizeReferences removes GitHub reference autolinks from model text. The
+// caller has already replaced '#' and '@' with fullwidth signs, which covers
+// #N, owner/repo#N, owner@SHA and owner/repo@SHA. This rewrites the rest:
+//   - GH-N (any case) not preceded by an ASCII letter or digit becomes GH－N
+//     with a fullwidth hyphen-minus.
+//   - Every maximal run of at least 7 ASCII hexadecimal digits (any case) that
+//     is not preceded or followed by an ASCII letter or digit gets a word
+//     joiner after each 6 digits, so no piece is long enough to be a SHA.
+//
+// Runs glued to other ASCII letters or digits stay unchanged because GitHub's
+// word-boundary match cannot select them.
+func neutralizeReferences(s string) string {
+	s = issueKeyReference.ReplaceAllString(s, "${1}${2}－${3}")
+	var b strings.Builder
+	for i := 0; i < len(s); {
+		if !hexDigit(s[i]) {
+			b.WriteByte(s[i])
+			i++
+			continue
+		}
+		end := i
+		for end < len(s) && hexDigit(s[end]) {
+			end++
+		}
+		run := s[i:end]
+		glued := i > 0 && asciiAlphanumeric(s[i-1]) || end < len(s) && asciiAlphanumeric(s[end])
+		for len(run) > commitRunChunk && !glued {
+			b.WriteString(run[:commitRunChunk] + commitRunJoiner)
+			run = run[commitRunChunk:]
+		}
+		b.WriteString(run)
+		i = end
+	}
+	return b.String()
+}
+
+// safeText renders untrusted model text as inert Markdown. It cannot produce
+// mentions, issue or commit reference autolinks, links, images or HTML.
 func safeText(s string) string {
 	s = credentialText.ReplaceAllString(s, "[redacted credential]")
 	s = externalLink.ReplaceAllString(s, "[external link omitted]")
 	s = strings.Map(func(r rune) rune {
-		if r == '@' {
+		switch {
+		case r == '@':
 			return '＠'
-		}
-		if unicode.IsControl(r) {
+		case r == '#':
+			return '＃'
+		case unicode.IsControl(r):
 			return ' '
 		}
 		return r
 	}, s)
-	return markdownEscaper.Replace(html.EscapeString(s))
+	return markdownEscaper.Replace(htmlEscaper.Replace(neutralizeReferences(s)))
 }
 
 func sourceURL(snapshot Snapshot, a Anchor) string {
