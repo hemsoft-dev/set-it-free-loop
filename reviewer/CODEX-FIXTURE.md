@@ -48,6 +48,9 @@ intake handlers. Captured Cache-Control and Responses-Lite header names are
 included explicitly; telemetry routes remain absent from the guard policy.
 A stopped private provider receipt must pass `ValidateCompleted` before this
 fixture accepts a report. Counts/policy are retained without auth values.
+Guarded cases also set the Codex request policy, so a request whose tool
+inventory differs from the measured code-mode pair is refused before the fake
+backend receives it.
 
 This qualifies only the captured protocol path through this guard. The local
 HTTP listener and fixed Host mapping stand in for production peer/TLS wiring;

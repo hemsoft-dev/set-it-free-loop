@@ -75,6 +75,17 @@ subscription identity and paid-overflow prevention remain qualification gates.
 CLI agentic-turn counts are not inference-request counts. Codex's internal
 request/turn enforcement is still a launcher qualification requirement.
 
+With these flags, every measured pinned Codex 0.163.0 request advertised only
+`functions.exec` and `functions.wait` in code mode, and `exec` declared only
+the two source tools. Hostile model metadata can still make the client
+advertise direct tools despite the flags; see
+[HOSTILE-FIXTURES.md](HOSTILE-FIXTURES.md#boundary-failure-codex-model-metadata-restores-direct-tools).
+The host provider egress therefore enforces that measured inventory outside
+the client and refuses any other Codex request before forwarding it; see
+[RESPONSE-TOOLS.md](RESPONSE-TOOLS.md#codex-request-tool-inventory). Claude's
+three-tool inventory has no host request check. No recorded Claude request or
+hostile case changed it.
+
 `SourceEndpoint` tells the supervisor the session hash, socket, expected reader
 UID and required profile. Before starting a client it must bind that exact socket
 to the same invocation's broker under the separate credential-free reader
