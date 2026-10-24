@@ -24,10 +24,11 @@ themselves.
 | --- | --- | --- |
 | `*-response-flood` | Streams 17 MiB of SSE text in one response, flushed in chunks with no declared length | 16 MiB per-response egress bound |
 | `*-turn-flood` | Calls a valid source read on every turn and never reports | 24 inference requests; Claude also has `--max-turns 24` |
-| `*-stall` | Accepts the first inference and writes nothing | 75 s phase deadline |
+| `*-stall` | Accepts the first inference and writes nothing | 60 s work deadline and 15 s result grace of the 75 s phase |
 | `*-source-oversize` | Reads `big.go` twice, then reports | 2 MiB reader byte budget |
 | `codex-source-flood` | One exec makes 140 sequential source reads | 128 source tool calls |
-| `codex-code-memory` | Fills 2 × 32 MiB typed arrays in one exec, then 64 × 32 MiB in the next | 256 MiB code-host guest cgroup |
+| `codex-request-flood` | One exec makes 200 sequential source reads | 128 + 32 source MCP requests |
+| `codex-code-memory` | Fills 2 × 32 MiB typed arrays in one exec, then 64 × 32 MiB in the next | 256 MiB code-host guest cgroup, then the guest's own deadline |
 | `codex-code-output-flood` | Prints 9 MiB from one exec | 8 MiB code-host relay bound |
 | `codex-code-spin` | Runs `for(;;){}` in one exec, then reports | Client yield and session stop |
 
@@ -45,11 +46,21 @@ incomplete audit and a `phase-*`, deadline or `auth-recovery` error class; an
 unproven stop never counts. An honest partial report is complete only if its
 authoritative coverage lists the omission.
 
+The stalls, `codex-code-memory` and `codex-request-flood` are stricter: they
+must return auth and the source audit, with a `phase-*` class. Fenced auth or a
+lost audit fails them (see [Result grace](#result-grace) and
+[Request floods](#request-floods)).
+
 The matrix runner accepts a result only with kind `exhaustion` and exactly
 these common checks plus the case's own checks from `exhaustionChecks`. A
 missing or extra check fails the case, as in the hostile matrix.
 
 ## Measured results
+
+These runs predate the [result grace](#result-grace) and the
+[request-flood](#request-floods) refusal. Their stall and `codex-code-memory`
+rows are the fenced outcome the current expectations reject, and they have no
+`codex-request-flood` row. No run of the current expectations is recorded yet.
 
 ### Measured at a6e1b5f
 
@@ -131,13 +142,11 @@ Details:
   `incomplete_expired`; see the limitations below.
 - **Stalls.** The guard's upstream request was cancelled at the 75 s phase
   deadline, and the result came back 0.2 to 0.3 s later. The host and guest
-  share that deadline, so the host stopped the unit before the guest's finished
-  record arrived. The host then had no auth return and no source audit, so auth
-  stays fenced for recovery, as documented in [NATIVE-VM.md](NATIVE-VM.md).
-  The fake upstream records when it observed the cancellation. The case passes
-  only if that is within 2 s after the 75 s deadline and the result returns
-  within 20 s of the deadline. The runner's 100 s outer watchdog lies outside
-  both intervals, so its cancellation cannot pass the case.
+  shared that deadline, so the host stopped the unit before the guest's
+  finished record arrived. The host then had no auth return and no source
+  audit, so auth stayed fenced for recovery, as documented in
+  [NATIVE-VM.md](NATIVE-VM.md). The [result grace](#result-grace) replaces
+  this outcome and its timing check.
 - **Oversized object.** The first read was served and counted at 1,572,864
   bytes. The second read was refused by the host object stream's own budget
   before the reader's check, and was listed as an omission of `big.go` with
@@ -166,17 +175,21 @@ Details:
     and one of two outcomes holds. In the first, the code host's receipt is
     stopped and failed in its `wait` stage, with output well below the relay
     bound, and the client returned the failure on a third inference. In the
-    second, the receipt is lost, the client never returned the cell, there
-    were exactly two inferences, and the result came back within 20 s after
-    the 75 s phase deadline, before the outer watchdog.
+    second, the client never returned the cell and there were exactly two
+    inferences. Before the [result grace](#result-grace) the receipt was then
+    lost and the result came back within 20 s after the 75 s phase deadline.
+    The case now requires the code host's receipt stopped and failed in its
+    `wait` stage, the result between the 60 s work deadline and 20 s after the
+    phase deadline, a `phase-incomplete_expired` class, the source audit and
+    returned auth.
 
   The only difference between the two cells is crossing 256 MiB. A cell that
   is merely slow yields after about 30 s (see `codex-code-spin`). So a client
   that ran the control but hung on the over-bound cell until the deadline is
   attributed to the memory bound. That is still an inference: no OOM record
   exists. The earlier runs, through `matrix-r6` at `7c5dae4`, predate the
-  control. They match the second outcome only in their timing and need a
-  fresh run.
+  control. They matched the earlier second outcome only in their timing and
+  need a fresh run.
 - **Code-host output.** The broker stopped the relay before 8 MiB, marked the
   exchange failed and the client reported `failed to read code-mode host
   message: early eof`. The fake model still emitted a report; the guest
@@ -201,7 +214,8 @@ more than 128 times could force that recovery.
 `ServeSourceMCP` now answers calls past the bound with `Source request denied`
 and keeps the connection. The broker records the omission once and claims
 `exhausted` only after it served the full bound. The total request budget of
-`ReaderCalls + 32` still closes a larger flood. On the fixed image the same case
+`ReaderCalls + 32` still ends a larger flood, now with the audit kept (see
+[Request floods](#request-floods)). On the fixed image the same case
 completed with 128 served reads and 12 denials. The receipt was exhausted and
 recorded `source tool-call limit exhausted` in report coverage, and auth was
 returned. `TestSourceMCPToolCallBoundDeniesWithoutDroppingTheAudit` failed before
@@ -265,6 +279,9 @@ state other than `invalid_output`:
   unit before the guest's record arrives.
 - The complete cases are unchanged.
 
+The [result grace](#result-grace) later changes the stalls and
+`codex-code-memory` to a returned `phase-incomplete_expired`.
+
 Measured on October 23, 2026 at `a3c8dbd` on mini, with a native image and
 runner built from that commit: the exhaustion matrix passed 12 of 12.
 `claude-turn-flood` now records `phase-incomplete_expired` (Claude's
@@ -274,25 +291,98 @@ runner built from that commit: the exhaustion matrix passed 12 of 12.
 classification. The stalls and `codex-code-memory` stay `auth-recovery`, and
 the complete cases are unchanged.
 
+## Result grace
+
+Through `a3c8dbd`, every wall-time exhaustion ended with auth fenced and the
+source audit lost
+([#278](https://github.com/hemsoft-dev/set-it-free-loop/issues/278)). The phase
+deadline is now split, not extended
+([NATIVE-VM.md](NATIVE-VM.md#result-grace)). For the fixtures' 75 s phase:
+
+- At 60 s, the host's work deadline revokes provider intake through the
+  shutdown drain's path. A client waiting on the provider fails its exchange
+  and the guest's client proxy stops it.
+- At 60 s after its own request intake, so a few seconds later, the guest ends
+  its client, code-host broker and code host, then returns auth and the source
+  audit in its finished record.
+- The host reads that record until 75 s, its unchanged deadline. If it
+  arrives, the host proves whole-unit stop, commits the stopped auth return
+  and reports `phase-incomplete_expired`. If it does not, the fenced path is
+  unchanged.
+
+Expected outcomes, judged strictly. Each of these cases also requires
+`auth-returned`, which is the hostile matrix's returned-auth check (original
+synthetic tokens, a committed return and no recovery error) together with the
+reopened-store agreement, and `source-audit-returned`, which requires the
+host to have decoded the guest's audit without `ErrSourceAuditPending`. A case
+that still fences fails both checks and is reported as a failure.
+
+| Case | Expected outcome | Case checks |
+| --- | --- | --- |
+| `claude-stall`, `codex-stall` | The work deadline cancels the stalled upstream between 60 and 62 s. The record returns within the grace; the result is expected at about 61 s and accepted up to 95 s. `phase-incomplete_expired`, one inference, no source call, auth returned. | `expired-phase`, `guard-cancelled-stall`, `unaccepted-upstream-recorded`, `grace-bounded`, `single-inference`, `no-source-access` |
+| `codex-code-memory` | Expected: the client never returns the over-bound cell, and the guest's own deadline ends client, code host and broker at about 60 s plus boot. `phase-incomplete_expired`, two inferences, a code-host receipt stopped and failed in `wait`, auth returned. The variant where the client returns the code host's failure on a third inference is still accepted with any phase class. | `typed-phase-failure`, `allocation-dispatched`, `memory-bound-ended-cell`, `no-source-access` |
+| `codex-request-flood` | See [Request floods](#request-floods). | `typed-phase-failure`, `request-bound`, `client-saw-refusal` |
+
+`expired-phase` and `typed-phase-failure` accept only a `phase-*` class, an
+empty report and an incomplete audit; a deadline, cancellation or
+`auth-recovery` class fails them. Every other case keeps its checks and
+expected outcome. The fast cases end in about five seconds and
+`codex-code-spin` in about 36, all before the work deadline.
+
+`codex-code-memory` should now return auth, because the earlier fence came from
+the deadline, not from the memory bound. The host unit's peak stayed at 1.1G,
+so the pressure stayed inside the guest. The code host runs in its own 256 MiB
+cgroup, apart from the client's 1280 MiB cgroup and guest PID1. The receipt was
+lost only because the host stopped the unit before the guest's record arrived.
+At the guest's deadline, cancelling the broker closes the relay pipes and
+kills the code host's cgroup under a five-second bound, which records it
+stopped; the client is killed the same way. If that kill is not observed
+within its bound, the guest returns its record without auth and the case fails
+on `auth-returned`. This is a prediction from the code, not a measurement.
+
+The guest change needs a new native image. The runner and `reviewer.test`
+change too. None of the expectations above has been measured yet.
+
+## Request floods
+
+`codex-request-flood` makes 200 sequential source reads in one exec, more than
+the source MCP request budget of `ReaderCalls + 32` (160). The first 128 are
+served, later calls within the budget get `Source request denied`, and the
+request past the budget ends source intake, so the remaining reads fail.
+
+Before the change, that closed connection failed the reader's audit, the guest
+dropped it and the host reported `ErrSourceAuditPending`, which keeps the job
+for stopped-worker recovery. Now the transport tells the broker before it
+closes, the broker records `source request limit exhausted` once, and the
+reader seals a valid stopped audit. Guest PID1 keeps it and downgrades a
+complete report. The host refuses any phase whose audit records the flood, so
+the fake model's report fails as `phase-invalid_output` with the audit and the
+returned auth (see [MCP.md](MCP.md)).
+
+The case requires `request-bound` (128 served tool calls, the tool-call
+exhaustion and the flood both recorded in the returned audit),
+`client-saw-refusal` (exactly 128 served reads, then at least one denial within
+the budget, then at least one failed read after intake ended, 200 in all) and a
+`phase-*` class with returned auth and audit. `codex-source-flood`, at 140
+reads, stays within the budget and is unchanged.
+`TestSourceMCPRequestFloodKeepsAValidReceiptThatRecordsTheFlood`,
+`TestSourceSocketRequestFloodSealsTheAuditInsteadOfFailingIt` and
+`TestNativeVMRequestFloodReturnsAuthAndAuditButNeverCompletes` cover the
+transport, the reader and the host.
+
 ## Remaining limitations
 
-- **Deadline fences auth.** A stall or a hung client always ends with auth fenced
-  and source evidence lost, because host and guest share one phase deadline and
-  the host does not wait for the guest's finished record. This fails closed,
-  but every wall-time exhaustion needs operator recovery. A shorter guest
-  deadline with a host grace window would need a guest change and a new image.
-  It is not implemented.
-- **Claude max-turns classification.** The pinned client emits
-  `error_max_turns` with `is_error: true`, which the normalizer maps to
-  `incomplete_expired`. The native run reported `invalid_output` with
-  `client-error-silent-exit`. That run predates the typed-state fix above, so
-  its class does not show what the guest classified. If a rerun still records
-  `invalid_output`, the exchange failed after or around the result frame. One
-  likely cause is the post-result `mcp_status` control request meeting an
-  exited client, but that is not confirmed. The guest records no frame-level
-  observation on the Claude path. It is still a typed failure, not success.
-- **Request floods.** More than `ReaderCalls + 32` MCP requests still close the
-  source connection, with the pre-fix effect: lost audit and fenced auth.
+- **Deadline fences auth.** A guest that does not return its finished record
+  within the 15 s result grace is still fenced, with its source evidence lost.
+  That needs the VM's boot plus the guest's cleanup to exceed the grace, or a
+  guest that stops responding. It fails closed.
+- **Result grace evidence.** Whether real guests return within the grace,
+  including after the over-bound memory cell, is not yet measured. The memory
+  case's returned outcome is a prediction from the code.
+- **Request floods.** A flood still ends source intake for the rest of the
+  session; later reads fail. The audit and auth survive, and the phase fails
+  typed. Malformed, duplicate and oversized MCP frames still fail the reader's
+  audit as before.
 - **Unreachable pressure.** Guest task pressure cannot be induced through
   either client. Code mode has no process, worker or module API (see the
   `codex-code-probe` results), and Claude has no execution tool. Claude client
@@ -307,6 +397,10 @@ the complete cases are unchanged.
 - These results do not establish production resource limits, live-account
   behavior or provider eligibility.
 
+The earlier Claude max-turns limitation is resolved. `claude-turn-flood`
+records `phase-incomplete_expired`, Claude's `error_max_turns`, as measured at
+`a3c8dbd` (see [Typed guest failure states](#typed-guest-failure-states)).
+
 ## Reproduce
 
 From a clean committed checkout, with a native image built from the same tree:
@@ -318,14 +412,15 @@ python3 -B reviewer/scripts/native-vm-hostile.py --run-fake-only --matrix exhaus
   --go /absolute/path/to/go --module-cache /absolute/path/to/module-cache
 ```
 
-Use `--only NAME` for one case. The three deadline cases take about 75 s each.
+Use `--only NAME` for one case. The stalls and `codex-code-memory` end within
+the result grace, about 60 to 65 s each.
 The runner's `/tmp` state roots and build caches count against the `/tmp` user
 quota. Set `TMPDIR` to a disk directory to move the build cache.
 
 Unit tests run without KVM:
 
 ```sh
-go -C reviewer test -race -count=1 -run 'SourceMCP' .
+go -C reviewer test -race -count=1 -run 'SourceMCP|RequestFlood|NativeVMDeadlineSplit|NativeVMWorkDeadline|NativeVMExpired' .
 go -C reviewer test -race -count=1 ./internal/nativefixture ./cmd/nativevmfixture
 python3 -B -m unittest discover -s reviewer/scripts -p 'test_native_vm_hostile.py'
 ```

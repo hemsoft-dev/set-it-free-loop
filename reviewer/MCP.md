@@ -26,6 +26,18 @@ cancels that operation and suppresses its late response. Controller cancellation
 closes blocked connection I/O, cancels source work and joins handlers before
 return. Trusted source implementations must honor cancellation.
 
+Tool calls past the reader-call bound receive `Source request denied` and keep
+the connection. A connection that sends more than `ReaderCalls + 32` requests,
+or more request bytes than its input budget, is closed as `ErrSourceMCPFlood`,
+a kind of `ErrSourceMCPProtocol`. Before closing, the transport tells the
+broker, which records `source request limit exhausted` once in its receipt. The
+reader service then seals that receipt as a valid stopped audit instead of
+failing it, so the audit and any auth return survive. A phase whose audit
+records the flood is never clean: guest PID1 and the native host both refuse a
+complete report, and the generic source path fails it as `invalid_output`
+([#278](https://github.com/hemsoft-dev/set-it-free-loop/issues/278)).
+Malformed, duplicate and oversized frames still fail the connection as before.
+
 Argument and unknown-tool errors cause no source access. Traversal, wrong
 revisions and other broker denials produce a generic tool error and retain the
 broker's authoritative coverage receipt. Backend errors and host paths are not
@@ -44,7 +56,8 @@ Tests exercise both provider identities over private in-memory connections and
 verify actual broker read/search receipts, lifecycle/capability negotiation,
 denials, cross-snapshot and job-selector rejection, notifications, malformed and
 oversized frames, canonical ID reuse, client cancellation, blocked connection
-deadlines, metadata floods, output caps and private backend-error redaction.
+deadlines, metadata and request floods, output caps and private backend-error
+redaction.
 These tests run no official client or inference.
 
 This implements the source wire protocol. [Client configuration](SOURCE-CLIENTS.md)

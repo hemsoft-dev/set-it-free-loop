@@ -174,7 +174,10 @@ reports `ErrWorkerStopPending`. The E2E case `close-provider-fenced` qualifies
 that outcome with real VMs by stopping the guest's unit from outside before
 `Close` ([E2E-QUALIFICATION.md](E2E-QUALIFICATION.md#cases)).
 
-The grace applies only to `Close`. A host process kill gets none.
+The grace applies only to `Close`. A host process kill gets none. A session
+that reaches its own phase deadline uses the same revocation at the start of its
+separate [result grace](NATIVE-VM.md#result-grace), inside the unchanged phase
+deadline, so neither grace extends the other or any ceiling above.
 
 ## Stopped provider recovery
 

@@ -61,8 +61,9 @@ one CPU quota and seven-minute outer runtime cap, with a 2 GiB guest. Short fake
 reviews have sampled these bounds for both clients, with peaks near 1.35 GB and
 nine tasks and no OOM events. These samples do not establish stress limits.
 [EXHAUSTION-FIXTURES.md](EXHAUSTION-FIXTURES.md) records fake-only cases that
-push response size, turns, wall time, source calls and bytes, and code-host
-memory, output and CPU past their bounds. Unit peaks stayed at 1.1 to 1.2 GB.
+push response size, turns, wall time, source calls, requests and bytes, and
+code-host memory, output and CPU past their bounds. Unit peaks stayed at 1.1 to
+1.2 GB.
 The synthetic unit retains
 its original 1 GiB/64-task/two-minute profile. `NativeVMSupervisor` reuses durable
 unit identity, start settlement, revoked grants, whole-cgroup stop and fresh
@@ -368,6 +369,52 @@ proxy handler and the host result handling with fakes. Whether the guest sees
 the closed virtio port as end of stream promptly is a host property they do
 not exercise; if it does not, the grace expires into the cancellation path
 above.
+
+## Result grace
+
+A session that reaches its phase deadline now ends through the guest's ordinary
+finished record when it can, instead of a fenced stop
+([#278](https://github.com/hemsoft-dev/set-it-free-loop/issues/278)). The
+phase deadline, `Session.Limits.Timeout`, stays the session ceiling. Its last
+`NativeVMResultGrace` (fifteen seconds, or a quarter of a shorter phase) is
+reserved for returning auth and the source audit. Both sides derive it from
+the deadline the host already sends in the bound launch request; there is no
+new field or tunable.
+
+- At its deadline minus the grace, the host ends client work. It revokes
+  provider intake through the same path as the shutdown drain above: the
+  private provider stream and any in-flight request close, the guard records
+  the aborted request as failed, and the guest's client proxy stops its CLI on
+  the failed exchange. No auth is exported after this point. The host keeps
+  reading the finished record until its unchanged deadline. A caller deadline
+  earlier than the phase deadline moves the work deadline earlier too.
+- Guest PID1 ends its client, code-host broker and code host at the phase
+  deadline minus the grace, counted from its request intake. This ends a
+  client that is not using the provider, such as one waiting for a code-mode
+  cell. PID1 then stops its roles and returns auth and the source audit in its
+  finished record, under its existing twelve-second cleanup bound.
+- If that record arrives within the grace, the host proves whole-unit stop,
+  commits the stopped auth return, persists the audit and returns a typed
+  `incomplete_expired` phase. A latched provider refusal or exhaustion keeps
+  its own class. The stopped receipt records failure `deadline`.
+- If it does not, the session deadline interrupts the result read and the
+  fenced path below runs exactly as before.
+
+The guest's intake follows the host's start by its preparation and VM boot,
+measured at a few seconds. A hung client therefore returns within the grace
+when boot plus the guest's cleanup after its client ends stays under fifteen
+seconds; that cleanup is normally well under one second and at most
+seventeen (five for the worker stop, twelve for role stop and auth read). No
+other ceiling moves: the host's fifteen-second stop path after the deadline,
+the native unit's seven-minute runtime cap, the guest's seven-minute bound,
+the controller's phase context, the durable lease of the phase plus one
+minute, the shutdown grace and `Close`'s 30-second ceiling, and the fixture
+runner's 100-second watchdog were all sized for the unchanged phase deadline.
+The cost is that client work ends fifteen seconds earlier. Offline tests cover
+the split, the work-deadline revocation with a fake clock, the returned and
+the fenced outcomes, and the caller-deadline bound. Whether real guests return
+within the grace is measured by the exhaustion matrix
+([EXHAUSTION-FIXTURES.md](EXHAUSTION-FIXTURES.md#result-grace)).
 
 ## Operator recovery of a stopped attempt
 
