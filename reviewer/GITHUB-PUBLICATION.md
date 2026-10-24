@@ -25,9 +25,18 @@ remains part of the trusted publisher boundary.
 ## Writes and receipts
 
 Review writes use only COMMENT, the captured commit and right-side line anchors.
-Configuration acknowledgments use issue comments. Both carry the durable unique
-intent marker. The adapter validates marker/hash, finite document bounds and
-scope before writing. It never approves, requests changes or merges.
+Configuration acknowledgments use issue comments. Status writes for
+non-complete jobs are COMMENT reviews on the job's captured commit with no
+inline comment. All three carry the durable unique intent marker. The adapter
+validates marker/hash, finite document bounds and scope before writing, and
+refuses a status with an inline comment or a state outside the published set.
+It never approves, requests changes or merges.
+
+A status reuses the review POST, inline receipt read, review collection scan
+and summary PUT. It adds no route, permission or collection. Choosing a
+review rather than an issue comment binds the receipt to the captured commit,
+which reconciliation checks as it does for reviews, and lets supersession
+update the known status in place with the same annotation.
 
 A successful review response is insufficient alone. The adapter retrieves every
 inline comment page and reconstructs the actual document. It checks the immutable
@@ -82,8 +91,8 @@ A later Dispatch rechecks the current snapshot and owner request before writing.
 A 422 from receipt readback after an accepted POST remains unknown. Other status
 codes remain conservative unknown results. No retry occurs inside Dispatch.
 
-Supersession reads and verifies the exact known App review, then PUTs its summary
-with a fixed marker and sanitized reason. It never appends another review or
+Supersession reads and verifies the exact known App review or status, then
+PUTs its summary with a fixed marker and sanitized reason. It never appends another review or
 comment. Repeating the same annotation is a no-op, including recovery after an
 accepted update whose local response was lost. A conflicting annotation defers
 for reconciliation.
@@ -95,9 +104,11 @@ this frozen alpha has no live installation/state migration path.
 ## Offline validation and remaining work
 
 Tests send actual TLS HTTP requests through an explicit local fake transport.
-They exercise COMMENT and ACK submission, multi-page inline receipts, altered
+They exercise COMMENT, status and ACK submission, multi-page inline receipts, altered
 remote bodies/anchors/identity, reordered comments, redirect refusal, bounded
-malformed responses and supersession idempotence. An integration test combines
+malformed responses and supersession idempotence. A status test loses the
+POST response, defers on an empty scan, never POSTs again, confirms by marker
+and then annotates the status in place. An integration test combines
 SQLite, Publisher and HTTP: a server accepts a review then returns 503, delayed
 visibility keeps publication unknown, a second Dispatch makes no POST, and a
 later complete scan confirms exactly the original write.
