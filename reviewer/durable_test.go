@@ -644,6 +644,22 @@ func TestKnownSecretsAreRedactedAfterRenderingTransforms(t *testing.T) {
 	}
 }
 
+// Reference neutralization depends on neighbouring text, so a known secret
+// inside a longer hex run or after "GH" renders differently from safeText(secret).
+func TestKnownSecretsAreRedactedThroughReferenceNeutralization(t *testing.T) {
+	for _, secret := range []string{"deadbeefcafe1234", "-1-token", "cafe1234567890abcdef0"} {
+		for _, text := range []string{"0" + secret, "GH" + secret, "x " + secret + "1", secret + "-9", "#" + secret} {
+			rendered := safeText(text)
+			redacted := redactDocument(Document{Summary: rendered, Inline: []InlineComment{{"source.go", 1, rendered}}}, []string{secret})
+			for _, published := range []string{redacted.Summary, redacted.Inline[0].Body} {
+				if strings.Contains(strings.NewReplacer(commitRunJoiner, "", "－", "-").Replace(published), secret) {
+					t.Fatalf("neutralized rendering leaked known secret %q in %q", secret, published)
+				}
+			}
+		}
+	}
+}
+
 func TestResumedDailyCapKeepsQuotaWaitRetryable(t *testing.T) {
 	s, job, _ := admittedFixture(t)
 	ctx := context.Background()

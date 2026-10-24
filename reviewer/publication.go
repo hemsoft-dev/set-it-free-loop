@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -74,6 +75,29 @@ func canonicalPublicationDocument(doc Document) Document {
 	})
 	return doc
 }
+
+// neutralizedSecretPattern matches value with the reference-neutralization
+// artifacts of safeText tolerated: word joiners between characters and a
+// fullwidth hyphen-minus for '-'. Neighbouring text decides where safeText puts
+// them, so a secret inside model text can render unlike safeText(secret).
+func neutralizedSecretPattern(value string) *regexp.Regexp {
+	runes := []rune(strings.ReplaceAll(value, commitRunJoiner, ""))
+	if len(runes) == 0 {
+		return nil
+	}
+	var b strings.Builder
+	for i, r := range runes {
+		if i > 0 {
+			b.WriteString(regexp.QuoteMeta(commitRunJoiner) + "*")
+		}
+		if r == '-' || r == '－' {
+			b.WriteString("[-－]")
+		} else {
+			b.WriteString(regexp.QuoteMeta(string(r)))
+		}
+	}
+	return regexp.MustCompile(b.String())
+}
 func redactDocument(doc Document, secrets []string) Document {
 	doc.Inline = append([]InlineComment{}, doc.Inline...)
 	values := append([]string{}, secrets...)
@@ -87,10 +111,17 @@ func redactDocument(doc Document, secrets []string) Document {
 		}
 	}
 	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
+	patterns := make([]*regexp.Regexp, len(values))
+	for i, secret := range values {
+		patterns[i] = neutralizedSecretPattern(secret)
+	}
 	redact := func(s string) string {
-		for _, secret := range values {
+		for i, secret := range values {
 			if secret != "" {
 				s = strings.ReplaceAll(s, secret, "[redacted]")
+			}
+			if patterns[i] != nil {
+				s = patterns[i].ReplaceAllLiteralString(s, "[redacted]")
 			}
 		}
 		return s
