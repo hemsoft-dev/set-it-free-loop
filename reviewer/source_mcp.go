@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strconv"
@@ -19,6 +20,11 @@ import (
 const SourceMCPVersion = "2025-11-25"
 
 var ErrSourceMCPProtocol = errors.New("source MCP connection rejected or exhausted")
+
+// ErrSourceMCPFlood ends a connection that exceeded its request budget. It is a
+// protocol error, but the broker has recorded the flood as an omission, so a
+// trusted reader seals and keeps its receipt instead of failing its audit.
+var ErrSourceMCPFlood = fmt.Errorf("%w: request budget exhausted", ErrSourceMCPProtocol)
 
 type sourceRPC struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -152,7 +158,17 @@ func ServeSourceMCP(ctx context.Context, inv Invocation, connection io.ReadWrite
 		}
 		received += len(scan.Bytes()) + 1
 		requests++
-		if requests > inv.Limits.ReaderCalls+32 || received > inv.Limits.InputBytes+inv.Limits.ReaderCalls*2048 || len(scan.Bytes()) > 16<<10 {
+		if requests > inv.Limits.ReaderCalls+32 || received > inv.Limits.InputBytes+inv.Limits.ReaderCalls*2048 {
+			// A request flood still ends source intake, but the broker
+			// records it, so the reader audit survives and the phase fails
+			// typed with its auth returned instead of fenced. The hook only
+			// marks the flood; the deferred cancel still joins any active call.
+			if flood, ok := inv.Source.(interface{ recordRequestFlood() }); ok {
+				flood.recordRequestFlood()
+			}
+			return ErrSourceMCPFlood
+		}
+		if len(scan.Bytes()) > 16<<10 {
 			return ErrSourceMCPProtocol
 		}
 		var request sourceRPC

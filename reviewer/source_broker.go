@@ -30,6 +30,29 @@ type SourceAccess struct {
 	Coverage    []Coverage   `json:"coverage"`
 }
 
+// sourceRequestFloodReason is the broker's omission for a client that sent
+// more source MCP requests, or request bytes, than the session's intake budget
+// of ReaderCalls + 32 requests. The transport then ends source intake.
+const sourceRequestFloodReason = "source request limit exhausted"
+
+// ErrSourceRequestFlood fails a phase whose source audit records a request
+// flood. The audit and any auth return are kept; the outcome is never clean.
+var ErrSourceRequestFlood = errors.New("source request limit exhausted; source intake ended")
+
+// requestFlooded reports whether the broker recorded a request flood. Only the
+// broker writes coverage reasons, never model text.
+func (a *SourceAccess) requestFlooded() bool {
+	if a == nil {
+		return false
+	}
+	for _, c := range a.Coverage {
+		if c.Path == "" && strings.Contains(c.Reason, sourceRequestFloodReason) {
+			return true
+		}
+	}
+	return false
+}
+
 func cloneSourceAccess(a *SourceAccess) *SourceAccess {
 	if a == nil {
 		return nil
@@ -88,6 +111,9 @@ func sourceReviewResult(r Report, access *SourceAccess, err error, s Session) (R
 	if auditErr := access.validate(s); auditErr != nil {
 		return Report{}, nil, errors.Join(err, adapterValidation(auditErr, false))
 	}
+	if err == nil && access.requestFlooded() {
+		return Report{}, cloneSourceAccess(access), adapterValidation(ErrSourceRequestFlood, false)
+	}
 	if err == nil && access != nil {
 		var mergeErr error
 		r, mergeErr = mergeCoverageRecords(r, access.Coverage)
@@ -112,7 +138,11 @@ type sourceBroker struct {
 	transportDenied atomic.Bool
 	// transportRecorded means that omission is already listed once.
 	transportRecorded bool
-	denials           []Coverage
+	// requestFlood is set by the MCP transport when a client exceeded the
+	// request intake budget. Like transportDenied it never takes mu.
+	requestFlood  atomic.Bool
+	floodRecorded bool
+	denials       []Coverage
 }
 
 // newSourceBroker forks a fresh read budget. Citation validation on the supplied
@@ -163,6 +193,18 @@ func (b *sourceBroker) begin(ctx context.Context) error {
 // past the tool-call bound. It only marks the denial, so the transport's intake
 // loop never waits on source I/O.
 func (b *sourceBroker) recordToolCallExhaustion() { b.transportDenied.Store(true) }
+
+// recordRequestFlood is called by the MCP transport when it ends intake on a
+// request flood. The omission is listed once when the receipt is sealed.
+func (b *sourceBroker) recordRequestFlood() { b.requestFlood.Store(true) }
+
+// foldRequestFlood records a transport request flood once. Called with mu held.
+func (b *sourceBroker) foldRequestFlood() {
+	if b.requestFlood.Swap(false) && !b.floodRecorded {
+		b.denials = append(b.denials, Coverage{Reason: sourceRequestFloodReason})
+		b.floodRecorded = true
+	}
+}
 
 // foldTransportDenial records a transport denial once. Exhausted is claimed
 // only when the broker itself served the full bound; calls that the transport
@@ -216,6 +258,7 @@ func (b *sourceBroker) seal() *SourceAccess {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.foldTransportDenial()
+	b.foldRequestFlood()
 	b.sealed = true
 	reads, coverage := b.reader.Evidence()
 	b.reader.mu.Lock()

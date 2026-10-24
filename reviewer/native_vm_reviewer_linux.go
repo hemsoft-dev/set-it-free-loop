@@ -13,6 +13,7 @@ import (
 	"net/http/httptrace"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -115,6 +116,13 @@ type nativeVMHostPhase struct {
 	drain        *shutdownDrain
 	releaseGrace func()
 	stopGrace    func() bool
+	// expired is set once the work deadline has ended client work; see
+	// armWorkDeadline. stopWork cancels that timer.
+	expired  atomic.Bool
+	stopWork func() bool
+	// now and after are the work-deadline clock; nil uses the real clock.
+	now   func() time.Time
+	after func(time.Duration, func()) func() bool
 }
 
 var _ attemptAuditedReviewer = (*NativeVMReviewer)(nil)
@@ -216,6 +224,7 @@ func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, con
 	if err != nil {
 		return nativeVMTaskReport{}, nil, nil, workerLauncherError(err, true)
 	}
+	phase.armWorkDeadline(ctx, s.Limits.Timeout)
 	phase.objectsDone = make(chan error, 1)
 	go func() { phase.objectsDone <- ServeVMObjects(ctx, channels.host[1], s, paths, store) }()
 	phase.stage = "prepare"
@@ -257,6 +266,10 @@ func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, con
 	// Once service shutdown drains this invocation no auth is exported.
 	if !phase.holdShutdownGrace(ctx) {
 		return nativeVMTaskReport{}, nil, nil, workerLauncherError(context.Canceled, true)
+	}
+	// Nor is any exported once the work deadline has ended client work.
+	if phase.workExpired() {
+		return nativeVMTaskReport{}, nil, nil, workerLauncherError(context.DeadlineExceeded, true)
 	}
 	phase.stage = "auth-export"
 	seed, err := phase.profile.ExportAuth(ctx, nativeVMExportGate{supervisor, manifest, request, ready})
@@ -301,6 +314,10 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 		defer p.releaseGrace()
 	}
 	drained := p.shutdownDrained()
+	if p.stopWork != nil {
+		p.stopWork()
+	}
+	expired := p.workExpired()
 	if p.profile != nil {
 		defer p.profile.Close()
 	}
@@ -395,6 +412,10 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 			primary = adapterValidation(ErrVMBoot, false)
 		case access == nil || access.validate(p.request.Session) != nil:
 			primary = ErrSourceAuditPending
+		case access.requestFlooded():
+			// A source request flood is never a clean outcome, even with a
+			// complete report. Its audit and auth return are kept.
+			primary = adapterValidation(ErrSourceRequestFlood, false)
 		case evidence == nil || evidence.validateStoppedCaptured(p.request.Session.Identity.Provider, p.request.Session.Limits, Digest(p.request.Session)) != nil:
 			primary = ErrProviderAuditPending
 		case evidence.Access.ValidateCompleted(p.request.Session, evidence.Policy) != nil:
@@ -415,6 +436,12 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 	// own classification.
 	if primary != nil && drained && !nativeProviderRefused(evidence) {
 		primary = errors.Join(primary, context.Canceled)
+	} else if primary != nil && expired && p.finished != nil && !nativeProviderRefused(evidence) {
+		// The work deadline ended this session and the guest still returned
+		// its finished record within the grace. The phase expired; its stop
+		// proof, auth return and audit were handled as for any typed failure.
+		// Without that record the fenced path above is unchanged.
+		primary = errors.Join(PhaseError{State: "incomplete_expired"}, primary, errNativeWorkExpired)
 	}
 	if p.started && p.persistAudit(cleanup, report.value(), access, evidence, primary) != nil {
 		primary = errors.Join(primary, ErrProviderAuditPending)
@@ -457,6 +484,46 @@ func (p *nativeVMHostPhase) holdShutdownGrace(ctx context.Context) bool {
 		}
 	})
 	return !drain.draining()
+}
+
+// armWorkDeadline ends client work NativeVMResultGrace before the session
+// deadline, or before an earlier caller deadline. Like a shutdown drain it
+// revokes provider intake: the private provider stream and any in-flight
+// request close, the guest's client proxy stops its CLI on the failed
+// exchange, and guest PID1 returns auth and the source audit in its ordinary
+// finished record. The guest's own phase deadline ends a client that is not
+// using the provider. The result read keeps the session deadline, so the
+// guest has the grace to return that record; after it the fenced path runs.
+func (p *nativeVMHostPhase) armWorkDeadline(ctx context.Context, timeout time.Duration) {
+	work, ok := nativeVMWorkDeadline(ctx, timeout)
+	if !ok {
+		return
+	}
+	now, after := p.now, p.after
+	if now == nil {
+		now = time.Now
+	}
+	if after == nil {
+		after = func(d time.Duration, f func()) func() bool { return time.AfterFunc(d, f).Stop }
+	}
+	p.stopWork = after(work.Sub(now()), p.expire)
+}
+
+// errNativeWorkExpired marks, for the stopped receipt only, a session that the
+// work deadline ended and whose guest still returned its finished record. It
+// is not retained in the returned error.
+var errNativeWorkExpired = errors.New("native work deadline ended the session")
+
+// workExpired reports whether the work deadline has ended client work.
+func (p *nativeVMHostPhase) workExpired() bool { return p.expired.Load() }
+
+// expire marks the work deadline and revokes provider intake. It attests
+// nothing: the stop proof and the stopped receipt are unchanged.
+func (p *nativeVMHostPhase) expire() {
+	p.expired.Store(true)
+	if p.bridge != nil {
+		p.bridge.revoke()
+	}
 }
 
 // shutdownDrained ends the revocation hook and reports whether shutdown had
@@ -512,7 +579,7 @@ func (p *nativeVMHostPhase) drainObjects(ctx context.Context, graceful bool) err
 
 func nativeVMCauses(err error) error {
 	var retained []error
-	for _, cause := range []error{context.Canceled, context.DeadlineExceeded, ErrLiveBlocked, ErrWorkerStopPending, ErrProviderAuditPending, ErrProviderEgressPending, ErrSourceAuditPending, ErrAuthRecoveryRequired} {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded, ErrLiveBlocked, ErrWorkerStopPending, ErrProviderAuditPending, ErrProviderEgressPending, ErrSourceAuditPending, ErrAuthRecoveryRequired, ErrSourceRequestFlood} {
 		if errors.Is(err, cause) {
 			retained = append(retained, cause)
 		}
@@ -583,9 +650,9 @@ func nativeVMFailureKind(err error) string {
 		kind string
 	}{
 		{ErrWorkerStopPending, "stop"}, {ErrAuthRecoveryRequired, "auth-return"},
-		{ErrSourceAuditPending, "source-audit"}, {ErrSourceService, "source-service"},
+		{ErrSourceAuditPending, "source-audit"}, {ErrSourceService, "source-service"}, {ErrSourceRequestFlood, "source-flood"},
 		{ErrProviderAuditPending, "provider-audit"}, {ErrProviderEgressPending, "provider-stop"},
-		{ErrProviderEgressFailed, "provider-egress"}, {context.DeadlineExceeded, "deadline"},
+		{ErrProviderEgressFailed, "provider-egress"}, {context.DeadlineExceeded, "deadline"}, {errNativeWorkExpired, "deadline"},
 		{context.Canceled, "cancelled"},
 	} {
 		if errors.Is(err, cause.err) {

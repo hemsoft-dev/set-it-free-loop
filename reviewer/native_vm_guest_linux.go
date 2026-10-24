@@ -102,7 +102,7 @@ func NativeVMGuestMain(args []string) int {
 	if !bound {
 		return 2
 	}
-	ctx, deadline := context.WithTimeout(ctx, q.Session.Limits.Timeout)
+	ctx, deadline := nativeGuestPhaseContext(ctx, q)
 	defer deadline()
 	phase := &nativeGuestPhase{request: q, control: control}
 	// All roles are stopped and audit/auth return constructed on every path,
@@ -295,6 +295,16 @@ func NativeVMGuestMain(args []string) int {
 	return 0
 }
 
+// nativeGuestPhaseContext bounds the guest's client work. It ends
+// NativeVMResultGrace before the captured phase deadline, counted from request
+// intake, so the client, code host and broker stop while the host still reads
+// the finished record. Guest PID1 then stops its roles and returns auth and the
+// source audit in that record. Role cleanup and the record write run after it
+// under their own bounds.
+func nativeGuestPhaseContext(parent context.Context, q nativeVMRequest) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(parent, nativeVMGuestTimeout(q.Session.Limits.Timeout))
+}
+
 func nativeGuestBindDirectory(source, target string) error {
 	if unix.Mount(source, target, "", unix.MS_BIND, "") != nil || unix.Mount("", target, "", unix.MS_BIND|unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "") != nil {
 		return ErrVMBoot
@@ -404,7 +414,7 @@ func (p *nativeGuestPhase) finish(parent context.Context) {
 	if finished.State == "" {
 		finished.State = "blocked"
 	}
-	stopped := true
+	stopped, flooded := true, false
 	if p.clientControl != nil {
 		p.clientControl.Close()
 	}
@@ -427,12 +437,7 @@ func (p *nativeGuestPhase) finish(parent context.Context) {
 		if p.readerAudit != nil {
 			select {
 			case audit := <-p.readerAudit:
-				if audit.err == nil {
-					decoded, err := DecodeSourceReaderAudit(p.request.readerConfig(), audit.raw)
-					if err == nil && !decoded.Failed {
-						finished.SourceAudit = audit.raw
-					}
-				}
+				finished.SourceAudit, flooded = nativeGuestKeepAudit(p.request.readerConfig(), audit)
 			case <-ctx.Done():
 				stopped = false
 			}
@@ -481,13 +486,28 @@ func (p *nativeGuestPhase) finish(parent context.Context) {
 	finished.Native = p.nativeSnapshot()
 	if finished.State == "complete" {
 		finished.Report = p.report
-		if !stopped || nativeCredentialCanarySeen(p.report, p.canaries) || !finished.valid(p.request) {
+		// A source request flood is never clean; the host refuses it too.
+		if !stopped || flooded || nativeCredentialCanarySeen(p.report, p.canaries) || !finished.valid(p.request) {
 			finished.State, finished.Report = "invalid_output", nil
 		}
 	}
 	stop := context.AfterFunc(ctx, func() { p.control.Close() })
 	defer stop()
 	_ = writeVMRecord(p.control, finished, 4<<20)
+}
+
+// nativeGuestKeepAudit returns the reader's stopped audit for the finished
+// record, or nil for a failed or invalid one, and whether it records a source
+// request flood. A flooded audit is kept; the phase is then never complete.
+func nativeGuestKeepAudit(config SourceReaderConfig, audit readerAuditResult) ([]byte, bool) {
+	if audit.err != nil {
+		return nil, false
+	}
+	decoded, err := DecodeSourceReaderAudit(config, audit.raw)
+	if err != nil || decoded.Failed {
+		return nil, false
+	}
+	return audit.raw, decoded.Access.requestFlooded()
 }
 
 func nativeGuestPrepareProfile(root string, q nativeVMRequest) error {

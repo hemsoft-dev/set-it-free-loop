@@ -4,6 +4,7 @@ package reviewer
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -160,7 +161,9 @@ func serveSourceSocketDraining(ctx, drain context.Context, config SourceReaderCo
 		err = ServeSourceMCP(ctx, inv, connection)
 		_ = connection.Close()
 		access := broker.seal()
-		if err != nil {
+		// A request flood is recorded in the receipt, which stays valid: the
+		// phase then fails typed, never clean, with its audit and auth kept.
+		if err != nil && !errors.Is(err, ErrSourceMCPFlood) {
 			return access, ErrSourceService
 		}
 		return access, nil
