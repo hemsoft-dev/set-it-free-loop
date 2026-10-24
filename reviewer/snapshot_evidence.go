@@ -40,6 +40,13 @@ func (e CaptureRefusal) known() bool {
 	return e.Reason == CaptureMissingHistory || e.Reason == CaptureAmbiguousHistory || e.Reason == CaptureInventoryLimit
 }
 
+// bareCaptureRefusal returns err only when it is itself a refusal with a known
+// reason, reached before ctx ended. A wrapped or joined refusal is not one.
+func bareCaptureRefusal(ctx context.Context, err error) (CaptureRefusal, bool) {
+	refusal, ok := err.(CaptureRefusal)
+	return refusal, ok && refusal.known() && ctx != nil && ctx.Err() == nil
+}
+
 // captureRefusalPacket is the admitted packet of a capture_refused job. It
 // records the refusal instead of evidence, so it can never restore, bind a
 // reader or describe a reviewed change set.
@@ -280,16 +287,8 @@ func snapshotInventory(ctx context.Context, git GitStore, snapshot Snapshot) ([]
 	}
 	ancestor, err := git.command(ctx, 256, "merge-base", "--all", snapshot.Base, snapshot.Head)
 	if err != nil || string(ancestor) != snapshot.MergeBase+"\n" {
-		switch {
-		case err == nil && ctx.Err() == nil && snapshotMergeBases(ancestor, len(snapshot.Head)):
-			return nil, CaptureRefusal{CaptureAmbiguousHistory}
-		case errors.Is(err, errGitOutputLimit) && ctx.Err() == nil:
-			// More best common ancestors than the bounded output holds.
-			return nil, CaptureRefusal{CaptureAmbiguousHistory}
-		case definite(err, 1):
-			// merge-base exits 1 only when the commits share no ancestor. A
-			// missing intermediate commit is a 255 error and stays transient.
-			return nil, CaptureRefusal{CaptureMissingHistory}
+		if refusal, ok := snapshotMergeBaseRefusal(ctx, ancestor, err, len(snapshot.Head)); ok {
+			return nil, refusal
 		}
 		return nil, errors.New("snapshot merge-base history unavailable or ambiguous")
 	}
@@ -307,6 +306,25 @@ func snapshotInventory(ctx context.Context, git GitStore, snapshot Snapshot) ([]
 		return nil, err
 	}
 	return files, nil
+}
+
+// snapshotMergeBaseRefusal classifies a merge-base --all answer that is not
+// the snapshot's merge base. Only Git's definite answers before the deadline
+// refuse: a complete different or ambiguous answer, more best common ancestors
+// than the bounded output holds, or exit 1 for commits that share no ancestor.
+// A missing intermediate commit is a 255 error and stays transient.
+func snapshotMergeBaseRefusal(ctx context.Context, ancestor []byte, err error, hashLength int) (CaptureRefusal, bool) {
+	switch {
+	case ctx.Err() != nil:
+		return CaptureRefusal{}, false
+	case err == nil && snapshotMergeBases(ancestor, hashLength):
+		return CaptureRefusal{CaptureAmbiguousHistory}, true
+	case errors.Is(err, errGitOutputLimit):
+		return CaptureRefusal{CaptureAmbiguousHistory}, true
+	case gitExited(err, 1):
+		return CaptureRefusal{CaptureMissingHistory}, true
+	}
+	return CaptureRefusal{}, false
 }
 
 // snapshotMergeBases reports a complete merge-base --all answer: one or more

@@ -90,9 +90,24 @@ func writeGitVMExport(ctx context.Context, output io.Writer, store GitStore, q g
 	return writeGitMaterialization(ctx, output, store, q.Binding, DefaultGitAcquisitionBounds())
 }
 
+// writeGitVMRefusal runs inside the protected source guest when acquisition
+// reached a permanent capture refusal: the same request-bound header, then the
+// refusal record instead of a materialization.
+func writeGitVMRefusal(ctx context.Context, output io.Writer, q gitVMRequest, reason string) error {
+	if ctx == nil || ctx.Err() != nil || output == nil || !q.valid() || !(CaptureRefusal{reason}).known() {
+		return errGitVMProtocol
+	}
+	header := gitVMExportHeader{1, gitVMSourcePurpose, Digest(q), q.Binding}
+	if writeVMRecord(output, header, gitVMRecordBytes) != nil || writeGitCaptureRefusal(ctx, output, q.Binding, reason) != nil {
+		return errGitVMProtocol
+	}
+	return nil
+}
+
 // receiveGitVMExport returns private staging only. It owns input on every
 // path, bounds the header before allocation, and requires exact EOF after the
 // existing materialization frame. No host Git parser or source publication.
+// An exact refusal record after the header returns the bare CaptureRefusal.
 func receiveGitVMExport(ctx context.Context, input io.ReadCloser, q gitVMRequest) (*gitMaterialization, error) {
 	if input == nil {
 		return nil, errGitVMProtocol

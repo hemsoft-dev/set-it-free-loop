@@ -277,6 +277,8 @@ func (a *gitVMExportArchive) leave() { a.operation <- struct{}{} }
 // Persist request intent before even reading the source header. A failed or
 // partial attempt remains receiving and blocks new staging. The caller must
 // retain acquisition ownership and obtain independent stop/recovery evidence.
+// A request-bound refusal record also remains receiving and returns the bare
+// refusal; the caller must still verify the guest's measured finished record.
 func (a *gitVMExportArchive) stage(ctx context.Context, q gitVMRequest, input io.ReadCloser) (*gitMaterialization, error) {
 	if input == nil {
 		return nil, errGitExportArchive
@@ -314,6 +316,10 @@ func (a *gitVMExportArchive) stage(ctx context.Context, q gitVMRequest, input io
 		return nil, errGitExportArchive
 	}
 	m, err := a.raw.stage(ctx, q.Binding, input)
+	if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+		// The request stays receiving, exactly like a failed intake.
+		return nil, refusal
+	}
 	if err != nil {
 		return nil, errGitExportArchive
 	}

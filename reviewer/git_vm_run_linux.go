@@ -200,23 +200,39 @@ func (r *gitVMRun) acquire(ctx context.Context, source *gitGenerationReader) (_ 
 	if writeVMRecord(control, gitVMGuestPhase{1, gitVMGuestPurpose, Digest(q), "host-grant"}, gitVMRecordBytes) != nil {
 		return nil, r.fail("host-grant")
 	}
+	materialized, failed, err := stageGitVMExport(phase, r.archive, q, export, control)
+	if failed != "" {
+		return nil, r.fail(failed)
+	}
+	return materialized, err
+}
+
+// stageGitVMExport stages the guest's export, then requires the guest's
+// finished record to measure exactly the bytes staged. A capture refusal is
+// returned only after that record matches, like a materialization. Any other
+// failure names its fixed stage and returns no refusal.
+func stageGitVMExport(ctx context.Context, archive *gitVMExportArchive, q gitVMGuestRequest, export io.ReadCloser, control io.Reader) (_ *gitMaterialization, failed string, _ error) {
 	measured := &gitVMMeasuredExport{ReadCloser: export, digest: sha256.New()}
-	materialized, err := r.archive.stage(phase, q.Source, measured)
-	if err != nil {
-		return nil, r.fail("export")
+	materialized, err := archive.stage(ctx, q.Source, measured)
+	refusal, refused := bareCaptureRefusal(ctx, err)
+	if err != nil && !refused {
+		return nil, "export", errGitVMOwner
 	}
 	good := false
 	defer func() {
-		if !good {
+		if !good && materialized != nil {
 			materialized.Close()
 		}
 	}()
 	finished, err := readVMRecord[gitVMGuestFinished](control, gitVMRecordBytes)
-	if err != nil || !finished.valid(q) || finished.ExportBytes != measured.bytes || finished.ExportHash != hex.EncodeToString(measured.digest.Sum(nil)) || phase.Err() != nil {
-		return nil, r.fail("guest-finished")
+	if err != nil || !finished.valid(q) || finished.ExportBytes != measured.bytes || finished.ExportHash != hex.EncodeToString(measured.digest.Sum(nil)) || ctx.Err() != nil {
+		return nil, "guest-finished", errGitVMOwner
+	}
+	if refused {
+		return nil, "", refusal
 	}
 	good = true
-	return materialized, nil
+	return materialized, "", nil
 }
 
 // launchInputs returns the eight boot roles: sealed pinned assets, a fresh KVM

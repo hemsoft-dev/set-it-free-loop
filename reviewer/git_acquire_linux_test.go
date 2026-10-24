@@ -108,7 +108,9 @@ func TestGitAcquisitionActualFetchVerifyAndExport(t *testing.T) {
 }
 
 func TestGitAcquisitionFailedFetchAndVerificationAreSpentWithoutExport(t *testing.T) {
-	for _, kind := range []string{"missing-tip", "wrong-merge-base", "object-limit"} {
+	// A merge base that is a complete, different Git answer is a permanent
+	// refusal record instead (TestGitAcquisitionRefusalCrossesWorkerExport).
+	for _, kind := range []string{"missing-tip", "non-commit-merge-base", "object-limit"} {
 		t.Run(kind, func(t *testing.T) {
 			fixture := snapshotGitFixtureFormat(t, "sha1")
 			endpoint, finish := gitAcquisitionBackend(t, fixture)
@@ -117,8 +119,8 @@ func TestGitAcquisitionFailedFetchAndVerificationAreSpentWithoutExport(t *testin
 			switch kind {
 			case "missing-tip":
 				binding.Snapshot.Head = strings.Repeat("a", 40)
-			case "wrong-merge-base":
-				binding.Snapshot.MergeBase = binding.Snapshot.Head
+			case "non-commit-merge-base":
+				binding.Snapshot.MergeBase = fixture.run(t, "rev-parse", binding.Snapshot.Head+"^{tree}")
 			case "object-limit":
 				bounds.Objects = 1
 			}

@@ -30,6 +30,20 @@ const gitMaterializationEntries = 3 * snapshotFileLimit
 
 var errGitMaterialization = errors.New("Git materialization refused")
 
+// A worker that reaches a permanent capture refusal exports this record instead
+// of a materialization. Its marker has the materialization marker's length, so
+// the receiver reads one fixed prefix before choosing either frame.
+const gitCaptureRefusalMagic = "SFL-GIT-CAPTURE-REFUSAL-1\n"
+const gitCaptureRefusalBytes = 4 << 10
+
+// gitCaptureRefusalRecord binds a refusal reason to the exact attempt. It has
+// no manifest, packet or blob, so a refusal can never carry source data.
+type gitCaptureRefusalRecord struct {
+	Version int
+	Binding gitMaterializationBinding
+	Reason  string
+}
+
 // errGitMaterializationByteLimit refuses a sealed blob larger than the caller's
 // remaining byte budget. It is still a materialization refusal.
 var errGitMaterializationByteLimit = fmt.Errorf("%w: %w", errGitMaterialization, ErrSourceByteLimit)
@@ -120,10 +134,16 @@ func writeGitMaterialization(ctx context.Context, output io.Writer, store GitSto
 		return errGitMaterialization
 	}
 	inventory, err := verifyGitQuarantine(ctx, store, b.Snapshot, bounds)
+	if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+		return writeGitCaptureRefusal(ctx, output, b, refusal.Reason)
+	}
 	if err != nil {
 		return errGitMaterialization
 	}
 	evidence, err := CaptureSnapshotEvidence(ctx, store, b.Snapshot)
+	if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+		return writeGitCaptureRefusal(ctx, output, b, refusal.Reason)
+	}
 	if err != nil {
 		return errGitMaterialization
 	}
@@ -264,6 +284,30 @@ func writeGitMaterialization(ctx context.Context, output io.Writer, store GitSto
 	return nil
 }
 
+// writeGitCaptureRefusal runs ONLY inside the protected acquisition worker,
+// before any materialization byte is written. The record is the whole export.
+func writeGitCaptureRefusal(ctx context.Context, output io.Writer, b gitMaterializationBinding, reason string) error {
+	if ctx == nil || ctx.Err() != nil || output == nil || !b.valid() || !(CaptureRefusal{reason}).known() {
+		return errGitMaterialization
+	}
+	raw, err := json.Marshal(gitCaptureRefusalRecord{1, b, reason})
+	if err != nil || len(raw) > gitCaptureRefusalBytes {
+		return errGitMaterialization
+	}
+	var size [4]byte
+	binary.BigEndian.PutUint32(size[:], uint32(len(raw)))
+	for _, part := range [][]byte{[]byte(gitCaptureRefusalMagic), size[:], raw} {
+		if ctx.Err() != nil {
+			return errGitMaterialization
+		}
+		n, err := output.Write(part)
+		if err != nil || n != len(part) {
+			return errGitMaterialization
+		}
+	}
+	return nil
+}
+
 func validateGitMaterialization(m gitMaterializationManifest, packet []byte, expected gitMaterializationBinding) (snapshotPacket, error) {
 	zero := snapshotPacket{}
 	if !expected.valid() || m.Version != 1 || m.Binding != expected || m.PacketHash != gitRawHash(packet) || m.Entries == nil || m.Blobs == nil || len(m.Entries) > gitMaterializationEntries || len(m.Blobs) > gitMaterializationEntries {
@@ -397,7 +441,8 @@ func (m *gitMaterialization) Close() error {
 // receiveGitMaterialization consumes and closes a context-cooperative private
 // pipe, including exact EOF. Cancellation closes intake and joins its callback.
 // All allocation lengths are checked before allocation; no remote filename or
-// directory is ever opened. Every error closes every staged descriptor.
+// directory is ever opened. Every error closes every staged descriptor. An
+// exact refusal record returns that bare CaptureRefusal and no materialization.
 func receiveGitMaterialization(ctx context.Context, input io.ReadCloser, expected gitMaterializationBinding) (*gitMaterialization, error) {
 	if input == nil {
 		return nil, errGitMaterialization
@@ -421,7 +466,7 @@ func receiveGitMaterialization(ctx context.Context, input io.ReadCloser, expecte
 		}
 	}()
 	magic := make([]byte, len(gitMaterializationMagic))
-	if _, err := io.ReadFull(input, magic); err != nil || string(magic) != gitMaterializationMagic {
+	if _, err := io.ReadFull(input, magic); err != nil || string(magic) != gitMaterializationMagic && string(magic) != gitCaptureRefusalMagic {
 		return nil, errGitMaterialization
 	}
 	frame := func(max int) ([]byte, error) {
@@ -438,6 +483,27 @@ func receiveGitMaterialization(ctx context.Context, input io.ReadCloser, expecte
 			return nil, errGitMaterialization
 		}
 		return raw, nil
+	}
+	if string(magic) == gitCaptureRefusalMagic {
+		// A refusal is the exact canonical record for this attempt with a known
+		// reason and exact EOF. Anything else is an opaque failure.
+		raw, err := frame(gitCaptureRefusalBytes)
+		if err != nil {
+			return nil, err
+		}
+		record, err := DecodeStrict[gitCaptureRefusalRecord](raw, gitCaptureRefusalBytes)
+		canonical, marshalErr := json.Marshal(record)
+		if err != nil || marshalErr != nil || !bytes.Equal(canonical, raw) || record.Version != 1 || record.Binding != expected {
+			return nil, errGitMaterialization
+		}
+		var extra [1]byte
+		if _, err := io.ReadFull(input, extra[:]); err != io.EOF {
+			return nil, errGitMaterialization
+		}
+		if refusal, ok := bareCaptureRefusal(ctx, CaptureRefusal{record.Reason}); ok {
+			return nil, refusal
+		}
+		return nil, errGitMaterialization
 	}
 	raw, err := frame(gitMaterializationManifestBytes)
 	if err != nil {

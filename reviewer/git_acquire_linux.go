@@ -93,6 +93,9 @@ func acquireGitQuarantine(ctx context.Context, git, workspace string, endpoint G
 		return zero, ErrGitQuarantine
 	}
 	if _, err := verifyGitQuarantine(ctx, store, binding.Snapshot, bounds); err != nil {
+		if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+			return zero, refusal
+		}
 		return zero, ErrGitQuarantine
 	}
 	return store, nil
@@ -117,11 +120,15 @@ func gitAcquisitionFetch(ctx context.Context, store GitStore, args ...string) er
 // acquireGitMaterialization never returns an ObjectStore or a host path. Its
 // plain export is untrusted staged data until the supervisor authenticates the
 // producer, revokes/drains the broker, proves whole-unit stop and publishes it.
+// A permanent capture refusal is exported as the refusal record instead.
 func acquireGitMaterialization(ctx context.Context, output io.Writer, git, workspace string, endpoint GitReadEndpoint, binding gitMaterializationBinding, bounds GitAcquisitionBounds) error {
 	if output == nil {
 		return ErrGitQuarantine
 	}
 	store, err := acquireGitQuarantine(ctx, git, workspace, endpoint, binding, bounds)
+	if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+		return writeGitCaptureRefusal(ctx, output, binding, refusal.Reason)
+	}
 	if err != nil {
 		return err
 	}

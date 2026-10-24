@@ -119,7 +119,14 @@ func gitVMGuestWorkerMain(hash string) int {
 	}
 	stage = "acquire"
 	store, err := acquireGitQuarantine(ctx, "/usr/bin/git", "/work", GitReadEndpoint{"/broker/git.sock", gitReadLocalURL}, q.Source.Binding, DefaultGitAcquisitionBounds())
-	if err != nil || writeGitVMExport(ctx, output, store, q.Source) != nil || output.Close() != nil {
+	// A permanent refusal is a completed export: the request header and the
+	// refusal record, then a normal exit so the guest reports it as finished.
+	if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+		err = writeGitVMRefusal(ctx, output, q.Source, refusal.Reason)
+	} else if err == nil {
+		err = writeGitVMExport(ctx, output, store, q.Source)
+	}
+	if err != nil || output.Close() != nil {
 		return 2
 	}
 	return 0
