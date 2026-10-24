@@ -95,7 +95,8 @@ ledger, and a restore probe.
 | `isolation` | PR 1 (automatic) and PR 2 (owner comment) pending together. | 2 / 8 | 2 | both usable |
 | `close-capture` | Close the whole service after capture and admission, inside the first session's host check, before any VM launch. Reopen and finish. | 1 / 4 | 1 | both usable |
 | `close-provider` | Close the whole service while the first Codex session waits for a withheld inference response. With the shutdown grace, reopen: the requeued job ends incomplete and publishes one status. | 1 / 1 | 1 (grace) or lifecycle order only (fenced) | both usable (grace), or Codex fenced and Claude usable |
-| `close-provider-reopen` | A second process attached to the root retained by `close-provider` (`SFL_E2E_ATTACH`), as a restarted service. | 0 / 0 | 1 (retained) | Codex fenced, Claude usable |
+| `close-provider-fenced` | `close-provider` with every process of the interrupted launch's native unit stopped from outside just before `Close`, so the guest cannot return within the grace: the fenced branch, root retained. | 1 / 1 | lifecycle order only | Codex fenced, Claude usable |
+| `close-provider-reopen` | A second process attached to the root retained by `close-provider-fenced` (`SFL_E2E_ATTACH`), as a restarted service. | 0 / 0 | 1 (retained) | Codex fenced, Claude usable |
 | `close-provider-recover` | Instead of `close-provider-reopen`: a restarted process recovers the retained attempt through the operator API, publishes PR 1's `auth_failed` status, then reviews and publishes the next request. | 1 / 4 | 2 (1 retained) | both usable (Codex re-provisioned) |
 | `close-publish` | The fake GitHub commits the review POST but withholds its response; close the whole service; reopen and reconcile. | 1 / 4 | 1 | both usable |
 
@@ -127,6 +128,34 @@ If the guest does not return within the grace, `Close` cancels as before and
 the case takes the fenced branch below. Only that branch retains a root for
 `close-provider-reopen` and `close-provider-recover`.
 
+`close-provider-fenced` ([#271](https://github.com/hemsoft-dev/set-it-free-loop/issues/271))
+reaches that branch on purpose without changing any production bound or code.
+It runs `close-provider` until the withheld inference request is held and the
+source order is judged. Then, just before `Close`, the harness stops every
+process of the interrupted launch's unit with `SIGSTOP`. The unit is the
+`sfl-alpha-<launch>.service` named by the Codex native root's only launch
+directory, and `systemctl --user show` must report it active, as a native VM
+containment unit with a control group and a main process. Every process in
+that cgroup's subtree is signalled. The harness lists the subtree again until
+no unsignalled process remains, since a process listed before its signal may
+have forked. It then waits until every task of each process, except an
+io_uring worker (which the kernel never group-stops and which runs no guest
+code), is in the stopped state, and a final listing must report exactly those
+processes, the main process among them. The stub, QEMU and every vCPU are
+therefore stopped. The guest cannot end its client or write its result
+record, so `Close` waits out the whole grace and then cancels the launch as
+before. The host stop path needs nothing from the stopped processes.
+`AbortAndWait` revokes the gate on the host, writes `cgroup.kill` on the
+captured cgroup and waits for the cgroup to empty and the unit to settle. The
+kernel's `SIGKILL` wakes and ends stopped tasks. With no result record the
+exported auth stays fenced, the stopped audit fails as `auth-return` at the
+wait for its result, the lease is kept and `Close` reports
+`ErrWorkerStopPending`. The case requires that branch and then applies every
+fenced-branch check of `close-provider` below, with the same declared end
+state. A freeze that cannot prove every process stopped fails the case before
+`Close`. `close-provider` itself is unchanged and still expects the grace
+branch.
+
 Every case also observes `systemctl --user list-units 'sfl-alpha-*'` every 200
 ms, excluding units that existed before the run. At the end it first stops
 and joins the periodic sampler, so no listing still in flight can record a
@@ -144,7 +173,9 @@ created by this process. Every launch recorded by this process must have been
 observed, and the observed source and native counts must equal the case's
 expectation in the table. An attached process may hold the earlier process's
 source records, which it need not observe. Before `close-provider-reopen` or
-`close-provider-recover` accepts an attached root, the root must hold exactly
+`close-provider-recover` accepts an attached root (retained by
+`close-provider-fenced`, or by a `close-provider` that took its fenced
+branch), the root must hold exactly
 one durable job: PR 1's, still leased, bound to PR 1's scope and the
 deterministic fake upstream's snapshot, and admitted under the current release
 revision, and that job must be exactly the one admission derives from its
@@ -164,8 +195,9 @@ by digest; another valid stopped receipt of the same session is refused. The
 job may hold no source attempt but that attempt's own. The audit must record
 that attempt's request, the zero report and exactly the source receipt the
 job recorded for it (none at `daac99c`), end at the wait for its result
-record and fail with `auth-return`. The first `close-provider` process
-applies the same check before it retains the root. A missing launch, an
+record and fail with `auth-return`. The first `close-provider` or
+`close-provider-fenced` process applies the same check before it retains the
+root. A missing launch, an
 unreadable launch directory, any other entry in the native root or a version
 1 receipt fails setup, and a retained launch must still be present at the
 end. Every check of source stop receipts
@@ -207,7 +239,8 @@ be admitted again. At the end, PR 1 must still retain only that request, PR 2
 exactly one owner `comment` request, admitted as the request of PR 2's
 reviewed job, and no other PR any request. Every case records the requests it
 judged as `Requests` in the JSON result. The fence states (`close-capture`
-after close, both `close-provider` processes) must hold PR 1's job as the only
+after close, `close-provider-fenced`, a fenced `close-provider` and
+`close-provider-reopen`) must hold PR 1's job as the only
 job and no write intent. The case enumerates every entry of each provider's
 native root except the supervisor's `executables` directory, reads each
 launch's `unit.json` and `native-audit.json`, and checks provider auth
@@ -552,9 +585,13 @@ flock -o ~/.cache/sfl-vm.lock env GOMAXPROCS=2 \
   timeout 600 nice -n 10 "$OUT/reviewer.test" -test.run '^TestE2EQualification$' -test.v -test.timeout 590s
 ```
 
-When `close-provider` took the fenced branch and retained its root, run
+To qualify the fenced branch and its restart, run `close-provider-fenced`, then
 `close-provider-reopen` next in a new process with `SFL_E2E_ATTACH` set to the
-`Root` recorded in `close-provider.json`, inside the same lock hold. State
+`Root` recorded in `close-provider-fenced.json`, inside the same lock hold.
+`close-provider-recover` attaches the same way, to a fresh
+`close-provider-fenced` root of its own: each retained root serves one
+followup. A `close-provider` that took its fenced branch retains a root the
+same way. State
 lives under a fresh `/tmp/sfl-e2e-<nonce>` root, which a passing run removes.
 `SFL_E2E_KEEP_FAILED=1` retains a failed root.
 
@@ -748,8 +785,9 @@ reserved session is refunded, and the job returns to `queued`.
 [`RecoverStoppedProvider`](GIT-STARTUP.md#stopped-provider-recovery) answers
 the finding above with an explicit operator path; nothing runs it
 automatically. `close-provider-recover` qualifies it end to end. It runs in a
-new process attached to the root retained by `close-provider`, inside the
-same lock hold, as `SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
+new process attached to the root retained by `close-provider-fenced` (before
+the shutdown grace, by `close-provider`), inside the same lock hold, as
+`SFL_E2E_FOLLOWUP=close-provider-recover` in the run script.
 
 1. Before startup, the job is `running` with its lease, an outstanding
    attempt and one charged session, and is exactly the job admission derives
@@ -894,13 +932,15 @@ now waits for admission.
 ## Limitations and remaining work
 
 - Crash points use whole-service `Close` (cancellation), not `SIGKILL` at an
-  arbitrary instruction. `close-provider-reopen` is a real process restart, but
+  arbitrary instruction. `close-provider-fenced` stops the guest with
+  `SIGSTOP` from outside, which models a guest that hangs past the grace, not
+  one that fails on its own. `close-provider-reopen` is a real process restart, but
   only after in-process cancellation has already stopped the unit. Mid-capture
   process loss is covered separately by the source VM `crash` case in
   [GIT-VM-SOURCE.md](GIT-VM-SOURCE.md), and native supervisor process loss by
   [NATIVE-VM-CRASH.md](NATIVE-VM-CRASH.md). A `SIGKILL` between session
   reservation and stopped receipt would leave the same durable fence as
-  `close-provider`, without the in-process stop proof. The shutdown grace
+  `close-provider-fenced`, without the in-process stop proof. The shutdown grace
   applies only to `Close`; a process kill gets none.
 - Operator recovery covers a provider attempt stopped with a durable
   stopped audit receipt (see the recovery section). An attempt without that
