@@ -57,10 +57,42 @@ missing or extra check fails the case, as in the hostile matrix.
 
 ## Measured results
 
-These runs predate the [result grace](#result-grace) and the
-[request-flood](#request-floods) refusal. Their stall and `codex-code-memory`
-rows are the fenced outcome the current expectations reject, and they have no
-`codex-request-flood` row. No run of the current expectations is recorded yet.
+### Measured at 1c3f267
+
+On October 24, 2026, all 13 cases ran under the current expectations, with the
+runner and native image both built from `1c3f267`, the merged head of
+[#279](https://github.com/hemsoft-dev/set-it-free-loop/pull/279), one VM at a
+time behind the available-memory gate. Every case passed with no failed check,
+and every unit was stopped independently. The hostile matrix at the same head
+passed 20 of 20. Columns are from the run's `matrix.json`. Seconds, Peak and
+Result mean the same as in the history table below.
+
+| Case | Verdict | State | Error class | Seconds | Peak | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| `claude-response-flood` | pass | failed | `phase-invalid_output` | 6.1 | 1.2G | `392573d2b0f9` |
+| `claude-turn-flood` | pass | failed | `phase-incomplete_expired` | 6.8 | 1.1G | `9dde754ccde0` |
+| `claude-stall` | pass | failed | `phase-incomplete_expired` | 60.3 | 1.1G | `f4392c6a9486` |
+| `claude-source-oversize` | pass | complete | none | 5.4 | 1.1G | `5ebcc85e620c` |
+| `codex-response-flood` | pass | failed | `phase-invalid_output` | 4.5 | 1.1G | `dd6828ceff9b` |
+| `codex-turn-flood` | pass | failed | `phase-invalid_output` | 4.7 | 1.1G | `9c1068bbeae4` |
+| `codex-stall` | pass | failed | `phase-incomplete_expired` | 60.2 | 1.2G | `40b59b696bb1` |
+| `codex-source-flood` | pass | complete | none | 4.5 | 1.1G | `ff5ebd2846e3` |
+| `codex-request-flood` | pass | failed | `phase-invalid_output` | 4.6 | 1.1G | `8eaa0a3ce4fa` |
+| `codex-source-oversize` | pass | complete | none | 4.5 | 1.1G | `e70825e2ed07` |
+| `codex-code-memory` | pass | failed | `phase-incomplete_expired` | 64.3 | 1.1G | `169e7978f4fd` |
+| `codex-code-output-flood` | pass | failed | `phase-invalid_output` | 4.5 | 1.1G | `b88046ea4730` |
+| `codex-code-spin` | pass | complete | none | 35.6 | 1.2G | `f283193fac6c` |
+
+The [result grace](#result-grace) held on real guests:
+- Both stalls finished at about 60.3 s of runner wall time, inside the 75 s phase. At 60 s (75 s minus the 15 s grace) the host's work deadline revoked provider intake, which cancelled the stalled request, and the finished record returned auth and the decoded source audit. Before the grace they fenced at 75 s.
+- `codex-code-memory` finished at 64.3 s of runner wall time, which includes VM boot, consistent with the guest's own cut-off 60 s after request intake. It returned auth and a stopped, failed code-host receipt, so its earlier fence came from the shared deadline, not from a memory kill.
+- `codex-request-flood` recorded both exhaustion reasons in its returned audit, and the host named the flood as the cause.
+
+The same results held at `7d0cee3`, before the review fix that keeps the flood cause.
+
+The two runs below predate the result grace and the request-flood refusal. Their
+stall and `codex-code-memory` rows are the fenced outcome the current
+expectations reject, and they have no `codex-request-flood` row.
 
 ### Measured at a6e1b5f
 
@@ -380,9 +412,10 @@ transport, the reader and the host.
   within the 15 s result grace is still fenced, with its source evidence lost.
   That needs the VM's boot plus the guest's cleanup to exceed the grace, or a
   guest that stops responding. It fails closed.
-- **Result grace evidence.** Whether real guests return within the grace,
-  including after the over-bound memory cell, is not yet measured. The memory
-  case's returned outcome is a prediction from the code.
+- **Result grace margin.** The measured stalls and the memory case finished
+  at 60.2 to 64.3 s of runner wall time, which includes VM boot, well before
+  the 75 s phase deadline. Slower boots or cleanups under host load are not
+  measured.
 - **Request floods.** A flood still ends source intake for the rest of the
   session; later reads fail. The audit and auth survive, and the phase fails
   typed. Malformed, duplicate and oversized MCP frames still fail the reader's
@@ -396,8 +429,8 @@ transport, the reader and the host.
 - **Observation limits.** Peaks are whole-unit host accounting. Guest-internal
   memory, OOM kills and task counts are not exported. The memory case is
   attributed by its control cell, not by an observed OOM kill.
-- **Image provenance.** The current run used an image built from `a6e1b5f`.
-  The history table's image was built from `5c9f757`.
+- **Image provenance.** The current run used an image built from `1c3f267`.
+  The earlier runs' images were built from `a6e1b5f` and `5c9f757`.
 - These results do not establish production resource limits, live-account
   behavior or provider eligibility.
 
