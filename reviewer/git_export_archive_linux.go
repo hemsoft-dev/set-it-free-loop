@@ -332,6 +332,7 @@ type gitExportIntake struct {
 // stage spends the attempt directory before intake. Partial/failed intake stays
 // receiving and blocks all new staging; no retry or refetch follows a crash.
 // Its return is private staging only, even after durable persistence succeeds.
+// An exact refusal record also stays receiving and returns the bare refusal.
 func (a *gitExportArchive) stage(ctx context.Context, binding gitMaterializationBinding, input io.ReadCloser) (*gitMaterialization, error) {
 	if input == nil {
 		return nil, errGitExportArchive
@@ -373,6 +374,11 @@ func (a *gitExportArchive) stage(ctx context.Context, binding gitMaterialization
 	writer := &gitExportWriter{ctx: ctx, output: file, digest: sha256.New()}
 	intake := &gitExportIntake{Reader: io.TeeReader(io.LimitReader(input, gitExportWireBytes+1), writer), Closer: input}
 	materialized, err := receiveGitMaterialization(ctx, intake, binding)
+	if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+		// The attempt stays receiving like any failed intake: the factory
+		// discards it after proved stop and it can never reopen as source.
+		return nil, refusal
+	}
 	if err != nil {
 		return nil, errGitExportArchive
 	}

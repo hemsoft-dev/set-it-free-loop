@@ -43,7 +43,10 @@ malformed records require recovery. Canonical journal validation rejects unknown
 duplicate or differently cased fields, substituted binding/image/unit identity,
 invalid jobs and inconsistent state. Records are atomically replaced and fsynced.
 No unit-manager call follows a failed start-intent write. A lost start reply or
-job failure never causes an automatic second start.
+job failure never causes an automatic second start. A worker
+[capture refusal](GIT-FACTORY.md#worker-capture-refusals) keeps this
+lifecycle: its record is stopped and revoked through the same independent stop
+proof as a failed attempt, its nonce stays spent and retention retires it.
 
 The distinct systemd description selects fixed Git properties. In addition to
 1 GiB RAM, no swap, 64 tasks, one CPU quota, a 120-second runtime, no restart and

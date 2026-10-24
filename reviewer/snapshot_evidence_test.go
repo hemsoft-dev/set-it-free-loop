@@ -186,11 +186,25 @@ func TestSnapshotEvidenceUsesActualGitWithoutCheckoutOrExternalDrivers(t *testin
 	}
 }
 
+// Git's definite answers about the snapshot's commits are permanent typed
+// refusals. A corrupt, unreadable or cancelled store, a non-commit object and
+// a missing intermediate ancestor stay plain errors that a retry may not repeat.
 func TestSnapshotEvidenceRefusesMissingOrAmbiguousHistory(t *testing.T) {
 	f := newSnapshotGitFixture(t)
-	for _, field := range []string{"head", "base", "merge-base", "not-commit", "incorrect-merge-base"} {
+	tree := f.run(t, "rev-parse", f.snapshot.Head+"^{tree}")
+	for field, want := range map[string]string{
+		"head":                 CaptureMissingHistory,
+		"base":                 CaptureMissingHistory,
+		"merge-base":           CaptureMissingHistory,
+		"unrelated":            CaptureMissingHistory,
+		"incorrect-merge-base": CaptureAmbiguousHistory,
+		"criss-cross":          CaptureAmbiguousHistory,
+		"not-commit":           "",
+		"missing-ancestor":     "",
+		"unreadable-store":     "",
+	} {
 		t.Run(field, func(t *testing.T) {
-			s := f.snapshot
+			s, store := f.snapshot, f.store()
 			switch field {
 			case "head":
 				s.Head = strings.Repeat("f", 40)
@@ -198,13 +212,35 @@ func TestSnapshotEvidenceRefusesMissingOrAmbiguousHistory(t *testing.T) {
 				s.Base = strings.Repeat("f", 40)
 			case "merge-base":
 				s.MergeBase = strings.Repeat("f", 40)
-			case "not-commit":
-				s.Head = f.run(t, "rev-parse", "HEAD:safe.go")
+			case "unrelated":
+				s.Base = f.run(t, "commit-tree", tree, "-m", "unrelated root")
 			case "incorrect-merge-base":
 				s.MergeBase = s.Head
+			case "criss-cross":
+				s = refusedSnapshot(t, f, CaptureAmbiguousHistory)
+			case "not-commit":
+				s.Head = f.run(t, "rev-parse", "HEAD:safe.go")
+			case "missing-ancestor":
+				gone := f.run(t, "commit-tree", tree, "-p", s.MergeBase, "-m", "removed ancestor")
+				s.MergeBase = f.run(t, "commit-tree", tree, "-p", gone, "-m", "retained merge base")
+				s.Head = f.run(t, "commit-tree", tree, "-p", s.MergeBase, "-m", "head side")
+				s.Base = f.run(t, "commit-tree", tree, "-p", s.MergeBase, "-m", "base side")
+				if err := os.Remove(filepath.Join(f.dir, ".git", "objects", gone[:2], gone[2:])); err != nil {
+					t.Fatal(err)
+				}
+			case "unreadable-store":
+				store.GitDir = filepath.Join(f.dir, "absent-git-dir")
 			}
-			if e, err := CaptureSnapshotEvidence(context.Background(), f.store(), s); err == nil || e != nil {
+			e, err := CaptureSnapshotEvidence(context.Background(), store, s)
+			if err == nil || e != nil {
 				t.Fatal(e, err)
+			}
+			refusal, ok := err.(CaptureRefusal)
+			if want == "" && ok {
+				t.Fatal("transient or untrusted failure classified as permanent", refusal)
+			}
+			if want != "" && (!ok || refusal.Reason != want) {
+				t.Fatal("wrong capture refusal", err)
 			}
 		})
 	}
@@ -215,8 +251,13 @@ func TestSnapshotEvidenceRefusesMissingOrAmbiguousHistory(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if e, err := CaptureSnapshotEvidence(ctx, f.store(), f.snapshot); err == nil || e != nil {
-		t.Fatal(e, err)
+	missing := f.snapshot
+	missing.Head = strings.Repeat("f", 40)
+	for _, s := range []Snapshot{f.snapshot, missing} {
+		e, err := CaptureSnapshotEvidence(ctx, f.store(), s)
+		if _, refused := err.(CaptureRefusal); err == nil || e != nil || refused {
+			t.Fatal("cancelled capture", e, err)
+		}
 	}
 }
 
@@ -247,7 +288,7 @@ func TestSnapshotEvidenceRetainsSizeOmissionsAndEnforcesInventoryCap(t *testing.
 	f.run(t, "add", "--all")
 	f.run(t, "commit", "--quiet", "-m", "too many paths")
 	f.snapshot.Head = f.run(t, "rev-parse", "HEAD")
-	if e, err := CaptureSnapshotEvidence(context.Background(), f.store(), f.snapshot); err == nil || e != nil {
+	if e, err := CaptureSnapshotEvidence(context.Background(), f.store(), f.snapshot); err != (CaptureRefusal{CaptureInventoryLimit}) || e != nil {
 		t.Fatal("partial inventory admitted", e, err)
 	}
 }
@@ -286,7 +327,16 @@ func TestSnapshotRawChangesRejectUnsafeAndIncompleteInventories(t *testing.T) {
 	for _, raw := range []string{strings.TrimSuffix(valid, "\x00"), valid + valid, strings.Replace(valid, "safe.go", "../escape", 1), strings.Replace(valid, " M", " R100", 1), strings.Replace(valid, a, strings.Repeat("0", 40), 1), strings.Replace(valid, "100644", "000000", 1), strings.Replace(valid, a, "bad", 1)} {
 		if _, err := parseSnapshotChanges([]byte(raw), 40); err == nil {
 			t.Fatal("malformed raw accepted")
+		} else if _, refused := err.(CaptureRefusal); refused {
+			t.Fatal("malformed raw classified as a permanent refusal", err)
 		}
+	}
+	over := ""
+	for i := 0; i <= snapshotFileLimit; i++ {
+		over += ":100644 100644 " + a + " " + b + " M\x00f" + strconv.Itoa(i) + "\x00"
+	}
+	if _, err := parseSnapshotChanges([]byte(over), 40); err != (CaptureRefusal{CaptureInventoryLimit}) {
+		t.Fatal("inventory over the file limit not refused", err)
 	}
 }
 

@@ -163,6 +163,8 @@ func gitQuarantineFileEquals(root *os.Root, name string, want string) bool {
 // must bind the input, executable and receipt, stop all writers and the broker,
 // and verify whole-unit stop before publishing any retained object store.
 // Current direct tests use only trusted synthetic repos and prove algorithms.
+// After every other check passes, Git's definite answer that the snapshot's
+// merge base is missing, ambiguous or different returns a CaptureRefusal.
 func verifyGitQuarantine(ctx context.Context, store GitStore, s Snapshot, b GitAcquisitionBounds) (GitAcquisitionInventory, error) {
 	zero := GitAcquisitionInventory{}
 	if ctx == nil || ctx.Err() != nil || s.Validate() != nil || !b.valid() || !filepath.IsAbs(store.Git) || !filepath.IsAbs(store.GitDir) || filepath.Clean(store.GitDir) != store.GitDir || privateDirectory(store.GitDir) != nil {
@@ -220,10 +222,16 @@ func verifyGitQuarantine(ctx context.Context, store GitStore, s Snapshot, b GitA
 			return zero, ErrGitQuarantine
 		}
 	}
-	for _, id := range []string{s.Head, s.Base, s.MergeBase} {
+	for _, id := range []string{s.Head, s.Base} {
 		if objects[id] != "commit" {
 			return zero, ErrGitQuarantine
 		}
+	}
+	// A recorded merge base absent from the store is answered only after the
+	// fetched history is proved complete below; any other object type refuses.
+	mergeBase := objects[s.MergeBase]
+	if mergeBase != "commit" && mergeBase != "" {
+		return zero, ErrGitQuarantine
 	}
 	if _, err := run(2048, "fsck", "--full", "--strict", "--no-reflogs", "--no-dangling"); err != nil {
 		return zero, ErrGitQuarantine
@@ -263,6 +271,15 @@ func verifyGitQuarantine(ctx context.Context, store GitStore, s Snapshot, b GitA
 	}
 	merge, err := run(256, "merge-base", "--all", s.Base, s.Head)
 	if err != nil || string(merge) != s.MergeBase+"\n" || ctx.Err() != nil {
+		// Head and base history is complete and verified, so Git's definite
+		// answer about it is permanent for this snapshot. A recorded merge base
+		// outside that history is missing; anything else stays opaque.
+		if ctx.Err() == nil && mergeBase == "" {
+			return zero, CaptureRefusal{CaptureMissingHistory}
+		}
+		if refusal, ok := snapshotMergeBaseRefusal(ctx, merge, err, len(s.Head)); ok {
+			return zero, refusal
+		}
 		return zero, ErrGitQuarantine
 	}
 	sort.Strings(rows)

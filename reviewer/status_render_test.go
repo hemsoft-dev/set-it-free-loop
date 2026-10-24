@@ -51,6 +51,29 @@ func TestStatusMarkdownGolden(t *testing.T) {
 	}
 }
 
+// Each permanent capture refusal renders its own INCOMPLETE cause with no
+// completed phase and none of a completed review's wording.
+func TestCaptureRefusalStatusMarkdownGolden(t *testing.T) {
+	for _, reason := range []string{CaptureMissingHistory, CaptureAmbiguousHistory, CaptureInventoryLimit} {
+		t.Run(reason, func(t *testing.T) {
+			job := testJob()
+			packet, err := newCaptureRefusalPacket(job.Snapshot, reason)
+			if err != nil {
+				t.Fatal(err)
+			}
+			job.Packet = packet
+			doc, err := Render(Outcome{Job: job, State: "capture_refused", Artifacts: []Artifact{}}, map[string]map[int]bool{"source.go": {1: true}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(doc.Inline) != 0 || !strings.HasPrefix(doc.Summary, "## SFL advisory review status\n") || !strings.Contains(doc.Summary, "Completed phases: 0 of 4.") || strings.Contains(doc.Summary, "No findings reported") || strings.Contains(doc.Summary, "this snapshot could not be captured") {
+				t.Fatal("capture refusal status lost its cause or reads as a review", doc.Summary)
+			}
+			checkGolden(t, "status-capture_refused-"+reason+".golden.md", doc.Summary)
+		})
+	}
+}
+
 // A completed adversarial review with an R1 objection and an R2-raised late
 // allegation renders the disputed and unverified sections.
 func TestDisputedLateReviewMarkdownGolden(t *testing.T) {

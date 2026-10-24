@@ -53,6 +53,11 @@ func runGitFactoryAcquisition(ctx context.Context, credentials *GitHubCredential
 	if run.close() != nil {
 		return nil, errGitUnit
 	}
+	// A worker's refusal, like its source, counts only after proved stop and
+	// generation release. It is bound to this attempt and carries no data.
+	if refusal, ok := bareCaptureRefusal(ctx, acquireErr); ok && materialized == nil {
+		return nil, refusal
+	}
 	if acquireErr != nil || materialized == nil || ctx.Err() != nil {
 		return nil, errors.Join(errGitUnit, ctx.Err())
 	}

@@ -233,7 +233,15 @@ func (f *gitSourceFactory) checkRoot() error {
 	return nil
 }
 
+// Capture returns evidence, an opaque error, or a bare CaptureRefusal that the
+// worker exported for this attempt, only after its proved stop and retirement.
 func (f *gitSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*SnapshotEvidence, error) {
+	return f.capture(ctx, snapshot, func(run *gitFactoryRun) gitFactoryAcquisition { return run })
+}
+
+// capture drives acquisition through the private seam. Production passes the
+// run itself; tests replace only its worker side and keep its real stop.
+func (f *gitSourceFactory) capture(ctx context.Context, snapshot Snapshot, acquisition func(*gitFactoryRun) gitFactoryAcquisition) (*SnapshotEvidence, error) {
 	if !f.enter(ctx) {
 		return nil, errGitUnit
 	}
@@ -261,13 +269,18 @@ func (f *gitSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*Sna
 		return nil, errGitUnit
 	}
 	f.runs[binding.Attempt] = run
-	m, err := runGitFactoryAcquisition(ctx, f.credentials, binding, run)
+	m, err := runGitFactoryAcquisition(ctx, f.credentials, binding, acquisition(run))
 	if err != nil {
 		phase, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		retireErr := f.retireFailedCapture(phase, run)
 		cancel()
 		if retireErr != nil {
 			f.ready = false
+			return nil, errGitUnit
+		}
+		// A refused attempt is retired exactly like a failed one first.
+		if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+			return nil, refusal
 		}
 		return nil, errGitUnit
 	}

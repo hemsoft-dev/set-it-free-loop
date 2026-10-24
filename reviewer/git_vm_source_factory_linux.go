@@ -310,7 +310,15 @@ func gitVMOpenTree(root *os.Root, name string, depth int) error {
 	return nil
 }
 
+// Capture returns evidence, an opaque error, or a bare CaptureRefusal that the
+// guest exported for this attempt, only after its proved stop and retirement.
 func (f *gitVMSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*SnapshotEvidence, error) {
+	return f.capture(ctx, snapshot, func(run *gitVMRun) gitFactoryAcquisition { return run })
+}
+
+// capture drives acquisition through the private seam. Production passes the
+// run itself; tests replace only its VM side and keep its real stop.
+func (f *gitVMSourceFactory) capture(ctx context.Context, snapshot Snapshot, acquisition func(*gitVMRun) gitFactoryAcquisition) (*SnapshotEvidence, error) {
 	if !f.enter(ctx) {
 		return nil, errGitVMOwner
 	}
@@ -335,14 +343,20 @@ func (f *gitVMSourceFactory) Capture(ctx context.Context, snapshot Snapshot) (*S
 		return nil, errGitVMOwner
 	}
 	f.runs[attempt] = run
-	m, err := runGitFactoryAcquisition(ctx, f.credentials, binding, run)
+	m, err := runGitFactoryAcquisition(ctx, f.credentials, binding, acquisition(run))
 	if err != nil {
 		phase, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		if f.retireFailedCapture(phase, run, binding) != nil {
+		retireErr := f.retireFailedCapture(phase, run, binding)
+		cancel()
+		if retireErr != nil {
 			// Unknown stop keeps the run, its generation and every record owned.
 			f.ready = false
+			return nil, errGitVMOwner
 		}
-		cancel()
+		// A refused attempt is retired exactly like a failed one first.
+		if refusal, ok := bareCaptureRefusal(ctx, err); ok {
+			return nil, refusal
+		}
 		return nil, errGitVMOwner
 	}
 	delete(f.runs, attempt)

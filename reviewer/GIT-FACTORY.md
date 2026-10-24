@@ -102,6 +102,27 @@ canonical protected stopped receipt remains valid after systemd collects the
 unit and cgroup; an unfinished stop still needs independent live proof. There
 is no network refetch, host Git parser, recapture or label-based fallback.
 
+## Worker capture refusals
+
+A worker [refusal record](GIT-MATERIALIZATION.md#capture-refusal-record) is
+staged as incomplete intake and takes the same stop path as source.
+`runGitFactoryAcquisition` returns the bare `CaptureRefusal` only after the
+stop capability proved whole-unit stop, the run closed and the credential
+owner released the generation, and only with no materialization and before
+cancellation. `Capture` then runs the failed-capture retirement below, which
+discards the `receiving` intake with its terminal receipt. Only if that
+succeeds does it return the refusal to the
+[poll worker](POLLING.md#capture-refusals). A failed retirement fences the
+factory and returns the opaque error. The attempt's unit record is stopped and
+revoked like any failed attempt's, and `PruneSource` retires it because no job
+references it. The nonce stays spent; the next capture uses a fresh one. A
+record for another attempt, an unknown reason, trailing data, an unknown stop
+and cancellation all stay `errGitUnit`.
+
+The private `capture` method takes the acquisition constructor, so tests
+replace only the worker side of a real run and keep its real stop, close and
+retirement. Production passes the run itself.
+
 ## Restart recovery
 
 Startup joins the newly opened cross-process-locked unit owner with the export

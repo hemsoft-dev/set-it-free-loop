@@ -17,6 +17,69 @@ const snapshotPacketBytes = 64 << 10
 const snapshotFileLimit = 128
 const snapshotObjectBytes = 2 << 20
 
+// Capture refusal reasons. Each is Git's definite answer about a snapshot's
+// immutable commits in the trusted object store, so that snapshot can never
+// be captured there.
+const (
+	CaptureMissingHistory   = "missing_history"
+	CaptureAmbiguousHistory = "ambiguous_history"
+	CaptureInventoryLimit   = "inventory_limit"
+)
+
+// CaptureRefusal is a permanent refusal to capture one snapshot: its head,
+// base or merge-base commit is missing, or head and base share no ancestor;
+// its merge base is ambiguous or differs from the snapshot's; or its
+// changed-path inventory is over snapshotFileLimit. A failed, killed or
+// cancelled Git process, and transport, access, rate-limit and VM failures,
+// are never refusals and keep the poll loop's deferred backoff.
+type CaptureRefusal struct{ Reason string }
+
+func (e CaptureRefusal) Error() string { return "snapshot capture refused: " + e.Reason }
+
+func (e CaptureRefusal) known() bool {
+	return e.Reason == CaptureMissingHistory || e.Reason == CaptureAmbiguousHistory || e.Reason == CaptureInventoryLimit
+}
+
+// bareCaptureRefusal returns err only when it is itself a refusal with a known
+// reason, reached before ctx ended. A wrapped or joined refusal is not one.
+func bareCaptureRefusal(ctx context.Context, err error) (CaptureRefusal, bool) {
+	refusal, ok := err.(CaptureRefusal)
+	return refusal, ok && refusal.known() && ctx != nil && ctx.Err() == nil
+}
+
+// captureRefusalPacket is the admitted packet of a capture_refused job. It
+// records the refusal instead of evidence, so it can never restore, bind a
+// reader or describe a reviewed change set.
+type captureRefusalPacket struct {
+	Version  string
+	Snapshot Snapshot
+	Reason   string
+}
+
+const captureRefusalVersion = "sfl-capture-refusal-1"
+
+func newCaptureRefusalPacket(snapshot Snapshot, reason string) (string, error) {
+	if snapshot.Validate() != nil || !(CaptureRefusal{reason}).known() {
+		return "", ErrIgnored
+	}
+	encoded, err := json.Marshal(captureRefusalPacket{captureRefusalVersion, snapshot, reason})
+	return string(encoded), err
+}
+
+// captureRefusalReason returns the reason a capture_refused job's canonical
+// packet records for the job's own snapshot, or "" for any other packet.
+func captureRefusalReason(job Job) string {
+	var p captureRefusalPacket
+	if len(job.Packet) > snapshotPacketBytes || json.Unmarshal([]byte(job.Packet), &p) != nil {
+		return ""
+	}
+	canonical, err := json.Marshal(p)
+	if err != nil || string(canonical) != job.Packet || p.Version != captureRefusalVersion || p.Snapshot != job.Snapshot || !(CaptureRefusal{p.Reason}).known() {
+		return ""
+	}
+	return p.Reason
+}
+
 // SnapshotEvidence is captured by the trusted source reader, never supplied by
 // a model. Its methods return copies; packet, reader paths and inline anchors
 // all describe the same immutable merge-base-to-head comparison.
@@ -121,10 +184,12 @@ func (bound *JobEvidence) Reader(snapshot Snapshot) (*Reader, error) {
 }
 
 // CaptureSnapshotEvidence runs only read-only Git plumbing against an explicitly
-// supplied trusted object store. Missing history defers the whole capture. It
-// never fetches, checks out a tree, reads the working tree or executes its code.
-// Whole changed-path inventories must fit; individual source/patch omissions
-// remain explicit. No partially collected packet is returned on failure.
+// supplied trusted object store. Missing or ambiguous history refuses the whole
+// capture. It never fetches, checks out a tree, reads the working tree or
+// executes its code. Whole changed-path inventories must fit; individual
+// source/patch omissions remain explicit. No partially collected packet is
+// returned on failure. Git's definite answers return a CaptureRefusal; every
+// other failure is a plain error that a later attempt may not repeat.
 func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapshot) (*SnapshotEvidence, error) {
 	if snapshot.Validate() != nil {
 		return nil, ErrIgnored
@@ -203,18 +268,36 @@ func CaptureSnapshotEvidence(ctx context.Context, git GitStore, snapshot Snapsho
 }
 
 func snapshotInventory(ctx context.Context, git GitStore, snapshot Snapshot) ([]snapshotFile, error) {
+	// Git's definite answers count only from a process that exited by itself
+	// before the capture deadline; command reports nothing else as an exit.
+	definite := func(err error, code int) bool { return ctx.Err() == nil && gitExited(err, code) }
 	for _, id := range []string{snapshot.Base, snapshot.Head, snapshot.MergeBase} {
 		kind, err := git.command(ctx, 32, "cat-file", "-t", id)
-		if err != nil || string(kind) != "commit\n" {
+		if err != nil {
+			// cat-file -e exits 1, with no fatal error, only when Git looked the
+			// object up and found nothing. A corrupt or unreadable store exits 128.
+			if _, missing := git.command(ctx, 32, "cat-file", "-e", id); definite(missing, 1) {
+				return nil, CaptureRefusal{CaptureMissingHistory}
+			}
+			return nil, errors.New("snapshot commit history unavailable")
+		}
+		if string(kind) != "commit\n" {
 			return nil, errors.New("snapshot commit history unavailable")
 		}
 	}
 	ancestor, err := git.command(ctx, 256, "merge-base", "--all", snapshot.Base, snapshot.Head)
 	if err != nil || string(ancestor) != snapshot.MergeBase+"\n" {
+		if refusal, ok := snapshotMergeBaseRefusal(ctx, ancestor, err, len(snapshot.Head)); ok {
+			return nil, refusal
+		}
 		return nil, errors.New("snapshot merge-base history unavailable or ambiguous")
 	}
 	args := []string{"diff", "--raw", "-z", "--no-abbrev", "--no-renames", "--ignore-submodules=none", "--no-ext-diff", "--no-textconv", "--no-color", snapshot.MergeBase, snapshot.Head, "--"}
 	raw, err := git.command(ctx, snapshotObjectBytes, args...)
+	if errors.Is(err, errGitOutputLimit) && ctx.Err() == nil {
+		// Raw records are far larger than the file limit allows in this bound.
+		return nil, CaptureRefusal{CaptureInventoryLimit}
+	}
 	if err != nil {
 		return nil, errors.New("complete changed-path inventory unavailable")
 	}
@@ -223,6 +306,41 @@ func snapshotInventory(ctx context.Context, git GitStore, snapshot Snapshot) ([]
 		return nil, err
 	}
 	return files, nil
+}
+
+// snapshotMergeBaseRefusal classifies a merge-base --all answer that is not
+// the snapshot's merge base. Only Git's definite answers before the deadline
+// refuse: a complete different or ambiguous answer, more best common ancestors
+// than the bounded output holds, or exit 1 for commits that share no ancestor.
+// A missing intermediate commit is a 255 error and stays transient.
+func snapshotMergeBaseRefusal(ctx context.Context, ancestor []byte, err error, hashLength int) (CaptureRefusal, bool) {
+	switch {
+	case ctx.Err() != nil:
+		return CaptureRefusal{}, false
+	case err == nil && snapshotMergeBases(ancestor, hashLength):
+		return CaptureRefusal{CaptureAmbiguousHistory}, true
+	case errors.Is(err, errGitOutputLimit):
+		return CaptureRefusal{CaptureAmbiguousHistory}, true
+	case gitExited(err, 1):
+		return CaptureRefusal{CaptureMissingHistory}, true
+	}
+	return CaptureRefusal{}, false
+}
+
+// snapshotMergeBases reports a complete merge-base --all answer: one or more
+// distinct object IDs of the snapshot's hash length, one per line.
+func snapshotMergeBases(raw []byte, hashLength int) bool {
+	if len(raw) == 0 || raw[len(raw)-1] != '\n' {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(string(raw[:len(raw)-1]), "\n") {
+		if len(line) != hashLength || !objectID.MatchString(line) || seen[line] {
+			return false
+		}
+		seen[line] = true
+	}
+	return true
 }
 
 // RestoreSnapshotEvidence reconstructs the admitted packet against its immutable
@@ -373,8 +491,11 @@ func parseSnapshotChanges(raw []byte, hashLength int) ([]snapshotFile, error) {
 		return nil, ErrDeferred
 	}
 	parts := bytes.Split(raw[:len(raw)-1], []byte{0})
-	if len(parts)%2 != 0 || len(parts)/2 > snapshotFileLimit {
-		return nil, errors.New("changed-path inventory is malformed or exceeds file limit")
+	if len(parts)%2 != 0 {
+		return nil, errors.New("changed-path inventory is malformed")
+	}
+	if len(parts)/2 > snapshotFileLimit {
+		return nil, CaptureRefusal{CaptureInventoryLimit}
 	}
 	seen := map[string]bool{}
 	for i := 0; i < len(parts); i += 2 {

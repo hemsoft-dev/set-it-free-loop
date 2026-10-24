@@ -428,6 +428,31 @@ func (c *PollingController) selectWork(d DurableState, remote map[string]RemoteS
 	return &pollWork{scope: scope, request: r.ID, generation: pr.Generation, snapshot: r.Snapshot, done: make(chan struct{})}
 }
 
+// errCaptureRefused reports that beforeWork recorded a permanent capture
+// refusal as the request's terminal job. The invocation ends without error, so
+// neither the refused request nor the poll schedule is retried or deferred.
+var errCaptureRefused = errors.New("permanent capture refusal recorded")
+
+// refuseCapture records a permanent refusal under the same exclusion, remote
+// fences and admission fences as admitting a captured packet.
+func (c *PollingController) refuseCapture(ctx context.Context, w *pollWork, reason string) error {
+	err := c.exclusive(ctx, func() error {
+		remote, err := c.observe(ctx, w.scope)
+		if err != nil {
+			return err
+		}
+		if !remote.Access || !remote.Open || remote.Snapshot != w.snapshot || remote.Request.ID != w.request {
+			return ErrFenced
+		}
+		_, err = c.options.Store.RefuseCapture(ctx, w.scope, w.request, c.options.Release, w.snapshot, reason, c.now())
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	return errCaptureRefused
+}
+
 func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound *JobEvidence, job Job, result error) {
 	if err := c.options.Check(ctx, c.options.Enrollment, c.options.Release); err != nil {
 		return nil, Job{}, errors.Join(ErrLiveBlocked, err)
@@ -449,6 +474,12 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound 
 		var captureErr error
 		evidence, captureErr = c.options.Capture(ctx, w.snapshot)
 		if captureErr != nil {
+			// Only a bare, uncancelled refusal is permanent. Anything else,
+			// including a refusal wrapped in or joined with another failure,
+			// keeps the deferred backoff.
+			if refusal, ok := captureErr.(CaptureRefusal); ok && evidence == nil && ctx.Err() == nil && refusal.known() {
+				return nil, Job{}, c.refuseCapture(ctx, w, refusal.Reason)
+			}
 			return nil, Job{}, captureErr
 		}
 		if evidence == nil {
@@ -502,7 +533,11 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound 
 func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 	defer close(w.done)
 	bound, job, err := c.beforeWork(ctx, w)
-	if err == nil {
+	refused := err == errCaptureRefused
+	if refused {
+		err = nil
+	}
+	if err == nil && !refused {
 		d, readErr := c.options.Store.Snapshot(ctx)
 		err = readErr
 		if err == nil {
