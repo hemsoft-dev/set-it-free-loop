@@ -272,11 +272,8 @@ func (r *NativeVMReviewer) reviewTaskAudited(ctx context.Context, s Session, con
 	}
 	phase.finished = &finished
 	phase.stage = "result-validation"
-	if !finished.valid(request) {
-		return nativeVMTaskReport{}, nil, nil, adapterValidation(ErrVMBoot, false)
-	}
-	if finished.State != "complete" {
-		return nativeVMTaskReport{}, nil, nil, PhaseError{State: finished.State}
+	if err := finished.failure(request); err != nil {
+		return nativeVMTaskReport{}, nil, nil, err
 	}
 	report, err = decodeNativeVMTaskReport(request, finished.Report)
 	if err != nil {

@@ -165,12 +165,14 @@ func (r nativeVMReady) valid(q nativeVMRequest) bool {
 // The guest's privileged supervisor writes this receipt over the control port.
 // It never accepts this structure from client stdout or a source tool. The host
 // must separately prove whole-VM stop and validate its own provider receipt.
+// A record without a report omits Report. An explicit null is a carried value,
+// so only a complete record can hold a report and none may hold null.
 type nativeVMFinished struct {
 	Version     int
 	Binding     AuthBinding
 	RequestHash string
 	State       string
-	Report      json.RawMessage
+	Report      json.RawMessage `json:",omitempty"`
 	SourceAudit []byte
 	AuthReturn  []byte
 	CodeHost    *nativeVMCodeHostAccess
@@ -208,7 +210,7 @@ func (f nativeVMFinished) valid(q nativeVMRequest) bool {
 	default:
 		return false
 	}
-	if f.State != "complete" && len(f.Report) != 0 {
+	if f.State != "complete" && len(f.Report) != 0 || string(f.Report) == "null" {
 		return false
 	}
 	if q.Session.Identity.Provider == Claude && f.CodeHost != nil {
@@ -227,6 +229,18 @@ func (f nativeVMFinished) valid(q nativeVMRequest) bool {
 		return false
 	}
 	return true
+}
+
+// failure classifies a decoded finished record on the host. A valid typed
+// guest failure keeps its state; an invalid record is invalid output.
+func (f nativeVMFinished) failure(q nativeVMRequest) error {
+	if !f.valid(q) {
+		return adapterValidation(ErrVMBoot, false)
+	}
+	if f.State != "complete" {
+		return PhaseError{State: f.State}
+	}
+	return nil
 }
 
 func nativeVMSeedRecord(seed AuthTransfer) ([]byte, error) {

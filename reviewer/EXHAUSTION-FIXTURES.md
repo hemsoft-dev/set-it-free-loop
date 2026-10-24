@@ -240,6 +240,40 @@ passes and the contained `codex-metadata` client failure; and every E2E case,
 including `close-provider-recover`, passed. The E2E source acquisitions also
 ran with the capped `git fetch` output enforced.
 
+## Typed guest failure states
+
+Through `a3f665b`, every `phase-invalid_output` above was the host's class,
+not the guest's. The guest encoded an absent report as `"Report":null`, and
+the host refused every non-complete finished record and classified the phase
+as invalid output
+([#255](https://github.com/hemsoft-dev/set-it-free-loop/issues/255)). The
+guest now omits an absent report, and the host returns a valid typed guest
+failure with its own state. `ErrorText` no longer carries the VM boot error
+for such a case.
+
+`typed-failure` accepts any `phase-*` class, so no check or verdict changes.
+The recorded class changes only for cases whose guest record arrives with a
+state other than `invalid_output`:
+
+- The response and turn floods record the state the guest classified from the
+  client's output, such as `provider_unavailable` for a Codex failure event
+  or `incomplete_expired` for Claude's `error_max_turns`. Output the guest
+  cannot classify stays `invalid_output`.
+- `codex-code-output-flood` stays `phase-invalid_output`. The guest itself
+  downgrades the report because the code-host exchange failed.
+- The stalls and `codex-code-memory` stay `auth-recovery`. The host stops the
+  unit before the guest's record arrives.
+- The complete cases are unchanged.
+
+Measured on October 23, 2026 at `a3c8dbd` on mini, with a native image and
+runner built from that commit: the exhaustion matrix passed 12 of 12.
+`claude-turn-flood` now records `phase-incomplete_expired` (Claude's
+`error_max_turns`), where it previously recorded the host's
+`phase-invalid_output`. The response floods, `codex-turn-flood` and
+`codex-code-output-flood` record `phase-invalid_output` as the guest's own
+classification. The stalls and `codex-code-memory` stay `auth-recovery`, and
+the complete cases are unchanged.
+
 ## Remaining limitations
 
 - **Deadline fences auth.** A stall or a hung client always ends with auth fenced
@@ -251,11 +285,12 @@ ran with the capped `git fetch` output enforced.
 - **Claude max-turns classification.** The pinned client emits
   `error_max_turns` with `is_error: true`, which the normalizer maps to
   `incomplete_expired`. The native run reported `invalid_output` with
-  `client-error-silent-exit`, so the exchange failed after or around the result
-  frame. One likely cause is the post-result `mcp_status` control request
-  meeting an exited client, but that is not confirmed. The guest records no
-  frame-level observation on the Claude path. It is still a typed failure, not
-  success.
+  `client-error-silent-exit`. That run predates the typed-state fix above, so
+  its class does not show what the guest classified. If a rerun still records
+  `invalid_output`, the exchange failed after or around the result frame. One
+  likely cause is the post-result `mcp_status` control request meeting an
+  exited client, but that is not confirmed. The guest records no frame-level
+  observation on the Claude path. It is still a typed failure, not success.
 - **Request floods.** More than `ReaderCalls + 32` MCP requests still close the
   source connection, with the pre-fix effect: lost audit and fenced auth.
 - **Unreachable pressure.** Guest task pressure cannot be induced through

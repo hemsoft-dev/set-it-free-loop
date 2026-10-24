@@ -284,6 +284,98 @@ func TestNativeGuestInvocationBothProvidersRetainSourceAndFixedProxy(t *testing.
 	}
 }
 
+// guestFinishedWire runs the guest's own finish producer over a pipe and
+// returns the exact control record bytes the host reads.
+func guestFinishedWire(t *testing.T, q nativeVMRequest, state string, report []byte) []byte {
+	t.Helper()
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	wire := make(chan []byte, 1)
+	go func() { raw, _ := io.ReadAll(read); wire <- raw }()
+	phase := &nativeGuestPhase{request: q, control: write, state: state, stage: "native-execute", report: report}
+	phase.finish(context.Background())
+	write.Close()
+	return <-wire
+}
+
+func TestNativeVMHostReceivesTypedGuestFailureAsEncodedByTheGuest(t *testing.T) {
+	for _, provider := range []Provider{Codex, Claude} {
+		q := nativeRequestFixture(t, provider)
+		report, _ := json.Marshal(fakeReport(q.Session))
+		cases := map[string]string{"auth_failed": "auth_failed", "provider_unavailable": "provider_unavailable", "quota_wait": "quota_wait", "incomplete_expired": "incomplete_expired", "invalid_output": "invalid_output", "cancelled": "cancelled", "": "blocked"}
+		// A complete phase without a stopped auth return is downgraded by the
+		// guest itself; the host must still see that typed state.
+		cases["complete"] = "invalid_output"
+		for state, want := range cases {
+			raw := report
+			if state != "complete" {
+				raw = nil
+			}
+			wire := guestFinishedWire(t, q, state, append([]byte{}, raw...))
+			finished, err := readVMRecord[nativeVMFinished](bytes.NewReader(wire), 4<<20)
+			var phase PhaseError
+			failure := finished.failure(q)
+			if err != nil || !errors.As(failure, &phase) || phase.State != want || errors.Is(failure, ErrVMBoot) || len(finished.Report) != 0 {
+				t.Error("typed guest failure did not reach the host", provider, state, finished.State, string(finished.Report), err, failure)
+			}
+			if bytes.Contains(wire, []byte(`"Report"`)) {
+				t.Error("guest encoded an absent report", provider, state)
+			}
+		}
+	}
+}
+
+func TestNativeVMFinishedRefusesReportsOutsideCompleteOverTheWire(t *testing.T) {
+	q := nativeRequestFixture(t, Codex)
+	report, _ := json.Marshal(fakeReport(q.Session))
+	code := &nativeVMCodeHostAccess{Version: 2, SessionHash: Digest(q.Session), UID: nativeVMCodeHostUID, InputHash: Digest("input"), OutputHash: Digest("output"), Stopped: true, RelayComplete: true}
+	complete := nativeVMFinished{Version: 1, Binding: q.Binding, RequestHash: Digest(q), State: "complete", Report: report, SourceAudit: []byte("private-audit-placeholder"), AuthReturn: []byte("private-return-placeholder"), CodeHost: code}
+	roundTrip := func(value any) (nativeVMFinished, error) {
+		var wire bytes.Buffer
+		if err := writeVMRecord(&wire, value, 4<<20); err != nil {
+			t.Fatal(err)
+		}
+		return readVMRecord[nativeVMFinished](&wire, 4<<20)
+	}
+	refused := func(got nativeVMFinished) bool {
+		var phase PhaseError
+		failure := got.failure(q)
+		return !got.valid(q) && errors.As(failure, &phase) && phase.State == "invalid_output" && errors.Is(failure, ErrVMBoot)
+	}
+	if got, err := roundTrip(complete); err != nil || got.failure(q) != nil || !bytes.Equal(got.Report, report) {
+		t.Fatal("complete record with a report refused", err)
+	}
+	missing := complete
+	missing.Report = nil
+	if got, err := roundTrip(missing); err != nil || !refused(got) {
+		t.Fatal("complete record without a report accepted", err)
+	}
+	failed := complete
+	failed.State = "auth_failed"
+	if got, err := roundTrip(failed); err != nil || !refused(got) {
+		t.Fatal("typed failure carrying a report accepted", err)
+	}
+	// The guest omits an absent report. An explicit null is not its encoding
+	// and stays a carried value that a typed failure cannot hold.
+	raw, _ := json.Marshal(nativeVMFinished{Version: 1, Binding: q.Binding, RequestHash: Digest(q), State: "auth_failed"})
+	if !bytes.Contains(raw, []byte(`"Report":null`)) {
+		raw = bytes.Replace(raw, []byte(`"State":"auth_failed",`), []byte(`"State":"auth_failed","Report":null,`), 1)
+	}
+	if got, err := roundTrip(json.RawMessage(raw)); err != nil || !refused(got) || string(got.Report) != "null" {
+		t.Fatal("typed failure with an explicit null report accepted", err)
+	}
+	raw, _ = json.Marshal(missing)
+	if !bytes.Contains(raw, []byte(`"Report":null`)) {
+		raw = bytes.Replace(raw, []byte(`"State":"complete",`), []byte(`"State":"complete","Report":null,`), 1)
+	}
+	if got, err := roundTrip(json.RawMessage(raw)); err != nil || !refused(got) || string(got.Report) != "null" {
+		t.Fatal("complete record with an explicit null report accepted", err)
+	}
+}
+
 func TestNativeGuestReturnedFileRequiresBoundedSingleOwnedRegularFile(t *testing.T) {
 	for _, kind := range []string{"valid", "symlink", "parent-escape", "hardlink", "permissions", "oversize", "fifo", "owner"} {
 		t.Run(kind, func(t *testing.T) {

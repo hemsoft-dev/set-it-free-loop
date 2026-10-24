@@ -85,7 +85,11 @@ active response intact. It
 requires the captured model and strict source-tool response policy, and retains
 a stopped host-side provider receipt. Control request/ready/finished envelopes
 bind the full launch, session and request digest; the host must still validate
-their actual source audit/auth return before accepting a report.
+their actual source audit/auth return before accepting a report. A finished
+envelope without a report omits `Report`. Only a `complete` envelope may carry
+one, and an explicit `null` is refused in every state. A valid typed guest
+failure, such as `auth_failed` or `provider_unavailable`, reaches the host with
+its own state.
 
 The host waits for the first private byte within the job's timeout before
 starting its five-second HTTP header timer. VM boot and client initialization
