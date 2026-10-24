@@ -23,6 +23,7 @@ commits in this object store. Capture returns them as a typed
 | `missing_history` | `cat-file -e` exits 1 for the head, base or merge-base commit, or `merge-base` exits 1 because head and base share no ancestor |
 | `ambiguous_history` | `merge-base --all` completes with more than one merge base, more than its bounded output holds, or one that differs from the snapshot's |
 | `inventory_limit` | the complete raw inventory has more than 128 paths or exceeds the two-MiB output cap |
+| `history_limit` | the fetched history overruns an acquisition quarantine object, commit or byte bound ([quarantine verification](GIT-QUARANTINE.md) only) |
 
 `GitStore` reports a nonzero exit status only for a Git process that exited by
 itself before cancellation, and refusals also require the capture deadline to
@@ -35,8 +36,10 @@ refusal as a terminal job and keeps the deferred backoff for everything else.
 In production these answers come from inside the acquisition boundary. The
 worker runs this capture on its fetched quarantine, whose
 [verification](GIT-QUARANTINE.md) classifies the merge-base answers the same
-way, and exports a [refusal record](GIT-MATERIALIZATION.md#capture-refusal-record)
-instead of source.
+way and also answers a definite bound overrun as `history_limit`, and exports a
+[refusal record](GIT-MATERIALIZATION.md#capture-refusal-record) instead of
+source. In-process capture has no quarantine bounds and never returns
+`history_limit`.
 
 Git produces the NUL-delimited raw inventory with full object IDs and renames
 disabled. A rename appears as deletion and addition. Modes, status, object IDs,

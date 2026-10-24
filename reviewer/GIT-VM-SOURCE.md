@@ -55,7 +55,11 @@ source envelope. No existing host journal or release changes mechanism.
 When acquisition reaches a permanent refusal, the guest worker writes
 `writeGitVMRefusal` instead: the same request-bound header followed by the
 host [refusal record](GIT-MATERIALIZATION.md#capture-refusal-record), then a
-normal exit so the guest root still reports a finished record. A refusal from
+normal exit so the guest root still reports a finished record. That includes
+`history_limit`, which the guest's [quarantine verification](GIT-QUARANTINE.md)
+answers under the default acquisition bounds for a definite object, commit or
+byte overrun. The guest's 110-second worker deadline and the host's
+150-second run phase are wall-clock limits, never refusals. A refusal from
 capture after verification produces the same bytes through `writeGitVMExport`.
 `receiveGitVMExport` returns the bare `CaptureRefusal` only for the exact record
 after a valid header for this request.
