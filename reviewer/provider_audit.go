@@ -164,7 +164,9 @@ func (e *ProviderEvidence) validateStoppedCaptured(provider Provider, limits Lim
 		a.Forwarded < 0 || a.Forwarded > a.Requests-a.NegotiationRequests || a.Responses < 0 || a.Responses > a.Forwarded ||
 		a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes+1 || a.ResponseBytes > l.TotalBytes+1-a.RequestBytes ||
 		a.RequestBytes > a.Requests*(l.RequestBytes+1) || a.ResponseBytes > a.Forwarded*(l.ResponseBytes+1) || a.Exhausted && !a.Failed ||
-		a.RouteDenials < 0 || a.ResponseDenials < 0 || a.ResponseDenials > a.Forwarded || (a.RouteDenials > 0 || a.ResponseDenials > 0) && !a.Failed {
+		a.RouteDenials < 0 || a.ResponseDenials < 0 || a.ResponseDenials > a.Forwarded || (a.RouteDenials > 0 || a.ResponseDenials > 0) && !a.Failed ||
+		// Each request denial is a reserved inference that was never forwarded.
+		a.RequestDenials < 0 || a.RequestDenials > a.InferenceRequests || a.RequestDenials > a.Requests-a.NegotiationRequests-a.Forwarded || a.RequestDenials > 0 && (!a.Failed || e.Policy.RequestPolicy == "") {
 		return ErrProviderEgressFailed
 	}
 	return nil

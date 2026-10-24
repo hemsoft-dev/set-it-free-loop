@@ -47,7 +47,7 @@ func TestNativeVMShutdownDrainRevokesWithheldInferenceAndStopsGuestClient(t *tes
 	// the proxy waits for its handler.
 	t.Cleanup(proxy.Close)
 	t.Cleanup(func() { guest.Close(); host.Close() })
-	raw, _ := json.Marshal(map[string]any{"model": p.request.Session.Identity.Model})
+	raw := codexMeasuredBody(t, p.request.Session.Identity.Model)
 	q, _ := http.NewRequest("POST", proxy.URL+"/infer", strings.NewReader(string(raw)))
 	q.Header.Set("Authorization", "Bearer synthetic-native-access")
 	q.Header.Set("Content-Type", "application/json")

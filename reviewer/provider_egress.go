@@ -61,6 +61,10 @@ type EgressPolicy struct {
 	Headers        []string      `json:"headers"`
 	Limits         EgressLimits  `json:"limits"`
 	ResponsePolicy string        `json:"response_policy,omitempty"`
+	// RequestPolicy checks each inference request's tool inventory before it
+	// is forwarded. Omitted when empty, so existing policy hashes keep their
+	// bytes.
+	RequestPolicy string `json:"request_policy,omitempty"`
 }
 
 // ProviderAccess is a private supervisor receipt, never model-authored usage.
@@ -93,6 +97,10 @@ type ProviderAccess struct {
 	// policy refused. Transport, status, size, read and format failures never
 	// reach that validator and are not counted. Omitted when zero.
 	ResponseDenials int `json:"response_denials,omitempty"`
+	// RequestDenials counts completely read inference requests the request
+	// policy refused. A refused request is reserved and charged but never
+	// forwarded. Omitted when zero.
+	RequestDenials int `json:"request_denials,omitempty"`
 }
 
 // ValidateCompleted is required before accepting a model report. A successful
@@ -116,7 +124,7 @@ func (a *ProviderAccess) validateCompletedCaptured(provider Provider, limits Lim
 		return ErrProviderEgressFailed
 	}
 	l := p.Limits
-	if len(inputHash) != 64 || !objectID.MatchString(inputHash) || a.Version != 1 || a.SessionHash != inputHash || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes || a.RouteDenials != 0 || a.ResponseDenials != 0 {
+	if len(inputHash) != 64 || !objectID.MatchString(inputHash) || a.Version != 1 || a.SessionHash != inputHash || a.PolicyHash != Digest(p) || a.Failed || a.Exhausted || a.InferenceRequests < 1 || a.InferenceRequests > l.InferenceRequests || a.RefreshRequests < 0 || a.RefreshRequests > l.RefreshRequests || a.MetadataRequests < 0 || a.MetadataRequests > l.MetadataRequests || a.NegotiationRequests < 0 || a.NegotiationRequests > l.NegotiationRequests || a.NegotiationResponses != a.NegotiationRequests || a.Requests != a.InferenceRequests+a.RefreshRequests+a.MetadataRequests+a.NegotiationRequests || a.Requests > l.Requests || a.Requests-a.NegotiationRequests != a.Forwarded || a.Forwarded != a.Responses || a.RequestBytes < 0 || a.ResponseBytes < 0 || a.RequestBytes > l.TotalBytes || a.ResponseBytes > l.TotalBytes-a.RequestBytes || a.RequestBytes > a.Forwarded*l.RequestBytes || a.ResponseBytes > a.Forwarded*l.ResponseBytes || a.RouteDenials != 0 || a.ResponseDenials != 0 || a.RequestDenials != 0 {
 		return ErrProviderEgressFailed
 	}
 	return nil
@@ -211,7 +219,7 @@ func NewProviderEgress(ctx context.Context, s Session, p EgressPolicy, transport
 // validateEgressPolicy is shared by launch construction and stopped-attempt
 // recovery. Validation neither opens a transport nor creates a live bridge.
 func validateEgressPolicy(provider Provider, limits Limits, p EgressPolicy) (map[string]bool, error) {
-	if !validResponsePolicy(provider, p.ResponsePolicy) || !provider.Valid() || limits.Validate() != nil || p.Provider != provider || len(p.Routes) == 0 || len(p.Routes) > 16 || len(p.Headers) > 24 {
+	if !validResponsePolicy(provider, p.ResponsePolicy) || !validRequestPolicy(provider, p.RequestPolicy) || !provider.Valid() || limits.Validate() != nil || p.Provider != provider || len(p.Routes) == 0 || len(p.Routes) > 16 || len(p.Headers) > 24 {
 		return nil, ErrLiveBlocked
 	}
 	m := egressLimits(provider, limits.MaxTurns)
@@ -441,6 +449,19 @@ func (b *ProviderEgress) denyRoute() {
 	b.cancel()
 }
 
+// denyRequest records a request-policy refusal and fails the session. The
+// refused request has been reserved and read but is never forwarded.
+func (b *ProviderEgress) denyRequest() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.audit.Stopped {
+		return
+	}
+	b.audit.RequestDenials++
+	b.audit.Failed = true
+	b.cancel()
+}
+
 // denyResponse records a response-policy refusal and fails the session.
 func (b *ProviderEgress) denyResponse() {
 	b.mu.Lock()
@@ -529,6 +550,14 @@ func (b *ProviderEgress) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil || len(body) > requestCap || len(r.Trailer) != 0 || ctx.Err() != nil {
 		b.fail(len(body) > requestCap)
 		http.Error(w, "provider input incomplete or oversized", http.StatusRequestEntityTooLarge)
+		return
+	}
+	// The complete inference body is checked before any upstream request is
+	// built, so a refused inventory never reaches the provider. Nonretryable
+	// status plus the latched failure stops the client from replaying it.
+	if route.Kind == "inference" && validateProviderRequest(b.policy.Provider, b.policy.RequestPolicy, body) != nil {
+		b.denyRequest()
+		http.Error(w, "provider tool request denied", http.StatusBadRequest)
 		return
 	}
 	if route.Kind == "local_negotiation" {

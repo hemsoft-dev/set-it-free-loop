@@ -140,6 +140,38 @@ func TestGuardCasesRequireResponsePolicyDenial(t *testing.T) {
 	}
 }
 
+// The codex-metadata case passes its refused variant only on the supervisor's
+// own request-policy denial of the single inference, with every other reserved
+// request forwarded and answered. The measured pre-#276 outcome, a forwarded
+// widened request whose response the response policy refused, does not count.
+func TestMetadataCaseRequiresRequestPolicyDenial(t *testing.T) {
+	// Five metadata requests and the local negotiation, as measured, then the
+	// refused inference.
+	denied := r.ProviderAccess{Failed: true, Requests: 7, InferenceRequests: 1, MetadataRequests: 5, NegotiationRequests: 1, NegotiationResponses: 1, Forwarded: 5, Responses: 5, RequestDenials: 1}
+	if !requestPolicyDenied(&r.ProviderEvidence{Access: denied}) {
+		t.Fatal("request-policy denial rejected")
+	}
+	change := func(edit func(*r.ProviderAccess)) r.ProviderAccess { a := denied; edit(&a); return a }
+	for name, access := range map[string]r.ProviderAccess{
+		"measured-response-denial": {Failed: true, Requests: 7, InferenceRequests: 1, MetadataRequests: 5, NegotiationRequests: 1, NegotiationResponses: 1, Forwarded: 6, Responses: 5, ResponseDenials: 1},
+		"not-failed":               change(func(a *r.ProviderAccess) { a.Failed = false }),
+		"no-denial":                change(func(a *r.ProviderAccess) { a.RequestDenials = 0 }),
+		"two-denials":              change(func(a *r.ProviderAccess) { a.RequestDenials, a.InferenceRequests, a.Requests = 2, 2, 8 }),
+		"second-inference":         change(func(a *r.ProviderAccess) { a.InferenceRequests, a.Requests, a.Forwarded, a.Responses = 2, 8, 6, 6 }),
+		"inference-forwarded":      change(func(a *r.ProviderAccess) { a.Forwarded, a.Responses = 6, 6 }),
+		"unanswered-forward":       change(func(a *r.ProviderAccess) { a.Responses = 4 }),
+		"also-response-denial":     change(func(a *r.ProviderAccess) { a.ResponseDenials = 1 }),
+		"also-route-denial":        change(func(a *r.ProviderAccess) { a.RouteDenials = 1 }),
+	} {
+		if requestPolicyDenied(&r.ProviderEvidence{Access: access}) {
+			t.Fatal("other failure accepted as request denial", name)
+		}
+	}
+	if requestPolicyDenied(nil) {
+		t.Fatal("missing evidence accepted")
+	}
+}
+
 // An exhaustion case that returns auth normally must still return the original
 // synthetic tokens; a client that rewrote them cannot pass as returned.
 func TestExhaustionReturnedAuthRequiresOriginalSyntheticTokens(t *testing.T) {

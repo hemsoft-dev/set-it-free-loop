@@ -82,7 +82,8 @@ serializes HTTP/1 through response EOF, including the local WebSocket rejection;
 ordinary and Upgrade requests cannot select separate connection pools. A partial
 response close retires the stream, while a cancelled queued request leaves the
 active response intact. It
-requires the captured model and strict source-tool response policy, and retains
+requires the captured model, the strict source-tool response policy and, for
+Codex, the request inventory policy, and retains
 a stopped host-side provider receipt. Control request/ready/finished envelopes
 bind the full launch, session and request digest; the host must still validate
 their actual source audit/auth return before accepting a report. A finished
@@ -186,8 +187,9 @@ remains a separate requirement.
 `--case hostile --hostile NAME` drives both pinned clients with forbidden tool,
 hostile source, code-mode and metadata turns. Canaries are scanned throughout.
 [HOSTILE-FIXTURES.md](HOSTILE-FIXTURES.md) records the measured matrix and the
-per-client capability matrix. It also records a contained Codex client failure
-that blocks live Codex use, and the code-mode owner decision.
+per-client capability matrix. It also records the Codex client capability
+failure, which the host request policy now refuses before egress, the gates
+that still block live Codex use, and the code-mode owner decision.
 
 The captured host runtime includes the ancillary Linux boot ROM selected by the
 [x86 loader in QEMU 10.2.1](https://raw.githubusercontent.com/qemu/qemu/v10.2.1/hw/i386/x86-common.c).

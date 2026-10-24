@@ -134,13 +134,45 @@ class HostileMatrixTests(unittest.TestCase):
             self.assertEqual(module.verdict("codex-shell", bad), "fail", bad)
 
     def test_client_failure_requires_contained_host_and_only_inventory_checks(self):
-        failed = result("codex-metadata", 1, Passed=False)
+        failed = result("claude-source-mcp", Passed=False)
         failed["Checks"].update({"inventory-fixed": False, "no-backend-problem": False})
-        self.assertEqual(module.verdict("codex-metadata", failed), "client-failure")
-        self.assertEqual(module.verdict("codex-metadata", dict(failed, HostContained=False)), "fail")
-        self.assertEqual(module.verdict("codex-metadata", dict(failed, Passed=True)), "fail")
+        self.assertEqual(module.verdict("claude-source-mcp", failed), "client-failure")
+        self.assertEqual(module.verdict("claude-source-mcp", dict(failed, HostContained=False)), "fail")
+        self.assertEqual(module.verdict("claude-source-mcp", dict(failed, Passed=True)), "fail")
         widened = dict(failed, Checks=dict(failed["Checks"], **{"no-canary-in-requests": False}))
-        self.assertEqual(module.verdict("codex-metadata", widened), "fail")
+        self.assertEqual(module.verdict("claude-source-mcp", widened), "fail")
+
+    def test_codex_inventory_change_is_a_host_failure(self):
+        # The Codex request policy owns the inventory. A changed inventory that
+        # reached the model is never a contained client failure.
+        for name in ["codex-source-mcp", "codex-shell", "codex-code-probe"]:
+            failed = result(name, Passed=False)
+            failed["Checks"].update({"inventory-fixed": False, "no-backend-problem": False})
+            self.assertEqual(module.verdict(name, failed), "fail", name)
+        # A Codex backend problem alone may still be a contained client failure.
+        problem = result("codex-source-mcp", Passed=False)
+        problem["Checks"]["no-backend-problem"] = False
+        self.assertEqual(module.verdict("codex-source-mcp", problem), "client-failure")
+
+    def test_codex_metadata_requires_the_request_refusal(self):
+        refused = result("codex-metadata", 1)
+        self.assertEqual(set(refused["Checks"]), module.COMMON_CHECKS - {"inventory-fixed"} | module.REQUEST_REFUSAL_CHECKS)
+        self.assertEqual(module.verdict("codex-metadata", refused), "pass")
+        for check in ["request-policy-denied", "no-inference-forwarded", "auth-returned", "unit-captured-and-stopped"]:
+            failed = dict(refused, Passed=False, HostContained=False, Checks=dict(refused["Checks"], **{check: False}))
+            self.assertEqual(module.verdict("codex-metadata", failed), "fail", check)
+        # The measured pre-#276 result: the widened request reached the model
+        # and only the response policy refused its tool calls. Even with every
+        # host check true it no longer matches a metadata check set.
+        forwarded = result("codex-metadata", Passed=False, HostContained=True,
+                           Checks=dict.fromkeys(module.COMMON_CHECKS | {"metadata-delivered"} | module.GUARD_CHECKS, True))
+        forwarded["Checks"].update({"inventory-fixed": False, "no-backend-problem": False})
+        self.assertEqual(module.verdict("codex-metadata", forwarded), "fail")
+        # A widened request that reached the model under the new check set.
+        leaked = dict(refused, Passed=False, HostContained=False,
+                      Checks=dict(refused["Checks"], **{"request-policy-denied": False, "no-inference-forwarded": False,
+                                                        "no-backend-problem": False}))
+        self.assertEqual(module.verdict("codex-metadata", leaked), "fail")
 
     def test_baseline_denial_requires_negative_pass(self):
         base = {"FakeOnly": True, "RuntimeQualified": False, "ProviderEligibilityQualified": False, "Passed": True, "Negative": True}

@@ -55,7 +55,7 @@ func (q nativeVMRequest) valid() bool {
 	if _, err := validateEgressPolicy(q.Session.Identity.Provider, q.Session.Limits, q.Policy); err != nil {
 		return false
 	}
-	if (q.Session.Identity.Provider == Codex && q.Policy.ResponsePolicy != CodexSourceResponses) || (q.Session.Identity.Provider == Claude && q.Policy.ResponsePolicy != ClaudeSourceMessages) {
+	if !nativeSourcePolicies(q.Session.Identity.Provider, q.Policy) {
 		return false
 	}
 	previous := ""

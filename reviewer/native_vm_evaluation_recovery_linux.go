@@ -147,8 +147,7 @@ func (v *NativeVMSupervisor) StoppedAttemptEvidence(ctx context.Context, binding
 	if !bytes.Equal(requestRaw, canonical) {
 		return fail()
 	}
-	policy := intent.Provider.Policy.ResponsePolicy
-	if (capability.Identity.Provider == Codex && policy != CodexSourceResponses) || (capability.Identity.Provider == Claude && policy != ClaudeSourceMessages) {
+	if !nativeSourcePolicies(capability.Identity.Provider, intent.Provider.Policy) {
 		return fail()
 	}
 	sourceRaw, err := readNativeEvidenceFile(held.root, "source-access.json", 2<<20)

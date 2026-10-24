@@ -60,6 +60,13 @@ the launcher's responsibility. Content-Length must agree with parsed framing,
 then the bridge rebuilds framing from the bounded captured body. It forwards only
 allowlisted headers to the captured HTTPS endpoint and requests identity encoding.
 
+A captured Codex `RequestPolicy` checks each complete inference body before
+the upstream request is built. A request whose advertised tool inventory is
+not the measured code-mode pair gets a fixed HTTP400 and latches failure. It
+stays charged as a reserved inference, is counted in `request_denials` and is
+never forwarded. [RESPONSE-TOOLS.md](RESPONSE-TOOLS.md#codex-request-tool-inventory)
+records the accepted shape and its evidence. Claude has no request policy.
+
 Responses are buffered through a strict bound before any provider payload reaches
 the client. Redirects, upgrades, compression, trailers, incomplete responses and
 non-JSON/non-SSE payloads fail. Only response Content-Type and the bounded body
@@ -100,8 +107,8 @@ release a possibly live worker lease. A stopped receipt can still record failed
 or exhausted work. Before accepting a model report, the supervisor must call
 `ValidateCompleted` with the original session and policy. It requires at least
 one inference request, complete forwarded responses, matching local negotiation
-request/response counts, consistent total counters and no
-failure or exhaustion. Missing/stale receipts cannot become measured zero usage.
+request/response counts, consistent total counters, no route, request or
+response denial and no failure or exhaustion. Missing/stale receipts cannot become measured zero usage.
 Forwarded and upstream-response counts exclude the local426; total requests
 include it. Codex metadata has a separate ceiling of five based on the pinned
 client capture after telemetry suppression; Claude retains its ceiling of four.

@@ -39,7 +39,7 @@ func NewNativeVMReviewer(o NativeVMOptions) (*NativeVMReviewer, error) {
 	if !o.Provider.Valid() || !sourcePath(o.Root) || !sourcePath(o.Stub) || !validAuthHash(o.StubHash) || o.Auth == nil || o.Auth.provider != o.Provider || o.Reader == nil || o.Transport == nil || o.Check == nil || o.Policy.Provider != o.Provider || !o.ProfileHints.valid(o.Provider) {
 		return nil, ErrLiveBlocked
 	}
-	if (o.Provider == Codex && o.Policy.ResponsePolicy != CodexSourceResponses) || (o.Provider == Claude && o.Policy.ResponsePolicy != ClaudeSourceMessages) {
+	if !nativeSourcePolicies(o.Provider, o.Policy) {
 		return nil, ErrLiveBlocked
 	}
 	// Filesystem and account state remain unopened at construction.
@@ -411,7 +411,7 @@ func (p *nativeVMHostPhase) finishTask(ctx context.Context, report nativeVMTaskR
 
 	// A failure after shutdown revoked provider intake reports the shutdown,
 	// so the controller may requeue the stopped job under its consumed
-	// budget. A latched route or response refusal, or exhaustion, keeps its
+	// budget. A latched route, request or response refusal, or exhaustion, keeps its
 	// own classification.
 	if primary != nil && drained && !nativeProviderRefused(evidence) {
 		primary = errors.Join(primary, context.Canceled)
@@ -469,7 +469,7 @@ func (p *nativeVMHostPhase) shutdownDrained() bool {
 }
 
 func nativeProviderRefused(evidence *ProviderEvidence) bool {
-	return evidence != nil && (evidence.Access.RouteDenials > 0 || evidence.Access.ResponseDenials > 0 || evidence.Access.Exhausted)
+	return evidence != nil && (evidence.Access.RouteDenials > 0 || evidence.Access.ResponseDenials > 0 || evidence.Access.RequestDenials > 0 || evidence.Access.Exhausted)
 }
 
 // A stopped CLI can return its old file after the provider already rotated it.

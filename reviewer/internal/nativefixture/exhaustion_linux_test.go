@@ -4,9 +4,7 @@ package nativefixture
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -197,12 +195,7 @@ func TestCodeMemoryRunsAControlCellBeforeTheOverBoundCell(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := func(id, text string) *http.Request {
-		item, _ := json.Marshal(map[string]any{"type": "custom_tool_call_output", "call_id": id, "output": []map[string]string{{"type": "input_text", "text": "Script completed\nOutput:\n" + text}}})
-		q := inferenceRequest(s, "")
-		raw, _ := io.ReadAll(q.Body)
-		body := strings.Replace(string(raw), `}]}]}]`, `}]}]},`+string(item)+`]`, 1)
-		q.Body, q.ContentLength = io.NopCloser(strings.NewReader(body)), int64(len(body))
-		return q
+		return codexInferenceRequest(s, map[string]any{"type": "custom_tool_call_output", "call_id": id, "output": []map[string]string{{"type": "input_text", "text": "Script completed\nOutput:\n" + text}}})
 	}
 	for turn, tc := range []struct {
 		request          *http.Request

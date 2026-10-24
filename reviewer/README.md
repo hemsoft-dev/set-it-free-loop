@@ -45,7 +45,10 @@ The [native VM host and guest](NATIVE-VM.md) connect the pinned clients to a
 separate reader, private provider transport and one-use auth transfer. Both
 clients have completed opt-in KVM reviews against fake TLS. The
 [hostile capability fixtures](HOSTILE-FIXTURES.md) record measured refusals.
-Live Codex use is blocked by a contained client capability failure. Full runtime
+Live Codex use is blocked. Hostile model metadata still widens the Codex
+client's tool inventory; the host request policy now refuses such requests
+before egress, but real catalogs are unchecked, provider permission (#173) is
+outstanding and code mode needs an owner decision. Full runtime
 qualification and live execution still require passing gates and activation
 authority. Substituting a fake is not production isolation proof. Optional
 trusted `SourceBridge` configuration binds each session to
@@ -90,6 +93,8 @@ credentials or qualify production credential transfer and OS containment.
 [Provider HTTP egress](PROVIDER-EGRESS.md) supplies exact route guards, separate
 inference/refresh request budgets, bounded payloads and private completion audits.
 Its concrete transport rejects private destinations and hidden connection retries.
+[Provider tool policies](RESPONSE-TOOLS.md) refuse forbidden tool calls in
+responses and, for Codex, any request advertising more than the code-mode pair.
 The [native VM assembly](NATIVE-VM.md) implements the bounded private provider
 stream, guest proxy, separate roles and captured policy/launch checks. Its source
 and fake-backend runs do not qualify complete physical egress/resource/crash

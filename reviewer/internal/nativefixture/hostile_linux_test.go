@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -39,13 +40,44 @@ func (t *handlerTransport) RoundTrip(q *http.Request) (*http.Response, error) {
 	return w.Result(), nil
 }
 
-// inferenceRequest is the minimal pinned-client request shape the fake backend
-// accepts: captured model and the fixed source tool inventory.
+// codexMeasuredBody is the sanitized first-turn request captured from the
+// pinned Codex 0.163.0 code-mode client, with model set and items appended to
+// its input. The host request policy accepts exactly this inventory.
+func codexMeasuredBody(model string, items ...any) string {
+	raw, err := os.ReadFile("../../testdata/codex-0.163.0-code-mode-requests.json")
+	if err != nil {
+		panic(err)
+	}
+	var requests []map[string]any
+	if json.Unmarshal(raw, &requests) != nil || len(requests) != 2 {
+		panic("measured Codex requests unreadable")
+	}
+	request := requests[0]
+	request["model"] = model
+	request["input"] = append(request["input"].([]any), items...)
+	body, _ := json.Marshal(request)
+	return string(body)
+}
+
+// inferenceRequest is the pinned-client request shape the fake backend and
+// the host policies accept: captured model and the fixed source tool
+// inventory. Extra is raw JSON appended to the top-level object.
 func inferenceRequest(s r.Session, extra string) *http.Request {
 	path, body := "/v1/messages?beta=true", `{"model":"`+s.Identity.Model+`","tools":[{"name":"mcp__sfl-source__read"},{"name":"mcp__sfl-source__search"},{"name":"StructuredOutput"}],"messages":[]`+extra+`}`
 	if s.Identity.Provider == r.Codex {
-		path, body = "/v1/responses", `{"model":"`+s.Identity.Model+`","input":[{"type":"additional_tools","tools":[{"type":"namespace","name":"functions","tools":[{"name":"exec","description":"mcp__sfl_source__read mcp__sfl_source__search"},{"name":"wait"}]}]}]`+extra+`}`
+		measured := codexMeasuredBody(s.Identity.Model)
+		path, body = "/v1/responses", measured[:len(measured)-1]+extra+`}`
 	}
+	return inferenceRequestBody(s, path, body)
+}
+
+// codexInferenceRequest appends history items, such as a tool output, to the
+// measured Codex request.
+func codexInferenceRequest(s r.Session, items ...any) *http.Request {
+	return inferenceRequestBody(s, "/v1/responses", codexMeasuredBody(s.Identity.Model, items...))
+}
+
+func inferenceRequestBody(s r.Session, path, body string) *http.Request {
 	q := httptest.NewRequest("POST", path, strings.NewReader(body))
 	q.Host = "fixture.provider.example"
 	q.Header.Set("Authorization", "Bearer sfl-fake-access")
@@ -81,7 +113,9 @@ func TestHostileCasesAreUniqueAndProviderBound(t *testing.T) {
 
 // Every guard case must be refused by the actual host response policy before a
 // byte reaches the client. A source turn through the same harness is admitted,
-// so the refusal is not an artifact of the test transport.
+// so the refusal is not an artifact of the test transport. The codex-metadata
+// request, which re-advertises direct tools, must be refused by the host
+// request policy before it reaches the fake model at all.
 func TestHostileGuardTurnsAreRefusedByTheHostResponsePolicy(t *testing.T) {
 	canaries, err := NewCanaries()
 	if err != nil {
@@ -121,21 +155,67 @@ func TestHostileGuardTurnsAreRefusedByTheHostResponsePolicy(t *testing.T) {
 				defer guard.Close(context.Background())
 				q := inferenceRequest(s, "")
 				if c.Name == "codex-metadata" {
-					// Direct tools re-advertised by injected metadata.
-					q = httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{"model":"`+s.Identity.Model+`","tools":[{"type":"custom","name":"apply_patch"},{"type":"function","name":"read_mcp_resource"}],"input":[]}`))
-					q.Host = "fixture.provider.example"
-					q.Header.Set("Authorization", "Bearer sfl-fake-access")
+					// Direct tools re-advertised by injected metadata, as the
+					// measured case recorded, beside the code-mode item.
+					q = inferenceRequest(s, `,"tools":[{"type":"custom","name":"apply_patch"},{"type":"function","name":"read_mcp_resource"}]`)
 				}
 				w := httptest.NewRecorder()
 				guard.ServeHTTP(w, q)
 				observed := backend.Hostile()
+				if c.Name == "codex-metadata" {
+					audit := guard.Snapshot()
+					if w.Code != 400 || !strings.Contains(w.Body.String(), "provider tool request denied") || !audit.Failed || audit.RequestDenials != 1 || audit.Forwarded != 0 || transport.calls != 0 || observed.Turns != 0 || len(observed.Inventory) != 0 {
+						t.Fatal("re-advertised direct tools crossed the host request policy", w.Code, w.Body.String(), audit, transport.calls, observed)
+					}
+					return
+				}
 				if w.Code != 400 || !strings.Contains(w.Body.String(), "provider tool response denied") || !guard.Snapshot().Failed || transport.calls != 1 || observed.Turns != 1 {
 					t.Fatal("hostile turn crossed the host response policy", w.Code, w.Body.String(), observed)
 				}
-				if c.Name == "codex-metadata" && (CodexInventoryAllowed(observed.Inventory) || len(observed.Problems) == 0) {
-					t.Fatal("re-advertised direct tools were not recorded", observed)
-				}
 			})
+		}
+	}
+}
+
+// The test-only inventory flattener and the production request policy agree
+// on every measured pinned-client inventory: the code-mode capture is the
+// allowed pair and is forwarded, and the widened capture is neither.
+func TestFixtureInventoryAgreesWithTheHostRequestPolicy(t *testing.T) {
+	s := hostileSession(t, r.Codex)
+	widened, err := os.ReadFile("../../testdata/codex-0.163.0-widened-code-mode-tools.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var item any
+	if json.Unmarshal(widened, &item) != nil {
+		t.Fatal("widened capture unreadable")
+	}
+	measured := codexMeasuredBody(s.Identity.Model)
+	var request map[string]any
+	_ = json.Unmarshal([]byte(measured), &request)
+	request["input"].([]any)[0] = item
+	raw, _ := json.Marshal(request)
+	for _, c := range []struct {
+		body    string
+		allowed bool
+	}{{measured, true}, {string(raw), false}} {
+		var body map[string]any
+		if json.Unmarshal([]byte(c.body), &body) != nil || CodexInventoryAllowed(codexInventory(body)) != c.allowed {
+			t.Fatal("fixture flattener disagrees with the measured capture", c.allowed, codexInventory(body))
+		}
+		control, policy, err := New(s, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		transport := &handlerTransport{handler: control}
+		guard, err := r.NewProviderEgress(context.Background(), s, policy, transport)
+		if err != nil {
+			t.Fatal(err)
+		}
+		guard.ServeHTTP(httptest.NewRecorder(), inferenceRequestBody(s, "/v1/responses", c.body))
+		audit, _ := guard.Close(context.Background())
+		if (transport.calls == 1) != c.allowed || (audit.RequestDenials == 0) != c.allowed {
+			t.Fatal("host request policy disagrees with the measured capture", c.allowed, transport.calls, audit)
 		}
 	}
 }

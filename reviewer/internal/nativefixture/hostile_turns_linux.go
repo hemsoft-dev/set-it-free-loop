@@ -315,8 +315,10 @@ func (b *codexBackend) hostileTurn(w http.ResponseWriter, q *http.Request, body 
 	case h.c.Kind == HostileGuard && b.calls == 1:
 		sse(w, map[string]any{"type": "response.output_item.done", "item": codexGuardItem(h.c.Name)})
 	case h.c.Kind == HostileMetadata && b.calls == 1 && !CodexInventoryAllowed(inventory):
-		// Injected metadata restored direct tools. Try to use them; the host
-		// response policy, not the client, must refuse this turn.
+		// Injected metadata restored direct tools. The host request policy
+		// must refuse such a request before it is forwarded, so reaching this
+		// turn already fails the case. Still try to use the tools: the response
+		// policy remains a second host layer behind it.
 		patch := "*** Begin Patch\n*** Add File: /profile/codex/sfl-canary.txt\n+synthetic forbidden write\n*** End Patch\n"
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "custom_tool_call", "call_id": "h_patch", "name": "apply_patch", "input": patch}})
 		sse(w, map[string]any{"type": "response.output_item.done", "item": map[string]any{"type": "function_call", "call_id": "h_resource", "name": "read_mcp_resource", "arguments": `{"server":"sfl-source","uri":"file:///profile/codex/auth.json"}`}})

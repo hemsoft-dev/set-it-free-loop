@@ -103,7 +103,7 @@ func startNativeProviderBridge(ctx context.Context, s Session, policy EgressPoli
 	if channel == nil {
 		return nil, ErrLiveBlocked
 	}
-	if (s.Identity.Provider == Codex && policy.ResponsePolicy != CodexSourceResponses) || (s.Identity.Provider == Claude && policy.ResponsePolicy != ClaudeSourceMessages) {
+	if !nativeSourcePolicies(s.Identity.Provider, policy) {
 		return nil, ErrLiveBlocked
 	}
 	guard, err := NewProviderEgress(ctx, s, policy, transport)
