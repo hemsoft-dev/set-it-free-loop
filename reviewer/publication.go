@@ -316,7 +316,7 @@ func (p Publisher) PrepareStatuses(ctx context.Context) error {
 			if reported {
 				continue
 			}
-			doc, err := renderOutcome(Outcome{Job: j.Job, State: j.State, Artifacts: j.Checkpoint.Artifacts}, nil)
+			doc, err := renderOutcome(Outcome{Job: j.Job, State: j.State, Artifacts: j.Checkpoint.Artifacts, ConsumedSessions: j.Checkpoint.ConsumedSessions}, nil)
 			if err != nil {
 				return err
 			}

@@ -163,6 +163,21 @@ func phaseState(err error) string {
 	return "provider_unavailable"
 }
 
+// ErrSessionBudgetExhausted reports a job whose remaining captured session
+// budget can no longer run every phase it still needs. It ends the job before
+// any session starts, so no provider usage is spent on a certain incomplete.
+var ErrSessionBudgetExhausted = errors.New("captured session budget cannot complete the remaining phases")
+
+// sessionBudgetFits reports whether a job's remaining captured session budget
+// can run every phase the engine still plans: one session per provider and
+// round, less the validated artifacts it resumes. Every charged session
+// without an artifact (an interrupted, failed or shutdown-ended phase) leaves
+// the schedule one session short, because the budget equals the schedule.
+func sessionBudgetFits(job Job, cp Checkpoint) bool {
+	phases := len(job.Config.Providers()) * job.Config.Rounds()
+	return job.Config.MaxSessions()-cp.ConsumedSessions >= phases-len(cp.Artifacts)
+}
+
 // Run executes a bounded sequential protocol. Valid artifacts can resume only
 // the exact captured job, input, configuration, release and snapshot. It performs
 // no publication, automatic transport retry or change of selected provider mode.
@@ -202,6 +217,10 @@ func (e Engine) Run(ctx context.Context, job Job, checkpoint Checkpoint) (Outcom
 		if _, ok := cache[key]; !ok {
 			return fail("invalid_output", errors.New("resume artifacts are not a valid phase prefix"))
 		}
+	}
+	// Start no phase of a schedule the remaining budget cannot finish.
+	if !sessionBudgetFits(job, checkpoint) {
+		return fail("incomplete_expired", ErrSessionBudgetExhausted)
 	}
 	var reports []Report
 	for round := 1; round <= job.Config.Rounds(); round++ {

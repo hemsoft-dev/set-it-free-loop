@@ -535,6 +535,17 @@ func (c *PollingController) beforeWork(ctx context.Context, w *pollWork) (bound 
 
 func (c *PollingController) runWork(ctx context.Context, w *pollWork) {
 	defer close(w.done)
+	// A retained job that can no longer finish its schedule ends incomplete
+	// before restoration, a runtime or a claim. A failed qualification instead
+	// takes the ordinary path below.
+	if w.job != "" && c.options.Check(ctx, c.options.Enrollment, c.options.Release) == nil {
+		if expired, err := c.options.Store.expireUnfinishable(ctx, w.job); err != nil || expired {
+			c.mu.Lock()
+			w.err = err
+			c.mu.Unlock()
+			return
+		}
+	}
 	bound, job, err := c.beforeWork(ctx, w)
 	refused := err == errCaptureRefused
 	if refused {

@@ -645,6 +645,12 @@ func (s *Store) claimJob(ctx context.Context, id string, now time.Time) (*Durabl
 		if j.State != "queued" && j.State != "quota_wait" {
 			return ErrDeferred
 		}
+		// A job whose remaining budget cannot finish its schedule ends here,
+		// before a lease, quota wait or session, as an expired wait does.
+		if !sessionBudgetFits(j.Job, j.Checkpoint) {
+			j.State = "incomplete_expired"
+			return nil
+		}
 		daily := 0
 		for _, other := range d.Jobs {
 			if chargedOn(other, now.UTC().Format("2006-01-02")) {
@@ -1270,9 +1276,45 @@ func (s *Store) ResumeUnavailable(ctx context.Context, id string, now time.Time)
 		if now.Sub(j.CreatedAt) > j.Job.Config.QuotaWait || j.Checkpoint.ConsumedSessions >= j.Job.Config.MaxSessions() {
 			return ErrDeferred
 		}
+		// A charged session without a result leaves too little budget for the
+		// schedule. Such a job is never requeued to spend more sessions.
+		if !sessionBudgetFits(j.Job, j.Checkpoint) {
+			return ErrSessionBudgetExhausted
+		}
 		j.State = "queued"
 		return nil
 	})
+}
+
+var errBudgetUnchanged = errors.New("job budget unchanged")
+
+// expireUnfinishable ends a current, unleased queued or quota-waiting job as
+// incomplete_expired when its remaining session budget can no longer finish
+// its schedule (sessionBudgetFits). It starts nothing and reports whether it
+// ended the job; the controller calls it before restoring evidence or
+// building a runtime, so a certain incomplete spends no further work.
+func (s *Store) expireUnfinishable(ctx context.Context, id string) (bool, error) {
+	err := s.update(ctx, func(d *DurableState) error {
+		j := d.Jobs[id]
+		if j == nil || j.LeaseToken != "" || j.Outstanding || (j.State != "queued" && j.State != "quota_wait") || sessionBudgetFits(j.Job, j.Checkpoint) {
+			return errBudgetUnchanged
+		}
+		p := d.PRs[j.Scope.key()]
+		if p == nil || p.Paused || p.Generation != j.Job.Generation || p.CurrentRequest != j.RequestID {
+			return errBudgetUnchanged
+		}
+		for _, other := range d.Jobs {
+			if other.LeaseToken != "" {
+				return errBudgetUnchanged
+			}
+		}
+		j.State = "incomplete_expired"
+		return nil
+	})
+	if errors.Is(err, errBudgetUnchanged) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func retireFencedJobs(d *DurableState, p *PRRecord) {

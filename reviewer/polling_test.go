@@ -701,7 +701,16 @@ func TestPollingQualificationInterruptionIsExplicitlyRecoverable(t *testing.T) {
 			if err != nil || result.Active {
 				t.Fatal("automatically repaired qualification interruption", result, err)
 			}
-			if err := f.store.ResumeUnavailable(context.Background(), original.ID, f.clock.Now()); err != nil {
+			err = f.store.ResumeUnavailable(context.Background(), original.ID, f.clock.Now())
+			if !factory {
+				// The interrupted provider session stays charged without a
+				// result, so the budget cannot finish the schedule.
+				if !errors.Is(err, ErrSessionBudgetExhausted) {
+					t.Fatal("an unfinishable interrupted job was requeued", err)
+				}
+				return
+			}
+			if err != nil {
 				t.Fatal("original request cannot resume", err)
 			}
 			d, _ = f.store.Snapshot(context.Background())

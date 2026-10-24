@@ -336,8 +336,14 @@ func TestLeaseDoesNotStealExpiredWorkerAndCrashConsumesBudget(t *testing.T) {
 	if err = s.ReleaseStopped(ctx, job.ID, token, "queued"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.Claim(ctx, job.ID, now); err != nil {
-		t.Fatal(err)
+	// The crashed session leaves three sessions for four phases, so the claim
+	// ends the job incomplete instead of leasing it for more sessions.
+	if _, err = s.Claim(ctx, job.ID, now); !errors.Is(err, ErrDeferred) {
+		t.Fatal("an unfinishable job was claimed", err)
+	}
+	d, _ = s.Snapshot(ctx)
+	if j := d.Jobs[job.ID]; j.State != "incomplete_expired" || j.LeaseToken != "" || j.Checkpoint.ConsumedSessions != 1 {
+		t.Fatal("unfinishable job not ended incomplete", j.State, j.LeaseToken, j.Checkpoint.ConsumedSessions)
 	}
 }
 func TestSQLiteConcurrentAdmissionAcrossHandles(t *testing.T) {
@@ -997,13 +1003,6 @@ func TestFailedRefundRetainsLeaseForExplicitDurableRecovery(t *testing.T) {
 	s, job, _ := admittedFixture(t)
 	ctx := context.Background()
 	now := controlTime.Add(4 * time.Minute)
-	// Three earlier uncertain attempts left exactly one session available.
-	if err := s.update(ctx, func(d *DurableState) error {
-		d.Jobs[job.ID].Checkpoint.ConsumedSessions = 3
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
 	preflightErr := errors.New("fixture authentication failure before work")
 	engine := testEngine(t, func(context.Context, Session) (Report, error) {
 		_, err := s.db.Exec(`CREATE TRIGGER refund_fault BEFORE UPDATE ON state BEGIN SELECT RAISE(FAIL, 'refund_fault'); END`)
@@ -1021,7 +1020,7 @@ func TestFailedRefundRetainsLeaseForExplicitDurableRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	j := d.Jobs[job.ID]
-	if j.LeaseToken == "" || !j.Outstanding || j.Checkpoint.ConsumedSessions != 4 || j.AttemptChargeDay == "" {
+	if j.LeaseToken == "" || !j.Outstanding || j.Checkpoint.ConsumedSessions != 1 || j.AttemptChargeDay == "" {
 		t.Fatal("failed refund lost durable recovery metadata", j)
 	}
 	if _, err = s.db.Exec("DROP TRIGGER refund_fault"); err != nil {
@@ -1060,7 +1059,7 @@ func TestFailedRefundRetainsLeaseForExplicitDurableRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	j = d.Jobs[job.ID]
-	if j.Checkpoint.ConsumedSessions != 3 || len(j.ChargeDays) != 0 || j.AttemptChargeDay != "" || j.Outstanding || j.LeaseToken != "" || j.State != "queued" {
+	if j.Checkpoint.ConsumedSessions != 0 || len(j.ChargeDays) != 0 || j.AttemptChargeDay != "" || j.Outstanding || j.LeaseToken != "" || j.State != "queued" {
 		t.Fatal("explicit recovery did not restore the actual budget", j)
 	}
 }
