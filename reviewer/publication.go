@@ -188,7 +188,8 @@ func (p Publisher) prepare(ctx context.Context, out Outcome, diff map[string]map
 // queued and running are transient. blocked is an operator qualification gate,
 // not a review outcome. A stale (superseded) job is never current, so its
 // replacement is reported only by annotating a status it already published.
-var statusStates = map[string]bool{"quota_wait": true, "auth_failed": true, "provider_unavailable": true, "invalid_output": true, "incomplete_expired": true, "cancelled": true}
+// capture_refused is terminal: its head was never captured or reviewed.
+var statusStates = map[string]bool{"quota_wait": true, "auth_failed": true, "provider_unavailable": true, "invalid_output": true, "incomplete_expired": true, "cancelled": true, "capture_refused": true}
 
 // resumableStatus reports a status that promises later work. Once its job is
 // replaced or cancelled that promise is false, so the status is annotated.
@@ -737,7 +738,7 @@ func (s *Store) Prune(ctx context.Context, now time.Time) error {
 			if j.LeaseToken != "" || now.Sub(j.CreatedAt) < time.Duration(j.Job.Config.RetentionDays)*24*time.Hour {
 				continue
 			}
-			if j.State != "dual_complete" && j.State != "single_complete" && j.State != "cancelled" && j.State != "stale" && j.State != "incomplete_expired" && j.State != "invalid_output" {
+			if j.State != "dual_complete" && j.State != "single_complete" && j.State != "cancelled" && j.State != "stale" && j.State != "incomplete_expired" && j.State != "invalid_output" && j.State != "capture_refused" {
 				continue
 			}
 			safe := true

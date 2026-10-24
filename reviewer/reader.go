@@ -261,6 +261,22 @@ func (b *cappedOutput) Write(p []byte) (int, error) {
 
 var errGitOutputLimit = errors.New("immutable git object output limit exceeded")
 
+// gitExitStatus is the nonzero exit status of a Git process that ran to
+// completion. It carries no stderr or object bytes. Capture uses it only to
+// tell Git's definite answers, such as a missing object, from a failed or
+// killed process; every other caller treats it as an unavailable object.
+type gitExitStatus struct{ code int }
+
+func (gitExitStatus) Error() string {
+	return "immutable git object unavailable or output limit exceeded"
+}
+
+// gitExited reports whether err is Git's own exit with code.
+func gitExited(err error, code int) bool {
+	var status gitExitStatus
+	return errors.As(err, &status) && status.code == code
+}
+
 func (g GitStore) command(ctx context.Context, max int, args ...string) ([]byte, error) {
 	if !filepath.IsAbs(g.Git) || !filepath.IsAbs(g.GitDir) || max <= 0 || max > 2<<20 {
 		return nil, errors.New("invalid trusted git reader configuration")
@@ -276,6 +292,10 @@ func (g GitStore) command(ctx context.Context, max int, args ...string) ([]byte,
 	if err := c.Run(); err != nil {
 		if b.exceeded {
 			return nil, errGitOutputLimit
+		}
+		var exit *exec.ExitError
+		if ctx.Err() == nil && errors.As(err, &exit) && exit.Exited() {
+			return nil, gitExitStatus{exit.ExitCode()}
 		}
 		return nil, errors.New("immutable git object unavailable or output limit exceeded")
 	}

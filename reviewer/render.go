@@ -270,6 +270,17 @@ func statusCause(job Job, state string) string {
 		return "INCOMPLETE: a provider returned output that failed validation. This job ended without a review."
 	case "incomplete_expired":
 		return "INCOMPLETE: this job expired before every required phase completed. It ended without a review."
+	case "capture_refused":
+		cause := "this snapshot could not be captured"
+		switch captureRefusalReason(job) {
+		case CaptureMissingHistory:
+			cause = "the commit history of this snapshot is missing from the trusted object store, so its changes could not be captured"
+		case CaptureAmbiguousHistory:
+			cause = "the merge base of this snapshot is ambiguous or differs from the recorded merge base, so its changes could not be captured"
+		case CaptureInventoryLimit:
+			cause = fmt.Sprintf("this snapshot changes more than %d files, over the capture inventory limit, so its changes could not be captured", snapshotFileLimit)
+		}
+		return "INCOMPLETE: " + cause + ". No source was reviewed and this request ended without a review. A new head or a fresh authorized request is captured again."
 	case "cancelled":
 		return "CANCELLED: this review request was cancelled before the job completed. A new review needs a fresh authorized request."
 	case "stale":

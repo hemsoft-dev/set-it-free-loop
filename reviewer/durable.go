@@ -530,6 +530,25 @@ func applyRequest(d *DurableState, scope Scope, r NativeRequest) error {
 // Admit maps platform request time to confirmed ACK time. Equal timestamps and
 // incomplete command history defer, even if poll discovery order differs.
 func (s *Store) Admit(ctx context.Context, scope Scope, requestID int64, release, packet string, now time.Time) (Job, error) {
+	return s.admit(ctx, scope, requestID, release, packet, nil, now)
+}
+
+// RefuseCapture records a permanent capture refusal of the request's own
+// snapshot. It passes every admission fence and admits the request as a
+// terminal capture_refused job whose packet records reason instead of
+// evidence, so the request is never selected or captured again and its
+// status is published once. The job is bound to its request and generation:
+// a later request, including one for a new head, is a new job and is
+// captured again. An already admitted request keeps its existing job.
+func (s *Store) RefuseCapture(ctx context.Context, scope Scope, requestID int64, release string, snapshot Snapshot, reason string, now time.Time) (Job, error) {
+	packet, err := newCaptureRefusalPacket(snapshot, reason)
+	if err != nil {
+		return Job{}, err
+	}
+	return s.admit(ctx, scope, requestID, release, packet, &snapshot, now)
+}
+
+func (s *Store) admit(ctx context.Context, scope Scope, requestID int64, release, packet string, refused *Snapshot, now time.Time) (Job, error) {
 	var job Job
 	err := s.update(ctx, func(d *DurableState) error {
 		p, err := prRecord(d, scope)
@@ -547,6 +566,9 @@ func (s *Store) Admit(ctx context.Context, scope Scope, requestID int64, release
 		}
 		if request.ID == 0 || request.Removed || request.CreatedAt.After(p.HistoryThrough) {
 			return ErrDeferred
+		}
+		if refused != nil && *refused != request.Snapshot {
+			return ErrFenced
 		}
 		for _, c := range p.Commands {
 			if d.Writes[c.WriteID].State != "confirmed" {
@@ -587,7 +609,11 @@ func (s *Store) Admit(ctx context.Context, scope Scope, requestID int64, release
 				p.Requests[i].Admitted = true
 			}
 		}
-		d.Jobs[id] = &DurableJob{Job: job, Scope: scope, RequestID: requestID, CreatedAt: now, State: "queued", Checkpoint: Checkpoint{JobHash: Digest(job), Artifacts: []Artifact{}}}
+		state := "queued"
+		if refused != nil {
+			state = "capture_refused"
+		}
+		d.Jobs[id] = &DurableJob{Job: job, Scope: scope, RequestID: requestID, CreatedAt: now, State: state, Checkpoint: Checkpoint{JobHash: Digest(job), Artifacts: []Artifact{}}}
 		return nil
 	})
 	return job, err
