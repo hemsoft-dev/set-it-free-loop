@@ -5,9 +5,15 @@ package reviewer
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io/fs"
 	"net"
 	"os"
 	"runtime"
+	"slices"
+	"strconv"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 	"unsafe"
@@ -51,13 +57,334 @@ func gitPacketFile(t *testing.T) *os.File {
 	t.Cleanup(func() { file.Close() })
 	return file
 }
-func gitPacketFDCount(t *testing.T) int {
+
+// gitFDEntry is one open descriptor number bound to the kernel object it
+// names. Pipe ends share an inode, so the access mode separates them too.
+type gitFDEntry struct {
+	FD     int
+	Dev    uint64
+	Ino    uint64
+	Mode   uint32
+	Access int
+	Target string
+	PID    int
+}
+
+// gitFDMatch selects descriptors that the code under test could have received
+// or created. Anything else in the process is unrelated to the assertion.
+type gitFDMatch func(gitFDEntry) bool
+
+// gitFDWatch compares descriptor sets, never the process-wide count: an
+// unrelated descriptor opened in the window is outside every match, and an
+// unrelated close cannot offset a retained descriptor.
+type gitFDWatch struct {
+	before map[gitFDEntry]bool
+	scope  []gitFDMatch
+}
+
+func gitWatchFDs(t *testing.T, scope ...gitFDMatch) gitFDWatch {
 	t.Helper()
-	files, err := os.ReadDir("/proc/self/fd")
+	if len(scope) == 0 {
+		t.Fatal("descriptor leak check has no scope")
+	}
+	return gitFDWatch{before: gitFDSnapshot(t), scope: scope}
+}
+
+// leaked reports in-scope descriptors open now that were not open with the
+// same number and identity before the window. A number reused for a retained
+// in-scope object after an unrelated close is still new.
+func (w gitFDWatch) leaked(t *testing.T) []gitFDEntry {
+	t.Helper()
+	var leaked []gitFDEntry
+	for entry := range gitFDSnapshot(t) {
+		if w.before[entry] {
+			continue
+		}
+		for _, match := range w.scope {
+			if match(entry) {
+				leaked = append(leaked, entry)
+				break
+			}
+		}
+	}
+	slices.SortFunc(leaked, func(a, b gitFDEntry) int { return a.FD - b.FD })
+	return leaked
+}
+
+func gitFDSnapshot(t *testing.T) map[gitFDEntry]bool {
+	t.Helper()
+	directory, err := os.Open("/proc/self/fd")
 	if err != nil {
 		t.Fatal(err)
 	}
-	return len(files)
+	defer directory.Close()
+	listing := int(directory.Fd())
+	names, err := directory.Readdirnames(-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := map[gitFDEntry]bool{}
+	for _, name := range names {
+		fd, err := strconv.Atoi(name)
+		if err != nil {
+			t.Fatal("descriptor table name", name)
+		}
+		if fd == listing {
+			continue
+		}
+		if entry, ok := gitFDDescribe(fd); ok {
+			snapshot[entry] = true
+		}
+	}
+	return snapshot
+}
+
+// A number closed or replaced while it is described is not a retained
+// descriptor; describe only a number whose link is stable across the reads.
+func gitFDDescribe(fd int) (gitFDEntry, bool) {
+	link := "/proc/self/fd/" + strconv.Itoa(fd)
+	for range 3 {
+		target, err := os.Readlink(link)
+		if err != nil {
+			return gitFDEntry{}, false
+		}
+		var st unix.Stat_t
+		if unix.Fstat(fd, &st) != nil {
+			return gitFDEntry{}, false
+		}
+		info, err := os.ReadFile("/proc/self/fdinfo/" + strconv.Itoa(fd))
+		if err != nil {
+			return gitFDEntry{}, false
+		}
+		if again, err := os.Readlink(link); err != nil {
+			return gitFDEntry{}, false
+		} else if again != target {
+			continue
+		}
+		entry := gitFDEntry{FD: fd, Dev: st.Dev, Ino: st.Ino, Mode: st.Mode, Target: target}
+		for _, line := range strings.Split(string(info), "\n") {
+			key, value, _ := strings.Cut(line, ":")
+			value = strings.TrimSpace(value)
+			switch {
+			case key == "flags":
+				flags, err := strconv.ParseInt(value, 8, 64)
+				if err != nil {
+					return gitFDEntry{}, false
+				}
+				entry.Access = int(flags) & unix.O_ACCMODE
+			case key == "Pid" && target == "anon_inode:[pidfd]":
+				if entry.PID, err = strconv.Atoi(value); err != nil {
+					return gitFDEntry{}, false
+				}
+			}
+		}
+		return entry, true
+	}
+	return gitFDEntry{}, false
+}
+
+type gitFDObject struct{ dev, ino uint64 }
+
+func gitFDObjects(objects map[gitFDObject]bool) gitFDMatch {
+	return func(entry gitFDEntry) bool { return objects[gitFDObject{entry.Dev, entry.Ino}] }
+}
+
+// Same kernel object as any given file, including duplicates and SCM copies.
+func gitFDFiles(t *testing.T, files ...*os.File) gitFDMatch {
+	t.Helper()
+	objects := map[gitFDObject]bool{}
+	for _, file := range files {
+		if file == nil {
+			continue
+		}
+		info, err := file.Stat()
+		if err != nil {
+			t.Fatal(err)
+		}
+		st := info.Sys().(*syscall.Stat_t)
+		objects[gitFDObject{st.Dev, st.Ino}] = true
+	}
+	return gitFDObjects(objects)
+}
+
+// Same socket as any given connection.
+func gitFDConns(t *testing.T, conns ...*net.UnixConn) gitFDMatch {
+	t.Helper()
+	objects := map[gitFDObject]bool{}
+	for _, conn := range conns {
+		raw, err := conn.SyscallConn()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var st unix.Stat_t
+		var statErr error
+		if err := raw.Control(func(fd uintptr) { statErr = unix.Fstat(int(fd), &st) }); err != nil || statErr != nil {
+			t.Fatal(err, statErr)
+		}
+		objects[gitFDObject{st.Dev, st.Ino}] = true
+	}
+	return gitFDObjects(objects)
+}
+
+// Same object as any given path after following links.
+func gitFDPaths(t *testing.T, paths ...string) gitFDMatch {
+	t.Helper()
+	objects := map[gitFDObject]bool{}
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		st := info.Sys().(*syscall.Stat_t)
+		objects[gitFDObject{st.Dev, st.Ino}] = true
+	}
+	return gitFDObjects(objects)
+}
+
+// A pidfd for any given process.
+func gitFDPIDFDs(pids ...int) gitFDMatch {
+	return func(entry gitFDEntry) bool { return entry.PID > 0 && slices.Contains(pids, entry.PID) }
+}
+
+// A procfs view of any given process: its directory, a file below it, or one
+// of its namespaces.
+func gitFDProcfs(t *testing.T, pids ...int) gitFDMatch {
+	t.Helper()
+	objects := map[gitFDObject]bool{}
+	var prefixes []string
+	for _, pid := range pids {
+		directory := "/proc/" + strconv.Itoa(pid)
+		prefixes = append(prefixes, directory)
+		// A nondumpable process's ns directory is not listable, but each
+		// namespace stays reachable to the observer that may open it.
+		for _, name := range []string{"cgroup", "ipc", "mnt", "net", "pid", "pid_for_children", "time", "time_for_children", "user", "uts"} {
+			info, err := os.Stat(directory + "/ns/" + name)
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			st := info.Sys().(*syscall.Stat_t)
+			objects[gitFDObject{st.Dev, st.Ino}] = true
+		}
+	}
+	namespaces := gitFDObjects(objects)
+	return func(entry gitFDEntry) bool {
+		for _, prefix := range prefixes {
+			if entry.Target == prefix || strings.HasPrefix(entry.Target, prefix+"/") {
+				return true
+			}
+		}
+		return namespaces(entry)
+	}
+}
+
+// A descriptor whose link names a given prefix, such as a memfd name.
+func gitFDTargets(prefixes ...string) gitFDMatch {
+	return func(entry gitFDEntry) bool {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(entry.Target, prefix) {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// The leak check sees exactly what a decoder retained: a deliberately kept
+// right is reported, while unrelated descriptors opened, closed or renumbered
+// in the same window neither fail the check nor offset the retained right.
+func TestGitFDWatchReportsExactlyRetainedRights(t *testing.T) {
+	// frame queues one hostile two-right record and watches its objects.
+	frame := func(t *testing.T) (*net.UnixConn, gitFDWatch) {
+		t.Helper()
+		left, right := gitPacketPair(t, unix.SOCK_SEQPACKET)
+		file := gitPacketFile(t)
+		if _, _, err := left.WriteMsgUnix([]byte("hostile"), unix.UnixRights(int(file.Fd()), int(file.Fd())), nil); err != nil {
+			t.Fatal("actual SCM producer", err)
+		}
+		return right, gitWatchFDs(t, gitFDFiles(t, file), gitFDConns(t, left, right))
+	}
+	// leakyDecode receives like the decoder but keeps the first right open.
+	leakyDecode := func(t *testing.T, conn *net.UnixConn) int {
+		t.Helper()
+		oob := make([]byte, unix.CmsgSpace(2*4))
+		_, on, _, _, err := conn.ReadMsgUnix(make([]byte, 64), oob)
+		messages, parseErr := unix.ParseSocketControlMessage(oob[:on])
+		if err != nil || parseErr != nil || len(messages) != 1 {
+			t.Fatal("leaky receive", err, parseErr)
+		}
+		fds, err := unix.ParseUnixRights(&messages[0])
+		if err != nil || len(fds) != 2 {
+			t.Fatal("leaky rights", err, fds)
+		}
+		unix.Close(fds[1])
+		return fds[0]
+	}
+	exact := func(t *testing.T, watch gitFDWatch, want ...int) {
+		t.Helper()
+		leaked := watch.leaked(t)
+		got := []int{}
+		for _, entry := range leaked {
+			got = append(got, entry.FD)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatal("leak check reported", leaked, "want descriptors", want)
+		}
+	}
+	t.Run("retained-right", func(t *testing.T) {
+		conn, watch := frame(t)
+		fd := leakyDecode(t, conn)
+		defer unix.Close(fd)
+		exact(t, watch, fd)
+	})
+	t.Run("decoder", func(t *testing.T) {
+		conn, watch := frame(t)
+		if _, files, err := readGitControlPacket(context.Background(), conn, 1); err == nil {
+			closeVMFiles(files)
+			t.Fatal("hostile frame accepted")
+		}
+		exact(t, watch)
+	})
+	t.Run("unrelated-open", func(t *testing.T) {
+		conn, watch := frame(t)
+		unrelated := gitPacketFile(t)
+		reader, writer, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer reader.Close()
+		defer writer.Close()
+		pidfd := gitTestPIDFD(t, os.Getpid())
+		if _, files, err := readGitControlPacket(context.Background(), conn, 1); err == nil {
+			closeVMFiles(files)
+			t.Fatal("hostile frame accepted")
+		}
+		exact(t, watch)
+		for _, file := range []*os.File{unrelated, reader, writer, pidfd} {
+			if _, err := file.Stat(); err != nil {
+				t.Fatal("unrelated descriptor closed before the check", err)
+			}
+		}
+	})
+	t.Run("unrelated-close", func(t *testing.T) {
+		unrelated, err := unix.Open(gitPacketFile(t).Name(), unix.O_RDONLY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer unix.Close(unrelated)
+		conn, watch := frame(t)
+		// Replacing the unrelated descriptor with the retained right closes it
+		// and reuses its number: the process-wide count is unchanged.
+		fd := leakyDecode(t, conn)
+		err = unix.Dup3(fd, unrelated, unix.O_CLOEXEC)
+		unix.Close(fd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exact(t, watch, unrelated)
+	})
 }
 func TestGitControlPacketActualRecordBoundariesAndCLOEXEC(t *testing.T) {
 	left, right := gitPacketPair(t, unix.SOCK_SEQPACKET)
@@ -194,14 +521,14 @@ func TestGitControlPacketRejectedAncillaryAndTruncationDoNotLeak(t *testing.T) {
 			} else if _, _, err := left.WriteMsgUnix(data, rights, nil); err != nil {
 				t.Fatal("actual SCM producer", err)
 			}
-			before := gitPacketFDCount(t)
+			watch := gitWatchFDs(t, gitFDFiles(t, file), gitFDConns(t, left, right), gitFDPIDFDs(os.Getpid()))
 			result, received, err := readGitControlPacket(context.Background(), right, expected)
 			if err == nil || result != nil || len(received) != 0 {
 				closeVMFiles(received)
 				t.Fatal("hostile frame accepted")
 			}
-			if after := gitPacketFDCount(t); after != before {
-				t.Fatal("rejected frame leaked descriptors", before, after)
+			if leaked := watch.leaked(t); len(leaked) != 0 {
+				t.Fatal("rejected frame leaked descriptors", leaked)
 			}
 			if _, err := file.Stat(); err != nil {
 				t.Fatal("sender descriptor closed", err)

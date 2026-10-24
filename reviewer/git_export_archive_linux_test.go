@@ -202,7 +202,12 @@ func TestGitExportArchiveRefusesMutatedOrForeignRetention(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			before := materializationBlobFDCount(t)
+			parent, err := filepath.EvalSymlinks(filepath.Dir(dir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			archive := filepath.Join(parent, filepath.Base(dir))
+			watch := gitWatchFDs(t, gitFDTargets(gitMaterializationBlobTarget, archive+"/", archive+"-owned/"))
 			bad, err := a.reopen(context.Background(), binding)
 			if bad != nil {
 				bad.Close()
@@ -210,8 +215,8 @@ func TestGitExportArchiveRefusesMutatedOrForeignRetention(t *testing.T) {
 			if err == nil || bad != nil {
 				t.Fatal("retention mutation granted", kind, err)
 			}
-			if got := materializationBlobFDCount(t); got != before {
-				t.Fatal("failed reopen leaked sealed blobs", before, got)
+			if leaked := watch.leaked(t); len(leaked) != 0 {
+				t.Fatal("failed reopen leaked sealed blobs", leaked)
 			}
 			if kind == "root-replaced" {
 				b, err := os.ReadFile(filepath.Join(dir, "foreign"))

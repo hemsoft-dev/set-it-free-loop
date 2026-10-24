@@ -433,7 +433,7 @@ func TestGitUnitGrantCanonicalPacketsRejectMutationsAndDisposeRights(t *testing.
 			if writeGitControlPacket(context.Background(), left, raw, files) != nil {
 				t.Fatal("actual packet producer")
 			}
-			before := gitPacketFDCount(t)
+			watch := gitWatchFDs(t, gitFDFiles(t, files...), gitFDConns(t, left, right))
 			packet, received, err := readGitUnitGrant(context.Background(), right, binding, gitWorkerGrant)
 			if kind == "valid" {
 				if err != nil || packet != good || len(received) != 0 {
@@ -444,8 +444,8 @@ func TestGitUnitGrantCanonicalPacketsRejectMutationsAndDisposeRights(t *testing.
 				closeVMFiles(received)
 				t.Fatal("mutated grant accepted")
 			}
-			if gitPacketFDCount(t) != before {
-				t.Fatal("grant decoder leaked descriptors")
+			if leaked := watch.leaked(t); len(leaked) != 0 {
+				t.Fatal("grant decoder leaked descriptors", leaked)
 			}
 		})
 	}
