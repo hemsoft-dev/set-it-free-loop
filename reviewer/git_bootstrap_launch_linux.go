@@ -25,7 +25,7 @@ func openGitTmpfsWorkspace(binding gitMaterializationBinding) (*os.File, error) 
 		return nil, errGitUnit
 	}
 	defer root.Close()
-	directory, err := root.OpenFile(".", os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	directory, err := openRootNoFollow(root, ".", os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, errGitUnit
 	}
@@ -70,7 +70,7 @@ func openGitTmpfsWorkspace(binding gitMaterializationBinding) (*os.File, error) 
 	if root.Mkdir(name, 0700) != nil {
 		return nil, errGitUnit
 	}
-	work, err := root.OpenFile(name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
+	work, err := openRootNoFollow(root, name, os.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, errGitUnit
 	}

@@ -348,7 +348,7 @@ func prepareGitRuntime(ctx context.Context, parentPath string, input io.Reader, 
 		if root.MkdirAll(filepath.Dir(file.Path), 0700) != nil {
 			return errGitRuntime
 		}
-		output, err := root.OpenFile(file.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
+		output, err := openRootNoFollow(root, file.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
 		if err != nil {
 			return errGitRuntime
 		}
@@ -381,7 +381,7 @@ func prepareGitRuntime(ctx context.Context, parentPath string, input io.Reader, 
 		if file.Path == gitRuntimeMetadata {
 			body = metadata
 		}
-		output, err := root.OpenFile(file.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
+		output, err := openRootNoFollow(root, file.Path, os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
 		if err != nil {
 			return nil, errGitRuntime
 		}

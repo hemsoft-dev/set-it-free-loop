@@ -92,7 +92,7 @@ func observeGitDescriptors(ctx context.Context, identity GateIdentity, original 
 		return nil, errGitUnit
 	}
 	readFlags := func(name string) (uint64, error) {
-		file, err := proc.OpenFile("fdinfo/"+name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		file, err := openRootNoFollow(proc, "fdinfo/"+name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return 0, errGitUnit
 		}

@@ -64,7 +64,7 @@ func gitVMArchiveRootMatches(directory string, root *os.Root, identity os.FileIn
 // The opened root is captured before this mutation. Renaming any ancestor
 // cannot redirect lock creation or stale-temp cleanup into a replacement.
 func lockGitVMArchiveRoot(ctx context.Context, root *os.Root, name string) (*os.File, error) {
-	f, err := root.OpenFile(name, os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0600)
+	f, err := openRootNoFollow(root, name, os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0600)
 	if err != nil {
 		return nil, errGitExportArchive
 	}

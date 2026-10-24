@@ -133,7 +133,7 @@ type gitVMOwnerJournal struct {
 }
 
 func readGitVMOwnerFile(root *os.Root, optional bool) ([]byte, error) {
-	file, err := root.OpenFile("source-vm-units.json", os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	file, err := openRootNoFollow(root, "source-vm-units.json", os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if optional && os.IsNotExist(err) {
 		return nil, nil
 	}

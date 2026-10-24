@@ -41,7 +41,7 @@ func TestGitRuntimeDirectoryReconstructsActualProducerArtifact(t *testing.T) {
 }
 
 func TestGitRuntimeDirectoryRejectsSubstitutionAndExtraStorage(t *testing.T) {
-	for _, kind := range []string{"metadata", "extra", "missing-device", "writable", "non-executable", "changed-bytes", "hardlink", "directory-mode", "closed", "cancelled", "wrong-size", "wrong-hash", "legacy-artifact"} {
+	for _, kind := range []string{"metadata", "extra", "missing-device", "writable", "non-executable", "changed-bytes", "hardlink", "directory-mode", "closed", "cancelled", "wrong-size", "wrong-hash", "legacy-artifact", "symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			manifest, bodies := gitRuntimeFixture(t)
 			raw, pins := gitRuntimeFrame(t, manifest, bodies)
@@ -107,6 +107,13 @@ func TestGitRuntimeDirectoryRejectsSubstitutionAndExtraStorage(t *testing.T) {
 				pins.Artifact.SHA256 = Digest("wrong artifact")
 			case "legacy-artifact":
 				fd = gitGrantSealedData(t, raw)
+			case "symlink":
+				// An in-root link to the exact metadata bytes (issue #257).
+				root.root.Chmod(".", 0700)
+				if root.root.Rename(gitRuntimeMetadata, "linked-metadata") != nil || root.root.Symlink("linked-metadata", gitRuntimeMetadata) != nil {
+					t.Fatal("symlink fixture")
+				}
+				root.root.Chmod(".", 0555)
 			}
 			if _, err := verifyGitRuntimeDirectory(ctx, fd, pins); err == nil {
 				t.Fatal("substituted directory admitted")

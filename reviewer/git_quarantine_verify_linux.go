@@ -148,7 +148,7 @@ func gitQuarantineFiles(root *os.Root, s Snapshot, b GitAcquisitionBounds) (int,
 	return count, size, err
 }
 func gitQuarantineFileEquals(root *os.Root, name string, want string) bool {
-	file, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	file, err := openRootNoFollow(root, name, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return false
 	}

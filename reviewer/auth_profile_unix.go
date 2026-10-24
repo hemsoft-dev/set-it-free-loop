@@ -16,6 +16,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 var ErrAuthRecoveryRequired = errors.New("auth profile requires stopped-worker recovery")
@@ -81,7 +83,7 @@ func (a *AuthStore) lock(ctx context.Context) (*authLock, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, err := r.OpenFile("refresh.lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
+	f, err := openRootNoFollow(r, "refresh.lock", os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0600)
 	if err != nil {
 		r.Close()
 		return nil, errors.New("auth lock unavailable")
@@ -143,7 +145,7 @@ func clearAuthTemps(r *os.Root) error {
 		if err != nil || hex.EncodeToString(decoded) != nonce {
 			continue
 		}
-		file, err := r.OpenFile(name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+		file, err := openRootNoFollow(r, name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			return ErrAuthRecoveryRequired
 		}
@@ -172,7 +174,7 @@ func privateAuthFile(f *os.File) error {
 }
 
 func readAuth(r *os.Root, path string, missing bool) ([]byte, error) {
-	f, err := r.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	f, err := openRootNoFollow(r, path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if missing && os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -200,13 +202,27 @@ func syncAuthDirectory(r *os.Root) error {
 }
 
 // All replacement files are created inside the anchored provider directory.
+// Neither the replacement nor any component of path is reached through a
+// symlink: os.Root.Rename would follow an intermediate in-root link.
 func writeAuth(r *os.Root, path string, b []byte) error {
 	var nonce [16]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return err
 	}
 	name := ".replace-" + hex.EncodeToString(nonce[:])
-	f, err := r.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	directory, err := openRootNoFollow(r, ".", os.O_RDONLY|syscall.O_DIRECTORY, 0)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	parent := directory
+	if filepath.Dir(path) != "." {
+		if parent, err = openRootNoFollow(r, filepath.Dir(path), os.O_RDONLY|syscall.O_DIRECTORY, 0); err != nil {
+			return err
+		}
+		defer parent.Close()
+	}
+	f, err := openRootNoFollow(r, name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
 	}
@@ -221,16 +237,20 @@ func writeAuth(r *os.Root, path string, b []byte) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	if err := r.Rename(name, path); err != nil {
+	// rename never follows its destination, but an auth path that is a link was
+	// planted. Refuse it rather than silently replacing the link.
+	var existing unix.Stat_t
+	err = unix.Fstatat(int(parent.Fd()), filepath.Base(path), &existing, unix.AT_SYMLINK_NOFOLLOW)
+	if err == nil && existing.Mode&unix.S_IFMT == unix.S_IFLNK {
+		return errors.New("auth file must not be a symbolic link")
+	}
+	if err != nil && err != unix.ENOENT {
 		return err
 	}
-	parent, err := r.OpenRoot(filepath.Dir(path))
-	if err != nil {
-		return err
+	if err := unix.Renameat(int(directory.Fd()), name, int(parent.Fd()), filepath.Base(path)); err != nil {
+		return &os.LinkError{Op: "renameat", Old: name, New: path, Err: err}
 	}
-	err = syncAuthDirectory(parent)
-	parent.Close()
-	return err
+	return parent.Sync()
 }
 
 func authHash(b []byte) string { sum := sha256.Sum256(b); return hex.EncodeToString(sum[:]) }

@@ -108,7 +108,7 @@ func newGitUnitOwner(ctx context.Context, root, stub, stubHash string, manager c
 			anchored.Close()
 		}
 	}()
-	owner.lock, err = anchored.OpenFile("git-owner.lock", os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0600)
+	owner.lock, err = openRootNoFollow(anchored, "git-owner.lock", os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0600)
 	if err != nil || privateAuthFile(owner.lock) != nil {
 		return nil, errGitUnit
 	}

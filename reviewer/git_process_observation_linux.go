@@ -93,7 +93,7 @@ func observeGitProcess(ctx context.Context, identity GateIdentity, original int,
 		if ctx.Err() != nil {
 			return nil, errGitUnit
 		}
-		file, err := proc.OpenFile(name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+		file, err := openRootNoFollow(proc, name, os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 		if err != nil {
 			return nil, errGitUnit
 		}

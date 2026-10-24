@@ -85,7 +85,7 @@ func openGitExportArchive(ctx context.Context, directory string) (*gitExportArch
 			root.Close()
 		}
 	}()
-	a.lock, err = root.OpenFile("git-export.lock", os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0600)
+	a.lock, err = openRootNoFollow(root, "git-export.lock", os.O_CREATE|os.O_RDWR|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0600)
 	if err != nil || privateAuthFile(a.lock) != nil {
 		return nil, errGitExportArchive
 	}
@@ -365,7 +365,7 @@ func (a *gitExportArchive) stage(ctx context.Context, binding gitMaterialization
 	if writeGitExportRecord(root, record) != nil {
 		return nil, errGitExportArchive
 	}
-	file, err := root.OpenFile("payload.bin", os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
+	file, err := openRootNoFollow(root, "payload.bin", os.O_CREATE|os.O_EXCL|os.O_WRONLY|unix.O_NOFOLLOW, 0600)
 	if err != nil {
 		return nil, errGitExportArchive
 	}
@@ -434,7 +434,7 @@ func (a *gitExportArchive) reopen(ctx context.Context, binding gitMaterializatio
 	if err != nil || record.State != "staged" || record.Binding != binding {
 		return nil, errGitExportArchive
 	}
-	file, err := root.OpenFile("payload.bin", os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	file, err := openRootNoFollow(root, "payload.bin", os.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, errGitExportArchive
 	}

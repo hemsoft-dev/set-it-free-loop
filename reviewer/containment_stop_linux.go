@@ -68,7 +68,7 @@ func (k linuxContainmentKernel) terminateOpened(ctx context.Context, root *os.Ro
 
 func killOpenedCgroup(ctx context.Context, root *os.Root, binding cgroupBinding) error {
 	// An original that emptied itself after the check above may be removed.
-	kill, err := root.OpenFile("cgroup.kill", os.O_WRONLY|syscall.O_NOFOLLOW, 0)
+	kill, err := openRootNoFollow(root, "cgroup.kill", os.O_WRONLY|syscall.O_NOFOLLOW, 0)
 	if err != nil {
 		return cgroupRemovedAfterOpen(err, binding)
 	}
