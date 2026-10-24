@@ -367,12 +367,15 @@ func runNativeHostile(c config) error {
 		checks["code-host-contained"] = probeContained(obs.Probe) && obs.MediaInputs == 0
 		checks["no-source-access"] = access != nil && access.ToolCalls == 0 && hostAnchorOnly(requests, s.Snapshot.Head)
 	case f.HostileExhaust:
-		// A deadline may leave auth fenced for recovery instead of returned.
-		// Either is accepted only when it agrees with the audit, the error and
-		// a reopened store.
+		// Auth may be fenced for recovery instead of returned. Either is
+		// accepted only when it agrees with the audit, the error and a
+		// reopened store. Cases that must return auth, such as the stalls,
+		// also require it returned with its original tokens and usable.
+		strict := checks["auth-returned"]
 		delete(checks, "auth-returned")
-		checks["auth-returned-or-fenced"] = exhaustionAuthHeld(c.Provider, filepath.Join(c.Root, "auth"), store, audit, reviewErr)
-		in := exhaustionInput{Name: hc.Name, Err: reviewErr, Report: report, Source: access, Policy: policy.Limits, Limits: limits, AuditComplete: audit.Complete, CodeHost: audit.CodeHost, Counts: counts, Observation: obs, Elapsed: time.Duration(elapsed) * time.Millisecond, StoreRequests: requests}
+		held := exhaustionAuthHeld(c.Provider, filepath.Join(c.Root, "auth"), store, audit, reviewErr)
+		checks["auth-returned-or-fenced"] = held
+		in := exhaustionInput{Name: hc.Name, Err: reviewErr, Report: report, Source: access, Policy: policy.Limits, Limits: limits, AuditComplete: audit.Complete, CodeHost: audit.CodeHost, Counts: counts, Observation: obs, Elapsed: time.Duration(elapsed) * time.Millisecond, StoreRequests: requests, AuthReturned: strict && held}
 		if evidence != nil {
 			in.Provider = &evidence.Access
 		}

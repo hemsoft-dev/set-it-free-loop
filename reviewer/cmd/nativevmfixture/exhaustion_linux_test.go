@@ -58,43 +58,72 @@ func TestExhaustionChecksRequireTheMeasuredBound(t *testing.T) {
 		}
 	}
 
-	stall := exhaustionBase("claude-stall")
-	stall.Err = errors.Join(r.PhaseError{State: "provider_unavailable"}, context.DeadlineExceeded, r.ErrAuthRecoveryRequired)
-	stall.Source = nil
-	stall.Observation.Results["stall"] = "cancelled-by-guard"
-	// Measured: the upstream was cancelled at the 75 s deadline and the result
-	// returned 0.2 to 0.3 s later.
-	stall.Elapsed, stall.StallCancel = 75300*time.Millisecond, 75050*time.Millisecond
-	if !allPass(exhaustionChecks(stall)) {
-		t.Fatal("deadline-fenced stall rejected", exhaustionChecks(stall))
-	}
-	for _, ended := range [][2]time.Duration{
-		{10 * time.Second, 9 * time.Second},
-		{120 * time.Second, 75050 * time.Millisecond},
-		// The fixture's outer watchdog, not the phase deadline, cancelled it.
-		{hostileWatchdog + 300*time.Millisecond, hostileWatchdog},
-		// No upstream cancellation was observed at all.
-		{75300 * time.Millisecond, 0},
-		{75300 * time.Millisecond, 70 * time.Second},
-	} {
-		late := stall
-		late.Elapsed, late.StallCancel = ended[0], ended[1]
-		if allPass(exhaustionChecks(late)) {
-			t.Fatal("stall ended by something other than the phase deadline", ended)
+	stallChecks(t)
+}
+
+// A stall passes only when the host's work deadline ended it and the guest
+// returned auth and the source audit within the result grace.
+func stallChecks(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{"claude-stall", "codex-stall"} {
+		stall := exhaustionBase(name)
+		stall.Err = r.PhaseError{State: "incomplete_expired"}
+		stall = returnedAuth(stall, true)
+		stall.Observation.Results["stall"] = "cancelled-by-guard"
+		// Expected: the work deadline at 60 s cancels the upstream and the
+		// guest's record returns within the grace, well before 75 s.
+		stall.Elapsed, stall.StallCancel = 60600*time.Millisecond, 60050*time.Millisecond
+		if !allPass(exhaustionChecks(stall)) {
+			t.Fatal("stall returned within the grace rejected", name, exhaustionChecks(stall))
+		}
+		// The measured pre-change outcome: the phase deadline cancelled the
+		// upstream at 75 s, the host stopped the unit before the guest's
+		// record arrived, and auth was fenced with the audit lost.
+		fenced := stall
+		fenced.Err = errors.Join(r.PhaseError{State: "provider_unavailable"}, context.DeadlineExceeded, r.ErrAuthRecoveryRequired, r.ErrSourceAuditPending)
+		fenced.Source = nil
+		fenced = returnedAuth(fenced, false)
+		fenced.Elapsed, fenced.StallCancel = 75300*time.Millisecond, 75050*time.Millisecond
+		if checks := exhaustionChecks(fenced); allPass(checks) || checks["auth-returned"] || checks["source-audit-returned"] || checks["expired-phase"] {
+			t.Fatal("deadline-fenced stall accepted", name, checks)
+		}
+		for label, mutate := range map[string]func(*exhaustionInput){
+			"auth-fenced": func(in *exhaustionInput) { *in = returnedAuth(*in, false) },
+			"audit-lost":  func(in *exhaustionInput) { in.Source = nil },
+			"audit-pending": func(in *exhaustionInput) {
+				in.Err = errors.Join(r.PhaseError{State: "incomplete_expired"}, r.ErrSourceAuditPending)
+			},
+			"deadline-class": func(in *exhaustionInput) {
+				in.Err = errors.Join(r.PhaseError{State: "incomplete_expired"}, context.DeadlineExceeded)
+			},
+			"other-phase": func(in *exhaustionInput) { in.Err = r.PhaseError{State: "provider_unavailable"} },
+			"clean":       func(in *exhaustionInput) { in.Err = nil },
+			"report":      func(in *exhaustionInput) { in.Report.Findings = []r.Finding{{ID: "x"}} },
+			"stop-pending": func(in *exhaustionInput) {
+				in.Err = errors.Join(r.PhaseError{State: "incomplete_expired"}, r.ErrWorkerStopPending)
+			},
+			"before-work":    func(in *exhaustionInput) { in.StallCancel, in.Elapsed = 10*time.Second, 10500*time.Millisecond },
+			"phase-deadline": func(in *exhaustionInput) { in.StallCancel, in.Elapsed = 75050*time.Millisecond, 75300*time.Millisecond },
+			"watchdog": func(in *exhaustionInput) {
+				in.StallCancel, in.Elapsed = hostileWatchdog, hostileWatchdog+300*time.Millisecond
+			},
+			"never-cancelled":   func(in *exhaustionInput) { in.StallCancel = 0 },
+			"late-result":       func(in *exhaustionInput) { in.Elapsed = 120 * time.Second },
+			"source-read":       func(in *exhaustionInput) { in.Source.ToolCalls = 1 },
+			"second-inference":  func(in *exhaustionInput) { in.Counts.Inference = 2 },
+			"upstream-answered": func(in *exhaustionInput) { in.Provider.Responses = 1 },
+		} {
+			changed := stall
+			provider, source := *stall.Provider, *stall.Source
+			changed.Provider, changed.Source = &provider, &source
+			mutate(&changed)
+			if allPass(exhaustionChecks(changed)) {
+				t.Fatal("stall accepted without its returned evidence", name, label)
+			}
 		}
 	}
 	if hostilePhase+deadlineCleanup >= hostileWatchdog {
-		t.Fatal("accepted deadline interval reaches the outer watchdog")
-	}
-	read := stall
-	read.StoreRequests = []string{"x:source.go"}
-	if allPass(exhaustionChecks(read)) {
-		t.Fatal("lost source audit accepted after a store read")
-	}
-	pending := stall
-	pending.Err = errors.Join(r.PhaseError{State: "provider_unavailable"}, r.ErrWorkerStopPending)
-	if allPass(exhaustionChecks(pending)) {
-		t.Fatal("unproven stop accepted as a typed failure")
+		t.Fatal("accepted grace interval reaches the outer watchdog")
 	}
 }
 
@@ -247,36 +276,47 @@ func TestOversizeAndCodeHostChecks(t *testing.T) {
 }
 
 // The memory case passes only when the client ran an allocation under the
-// bound, the guard relayed the over-bound cell, and that cell never completed:
-// the code host failed inside the exchange, or the client never returned it
-// and only the phase deadline ended the session.
+// bound, the guard relayed the over-bound cell, that cell never completed and
+// the code host's stopped, failed receipt came back with auth and the audit:
+// the client returned the failure, or the guest's own deadline ended it.
 func memoryChecks(t *testing.T) {
 	t.Helper()
-	// Measured shape: the client never returned the over-bound cell and the
-	// deadline fenced auth with the code-host receipt lost.
-	hung := exhaustionBase("codex-code-memory")
-	hung.Err = errors.Join(r.PhaseError{State: "provider_unavailable"}, context.DeadlineExceeded, r.ErrAuthRecoveryRequired)
-	hung.Source, hung.CodeHost, hung.Elapsed = nil, nil, 75300*time.Millisecond
-	hung.Counts.Inference = 2
-	hung.Provider = &r.ProviderAccess{Version: 1, Requests: 8, InferenceRequests: 2, Forwarded: 7, Responses: 7, Stopped: true, Failed: true}
-	hung.Observation.Results = map[string]string{"control-output": "survived", "memory-cell": "issued"}
-	if !allPass(exhaustionChecks(hung)) {
-		t.Fatal("deadline-ended over-bound cell rejected", exhaustionChecks(hung))
+	// Expected: the client never returned the over-bound cell; the guest's
+	// deadline stopped client, code host and broker within the grace.
+	expired := exhaustionBase("codex-code-memory")
+	expired.Err = r.PhaseError{State: "incomplete_expired"}
+	expired = returnedAuth(expired, true)
+	expired.CodeHost, _ = json.Marshal(codeHostAudit{Failed: true, Stopped: true, Stage: "wait", OutputBytes: 120})
+	expired.Elapsed = 63500 * time.Millisecond
+	expired.Counts.Inference = 2
+	expired.Provider = &r.ProviderAccess{Version: 1, Requests: 8, InferenceRequests: 2, Forwarded: 7, Responses: 7, Stopped: true}
+	expired.Observation.Results = map[string]string{"control-output": "survived", "memory-cell": "issued"}
+	if !allPass(exhaustionChecks(expired)) {
+		t.Fatal("guest-deadline-ended over-bound cell rejected", exhaustionChecks(expired))
 	}
-	killed := hung
+	killed := expired
 	killed.Err, killed.Elapsed = r.PhaseError{State: "invalid_output"}, 6*time.Second
 	killed.Counts.Inference = 3
 	killed.Provider = &r.ProviderAccess{Version: 1, Requests: 9, InferenceRequests: 3, Forwarded: 8, Responses: 8, Stopped: true, Failed: true}
 	killed.Observation.Results = map[string]string{"control-output": "survived", "memory-cell": "issued", "exec-output": "60:failed to read code-mode host message: early eof"}
-	killed.CodeHost, _ = json.Marshal(codeHostAudit{Failed: true, Stopped: true, Stage: "wait", OutputBytes: 120})
 	if !allPass(exhaustionChecks(killed)) {
 		t.Fatal("code host failed by the over-bound cell rejected", exhaustionChecks(killed))
+	}
+	// The measured pre-change shape: the phase deadline fenced auth and lost
+	// both the code-host receipt and the source audit.
+	fenced := expired
+	fenced.Err = errors.Join(r.PhaseError{State: "provider_unavailable"}, context.DeadlineExceeded, r.ErrAuthRecoveryRequired, r.ErrSourceAuditPending)
+	fenced.Source, fenced.CodeHost, fenced.Elapsed = nil, nil, 75300*time.Millisecond
+	fenced = returnedAuth(fenced, false)
+	if checks := exhaustionChecks(fenced); allPass(checks) || checks["auth-returned"] || checks["memory-bound-ended-cell"] {
+		t.Fatal("deadline-fenced memory case accepted", checks)
 	}
 	// A client or code host that fails before running the allocation, even
 	// immediately and with no memory pressure, never passes.
 	early := exhaustionBase("codex-code-memory")
 	early.CodeHost, early.Elapsed = nil, 5*time.Second
-	for name, in := range map[string]exhaustionInput{"early-typed-failure": early, "early-failure-at-deadline": func() exhaustionInput { in := early; in.Elapsed = hung.Elapsed; return in }()} {
+	early = returnedAuth(early, true)
+	for name, in := range map[string]exhaustionInput{"early-typed-failure": early, "early-failure-in-grace": func() exhaustionInput { in := early; in.Elapsed = expired.Elapsed; return in }()} {
 		if allPass(exhaustionChecks(in)) {
 			t.Fatal("memory case passed without dispatching the allocation", name)
 		}
@@ -291,16 +331,23 @@ func memoryChecks(t *testing.T) {
 		"returned-before-end": func(in *exhaustionInput) { in.Elapsed = 5 * time.Second },
 		"watchdog-ended":      func(in *exhaustionInput) { in.Elapsed = hostileWatchdog + 300*time.Millisecond },
 		"accepted-receipt":    func(in *exhaustionInput) { in.CodeHost = accepted },
+		"receipt-lost":        func(in *exhaustionInput) { in.CodeHost = nil },
+		"auth-fenced":         func(in *exhaustionInput) { *in = returnedAuth(*in, false) },
+		"audit-lost":          func(in *exhaustionInput) { in.Source = nil },
+		"other-phase":         func(in *exhaustionInput) { in.Err = r.PhaseError{State: "provider_unavailable"} },
+		"deadline-class": func(in *exhaustionInput) {
+			in.Err = errors.Join(r.PhaseError{State: "incomplete_expired"}, context.DeadlineExceeded)
+		},
 	} {
-		changed := hung
-		provider := *hung.Provider
-		changed.Provider, changed.Observation.Results = &provider, map[string]string{}
-		for k, v := range hung.Observation.Results {
+		changed := expired
+		provider, source := *expired.Provider, *expired.Source
+		changed.Provider, changed.Source, changed.Observation.Results = &provider, &source, map[string]string{}
+		for k, v := range expired.Observation.Results {
 			changed.Observation.Results[k] = v
 		}
 		mutate(&changed)
 		if allPass(exhaustionChecks(changed)) {
-			t.Fatal("deadline-ended memory case accepted without its evidence", name)
+			t.Fatal("expired memory case accepted without its evidence", name)
 		}
 	}
 	for name, host := range map[string]any{
@@ -310,13 +357,57 @@ func memoryChecks(t *testing.T) {
 		"completed":       codeHostAudit{Stopped: true, RelayComplete: true, Stage: "complete"},
 		"lost":            nil,
 	} {
-		changed := killed
-		changed.CodeHost = nil
-		if host != nil {
-			changed.CodeHost, _ = json.Marshal(host)
+		for _, base := range []exhaustionInput{killed, expired} {
+			changed := base
+			changed.CodeHost = nil
+			if host != nil {
+				changed.CodeHost, _ = json.Marshal(host)
+			}
+			if allPass(exhaustionChecks(changed)) {
+				t.Fatal("code-host failure not attributable to the over-bound cell", name)
+			}
 		}
+	}
+}
+
+// More than ReaderCalls + 32 requests end source intake. The case passes only
+// with the flood recorded in a returned audit, auth returned and a typed phase.
+func TestRequestFloodChecks(t *testing.T) {
+	flood := exhaustionBase("codex-request-flood")
+	flood = returnedAuth(flood, true)
+	flood.Source = &r.SourceAccess{Version: 1, ToolCalls: 128, Exhausted: true, Coverage: []r.Coverage{{Reason: "source tool-call limit exhausted"}, {Reason: "source request limit exhausted"}}}
+	flood.Observation.Probe = map[string]string{"ok": "128", "denied": "29", "closed": "43", "first_closed": "throw:Transport closed"}
+	flood.Provider.Failed = false
+	if !allPass(exhaustionChecks(flood)) {
+		t.Fatal("recorded request flood rejected", exhaustionChecks(flood))
+	}
+	for name, mutate := range map[string]func(*exhaustionInput){
+		"clean":       func(in *exhaustionInput) { in.Err, in.AuditComplete = nil, true },
+		"auth-fenced": func(in *exhaustionInput) { *in = returnedAuth(*in, false) },
+		"audit-lost":  func(in *exhaustionInput) { in.Source = nil },
+		"audit-pending": func(in *exhaustionInput) {
+			in.Err = errors.Join(r.PhaseError{State: "invalid_output"}, r.ErrSourceAuditPending)
+		},
+		"recovery-class": func(in *exhaustionInput) {
+			in.Err = errors.Join(r.PhaseError{State: "invalid_output"}, r.ErrAuthRecoveryRequired)
+		},
+		"flood-unrecorded": func(in *exhaustionInput) { in.Source.Coverage = in.Source.Coverage[:1] },
+		"bound-unreached":  func(in *exhaustionInput) { in.Source.ToolCalls, in.Source.Exhausted = 100, false },
+		"never-closed":     func(in *exhaustionInput) { in.Observation.Probe["closed"], in.Observation.Probe["denied"] = "0", "72" },
+		"never-denied":     func(in *exhaustionInput) { in.Observation.Probe["denied"], in.Observation.Probe["closed"] = "0", "72" },
+		"miscounted":       func(in *exhaustionInput) { in.Observation.Probe["closed"] = "40" },
+		"past-the-budget":  func(in *exhaustionInput) { in.Observation.Probe["denied"], in.Observation.Probe["closed"] = "40", "32" },
+		"report":           func(in *exhaustionInput) { in.Report.Findings = []r.Finding{{ID: "x"}} },
+	} {
+		changed := flood
+		source := *flood.Source
+		changed.Source, changed.Observation.Probe = &source, map[string]string{}
+		for k, v := range flood.Observation.Probe {
+			changed.Observation.Probe[k] = v
+		}
+		mutate(&changed)
 		if allPass(exhaustionChecks(changed)) {
-			t.Fatal("code-host failure not attributable to the over-bound cell", name)
+			t.Fatal("request flood accepted without its evidence", name)
 		}
 	}
 }

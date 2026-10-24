@@ -139,6 +139,7 @@ func TestCodexExhaustionProgramsTargetTheirBounds(t *testing.T) {
 	s := hostileSession(t, r.Codex)
 	want := map[string]string{
 		"codex-source-flood":      fmt.Sprintf("%d;i++", SourceFloodCalls),
+		"codex-request-flood":     fmt.Sprintf("%d;i++", RequestFloodCalls),
 		"codex-source-oversize":   `path:"big.go"`,
 		"codex-code-output-flood": "repeat(9",
 		"codex-code-spin":         "for(;;)",
@@ -160,6 +161,11 @@ func TestCodexExhaustionProgramsTargetTheirBounds(t *testing.T) {
 		if w.Code != 200 || !strings.Contains(w.Body.String(), "msg_fixture") || backend.Hostile().Results["exec-output"] != "missing" {
 			t.Fatal("second exhaustion turn differs", name, w.Code)
 		}
+	}
+	// The source flood stays within the request budget; the request flood
+	// passes it with room for the client's own handshake requests.
+	if SourceFloodCalls+8 > r.DefaultLimits().ReaderCalls+32 || RequestFloodCalls <= r.DefaultLimits().ReaderCalls+32+8 {
+		t.Fatal("source and request floods no longer straddle the request budget")
 	}
 	if SourceFloodCalls <= r.DefaultLimits().ReaderCalls || FloodBytes <= r.DefaultEgressLimits(s).ResponseBytes || 2*BigObjectBytes <= r.DefaultLimits().ReaderBytes || BigObjectBytes > r.DefaultLimits().ReaderBytes {
 		t.Fatal("exhaustion constants no longer exceed their bounds")
@@ -236,5 +242,24 @@ func TestCodeMemoryRunsAControlCellBeforeTheOverBoundCell(t *testing.T) {
 	}
 	if got := other.Hostile().Results; got["control-output"] == "survived" || got["exec-output"] != "missing" || len(got) != 3 {
 		t.Fatal("failed cells classified as survived", got)
+	}
+}
+
+// The request flood's exec result is reduced to its served, denied and closed
+// counts, and the fake model still reports so the host must refuse the phase.
+func TestRequestFloodRecordsWhatTheClientSaw(t *testing.T) {
+	canaries, _ := NewCanaries()
+	s := hostileSession(t, r.Codex)
+	backend, _, err := NewHostile(s, "codex-request-flood", canaries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend.ServeHTTP(httptest.NewRecorder(), inferenceRequest(s, ""))
+	text := `Script completed` + "\nOutput:\n" + `{"sfl_request":{"ok":128,"denied":29,"closed":43,"first_closed":"throw:Transport closed"}}`
+	w := httptest.NewRecorder()
+	backend.ServeHTTP(w, codexInferenceRequest(s, map[string]any{"type": "custom_tool_call_output", "call_id": "h_request", "output": []map[string]string{{"type": "input_text", "text": text}}}))
+	probe := backend.Hostile().Probe
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "msg_fixture") || probe["ok"] != "128" || probe["denied"] != "29" || probe["closed"] != "43" || probe["first_closed"] != "throw:Transport closed" {
+		t.Fatal("request flood outcome not recorded", w.Code, probe)
 	}
 }
