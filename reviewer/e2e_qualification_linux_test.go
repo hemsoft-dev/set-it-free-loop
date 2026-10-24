@@ -3498,12 +3498,12 @@ func e2eCloseCapture(e *e2eEnv) {
 
 // close-provider: the service closes while the first native session's pinned
 // client waits for a withheld fake inference response. The unit must be
-// proved stopped and the exported auth returned or fenced. Within the
-// shutdown grace the expected outcome is a returned auth and a Close that
-// proves completion; the case then reopens and judges the requeued job. If
-// the attempt stays uncertain, its durable lease is retained and Close keeps
-// reporting ErrWorkerStopPending; the root is then retained for
-// close-provider-reopen, which a separate process runs as a restarted service.
+// proved stopped and the exported auth returned. Within the shutdown grace
+// the guest returns its auth and Close proves completion; the case then
+// reopens and judges the requeued job. A Close that reports
+// ErrWorkerStopPending fails the case, since that means the grace regressed;
+// close-provider-fenced owns the fenced branch and retains the root for
+// close-provider-reopen and close-provider-recover.
 func e2eCloseProvider(e *e2eEnv) { e2eCloseProviderSession(e, false) }
 
 // close-provider-fenced is close-provider with the guest frozen from outside
@@ -3576,6 +3576,11 @@ func e2eCloseProviderSession(e *e2eEnv, fenced bool) {
 		// The frozen guest wrote no result record within the grace, so the
 		// cancelled launch keeps its lease and every Close reports it.
 		e.check(errors.Is(closeErr, r.ErrWorkerStopPending), "with its guest frozen, Close took the fenced branch and kept reporting ErrWorkerStopPending (%v)", closeErr)
+	} else {
+		// The guest runs, so it returns within the grace; a fenced Close here
+		// means the shutdown grace regressed. close-provider-fenced owns the
+		// fenced branch.
+		e.check(closeErr == nil, "with its guest running, Close proved completion within the shutdown grace (%v)", closeErr)
 	}
 	e.closeStore(label, e.store)
 	e.store = nil
@@ -3608,15 +3613,15 @@ func e2eCloseProviderSession(e *e2eEnv, fenced bool) {
 	e.check(auth[r.Claude] == "usable", "the untouched provider's auth remains usable (%s)", auth[r.Claude])
 	e.check((returned && auth[r.Codex] == "usable") || (!returned && auth[r.Codex] == "fenced"), "codex auth is usable exactly when its stopped return was committed, and fenced otherwise (returned %v, %s)", returned, auth[r.Codex])
 	e.check(e.github.reviewPosts(1) == 0, "nothing was published for the interrupted job")
-	if fenced && !e.wedged {
-		// Already failed above; the grace branch is not this case's.
+	if fenced != e.wedged {
+		// Already failed above; this branch is the other case's.
 		return
 	}
 	if !e.wedged {
 		// The expected branch since the shutdown grace (#264): Close revoked
 		// the withheld session's provider intake, the guest stopped its client
 		// and returned auth, and the stopped launch was released and requeued
-		// with its charged session. Not yet observed on a host.
+		// with its charged session.
 		e.check(j.LeaseToken == "" && !j.Outstanding && j.State == "queued" && returned, "a completed Close leaves a queued, unleased job with no outstanding reservation and returned auth (state %s)", j.State)
 		failure := ""
 		if len(units) == 1 {
@@ -4237,7 +4242,7 @@ func e2eCloseProviderRecover(e *e2eEnv) {
 	}
 	e.check(len(posts) == 2 && posts["app POST /app/installations/N/access_tokens"] == 2 && posts["publisher POST /pulls/N/reviews"] == 2, "the only GitHub POSTs are two role token mints, PR 1's status and PR 2's review (%v)", posts)
 	// PR 2's acquisition is the only upstream exchange: the retained PR 1
-	// attempt was captured by close-provider and is never fetched again.
+	// attempt was captured by close-provider-fenced and is never fetched again.
 	e.checkUploads(e.github.commits["2"])
 	if j1 != nil && j2 != nil {
 		e.result.Jobs = append(e.result.Jobs, e2eJobSummary(j1), e2eJobSummary(j2))
@@ -4322,7 +4327,7 @@ func e2eRecoveredJobVerdicts(label string, d r.DurableState, before *r.DurableJo
 // This attached process acquired only PR 2's source attempt, so only that
 // attempt's lifecycle order is judged here, from the journal sampled at its
 // upload-pack; PR 1's retained attempt was acquired, and its order judged,
-// by close-provider, and is judged here by its final record only. PR 1's
+// by close-provider-fenced, and is judged here by its final record only. PR 1's
 // interrupted session is never run again: this process's backends must have
 // checked exactly PR 2's artifact sessions, none held, and the interrupted
 // session is judged by its retained stopped receipt, which must count its one

@@ -68,7 +68,7 @@ ledger, and a restore probe.
    Operator recovery uses no GitHub route, so `close-provider-recover`, which
    publishes PR 1's `auth_failed` status and PR 2's review through the same
    review POST and receipt routes, serves exactly the publishing set, and the
-   `close-provider` process before it exactly the qualification and reader
+   `close-provider-fenced` process before it exactly the qualification and reader
    routes.
 3. **Source acquisition.** The same server answers smart-HTTP
    `info/refs` and `git-upload-pack` with the installed Git producer over a
@@ -120,12 +120,14 @@ match its one inline-free remote COMMENT on the head (`e2eStatusVerdicts`).
 There is no review intent and no other write. The case therefore expects one
 source unit, one native unit (the interrupted launch, the only launch), both
 auth stores usable, and the publishing route set: the qualified routes plus
-the publisher's review POST and receipt read. No host run has taken this
-branch. Its earlier forms expected a published review, then three reruns
+the publisher's review POST and receipt read. This branch passed on mini at
+`89c36a1` and `595d674`. Its earlier forms expected a published review, then three reruns
 that expired, which spent sessions on a certain incomplete.
 
 If the guest does not return within the grace, `Close` cancels as before and
-the case takes the fenced branch below. Only that branch retains a root for
+reports `ErrWorkerStopPending`. `close-provider` fails then, since its guest
+runs and that outcome means the grace regressed. The fenced branch belongs to
+`close-provider-fenced`, which alone retains a root for
 `close-provider-reopen` and `close-provider-recover`.
 
 `close-provider-fenced` ([#271](https://github.com/hemsoft-dev/set-it-free-loop/issues/271))
@@ -153,8 +155,8 @@ wait for its result, the lease is kept and `Close` reports
 `ErrWorkerStopPending`. The case requires that branch and then applies every
 fenced-branch check of `close-provider` below, with the same declared end
 state. A freeze that cannot prove every process stopped fails the case before
-`Close`. `close-provider` itself is unchanged and still expects the grace
-branch.
+`Close`. `close-provider` still runs the grace branch, and now requires it:
+a fenced `Close` there fails the case.
 
 Every case also observes `systemctl --user list-units 'sfl-alpha-*'` every 200
 ms, excluding units that existed before the run. At the end it first stops
@@ -181,7 +183,7 @@ deterministic fake upstream's snapshot, and admitted under the current release
 revision, and that job must be exactly the one admission derives from its
 retained request and the harness's inputs (see **Job** under
 [Evidence bindings](#evidence-bindings)). A root retained by another
-revision's `close-provider` is refused, so its interrupted job and launch are
+revision's `close-provider-fenced` is refused, so its interrupted job and launch are
 never recorded as this revision's restart or recovery. Before either case treats a native launch as the earlier
 process's, its root must hold exactly one launch: started, settled, captured,
 aborted and stopped, with a bound version 2 stopped audit that records the
@@ -423,7 +425,7 @@ and `close-provider` if it reopens) judges its completed PRs together:
   the revocation, and a grant is written only for a captured, unrevoked
   record. `TestGitVMOwnerJournalRejectsUnboundLifecycleStates`,
   `TestGitVMOwnerDurableStartCaptureAndOriginalStop` and
-  `TestGitVMGrantRefusesBeforeDurableAuthority` cover it. `close-provider`
+  `TestGitVMGrantRefusesBeforeDurableAuthority` cover it. `close-provider-fenced`
   judges this order before it retains its root. The attached
   `close-provider-reopen` process did not acquire the source, so it judges the
   final records only. The attached `close-provider-recover` process acquired
@@ -471,7 +473,7 @@ marker and canonical document hash. The owner journal holds exactly two source r
 one and PR 2's, each bound to its own job's snapshot, the current release and
 source VM runtime hashes and the release's source stub hash. PR 2's record
 must pass the source lifecycle order from the journal sampled at its one
-upload-pack; PR 1's record, acquired by `close-provider`, which judged its
+upload-pack; PR 1's record, acquired by `close-provider-fenced`, which judged its
 order, must pass the final-record rule. PR 2's four sessions must each meet
 the exchange contract, with served objects equal to the fake upstream's bytes
 at PR 2's head. PR 1's interrupted session is never run again: the recovery
@@ -487,7 +489,7 @@ hash. Any other entry, including an unreadable launch directory, fails. The
 only upstream exchanges are PR 2's acquisition. The settled re-read below
 applies to the recovery process's own fake servers, which hold only PR 1's
 status POST and PR 2's acquisition, sessions and review POST:
-`close-provider` judged what it observed itself, so a late rerun of PR 1's
+`close-provider-fenced` judged what it observed itself, so a late rerun of PR 1's
 interrupted session, a late PR 1 review, status change or refetch, or any
 late PR 2 request fails.
 
@@ -774,7 +776,7 @@ was implemented in the commits measured above. The operator path was added
 later and is qualified in
 [Operator recovery after a provider-session close](#operator-recovery-after-a-provider-session-close).
 The bounded [shutdown grace](GIT-STARTUP.md#shutdown-grace) was added after
-that, and its `close-provider` branch has not run on a host.
+that; its `close-provider` branch passed on mini at `89c36a1` and `595d674`.
 
 A shutdown before a session's work, while the host check runs, is
 different. The native reviewer reports a trusted before-work failure, the
@@ -859,7 +861,7 @@ the shutdown grace, by `close-provider`), inside the same lock hold, as
 8. The process observed exactly one source unit, PR 2's acquisition, and
    four native units, one per PR 2 session. Every one correlates with a
    recorded attempt or a launch directory this process created. The retained
-   PR 1 attempt and interrupted launch belong to `close-provider` and are not
+   PR 1 attempt and interrupted launch belong to `close-provider-fenced` and are not
    counted. Both auth stores are usable at the end: Codex holds the original
    synthetic tokens, as PR 2's sessions returned the re-supplied seed, and
    Claude its untouched original credential.
