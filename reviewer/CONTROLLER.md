@@ -123,7 +123,9 @@ state for `Reconcile`. Supersession annotations use `annotation_pending` and an
 idempotent update of the known review ID. They never append a new review/comment.
 A trusted before-work failure refunds both the session and any day charge first
 introduced by that attempt. A resumed job hitting the daily cap remains in
-`quota_wait`. Final secret redaction covers raw and rendered encodings.
+`quota_wait`. A job not yet started whose claim meets the daily cap enters
+`quota_wait` without a lease, session or day charge. Final secret redaction
+covers raw and rendered encodings.
 
 A crash after the final phase and before outbox preparation can recover through
 `RecoverCompleted`. It reconstructs the deterministic outcome using cached
@@ -184,9 +186,12 @@ phase count, and never includes a finding. `queued` and `running` are
 transient. `blocked` is the operator qualification gate, not a review
 outcome, and publishes nothing.
 
-Each job publishes at most one status per state. A `quota_wait` job is
-reclaimed every cycle and returns to `quota_wait` without a second status. A
-job that later expires publishes its `incomplete_expired` status once. A
+Each job publishes at most one status per state. A newly admitted job that
+meets the daily review limit at its first claim enters `quota_wait` there, so
+it publishes the same status before any phase runs. A `quota_wait` job is
+reclaimed every cycle and returns to `quota_wait` without a second status,
+including after quota frees and the job waits again mid-run. A job that later
+expires publishes its `incomplete_expired` status once. A
 status is prepared only while its job passes the review preparation fences:
 no lease or outstanding attempt, not paused, and its own request and
 generation still current. The one exception is cancellation: when the owner

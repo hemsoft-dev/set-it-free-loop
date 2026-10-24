@@ -208,3 +208,67 @@ func TestPollingAnnotatesReplacedJobStatus(t *testing.T) {
 		t.Fatal("superseded job published another status", len(statuses), f.annotations)
 	}
 }
+
+// When the daily review limit is already reached as a newly admitted job is
+// first claimed, the job waits for quota without running a phase and publishes
+// one quota_wait status. Once quota frees, a later quota wait of the same job
+// publishes no second quota_wait status; its expiry publishes its own status.
+func TestPollingPublishesQuotaWaitWhenDailyLimitPrecedesFirstPhase(t *testing.T) {
+	claudeQuota := false
+	c, f, calls := pollControllerFixture(t, func(_ context.Context, s Session) (Report, error) {
+		if claudeQuota && s.Identity.Provider == Claude {
+			return Report{}, PhaseError{State: "quota_wait", BeforeWork: true}
+		}
+		return fakeReport(s), nil
+	})
+	exhaustDailyReviews(t, f.store, f.clock.Now(), DefaultConfig().DailyReviews)
+	if _, err := pollOnce(t, c); err != nil {
+		t.Fatal(err)
+	}
+	settleWorker(t, c)
+	for range 3 {
+		pollAgain(t, c, f)
+	}
+	job := func() *DurableJob {
+		d, err := f.store.Snapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return d.Jobs["native-1-1"]
+	}
+	if j := job(); j == nil || j.State != "quota_wait" || j.Checkpoint.ConsumedSessions != 0 || calls.Load() != 0 {
+		t.Fatal("daily limit did not leave the admitted job waiting before work", j != nil && j.State == "quota_wait", calls.Load())
+	}
+	statuses := statusWrites(t, f)
+	if len(statuses) != 1 || f.posts != 1 || statuses[0].State != "confirmed" || statuses[0].Status != "quota_wait" || !strings.Contains(statuses[0].Document.Summary, "INCOMPLETE: the daily review quota is exhausted.") {
+		t.Fatal("daily-limit quota_wait status not published exactly once", len(statuses), f.posts)
+	}
+	// The next UTC day frees quota within the quota wait. The job starts,
+	// then waits for quota again mid-run.
+	claudeQuota = true
+	f.clock.Advance(23 * time.Hour)
+	for range 3 {
+		pollAgain(t, c, f)
+	}
+	if j := job(); j.State != "quota_wait" || j.Checkpoint.ConsumedSessions != 1 || calls.Load() == 0 {
+		t.Fatal("freed quota did not resume the job into a later quota wait", j.State, j.Checkpoint.ConsumedSessions, calls.Load())
+	}
+	if statuses = statusWrites(t, f); len(statuses) != 1 || f.posts != 1 {
+		t.Fatal("later quota wait published a second status", len(statuses), f.posts)
+	}
+	f.clock.Advance(2 * time.Hour)
+	for range 3 {
+		pollAgain(t, c, f)
+	}
+	if j := job(); j.State != "incomplete_expired" {
+		t.Fatal("quota wait did not expire", j.State)
+	}
+	statuses = statusWrites(t, f)
+	byState := map[string]int{}
+	for _, w := range statuses {
+		byState[w.Status]++
+	}
+	if len(statuses) != 2 || byState["quota_wait"] != 1 || byState["incomplete_expired"] != 1 || f.posts != 2 {
+		t.Fatal("expiry did not publish exactly its own status", byState, f.posts)
+	}
+}

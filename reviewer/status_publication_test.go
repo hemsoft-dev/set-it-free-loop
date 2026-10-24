@@ -3,6 +3,7 @@ package reviewer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -554,6 +555,167 @@ func TestGitHubStatusIntentShapeRefusedBeforeHTTP(t *testing.T) {
 			defer f.mu.Unlock()
 			if f.calls != 0 {
 				t.Fatal("malformed status reached HTTP", f.calls)
+			}
+		})
+	}
+}
+
+// exhaustDailyReviews charges count completed jobs of other PRs on day, so a
+// job that has not started yet meets the daily review limit at its claim.
+func exhaustDailyReviews(t *testing.T, s *Store, day time.Time, count int) {
+	t.Helper()
+	err := s.update(context.Background(), func(d *DurableState) error {
+		for i := range count {
+			job := testJob()
+			job.ID = fmt.Sprintf("charged-%d", i)
+			scope := alphaScope()
+			scope.PR = 100 + i
+			d.Jobs[job.ID] = &DurableJob{Job: job, Scope: scope, CreatedAt: day, State: "dual_complete", ChargeDays: []string{day.UTC().Format("2006-01-02")}, Checkpoint: Checkpoint{JobHash: Digest(job), Artifacts: []Artifact{}}}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A queued job below the daily review limit is transient: it publishes no
+// status, and its claim starts work instead of waiting for quota.
+func TestQueuedJobBelowDailyLimitPublishesNoStatus(t *testing.T) {
+	s, job, remote := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	exhaustDailyReviews(t, s, now, job.Config.DailyReviews-1)
+	p := Publisher{Store: s, Remote: remote}
+	jobsBefore, _ := durableDigests(t, s)
+	if err := p.PrepareStatuses(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if jobs, _ := durableDigests(t, s); jobs != jobsBefore || len(writes(t, s, "status")) != 0 {
+		t.Fatal("queued job published a status")
+	}
+	token, err := s.Claim(ctx, job.ID, now)
+	if err != nil || token == "" {
+		t.Fatal("job below the daily limit not claimed", err)
+	}
+	if err = p.PrepareStatuses(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(writes(t, s, "status")) != 0 || remote.posts != 0 {
+		t.Fatal("running job published a status")
+	}
+}
+
+// A newly admitted job whose claim meets the daily review limit waits for
+// quota durably: it enters quota_wait without a lease, a session or a day
+// charge, and publishes one fenced quota_wait status. Repeated claims leave the
+// durable state unchanged and publish no second status.
+func TestDailyLimitBeforeFirstPhasePublishesQuotaWaitOnce(t *testing.T) {
+	s, job, base := admittedFixture(t)
+	ctx := context.Background()
+	now := controlTime.Add(4 * time.Minute)
+	exhaustDailyReviews(t, s, now, job.Config.DailyReviews)
+	remote := &annotationRemote{fakeRemote: base}
+	p := Publisher{Store: s, Remote: remote}
+	if _, err := s.Claim(ctx, job.ID, now); !errors.Is(err, ErrDeferred) {
+		t.Fatal("claim at the daily limit not deferred", err)
+	}
+	d, _ := s.Snapshot(ctx)
+	if j := d.Jobs[job.ID]; j.State != "quota_wait" || j.LeaseToken != "" || j.Outstanding || j.Checkpoint.ConsumedSessions != 0 || len(j.ChargeDays) != 0 {
+		t.Fatal("daily limit did not leave the job waiting for quota", j.State, j.LeaseToken != "", j.Checkpoint.ConsumedSessions, j.ChargeDays)
+	}
+	jobsBefore, _ := durableDigests(t, s)
+	if _, err := s.Claim(ctx, job.ID, now.Add(time.Minute)); !errors.Is(err, ErrDeferred) {
+		t.Fatal("repeated claim at the daily limit not deferred", err)
+	}
+	if jobs, _ := durableDigests(t, s); jobs != jobsBefore {
+		t.Fatal("repeated daily-limit claim rewrote the job")
+	}
+	if err := p.PrepareStatuses(ctx); err != nil {
+		t.Fatal(err)
+	}
+	w := soleStatus(t, s)
+	if w.State != "prepared" || w.Status != "quota_wait" || w.JobHash != Digest(job) || w.RequestID != 1 || w.Generation != job.Generation || w.Snapshot != job.Snapshot || len(w.Document.Inline) != 0 || !strings.Contains(w.Document.Summary, statusCause(job, "quota_wait")) {
+		t.Fatalf("quota_wait status not bound to its job: %+v", w)
+	}
+	if err := p.Dispatch(ctx, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := s.Claim(ctx, job.ID, now.Add(2*time.Minute)); !errors.Is(err, ErrDeferred) {
+			t.Fatal(err)
+		}
+		if err := p.PrepareStatuses(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if got := soleStatus(t, s); got.State != "confirmed" || base.posts != 1 {
+			t.Fatal("waiting job duplicated its status", got.State, base.posts)
+		}
+	}
+	// The status promised later work, so a replacing request annotates it.
+	if err := s.RecordRequest(ctx, alphaScope(), native(2, controlTime.Add(10*time.Minute)), true); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.PrepareStatuses(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Reconcile(ctx, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := soleStatusFor(t, s, w.ID); got.State != "superseded" || len(remote.reasons) != 1 || remote.reasons[0] != statusSupersession || base.posts != 1 {
+		t.Fatal("replaced quota_wait status not annotated once", got.State, remote.reasons, base.posts)
+	}
+}
+
+// A daily-limit quota_wait status passes the same fences as every status: a
+// moved head, a non-owner request or a local pause retires it without a POST.
+// Once quota frees, it defers while its job runs and is retired when the job
+// leaves quota_wait.
+func TestDailyLimitQuotaWaitStatusFencesBeforeDispatch(t *testing.T) {
+	for name, change := range map[string]func(*testing.T, *Store, *fakeRemote, Job, func() error){
+		"head-moved": func(_ *testing.T, _ *Store, r *fakeRemote, _ Job, _ func() error) {
+			r.state.Snapshot.Head = strings.Repeat("e", 40)
+		},
+		"non-owner": func(_ *testing.T, _ *Store, r *fakeRemote, _ Job, _ func() error) { r.state.Request.RequesterID = 666 },
+		"local-pause": func(t *testing.T, s *Store, _ *fakeRemote, _ Job, _ func() error) {
+			if !pausePR(t, s) {
+				t.Fatal("PR not paused")
+			}
+		},
+		"quota-freed": func(t *testing.T, s *Store, r *fakeRemote, job Job, dispatch func() error) {
+			ctx := context.Background()
+			token, err := s.Claim(ctx, job.ID, controlTime.Add(24*time.Hour))
+			if err != nil {
+				t.Fatal("job not claimed once quota freed", err)
+			}
+			if err = dispatch(); !errors.Is(err, ErrDeferred) || r.posts != 0 || soleStatus(t, s).State != "prepared" {
+				t.Fatal("status of a running job did not defer", err, r.posts)
+			}
+			if err = s.ReleaseStopped(ctx, job.ID, token, "auth_failed"); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, job, remote := admittedFixture(t)
+			ctx := context.Background()
+			now := controlTime.Add(4 * time.Minute)
+			exhaustDailyReviews(t, s, now, job.Config.DailyReviews)
+			if _, err := s.Claim(ctx, job.ID, now); !errors.Is(err, ErrDeferred) {
+				t.Fatal(err)
+			}
+			p := Publisher{Store: s, Remote: remote}
+			if err := p.PrepareStatuses(ctx); err != nil {
+				t.Fatal(err)
+			}
+			w := soleStatus(t, s)
+			dispatch := func() error { return p.Dispatch(ctx, w.ID) }
+			change(t, s, remote, job, dispatch)
+			if err := dispatch(); !errors.Is(err, ErrFenced) || remote.posts != 0 {
+				t.Fatal("fenced quota_wait status was POSTed", err, remote.posts)
+			}
+			if got := soleStatusFor(t, s, w.ID); got.State != "stale" {
+				t.Fatal("fenced quota_wait status not retired", got.State)
 			}
 		})
 	}
