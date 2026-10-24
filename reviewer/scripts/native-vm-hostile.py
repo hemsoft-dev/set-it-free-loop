@@ -37,8 +37,8 @@ EXHAUSTION = [
     ("claude", "claude-response-flood"), ("claude", "claude-turn-flood"), ("claude", "claude-stall"),
     ("claude", "claude-source-oversize"),
     ("codex", "codex-response-flood"), ("codex", "codex-turn-flood"), ("codex", "codex-stall"),
-    ("codex", "codex-source-flood"), ("codex", "codex-source-oversize"), ("codex", "codex-code-memory"),
-    ("codex", "codex-code-output-flood"), ("codex", "codex-code-spin"),
+    ("codex", "codex-source-flood"), ("codex", "codex-request-flood"), ("codex", "codex-source-oversize"),
+    ("codex", "codex-code-memory"), ("codex", "codex-code-output-flood"), ("codex", "codex-code-spin"),
 ]
 PEAK = re.compile(r"Consumed .*?, ([0-9.]+[KMGT]?) memory peak")
 # A pinned Claude client that re-advertises a forbidden tool is a recorded
@@ -73,9 +73,14 @@ REQUIRED_CHECKS = {
 # Exhaustion cases may leave auth fenced for recovery instead of returned,
 # and each case adds its own bound checks, matching exhaustionChecks.
 EXHAUSTION_COMMON = COMMON_CHECKS - {"auth-returned"} | {"auth-returned-or-fenced", "provider-bounds-held", "usage-not-claimed"}
+# Cases that must end through the guest's returned finished record: auth
+# returned with its original tokens and usable, the source audit present and a
+# typed phase class. A fenced or audit-less result fails these checks; it is
+# never a pass or a contained client failure.
+RETURNED_CHECKS = {"auth-returned", "source-audit-returned"}
 FLOOD_CHECKS = {"typed-failure", "flood-passed-bound", "egress-exhausted", "single-inference", "no-source-access"}
-STALL_CHECKS = {"typed-failure", "guard-cancelled-stall", "unaccepted-upstream-recorded", "deadline-bounded",
-                "single-inference", "no-source-access"}
+STALL_CHECKS = {"expired-phase", "guard-cancelled-stall", "unaccepted-upstream-recorded", "grace-bounded",
+                "single-inference", "no-source-access"} | RETURNED_CHECKS
 TURN_CHECKS = {"typed-failure", "turn-bound-reached", "every-turn-used-source"}
 OVERSIZE_CHECKS = {"first-read-delivered", "second-read-denied", "byte-bound", "honest-outcome"}
 EXHAUSTION_CHECKS = {
@@ -84,8 +89,10 @@ EXHAUSTION_CHECKS = {
     "claude-turn-flood": TURN_CHECKS, "codex-turn-flood": TURN_CHECKS,
     "claude-source-oversize": OVERSIZE_CHECKS, "codex-source-oversize": OVERSIZE_CHECKS,
     "codex-source-flood": {"tool-call-bound", "client-saw-bound", "honest-outcome"},
+    "codex-request-flood": {"typed-phase-failure", "flood-cause", "request-bound", "client-saw-refusal"} | RETURNED_CHECKS,
     "codex-code-spin": {"cell-yielded", "code-host-stopped", "ended-before-deadline", "typed-or-validated", "no-source-access"},
-    "codex-code-memory": {"typed-failure", "allocation-dispatched", "memory-bound-ended-cell", "no-source-access"},
+    "codex-code-memory": {"typed-phase-failure", "allocation-dispatched", "memory-bound-ended-cell",
+                          "no-source-access"} | RETURNED_CHECKS,
     "codex-code-output-flood": {"typed-failure", "relay-limit-reached", "no-source-access"},
 }
 # Case kinds, matching internal/nativefixture hostileCases and exhaustionCases.

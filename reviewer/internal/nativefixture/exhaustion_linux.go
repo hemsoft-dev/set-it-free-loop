@@ -32,6 +32,7 @@ var exhaustionCases = []HostileCase{
 	{"codex-turn-flood", r.Codex, HostileExhaust},
 	{"codex-stall", r.Codex, HostileExhaust},
 	{"codex-source-flood", r.Codex, HostileExhaust},
+	{"codex-request-flood", r.Codex, HostileExhaust},
 	{"codex-source-oversize", r.Codex, HostileExhaust},
 	{"codex-code-memory", r.Codex, HostileExhaust},
 	{"codex-code-output-flood", r.Codex, HostileExhaust},
@@ -60,8 +61,13 @@ func bigObject() []byte { return []byte(bigText) }
 // FloodBytes exceeds the 16 MiB per-response egress bound by 1 MiB.
 const FloodBytes = 17 << 20
 
-// SourceFloodCalls exceeds the default 128 source tool calls.
+// SourceFloodCalls exceeds the default 128 source tool calls but stays within
+// the request budget of 128 + 32 MCP requests.
 const SourceFloodCalls = 140
+
+// RequestFloodCalls exceeds the request budget of 128 + 32 MCP requests, so
+// the transport ends source intake partway through.
+const RequestFloodCalls = 200
 
 // stallLimit only protects the fake server if the guard never cancels.
 const stallLimit = 150 * time.Second
@@ -212,6 +218,12 @@ const codexSourceFloodProgram = `const out={ok:0,err:0,first_err:"",last_err:""}
 for (let i=0;i<%d;i++) { try { const v=await tools.mcp__sfl_source__read({revision:"%s",path:"source.go"}); const t=(v&&Array.isArray(v.content)&&v.content.length===1&&v.content[0].type==="text")?v.content[0].text:""; if (v&&!v.isError&&t===%q) out.ok++; else { out.err++; const e=String(t||JSON.stringify(v)).slice(0,160); if(!out.first_err) out.first_err=e; out.last_err=e } } catch(e) { out.err++; const m="throw:"+String(e).slice(0,160); if(!out.first_err) out.first_err=m; out.last_err=m } }
 text(JSON.stringify({sfl_flood:out}));`
 
+// Each read is classified as served, denied past the tool-call bound, or
+// failed once the transport ended source intake on the request budget.
+const codexRequestFloodProgram = `const out={ok:0,denied:0,closed:0,first_closed:""};
+for (let i=0;i<%d;i++) { try { const v=await tools.mcp__sfl_source__read({revision:"%s",path:"source.go"}); const t=(v&&Array.isArray(v.content)&&v.content.length===1&&v.content[0].type==="text")?v.content[0].text:""; if (v&&!v.isError&&t===%q) out.ok++; else if (v&&v.isError&&t==="Source request denied") out.denied++; else { out.closed++; if(!out.first_closed) out.first_closed=String(t||JSON.stringify(v)).slice(0,160) } } catch(e) { out.closed++; if(!out.first_closed) out.first_closed="throw:"+String(e).slice(0,160) } }
+text(JSON.stringify({sfl_request:out}));`
+
 const codexSourceOversizeProgram = `const out={};
 for (const k of ["first-read","second-read"]) { try { const v=await tools.mcp__sfl_source__read({revision:"%s",path:"big.go"}); const t=(v&&Array.isArray(v.content)&&v.content.length===1&&v.content[0].type==="text")?v.content[0].text:JSON.stringify(v); out[k]=(v&&v.isError?"error:":"ok:")+t.length+":"+t.slice(0,96) } catch(e) { out[k]="throw:"+String(e).slice(0,160) } }
 text(JSON.stringify({sfl_big:out}));`
@@ -232,6 +244,8 @@ func (b *codexBackend) exhaustionProgram() (string, string) {
 	switch b.hostile.c.Name {
 	case "codex-source-flood":
 		return "h_flood", fmt.Sprintf(codexSourceFloodProgram, SourceFloodCalls, head, source)
+	case "codex-request-flood":
+		return "h_request", fmt.Sprintf(codexRequestFloodProgram, RequestFloodCalls, head, source)
 	case "codex-source-oversize":
 		return "h_big", fmt.Sprintf(codexSourceOversizeProgram, head)
 	case "codex-code-output-flood":
@@ -330,7 +344,7 @@ func (b *codexBackend) exhaustionTurn(w http.ResponseWriter, q *http.Request, bo
 		h.obs.Results["exec-output"] = "missing"
 		if ok {
 			h.obs.Results["exec-output"] = snippetOf(value, h.secrets)
-			for _, marker := range []string{"sfl_flood", "sfl_big"} {
+			for _, marker := range []string{"sfl_flood", "sfl_big", "sfl_request"} {
 				if fields, found := codexMarked(value, marker); found {
 					for k, raw := range fields {
 						if len(h.obs.Probe) < 64 {

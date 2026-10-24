@@ -118,6 +118,54 @@ class HostileMatrixTests(unittest.TestCase):
         self.assertIn('HostileExhaust = "exhaustion"', source)
         self.assertEqual({name: module.CASE_KINDS[name] for _, name in module.EXHAUSTION}, dict.fromkeys((n for _, n in module.EXHAUSTION), "exhaustion"))
 
+    def test_returning_exhaustion_cases_are_judged_strictly(self):
+        typed = {"claude-stall": "expired-phase", "codex-stall": "expired-phase",
+                 "codex-code-memory": "typed-phase-failure", "codex-request-flood": "typed-phase-failure"}
+        self.assertIn(("codex", "codex-request-flood"), module.EXHAUSTION)
+        self.assertEqual({name for name, checks in module.EXHAUSTION_CHECKS.items() if module.RETURNED_CHECKS <= checks},
+                         set(typed))
+        for name, phase in typed.items():
+            [checks] = module.required_checks(name)
+            self.assertTrue(module.RETURNED_CHECKS | {phase, "auth-returned-or-fenced"} <= checks, name)
+            self.assertNotIn("typed-failure", checks, name)
+            passing = result(name)
+            self.assertEqual(module.verdict(name, passing), "pass", name)
+            # Fenced auth, a lost audit or an untyped class fails the case even
+            # when every host containment check held. It is never reported as
+            # a contained client failure.
+            for check in sorted(module.RETURNED_CHECKS | {phase}):
+                for contained in (True, False):
+                    failed = dict(passing, Passed=False, HostContained=contained,
+                                  Checks=dict(passing["Checks"], **{check: False}))
+                    self.assertEqual(module.verdict(name, failed), "fail", (name, check, contained))
+        # The pre-change results, which accepted fenced auth and a lost audit,
+        # no longer match any check set.
+        legacy = {
+            "codex-stall": {"typed-failure", "guard-cancelled-stall", "unaccepted-upstream-recorded", "deadline-bounded",
+                            "single-inference", "no-source-access"},
+            "codex-code-memory": {"typed-failure", "allocation-dispatched", "memory-bound-ended-cell", "no-source-access"},
+        }
+        for name, checks in legacy.items():
+            old = result(name, Checks=dict.fromkeys(module.EXHAUSTION_COMMON | checks, True))
+            self.assertEqual(module.verdict(name, old), "fail", name)
+
+    def test_other_exhaustion_cases_are_unchanged(self):
+        flood = {"typed-failure", "flood-passed-bound", "egress-exhausted", "single-inference", "no-source-access"}
+        turn = {"typed-failure", "turn-bound-reached", "every-turn-used-source"}
+        oversize = {"first-read-delivered", "second-read-denied", "byte-bound", "honest-outcome"}
+        unchanged = {
+            "claude-response-flood": flood, "codex-response-flood": flood, "claude-turn-flood": turn, "codex-turn-flood": turn,
+            "claude-source-oversize": oversize, "codex-source-oversize": oversize,
+            "codex-source-flood": {"tool-call-bound", "client-saw-bound", "honest-outcome"},
+            "codex-code-spin": {"cell-yielded", "code-host-stopped", "ended-before-deadline", "typed-or-validated", "no-source-access"},
+            "codex-code-output-flood": {"typed-failure", "relay-limit-reached", "no-source-access"},
+        }
+        for name, checks in unchanged.items():
+            self.assertEqual(module.EXHAUSTION_CHECKS[name], checks, name)
+            self.assertEqual(module.required_checks(name), [module.EXHAUSTION_COMMON | checks], name)
+        self.assertEqual(set(unchanged) | {"claude-stall", "codex-stall", "codex-code-memory", "codex-request-flood"},
+                         {name for _, name in module.EXHAUSTION})
+
     def test_memory_peak_is_the_last_accounting_line(self):
         log = ("Started x.\nx.service: Consumed 4.790s CPU time over 5.090s wall clock time, 1.1G memory peak.\n"
                "x.service: Consumed 1.000s CPU time, 812.5M memory peak.\n")

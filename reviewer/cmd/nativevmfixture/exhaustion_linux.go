@@ -4,7 +4,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,8 +24,9 @@ const codeHostRelayLimit, codeHostRelaySlack = int64(8 << 20), int64(64 << 10)
 // cancellation can never satisfy a deadline check.
 const hostilePhase, hostileWatchdog = 75 * time.Second, 100 * time.Second
 
-// A stalled upstream must observe the phase deadline within
-// deadlineCancelSlack, and the result must return within deadlineCleanup of it.
+// A stalled upstream must observe the host's work deadline within
+// deadlineCancelSlack, and the result must return within deadlineCleanup of the
+// phase deadline.
 const deadlineCancelSlack, deadlineCleanup = 2 * time.Second, 20 * time.Second
 
 type codeHostAudit struct {
@@ -51,6 +54,10 @@ type exhaustionInput struct {
 	// StallCancel is when, after the review started, a stalled fake upstream
 	// observed its cancellation; zero if it never did.
 	StallCancel time.Duration
+	// AuthReturned means the synthetic auth came back with its original
+	// tokens, was committed, and agrees with the audit, the error and a
+	// reopened store: returned and usable, not fenced.
+	AuthReturned bool
 }
 
 // typedFailure accepts only a normalized failure: an empty report, an
@@ -98,10 +105,30 @@ func (in exhaustionInput) noSource() bool {
 	return in.Source.ToolCalls == 0 && len(in.Source.Reads) == 0
 }
 
-// deadlineEnded accepts a result returned only after the phase deadline and
-// within the cleanup bound, which ends before the fixture's outer watchdog.
-func (in exhaustionInput) deadlineEnded() bool {
-	return in.Elapsed >= in.Limits.Timeout-time.Second && in.Elapsed <= in.Limits.Timeout+deadlineCleanup
+// workDeadline is when the host ends client work: the result grace before
+// the phase deadline. The guest's own deadline follows it by the VM's boot.
+func (in exhaustionInput) workDeadline() time.Duration {
+	return in.Limits.Timeout - r.NativeVMResultGrace(in.Limits.Timeout)
+}
+
+// graceEnded accepts a result returned only after the work deadline and
+// within the cleanup bound of the phase deadline, which ends before the
+// fixture's outer watchdog.
+func (in exhaustionInput) graceEnded() bool {
+	return in.Elapsed >= in.workDeadline() && in.Elapsed <= in.Limits.Timeout+deadlineCleanup
+}
+
+// typedPhase accepts only a guest-returned typed failure: an empty report, an
+// incomplete audit and a phase class, never a deadline, cancellation or
+// auth-recovery class. An empty want accepts any phase class.
+func (in exhaustionInput) typedPhase(want string) bool {
+	class := errorClass(in.Err)
+	return in.Err != nil && strings.HasPrefix(class, "phase-") && (want == "" || class == want) && r.Digest(in.Report) == r.Digest(r.Report{}) && !in.AuditComplete
+}
+
+// auditReturned means the host decoded the guest's source audit.
+func (in exhaustionInput) auditReturned() bool {
+	return in.Source != nil && !errors.Is(in.Err, r.ErrSourceAuditPending)
 }
 
 func exhaustionChecks(in exhaustionInput) map[string]bool {
@@ -120,14 +147,21 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 		checks["single-inference"] = in.Counts.Inference == 1
 		checks["no-source-access"] = in.noSource()
 	case "claude-stall", "codex-stall":
-		checks["typed-failure"] = in.typedFailure()
+		// The host's work deadline, the result grace before the phase
+		// deadline, revokes provider intake. The guest's client proxy stops
+		// the client, and the guest returns auth and the source audit in its
+		// finished record within the grace. Fenced auth fails the case.
+		checks["expired-phase"] = in.typedPhase("phase-incomplete_expired")
 		checks["guard-cancelled-stall"] = in.Observation.Results["stall"] == "cancelled-by-guard"
 		checks["unaccepted-upstream-recorded"] = pa != nil && pa.Failed && pa.InferenceRequests == 1 && pa.Forwarded == pa.Responses+1
-		// The phase deadline, not a client timer or the fixture's watchdog,
-		// cancels the stalled upstream, and cleanup is bounded after it.
-		checks["deadline-bounded"] = in.StallCancel >= in.Limits.Timeout && in.StallCancel <= in.Limits.Timeout+deadlineCancelSlack && in.deadlineEnded()
+		// The work deadline, not a client timer, the phase deadline or the
+		// fixture's watchdog, cancels the stalled upstream.
+		work := in.workDeadline()
+		checks["grace-bounded"] = in.StallCancel >= work && in.StallCancel <= work+deadlineCancelSlack && in.graceEnded()
 		checks["single-inference"] = in.Counts.Inference == 1
 		checks["no-source-access"] = in.noSource()
+		checks["source-audit-returned"] = in.auditReturned()
+		checks["auth-returned"] = in.AuthReturned
 	case "claude-turn-flood", "codex-turn-flood":
 		limit := in.Policy.InferenceRequests
 		checks["typed-failure"] = in.typedFailure()
@@ -139,6 +173,26 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 		// The final turn's result never returns to the model, but its call
 		// must still reach the broker: the broker proves all limit calls.
 		checks["every-turn-used-source"] = in.Observation.SourceResults >= limit-1 && in.Source != nil && in.Source.ToolCalls == limit
+	case "codex-request-flood":
+		// More than ReaderCalls + 32 MCP requests end source intake. The
+		// reader keeps a valid audit recording the flood, the guest returns
+		// it with auth, and the phase fails typed, never clean.
+		calls := in.Limits.ReaderCalls
+		probe := in.Observation.Probe
+		ok, okErr := strconv.Atoi(probe["ok"])
+		denied, deniedErr := strconv.Atoi(probe["denied"])
+		closed, closedErr := strconv.Atoi(probe["closed"])
+		counted := okErr == nil && deniedErr == nil && closedErr == nil && ok+denied+closed == f.RequestFloodCalls
+		checks["typed-phase-failure"] = in.typedPhase("")
+		// The guest already refused the flooded report; the host must still
+		// name the flood as the cause.
+		checks["flood-cause"] = errors.Is(in.Err, r.ErrSourceRequestFlood)
+		checks["request-bound"] = in.Source != nil && in.Source.ToolCalls == calls && in.Source.Exhausted && coverageHas(in.Source.Coverage, "source request limit exhausted") && coverageHas(in.Source.Coverage, "source tool-call limit exhausted")
+		// The client saw every bound in order: the served reads, denials past
+		// the tool-call bound within the request budget, then closed intake.
+		checks["client-saw-refusal"] = counted && ok == calls && denied >= 1 && closed >= 1 && ok+denied <= calls+32
+		checks["source-audit-returned"] = in.auditReturned()
+		checks["auth-returned"] = in.AuthReturned
 	case "codex-source-flood":
 		calls := in.Limits.ReaderCalls
 		checks["tool-call-bound"] = in.Source != nil && in.Source.ToolCalls == calls && in.Source.Exhausted && coverageHas(in.Source.Coverage, "source tool-call limit exhausted")
@@ -184,23 +238,26 @@ func exhaustionChecks(in exhaustionInput) map[string]bool {
 	case "codex-code-memory":
 		var host codeHostAudit
 		decoded := len(in.CodeHost) != 0 && json.Unmarshal(in.CodeHost, &host) == nil
-		lost := len(in.CodeHost) == 0 || string(in.CodeHost) == "null"
 		results := in.Observation.Results
 		exec, returned := results["exec-output"]
-		checks["typed-failure"] = in.typedFailure()
+		checks["typed-phase-failure"] = in.typedPhase("")
 		// The client ran and returned a 64 MiB control allocation under the
 		// bound, then the guard relayed the over-bound cell to it.
 		checks["allocation-dispatched"] = results["control-output"] == "survived" && results["memory-cell"] == "issued" && pa != nil && pa.InferenceRequests >= 2 && pa.Forwarded == pa.Responses
 		// The over-bound cell, differing from the control only in size, never
-		// completed. Either the code host's receipt shows it failed inside the
-		// exchange well below the relay bound and the client returned that
-		// failure, or the receipt was lost because the client never returned
-		// the cell and only the phase deadline ended the session. A merely
+		// completed, and the code host's receipt shows it stopped and failed
+		// inside the exchange well below the relay bound. Either the client
+		// returned that failure on a third inference, or it never returned
+		// the cell: then the guest's own deadline ended the client, code host
+		// and broker within the result grace and the phase expired. A merely
 		// long cell yields after about 30 s instead; see codex-code-spin.
-		failed := decoded && host.Stopped && host.Failed && !host.RelayComplete && host.Stage == "wait" && host.OutputBytes < codeHostRelayLimit-codeHostRelaySlack && returned && in.Counts.Inference == 3
-		hung := lost && !returned && in.Counts.Inference == 2 && in.deadlineEnded()
-		checks["memory-bound-ended-cell"] = exec != "survived" && (failed || hung)
+		ended := decoded && host.Stopped && host.Failed && !host.RelayComplete && host.Stage == "wait" && host.OutputBytes < codeHostRelayLimit-codeHostRelaySlack
+		failed := ended && returned && in.Counts.Inference == 3
+		expired := ended && !returned && in.Counts.Inference == 2 && in.graceEnded() && errorClass(in.Err) == "phase-incomplete_expired"
+		checks["memory-bound-ended-cell"] = exec != "survived" && (failed || expired)
 		checks["no-source-access"] = in.noSource()
+		checks["source-audit-returned"] = in.auditReturned()
+		checks["auth-returned"] = in.AuthReturned
 	case "codex-code-output-flood":
 		var host codeHostAudit
 		decoded := len(in.CodeHost) != 0 && json.Unmarshal(in.CodeHost, &host) == nil
