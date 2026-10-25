@@ -147,9 +147,9 @@ def helper_observation_valid(result):
     if set(observation) != {"Version", "Binding", "RequestHash", "ImageSourceHead", "HelperSHA256",
                             "HelperEntry", "UID", "Attempts", "Denied", "Failed", "Complete"}:
         return False
-    if set(binding) != {"SessionHash", "LaunchID", "ContainmentID"}:
+    if set(binding) != {"session_hash", "launch_id", "containment_id"}:
         return False
-    for key, size in [("SessionHash", 64), ("LaunchID", 32), ("ContainmentID", 64)]:
+    for key, size in [("session_hash", 64), ("launch_id", 32), ("containment_id", 64)]:
         if not isinstance(binding[key], str) or not re.fullmatch("[0-9a-f]{"+str(size)+"}", binding[key]):
             return False
     for key in ["HelperRequestHash", "DenyHelperSHA256"]:
