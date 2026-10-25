@@ -10,6 +10,9 @@ import (
 )
 
 func main() {
+	if filepath.Base(os.Args[0]) == "sh" {
+		os.Exit(r.NativeVMDenyShell())
+	}
 	args := os.Args[1:]
 	if filepath.Base(os.Args[0]) == "codex-code-mode-host" {
 		if len(args) != 0 {

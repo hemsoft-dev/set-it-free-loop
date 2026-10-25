@@ -105,7 +105,10 @@ def required_checks(name):
     """Every check set a result for this case may carry."""
     if CASE_KINDS.get(name) == "exhaustion":
         return [EXHAUSTION_COMMON | EXHAUSTION_CHECKS[name]]
-    return REQUIRED_CHECKS.get(CASE_KINDS.get(name), [])
+    variants = REQUIRED_CHECKS.get(CASE_KINDS.get(name), [])
+    if name == "codex-settings":
+        return [checks | {"hook-observation-bound", "hook-command-denied"} for checks in variants]
+    return variants
 
 
 def cases(matrix="hostile"):
@@ -120,6 +123,8 @@ def verdict(name, result):
         return "fail"
     if name == "forbidden":
         return "pass" if result.get("Passed") is True and result.get("Negative") is True else "fail"
+    if name == "codex-settings" and not helper_observation_valid(result):
+        return "fail"
     checks, kind = result.get("Checks"), CASE_KINDS.get(name)
     if not isinstance(checks, dict) or result.get("Case") != name or result.get("Kind") != kind \
             or set(checks) not in required_checks(name):
@@ -131,6 +136,39 @@ def verdict(name, result):
     if failed and failed <= client_checks and result.get("HostContained") is True and result.get("Passed") is False:
         return "client-failure"
     return "fail"
+
+
+def helper_observation_valid(result):
+    """Check the saved host observation, never infer execution from inventory."""
+    observation = result.get("ExecObservation")
+    binding = result.get("HelperBinding")
+    if not isinstance(observation, dict) or not isinstance(binding, dict):
+        return False
+    if set(observation) != {"Version", "Binding", "RequestHash", "ImageSourceHead", "HelperSHA256",
+                            "HelperEntry", "UID", "Attempts", "Denied", "Failed", "Complete"}:
+        return False
+    if set(binding) != {"SessionHash", "LaunchID", "ContainmentID"}:
+        return False
+    for key, size in [("SessionHash", 64), ("LaunchID", 32), ("ContainmentID", 64)]:
+        if not isinstance(binding[key], str) or not re.fullmatch("[0-9a-f]{"+str(size)+"}", binding[key]):
+            return False
+    for key in ["HelperRequestHash", "DenyHelperSHA256"]:
+        if not isinstance(result.get(key), str) or not re.fullmatch("[0-9a-f]{64}", result[key]):
+            return False
+    if (type(observation.get("Version")) is not int or observation["Version"] != 1
+            or type(observation.get("UID")) is not int or observation["UID"] != 1202
+            or observation.get("HelperEntry") != "sh-deny-v1"
+            or observation.get("Binding") != binding
+            or observation.get("RequestHash") != result["HelperRequestHash"]
+            or observation.get("HelperSHA256") != result["DenyHelperSHA256"]
+            or observation.get("ImageSourceHead") != result.get("ImageSourceHead")
+            or not isinstance(observation.get("ImageSourceHead"), str)
+            or not re.fullmatch("[0-9a-f]{40}", observation["ImageSourceHead"])
+            or observation.get("Complete") is not True or observation.get("Failed") is not False):
+        return False
+    attempts, denied = observation.get("Attempts"), observation.get("Denied")
+    return (type(attempts) is int and type(denied) is int and 0 <= attempts <= 64 and denied == attempts
+            and result.get("HelperOutcome") == ("no-observed-attempt" if attempts == 0 else "attempted-and-denied"))
 
 
 # native-vm-fake.py may take two 120 s build steps plus its 125 s runner bound.

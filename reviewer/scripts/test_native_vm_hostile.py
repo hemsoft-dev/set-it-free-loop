@@ -1,4 +1,5 @@
 import importlib.util
+import copy
 import json
 from pathlib import Path
 import re
@@ -23,6 +24,13 @@ def result(name, variant=0, **changes):
     kind = module.CASE_KINDS.get(name, "response-guard")
     value = {"Case": name, "Kind": kind, "FakeOnly": True, "RuntimeQualified": False, "ProviderEligibilityQualified": False,
              "Passed": True, "HostContained": True, "Checks": dict.fromkeys((module.required_checks(name) or module.REQUIRED_CHECKS[kind])[variant], True)}
+    if name == "codex-settings":
+        binding = {"SessionHash": "a"*64, "LaunchID": "b"*32, "ContainmentID": "c"*64}
+        value.update(HelperBinding=binding, HelperRequestHash="d"*64, DenyHelperSHA256="f"*64,
+                     ImageSourceHead="e"*40, HelperOutcome="no-observed-attempt",
+                     ExecObservation={"Version": 1, "Binding": binding.copy(), "RequestHash": "d"*64,
+                                      "ImageSourceHead": "e"*40, "HelperSHA256": "f"*64, "HelperEntry": "sh-deny-v1", "UID": 1202,
+                                      "Attempts": 0, "Denied": 0, "Failed": False, "Complete": True})
     value.update(changes)
     return value
 
@@ -64,6 +72,31 @@ def all_stopped(marker):
 
 
 class HostileMatrixTests(unittest.TestCase):
+    def test_settings_without_hook_observation_cannot_pass(self):
+        old = result("codex-settings")
+        old["Checks"].pop("hook-observation-bound", None)
+        old["Checks"].pop("hook-command-denied", None)
+        self.assertEqual(module.verdict("codex-settings", old), "fail")
+
+    def test_helper_observation_distinguishes_denial_unknown_and_unsafe(self):
+        zero = result("codex-settings")
+        self.assertEqual(module.verdict("codex-settings", zero), "pass")
+        denied = copy.deepcopy(zero)
+        denied["ExecObservation"].update(Attempts=1, Denied=1)
+        denied["HelperOutcome"] = "attempted-and-denied"
+        self.assertEqual(module.verdict("codex-settings", denied), "pass")
+        for key, wrong in [("Attempts", 2), ("Denied", 0), ("Complete", False), ("Failed", True),
+                           ("UID", 1203), ("RequestHash", "0"*64), ("HelperSHA256", "0"*64),
+                           ("ImageSourceHead", "0"*40), ("Binding", {}), ("Version", 0), ("Version", True),
+                           ("UID", 1202.0), ("HelperEntry", "interpreter"), ("unexpected", "forged")]:
+            bad = copy.deepcopy(denied)
+            bad["ExecObservation"][key] = wrong
+            self.assertEqual(module.verdict("codex-settings", bad), "fail", key)
+        for observation in [None, {}, "truncated", {"Version": 1}]:
+            self.assertEqual(module.verdict("codex-settings", dict(zero, ExecObservation=observation)), "fail")
+        for claim in ["ignored-hook", "no-execution", "unsafe", "unknown"]:
+            self.assertEqual(module.verdict("codex-settings", dict(zero, HelperOutcome=claim)), "fail")
+
     def test_case_list_matches_the_go_fixture(self):
         source = (Path(__file__).resolve().parent.parent/"internal"/"nativefixture"/"hostile_linux.go").read_text()
         declared = re.findall(r'\{"((?:claude|codex)-[a-z-]+)", r\.(Claude|Codex), Hostile', source)

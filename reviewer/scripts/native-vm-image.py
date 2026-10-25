@@ -117,12 +117,14 @@ class Image:
         if source != "/native-init" and not source.startswith("/runtime/"):
             raise RuntimeError("invalid runtime source")
         fixed = {"/native-init", "/sourceproxy", "/usr/bin/env", "/client/codex", "/client/claude",
-                 "/client/codex-code-mode-host", "/codehost"}
+                 "/client/codex-code-mode-host", "/codehost", "/bin/sh"}
         if ((target not in fixed and not target.startswith(("/lib/", "/lib64/", "/usr/lib/")))
                 or ".." in Path(source).parts or ".." in Path(target).parts):
             raise RuntimeError("invalid runtime target")
         if any(role not in ROLES for role in roles) or not roles or len(set(roles)) != len(roles):
             raise RuntimeError("invalid image role")
+        if target == "/bin/sh" and (source != "/native-init" or roles != ["codex"]):
+            raise RuntimeError("shell path permits only the pinned Codex denial helper")
         for role in roles:
             key = (role, target)
             if key in self.targets:
@@ -201,6 +203,7 @@ def main():
     init = (output / "native-init").read_bytes()
     image.runtime("/native-init", "/native-init", init, ROLES)
     image.runtime("/native-init", "/client/codex-code-mode-host", init, ["codex"])
+    image.runtime("/native-init", "/bin/sh", init, ["codex"])
     image.runtime("/runtime/sourceproxy", "/sourceproxy", (output / "sourceproxy").read_bytes(), ["codex", "claude"])
     for name, data in clients.items():
         target = "/codehost" if name == "codehost" else "/client/"+name

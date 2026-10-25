@@ -15,6 +15,46 @@ import (
 	f "github.com/hemsoft-dev/set-it-free-loop/reviewer/internal/nativefixture"
 )
 
+func TestSettingsHookObservationRequiresTheCapturedGuestAndHelper(t *testing.T) {
+	binding := r.AuthBinding{SessionHash: r.Digest("session"), LaunchID: strings.Repeat("b", 32), ContainmentID: r.Digest("containment")}
+	c := config{ImageSourceHead: strings.Repeat("a", 40), DenyHelperSHA256: r.Digest("measured-helper")}
+	o := r.NativeVMExecObservation{Version: 1, Binding: binding, RequestHash: r.Digest("captured-request"), ImageSourceHead: c.ImageSourceHead, HelperSHA256: c.DenyHelperSHA256, HelperEntry: "sh-deny-v1", UID: 1202, Complete: true}
+	audit := hostileAudit{Binding: binding, RequestHash: o.RequestHash, ExecObservation: &o}
+	if !hookObservationBound(audit, c) {
+		t.Fatal("captured observer rejected")
+	}
+	for _, kind := range []string{"missing", "image", "helper", "session", "launch", "request", "uid", "incomplete", "failed"} {
+		t.Run(kind, func(t *testing.T) {
+			bad := audit
+			copy := o
+			bad.ExecObservation = &copy
+			switch kind {
+			case "missing":
+				bad.ExecObservation = nil
+			case "image":
+				copy.ImageSourceHead = strings.Repeat("c", 40)
+			case "helper":
+				copy.HelperSHA256 = r.Digest("foreign-executable")
+			case "session":
+				copy.Binding.SessionHash = r.Digest("other-job")
+			case "launch":
+				copy.Binding.LaunchID = strings.Repeat("c", 32)
+			case "request":
+				copy.RequestHash = r.Digest("old-request")
+			case "uid":
+				copy.UID = 1203
+			case "incomplete":
+				copy.Complete = false
+			case "failed":
+				copy.Failed = true
+			}
+			if hookObservationBound(bad, c) {
+				t.Fatal("unknown observation accepted", kind)
+			}
+		})
+	}
+}
+
 func TestHostileCaseCannotMixModesOrProviders(t *testing.T) {
 	for _, c := range []config{{Provider: r.Codex, Hostile: "codex-shell"}, {Provider: r.Claude, Hostile: "claude-source-mcp"}} {
 		if !c.validCase() {

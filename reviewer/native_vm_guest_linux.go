@@ -177,6 +177,10 @@ func NativeVMGuestMain(args []string) int {
 		if err != nil {
 			return 2
 		}
+		phase.execObserver, err = newNativeGuestExecObserver(q, release)
+		if err != nil {
+			return 2
+		}
 		if os.Mkdir(filepath.Join(clientRoot, "codehost"), 0710) != nil || nativeGuestBindDirectory("/run/native/code-rpc", filepath.Join(clientRoot, "codehost")) != nil {
 			return 2
 		}
@@ -366,6 +370,7 @@ type nativeGuestPhase struct {
 	broker            *nativeGuestCodeBroker
 	brokerDone        chan nativeVMCodeHostAccess
 	cancelBroker      context.CancelFunc
+	execObserver      *nativeGuestExecObserver
 	seed              *AuthTransferInfo
 	canaries          [][]byte
 	report            []byte
@@ -422,6 +427,7 @@ func (p *nativeGuestPhase) finish(parent context.Context) {
 		stopped = p.client.Stop(ctx) == nil
 		p.client.out.Close()
 	}
+	finished.ExecObservation = p.execObserver.finish(ctx, stopped && p.client != nil)
 	if p.clientStatusInput != nil {
 		select {
 		case class := <-p.clientStatus:

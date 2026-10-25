@@ -145,44 +145,61 @@ func attachIdleNativeProviderBridge(t *testing.T, p *nativeVMHostPhase) {
 }
 
 func TestNativeVMInvalidModelOutputStillCommitsStoppedAuthReturn(t *testing.T) {
-	p, manager := nativeHostPhaseFixture(t)
-	store := authTestStore(t, Codex)
-	profile, err := store.LeaseProfile(context.Background(), p.request.Binding)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p.profile = profile
-	seed, err := profile.ExportAuth(context.Background(), authExportCheck(func(context.Context, AuthBinding) error { return nil }))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer seed.Close()
-	p.exported = true
-	info, _ := seed.Info()
-	returned, err := NewAuthReturn(info, []byte("synthetic-refreshed-invalid-output"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	wire := authWire(t, returned)
-	p.finished = &nativeVMFinished{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), State: "invalid_output", AuthReturn: wire, SourceAudit: nativeHostAuditFixture(t, p.request)}
-	attachIdleNativeProviderBridge(t, p)
-	report, _, _, err := p.finish(context.Background(), Report{}, PhaseError{State: "invalid_output"})
-	if err == nil || len(report.Findings) != 0 || manager.stops != 1 {
-		t.Fatal("invalid result became a review or skipped physical stop", err)
-	}
-	state, err := os.ReadFile(filepath.Join(store.directory, "state.json"))
-	if err != nil || string(state) != "synthetic-refreshed-invalid-output" {
-		t.Fatal("stopped returned auth was lost or zeroed before commit", err)
-	}
-	if profile.held != nil {
-		t.Fatal("profile lock not released after auth persistence")
-	}
-	if !bytes.Equal(wire, make([]byte, len(wire))) {
-		t.Fatal("owned auth return wire not cleared after use")
-	}
-	audit, err := os.ReadFile(filepath.Join(p.supervisor.supervisor.root, p.request.Binding.LaunchID, "native-audit.json"))
-	if err != nil || bytes.Contains(audit, []byte("synthetic-refreshed-invalid-output")) {
-		t.Fatal("native receipt missing or contains credentials", err)
+	for _, mode := range []string{"legacy", "observed", "stale-observation"} {
+		t.Run(mode, func(t *testing.T) {
+			p, manager := nativeHostPhaseFixture(t)
+			store := authTestStore(t, Codex)
+			profile, err := store.LeaseProfile(context.Background(), p.request.Binding)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p.profile = profile
+			seed, err := profile.ExportAuth(context.Background(), authExportCheck(func(context.Context, AuthBinding) error { return nil }))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer seed.Close()
+			p.exported = true
+			info, _ := seed.Info()
+			returned, err := NewAuthReturn(info, []byte("synthetic-refreshed-invalid-output"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			wire := authWire(t, returned)
+			p.finished = &nativeVMFinished{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), State: "invalid_output", AuthReturn: wire, SourceAudit: nativeHostAuditFixture(t, p.request)}
+			if mode != "legacy" {
+				p.finished.ExecObservation = &NativeVMExecObservation{Version: 1, Binding: p.request.Binding, RequestHash: Digest(p.request), ImageSourceHead: strings.Repeat("a", 40), HelperSHA256: Digest("measured-helper"), HelperEntry: "sh-deny-v1", UID: nativeVMCodexUID, Attempts: 1, Denied: 1, Complete: true}
+				if mode == "stale-observation" {
+					p.finished.ExecObservation.RequestHash = Digest("stale")
+				}
+			}
+			attachIdleNativeProviderBridge(t, p)
+			report, _, _, err := p.finish(context.Background(), Report{}, PhaseError{State: "invalid_output"})
+			if err == nil || len(report.Findings) != 0 || manager.stops != 1 {
+				t.Fatal("invalid result became a review or skipped physical stop", err)
+			}
+			state, err := os.ReadFile(filepath.Join(store.directory, "state.json"))
+			if err != nil || string(state) != "synthetic-refreshed-invalid-output" {
+				t.Fatal("stopped returned auth was lost or zeroed before commit", err)
+			}
+			if profile.held != nil {
+				t.Fatal("profile lock not released after auth persistence")
+			}
+			if !bytes.Equal(wire, make([]byte, len(wire))) {
+				t.Fatal("owned auth return wire not cleared after use")
+			}
+			audit, err := os.ReadFile(filepath.Join(p.supervisor.supervisor.root, p.request.Binding.LaunchID, "native-audit.json"))
+			if err != nil || bytes.Contains(audit, []byte("synthetic-refreshed-invalid-output")) {
+				t.Fatal("native receipt missing or contains credentials", err)
+			}
+			var receipt nativeVMAuditReceipt
+			if json.Unmarshal(audit, &receipt) != nil || (receipt.ExecObservation != nil) != (mode == "observed") {
+				t.Fatal("host lost or misattributed helper observation")
+			}
+			if mode == "observed" && receipt.ExecObservation.Outcome(p.request.Binding, Digest(p.request)) != "attempted-and-denied" {
+				t.Fatal("positive helper record not retained")
+			}
+		})
 	}
 }
 

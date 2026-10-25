@@ -155,7 +155,14 @@ required. The build captures QEMU libraries/ROMs and records host bootstrap
 dependencies. Its kernel requires built-in virtio-console and isolation
 facilities. It records named ELF dependencies including the interpreter and
 generates a canonical role-specific release. No source checkout, auth profile,
-shell or Git enters the image. It never opens KVM or runs a client or host unit.
+shell or Git enters the image. New builds map the same pinned `native-init`
+bytes at `/bin/sh` in the Codex jail solely as a deny-only execution helper.
+It never interprets arguments and always exits 126. Its session-bound positive
+observations and the limits of zero or missing records are specified in
+[HOSTILE-FIXTURES.md](HOSTILE-FIXTURES.md#denial-helper-observation-contract).
+This requires a newly pinned image and separate physical qualification; it
+does not upgrade historical absent-shell results. The image builder never
+opens KVM or runs a client or host unit.
 
 Ordinary tests cover these protocols and hostile inputs using synthetic auth,
 real local Unix transports and fake managers. Full measured resource limits,

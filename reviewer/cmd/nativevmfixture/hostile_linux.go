@@ -21,8 +21,10 @@ import (
 type hostileAudit struct {
 	Complete, AuthExported, AuthReturned bool
 	Binding                              r.AuthBinding
+	RequestHash                          string
 	Stage, GuestStage, Failure           string
 	CodeHost                             json.RawMessage
+	ExecObservation                      *r.NativeVMExecObservation
 }
 
 type hostileCanaryHits struct{ Requests, Report, Files, Receipt int }
@@ -45,7 +47,11 @@ type hostileReceipt struct {
 	Source                                                       *r.SourceAccess
 	ProviderAccess                                               *r.ProviderAccess
 	CodeHost                                                     json.RawMessage
-	ReportCoverage                                               []r.Coverage `json:",omitempty"`
+	ExecObservation                                              *r.NativeVMExecObservation `json:",omitempty"`
+	HelperOutcome                                                string                     `json:",omitempty"`
+	HelperBinding                                                *r.AuthBinding             `json:",omitempty"`
+	HelperRequestHash, DenyHelperSHA256                          string                     `json:",omitempty"`
+	ReportCoverage                                               []r.Coverage               `json:",omitempty"`
 	UsageKnown                                                   bool
 	// StallCancelMS is when, after the review started, a stalled upstream
 	// observed its cancellation.
@@ -389,6 +395,11 @@ func runNativeHostile(c config) error {
 		// The injected response must actually have reached the client;
 		// otherwise "no effect" would prove nothing.
 		checks["metadata-delivered"] = counts.MetadataCaptured && obs.InjectedSettings > 0 && (hc.Name != "codex-metadata" || obs.InjectedModels > 0)
+		if hc.Name == "codex-settings" {
+			checks["hook-observation-bound"] = bound && hookObservationBound(audit, c)
+			outcome := audit.ExecObservation.Outcome(audit.Binding, audit.RequestHash)
+			checks["hook-command-denied"] = checks["hook-observation-bound"] && (outcome == "no-observed-attempt" || outcome == "attempted-and-denied")
+		}
 		if checks["inventory-fixed"] && (evidence == nil || evidence.Access.RequestDenials == 0) {
 			checks["complete-report"] = reviewErr == nil && len(report.Findings) == 1 && evidence != nil && !evidence.Access.Failed && audit.Complete
 			checks["planned-inferences"] = counts.Inference == 2 && counts.Failures == 0
@@ -423,6 +434,14 @@ func runNativeHostile(c config) error {
 		state = "failed"
 	}
 	receipt := hostileReceipt{Version: 1, Purpose: "native-fake-hostile", RunnerSourceHead: sourceHead, RunnerSourceTree: sourceTree, ImageSourceHead: c.ImageSourceHead, Case: hc.Name, Kind: hc.Kind, Provider: c.Provider, FakeOnly: true, Checks: checks, State: state, ErrorClass: errorClass(reviewErr), ErrorText: errorText(reviewErr), Stage: audit.Stage, GuestStage: audit.GuestStage, Failure: audit.Failure, ElapsedMS: elapsed, Counts: counts, Observation: obs, StoreRequests: requests, DeniedDestinations: denied.Load(), Source: access, CodeHost: audit.CodeHost}
+	if hc.Name == "codex-settings" {
+		receipt.ExecObservation = audit.ExecObservation
+		receipt.HelperBinding, receipt.HelperRequestHash, receipt.DenyHelperSHA256 = &audit.Binding, audit.RequestHash, c.DenyHelperSHA256
+		receipt.HelperOutcome = "unknown"
+		if checks["hook-observation-bound"] {
+			receipt.HelperOutcome = audit.ExecObservation.Outcome(audit.Binding, audit.RequestHash)
+		}
+	}
 	if evidence != nil {
 		receipt.ProviderAccess = &evidence.Access
 	}
@@ -438,6 +457,8 @@ func runNativeHostile(c config) error {
 	if hits := f.CanaryHits(data, secrets); hits != 0 {
 		// Drop every model-influenced field before persisting, then rescan.
 		receipt.CanaryHits.Receipt, receipt.Passed, receipt.HostContained, receipt.Observation, receipt.CodeHost, receipt.ReportCoverage = hits, false, false, f.HostileObservation{Case: hc.Name, Kind: hc.Kind}, nil, nil
+		receipt.ExecObservation, receipt.HelperOutcome = nil, "unknown"
+		receipt.HelperBinding, receipt.HelperRequestHash, receipt.DenyHelperSHA256 = nil, "", ""
 		data, _ = json.MarshalIndent(receipt, "", "  ")
 		if f.CanaryHits(data, secrets) != 0 {
 			// Still disclosing: persist only the fixed failure identity.
@@ -452,6 +473,10 @@ func runNativeHostile(c config) error {
 		return errors.New("native hostile qualification incomplete")
 	}
 	return nil
+}
+
+func hookObservationBound(audit hostileAudit, c config) bool {
+	return audit.ExecObservation.Bound(audit.Binding, audit.RequestHash) && audit.ExecObservation.ImageSourceHead == c.ImageSourceHead && audit.ExecObservation.HelperSHA256 == c.DenyHelperSHA256
 }
 
 // exhaustionAuthHeld accepts auth only when it agrees with the audit, the

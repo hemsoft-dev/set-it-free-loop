@@ -28,6 +28,7 @@ var sourceHead, sourceTree string
 type config struct {
 	Version                              int
 	Purpose, ImageSourceHead, Root       string
+	DenyHelperSHA256                     string
 	Provider                             r.Provider
 	Negative                             bool
 	Refresh, UncertainRefresh            bool

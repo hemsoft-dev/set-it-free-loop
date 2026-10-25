@@ -140,6 +140,7 @@ def main():
     # refused by the runner. Retain journals if stop/auth recovery is uncertain.
     state = Path("/tmp")/("sfl-nvm-"+secrets.token_hex(8))
     config = {"Version": 1, "Purpose": "native-control-fake-only" if args.case == "self-critique" else "native-fake-only", "ImageSourceHead": manifest["source_commit"],
+              "DenyHelperSHA256": manifest.get("programs", {}).get("native-init", ""),
               "Root": str(state), "Provider": "" if args.provider == "both" else args.provider,
               "Negative": args.case == "forbidden", "Refresh": args.case == "refresh", "UncertainRefresh": args.case == "refresh-uncertain",
               "Cancellation": args.case.removeprefix("cancel-") if args.case.startswith("cancel-") else "",

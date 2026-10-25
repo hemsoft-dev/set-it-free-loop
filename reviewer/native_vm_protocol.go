@@ -168,16 +168,17 @@ func (r nativeVMReady) valid(q nativeVMRequest) bool {
 // A record without a report omits Report. An explicit null is a carried value,
 // so only a complete record can hold a report and none may hold null.
 type nativeVMFinished struct {
-	Version     int
-	Binding     AuthBinding
-	RequestHash string
-	State       string
-	Report      json.RawMessage `json:",omitempty"`
-	SourceAudit []byte
-	AuthReturn  []byte
-	CodeHost    *nativeVMCodeHostAccess
-	GuestStage  string
-	Native      *nativeResultObservation
+	Version         int
+	Binding         AuthBinding
+	RequestHash     string
+	State           string
+	Report          json.RawMessage `json:",omitempty"`
+	SourceAudit     []byte
+	AuthReturn      []byte
+	CodeHost        *nativeVMCodeHostAccess
+	GuestStage      string
+	Native          *nativeResultObservation
+	ExecObservation *NativeVMExecObservation `json:",omitempty"`
 }
 type nativeVMCodeHostAccess struct {
 	Version                 int
@@ -215,6 +216,14 @@ func (f nativeVMFinished) valid(q nativeVMRequest) bool {
 	}
 	if q.Session.Identity.Provider == Claude && f.CodeHost != nil {
 		return false
+	}
+	if f.ExecObservation != nil {
+		if q.Session.Identity.Provider != Codex || !f.ExecObservation.valid(q.Binding, Digest(q)) {
+			return false
+		}
+		if f.State == "complete" && (f.ExecObservation.Outcome(q.Binding, Digest(q)) == "unknown" || f.ExecObservation.Outcome(q.Binding, Digest(q)) == "unsafe") {
+			return false
+		}
 	}
 	if f.CodeHost != nil && !nativeVMCodeStage(f.CodeHost.Stage) {
 		return false
