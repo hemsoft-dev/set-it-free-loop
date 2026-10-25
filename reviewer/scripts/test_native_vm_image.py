@@ -40,7 +40,15 @@ class NativeImageTests(unittest.TestCase):
         runtime = image.Image("a"*40)
         runtime.runtime("/native-init", "/native-init", b"fixed helper", image.ROLES)
         runtime.runtime("/native-init", "/client/codex-code-mode-host", b"fixed helper", ["codex"])
-        self.assertEqual(len(runtime.release()["Files"]), 2)
+        runtime.runtime("/native-init", "/bin/sh", b"fixed helper", ["codex"])
+        self.assertEqual(len(runtime.release()["Files"]), 3)
+        self.assertEqual(runtime.release()["Files"][0]["SHA256"], runtime.release()["Files"][2]["SHA256"])
+        for source, roles in [("/runtime/bin/sh", ["codex"]), ("/native-init", ["claude"]),
+                              ("/native-init", ["codex", "codehost"])]:
+            with self.assertRaises(RuntimeError):
+                image.Image("a"*40).runtime(source, "/bin/sh", b"untrusted shell", roles)
+        with self.assertRaises(RuntimeError):
+            runtime.runtime("/native-init", "/bin/sh", b"substituted interpreter", ["codex"])
         with self.assertRaises(RuntimeError):
             runtime.runtime("/runtime/other", "/native-init", b"other", ["reader"])
         with self.assertRaises(RuntimeError):

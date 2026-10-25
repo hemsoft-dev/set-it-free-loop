@@ -342,6 +342,66 @@ now refused at the host before egress, but live use still needs all of these:
 - Franz's explicit decision on whether model-written JavaScript in the
   confined Codex code host is acceptable (see the code-mode section above).
 
+## Denial-helper observation contract
+
+The offline change under [#174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174)
+adds positive execution evidence for a fixed denial helper. It does not establish
+that a client hook was ignored, qualify a new native image or complete #174.
+The [bounded owner request](https://discord.com/channels/268484937475293186/1562562212118396993/1563714881780318309)
+permits this helper and synthetic controls. A kernel/syscall observer is outside
+this tranche.
+
+New image builds bind the same pinned `native-init` bytes at `/bin/sh` in the
+Codex jail only. This entry is a denial helper, with no shell, parser or
+interpreter. It never reads command arguments, stdin or credentials, starts a
+program or opens an IP connection. It sends one fixed frame over a private Unix
+socket and always exits 126, including when observation fails. The existing
+request/response policies, no-NIC VM, role identities, source reader and
+code-host confinement continue to enforce their own boundaries.
+
+Guest PID1 owns the observer in the existing root-owned broker directory. It
+checks the connecting UID/GID, original peer pidfd liveness, executable inode
+against pinned `native-init`, exact client cgroup and helper entry `argv[0]`.
+No argument payload enters the observation. A forged peer or malformed frame
+fails the observer. The record is capped at 64 entries and finishes after the
+client cgroup stops. The private finished record binds the full launch identity
+and request digest. The host retains a valid observation in its stopped audit.
+Its authority depends on this trusted guest, root-owned socket and private
+control-channel boundary. Client stdout and stderr cannot supply this evidence.
+
+The record identifies `sh-deny-v1`, helper SHA-256, image source revision,
+UID, launch/session/request binding and observed/denied counts. It identifies
+execution of that measured helper entry, not which client feature caused it.
+The same helper could be invoked directly. Specific hook attribution requires
+separate causal evidence.
+
+| Observation | Meaning |
+| --- | --- |
+| Bound, complete, zero entries | `no-observed-attempt`. No ignored-hook or no-execution claim. |
+| Bound, complete, positive entries, all denied | `attempted-and-denied` for the measured helper. |
+| Bound entries not all denied | `unsafe`, rejected by the fixture. |
+| Missing, malformed, stale, wrong identity, failed or incomplete | `unknown`, rejected by the fixture. |
+| Exec denied or interrupted before helper entry/record | Unobserved and unproved, including with a zero-count record. |
+
+`codex-settings` now requires the bound observation and compares its helper pin
+and source revision with the selected image manifest. The Python matrix also
+checks the saved identity, counts and outcome rather than trusting a `Passed`
+flag. An old image's missing observation fails this new fixture contract.
+The new image's initrd digest, `programs.native-init` digest and release mapping
+must be recorded together with runner/image revisions in any future measured
+result. The original image release and provenance fixtures remain unchanged.
+
+Synthetic tests exercise real local Unix sockets and process identity checks,
+forged peers/frames, executable/UID/cgroup/entry mismatches, replay and missing
+records, unsafe counts, and denial without executing candidate text. They also
+check that bad observations cannot discard a valid stopped auth return. These
+tests do not qualify the helper inside a new KVM guest or run a real client.
+Physical qualification still needs a clean committed image build from the
+explicit hashed kernel/config and pinned client/code-host/runtime inputs, then
+the documented fake-only `codex-settings` matrix case with fresh synthetic
+identities, resource bounds, recorded pins and independent cleanup/stop proof.
+No new image or native matrix result is claimed by this source change.
+
 ## Remaining limitations
 
 - Real logged-in accounts may receive different model catalogs, settings or
@@ -363,7 +423,8 @@ now refused at the host before egress, but live use still needs all of these:
   cover the guest TLS proxy's refusal of foreign `CONNECT` targets.
 - The guest profile holds only the synthetic seed. No extra guest-side canary
   file was added.
-- Hook execution in `codex-settings` is not observable. The injected hook is
+- Historical absent-shell measurement, retained without upgrading its verdict:
+  Hook execution in `codex-settings` is not observable. The injected hook is
   `/bin/sh -c 'curl http://10.0.0.1/'`. The native initrd holds only
   `native-init`, `sourceproxy`, the two clients, the code host and their C
   libraries: no shell, `curl` or other HTTP client. The VM has no NIC. A hook

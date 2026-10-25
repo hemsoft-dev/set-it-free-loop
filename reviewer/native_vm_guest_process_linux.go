@@ -44,7 +44,7 @@ func nativeGuestTarget(path string) bool {
 		return false
 	}
 	switch path {
-	case "/native-init", "/sourceproxy", "/usr/bin/env", "/client/codex", "/client/claude", "/client/codex-code-mode-host", "/codehost":
+	case "/native-init", "/sourceproxy", "/usr/bin/env", "/client/codex", "/client/claude", "/client/codex-code-mode-host", "/codehost", "/bin/sh":
 		return true
 	}
 	return strings.HasPrefix(path, "/lib/") || strings.HasPrefix(path, "/lib64/") || strings.HasPrefix(path, "/usr/lib/")
@@ -64,9 +64,21 @@ func (r nativeGuestRelease) valid() bool {
 		modulePaths[module.Path] = true
 	}
 	seen := map[string]bool{}
+	var init, deny *nativeGuestFile
 	targets := map[string]map[string]bool{}
 	var total int64
 	for _, file := range r.Files {
+		if file.Target == "/native-init" && file.Source == "/native-init" {
+			copy := file
+			init = &copy
+		}
+		if file.Target == "/bin/sh" {
+			if file.Source != "/native-init" || len(file.Roles) != 1 || file.Roles[0] != "codex" {
+				return false
+			}
+			copy := file
+			deny = &copy
+		}
 		if !sourcePath(file.Source) || (file.Source != "/native-init" && !strings.HasPrefix(file.Source, "/runtime/")) || !nativeGuestTarget(file.Target) || !validAuthHash(file.SHA256) || file.Bytes <= 0 || file.Bytes > 512<<20 || len(file.Roles) == 0 || len(file.Roles) > 4 {
 			return false
 		}
@@ -101,7 +113,8 @@ func (r nativeGuestRelease) valid() bool {
 			return false
 		}
 	}
-	return targets["codex"]["/client/codex-code-mode-host"] && targets["codehost"]["/codehost"]
+	return targets["codex"]["/client/codex-code-mode-host"] && targets["codehost"]["/codehost"] &&
+		init != nil && (deny == nil || init.SHA256 == deny.SHA256 && init.Bytes == deny.Bytes)
 }
 
 func nativeGuestVerifiedFile(pin nativeGuestFile) error {

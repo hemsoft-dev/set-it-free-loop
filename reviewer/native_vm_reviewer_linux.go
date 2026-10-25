@@ -613,12 +613,15 @@ func (p *nativeVMHostPhase) persistAudit(ctx context.Context, report any, access
 	if p.finished != nil {
 		host = p.finished.CodeHost
 	}
-	receipt := nativeVMAuditReceipt{2, p.request.Binding, p.attempt, Digest(p.request), Digest(p.manifest), Digest(report), Digest(access), evidence, host, failure == nil, p.stage, p.exported, p.authReturned, "", nil, nativeVMFailureKind(failure), p.bootDiagnostics}
+	receipt := nativeVMAuditReceipt{Version: 2, Binding: p.request.Binding, AttemptID: p.attempt, RequestHash: Digest(p.request), ManifestHash: Digest(p.manifest), ReportHash: Digest(report), SourceHash: Digest(access), Provider: evidence, CodeHost: host, Complete: failure == nil, Stage: p.stage, AuthExported: p.exported, AuthReturned: p.authReturned, Failure: nativeVMFailureKind(failure), BootDiagnostics: p.bootDiagnostics}
 	if p.finished != nil && nativeVMGuestStage(p.finished.GuestStage) {
 		receipt.GuestStage = p.finished.GuestStage
 	}
 	if p.finished != nil && p.finished.Native.valid(p.request.Session) {
 		receipt.Native = p.finished.Native
+	}
+	if p.finished != nil && p.finished.ExecObservation.valid(p.request.Binding, Digest(p.request)) {
+		receipt.ExecObservation = p.finished.ExecObservation
 	}
 	raw, err := json.Marshal(receipt)
 	if err != nil || len(raw) > 65536 {
@@ -644,6 +647,7 @@ type nativeVMAuditReceipt struct {
 	Native                                            *nativeResultObservation
 	Failure                                           string
 	BootDiagnostics                                   []string
+	ExecObservation                                   *NativeVMExecObservation `json:",omitempty"`
 }
 
 func nativeVMFailureKind(err error) string {

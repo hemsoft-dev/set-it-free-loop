@@ -202,6 +202,7 @@ func TestNativeCodeStreamRejectsSplitCanaryAndOverflowBeforeForward(t *testing.T
 func nativeReleaseFixture() nativeGuestRelease {
 	r := nativeGuestRelease{Version: 1, Purpose: "native-review", SourceHead: strings.Repeat("a", 40)}
 	r.Files = append(r.Files, nativeGuestFile{Source: "/native-init", Target: "/native-init", SHA256: authHash([]byte("unit")), Bytes: 4, Roles: []string{"reader", "codex", "claude", "codehost"}})
+	r.Files = append(r.Files, nativeGuestFile{Source: "/native-init", Target: "/bin/sh", SHA256: authHash([]byte("unit")), Bytes: 4, Roles: []string{"codex"}})
 	for role, targets := range map[string][]string{"codex": {"/client/codex", "/sourceproxy", "/usr/bin/env", "/client/codex-code-mode-host"}, "claude": {"/client/claude", "/sourceproxy", "/usr/bin/env"}, "codehost": {"/codehost"}} {
 		for _, target := range targets {
 			r.Files = append(r.Files, nativeGuestFile{Source: "/runtime" + target, Target: target, SHA256: authHash([]byte("unit")), Bytes: 4, Roles: []string{role}})
@@ -214,7 +215,7 @@ func TestNativeGuestReleaseRejectsAmbientExecutablesAndMissingRoles(t *testing.T
 	if !nativeReleaseFixture().valid() {
 		t.Fatal("fixed image roles rejected")
 	}
-	for _, kind := range []string{"purpose", "head", "shell", "profile", "source", "role", "missing", "duplicate", "module", "bytes"} {
+	for _, kind := range []string{"purpose", "head", "shell", "profile", "source", "role", "missing", "duplicate", "module", "bytes", "deny-pin", "deny-role", "deny-source"} {
 		t.Run(kind, func(t *testing.T) {
 			r := nativeReleaseFixture()
 			switch kind {
@@ -238,6 +239,12 @@ func TestNativeGuestReleaseRejectsAmbientExecutablesAndMissingRoles(t *testing.T
 				r.Modules = []nativeGuestModule{{Path: "/runtime/not-a-module", SHA256: r.Files[0].SHA256, Bytes: 1}}
 			case "bytes":
 				r.Files[0].Bytes = 513 << 20
+			case "deny-pin":
+				r.Files[1].SHA256 = Digest("untrusted-interpreter")
+			case "deny-role":
+				r.Files[1].Roles = []string{"claude"}
+			case "deny-source":
+				r.Files[1].Source = "/runtime/bin/sh"
 			}
 			if r.valid() {
 				t.Fatal("invalid release accepted")
