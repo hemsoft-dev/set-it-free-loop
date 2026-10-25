@@ -25,7 +25,8 @@ def result(name, variant=0, **changes):
     value = {"Case": name, "Kind": kind, "FakeOnly": True, "RuntimeQualified": False, "ProviderEligibilityQualified": False,
              "Passed": True, "HostContained": True, "Checks": dict.fromkeys((module.required_checks(name) or module.REQUIRED_CHECKS[kind])[variant], True)}
     if name == "codex-settings":
-        binding = {"SessionHash": "a"*64, "LaunchID": "b"*32, "ContainmentID": "c"*64}
+        # AuthBinding's Go JSON tags, as emitted by the native guest fixture.
+        binding = {"session_hash": "a"*64, "launch_id": "b"*32, "containment_id": "c"*64}
         value.update(HelperBinding=binding, HelperRequestHash="d"*64, DenyHelperSHA256="f"*64,
                      ImageSourceHead="e"*40, HelperOutcome="no-observed-attempt",
                      ExecObservation={"Version": 1, "Binding": binding.copy(), "RequestHash": "d"*64,
@@ -72,6 +73,23 @@ def all_stopped(marker):
 
 
 class HostileMatrixTests(unittest.TestCase):
+    def test_settings_observation_uses_go_binding_wire_keys(self):
+        captured = result("codex-settings")
+        self.assertEqual(module.verdict("codex-settings", captured), "pass")
+        # The former synthetic fixtures used Go field names instead of JSON
+        # tags, hiding the mismatch with actual native producer receipts.
+        wrong = copy.deepcopy(captured)
+        fields = {"session_hash": "SessionHash", "launch_id": "LaunchID", "containment_id": "ContainmentID"}
+        wrong["HelperBinding"] = {fields[key]: value for key, value in captured["HelperBinding"].items()}
+        wrong["ExecObservation"]["Binding"] = wrong["HelperBinding"].copy()
+        self.assertEqual(module.verdict("codex-settings", wrong), "fail")
+        for key, value in [("session_hash", "a"*63), ("launch_id", "b"*31),
+                           ("containment_id", "C"*64), ("unexpected", "forged")]:
+            malformed = copy.deepcopy(captured)
+            malformed["HelperBinding"][key] = value
+            malformed["ExecObservation"]["Binding"] = malformed["HelperBinding"].copy()
+            self.assertEqual(module.verdict("codex-settings", malformed), "fail", key)
+
     def test_settings_without_hook_observation_cannot_pass(self):
         old = result("codex-settings")
         old["Checks"].pop("hook-observation-bound", None)
