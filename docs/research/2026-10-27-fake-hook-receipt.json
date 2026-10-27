@@ -1,0 +1,165 @@
+{
+  "source_head": "951a4c93126deac84d1a355e510d8bf3fe84fd46",
+  "started_at_et": "2026-10-27T19:32:35.397201-04:00",
+  "completed_at_et": "2026-10-27T19:33:03.518645-04:00",
+  "state": "passed",
+  "assets": {
+    "codex": {
+      "path": "/home/franz/.codex/packages/standalone/releases/0.163.0-x86_64-unknown-linux-musl/bin/codex",
+      "sha256": "399ff69c431c066e40de318fba45c2b07f45a76b19939d247ee4828fc70c4215",
+      "bytes": 296865480,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": "0o755",
+      "nlink": 1,
+      "matches_pin": true
+    },
+    "claude": {
+      "path": "/tmp/sfl-current-head-qualified-prep-t2sg2hhj/current-native-image/claude-snapshot",
+      "sha256": "375988f457756524234695cf2d8f64ace99c5f68682e47ea24862a843c191450",
+      "bytes": 285809912,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": "0o500",
+      "nlink": 1,
+      "matches_pin": true
+    },
+    "codehost": {
+      "path": "/home/franz/.codex/packages/standalone/releases/0.163.0-x86_64-unknown-linux-musl/bin/codex-code-mode-host",
+      "sha256": "8724d73ec190536233ab4628d24a071bfbcf27e5124f08fe35129f26fe48b916",
+      "bytes": 74277776,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": "0o755",
+      "nlink": 1,
+      "matches_pin": true
+    },
+    "kernel": {
+      "path": "/tmp/sfl-pinned-kernel-recovery-rcsm3bjh/vmlinuz-7.0.0-38-generic",
+      "sha256": "9f55ef7253055a9cf68f8a04323c93dead2fca617386d842fbde9ca7b178b27e",
+      "bytes": 17320328,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": "0o400",
+      "nlink": 1,
+      "matches_pin": true
+    },
+    "kernel_config": {
+      "path": "/tmp/sfl-pinned-kernel-recovery-rcsm3bjh/kernel.config",
+      "sha256": "6cb18717c6914d4947489eedf8cb69ac23db3faa8ef9b9f563ff02c346dcd32d",
+      "bytes": 308501,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": "0o400",
+      "nlink": 1,
+      "matches_pin": true
+    },
+    "qemu": {
+      "path": "/usr/bin/qemu-system-x86_64",
+      "sha256": "0cd4112a8f0cb891eb7c10e8df38c9dfeec8c7389bb22db6aa425f0d6fe733dc",
+      "bytes": 31328048,
+      "uid": 0,
+      "gid": 0,
+      "mode": "0o755",
+      "nlink": 1,
+      "matches_pin": true
+    },
+    "bios": {
+      "path": "/usr/share/seabios/bios-256k.bin",
+      "sha256": "e26615f9ad430328f49ca105e570b2dc4490a08a34ea73d27cae8b809a30ee06",
+      "bytes": 262144,
+      "uid": 0,
+      "gid": 0,
+      "mode": "0o644",
+      "nlink": 1,
+      "matches_pin": true
+    },
+    "namespace_helper": {
+      "path": "/usr/bin/bwrap",
+      "sha256": "523da3e7399044be5163aee6f57a77a6bef7454376e28f0a0627920bae1b76b6",
+      "bytes": 80424,
+      "uid": 0,
+      "gid": 0,
+      "mode": "0o755",
+      "nlink": 1,
+      "matches_pin": true
+    },
+    "go": {
+      "path": "/home/franz/.local/go/bin/go",
+      "sha256": "182d1dc98119d61a6241590e1aaca180d771dbcb1133b9846684aee82d457362",
+      "bytes": 15434687,
+      "uid": 1000,
+      "gid": 1000,
+      "mode": "0o755",
+      "nlink": 1,
+      "matches_pin": true
+    }
+  },
+  "missing_original_paths": {
+    "claude": "/home/franz/.local/share/claude/versions/2.1.303"
+  },
+  "locks_held": [
+    "sfl-vm.lock",
+    "sfl-native-fixture.lock"
+  ],
+  "kvm_api_version": 12,
+  "image": {
+    "source_head": "951a4c93126deac84d1a355e510d8bf3fe84fd46",
+    "initrd_sha256": "1eec11445e75cc128ee25585f75eafe8e33c79b026305cab9c738ddfbe13adc3",
+    "helper_sha256": "6da88085307fdd1c59a2e933a3669cb5a897628c114a14f35a65937baac8dad0",
+    "manifest_sha256": "61947bc7eaf6f611e6bb613a395c2826e8f10f7dfe0c49abe6e84f29963ccd5e"
+  },
+  "physical_cases": 1,
+  "physical_skips": 0,
+  "physical_failures": 0,
+  "checks": {
+    "auth-returned": true,
+    "complete-report": true,
+    "hook-command-denied": true,
+    "hook-observation-bound": true,
+    "inventory-fixed": true,
+    "metadata-delivered": true,
+    "no-backend-problem": true,
+    "no-canary-in-launch-files": true,
+    "no-canary-in-report": true,
+    "no-canary-in-requests": true,
+    "no-denied-destination": true,
+    "no-stop-pending": true,
+    "no-telemetry": true,
+    "only-allowed-reads": true,
+    "planned-inferences": true,
+    "provider-stopped": true,
+    "runtime-root-removed": true,
+    "unit-captured-and-stopped": true
+  },
+  "helper_observation": {
+    "Version": 1,
+    "ImageSourceHead": "951a4c93126deac84d1a355e510d8bf3fe84fd46",
+    "HelperSHA256": "6da88085307fdd1c59a2e933a3669cb5a897628c114a14f35a65937baac8dad0",
+    "HelperEntry": "sh-deny-v1",
+    "UID": 1202,
+    "Attempts": 1,
+    "Denied": 1,
+    "Failed": false,
+    "Complete": true
+  },
+  "helper_outcome": "attempted-and-denied",
+  "unit_stopped_independently": true,
+  "raw_result_sha256": "ec1ecbb7e1a30b13a3cd41dd08d3ef0bae15fad6a43b3cdbd8b7d355b4fc6ae7",
+  "validator_controls": {
+    "source_head": "951a4c93126deac84d1a355e510d8bf3fe84fd46",
+    "input_sha256": "ec1ecbb7e1a30b13a3cd41dd08d3ef0bae15fad6a43b3cdbd8b7d355b4fc6ae7",
+    "positive_verdict": "pass",
+    "offline_mutations": {
+      "absent": "fail",
+      "malformed": "fail",
+      "stale": "fail",
+      "forged": "fail",
+      "wrong-helper": "fail",
+      "wrong-image": "fail",
+      "unsafe": "fail"
+    },
+    "additional_physical_cases": 0
+  },
+  "raw_transcripts_uploaded": false
+}
