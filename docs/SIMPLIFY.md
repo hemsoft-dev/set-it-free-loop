@@ -16,7 +16,9 @@ This proves connectivity only.
 
 This product replacement accepts Codex authorship, OpenAI's model selection and
 review format, and manual requests for v0. If an SFL-bot identity or exact model
-is essential, decide before building. Automatic triggers wait.
+is essential, decide before building. Before the pilot, Franz must disable
+automatic code and security reviews for this repository, or the pilot stops.
+Existing delivery reviews of this plan are outside that future pilot.
 
 ## Where scope grew
 
@@ -82,10 +84,12 @@ success establishes no CLI-policy exception.
 1. **This plan.** Approve the replacement scope, including manual-only v0 and
    native identity/model selection. No live permission follows from merging it.
 2. **Pilot evidence, 1–2 hours after separate explicit pilot permission and
-   account checks.** Manually request one real open PR. Record head, request,
-   result, turnaround, advisory review state and useful findings or noise.
-   Franz judges three reviews before expansion. First review may take minutes;
-   provider latency is not guaranteed.
+   account checks.** At most three real open PRs in seven calendar days from
+   authorization, one outstanding request. Start with the next ready owner PR;
+   create no filler PRs. Exclude this plan's delivery reviews. Stop at three
+   reviews or seven days. Record head, request, result, turnaround, advisory
+   state and useful findings/noise. Franz judges expansion. The first result
+   may take minutes; provider latency is not guaranteed.
 3. **Scope cleanup, 1–2 hours after plan approval.** Add the two supersession
    notices and issue dispositions above. No deletion or credential recovery.
 4. **Optional requester, 3–5 hours only if manual use proves painful.** One
@@ -96,7 +100,8 @@ success establishes no CLI-policy exception.
 Allow half a day plus approval/review waits; the optional command is no
 prerequisite. Franz approves the replacement and
 bounded pilot, then verify the [connected review settings](https://chatgpt.com/codex/settings/code-review)
-and account billing controls, including any automatic code/security reviews.
+and billing controls. Confirm automatic code/security reviews are off before
+the pilot; otherwise stop.
 Head/result checks remain an operator task. No App, credential, provider-contact
 or organization rollout work is needed.
 
