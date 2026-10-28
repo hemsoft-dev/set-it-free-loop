@@ -1,4 +1,14 @@
-# Set it Free Loop — frozen
+# Set it Free Loop
+
+## Owner-triggered v0 pilot
+
+The owner authorized a small v0 pilot on October 28, 2026. Its
+[v0 plan](https://github.com/hemsoft-dev/set-it-free-loop/blob/664f719d1934257472baf83c3eacfd441d4550f2/docs/SIMPLIFY.md) uses `@sfl review` from HemSoft to request one advisory
+review by our T3 agent, published by the SFL App. The runner lives in
+[project-manager](https://github.com/hemsoft-dev/project-manager/blob/main/docs/sfl-v0.md).
+The historical alpha and retired organization automation remain frozen.
+
+## Historical freeze
 
 The owner's October 19, 2026 merge-mission instruction authorizes an offline
 dual-subscription alpha in [`reviewer/`](reviewer/README.md), tracked by
