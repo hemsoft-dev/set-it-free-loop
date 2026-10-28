@@ -55,11 +55,13 @@ def check(review, head):
     if last and coverage[last.end():].strip():
         errors.append('unexpected content after tests disclaimer')
     disclaimer = '- **Tests run:** None. Reviewer execution is disabled.'
-    if len(re.findall(r'^' + re.escape(disclaimer) + r'$', body, re.M)) != 1:
+    if (not last or last[0] != disclaimer
+            or len(re.findall(r'^' + re.escape(disclaimer) + r'$', body, re.M)) != 1):
         errors.append('expected one parent-owned tests disclaimer')
     if re.search(r'^(?:[-*>] )?(?:\*{1,2})?No tests were executed[.!]?(?:\*{1,2})?$', prose_body, re.M):
         errors.append('legacy tests disclaimer remains')
-    if not re.search(r'^<!-- sfl request=\d+ sha=' + head + r' -->$', body, re.M):
+    markers = re.findall(r'^<!-- sfl request=\d+ sha=([0-9a-f]{40}) -->$', body, re.M)
+    if markers != [head]:
         errors.append('request marker does not name the expected head')
     return errors
 

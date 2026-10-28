@@ -103,6 +103,19 @@ class ReviewFormatTests(unittest.TestCase):
         review['body'] = review['body'].replace('\n\n---', '\n- Orphaned item.\n\n---')
         self.assertIn('unexpected content after tests disclaimer', check(review, HEAD))
 
+    def test_disclaimer_elsewhere_cannot_validate_an_execution_claim(self):
+        review = self.review()
+        disclaimer = '- **Tests run:** None. Reviewer execution is disabled.'
+        review['body'] = review['body'].replace(disclaimer, '- **Tests run:** pytest passed.')
+        review['body'] += '\n' + disclaimer + '\n'
+        self.assertIn('expected one parent-owned tests disclaimer', check(review, HEAD))
+
+    def test_multiple_parent_markers_are_rejected(self):
+        for head in (HEAD, 'b' * 40):
+            review = self.review()
+            review['body'] += '\n<!-- sfl request=456 sha=' + head + ' -->\n'
+            self.assertIn('request marker does not name the expected head', check(review, HEAD))
+
     def test_missing_or_reordered_coverage(self):
         review = self.review()
         review['body'] = review['body'].replace('**Files reviewed:**', '**Context read:**')
