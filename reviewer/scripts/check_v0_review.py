@@ -24,7 +24,10 @@ def check(review, head):
     body = review.get('body') or ''
     if not isinstance(body, str):
         return errors + ['review body must be text']
-    if re.search(r'&(?:amp;)?(?:\\)?#(?:x27|39);', body, re.I):
+    # Code spans deliberately preserve source literals. Escaped ampersands in
+    # prose can also be intentional examples, so they are not evidence of a leak.
+    prose_body = re.sub(r'(?<!`)(`+)(?!`)[^\n]*?(?<!`)\1(?!`)', '', body)
+    if re.search(r'&(?:\\)?#(?:x27|39);', prose_body, re.I):
         errors.append('apostrophe entity leaked into Markdown')
     headings = ['### Key Findings', '### Coverage']
     if any(len(re.findall(r'^' + re.escape(heading) + r'$', body, re.M)) != 1

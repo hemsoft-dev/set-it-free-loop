@@ -59,10 +59,17 @@ class ReviewFormatTests(unittest.TestCase):
         self.assertEqual(len(check(review, HEAD)), 3)
 
     def test_entities_and_duplicate_disclaimer(self):
-        for entity in ('&#x27;', '&\\#x27;', '&amp;#39;'):
+        for entity in ('&#x27;', '&\\#x27;'):
             review = self.review()
             review['body'] += '\nresponse' + entity + 's\nNo tests were executed.'
             self.assertEqual(len(check(review, HEAD)), 2)
+
+    def test_literal_entity_examples_are_valid_source_evidence(self):
+        for example in ('`&#x27;`', '``a`&#39;``', '`&\\#x27;`', '&amp;#x27;', '&amp;#39;'):
+            with self.subTest(example=example):
+                review = self.review()
+                review['body'] = 'The source contains ' + example + '.\n' + review['body']
+                self.assertEqual(check(review, HEAD), [])
 
     def test_missing_or_reordered_coverage(self):
         review = self.review()
