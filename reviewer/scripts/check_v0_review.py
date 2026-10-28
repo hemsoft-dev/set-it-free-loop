@@ -53,7 +53,7 @@ def check(review, head):
     disclaimer = '- **Tests run:** None. Reviewer execution is disabled.'
     if len(re.findall(r'^' + re.escape(disclaimer) + r'$', body, re.M)) != 1:
         errors.append('expected one parent-owned tests disclaimer')
-    if 'No tests were executed' in prose_body:
+    if re.search(r'^(?:[-*>] )?(?:\*{1,2})?No tests were executed[.!]?(?:\*{1,2})?$', prose_body, re.M):
         errors.append('legacy tests disclaimer remains')
     if not re.search(r'^<!-- sfl request=\d+ sha=' + head + r' -->$', body, re.M):
         errors.append('request marker does not name the expected head')

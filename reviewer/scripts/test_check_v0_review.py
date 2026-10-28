@@ -78,6 +78,11 @@ class ReviewFormatTests(unittest.TestCase):
                 review['body'] = 'The source contains `' + source + '`.\n' + review['body']
                 self.assertEqual(check(review, HEAD), [])
 
+    def test_discussing_legacy_disclaimer_in_prose_is_valid(self):
+        review = self.review()
+        review['body'] = 'The source checks for No tests were executed as its legacy text.\n' + review['body']
+        self.assertEqual(check(review, HEAD), [])
+
     def test_quoted_marker_cannot_replace_the_parent_marker(self):
         review = self.review()
         marker = '<!-- sfl request=123 sha=' + HEAD + ' -->'
