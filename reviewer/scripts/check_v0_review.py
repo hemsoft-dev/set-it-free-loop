@@ -35,16 +35,23 @@ def check(review, head):
         errors.append('expected one findings and coverage section')
     section = re.search(r'^### Coverage$', body, re.M)
     coverage = body[section.end():].split('\n---', 1)[0] if section else ''
+    findings = re.search(r'^### Key Findings$', body, re.M)
+    if section and findings and findings.start() > section.start():
+        errors.append('findings must precede coverage')
     labels = ['Files reviewed', 'Context read', 'Verified', 'Not verified', 'Tests run']
     actual = re.findall(r'^- \*\*([^*]+):\*\*(?: |$)', coverage, re.M)
     if actual != labels:
         errors.append('coverage must contain the five ordered bullets')
+    boundary = r'\n(?=- \*\*(?:' + '|'.join(map(re.escape, labels)) + r'):\*\*)'
+    first = re.search(r'^- \*\*Files reviewed:\*\*', coverage, re.M)
+    if first and coverage[:first.start()].strip():
+        errors.append('unexpected content before first coverage group')
     for label in labels[:-1]:
         match = re.search(r'^- \*\*' + re.escape(label) + r':\*\*(.*)$', coverage, re.M)
         if not match:
             continue
         inline = match[1]
-        following = coverage[match.end():].split('\n- **', 1)[0]
+        following = re.split(boundary, coverage[match.end():], maxsplit=1)[0]
         items = [line for line in following.splitlines() if line.strip()]
         if inline == ' None reported.' and label in ('Context read', 'Not verified'):
             if following.strip():

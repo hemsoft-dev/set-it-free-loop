@@ -116,6 +116,22 @@ class ReviewFormatTests(unittest.TestCase):
             review['body'] += '\n<!-- sfl request=456 sha=' + head + ' -->\n'
             self.assertIn('request marker does not name the expected head', check(review, HEAD))
 
+    def test_bold_orphan_bullets_cannot_end_a_coverage_group(self):
+        for orphan in ('- **Second item.**', '- **Unknown:** content'):
+            with self.subTest(orphan=orphan):
+                review = self.review()
+                review['body'] = review['body'].replace('  - Second item.', orphan, 1)
+                self.assertIn('Files reviewed must use nested coverage bullets', check(review, HEAD))
+        review = self.review()
+        review['body'] = review['body'].replace('### Coverage\n\n', '### Coverage\n\n- **Orphan**\n')
+        self.assertIn('unexpected content before first coverage group', check(review, HEAD))
+
+    def test_findings_section_cannot_follow_the_footer(self):
+        review = self.review()
+        review['body'] = review['body'].replace('### Key Findings\n\nNone.\n\n', '')
+        review['body'] += '\n### Key Findings\nNone.\n'
+        self.assertIn('findings must precede coverage', check(review, HEAD))
+
     def test_missing_or_reordered_coverage(self):
         review = self.review()
         review['body'] = review['body'].replace('**Files reviewed:**', '**Context read:**')
