@@ -50,11 +50,12 @@ def check(review, head):
                 errors.append(label + ' has content after None reported')
         elif inline or not re.search(r'^  - \S', following, re.M):
             errors.append(label + ' must use nested coverage bullets')
-    if body.count('- **Tests run:** None. Reviewer execution is disabled.') != 1:
+    disclaimer = '- **Tests run:** None. Reviewer execution is disabled.'
+    if len(re.findall(r'^' + re.escape(disclaimer) + r'$', body, re.M)) != 1:
         errors.append('expected one parent-owned tests disclaimer')
-    if 'No tests were executed' in body:
+    if 'No tests were executed' in prose_body:
         errors.append('legacy tests disclaimer remains')
-    if not re.search(r'<!-- sfl request=\d+ sha=' + head + r' -->', body):
+    if not re.search(r'^<!-- sfl request=\d+ sha=' + head + r' -->$', body, re.M):
         errors.append('request marker does not name the expected head')
     return errors
 

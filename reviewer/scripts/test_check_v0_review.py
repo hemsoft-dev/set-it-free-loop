@@ -71,6 +71,19 @@ class ReviewFormatTests(unittest.TestCase):
                 review['body'] = 'The source contains ' + example + '.\n' + review['body']
                 self.assertEqual(check(review, HEAD), [])
 
+    def test_literal_disclaimer_quotations_are_valid_source_evidence(self):
+        for source in ('No tests were executed', '- **Tests run:** None. Reviewer execution is disabled.'):
+            with self.subTest(source=source):
+                review = self.review()
+                review['body'] = 'The source contains `' + source + '`.\n' + review['body']
+                self.assertEqual(check(review, HEAD), [])
+
+    def test_quoted_marker_cannot_replace_the_parent_marker(self):
+        review = self.review()
+        marker = '<!-- sfl request=123 sha=' + HEAD + ' -->'
+        review['body'] = 'The source contains `' + marker + '`.\n' + review['body'].replace(HEAD, 'b' * 40)
+        self.assertIn('request marker does not name the expected head', check(review, HEAD))
+
     def test_missing_or_reordered_coverage(self):
         review = self.review()
         review['body'] = review['body'].replace('**Files reviewed:**', '**Context read:**')
