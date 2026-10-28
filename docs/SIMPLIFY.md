@@ -97,13 +97,10 @@ success establishes no CLI-policy exception.
    tests at 300 lines; stop and keep manual requests if it grows beyond that.
    Its local allowlist, rate cap and disabled flag govern only its own requests.
 
-Allow half a day plus approval/review waits; the optional command is no
-prerequisite. Franz approves the replacement and
-bounded pilot, then verify the [connected review settings](https://chatgpt.com/codex/settings/code-review)
-and billing controls. Confirm automatic code/security reviews are off before
-the pilot; otherwise stop.
-Head/result checks remain an operator task. No App, credential, provider-contact
-or organization rollout work is needed.
+Allow half a day plus approval/review waits. Franz approves the scope and pilot,
+then verifies [review settings](https://chatgpt.com/codex/settings/code-review)
+and billing evidence. Head/result checks remain manual. No new App, credentials,
+provider contact or organization rollout is needed.
 
 Council: active GPT 6.1 Sol · consulted Muse Wonder Full 1.0 · missing Claude
 Opus 5.5, over pace · adopted 6 · declined 0. Muse prompted the zero-code pilot,
