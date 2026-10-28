@@ -1,109 +1,97 @@
-# Get SFL reviewing PRs
+# SFL v0: ask our agent to review
 
-Proposal for Franz, October 27, 2026. This PR changes no runtime, issue or
-existing contract. Plan approval alone grants no activation or deletion.
+Franz corrected the plan on October 28, 2026 at 00:47 EDT: "I thought the
+whole point was for us to be doing the review in an agent and not use Codex."
+This supersedes the native-Codex product framing merged in
+[#284](https://github.com/hemsoft-dev/set-it-free-loop/pull/284).
+Native `@codex review` remains a delivery check on our implementation PRs.
 
-## Start with zero new code
+## The whole loop
 
-Use connected Codex GitHub review as SFL's first reviewer. Franz posts
-`@codex review` on an allowed PR. Codex reads the diff and posts its native
-review under his connected subscription. One Codex reviewer, no SFL-orchestrated
-second model. Humans decide what to fix and merge. No fix commands, approvals
-or autonomous merges. [OpenAI documents the route](https://learn.chatgpt.com/docs/third-party/github)
-and its [subscription usage](https://learn.chatgpt.com/docs/pricing).
-It already reviewed [SFL's latest merged PR](https://github.com/hemsoft-dev/set-it-free-loop/pull/283#issuecomment-6456266599).
-This proves connectivity only.
+1. HemSoft posts exactly `@sfl review` in an open PR's Conversation tab.
+2. A light poll in project-manager checks allowed open PRs every 60 seconds,
+   independently of its 30-minute reconciliation sweep. It uses ETags and a
+   durable comment cursor. No GitHub App event checkbox is needed.
+3. One T3 review session on mini examines the exact base and head commits.
+   Chief's `scripts/pick-provider.py --priority P1 --json` selects the provider.
+   The prompt permits only reading GitHub commit data and reporting findings.
+4. The existing `hemsoft-sfl-reviewer` App, installation `173628126`, posts one
+   advisory PR review with event `COMMENT` and the reviewed head SHA. Humans
+   decide what to fix and merge. A newer head requires a new request.
 
-This product replacement accepts Codex authorship, OpenAI's model selection and
-review format, and manual requests for v0. If an SFL-bot identity or exact model
-is essential, decide before building. Before the pilot, Franz must disable
-automatic code and security reviews for this repository, or the pilot stops.
-Existing delivery reviews of this plan are outside that future pilot.
+The implementation lives in project-manager, including its small Python runner.
+The external MCP credential uses T3's launch path because `delegate_task`
+requires an active parent provider session. A later tick reads the launched
+session's result. There is no second review model or custom job database.
 
-## Where scope grew
+## Pilot controls
 
-Survey at main `e4d85f3`: four Go modules. The offline `reviewer/` alone has
-51,371 non-test Go lines, 63,049 test Go lines, 22 command directories and
-80 Markdown files. These are tracked physical lines including blanks, comments
-and fixture programs. Python adds 5,697 lines; ten research documents add 1,544. The last 15 merged PRs added 13,590 lines and
-deleted 816, median 840 changed lines, largest 2,845. No PR is currently open.
+- Allow only `hemsoft-dev/set-it-free-loop`, repository ID `1169772257`.
+  Require both the PR base and head repository IDs to match. No fork heads.
+- Pin requester `HemSoft`, numeric user ID `8227352`, type `User`. An org
+  membership or `OWNER` association alone is insufficient. Review bodies and
+  inline comments do not trigger runs. Edited old comments do not become new
+  requests. On first enable, establish a creation-time baseline.
+- Permit one review in flight globally, which also enforces one per PR.
+  Default maximum three launch attempts per Eastern calendar day. Reserve the
+  attempt in a locked, atomically replaced state file before calling T3.
+  Capacity refusals consume no launch. Busy requests and duplicate requests
+  for an already reviewed head require a fresh comment.
+- Save the session/run IDs and survive pmd restarts. An uncertain launch stays
+  blocked for operator reconciliation. Never automatically launch it again.
+  Mark a publication attempt before POST, and reconcile an uncertain POST by
+  looking for the request/head marker under the SFL App identity. Never repeat
+  an uncertain POST automatically.
+- Recheck the live PR and head before launch and publication. Require the
+  session result's reviewed SHA and base SHA to match the reservation. If the
+  head moved, retain the result locally and require a fresh request. The App
+  review uses `commit_id` equal to the reserved SHA.
+- Keep App and T3 credentials in the parent process, outside prompts, state
+  and logs. Use only the existing subscriptions. No API-key fallback or paid
+  overflow. Refuse expired T3 credentials before reserving an attempt.
+- The review session must not edit, execute PR code, push, approve, merge,
+  publish, or delegate. T3 enforces no read-only sandbox, so these are prompt
+  instructions for this owner-only pilot. This is not hostile-code isolation.
+- Set the runner's `enabled` flag to false to stop new launches and posts.
+  Known active sessions are interrupted on the next tick. Keep uncertain state
+  until reconciled. Removing future trigger comments stops future requests;
+  it does not cancel an accepted request.
 
-Nine alpha subsystems: polling/SQLite controller, Git acquisition VM, reader,
-dual CLI workers, auth transfer, egress proxy, App publisher, release registry
-and six-arm evaluator. Six activation gate groups remain open. Qualification
-has 20 hostile, 13 exhaustion and eight E2E scenarios. Kernel/QEMU pins, VM
-images, native-hook evidence and provider-policy packs support that service.
-Native requests need none of this local machinery.
-See the [architecture](../reviewer/README.md),
-[qualification](../reviewer/E2E-QUALIFICATION.md) and
-[gate inventory](research/2026-10-21-alpha-activation-checklist.md).
+## Keep parked work parked
 
-## Cut or park, after approval
+Preserve code and evidence. Do not delete modules or revive these issues.
 
-Parked issues stay open with a reason and revival condition; work stops. Preserve
-code and failed evidence. Revival requires the original unresolved gates. This
-cuts scope and maintenance commitments before deleting code.
-
-| All six open issues | Proposed disposition and reason |
+| Issue | v0 disposition |
 | --- | --- |
-| [#172](https://github.com/hemsoft-dev/set-it-free-loop/issues/172), dual alpha | Close as superseded after explicit approval of the replacement scope, never as completed. |
-| [#173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173), eligibility | Park unattended CLI and custom-App questions. Verify only the selected native account, repository access and billing boundary. |
-| [#174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174), adapters/isolation | Park `reviewer/`, VMs, kernel pins, native hooks, egress and qualification. SFL runs no local model process. |
-| [#176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176), controller/publisher | Park polling, SQLite jobs, auth leases, custom App writes and promotion. Native Codex publishes its own review. |
-| [#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177), evaluation | Park comparative benchmarks and the two-week gate. Franz judges usefulness and noise on three real reviews. |
-| [#264](https://github.com/hemsoft-dev/set-it-free-loop/issues/264), missing stop receipt | Park with its worker; no credential recovery or policy decision is implied. |
+| [#172](https://github.com/hemsoft-dev/set-it-free-loop/issues/172), dual alpha | Superseded by this single-session pilot; no dual-model work. |
+| [#173](https://github.com/hemsoft-dev/set-it-free-loop/issues/173), eligibility | The remaining native-account/provider-question slice is not needed for v0. Existing Chief T3 sessions and the existing App supply the path. The unattended CLI service remains parked. |
+| [#174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174), isolation | VMs, kernel pins, native hooks and hostile-fixture qualification remain parked. |
+| [#176](https://github.com/hemsoft-dev/set-it-free-loop/issues/176), controller | SQLite jobs, auth leases, promotion and the alpha publisher remain parked. The tiny pmd runner does not activate them. |
+| [#177](https://github.com/hemsoft-dev/set-it-free-loop/issues/177), evaluation | Comparative benchmarks remain parked. Judge usefulness on the live pilot. |
+| [#264](https://github.com/hemsoft-dev/set-it-free-loop/issues/264), stop receipt | Remains parked with its worker. |
 
-Keep retired `central-reviewer/`, `gh-sfl/` and deployment code frozen. Supersede
-the alpha README and activation checklist for v0; retain other research. Actions
-is disabled. The ready
-[provider-question pack](research/2026-10-27-provider-support-send-pack.md)
-remains unsent and relevant only if the unattended CLI service returns. Native
-success establishes no CLI-policy exception.
+Keep `reviewer/`, retired `central-reviewer/`, `gh-sfl/` and deployment
+automation frozen. This v0 supersedes the alpha README and activation checklist
+only as the delivery plan. It grants no exception for the parked CLI service.
 
-## Keep only essential controls
+## Delivery evidence
 
-- Owner-operated pilot, exact repository ID `1169772257`, same-repository heads.
-  Approve PR-content disclosure to OpenAI. Add no local secrets, auth files or
-  logs; inspect for accidental secrets.
-- Manual budget: one outstanding request, three/day maximum. Record request URL,
-  head and time. Reconcile uncertain POSTs before retrying. Reuse an identifiable
-  current-head review. Unclear/moved heads stay pending. No parser or branch gate.
-- Verify included-plan usage cannot draw purchased credits or paid overflow.
-  Record account evidence or stop. No API-key fallback or credit purchase.
-- Stop new requests to stop the pilot. Account connector revocation is the
-  stronger access stop; neither proves in-flight cancellation. Operator controls
-  cannot bound other authorized users or automatic reviews.
-- Hostile text can still mislead the hosted reviewer. Keep output advisory and
-  verify its reviewed head manually. Existing checks and merge rules continue.
-  For this plan PR's required review, wait about 60 minutes, re-request once,
-  then follow the existing cross-model fallback if still hung after another hour.
-  Pilot failures stop without substitution.
+Use small PRs for this correction and project-manager's runner. Each needs a
+clean current-head delivery review via `@codex review`, required checks, and a
+guarded merge. If Codex hangs about one hour, re-request once; after another
+hour, use a Claude `audit-pr` fallback. Deploy pmd with `bash deploy/install.sh`
+and fast-forward the main checkouts on mini and home.
 
-## Ordered small PRs
+Then open a tiny real PR here. Ask the Chief or Franz to post `@sfl review`.
+Record the request URL, exact head, T3 session, SFL App review URL and elapsed
+time. Verify exactly one review, correct App identity and SHA. Repeat polling
+must not duplicate it. The first posted review is the acceptance test.
 
-1. **This plan.** Approve the replacement scope, including manual-only v0 and
-   native identity/model selection. No live permission follows from merging it.
-2. **Pilot evidence, 1–2 hours after separate explicit pilot permission and
-   account checks.** At most three real open PRs in seven calendar days from
-   authorization, one outstanding request. Start with the next ready owner PR;
-   create no filler PRs. Exclude this plan's delivery reviews. Stop at three
-   reviews or seven days. Record head, request, result, turnaround, advisory
-   state and useful findings/noise. Franz judges expansion. The first result
-   may take minutes; provider latency is not guaranteed.
-3. **Scope cleanup, 1–2 hours after plan approval.** Add the two supersession
-   notices and issue dispositions above. No deletion or credential recovery.
-4. **Optional requester, 3–5 hours only if manual use proves painful.** One
-   Python command in `scripts/`, local receipts and `gh` stubs. Cap code plus
-   tests at 300 lines; stop and keep manual requests if it grows beyond that.
-   Its local allowlist, rate cap and disabled flag govern only its own requests.
-
-Allow half a day plus approval/review waits. Franz approves the scope and pilot,
-then verifies [review settings](https://chatgpt.com/codex/settings/code-review)
-and billing evidence. Head/result checks remain manual. No new App, credentials,
-provider contact or organization rollout is needed.
-
-Council: active GPT 6.1 Sol · consulted Muse Wonder Full 1.0 · missing Claude
-Opus 5.5, over pace · adopted 6 · declined 0. Muse prompted the zero-code pilot,
-explicit product change, honest operator controls, defined parking, bounded
-optional command and ongoing owner duties. Capacity checked October 27 at
-20:52 EDT: Claude red/deferred; Muse both windows ok, yellow pacing, gate open.
+Council: GPT 6.1 Sol active, Claude Opus 5.5 consulted; Muse Wonder Full 1.0
+missing because its quota guard was unknown. Adopted six material fixes:
+short restart-safe ticks, a local MCP client, credential-expiry checks,
+exact-commit result validation, mention neutralization and new-comment rules.
+Claude's delegate-status polling suggestion is implemented with T3's external
+launch/read path because delegates require an active parent session. The
+suggestion to publish after a head move was declined to preserve the fresh-head
+request rule. No material objection to the overall direction.
