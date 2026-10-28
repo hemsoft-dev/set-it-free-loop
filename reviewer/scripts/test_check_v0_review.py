@@ -89,6 +89,20 @@ class ReviewFormatTests(unittest.TestCase):
         review['body'] = 'The source contains `' + marker + '`.\n' + review['body'].replace(HEAD, 'b' * 40)
         self.assertIn('request marker does not name the expected head', check(review, HEAD))
 
+    def test_every_coverage_item_must_stay_nested(self):
+        for label in ('Files reviewed', 'Context read', 'Verified', 'Not verified'):
+            with self.subTest(label=label):
+                review = self.review()
+                review['body'] = review['body'].replace(
+                    '**' + label + ':**\n  - `file.py`\n  - Second item.',
+                    '**' + label + ':**\n  - `file.py`\n- Second item.')
+                self.assertIn(label + ' must use nested coverage bullets', check(review, HEAD))
+
+    def test_tests_disclaimer_cannot_have_extra_coverage_items(self):
+        review = self.review()
+        review['body'] = review['body'].replace('\n\n---', '\n- Orphaned item.\n\n---')
+        self.assertIn('unexpected content after tests disclaimer', check(review, HEAD))
+
     def test_missing_or_reordered_coverage(self):
         review = self.review()
         review['body'] = review['body'].replace('**Files reviewed:**', '**Context read:**')

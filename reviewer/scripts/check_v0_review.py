@@ -45,11 +45,15 @@ def check(review, head):
             continue
         inline = match[1]
         following = coverage[match.end():].split('\n- **', 1)[0]
+        items = [line for line in following.splitlines() if line.strip()]
         if inline == ' None reported.' and label in ('Context read', 'Not verified'):
             if following.strip():
                 errors.append(label + ' has content after None reported')
-        elif inline or not re.search(r'^  - \S', following, re.M):
+        elif inline or not items or any(not re.fullmatch(r'  - [ \t]*\S.*', line) for line in items):
             errors.append(label + ' must use nested coverage bullets')
+    last = re.search(r'^- \*\*Tests run:\*\*.*$', coverage, re.M)
+    if last and coverage[last.end():].strip():
+        errors.append('unexpected content after tests disclaimer')
     disclaimer = '- **Tests run:** None. Reviewer execution is disabled.'
     if len(re.findall(r'^' + re.escape(disclaimer) + r'$', body, re.M)) != 1:
         errors.append('expected one parent-owned tests disclaimer')
