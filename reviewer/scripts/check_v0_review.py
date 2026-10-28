@@ -27,13 +27,26 @@ def check(review, head):
     if re.search(r'&(?:amp;)?(?:\\)?#(?:x27|39);', body, re.I):
         errors.append('apostrophe entity leaked into Markdown')
     headings = ['### Key Findings', '### Coverage']
-    if any(body.count(heading) != 1 for heading in headings):
+    if any(len(re.findall(r'^' + re.escape(heading) + r'$', body, re.M)) != 1
+           for heading in headings):
         errors.append('expected one findings and coverage section')
-    coverage = body.split('### Coverage', 1)[-1].split('\n---', 1)[0]
+    section = re.search(r'^### Coverage$', body, re.M)
+    coverage = body[section.end():].split('\n---', 1)[0] if section else ''
     labels = ['Files reviewed', 'Context read', 'Verified', 'Not verified', 'Tests run']
-    actual = re.findall(r'^- \*\*([^*]+):\*\* ', coverage, re.M)
+    actual = re.findall(r'^- \*\*([^*]+):\*\*(?: |$)', coverage, re.M)
     if actual != labels:
         errors.append('coverage must contain the five ordered bullets')
+    for label in labels[:-1]:
+        match = re.search(r'^- \*\*' + re.escape(label) + r':\*\*(.*)$', coverage, re.M)
+        if not match:
+            continue
+        inline = match[1]
+        following = coverage[match.end():].split('\n- **', 1)[0]
+        if inline == ' None reported.' and label in ('Context read', 'Not verified'):
+            if following.strip():
+                errors.append(label + ' has content after None reported')
+        elif inline or not re.search(r'^  - \S', following, re.M):
+            errors.append(label + ' must use nested coverage bullets')
     if body.count('- **Tests run:** None. Reviewer execution is disabled.') != 1:
         errors.append('expected one parent-owned tests disclaimer')
     if 'No tests were executed' in body:
