@@ -6,6 +6,35 @@ This supersedes the native-Codex product framing merged in
 [#284](https://github.com/hemsoft-dev/set-it-free-loop/pull/284).
 Native `@codex review` remains a delivery check on our implementation PRs.
 
+## Explicit owner authorization
+
+Franz must explicitly authorize live deployment and pilot activation, including
+setting the poller's `enabled` flag to `true`, before those steps happen. A clean
+review, merged plan, merged runner or this runbook alone grants no activation
+permission. Record the owner go and its scope before acting.
+
+The Chief recorded Franz's authorization for this v0 on October 28, 2026:
+
+- At 00:40 EDT, Franz approved the plan and authorized this v0 pilot.
+- At 00:47 EDT, Franz corrected the reviewer choice to our T3 agent.
+- v0 was enabled under that authority for only `hemsoft-dev/set-it-free-loop`,
+  owner-comment triggers, one session at a time and three attempts per Eastern
+  day, using the existing SFL App and Chief subscriptions.
+- The [live request](https://github.com/hemsoft-dev/set-it-free-loop/pull/286#issuecomment-6461413661)
+  was posted at 01:26:09 EDT. Exactly one
+  [SFL App review](https://github.com/hemsoft-dev/set-it-free-loop/pull/286#pullrequestreview-5678160241)
+  posted at 01:27:47 EDT, 98 seconds later, for head
+  `10f24a8367c9586996fc40fed46c96f3026f7179`. Its review thread was archived.
+
+This is a narrow owner-authorized exception for the pmd v0 route. The retired
+systems and parked alpha remain frozen.
+
+Each further live activation or scope change needs a new explicit owner go.
+Before enabling the poller, widening the repository allowlist, raising the daily
+cap or adding an automatic PR-open/head-push trigger, obtain and record Franz's
+authorization for that specific step. The current pilot's approval does not
+cover more repositories, a higher cap, auto-triggers or other scope expansion.
+
 ## The whole loop
 
 1. HemSoft posts exactly `@sfl review` in an open PR's Conversation tab.
@@ -27,13 +56,15 @@ session's result. There is no second review model or custom job database.
 ## Pilot controls
 
 - Allow only `hemsoft-dev/set-it-free-loop`, repository ID `1169772257`.
+  Adding a repository requires a new explicit owner go before activation.
   Require both the PR base and head repository IDs to match. No fork heads.
 - Pin requester `HemSoft`, numeric user ID `8227352`, type `User`. An org
   membership or `OWNER` association alone is insufficient. Review bodies and
   inline comments do not trigger runs. Edited old comments do not become new
   requests. On first enable, establish a creation-time baseline.
 - Permit one review in flight globally, which also enforces one per PR.
-  Default maximum three launch attempts per Eastern calendar day. Reserve the
+  Default maximum three launch attempts per Eastern calendar day. Raising this
+  cap requires a new explicit owner go. Reserve the
   attempt in a locked, atomically replaced state file before calling T3.
   Capacity refusals consume no launch. Busy requests and duplicate requests
   for an already reviewed head require a fresh comment.
@@ -79,10 +110,18 @@ only as the delivery plan. It grants no exception for the parked CLI service.
 Use small PRs for this correction and project-manager's runner. Each needs a
 clean current-head delivery review via `@codex review`, required checks, and a
 guarded merge. If Codex hangs about one hour, re-request once; after another
-hour, use a Claude `audit-pr` fallback. Deploy pmd with `bash deploy/install.sh`
-and fast-forward the main checkouts on mini and home.
+hour, use a Claude `audit-pr` fallback.
 
-Then open a tiny real PR here. Ask the Chief or Franz to post `@sfl review`.
+Before live deployment, enabling the poller or running the live acceptance test,
+verify that Franz's recorded explicit go covers the repository, trigger mode and
+daily cap. Without it, stop those live steps; offline implementation, reviews and
+guarded merges may continue. This v0's go is recorded above. Back up pmd before
+deploying with `bash deploy/install.sh`, verify `/healthz`, and fast-forward only
+clean main checkouts on mini and home. Set `enabled` to `true` only within the
+explicitly authorized scope.
+
+After the authorization gate, open a tiny real PR here. Ask the Chief or Franz
+to post `@sfl review`, or use the HemSoft account when explicitly authorized.
 Record the request URL, exact head, T3 session, SFL App review URL and elapsed
 time. Verify exactly one review, correct App identity and SHA. Repeat polling
 must not duplicate it. The first posted review is the acceptance test.
