@@ -1,12 +1,27 @@
 # Set it Free Loop
 
-## Owner-triggered v0 pilot
+## Current SFL v0
 
-The owner authorized a small v0 pilot on October 28, 2026. Its
-[v0 plan](https://github.com/hemsoft-dev/set-it-free-loop/blob/664f719d1934257472baf83c3eacfd441d4550f2/docs/SIMPLIFY.md) uses `@sfl review` from HemSoft to request one advisory
-review by our T3 agent, published by the SFL App. The runner lives in
-[project-manager](https://github.com/hemsoft-dev/project-manager/blob/main/docs/sfl-v0.md).
-The historical alpha and retired organization automation remain frozen.
+The current operating contract is
+[project-manager's SFL v0 documentation](https://github.com/hemsoft-dev/project-manager/blob/main/docs/sfl-v0.md).
+HemSoft comments exactly `@sfl review` on an open PR with a same-repository head
+to request one advisory review by our T3 agent, published by the SFL App. The
+contract covers every public or private hemsoft-dev repository the App
+installation can access. Accepted requests wait in a durable FIFO, and there is
+no daily setting or counter. Provider pause and hot verdicts still apply.
+[V0-REVIEW-FORMAT](docs/V0-REVIEW-FORMAT.md) describes the posted review.
+
+This summary repeats the documented contract. It does not show what any host is
+running, and it grants no activation or scope authority. Each further live
+activation or scope change needs a new explicit owner go.
+
+## Initial v0 pilot, October 28, 2026
+
+The owner authorized a small pilot on October 28, 2026. The
+[initial plan](docs/SIMPLIFY.md) records that authorization and its limits: this
+repository only and three attempts per Eastern day, with a fresh comment for
+busy requests. Those limits are dated history, not current operation. The
+historical alpha and retired organization automation remain frozen.
 
 ## Historical freeze
 

@@ -1,5 +1,20 @@
 # SFL v0: ask our agent to review
 
+This is the initial plan and pilot record from October 28, 2026. It is not the
+current operating guide. For current operation, follow
+[project-manager's SFL v0 contract](https://github.com/hemsoft-dev/project-manager/blob/main/docs/sfl-v0.md).
+That contract covers every public or private hemsoft-dev repository the SFL App
+installation can access. Accepted requests wait in a durable FIFO, and there is
+no daily setting or counter. Busy requests stay queued, so they need no fresh
+comment. A changed head still needs a fresh request.
+
+The single-repository allowlist, three-attempt daily cap and busy-request rule
+below are dated pilot history. The authorization recorded below covers that
+pilot only. This note grants no activation or scope authority, and it does not
+show what any host is running. The owner-go requirement below still applies. The
+parked alpha and retired automation stay frozen, with their separate credential,
+App and activation gates.
+
 Franz corrected the plan on October 28, 2026 at 00:47 EDT: "I thought the
 whole point was for us to be doing the review in an agent and not use Codex."
 This supersedes the native-Codex product framing merged in
@@ -32,7 +47,7 @@ systems and parked alpha remain frozen.
 Each further live activation or scope change needs a new explicit owner go.
 Before enabling the poller, widening the repository allowlist, raising the daily
 cap or adding an automatic PR-open/head-push trigger, obtain and record Franz's
-authorization for that specific step. The current pilot's approval does not
+authorization for that specific step. The initial pilot's approval does not
 cover more repositories, a higher cap, auto-triggers or other scope expansion.
 
 ## The whole loop
@@ -53,7 +68,7 @@ The external MCP credential uses T3's launch path because `delegate_task`
 requires an active parent provider session. A later tick reads the launched
 session's result. There is no second review model or custom job database.
 
-## Pilot controls
+## Initial pilot controls, October 28, 2026
 
 - Allow only `hemsoft-dev/set-it-free-loop`, repository ID `1169772257`.
   Adding a repository requires a new explicit owner go before activation.
@@ -115,7 +130,7 @@ hour, use a Claude `audit-pr` fallback.
 Before live deployment, enabling the poller or running the live acceptance test,
 verify that Franz's recorded explicit go covers the repository, trigger mode and
 daily cap. Without it, stop those live steps; offline implementation, reviews and
-guarded merges may continue. This v0's go is recorded above. Back up pmd before
+guarded merges may continue. The initial pilot's go is recorded above. Back up pmd before
 deploying with `bash deploy/install.sh`, verify `/healthz`, and fast-forward only
 clean main checkouts on mini and home. Set `enabled` to `true` only within the
 explicitly authorized scope.
