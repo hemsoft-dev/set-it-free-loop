@@ -3,6 +3,7 @@
 
 Usage: python3 reviewer/scripts/check_v0_review.py review.json expected-head
 No credentials, network calls or repository code execution are needed.
+Fenced source examples cannot supply review structure or the parent footer.
 """
 import json
 import re
@@ -10,6 +11,28 @@ import sys
 
 
 BOT_ID = 345646943
+
+
+def outside_fenced_code(body):
+    """Keep only lines outside backtick/tilde code fences for validation."""
+    visible = []
+    fence = None
+    for line in body.split('\n'):
+        if fence is not None:
+            closing = r' {0,3}' + re.escape(fence[0]) + '{' + str(len(fence)) + r',}[ \t]*'
+            if re.fullmatch(closing, line):
+                fence = None
+            visible.append('')
+            continue
+        opening = re.fullmatch(r' {0,3}(`{3,}|~{3,})(.*)', line)
+        # Backtick info strings cannot contain backticks. Closing fences must
+        # use the opening character, at least its length, and no trailing text.
+        if opening and (opening[1][0] != '`' or '`' not in opening[2]):
+            fence = opening[1]
+            visible.append('')
+        else:
+            visible.append(line)
+    return '\n'.join(visible)
 
 
 def check(review, head):
@@ -24,6 +47,7 @@ def check(review, head):
     body = review.get('body') or ''
     if not isinstance(body, str):
         return errors + ['review body must be text']
+    body = outside_fenced_code(body)
     # Code spans deliberately preserve source literals. Escaped ampersands in
     # prose can also be intentional examples, so they are not evidence of a leak.
     prose_body = re.sub(r'(?<!`)(`+)(?!`)[^\n]*?(?<!`)\1(?!`)', '', body)
