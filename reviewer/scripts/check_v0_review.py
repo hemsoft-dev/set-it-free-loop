@@ -58,7 +58,9 @@ def check(review, head):
            for heading in headings):
         errors.append('expected one findings and coverage section')
     section = re.search(r'^### Coverage$', body, re.M)
-    coverage = body[section.end():].split('\n---', 1)[0] if section else ''
+    # Only a complete formatter separator line ends coverage. A plain-text
+    # prefix such as ---not-a-rule must remain subject to coverage checks.
+    coverage = re.split(r'^---[ \t]*$', body[section.end():], maxsplit=1, flags=re.M)[0] if section else ''
     findings = re.search(r'^### Key Findings$', body, re.M)
     if section and findings and findings.start() > section.start():
         errors.append('findings must precede coverage')

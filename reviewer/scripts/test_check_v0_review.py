@@ -24,6 +24,47 @@ class ReviewFormatTests(unittest.TestCase):
     def test_valid(self):
         self.assertEqual(check(self.review(), HEAD), [])
 
+    def separator_cases(self):
+        for separator in ('---', '--- \t'):
+            review = self.review()
+            review['body'] = review['body'].replace('\n---\n', '\n' + separator + '\n')
+            yield separator, review, False
+        for prefix in ('---not-a-Markdown-rule', '--- text', '---\ttext', '----text'):
+            for extra in ('- **Tests run:** pytest passed.',
+                          '- **Altered group:** content', '- Orphaned item.'):
+                for boundary in (prefix + '\n', ''):
+                    review = self.review()
+                    review['body'] = review['body'].replace(
+                        '\n\n---', '\n' + boundary + extra + '\n\n---')
+                    yield (prefix, extra, boundary), review, True
+
+    def test_false_separator_cannot_hide_coverage_content(self):
+        for case, review, rejected in self.separator_cases():
+            with self.subTest(case=case):
+                errors = check(review, HEAD)
+                if rejected:
+                    self.assertIn('unexpected content after tests disclaimer', errors)
+                else:
+                    self.assertEqual(errors, [])
+
+    def test_false_separator_cannot_hide_renamed_required_group(self):
+        review = self.review()
+        review['body'] = review['body'].replace(
+            '- **Verified:**', '---not-a-Markdown-rule\n- **Altered group:**')
+        self.assertIn('coverage must contain the five ordered bullets', check(review, HEAD))
+
+    def test_cli_separator_boundaries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            payload = Path(directory) / 'review.json'
+            for case, review, rejected in self.separator_cases():
+                with self.subTest(case=case):
+                    payload.write_text(json.dumps(review), encoding='utf-8')
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(Path(__file__).with_name('check_v0_review.py')),
+                         str(payload), HEAD], capture_output=True, text=True, check=False, timeout=10)
+                    self.assertEqual(result.returncode, int(rejected), result.stderr)
+                    self.assertEqual('review format passed' in result.stdout, not rejected)
+
     def test_heading_text_in_inline_code_is_not_a_section(self):
         review = self.review()
         review['body'] = 'The change touches `### Coverage` and `### Key Findings`.\n' + review['body']
