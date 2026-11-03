@@ -75,6 +75,60 @@ class ReviewFormatTests(unittest.TestCase):
         review['body'] += '\n### Coverage\n'
         self.assertIn('expected one findings and coverage section', check(review, HEAD))
 
+    def heading_cases(self):
+        for title in ('Key Findings', 'Coverage'):
+            for suffix in ('', ' ', '\t', ' \t', ' ###', '\t#', ' ### \t'):
+                for prefix in ('### ', '  ###\t'):
+                    heading = prefix + title + suffix
+                    for position in ('before', 'between', 'footer'):
+                        review = self.review()
+                        extra = heading + '\nConflicting section.\n\n'
+                        if position == 'before':
+                            review['body'] = extra + review['body']
+                        elif position == 'between':
+                            review['body'] = review['body'].replace('### Coverage', extra + '### Coverage')
+                        else:
+                            review['body'] += '\n' + extra
+                        yield (title, suffix, prefix, position), review
+
+    def test_duplicate_heading_variants_are_rejected(self):
+        for case, review in self.heading_cases():
+            with self.subTest(case=case):
+                self.assertIn('expected one findings and coverage section', check(review, HEAD))
+
+    def test_cli_duplicate_heading_variants(self):
+        with tempfile.TemporaryDirectory() as directory:
+            payload = Path(directory) / 'review.json'
+            for case, review in self.heading_cases():
+                with self.subTest(case=case):
+                    payload.write_text(json.dumps(review), encoding='utf-8')
+                    result = subprocess.run(
+                        [sys.executable, '-B', str(Path(__file__).with_name('check_v0_review.py')),
+                         str(payload), HEAD], capture_output=True, text=True, check=False, timeout=10)
+                    self.assertEqual(result.returncode, 1, result.stderr)
+                    self.assertIn('expected one findings and coverage section', result.stderr)
+                    self.assertNotIn('review format passed', result.stdout)
+
+    def test_heading_variants_in_source_evidence_are_not_sections(self):
+        for title in ('Key Findings', 'Coverage'):
+            for suffix in (' ', '\t', ' ###', ' ### \t'):
+                heading = '### ' + title + suffix
+                for example in ('`' + heading + '`', '> ' + heading,
+                                '```markdown\n' + heading + '\n```',
+                                '~~~markdown\n' + heading + '\n~~~'):
+                    with self.subTest(example=example):
+                        review = self.review()
+                        review['body'] = review['body'].replace('None.', example, 1)
+                        self.assertEqual(check(review, HEAD), [])
+
+    def test_heading_variants_use_consistent_section_boundaries(self):
+        for title in ('Key Findings', 'Coverage'):
+            for suffix in (' ', '\t', ' ###', ' ### \t'):
+                with self.subTest(title=title, suffix=suffix):
+                    review = self.review()
+                    review['body'] = review['body'].replace('### ' + title, '### ' + title + suffix)
+                    self.assertEqual(check(review, HEAD), [])
+
     def test_rejects_old_inline_coverage(self):
         review = self.review()
         review['body'] = review['body'].replace('**Files reviewed:**\n  - ', '**Files reviewed:** ')

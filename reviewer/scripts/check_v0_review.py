@@ -53,15 +53,18 @@ def check(review, head):
     prose_body = re.sub(r'(?<!`)(`+)(?!`)[^\n]*?(?<!`)\1(?!`)', '', body)
     if re.search(r'&(?:\\)?#(?:x27|39);', prose_body, re.I):
         errors.append('apostrophe entity leaked into Markdown')
-    headings = ['### Key Findings', '### Coverage']
-    if any(len(re.findall(r'^' + re.escape(heading) + r'$', body, re.M)) != 1
-           for heading in headings):
+    # Match structural ATX headings, including trailing whitespace and optional
+    # closing hashes. Use the same matches for counts, ordering and boundaries.
+    headings = [list(re.finditer(r'^ {0,3}###[ \t]+' + re.escape(title)
+                                 + r'(?:[ \t]+#+)?[ \t]*$', body, re.M))
+                for title in ('Key Findings', 'Coverage')]
+    if any(len(matches) != 1 for matches in headings):
         errors.append('expected one findings and coverage section')
-    section = re.search(r'^### Coverage$', body, re.M)
+    findings = headings[0][0] if headings[0] else None
+    section = headings[1][0] if headings[1] else None
     # Only a complete formatter separator line ends coverage. A plain-text
     # prefix such as ---not-a-rule must remain subject to coverage checks.
     coverage = re.split(r'^---[ \t]*$', body[section.end():], maxsplit=1, flags=re.M)[0] if section else ''
-    findings = re.search(r'^### Key Findings$', body, re.M)
     if section and findings and findings.start() > section.start():
         errors.append('findings must precede coverage')
     labels = ['Files reviewed', 'Context read', 'Verified', 'Not verified', 'Tests run']
