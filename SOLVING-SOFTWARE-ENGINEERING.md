@@ -1,5 +1,9 @@
 # Solving Software Engineering Development through the art of the Agentic Loop — The Set it Free Loop™ 🚀
 
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions,
+> not an active setup or deployment procedure. Do not install, configure,
+> dispatch or restart SFL. See the repository README for the freeze status.
+
 ## Learning to fly
 
 Software engineering is shifting from one-off automation to **self-improving systems**.

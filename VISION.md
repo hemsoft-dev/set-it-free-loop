@@ -1,8 +1,12 @@
 # Set it Free Loop™ — Vision
 
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions,
+> not an active setup or deployment procedure. Do not install, configure,
+> dispatch or restart SFL. See the repository README for the freeze status.
+
 **Version**: 1.0
 **Created**: 2026-02-18
-**Status**: Active Execution
+**Status**: Retired on 2026-10-09; historical vision, not current direction
 
 ---
 

@@ -1,5 +1,11 @@
 # Offline adversarial reviewer alpha
 
+> **Parked on 2026-10-28:** This alpha is frozen reference code, not active
+> work. Its issues #172 through #177 are closed. Do not revive or activate it
+> without a new explicit owner instruction. The only active asset under
+> `reviewer/` is the v0 acceptance checker, `scripts/check_v0_review.py`. See
+> the repository [AGENTS.md](../AGENTS.md) and [README](../README.md).
+
 This separate Go module implements the new alpha contracts from
 [issue #174](https://github.com/hemsoft-dev/set-it-free-loop/issues/174).
 The retired modules are reference material. No workflow, daemon, App installation
@@ -112,9 +118,12 @@ overflow controls, the selected App identity and trigger discovery, externally e
 qualified official-client transport, tool/resource enforcement and explicit
 owner activation remain required. If a client cannot remove a forbidden
 capability, record it blocked; do not weaken the contract or declare v1 complete.
-Keep [the tracking issue](https://github.com/hemsoft-dev/set-it-free-loop/issues/172)
-open while its acceptance criteria remain unmet. Raw transcripts and credentials
-never belong in public artifacts.
+[The tracking issue](https://github.com/hemsoft-dev/set-it-free-loop/issues/172)
+was closed as not planned on October 28, 2026, when the
+[approved v0 plan](../docs/SIMPLIFY.md#keep-parked-work-parked) parked this
+alpha. Its acceptance criteria remain unmet, and reviving it needs a new
+explicit owner instruction. Raw transcripts and credentials never belong in
+public artifacts.
 
 Transport references: [Codex JSONL and schema output](https://learn.chatgpt.com/docs/non-interactive-mode), [Claude structured results](https://code.claude.com/docs/en/headless). These documents support the offline decoders; live compatibility remains unproven.
 

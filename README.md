@@ -25,12 +25,16 @@ historical alpha and retired organization automation remain frozen.
 
 ## Historical freeze
 
-The owner's October 19, 2026 merge-mission instruction authorizes an offline
+The owner's October 19, 2026 merge-mission instruction authorized an offline
 dual-subscription alpha in [`reviewer/`](reviewer/README.md), tracked by
 [issue #172](https://github.com/hemsoft-dev/set-it-free-loop/issues/172).
-The exception covers code, fake-provider tests and documentation. Credentials,
-App installation, live inference and deployment retain their separate gates.
-The retired implementation and organization automation remain frozen.
+The [approved v0 plan](docs/SIMPLIFY.md#keep-parked-work-parked) parked that
+alpha on October 28, 2026, and issue #172 was closed as not planned that day.
+The alpha code stays frozen for reference. The only active asset here is the
+offline v0 acceptance checker, `reviewer/scripts/check_v0_review.py`.
+Credentials, App installation, live inference and deployment retain their
+separate gates. The retired implementation and organization automation remain
+frozen.
 
 SFL is frozen by owner instruction as of 2026-10-09. It is no longer deployed or available as a PR reviewer in hemsoft-dev. Do not install, activate, or configure it.
 

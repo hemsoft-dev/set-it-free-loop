@@ -1,13 +1,32 @@
 ## Project freeze
 
-Owner exception, October 19, 2026: the explicit merge-mission invocation
-authorizes offline implementation, tests, documentation and guarded merges for
-the new `reviewer/` alpha module and issues #172 through #177. Use fake providers
-and fake GitHub transports. This exception does not activate the retired
-modules or authorize App installation, credential recreation, live inference,
-provider-policy exceptions or paid usage. Keep those separately evidenced gates.
-
 SFL is frozen by owner instruction as of 2026-10-09. Preserve its source and history for reference. Do not reactivate automation, deploy the reviewer, recreate SFL credentials or install the App without a new explicit owner instruction. The current retirement cleanup may be completed under the existing instruction.
+
+## Parked reviewer alpha
+
+The October 19, 2026 owner exception for the offline `reviewer/` alpha has
+ended. The [approved v0 plan](docs/SIMPLIFY.md#keep-parked-work-parked) parked
+that work on October 28, 2026. Issues #172 through #177 are all closed: #175 is
+complete, and the others were closed as not planned. Do not revive them, open
+alpha PRs or extend the alpha code without a new explicit owner instruction.
+Keep `reviewer/`, the retired `central-reviewer/`, `gh-sfl/` and deployment
+automation frozen.
+
+## Current v0 role
+
+SFL v0 runs from project-manager, and runner changes belong there. Its
+operating contract is
+[project-manager's SFL v0 documentation](https://github.com/hemsoft-dev/project-manager/blob/main/docs/sfl-v0.md).
+This repository's only active asset is the offline v0 acceptance checker,
+`reviewer/scripts/check_v0_review.py`, with its tests in
+`reviewer/scripts/test_check_v0_review.py`. The review presentation it checks
+is described in [V0-REVIEW-FORMAT](docs/V0-REVIEW-FORMAT.md). This repository
+accepts small fixes to that checker and its tests, plus documentation
+corrections. The checker needs no credentials or network access and runs no
+repository code. This role grants no activation, credential recreation, App
+installation, live inference, provider-policy exception, paid usage or scope
+authority. Each live activation or scope change still needs a new explicit
+owner go.
 
 ## Repository Identity
 
