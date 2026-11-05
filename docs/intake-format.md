@@ -1,5 +1,9 @@
 # sfl: Frontmatter Spec
 
+> **Retired on 2026-10-09:** SFL is frozen. These are historical instructions,
+> not an active setup or deployment procedure. Do not install, configure,
+> dispatch or restart SFL. See the repository README for the freeze status.
+
 **Audience**: Maintainers authoring new workflows for the Set it Free Loop library.
 
 ---
