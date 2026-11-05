@@ -134,7 +134,7 @@
           "triage": true,
           "pull": true
         },
-        "temp_clone_token": "AB6YUGEO3SRMFNIV66MJ323KY3ZOW",
+        "temp_clone_token": "",
         "allow_squash_merge": true,
         "allow_merge_commit": true,
         "allow_rebase_merge": true,
@@ -456,7 +456,7 @@
         "url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/contents/.github/workflows/ci.yml?ref=f2cb9726ff85c4831b14a25b37474327b10168fc",
         "html_url": "https://github.com/HemSoft/survival-shelter-opus55/blob/f2cb9726ff85c4831b14a25b37474327b10168fc/.github/workflows/ci.yml",
         "git_url": "https://api.github.com/repos/HemSoft/survival-shelter-opus55/git/blobs/9c942b4e2b5a6aa3e499e0686652e7130dbcdf94",
-        "download_url": "https://raw.githubusercontent.com/HemSoft/survival-shelter-opus55/f2cb9726ff85c4831b14a25b37474327b10168fc/.github/workflows/ci.yml?token=AB6YUGDZYRXXHK25NZX7FYTKY3PETAA",
+        "download_url": "https://raw.githubusercontent.com/HemSoft/survival-shelter-opus55/f2cb9726ff85c4831b14a25b37474327b10168fc/.github/workflows/ci.yml?token=",
         "type": "file",
         "content": "IyBCdWlsZCBhbmQgc2ltdWxhdGlvbiB0ZXN0cyBvbiBldmVyeSBwdXNoIGFu\nZCBwdWxsIHJlcXVlc3QgdG8gbWFpbi4KIyBOZWVkcyBhIHNlbGYtaG9zdGVk\nIFdpbmRvd3MgcnVubmVyIHdpdGggVUUgNS43IChzZWUgRG9jcy9DSS5tZCku\nIFRoZSBqb2IgaXMgc2tpcHBlZCwgd2hpY2ggc2F0aXNmaWVzIHRoZSByZXF1\naXJlZAojIGNoZWNrLCB1bnRpbCB0aGUgcmVwb3NpdG9yeSB2YXJpYWJsZSBV\nRV9SVU5ORVJfRU5BQkxFRCBpcyAndHJ1ZScsIHNvIHB1bGwgcmVxdWVzdHMg\nZG9uJ3QgcXVldWUgd2l0aG91dCBhIHJ1bm5lci4KbmFtZTogQ0kKCm9uOgog\nIHB1c2g6CiAgICBicmFuY2hlczogW21haW5dCiAgcHVsbF9yZXF1ZXN0Ogog\nICAgYnJhbmNoZXM6IFttYWluXQogIHdvcmtmbG93X2Rpc3BhdGNoOgoKcGVy\nbWlzc2lvbnM6CiAgY29udGVudHM6IHJlYWQKCiMgUXVldWUgcmF0aGVyIHRo\nYW4gY2FuY2VsOiBjYW5jZWxsaW5nIGtpbGxzIGEgcnVubmluZyBVbnJlYWxF\nZGl0b3IsIHdoaWNoIEFHRU5UUy5tZCBmb3JiaWRzLgpjb25jdXJyZW5jeToK\nICBncm91cDogY2ktJHt7IGdpdGh1Yi5yZWYgfX0KICBjYW5jZWwtaW4tcHJv\nZ3Jlc3M6IGZhbHNlCgpqb2JzOgogIGJ1aWxkLWFuZC10ZXN0OgogICAgIyBU\naGUgcmVxdWlyZWQgc3RhdHVzIGNoZWNrIG1hdGNoZXMgdGhpcyBuYW1lIGV4\nYWN0bHk7IHJlbmFtZSBib3RoIHRvZ2V0aGVyLgogICAgbmFtZTogQnVpbGQg\nYW5kIHNpbXVsYXRpb24gdGVzdHMKICAgIGlmOiB2YXJzLlVFX1JVTk5FUl9F\nTkFCTEVEID09ICd0cnVlJwogICAgcnVucy1vbjogW3NlbGYtaG9zdGVkLCBX\naW5kb3dzLCBYNjQsIHVlNS43XQogICAgdGltZW91dC1taW51dGVzOiA2MAog\nICAgZW52OgogICAgICBVRV9ST09UOiAke3sgdmFycy5VRV9ST09UIH19CiAg\nICBzdGVwczoKICAgICAgLSBuYW1lOiBDaGVjayBvdXQKICAgICAgICB1c2Vz\nOiBhY3Rpb25zL2NoZWNrb3V0QDNkM2M0MmU1YWFjNWJhODA1ODI1ZGE3NjQx\nMGMxODEyNzNiYTkwYjEgIyB2Ny4wLjEKICAgICAgICB3aXRoOgogICAgICAg\nICAgbGZzOiB0cnVlCiAgICAgICAgICBwZXJzaXN0LWNyZWRlbnRpYWxzOiBm\nYWxzZQoKICAgICAgLSBuYW1lOiBCdWlsZCBlZGl0b3IgdGFyZ2V0CiAgICAg\nICAgc2hlbGw6IHB3c2gKICAgICAgICBydW46IC4vVG9vbHMvU2NyaXB0cy9i\ndWlsZC5wczEKCiAgICAgIC0gbmFtZTogU2ltdWxhdGlvbiB0ZXN0cwogICAg\nICAgIHNoZWxsOiBwd3NoCiAgICAgICAgcnVuOiAuL1Rvb2xzL1NjcmlwdHMv\ncnVuLXRlc3RzLnBzMQo=\n",
         "encoding": "base64",
@@ -667,5 +667,27 @@
     }
   },
   "treatment": "Preserve runner10, existing logon startup task, UE_RUNNER_ENABLED and current main protections. Require fresh primary source checks and actual destination CI on runner10. Do not change or cancel human processes, tasks or registration.",
-  "transfer_gate_cleared": false
+  "transfer_gate_cleared": false,
+  "redactions": {
+    "issue": "https://github.com/hemsoft-dev/set-it-free-loop/issues/298",
+    "unredacted_sha256": "a53f01ba88db330c6e370a0c959c1c993bebe3b37e1abae68b7fa987c01b880a",
+    "unredacted_commit": "6f631ec574f87f126f8b02030f180055fb4023ed",
+    "placeholder": "Redacted values are empty strings; the token query keeps its name with an empty value.",
+    "fields": [
+      {
+        "pointer": "/policy_capture/repository_response/data/temp_clone_token",
+        "kind": "temp_clone_token",
+        "original_length": 29,
+        "replacement": "",
+        "reason": "GitHub-issued temporary access token removed from public evidence (#298). The original value remains in git history at the unredacted commit and was not used, tested, rotated or revoked here; removing it does not revoke it, and whether it still grants access is unknown. No validator reads this field."
+      },
+      {
+        "pointer": "/workflow_capture/contents_response/data/download_url",
+        "kind": "download_url token query value",
+        "original_length": 31,
+        "replacement": "https://raw.githubusercontent.com/HemSoft/survival-shelter-opus55/f2cb9726ff85c4831b14a25b37474327b10168fc/.github/workflows/ci.yml?token=",
+        "reason": "GitHub-issued temporary access token removed from public evidence (#298). The original value remains in git history at the unredacted commit and was not used, tested, rotated or revoked here; removing it does not revoke it, and whether it still grants access is unknown. No validator reads this field."
+      }
+    ]
+  }
 }

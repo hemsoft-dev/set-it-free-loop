@@ -56,7 +56,7 @@ SFL_APP_PERMISSIONS = {'actions':'write', 'checks':'write', 'contents':'read',
                        'issues':'write', 'metadata':'read', 'pull_requests':'write'}
 GHX_HISTORY_CATALOG_SHA256 = 'a95712b0121ab3c4d0b4b985727eff0dd82eb0ca4081218733ac39bb388c8c78'
 SURVIVAL_REPOSITORY_ID = 1399232444
-SURVIVAL_RESOURCES_SHA256 = 'a53f01ba88db330c6e370a0c959c1c993bebe3b37e1abae68b7fa987c01b880a'
+SURVIVAL_RESOURCES_SHA256 = '3bbb89f1681915ef22a01871768a52e96df5cc8dca5ab17df9972b502c180236'
 
 
 def require(condition, message):
