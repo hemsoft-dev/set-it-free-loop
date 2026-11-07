@@ -4,7 +4,7 @@
 
 **Version**: 1.0  
 **Updated**: 2026-02-18  
-**Status**: Active  
+**Status**: Retired on 2026-10-09; historical, not current direction  
 
 ---
 
@@ -269,6 +269,7 @@ Add the `no-agent` label to any issue. The agent will not claim or act on that i
 
 ## References
 
-- [VISION.md](../VISION.md) — Set it Free loop architecture
-- [SOLVING-SOFTWARE-ENGINEERING.md](../SOLVING-SOFTWARE-ENGINEERING.md) — Strategic context
-- [scripts/setup-github-labels.ps1](../scripts/setup-github-labels.ps1) — Label creation script
+- [VISION.md](../../VISION.md) — Set it Free loop architecture
+- [SOLVING-SOFTWARE-ENGINEERING.md](../../SOLVING-SOFTWARE-ENGINEERING.md) —
+  Strategic context
+- [setup-labels.ps1](setup-labels.ps1) — Label creation script
