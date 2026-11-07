@@ -57,17 +57,11 @@ gh sfl sync --repo owner/repo --direct     # Explicit direct update
 gh sfl sync --dry-run                      # Preview without changes
 ```
 
-### `gh sfl add`
+### Add-on packages (not available)
 
-Add the reviewer package to an existing minimal or standard installation. The
-workflow sources remain pinned to the installation manifest's immutable source
-commit, and the command opens a pull request by default.
-
-```bash
-gh sfl add pr-review                       # Open an add-on PR for the current repo
-gh sfl add pr-review --repo owner/repo     # Open an add-on PR for a specific repo
-gh sfl add pr-review --direct              # Explicit direct deployment
-```
+The CLI has no `gh sfl add` command. `add.go` contains an add-on
+implementation, but `main.go` never registered it, so `gh sfl add` fails with
+`unknown command "add"`. Under the freeze the command stays unregistered.
 
 ### `gh sfl gate`
 

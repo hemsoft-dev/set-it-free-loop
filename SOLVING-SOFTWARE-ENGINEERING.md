@@ -108,7 +108,7 @@ Your authored logic remains in the concise `.md` workflow source file.
 
 The system is recursive, but **bounded** by explicit controls.
 
-![Set it Free Loop Overview](assets/set-it-free-loop/01-set-it-free-loop-overview.png)
+_Diagram not in this repository: Set it Free Loop Overview._
 
 ---
 
@@ -157,7 +157,7 @@ To make recursion safe and useful, stack gates in this order:
 7. **Merge Gate**
    - only after all required statuses are green.
 
-![Set it Free Quality Gates](assets/set-it-free-loop/02-set-it-free-quality-gates.png)
+_Diagram not in this repository: Set it Free Quality Gates._
 
 ---
 
@@ -351,7 +351,7 @@ These are planning estimates, not billing guarantees.
 - Use p50/p90 cost-per-run to forecast instead of guesses.
 - Apply hard monthly budget caps and throttle non-critical runs.
 
-![Set it Free Scaling Economics](assets/set-it-free-loop/03-set-it-free-scaling-economics.png)
+_Diagram not in this repository: Set it Free Scaling Economics._
 
 ---
 
@@ -375,7 +375,7 @@ These are planning estimates, not billing guarantees.
 - Keep strict hard gates and escalation controls
 - Expand repo count gradually
 
-![Set it Free Roadmap](assets/set-it-free-loop/04-set-it-free-roadmap.png)
+_Diagram not in this repository: Set it Free Roadmap._
 
 ---
 
