@@ -12,6 +12,17 @@ alpha PRs or extend the alpha code without a new explicit owner instruction.
 Keep `reviewer/`, the retired `central-reviewer/`, `gh-sfl/` and deployment
 automation frozen.
 
+## Personal Slack assistant exception, November 11, 2026
+
+Franz explicitly authorized building and starting his personal Home Slack
+assistant in this repository, tracked by
+[issue #308](https://github.com/hemsoft-dev/set-it-free-loop/issues/308).
+This exception covers only `personal-slack/`, its documentation and its isolated
+Home runtime. It does not reactivate or change the reviewer, alpha,
+`central-reviewer/`, `gh-sfl/`, GitHub App or retired deployment automation.
+Review source before activation. Preserve Chief source, configuration, services,
+schedules and other owners. Personal intake is restricted to the verified Franz DM.
+
 ## Current v0 role
 
 SFL v0 runs from project-manager, and runner changes belong there. Its

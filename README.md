@@ -1,5 +1,14 @@
 # Set it Free Loop
 
+## Personal Slack assistant
+
+Franz's November 11, 2026 instruction grants a narrow exception for the
+[personal Home Slack assistant](personal-slack/README.md), tracked by
+[issue #308](https://github.com/hemsoft-dev/set-it-free-loop/issues/308).
+It has separate source, runtime, configuration and task lifecycle. The retired
+reviewer, alpha, GitHub App and deployment automation remain frozen. Source
+preparation does not establish live delivery or authorize skipping review.
+
 ## Current SFL v0
 
 The current operating contract is
