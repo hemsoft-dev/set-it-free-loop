@@ -3,6 +3,7 @@ import { rename, unlink } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Transform, Readable } from 'node:stream';
 import { hash, requireThat } from './store.mjs';
+import { LINK_WORKSPACE, readLinked } from './linked.mjs';
 
 export class SlackError extends Error {
   constructor(code, { definite = false, retryAfter = 60 } = {}) {
@@ -52,15 +53,26 @@ export class Slack {
     try { await this.api(remove ? 'reactions.remove' : 'reactions.add', { channel: source.channel, timestamp: source.ts, name }); }
     catch (e) { if (!['already_reacted', 'no_reaction'].includes(e.code)) throw e; }
   }
-  async download(id, path) {
+  async readLinked(ref, identity, progress) {
+    const user=await this.api('auth.test',{},this.userToken);
+    requireThat(user.team_id===identity.team && user.user_id===identity.user &&
+      user.url===`https://${LINK_WORKSPACE.host}/` && identity.team===LINK_WORKSPACE.team,'LinkedIdentityMismatch');
+    return readLinked(ref,identity,(method,args)=>{
+      requireThat(['conversations.history','conversations.replies'].includes(method),'LinkedReadMethodRefused');
+      return this.api(method,args,this.userToken);
+    },progress);
+  }
+  async downloadLinked(id,path,maxBytes) { return this.download(id,path,this.userToken,maxBytes); }
+  async download(id, path, token = this.botToken, maxBytes = 25*1024*1024) {
     requireThat(/^F[A-Z0-9]+$/.test(id), 'InvalidFileId');
-    const file = (await this.api('files.info', { file: id })).file;
+    const file = (await this.api('files.info', { file: id }, token)).file;
     requireThat(file?.id === id && !file.is_external && !file.external_type && file.mode !== 'external', 'ExternalFileRefused');
     const url = new URL(file.url_private_download ?? file.url_private);
     requireThat(url.protocol === 'https:' && url.hostname === 'files.slack.com' && !url.username && !url.password && !url.port, 'UnsafeFileURL');
-    const max = 25 * 1024 * 1024;
+    const max = Math.min(25 * 1024 * 1024,maxBytes);
+    requireThat(Number.isSafeInteger(max) && max>=0,'AttachmentBudgetExceeded');
     requireThat(Number.isSafeInteger(file.size) && file.size >= 0 && file.size <= max, 'AttachmentTooLarge');
-    const response = await this.fetcher(url, { headers: { Authorization: `Bearer ${this.botToken}` }, redirect: 'manual', signal: AbortSignal.timeout(60000) });
+    const response = await this.fetcher(url, { headers: { Authorization: `Bearer ${token}` }, redirect: 'manual', signal: AbortSignal.timeout(60000) });
     requireThat(response.status === 200 && response.body, 'AttachmentDownloadFailed');
     const type = response.headers.get('content-type')?.split(';')[0];
     requireThat(type && type !== 'text/html' && type !== 'application/xhtml+xml', 'AttachmentLoginPage');

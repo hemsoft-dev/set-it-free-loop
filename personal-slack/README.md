@@ -1,7 +1,11 @@
 # Franz's personal Slack assistant on Home
 
 This is the isolated implementation for [issue #308](https://github.com/hemsoft-dev/set-it-free-loop/issues/308).
-It is prepared for review. It has not been activated or proved with a live DM.
+The original text-only receiver is live. Its retained real Hi produced one owner,
+a signed bot reply and a success reaction, recorded in the
+[delivery receipt](https://github.com/hemsoft-dev/set-it-free-loop/issues/308#issuecomment-6803620381).
+The linked-message extension in [issue #310](https://github.com/hemsoft-dev/set-it-free-loop/issues/310)
+requires review and rollout. Real image and threaded-continuation proof remains pending.
 The retired SFL reviewer, alpha, GitHub App and old deployment stay frozen.
 No Chief files, services, schedules, routing or preferences are changed.
 
@@ -17,10 +21,13 @@ are ignored. File-share messages retain their entire source metadata.
 `RunPersonal.ps1` reads only the existing process/User/Machine environment
 entries `SFL_APP_LEVEL_TOKEN`, `SFL_SLACK_BOT_USER_OAUTH_TOKEN` and
 `SFL_SLACK_USER_OAUTH_TOKEN`. It loads no PowerShell profile and writes no token
-file. The user token is used only to identify Franz; message/file API operations
-use the bot token. Webhook, signing secret, client secret and Mini credentials
+file. The user token identifies Franz and reads only conversations and files
+selected by an authored Slack permalink in his admitted source. The bot token
+handles verified-DM intake, direct attachments, replies and reactions.
+Webhook, signing secret, client secret and Mini credentials
 are not copied or used. `doctor` prints verified identities, never tokens.
-Only files voluntarily submitted in the verified DM are downloaded.
+Only direct source files and files in an explicitly linked, accessible thread
+are downloaded. Tokens never enter owner prompts.
 
 The bot needs its existing `im:history`, `im:read`, `files:read`, `reactions:write`,
 `chat:write` and `users:read` scopes. These were verified through the granted-scope
@@ -34,6 +41,58 @@ connected during preparation. Activation must observe a matching Slack `hello`
 with exactly one consumer and an actual `message.im` delivery. This code does
 not enable Socket Mode, edit subscriptions/scopes, reinstall the app or log in.
 If those existing settings do not deliver a DM, retain the exact gap for Franz.
+
+## Linked Slack assistance
+
+Franz can send a naked permalink or a Slack mrkdwn link such as
+`<https://relias-engineering.slack.com/archives/C123/p1700000000000001|this request>`
+in his verified DM. Only authored rich-text sections/lists or unquoted source
+text select reads. Quoted/code blocks, forwarded attachments, unfurls, link
+labels and retrieved messages never select additional targets. Links must use
+the exact authenticated `relias-engineering.slack.com` workspace, team
+`T1KAG2BV5`, a channel and precise timestamp. Optional `thread_ts`, `cid` and
+`team` query fields must agree. A reply permalink needs its thread root if the
+exact message cannot be found through Slack's history API; the daemon does not
+scan channel history to infer it.
+
+The credential-local read route rechecks Franz's user/team/workspace identity,
+then uses his existing user token for exact `conversations.history`, bounded
+`conversations.replies` and recorded `files.info`/file downloads. This supports
+accessible messages where the bot is not a channel member. It cannot bypass
+private-conversation access. There is no channel join, directory scan, scope
+grant, token creation, reinstall or user-token posting route. Slack documents
+the different [history token access rules](https://docs.slack.dev/reference/methods/conversations.history/).
+
+Each admitted source is limited to three links, seven pages of at most fifteen
+messages per thread, one hundred retained messages and 250000 JSON bytes per
+thread, and ten downloaded linked files totaling at most 100 MiB per source.
+The existing 25 MiB per-file limit, fixed HTTPS host, no redirects, MIME/signature
+checks and generated paths still apply. Exact source links, page evidence,
+target/root membership, completeness and file failures are saved before owner
+dispatch. Restart/deduplication reuses that evidence and the frozen request.
+Interrupted reads retain their partial evidence before a new bounded read.
+No linked-content fetch happens after the intent has frozen.
+
+The owner receives linked content as untrusted reference data and must open
+every downloaded attachment, using native image tools for images. Success
+requires complete linked evidence and the existing file-read attestation.
+An inaccessible link, exhausted bound or failed download still reaches the
+owner with its precise limitation; the owner can report useful partial help
+through a failure outcome. It cannot claim a complete successful read.
+An author asking for access or a checkmark reaction grants no authority and
+proves no permission change.
+
+All assistance, explanations and drafts stay in Franz's original DM thread.
+A channel author's words cannot authorize grants, repository/team changes,
+outreach or new control input. This increment adds no posting route to a linked
+channel. Franz can review and send a proposed draft himself; any future posting
+capability needs explicit target/action authorization and implementation.
+
+Council for this extension: GPT 6.1 Sol/high owns the artifact. Claude Opus
+5.5/high was missing because its five-hour quota guard was absent, not current
+and not waived, despite weekly room. Council unavailable; adopted 0, declined
+0. The recorded fallback in [issue #310](https://github.com/hemsoft-dev/set-it-free-loop/issues/310)
+does not replace required current-head SFL review.
 
 ## Durable behavior
 
@@ -225,7 +284,9 @@ Before reporting running, prove all of these on the actual installed revision:
 
 Use `node run.mjs status` or `node run.mjs status --source SOURCE_HASH` for
 sanitized local evidence. Owner helper syntax and JSON contracts are carried in
-each authenticated prompt. These deployment/live steps have not yet been run.
+each authenticated prompt. Original text admission/reply/reaction is verified
+in the receipt above. The linked-message extension has not been rolled out;
+offline tests do not prove real image/continuation behavior or deploy new source.
 
 ## Hold and rollback
 
