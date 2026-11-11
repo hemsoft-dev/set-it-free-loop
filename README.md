@@ -1,5 +1,14 @@
 # Set it Free Loop
 
+## Personal Slack assistant
+
+Franz's November 11, 2026 instruction grants a narrow exception for the
+[personal Home Slack assistant](personal-slack/README.md), tracked by
+[issue #308](https://github.com/hemsoft-dev/set-it-free-loop/issues/308).
+It has separate source, runtime, configuration and task lifecycle. The retired
+reviewer, alpha, GitHub App and deployment automation remain frozen. Source
+preparation does not establish live delivery or authorize skipping review.
+
 ## Current SFL v0
 
 The current operating contract is
@@ -30,7 +39,7 @@ dual-subscription alpha in [`reviewer/`](reviewer/README.md), tracked by
 [issue #172](https://github.com/hemsoft-dev/set-it-free-loop/issues/172).
 The [approved v0 plan](docs/SIMPLIFY.md#keep-parked-work-parked) parked that
 alpha on October 28, 2026, and issue #172 was closed as not planned that day.
-The alpha code stays frozen for reference. The only active asset here is the
+The alpha code stays frozen for reference. The active SFL review asset here is the
 offline v0 acceptance checker, `reviewer/scripts/check_v0_review.py`.
 Credentials, App installation, live inference and deployment retain their
 separate gates. The retired implementation and organization automation remain
