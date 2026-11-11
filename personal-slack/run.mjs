@@ -7,6 +7,7 @@ import { Store, atomic, enqueue, hash, requireThat } from './store.mjs';
 import { Slack } from './slack.mjs';
 import { Receiver, signOperation } from './receiver.mjs';
 import { T3 } from './t3.mjs';
+import { operationBody } from './operations.mjs';
 
 export const EXPECTED = Object.freeze({ team: 'T1KAG2BV5', user: 'U2XMZDPJ7', realName: 'Franz Hemmer',
   bot: 'U0B4SG9L6UX', botId: 'B0B59QTAWPK', app: 'A0B627TMM6U' });
@@ -127,8 +128,7 @@ export async function main(argv) {
   if (action === 'submit') {
     const flags = Object.fromEntries(rest.reduce((a, x, i) => i % 2 ? a : [...a, [x,rest[i+1]]], []));
     requireThat(rest.length === 6 && flags['--source'] && flags['--thread'] && flags['--file'] && /^[a-f0-9]{64}$/.test(flags['--source']), 'InvalidSubmitArguments');
-    const body = json(flags['--file']);
-    requireThat(!['source','thread','signature'].some(k => Object.hasOwn(body,k)), 'ReservedOperationField');
+    const body = operationBody(json(flags['--file']));
     const op = { ...body, source: flags['--source'], thread: flags['--thread'] };
     const state = json(join(root, 'state.json')).data;
     const entry = state.requests[op.source];
@@ -148,8 +148,8 @@ export async function main(argv) {
     const source = rest[0] === '--source' ? rest[1] : undefined;
     requireThat(!source || /^[a-f0-9]{64}$/.test(source), 'InvalidSource');
     console.log(JSON.stringify({ held:existsSync(join(root,'HOLD')), socket:state.socket,
-      requests:Object.values(state.requests).filter(e => !source || e.key === source).map(e => ({ source:e.key,status:e.status,error:e.error,owner:e.owner,outcome:e.outcome })),
-      operations:Object.values(state.operations).filter(o => !source || o.source === source).map(o => ({ id:o.id,status:o.status,error:o.error })),
+      requests:Object.values(state.requests).filter(e => !source || e.key === source).map(e => ({ source:e.key,status:e.status,deliveryState:e.deliveryState,intentRevision:e.intentRevision,error:e.error,owner:e.owner,outcome:e.outcome })),
+      operations:Object.values(state.operations).filter(o => !source || o.source === source).map(o => ({ id:o.id,sequence:o.sequence,predecessor:o.predecessor,status:o.status,error:o.error })),
       incidents:state.incidents })); return;
   }
   if (action === 'serve') { await serve(root,json(join(root,'config.json'))); return; }

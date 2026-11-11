@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { hash, requireThat } from './store.mjs';
 const exec = promisify(execFile);
 const sourceDigest = bytes => hash(new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes).replaceAll('\r\n','\n'));
-export const CHIEF_PIN = '05b1657d20e557e12b4270c39fecb0f76b27426f';
+export const CHIEF_PIN = '478ed2ead9e9f042acba9120c7b67268ea491eca';
 const TOOLS = new Set(['t3_thread_launch', 't3_thread_send', 't3_thread_read', 't3_thread_list',
   't3_project_list', 't3_project_read', 't3_project_create', 't3_environment_read', 'orchestrator_capabilities']);
 const NOT_SENT = new Set(['InvalidArguments', 'UnknownEndpoint', 'ToolUnavailable', 'LiveModeLaunchRefused']);

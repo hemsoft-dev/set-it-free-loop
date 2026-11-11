@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { candidate, SlackError } from './slack.mjs';
 import { admission, ownerAvailable, CHIEF_PIN } from './t3.mjs';
 import { hash, requireThat } from './store.mjs';
+import { operationBody, storedBody } from './operations.mjs';
 
 export const sourceKey = (team, event) => hash(`${team}/${event.channel}/${event.ts}`);
 export const signOperation = (secret, body) => createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex');
@@ -76,21 +77,28 @@ Durable memory, factual context not new authority: ${JSON.stringify(this.state.m
 Recent read-only owner pointers, no implicit continuation or writer permission: ${JSON.stringify(recent)}
 Central claim snapshot, historical only, recheck before writes: ${JSON.stringify(claims)}
 Your authenticated personal helper is node ${JSON.stringify(helper)} submit --source ${e.key} --thread YOUR_ACTUAL_THREAD_ID --file UTF8_JSON. The private capability is loaded by the helper from ${JSON.stringify(cap)}. Never print/copy it. JSON body: {"operation":"stable-slug","kind":"question|success|failure|memory","text":"actual answer or concise verified fact","readFiles":["file ids opened"]}. Memory also requires "memoryKey":"stable-slug". An operation id is immutable; never reuse it for changed text. Each reply goes only to the original DM thread; questions must ask Franz to reply there. Success/failure only after ACTUAL outcome for this source, including required review and delivery. Keep hourglass while waiting. Submit final failure if the requested result failed. Owner helper accepted means durably queued, not externally delivered. Check with node ${JSON.stringify(helper)} status --source ${e.key}. Never resend an ambiguous operation under a new id. Very long results: split question/progress operations below 35000 characters; final outcome summarizes/link to artifacts. Retain ownership while any actual task obligation remains.
+Only the shown body fields are accepted; memoryKey is required only for memory. Never submit intent, hashes, sequence, predecessor, delivery status or other transport fields. For multipart replies, submit parts sequentially and confirm the earlier part appears in helper status before submitting the next. Submit the final outcome last. Its persisted dependency waits for every earlier admitted operation to be confirmed, including ambiguous deliveries.
 If a threaded continuation delivers another source, independently account for its source outcome and files using its own helper capability. Do not mark old source complete just because a new message arrived.`;
   }
-  async freeze(e) {
+  async freeze(e, { supersedeUnsent = false } = {}) {
     requireThat(!this.held(), 'AdmissionHeld');
+    requireThat(!e.intent || supersedeUnsent,'FrozenIntentExists');
+    if(supersedeUnsent) requireThat(e.status==='frozen' && e.deliveryState==='unsent' && e.intent?.tool==='t3_thread_send' &&
+      hash(JSON.stringify(e.intent))===e.intentHash && e.source.thread_ts && e.source.thread_ts!==e.source.ts, 'IntentRecoveryRefused');
     await this.attachments(e);
     let owner;
     const threadTs = e.source.thread_ts;
     if (threadTs && threadTs !== e.source.ts) {
-      const pointer=this.state.threadOwners?.[`${e.source.channel}/${threadTs}`];
+      const pointer=supersedeUnsent ? e.ownerRequest : this.state.threadOwners?.[`${e.source.channel}/${threadTs}`];
+      if(supersedeUnsent) requireThat(pointer && this.state.requests[pointer]?.owner?.threadId===e.intent.args.threadId, 'RecoveryOwnerMismatch');
       const roots = pointer ? [this.state.requests[pointer]].filter(Boolean) : Object.values(this.state.requests).filter(r => r.source.channel === e.source.channel && r.source.ts === threadTs);
       requireThat(roots.length === 1, 'UnknownThreadOwner');
       const root = roots[0]; requireThat(root.owner?.threadId, 'ThreadOwnerPending');
       requireThat(root.source.channel===e.source.channel && (root.source.thread_ts ?? root.source.ts)===threadTs,'ThreadOwnerMismatch');
       const view=await this.available(this.t3, root.owner.threadId, this.config, undefined, { resultOnly:true });
       requireThat(!view.thread.snoozed && !view.thread.pendingRequestCount,'OwnerHeld');
+      if(supersedeUnsent) requireThat(view.thread.settled===true,'RecoveryOwnerChanged');
+      e.ownerRequest=root.key;
       e.root = root.root ?? root.key;
       if(view.thread.settled) {
         e.previousOwner=root.owner.threadId;
@@ -102,36 +110,55 @@ If a threaded continuation delivers another source, independently account for it
       } else owner = root.owner;
     }
     let claims = {};
+    let intent;
+    const revision=(e.intentRevision ?? 0)+(supersedeUnsent ? 1 : 0);
+    const clientRequestId=`personal-slack-${e.key}${revision ? `-r${revision}` : ''}`;
     if (!owner) {
       const evidence = await this.gate(this.t3, this.config);
       claims = evidence.claims;
       requireThat(!e.previousOwner || !Object.values(claims).some(c=>c.owner===`thread:${e.previousOwner}`),'SettledOwnerStillClaims');
       requireThat(this.config.qualification.providers.includes(evidence.model.instanceId), 'ProviderNotQualified');
-      e.intent = { tool: 't3_thread_launch', args: { projectId: this.config.projectId,
-        title: `Slack request ${e.team}/${e.source.channel}/${e.source.ts}`, clientRequestId: `personal-slack-${e.key}`,
+      intent = { tool: 't3_thread_launch', args: { projectId: this.config.projectId,
+        title: `Slack request ${e.team}/${e.source.channel}/${e.source.ts}`, clientRequestId,
         modelSelection: evidence.model, workspaceStrategy: { type: 'root' }, message: this.prompt(e, claims) }, launchClass: 'human-request' };
     } else {
-      e.intent = { tool: 't3_thread_send', args: { threadId: owner.threadId, mode: 'auto',
-        clientRequestId: `personal-slack-${e.key}`, message: `Validated same-task continuation of ${e.root}. No additional claim granted.\n${this.prompt(e, claims)}` }, launchClass: 'owner-continuation' };
+      intent = { tool: 't3_thread_send', args: { threadId: owner.threadId, mode: 'auto',
+        clientRequestId, message: `Validated same-task continuation of ${e.root}. No additional claim granted.\n${this.prompt(e, claims)}` }, launchClass: 'owner-continuation' };
     }
-    e.intentHash = hash(JSON.stringify(e.intent)); e.status = 'frozen'; this.save();
+    if(supersedeUnsent) {
+      e.intentHistory ??= [];
+      e.intentHistory.push({ intent:structuredClone(e.intent), intentHash:e.intentHash, lastAttempt:e.lastAttempt,
+        disposition:'definitely-unsent-owner-settled', at:this.now() });
+    }
+    e.intent=intent; e.intentRevision=revision;
+    e.intentHash = hash(JSON.stringify(intent)); e.status = 'frozen'; e.deliveryState='unsent'; delete e.lastAttempt; this.save();
   }
   async deliver(e) {
     requireThat(hash(JSON.stringify(e.intent)) === e.intentHash, 'FrozenIntentChanged');
     if (e.status === 'uncertain') return this.reconcile(e);
+    if (e.status === 'delivered') return;
+    requireThat(e.status==='frozen' && e.deliveryState==='unsent','IntentDeliveryStateUnknown');
     requireThat(!this.held(), 'AdmissionHeld');
-    if (e.intent.tool === 't3_thread_send') await this.available(this.t3, e.intent.args.threadId, this.config);
+    if (e.intent.tool === 't3_thread_send') {
+      const view=await this.available(this.t3, e.intent.args.threadId, this.config, undefined, { resultOnly:true });
+      requireThat(!view.thread.snoozed && !view.thread.pendingRequestCount,'OwnerHeld');
+      if(view.thread.settled) {
+        await this.freeze(e,{supersedeUnsent:true});
+        return this.deliver(e);
+      }
+    }
     else {
       const current = await this.gate(this.t3, this.config);
       requireThat(JSON.stringify(current.model) === JSON.stringify(e.intent.args.modelSelection), 'FrozenProviderHeld');
     } // Recheck policies without changing frozen provider/args.
-    e.status = 'uncertain'; e.attemptAt = this.now(); this.save();
+    e.status = 'uncertain'; e.deliveryState='uncertain'; e.attemptAt = this.now();
+    e.lastAttempt={state:'uncertain',at:e.attemptAt}; this.save();
     try {
       const result = await this.t3.call(e.intent.tool, e.intent.args, e.intent.launchClass);
       requireThat(typeof result.threadId === 'string' && (e.intent.tool !== 't3_thread_send' || result.threadId === e.intent.args.threadId), 'InvalidOwnerResponse');
-      e.owner = { threadId: result.threadId, link: result.link, runId: result.runId }; e.status = 'delivered'; delete e.error; this.registerOwner(e); this.save();
+      e.owner = { threadId: result.threadId, link: result.link, runId: result.runId }; e.status = 'delivered'; e.deliveryState='sent'; delete e.error; this.registerOwner(e); this.save();
     } catch (error) {
-      if (error.definite) e.status = 'frozen';
+      if (error.definite) { e.status = 'frozen'; e.deliveryState='unsent'; e.lastAttempt={state:'definitely-unsent',error:safeCode(error),at:this.now()}; }
       e.error = safeCode(error); this.save(); throw error;
     }
   }
@@ -153,7 +180,7 @@ If a threaded continuation delivers another source, independently account for it
         view.items?.some(i => i.type === 'user_message' && i.text === e.intent.args.message), 'SendDeliveryUnconfirmed');
       e.owner = { threadId: view.thread.threadId, link: view.thread.link, runId: view.thread.latestRunId };
     }
-    e.status = 'delivered'; e.reconciledAt = this.now(); this.registerOwner(e); this.save();
+    e.status = 'delivered'; e.deliveryState='sent'; e.reconciledAt = this.now(); this.registerOwner(e); this.save();
   }
   registerOwner(e) {
     this.state.threadOwners ??= {};
@@ -169,39 +196,65 @@ If a threaded continuation delivers another source, independently account for it
       try {
         const packet = JSON.parse(readFileSync(join(this.store.root, 'inbox', name), 'utf8'));
         const { signature, ...op } = packet;
+        const { source, thread, ...body } = op;
+        const validated=operationBody(body); // Exact input schema, independently of the helper.
         requireThat(hash(`${op.source}\n${op.operation}`) === id && /^[a-f0-9]{64}$/.test(op.source) && /^[a-zA-Z0-9_-]{1,80}$/.test(op.operation), 'InvalidOperation');
         const e = this.state.requests[op.source];
         requireThat(e?.owner?.threadId === op.thread && e.status === 'delivered' && !e.outcome, 'OperationOwnerMismatch');
         const secret = readFileSync(join(this.store.root, 'files', e.key, 'owner.cap'));
         requireThat(hash(secret) === e.capHash && typeof signature === 'string' && /^[a-f0-9]{64}$/.test(signature), 'InvalidCapability');
         requireThat(timingSafeEqual(Buffer.from(signature,'hex'), Buffer.from(signOperation(secret,op),'hex')), 'InvalidCapability');
-        requireThat(['question','success','failure','memory'].includes(op.kind) && typeof op.text === 'string' && op.text.length > 0 && op.text.length <= 35000 &&
-          !/xox[baprs]-[a-zA-Z0-9-]+|xapp-[a-zA-Z0-9-]+/.test(op.text), 'InvalidReply');
         requireThat(Array.isArray(op.readFiles) && op.readFiles.every(f => assets(e).some(a => a.id === f)), 'InvalidReadEvidence');
         if (op.kind === 'success') requireThat(assets(e).every(f => op.readFiles.includes(f.id)), 'UnreadAttachment');
-        if (op.kind === 'memory') requireThat(/^[a-zA-Z0-9_-]{1,80}$/.test(op.memoryKey ?? '') &&
-          !['__proto__','constructor','prototype'].includes(op.memoryKey) && op.text.length <= 4000, 'InvalidMemory');
         await this.available(this.t3, op.thread, this.config, undefined, { resultOnly: true });
-        this.state.operations[id] = { ...op, id, status: 'pending', acceptedAt: this.now() }; this.save();
+        const previous=Object.values(this.state.operations).filter(o=>o.source===source).at(-1);
+        this.state.operations[id] = { ...validated, source, thread, id, status:'pending', acceptedAt:this.now(),
+          bodyHash:hash(JSON.stringify(validated)), predecessor:previous?.id, sequence:(previous?.sequence ?? 0)+1 }; this.save();
       } catch (error) { this.incident(id, safeCode(error)); }
     }
   }
+  validateReply(op) {
+    const e=this.state.requests[op.source];
+    requireThat(e?.owner?.threadId===op.thread && e.status==='delivered' && !e.outcome && e.verified &&
+      e.team===this.identity.team && e.app===this.identity.app && e.source.user===this.identity.user && /^D[A-Z0-9]+$/.test(e.source.channel), 'ReplyOwnerMismatch');
+    const body=storedBody(op);
+    requireThat(op.id===hash(`${op.source}\n${op.operation}`) && op.bodyHash===hash(JSON.stringify(body)), 'ReplyBodyChanged');
+    requireThat(op.readFiles.every(id=>assets(e).some(f=>f.id===id)) &&
+      (op.kind!=='success' || assets(e).every(f=>op.readFiles.includes(f.id))), 'UnreadAttachment');
+    return e;
+  }
+  predecessorDelivered(op) {
+    requireThat(Number.isSafeInteger(op.sequence) && op.sequence>0, 'InvalidOperationOrder');
+    if(op.sequence===1) { requireThat(op.predecessor===undefined,'InvalidOperationOrder'); return true; }
+    const prior=this.state.operations[op.predecessor];
+    requireThat(prior?.source===op.source && prior.sequence===op.sequence-1,'InvalidOperationOrder');
+    return prior.status==='delivered';
+  }
+  replyIntent(op, e) {
+    return { channel:e.source.channel, thread_ts:e.source.thread_ts ?? e.source.ts, text:op.text,
+      unfurl_links:false, unfurl_media:false,
+      metadata:{event_type:'sfl_personal_reply',event_payload:{source:op.source,operation:op.id,body:hash(op.text)}} };
+  }
+  validateReplyIntent(op, e) {
+    const expected=this.replyIntent(op,e);
+    requireThat(JSON.stringify(op.intent)===JSON.stringify(expected) && op.intentHash===hash(JSON.stringify(expected)), 'ReplyIntentChanged');
+  }
   async sendReply(op) {
-    const e = this.state.requests[op.source];
-    requireThat(e?.owner?.threadId === op.thread && !e.outcome, 'ReplyOwnerMismatch');
+    const e = this.validateReply(op);
+    requireThat(this.predecessorDelivered(op),'ReplyPredecessorPending');
     if (op.kind === 'memory') {
       requireThat(Object.keys(this.state.memory).length < 200 || this.state.memory[op.memoryKey], 'MemoryLimit');
       this.state.memory[op.memoryKey] = { text: op.text, source: op.source, updatedAt: this.now() };
       op.status = 'delivered'; this.save(); return;
     }
-    await this.slack.verifyDM(e.source.channel, this.identity);
     if (!op.intent) {
-      op.intent = { channel: e.source.channel, thread_ts: e.source.thread_ts ?? e.source.ts, text: op.text,
-        unfurl_links: false, unfurl_media: false,
-        metadata: { event_type: 'sfl_personal_reply', event_payload: { source: op.source, operation: op.id, body: hash(op.text) } } };
+      requireThat(op.status==='pending','ReplyIntentMissing');
+      op.intent = this.replyIntent(op,e);
       op.intentHash = hash(JSON.stringify(op.intent)); this.save();
     }
-    requireThat(hash(JSON.stringify(op.intent)) === op.intentHash, 'ReplyIntentChanged');
+    this.validateReplyIntent(op,e);
+    await this.slack.verifyDM(e.source.channel, this.identity);
+    this.validateReply(op); this.validateReplyIntent(op,e);
     if (op.status === 'uncertain') {
       const page = await this.slack.api('conversations.replies', { channel: e.source.channel, ts: op.intent.thread_ts,
         limit: 100, include_all_metadata: true });
@@ -217,7 +270,9 @@ If a threaded continuation delivers another source, independently account for it
     op.status = 'sent'; this.save();
   }
   async finishReply(op) {
-    const e = this.state.requests[op.source];
+    const e = this.validateReply(op);
+    this.validateReplyIntent(op,e);
+    requireThat(this.predecessorDelivered(op),'ReplyPredecessorPending');
     requireThat(op.ts && e?.owner?.threadId === op.thread, 'ReplyReceiptMissing');
     if (['success','failure'].includes(op.kind)) {
       // Serialized by pump and receipt() promise. Never let a late hourglass
@@ -248,8 +303,14 @@ If a threaded continuation delivers another source, independently account for it
       }
       await this.loadOperations();
       for (const op of Object.values(this.state.operations)) {
-        if (op.status === 'delivered' || op.nextAttempt > this.now()) continue;
-        try { if (op.status !== 'sent') await this.sendReply(op); if (op.status === 'sent') await this.finishReply(op); }
+        if (op.status === 'delivered') continue;
+        try {
+          // A delayed or ambiguous earlier part blocks only this source, including
+          // its final outcome. Dependencies persist through restart and are checked
+          // again by both the sender and the outcome writer.
+          if(!this.predecessorDelivered(op) || op.nextAttempt > this.now()) continue;
+          if (op.status !== 'sent') await this.sendReply(op); if (op.status === 'sent') await this.finishReply(op);
+        }
         catch (error) {
           if (this.store.failed) throw error;
           op.error = safeCode(error); op.nextAttempt = this.now() + Math.max(60000, (error.retryAfter ?? 60) * 1000); this.save();

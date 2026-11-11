@@ -28,12 +28,13 @@ schedules and other owners. Personal intake is restricted to the verified Franz 
 SFL v0 runs from project-manager, and runner changes belong there. Its
 operating contract is
 [project-manager's SFL v0 documentation](https://github.com/hemsoft-dev/project-manager/blob/main/docs/sfl-v0.md).
-This repository's only active asset is the offline v0 acceptance checker,
+For SFL review work, this repository's active asset is the offline v0 acceptance checker,
 `reviewer/scripts/check_v0_review.py`, with its tests in
 `reviewer/scripts/test_check_v0_review.py`. The review presentation it checks
 is described in [V0-REVIEW-FORMAT](docs/V0-REVIEW-FORMAT.md). This repository
 accepts small fixes to that checker and its tests, plus documentation
-corrections. The checker needs no credentials or network access and runs no
+corrections. The separate personal Slack assistant exception above remains in
+scope. The checker needs no credentials or network access and runs no
 repository code. This role grants no activation, credential recreation, App
 installation, live inference, provider-policy exception, paid usage or scope
 authority. Each live activation or scope change still needs a new explicit

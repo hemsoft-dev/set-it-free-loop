@@ -66,8 +66,17 @@ Intake grants no writer claim. Actual task owners must check live repo/PR owners
 and acquire the canonical Mini claim before any repository or operational write.
 
 Each launch/send freezes its tool, class, args and stable request ID first.
-Definite pre-send refusal retains that packet. An ambiguous result is **never
-automatically replayed**, including after a T3 restart. Reconciliation requires
+Definite pre-send refusal retains that packet. If its registered owner settles
+before an unsent continuation reaches T3, the receiver repeats the pause, stop,
+claim, capacity and provider checks. Only a definitely unsent packet can then be
+superseded. The same durable save archives its original arguments, hash and
+attempt evidence in `intentHistory`, and freezes the fresh context-bearing
+launch under a new revision ID. Missing provenance, a paused owner or retained
+claim stays held. Neither an ambiguous nor a confirmed sent packet can be
+superseded, even if the owner subsequently settles.
+
+An ambiguous result is never automatically replayed, including after a T3
+restart. Reconciliation requires
 the exact title/project/source or exact original continuation message. Bounded
 incomplete evidence remains held. There is no alternate host or recipient.
 The installed-version canary tests identical launch/send IDs and native image
@@ -84,6 +93,13 @@ a sandbox proof against a dishonest local owner. Native image capability must be
 qualified for each picked provider before that provider admits real requests.
 
 Owners submit immutable HMAC-authenticated inbox operations through `run.mjs`.
+Both the helper and daemon enforce the exact body schema: `operation`, `kind`,
+`text`, `readFiles`, and `memoryKey` only when kind is `memory`. Extra fields,
+including `intent`, `intentHash`, delivery status and dependencies, are rejected
+before admission. The daemon constructs every reply intent and revalidates its
+destination, thread, body, flags and metadata against the admitted source at send
+and outcome completion. A matching hash on owner-selected arguments grants no
+permission to send them.
 Per-source random capabilities remain in protected local files; routing state
 stores their hashes. The daemon validates the source, owner thread, project and
 fixed destination. This is a cooperative same-user trust boundary: another
@@ -97,7 +113,14 @@ response, exact original-thread metadata reconciles delivery; missing or partial
 evidence never triggers a blind resend. A real success or failure operation
 finishes the reaction only after the reply is confirmed. Idle model turns never
 mark a task complete. Long replies can be split into immutable operations below
-35000 characters; a final summary closes the outcome. Holds and overdue outcomes
+35000 characters. Submit parts sequentially, confirm each appears in helper
+status, then submit the next part and finally the outcome. The daemon assigns
+each admitted operation a durable per-source sequence and predecessor. A later
+part or final outcome waits until its predecessor is confirmed delivered, even
+when that predecessor is rate-limited, waiting for retry, or reconciling an
+ambiguous send across restart. Sender and outcome completion both enforce the
+dependency. Other sources remain independent. Helper status shows sequence and
+predecessor IDs. Holds and overdue outcomes
 produce one private incident per key, with an operator and next action.
 
 ## Validation
@@ -117,6 +140,9 @@ thread continuations, settled-task context, catch-up, file safety, actual-outcom
 reactions, memory, Home policy and qualification invalidation. They use fake
 network transports and create only temporary files. The live doctor and existing
 authenticated Home metadata/policy reads were also exercised without inference.
+Round 1 regressions also exercise the real submit CLI, forged signed/internal
+fields, frozen unsent versus ambiguous settlement recovery, and failed multipart
+delivery with restart, reconciliation and independent-source progress.
 
 ## Reviewed deployment and proof
 

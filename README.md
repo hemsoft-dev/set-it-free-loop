@@ -39,7 +39,7 @@ dual-subscription alpha in [`reviewer/`](reviewer/README.md), tracked by
 [issue #172](https://github.com/hemsoft-dev/set-it-free-loop/issues/172).
 The [approved v0 plan](docs/SIMPLIFY.md#keep-parked-work-parked) parked that
 alpha on October 28, 2026, and issue #172 was closed as not planned that day.
-The alpha code stays frozen for reference. The only active asset here is the
+The alpha code stays frozen for reference. The active SFL review asset here is the
 offline v0 acceptance checker, `reviewer/scripts/check_v0_review.py`.
 Credentials, App installation, live inference and deployment retain their
 separate gates. The retired implementation and organization automation remain
