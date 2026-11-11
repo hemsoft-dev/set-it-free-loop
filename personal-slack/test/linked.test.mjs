@@ -37,7 +37,11 @@ test('workspace, team, channel, thread and URL boundaries reject lookalikes with
     `${url(rootTs)}?cid=${channel}&cid=${channel}`,`${url(rootTs)}?redirect=https://evil.test`,`${url(rootTs)}#fragment`])
     assert.throws(()=>parsePermalink(bad));
   const parsed=sourceLinks({text:`${url(rootTs).replace(LINK_WORKSPACE.host,'other.slack.com')} ${url(rootTs)}?team=TOTHER`});
-  assert.equal(parsed.references.length,0);assert.equal(parsed.errors.length,2);
+  assert.equal(parsed.references.length,0);assert.equal(parsed.errors.length,1);assert.equal(parsed.ignored.length,1);
+  for(const malformed of [url(rootTs).replace('/archives/','/%61rchives/'),url(rootTs).replace('p1700000000000001','p1700000000%ZZ'),
+    url(rootTs).replace(LINK_WORKSPACE.host,`${LINK_WORKSPACE.host}:bad`),`${url(rootTs)}?cid=COTHER`]) {
+    const intended=sourceLinks({text:malformed});assert.equal(intended.references.length,0);assert.equal(intended.errors.length,1);
+  }
 });
 
 test('exact root and paginated reply selection preserve full evidence and never read a linked injection target',async()=>{
@@ -139,6 +143,26 @@ function submit(f,key,body) {
   const secret=readFileSync(join(f.directory,'files',key,'owner.cap'));
   const item=enqueue(f.directory,{...op,signature:signOperation(secret,op)});writeFileSync(item.path,item.bytes);return item.id;
 }
+
+test('ordinary documentation, help, client, channel-only and mailing-list URLs allow a normal successful DM response',async t=>{
+  const f=fixture(t);const urls=['https://api.slack.com/methods/conversations.history','https://slack.com/help/articles/123',
+    'https://app.slack.com/client/T1KAG2BV5/CTARGET',`https://${LINK_WORKSPACE.host}/archives/${channel}`,
+    'https://mail.example/archives/project/thread-123','https://docs.slack.dev/reference/methods/conversations.history/',
+    url(rootTs).replace(LINK_WORKSPACE.host,'other.slack.com')];
+  const key=f.receiver.accept({...f.event,event:{...f.event.event,text:`Explain these links: ${urls.join(' ')}`}});
+  await f.receiver.pump();assert.deepEqual(f.store.state.requests[key].linked.errors,[]);
+  assert.equal(f.calls.filter(c=>c.linkedRead).length,0);
+  const op=submit(f,key,{readFiles:[],text:'Useful explanation of the documentation links.'});await f.receiver.pump();
+  assert.equal(f.store.state.operations[op].status,'delivered');assert.equal(f.store.state.requests[key].outcome.kind,'success');
+  assert.equal(f.calls.find(c=>c.method==='chat.postMessage').args.channel,'DOWNER');
+});
+
+test('malformed intended workspace permalinks remain blocking and never trigger credentialed reads',async t=>{
+  const f=fixture(t);const key=f.receiver.accept({...f.event,event:{...f.event.event,text:`Help with ${url(rootTs)}?team=TOTHER`}});
+  await f.receiver.pump();assert.equal(f.store.state.requests[key].linked.errors[0].error,'LinkedWorkspaceMismatch');
+  assert.equal(f.calls.filter(c=>c.linkedRead).length,0);
+  const op=submit(f,key,{readFiles:[]});await f.receiver.pump();assert.equal(f.store.state.incidents[op].reason,'LinkedReadIncomplete');
+});
 
 test('real receiver persists linked evidence/files before one owner handoff, requires native reads, fixes reply destination and dedupes restart',async t=>{
   const f=fixture(t);assert.equal(f.receiver.accept({...f.event,event:{...f.event.event,user:'UOTHER'}}),undefined);assert.equal(f.calls.length,0);

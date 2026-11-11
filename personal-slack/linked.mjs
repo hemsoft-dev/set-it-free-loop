@@ -33,10 +33,29 @@ export function parsePermalink(raw) {
 }
 
 export function sourceLinks(event) {
-  const references=[]; const errors=[];
+  const references=[]; const errors=[]; const ignored=[];
   for(const match of authoredText(event).matchAll(/https?:\/\/[^\s<>|]+/g)) {
     const raw=match[0].replace(/[),.;!?]+$/,'');
-    if(!/slack\.com|\/archives\//i.test(raw)) continue;
+    let candidate;
+    try {
+      candidate=new URL(raw.replaceAll('&amp;','&'));
+      // Docs/help/client/channel-only URLs and unrelated archives are normal
+      // request content, not failed selections for this credentialed reader.
+      let path=candidate.pathname;
+      try { path=decodeURIComponent(path); } catch { /* Invalid escapes still reach the strict parser. */ }
+      if(!/^\/archives\/[^/]*\/p/.test(path)) continue;
+    } catch {
+      const expectedHost=LINK_WORKSPACE.host.replaceAll('.','\\.');
+      if(new RegExp(`^https?://(?:[^/?#]*@)?${expectedHost}(?=[:/?#])`,'i').test(raw) && /\/archives\/[^/]*\/p/.test(raw)) {
+        errors.push({url:raw.slice(0,2048),error:'InvalidSlackLink'});
+        if(errors.length>=LINK_LIMITS.links) break;
+      }
+      continue;
+    }
+    if(candidate.hostname!==LINK_WORKSPACE.host) {
+      if(ignored.length<LINK_LIMITS.links) ignored.push({url:raw.slice(0,2048),error:'LinkedWorkspaceMismatch'});
+      continue; // Unsupported foreign hosts are never fetched or task blockers.
+    }
     try {
       const ref=parsePermalink(raw);
       if(references.some(r=>r.channel===ref.channel && r.ts===ref.ts && r.threadTs===ref.threadTs)) continue;
@@ -44,7 +63,7 @@ export function sourceLinks(event) {
       references.push(ref);
     } catch(error) { errors.push({url:raw.slice(0,2048),error:code(error)}); if(errors.length>=LINK_LIMITS.links) break; }
   }
-  return {schema:1,references,errors};
+  return {schema:1,references,errors,ignored};
 }
 
 // read is a credential-local, fixed Slack API callback, never an arbitrary URL.

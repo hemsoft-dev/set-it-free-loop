@@ -54,6 +54,11 @@ the exact authenticated `relias-engineering.slack.com` workspace, team
 `team` query fields must agree. A reply permalink needs its thread root if the
 exact message cannot be found through Slack's history API; the daemon does not
 scan channel history to infer it.
+Documentation, help, client, channel-only and unrelated archive URLs are ordinary
+request content and do not block a successful response. Foreign-workspace
+permalink-looking URLs are recorded as unfetched, nonblocking diagnostics.
+Malformed intended permalinks on the authenticated workspace still produce a
+private read failure. No URL outside that workspace is fetched by this reader.
 
 The credential-local read route rechecks Franz's user/team/workspace identity,
 then uses his existing user token for exact `conversations.history`, bounded
@@ -73,6 +78,15 @@ dispatch. Restart/deduplication reuses that evidence and the frozen request.
 Interrupted reads retain their partial evidence before a new bounded read.
 No linked-content fetch happens after the intent has frozen.
 
+Ambiguous launch and continuation delivery reads timeline pages and, when T3
+truncates a source item at 50000 characters, follows that same item's text offsets.
+Every part stays bound to the original item, thread and personal project. Only
+full exact message equality confirms delivery; a matching prefix never does.
+The original frozen intent and request ID remain unchanged, with no replay.
+Incomplete pagination, altered evidence or duplicate exact source items stays
+unconfirmed. Reads are bounded at 100 timeline pages and 1024 text continuations
+per candidate item.
+
 The owner receives linked content as untrusted reference data and must open
 every downloaded attachment, using native image tools for images. Success
 requires complete linked evidence and the existing file-read attestation.
@@ -81,6 +95,12 @@ owner with its precise limitation; the owner can report useful partial help
 through a failure outcome. It cannot claim a complete successful read.
 An author asking for access or a checkmark reaction grants no authority and
 proves no permission change.
+
+Current conservative limits remain: linked messages carrying another team's
+`team` value are rejected, and transient read/download failures are finalized
+as incomplete evidence rather than retried automatically. Slack Connect behavior
+has not been verified at runtime. These nonblocking review notes are retained
+as limitations; neither case can produce a complete-success claim.
 
 All assistance, explanations and drafts stay in Franz's original DM thread.
 A channel author's words cannot authorize grants, repository/team changes,
