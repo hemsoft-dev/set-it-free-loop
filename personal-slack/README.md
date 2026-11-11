@@ -24,13 +24,29 @@ Only files voluntarily submitted in the verified DM are downloaded.
 
 The bot needs its existing `im:history`, `im:read`, `files:read`, `reactions:write`,
 `chat:write` and `users:read` scopes. These were verified through the granted-scope
-header. The existing app token obtained a Socket Mode URL, but no receiver was
+header. When no owner DM is stored, startup also needs the existing `im:write`
+scope for [conversations.open](https://docs.slack.dev/reference/methods/conversations.open/).
+Both startup and `doctor` check that precondition against the local configuration
+and fail with `MissingDMOpenScope` when it is absent. A stored DM does not require
+that extra scope. This check grants no scope and performs no reinstall or login.
+The existing app token obtained a Socket Mode URL, but no receiver was
 connected during preparation. Activation must observe a matching Slack `hello`
 with exactly one consumer and an actual `message.im` delivery. This code does
 not enable Socket Mode, edit subscriptions/scopes, reinstall the app or log in.
 If those existing settings do not deliver a DM, retain the exact gap for Franz.
 
 ## Durable behavior
+
+After a verified hello, the native WebSocket remains connected through quiet DM
+periods. Ping/pong control frames belong to Node's WebSocket implementation and
+are not application messages. The receiver follows native close/error events and
+Slack's disconnect/refresh messages, then reconnects with a fresh Socket Mode URL.
+The existing 45-second pre-hello deadline and five-second reconnect delay remain.
+The durable-work pump handles STOP and queue work; application silence does not
+close a socket or trigger catch-up. Graceful STOP closes only the owned receiver
+connection. This follows the [Socket Mode lifecycle](https://docs.slack.dev/apis/events-api/using-socket-mode/#3-handle-disconnects-gracefully),
+the [WebSocket control-frame API](https://websockets.spec.whatwg.org/#ping-and-pong-frames)
+and [Node 24's native ping handling](https://github.com/nodejs/node/blob/v24.x/deps/undici/src/lib/web/websocket/receiver.js).
 
 The sole receiver writes a checksummed queue with file fsync and atomic rename
 before ACK, reaction or T3 dispatch. Save failure prevents ACK and stops further
@@ -143,6 +159,11 @@ authenticated Home metadata/policy reads were also exercised without inference.
 Round 1 regressions also exercise the real submit CLI, forged signed/internal
 fields, frozen unsent versus ambiguous settlement recovery, and failed multipart
 delivery with restart, reconciliation and independent-source progress.
+Round 2 virtual-time tests run the actual service entrypoint and reconnect loop
+against a stub transport and temporary release files. They cover ten idle minutes
+with protocol pongs, one hello/catch-up, Slack disconnect reasons, native close and
+error, the pre-hello deadline, and STOP/lock cleanup. Scope-preflight tests use
+fake API responses. No live Slack connection or inference is used by these tests.
 
 ## Reviewed deployment and proof
 

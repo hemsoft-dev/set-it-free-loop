@@ -30,7 +30,7 @@ export class Slack {
     Object.defineProperty(value, 'scopes', { value: response.headers.get('x-oauth-scopes')?.split(',') ?? [] });
     return value;
   }
-  async identity(expected) {
+  async identity(expected, { needsDMOpen = true } = {}) {
     const user = await this.api('auth.test', {}, this.userToken);
     const bot = await this.api('auth.test');
     const self = (await this.api('users.info', { user: user.user_id })).user;
@@ -40,6 +40,7 @@ export class Slack {
       self.real_name === expected.realName && !self.is_bot && !self.deleted && profile?.is_bot &&
       profile.profile?.api_app_id === expected.app, 'IdentityMismatch');
     requireThat(['im:history', 'im:read', 'files:read', 'reactions:write', 'chat:write', 'users:read'].every(s => bot.scopes.includes(s)), 'MissingBotScopes');
+    requireThat(!needsDMOpen || bot.scopes.includes('im:write'), 'MissingDMOpenScope');
     return { ...expected, verifiedAt: new Date().toISOString() };
   }
   async verifyDM(channel, identity) {

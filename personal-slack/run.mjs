@@ -45,7 +45,7 @@ export async function serve(root, config) {
     const environment = await t3.call('t3_environment_read', {});
     requireThat(environment.label.toLowerCase() === 'home' && environment.platform.os === 'windows', 'HomeIdentityMismatch');
     validateQualification(config, environment);
-    const identity = await slack.identity(EXPECTED);
+    const identity = await slack.identity(EXPECTED, { needsDMOpen:!config.dm });
     store.state.identity = identity; store.save();
     if (!config.dm) {
       // Open only the verified owner's DM. This sends no message and discovers
@@ -71,10 +71,9 @@ export async function serve(root, config) {
           await new Promise((resolveConnection, rejectConnection) => {
             socket = new WebSocket(url);
             const deadline = setTimeout(() => socket.close(), 45000);
-            let lastMessage = Date.now();
-            const heartbeat = setInterval(() => { if (Date.now() - lastMessage > 120000) socket.close(); }, 30000);
+            // After hello, application silence is normal. Native WebSocket owns
+            // ping/pong control frames; reconnect on real lifecycle events only.
             socket.onmessage = event => {
-              lastMessage = Date.now();
               try {
                 const message = JSON.parse(event.data);
                 if (message.type === 'hello') {
@@ -108,8 +107,8 @@ export async function serve(root, config) {
                 socket.close(); if (store.failed) stopped = true;
               }
             };
-            socket.onclose = () => { clearTimeout(deadline); clearInterval(heartbeat); resolveConnection(); };
-            socket.onerror = () => { clearTimeout(deadline); clearInterval(heartbeat); socket.close(); rejectConnection(new Error('SocketUnavailable')); };
+            socket.onclose = () => { clearTimeout(deadline); resolveConnection(); };
+            socket.onerror = () => { clearTimeout(deadline); socket.close(); rejectConnection(new Error('SocketUnavailable')); };
           });
         } catch { if (!stopped) { store.state.socketError = 'SocketUnavailable'; store.save(); } }
         if (!stopped) await sleep(5000);
@@ -122,7 +121,9 @@ export async function main(argv) {
   const [action, ...rest] = argv; const root = rootPath();
   requireThat(process.env.LOCALAPPDATA && resolve(root).toLowerCase().startsWith(resolve(process.env.LOCALAPPDATA).toLowerCase()), 'PrivateRuntimeRequired');
   if (action === 'doctor') {
-    const identity = await new Slack(credentials()).identity(EXPECTED);
+    const configFile=join(root,'config.json');
+    const needsDMOpen=!existsSync(configFile) || !json(configFile).dm;
+    const identity = await new Slack(credentials()).identity(EXPECTED, { needsDMOpen });
     console.log(JSON.stringify({ identity, credentials: 'verified in process; values omitted' })); return;
   }
   if (action === 'submit') {

@@ -9,6 +9,24 @@ import { EXPECTED } from '../run.mjs';
 const model={instanceId:'codex',model:'gpt-6.1-sol',options:[{id:'reasoningEffort',value:'high'}]};
 const json=value=>new Response(JSON.stringify(value),{headers:{'content-type':'application/json'}});
 
+test('identity preflight requires im:write only when startup must open the owner DM',async()=>{
+  const base=['im:history','im:read','files:read','reactions:write','chat:write','users:read'];let scopes=[...base];
+  const methods=[];
+  const slack=new Slack({botToken:'test-bot',userToken:'test-user',fetcher:async(url,args)=>{
+    const method=new URL(url).pathname.split('/').at(-1);methods.push(method);
+    if(method==='auth.test')return new Response(JSON.stringify({ok:true,team_id:EXPECTED.team,
+      user_id:args.headers.Authorization==='Bearer test-user'?EXPECTED.user:EXPECTED.bot,bot_id:EXPECTED.botId}),
+      {headers:{'content-type':'application/json','x-oauth-scopes':scopes.join(',')}});
+    assert.equal(method,'users.info');const self=args.body.get('user')===EXPECTED.user;
+    return json({ok:true,user:{id:self?EXPECTED.user:EXPECTED.bot,real_name:EXPECTED.realName,is_bot:!self,deleted:false,
+      profile:{api_app_id:EXPECTED.app}}});
+  }});
+  await assert.rejects(slack.identity(EXPECTED),/MissingDMOpenScope/);
+  await slack.identity(EXPECTED,{needsDMOpen:false});
+  scopes=[...base,'im:write'];await slack.identity(EXPECTED);
+  assert.ok(methods.every(method=>['auth.test','users.info'].includes(method)),'preflight neither grants scopes nor opens a DM');
+});
+
 test('Slack uses bearer headers and form fields; rate limits are definite and transport failures uncertain',async()=>{
   const slack=new Slack({botToken:'FAKE',fetcher:async(url,args)=>{
     assert.equal(url,'https://slack.com/api/conversations.info');assert.equal(args.headers.Authorization,'Bearer FAKE');
