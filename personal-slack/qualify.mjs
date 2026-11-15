@@ -59,6 +59,10 @@ async function main(action) {
   requireThat(attempt.serverVersion===env.serverVersion && attempt.environment===env.environmentId && attempt.sourceRevision===config.sourceRevision,'QualificationEnvironmentChanged');
   const view=await t3.call('t3_thread_read',{threadId:attempt.thread.threadId,afterPosition:-1,limit:20,maxCharsPerItem:2000});
   requireThat(!view.hasMore,'QualificationResultReadIncomplete');
+  requireThat(typeof config.projectId==='string' && config.projectId.length>0 &&
+    attempt.launch?.projectId===config.projectId && view.thread?.projectId===config.projectId &&
+    view.thread.threadId===attempt.thread.threadId && view.thread.providerInstanceId===attempt.provider &&
+    attempt.launch?.modelSelection?.instanceId===attempt.provider,'QualificationOwnerMismatch');
   const result=view.items?.filter(i=>i.type==='assistant_message' && i.status==='completed').at(-1);
   const text=result?.text?.replace(/^```(?:json)?\s*|\s*```$/g,'');
   const colors=JSON.parse(text).colors;

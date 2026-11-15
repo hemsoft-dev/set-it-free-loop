@@ -276,7 +276,8 @@ answers fail. A verifier-only maintenance correction must pass current-head
 review before use. Its `verify` command can reconcile a retained attempt for
 the still-installed source without staging a different release or running
 `start` again. Source, server and environment must still match the frozen
-attempt. This does not qualify a different source revision. Keep the original
+attempt. The returned thread must match the frozen thread, configured project
+and frozen provider/launch identity. This does not qualify a different source revision. Keep the original
 answer and attempt bytes unchanged in the completed archive.
 
 It respects the normal picker and current Home cap, creates an idle personal
