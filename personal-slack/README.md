@@ -277,8 +277,22 @@ review before use. Its `verify` command can reconcile a retained attempt for
 the still-installed source without staging a different release or running
 `start` again. Source, server and environment must still match the frozen
 attempt. The returned thread must match the frozen thread, configured project
-and frozen provider/launch identity. This does not qualify a different source revision. Keep the original
-answer and attempt bytes unchanged in the completed archive.
+and frozen provider/launch identity. This does not qualify a different source
+revision. Keep the original answer and attempt bytes unchanged in the completed
+archive.
+
+For the retained `2f79eaff` recovery, after guarded merge and clean Home main
+sync, run the reviewed maintenance verifier from the source checkout outside
+the immutable installed release:
+
+```powershell
+node "D:\github\HemSoft\set-it-free-loop\personal-slack\qualify.mjs" verify
+```
+
+Run `verify` only. Record the clean checkout commit and verifier/import hashes
+as maintenance provenance. Keep config pointing to the original installed
+`2f79eaff` release. Do not copy the verifier into that release, run `deploy.mjs`,
+or run `start` again to reconcile this attempt.
 
 It respects the normal picker and current Home cap, creates an idle personal
 thread twice with one ID, then sends one image-read canary twice with one ID.
