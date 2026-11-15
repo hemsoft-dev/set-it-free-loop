@@ -12,6 +12,7 @@ export const signOperation = (secret, body) => createHmac('sha256', secret).upda
 const safeCode = e => /^[A-Za-z_]+$/.test(e.code ?? e.message ?? '') ? (e.code ?? e.message) : 'OperationFailed';
 const assets=e=>[...new Map([...e.files,...(e.context?.files ?? [])].map(f=>[f.id,f])).values()];
 const linksComplete=e=>!e.linked || (e.linked.finished && !e.linked.errors.length && e.linked.snapshots.every(s=>s.complete));
+const SOURCE_READ_CHARS=20000;
 
 export class Receiver {
   constructor({ store, slack, t3, config, identity, now = Date.now, gate = admission, available = ownerAvailable }) {
@@ -223,7 +224,7 @@ If a threaded continuation delivers another source, independently account for it
         Number.isSafeInteger(part.nextTextOffset) && part.nextTextOffset===text.length && part.nextTextOffset>offset,
       'ReconciliationIncomplete');
       offset=part.nextTextOffset;
-      const page=await this.t3.call('t3_thread_read',{threadId,itemId:item.itemId,textOffset:offset,maxCharsPerItem:50000});
+      const page=await this.t3.call('t3_thread_read',{threadId,itemId:item.itemId,textOffset:offset,maxCharsPerItem:SOURCE_READ_CHARS});
       requireThat(page.thread?.threadId===threadId && page.thread.projectId===this.config.projectId && page.items?.length===1,
         'ReconciliationIncomplete');
       part=page.items[0];
@@ -236,10 +237,9 @@ If a threaded continuation delivers another source, independently account for it
     return text===expected;
   }
   async exactSourceView(threadId, expected) {
-    let afterPosition; let matches=0; const matchedIds=new Set();
+    let afterPosition=-1; let matches=0; const matchedIds=new Set();
     for(let page=0;page<100;page++) {
-      const view=await this.t3.call('t3_thread_read',{threadId,limit:100,maxCharsPerItem:50000,
-        ...(afterPosition===undefined ? {} : {afterPosition})});
+      const view=await this.t3.call('t3_thread_read',{threadId,limit:100,maxCharsPerItem:SOURCE_READ_CHARS,afterPosition});
       requireThat(view.thread?.threadId===threadId && view.thread.projectId===this.config.projectId && Array.isArray(view.items),
         'ReconciliationIncomplete');
       for(const item of view.items) {
@@ -248,7 +248,7 @@ If a threaded continuation delivers another source, independently account for it
       }
       requireThat(matches<=1,'ReconciliationSourceAmbiguous');
       if(!view.hasMore) return matches===1 ? view : undefined;
-      requireThat(Number.isSafeInteger(view.nextPosition) && view.nextPosition>(afterPosition ?? -1),'ReconciliationIncomplete');
+      requireThat(Number.isSafeInteger(view.nextPosition) && view.nextPosition>afterPosition,'ReconciliationIncomplete');
       afterPosition=view.nextPosition;
     }
     throw new Error('ReconciliationIncomplete');

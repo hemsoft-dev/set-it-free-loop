@@ -57,7 +57,7 @@ async function main(action) {
   requireThat(action==='verify','UnsupportedQualificationAction');
   const attempt=JSON.parse(readFileSync(path,'utf8'));
   requireThat(attempt.serverVersion===env.serverVersion && attempt.environment===env.environmentId && attempt.sourceRevision===config.sourceRevision,'QualificationEnvironmentChanged');
-  const view=await t3.call('t3_thread_read',{threadId:attempt.thread.threadId,limit:20,maxCharsPerItem:2000});
+  const view=await t3.call('t3_thread_read',{threadId:attempt.thread.threadId,afterPosition:-1,limit:20,maxCharsPerItem:2000});
   requireThat(!view.hasMore,'QualificationResultReadIncomplete');
   const result=view.items?.filter(i=>i.type==='assistant_message' && i.status==='completed').at(-1);
   const text=result?.text?.replace(/^```(?:json)?\s*|\s*```$/g,'');

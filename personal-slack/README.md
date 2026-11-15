@@ -79,7 +79,9 @@ Interrupted reads retain their partial evidence before a new bounded read.
 No linked-content fetch happens after the intent has frozen.
 
 Ambiguous launch and continuation delivery reads timeline pages and, when T3
-truncates a source item at 50000 characters, follows that same item's text offsets.
+truncates a source item at 20000 characters, follows that same item's text offsets.
+Timeline reads start explicitly at `afterPosition: -1` and follow `nextPosition`,
+so a newest-first server default cannot hide an older admitted source.
 Every part stays bound to the original item, thread and personal project. Only
 full exact message equality confirms delivery; a matching prefix never does.
 The original frozen intent and request ID remain unchanged, with no replay.
@@ -275,6 +277,8 @@ T3, then run `node qualify.mjs verify`. Do not poll or create another attempt if
 one remains uncertain. The attempt and all completed evidence remain local.
 Verification checks the actual returned random quadrant colors, identical thread
 and message/run IDs, server identity/version, source revision and provider.
+It requests explicit forward message order so the final answer stays selected
+when the server's default is newest-first and earlier commentary also exists.
 It grants no Slack admission proof. A new source/server version requires fresh
 qualification. A newly picked provider remains held until qualified.
 
@@ -309,6 +313,12 @@ in the receipt above. The linked-message extension has not been rolled out;
 offline tests do not prove real image/continuation behavior or deploy new source.
 
 ## Hold and rollback
+
+Run lifecycle commands through the reviewed Windows PowerShell host, for example
+`powershell.exe -NoProfile -NonInteractive -File RELEASE/ManagePersonal.ps1 Hold`.
+For `Unlock`, Windows PowerShell 5.1 reads the retained JSON PID as `Int32`, as
+the reviewed guard expects; PowerShell 7 reads it as `Int64` and refuses it.
+Use the supported host rather than editing the lock or weakening its guard.
 
 `ManagePersonal.ps1 Hold` stops new inference admission while intake, ACKs and
 existing outcome delivery continue. `Stop` disables only this personal task and
