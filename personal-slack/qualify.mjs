@@ -59,9 +59,18 @@ async function main(action) {
   requireThat(attempt.serverVersion===env.serverVersion && attempt.environment===env.environmentId && attempt.sourceRevision===config.sourceRevision,'QualificationEnvironmentChanged');
   const view=await t3.call('t3_thread_read',{threadId:attempt.thread.threadId,afterPosition:-1,limit:20,maxCharsPerItem:2000});
   requireThat(!view.hasMore,'QualificationResultReadIncomplete');
+  requireThat(typeof config.projectId==='string' && config.projectId.length>0 &&
+    attempt.launch?.projectId===config.projectId && view.thread?.projectId===config.projectId &&
+    view.thread.threadId===attempt.thread.threadId && view.thread.providerInstanceId===attempt.provider &&
+    attempt.launch?.modelSelection?.instanceId===attempt.provider,'QualificationOwnerMismatch');
   const result=view.items?.filter(i=>i.type==='assistant_message' && i.status==='completed').at(-1);
   const text=result?.text?.replace(/^```(?:json)?\s*|\s*```$/g,'');
-  requireThat(!view.thread.activeRunId && JSON.stringify(JSON.parse(text).colors)===JSON.stringify(attempt.colors),'NativeImageQualificationPendingOrFailed');
+  const colors=JSON.parse(text).colors;
+  // The fixture's [0,255,0] is also named lime. Accept only that exact
+  // synonym in its expected position; retain every frozen attempt byte.
+  requireThat(!view.thread.activeRunId && Array.isArray(colors) && colors.length===attempt.colors.length &&
+    colors.every((color,i)=>color===attempt.colors[i] || (attempt.colors[i]==='green' && color==='lime')),
+    'NativeImageQualificationPendingOrFailed');
   const q={schema:1,homeEnvironment:env.environmentId,serverVersion:env.serverVersion,sourceRevision:config.sourceRevision,
     launchSameThread:attempt.launchSameThread,sendSameMessage:attempt.sendSameMessage,ambiguousPolicy:'reconcile-only',providers:[...new Set([
       ...(config.qualification?.serverVersion===env.serverVersion && config.qualification?.sourceRevision===config.sourceRevision ? config.qualification.providers : []),attempt.provider])],
