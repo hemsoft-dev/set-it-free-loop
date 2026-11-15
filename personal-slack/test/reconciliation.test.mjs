@@ -11,7 +11,7 @@ const payload=(ts='1700000000.000001',extra={})=>({type:'event_callback',team_id
   event:{type:'message',channel_type:'im',channel:'DOWNER',user:EXPECTED.user,ts,
     text:'Help with https://relias-engineering.slack.com/archives/CTARGET/p1700000000000001',...extra}});
 
-function fixture(t,mode,fault) {
+function fixture(t,mode,fault,strictLimit=true) {
   const root=mkdtempSync(join(tmpdir(),'sfl-reconcile-large-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const f={root,mode,fault,capture:mode==='launch',writes:[],reads:[],store:new Store(root)};
   const config={projectId:'personal',workspace:root,helper:join(root,'run.mjs'),qualification:{providers:['codex']}};
@@ -21,7 +21,7 @@ function fixture(t,mode,fault) {
   const chunk=(offset=0)=>{
     let text=f.message;
     if(f.fault==='tail')text=text.slice(0,-1)+'!';
-    const end=Math.min(offset+50000,text.length);
+    const end=Math.min(offset+20000,text.length);
     return {itemId:f.fault==='item'&&offset?'wrong-item':'source-item',messageId:'message-exact',sourceThreadId:f.fault==='source'?'foreign-thread':f.threadId,
       type:'user_message',createdBy:'agent',status:'completed',position:1,text:text.slice(offset,end),
       textTruncated:end<text.length,nextTextOffset:f.fault==='offset'?offset:(end<text.length?end:null)};
@@ -34,13 +34,18 @@ function fixture(t,mode,fault) {
       throw new Error('T3TransportUncertain');
     }
     if(tool==='t3_thread_list')return {threads:[{threadId:f.threadId,projectId:'personal',title:f.entry.intent.args.title}],nextCursor:null};
-    assert.equal(tool,'t3_thread_read');assert.equal(args.maxCharsPerItem,50000);f.reads.push(args);
+    assert.equal(tool,'t3_thread_read');f.reads.push(args);
+    if(strictLimit && args.maxCharsPerItem>20000)throw Object.assign(new Error('InvalidArguments'),{code:'InvalidArguments'});
     if(args.itemId) {
       assert.equal(args.itemId,'source-item');
       return {thread:{...thread(),...(f.fault==='project'?{projectId:'other-project'}:{})},items:[chunk(args.textOffset)],hasMore:false};
     }
-    if(args.afterPosition===undefined && mode==='launch')return {thread:thread(),items:[chunk()],hasMore:false,nextPosition:1};
-    if(args.afterPosition===undefined)return {thread:thread(),items:[{type:'assistant_message',text:'Unrelated old activity',position:0}],hasMore:true,nextPosition:0};
+    // Current T3 defaults to the newest page. nextPosition is a forward
+    // cursor, so following it cannot recover the omitted older source.
+    if(args.afterPosition===undefined)return {thread:thread(),items:[{type:'assistant_message',text:'Newest unrelated activity',position:300}],hasMore:true,nextPosition:300,earlierPosition:200};
+    if(args.afterPosition===300)return {thread:thread(),items:[],hasMore:false,nextPosition:null};
+    if(args.afterPosition===-1 && mode==='launch')return {thread:thread(),items:[chunk()],hasMore:false,nextPosition:1};
+    if(args.afterPosition===-1)return {thread:thread(),items:[{type:'assistant_message',text:'Unrelated old activity',position:0}],hasMore:true,nextPosition:0};
     assert.equal(args.afterPosition,0);
     return {thread:thread(),items:[chunk()],hasMore:false,nextPosition:1};
   }};
@@ -62,7 +67,16 @@ for(const mode of ['launch','continuation','settled'])test(`large ${mode} source
   assert.equal(f.entry.status,'delivered');assert.equal(f.entry.owner.threadId,f.threadId);
   assert.equal(JSON.stringify(f.entry.intent),original);assert.equal(f.writes.length,writes);
   if(mode!=='launch')assert.ok(f.reads.some(r=>r.afterPosition===0));
-  assert.ok(f.reads.some(r=>r.itemId==='source-item'&&r.textOffset===50000));
+  assert.equal(f.reads[0].afterPosition,-1);
+  assert.ok(f.reads.every(r=>r.maxCharsPerItem<=20000));
+  assert.ok(f.reads.some(r=>r.itemId==='source-item'&&r.textOffset===20000));
+});
+
+test('explicit forward traversal finds the original source when the newest page omits it',async t=>{
+  // Isolate ordering from schema rejection so either regression fails on its own.
+  const f=fixture(t,'launch',undefined,false);await f.prepare();const writes=f.writes.length;
+  f.restart();await f.receiver.reconcile(f.entry);
+  assert.equal(f.entry.status,'delivered');assert.equal(f.reads[0].afterPosition,-1);assert.equal(f.writes.length,writes);
 });
 
 for(const fault of ['tail','item','project','offset','source'])test(`large source ${fault} evidence mismatch cannot confirm a shared prefix`,async t=>{
