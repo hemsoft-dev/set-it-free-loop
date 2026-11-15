@@ -61,7 +61,12 @@ async function main(action) {
   requireThat(!view.hasMore,'QualificationResultReadIncomplete');
   const result=view.items?.filter(i=>i.type==='assistant_message' && i.status==='completed').at(-1);
   const text=result?.text?.replace(/^```(?:json)?\s*|\s*```$/g,'');
-  requireThat(!view.thread.activeRunId && JSON.stringify(JSON.parse(text).colors)===JSON.stringify(attempt.colors),'NativeImageQualificationPendingOrFailed');
+  const colors=JSON.parse(text).colors;
+  // The fixture's [0,255,0] is also named lime. Accept only that exact
+  // synonym in its expected position; retain every frozen attempt byte.
+  requireThat(!view.thread.activeRunId && Array.isArray(colors) && colors.length===attempt.colors.length &&
+    colors.every((color,i)=>color===attempt.colors[i] || (attempt.colors[i]==='green' && color==='lime')),
+    'NativeImageQualificationPendingOrFailed');
   const q={schema:1,homeEnvironment:env.environmentId,serverVersion:env.serverVersion,sourceRevision:config.sourceRevision,
     launchSameThread:attempt.launchSameThread,sendSameMessage:attempt.sendSameMessage,ambiguousPolicy:'reconcile-only',providers:[...new Set([
       ...(config.qualification?.serverVersion===env.serverVersion && config.qualification?.sourceRevision===config.sourceRevision ? config.qualification.providers : []),attempt.provider])],

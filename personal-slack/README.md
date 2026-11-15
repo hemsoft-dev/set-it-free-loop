@@ -270,6 +270,15 @@ From that staged release, run the bounded installed-version canary:
 node qualify.mjs start
 ```
 
+The fixture calls RGB `[0,255,0]` green; verification also accepts its exact
+color name lime in the same quadrant. Other hues, positions and incomplete
+answers fail. A verifier-only maintenance correction must pass current-head
+review before use. Its `verify` command can reconcile a retained attempt for
+the still-installed source without staging a different release or running
+`start` again. Source, server and environment must still match the frozen
+attempt. This does not qualify a different source revision. Keep the original
+answer and attempt bytes unchanged in the completed archive.
+
 It respects the normal picker and current Home cap, creates an idle personal
 thread twice with one ID, then sends one image-read canary twice with one ID.
 The output contains the actual thread link. Read/wait that exact thread through
