@@ -163,6 +163,27 @@ Intake grants no writer claim. Actual task owners must check live repo/PR owners
 and acquire the canonical Mini claim before any repository or operational write.
 
 Each launch/send freezes its tool, class, args and stable request ID first.
+The native Home schema limits that message to 120000 UTF-16 code units. The
+receiver checks the full message, including the continuation prefix, before
+freeze and before dispatch. An existing oversized frozen or uncertain intent
+stays intact and is never automatically rewritten or replayed.
+
+When optional inline source/context/linked/memory/claim evidence would exceed
+that bound, the receiver retains its full JSON in an immutable per-request
+`files/<source>/packet-<sha256>.json` file. The packet includes its exact path
+and digest, explicitly marked JSON-prefix excerpts, and an
+`OwnerPacketIncomplete` notice. Original source/evidence objects remain intact.
+Charter, identity, routing, capability and all current/context attachment paths
+stay in the message. Oversized mandatory attachment metadata fails locally
+before freezing, with `OwnerPacketTooLarge`, rather than becoming uncertain at
+T3. Evidence hashes are checked again before dispatch/reconciliation.
+
+An excerpted packet remains incomplete even if its owner reads the retained
+file. Both operation admission and reply validation reject success for it;
+the owner can provide useful partial assistance with a truthful failure
+outcome. No new read attestation or automatic success upgrade is introduced.
+Ordinary complete packets keep their existing success/read-files requirements.
+
 Definite pre-send refusal retains that packet. If its registered owner settles
 before an unsent continuation reaches T3, the receiver repeats the pause, stop,
 claim, capacity and provider checks. Only a definitely unsent packet can then be

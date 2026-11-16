@@ -11,21 +11,37 @@ const payload=(ts='1700000000.000001',extra={})=>({type:'event_callback',team_id
   event:{type:'message',channel_type:'im',channel:'DOWNER',user:EXPECTED.user,ts,
     text:'Help with https://relias-engineering.slack.com/archives/CTARGET/p1700000000000001',...extra}});
 
-function fixture(t,mode,fault,strictLimit=true) {
+// Home server4736 textPageEnd and timelineItemWithin behavior, extracted from
+// server.asar SHA256 f2a8b3da61bc9019b949bb079863d2cfcf4dc13572e449dda00a54c7fd95026e.
+function textPageEnd(text,offset,maxChars){
+  const end=offset+maxChars;if(end>=text.length)return end;
+  const last=text.charCodeAt(end-1);if(last<55296||last>56319)return end;
+  return end-1>offset?end-1:end+1;
+}
+function withinBudget(makeItem,maxChars,budget=30000-4000){
+  // Reserve envelope/thread metadata from the native 30000-byte result budget.
+  const full=makeItem(maxChars);if(Buffer.byteLength(JSON.stringify(full))<=budget)return full;
+  let low=2,high=maxChars-1,best=1;
+  while(low<=high){const mid=Math.floor((low+high)/2);
+    if(Buffer.byteLength(JSON.stringify(makeItem(mid)))<=budget){best=mid;low=mid+1;}else high=mid-1;}
+  return makeItem(Math.max(best,1));
+}
+
+function fixture(t,mode,fault) {
   const root=mkdtempSync(join(tmpdir(),'sfl-reconcile-large-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
   const f={root,mode,fault,capture:mode==='launch',writes:[],reads:[],store:new Store(root)};
   const config={projectId:'personal',workspace:root,helper:join(root,'run.mjs'),qualification:{providers:['codex']}};
   const slack={verifyDM:async()=>{},reaction:async()=>{},readLinked:async reference=>({reference,complete:true,targetFound:true,
-    messages:[{type:'message',ts:'1700000000.000001',text:'large untrusted evidence '.repeat(2800)+'\u{1f600}'}]})};
+    messages:[{type:'message',ts:'1700000000.000001',text:'"\\'.repeat(30000)+'\u{1f600}'}]})};
   const thread=()=>({threadId:f.threadId,projectId:'personal',latestRunId:'run-exact',link:'t3-thread://exact-owner'});
-  const chunk=(offset=0)=>{
+  const chunk=(offset=0,maxChars=20000)=>withinBudget(chars=>{
     let text=f.message;
     if(f.fault==='tail')text=text.slice(0,-1)+'!';
-    const end=Math.min(offset+20000,text.length);
+    const end=textPageEnd(text,offset,chars);
     return {itemId:f.fault==='item'&&offset?'wrong-item':'source-item',messageId:'message-exact',sourceThreadId:f.fault==='source'?'foreign-thread':f.threadId,
       type:'user_message',createdBy:'agent',status:'completed',position:1,text:text.slice(offset,end),
       textTruncated:end<text.length,nextTextOffset:f.fault==='offset'?offset:(end<text.length?end:null)};
-  };
+  },Math.min(maxChars,20000));
   const t3={call:async(tool,args)=>{
     if(['t3_thread_launch','t3_thread_send'].includes(tool)) {
       f.writes.push({tool,args:structuredClone(args)});
@@ -35,10 +51,9 @@ function fixture(t,mode,fault,strictLimit=true) {
     }
     if(tool==='t3_thread_list')return {threads:[{threadId:f.threadId,projectId:'personal',title:f.entry.intent.args.title}],nextCursor:null};
     assert.equal(tool,'t3_thread_read');f.reads.push(args);
-    if(strictLimit && args.maxCharsPerItem>20000)throw Object.assign(new Error('InvalidArguments'),{code:'InvalidArguments'});
     if(args.itemId) {
       assert.equal(args.itemId,'source-item');
-      return {thread:{...thread(),...(f.fault==='project'?{projectId:'other-project'}:{})},items:[chunk(args.textOffset)],hasMore:false};
+      return {thread:{...thread(),...(f.fault==='project'?{projectId:'other-project'}:{})},items:[chunk(args.textOffset,args.maxCharsPerItem)],hasMore:false};
     }
     // Current T3 defaults to the newest page. nextPosition is a forward
     // cursor, so following it cannot recover the omitted older source.
@@ -57,6 +72,7 @@ function fixture(t,mode,fault,strictLimit=true) {
     if(mode!=='launch') { f.receiver.accept(payload());await f.receiver.pump();f.capture=true; }
     f.key=f.receiver.accept(mode==='launch'?payload():payload('1700000001.000002',{thread_ts:'1700000000.000001'}));
     await f.receiver.pump();assert.equal(f.entry.status,'uncertain');assert.ok(f.message.length>50000);
+    assert.ok(f.message.length<=120000);assert.equal(f.entry.packetEvidence.complete,false);
   };
   f.restart();return f;
 }
@@ -69,14 +85,33 @@ for(const mode of ['launch','continuation','settled'])test(`large ${mode} source
   if(mode!=='launch')assert.ok(f.reads.some(r=>r.afterPosition===0));
   assert.equal(f.reads[0].afterPosition,-1);
   assert.ok(f.reads.every(r=>r.maxCharsPerItem<=20000));
-  assert.ok(f.reads.some(r=>r.itemId==='source-item'&&r.textOffset===20000));
+  assert.ok(f.reads.some(r=>r.itemId==='source-item'&&r.textOffset<20000));
 });
 
 test('explicit forward traversal finds the original source when the newest page omits it',async t=>{
-  // Isolate ordering from schema rejection so either regression fails on its own.
-  const f=fixture(t,'launch',undefined,false);await f.prepare();const writes=f.writes.length;
+  const f=fixture(t,'launch');await f.prepare();const writes=f.writes.length;
   f.restart();await f.receiver.reconcile(f.entry);
   assert.equal(f.entry.status,'delivered');assert.equal(f.reads[0].afterPosition,-1);assert.equal(f.writes.length,writes);
+});
+
+test('actual UTF-16 surrogate backoff, byte-budget cuts and removed timeline tail reconcile exactly',async()=>{
+  const expected='a'.repeat(19999)+'\u{1f600}'+'"\\'.repeat(30000)+'tail\u{1f600}',reads=[];
+  const thread={threadId:'owner',projectId:'personal'};
+  const item=(offset,maxChars)=>withinBudget(chars=>{
+    const end=textPageEnd(expected,offset,chars),truncated=expected.length>end;
+    return{itemId:'source-item',messageId:'message-exact',sourceThreadId:'owner',type:'user_message',
+      createdBy:'agent',status:'completed',position:3,text:expected.slice(offset,end),textTruncated:truncated,nextTextOffset:truncated?end:null};
+  },Math.min(maxChars,20000));
+  const t3={call:async(tool,args)=>{
+    assert.equal(tool,'t3_thread_read');reads.push(args);
+    if(args.itemId)return{thread,items:[item(args.textOffset,args.maxCharsPerItem)],hasMore:false};
+    if(args.afterPosition===-1)return{thread,items:[{type:'assistant_message',text:'Earlier activity; budget removed the tail',position:1}],hasMore:true,nextPosition:1};
+    assert.equal(args.afterPosition,1);return{thread,items:[item(0,args.maxCharsPerItem)],hasMore:false,nextPosition:3};
+  }};
+  const receiver=new Receiver({store:{state:{}},slack:{},t3,config:{projectId:'personal'},identity:{}});
+  assert.ok(await receiver.exactSourceView('owner',expected));
+  const offsets=reads.filter(a=>a.itemId).map(a=>a.textOffset);
+  assert.equal(offsets[0],19999);assert.ok(offsets.some((offset,index)=>index>0&&offset-offsets[index-1]<19999));
 });
 
 for(const fault of ['tail','item','project','offset','source'])test(`large source ${fault} evidence mismatch cannot confirm a shared prefix`,async t=>{
