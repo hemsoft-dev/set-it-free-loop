@@ -177,6 +177,11 @@ Charter, identity, routing, capability and all current/context attachment paths
 stay in the message. Oversized mandatory attachment metadata fails locally
 before freezing, with `OwnerPacketTooLarge`, rather than becoming uncertain at
 T3. Evidence hashes are checked again before dispatch/reconciliation.
+Packet files use the existing temporary-file, fsync and rename publication path.
+An interrupted process can leave a temporary file, but does not expose a partial
+digest-named packet. Retry preserves the source and capability and publishes the
+same complete evidence. Existing digest-named files are verified, never repaired
+by overwriting a failed hash check. This does not recover older partial files.
 
 An excerpted packet remains incomplete even if its owner reads the retained
 file. Both operation admission and reply validation reject success for it;

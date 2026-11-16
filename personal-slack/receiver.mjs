@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, statSy
 import { join } from 'node:path';
 import { candidate, SlackError } from './slack.mjs';
 import { admission, ownerAvailable, CHIEF_PIN } from './t3.mjs';
-import { hash, requireThat } from './store.mjs';
+import { atomic, hash, requireThat } from './store.mjs';
 import { operationBody, storedBody } from './operations.mjs';
 import { sourceLinks, LINK_LIMITS } from './linked.mjs';
 
@@ -158,7 +158,7 @@ If a threaded continuation delivers another source, independently account for it
       sections[key]=boundedSection(original[key],{...reference,section:key},budget);omitted.add(key);
     }
     if(existsSync(path))requireThat(hash(readFileSync(path))===sha256,'PacketEvidenceChanged');
-    else writeFileSync(path,bytes,{flag:'wx',mode:0o600});
+    else atomic(path,bytes);
     e.packetEvidence={complete:false,...reference,omittedSections:[...omitted]};return render();
   }
   async freeze(e, { supersedeUnsent = false } = {}) {
