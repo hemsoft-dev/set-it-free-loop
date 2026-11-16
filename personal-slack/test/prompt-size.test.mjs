@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,readFileSync,writeFileSync} from 'node:fs';
+import {mkdtempSync,rmSync,readFileSync,writeFileSync,readdirSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Receiver,signOperation} from '../receiver.mjs';
@@ -33,6 +34,48 @@ function fixture(t,{settled=false,ambiguous=false}={}) {
   f.request=(ts,extra={})=>{const key=f.receiver.accept(payload(ts,extra));const e=f.store.state.requests[key];e.linked=linked();return e;};
   f.restart();return f;
 }
+
+test('a crash during packet publication leaves no partial final file and the same request recovers',async t=>{
+  const f=fixture(t);const e=f.request();
+  await f.receiver.attachments(e);f.receiver.save();
+  const receiverUrl=new URL('../receiver.mjs',import.meta.url).href;
+  const storeUrl=new URL('../store.mjs',import.meta.url).href;
+  // Abruptly terminate an isolated process halfway through the real packet
+  // write. No catch/finally or graceful cleanup can hide a partial publication.
+  const script=`
+    import fs from 'node:fs';
+    import {syncBuiltinESMExports} from 'node:module';
+    const [root,key,receiverUrl,storeUrl,config,identity]=process.argv.slice(1);
+    const {Receiver}=await import(receiverUrl);const {Store}=await import(storeUrl);
+    const store=new Store(root),original=fs.writeFileSync;
+    fs.writeFileSync=(target,bytes,...options)=>{
+      if(typeof bytes==='string' && bytes.length>120000 && bytes.startsWith('{"source":')){
+        original(target,bytes.slice(0,4096),...options);process.exit(79);
+      }
+      return original(target,bytes,...options);
+    };
+    syncBuiltinESMExports();
+    const receiver=new Receiver({store,config:JSON.parse(config),identity:JSON.parse(identity)});
+    receiver.prompt(store.state.requests[key],{});
+    process.exit(80);
+  `;
+  const child=spawnSync(process.execPath,['--input-type=module','--eval',script,
+    f.root,e.key,receiverUrl,storeUrl,JSON.stringify(f.receiver.config),JSON.stringify(EXPECTED)],
+  {encoding:'utf8',timeout:10000});
+  assert.equal(child.status,79,child.stderr || child.error?.message);
+  const directory=join(f.root,'files',e.key);
+  assert.deepEqual(readdirSync(directory).filter(name=>/^packet-[a-f0-9]{64}\.json$/.test(name)),[],
+    'a killed write must not expose a partial file at the digest-named path');
+  const source=JSON.stringify(e.source),linkedEvidence=JSON.stringify(e.linked);
+  const capability=readFileSync(join(directory,'owner.cap'));
+  f.restart();const restored=f.store.state.requests[e.key];
+  await f.receiver.pump();
+  assert.equal(restored.status,'delivered');assert.equal(f.writes.length,1);
+  assert.equal(f.writes[0].args.clientRequestId,`personal-slack-${e.key}`);
+  assert.equal(JSON.stringify(restored.source),source);assert.equal(JSON.stringify(restored.linked),linkedEvidence);
+  assert.deepEqual(readFileSync(join(directory,'owner.cap')),capability);
+  assert.equal(hash(readFileSync(restored.packetEvidence.path)),restored.packetEvidence.sha256);
+});
 
 for(const mode of ['launch','continuation','settled'])test(`oversized ${mode} reaches an owner within native size bound without impossible uncertainty`,async t=>{
   const f=fixture(t,{settled:mode==='settled'});
