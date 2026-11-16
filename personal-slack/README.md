@@ -168,11 +168,13 @@ receiver checks the full message, including the continuation prefix, before
 freeze and before dispatch. An existing oversized frozen or uncertain intent
 stays intact and is never automatically rewritten or replayed.
 
-When optional inline source/context/linked/memory/claim evidence would exceed
-that bound, the receiver retains its full JSON in an immutable per-request
+When inline source/context/linked/memory/claim evidence would exceed that
+bound, the receiver retains its full JSON in an immutable per-request
 `files/<source>/packet-<sha256>.json` file. The packet includes its exact path
-and digest, explicitly marked JSON-prefix excerpts, and an
-`OwnerPacketIncomplete` notice. Original source/evidence objects remain intact.
+and digest, explicitly marked JSON-prefix excerpts, and a completeness notice.
+Advisory memory, recent owner pointers and historical claim snapshots are
+shortened before source, completed-task context or linked evidence. Original
+source/evidence and durable memory objects remain intact.
 Charter, identity, routing, capability and all current/context attachment paths
 stay in the message. Oversized mandatory attachment metadata fails locally
 before freezing, with `OwnerPacketTooLarge`, rather than becoming uncertain at
@@ -183,11 +185,24 @@ digest-named packet. Retry preserves the source and capability and publishes the
 same complete evidence. Existing digest-named files are verified, never repaired
 by overwriting a failed hash check. This does not recover older partial files.
 
-An excerpted packet remains incomplete even if its owner reads the retained
-file. Both operation admission and reply validation reject success for it;
-the owner can provide useful partial assistance with a truthful failure
-outcome. No new read attestation or automatic success upgrade is introduced.
-Ordinary complete packets keep their existing success/read-files requirements.
+If source, completed-task context or linked evidence is excerpted, the packet
+has an `OwnerPacketIncomplete` notice. Both operation admission and reply
+validation reject success even if the owner later reads the retained file;
+useful partial assistance may use a truthful failure outcome.
+
+Advisory-only excerpts carry `OwnerContextExcerpted` instead. Such a newly
+frozen packet explicitly records `requestComplete:true` and advisory-only
+omissions, while `complete:false` still means the inline snapshot is partial.
+Background clipping alone does not block a completed request. Owners must read
+and verify omitted background before relying on it when the task needs it.
+Every retained snapshot still passes its digest check before dispatch or
+reconciliation. Required attachment reads, linked-read completeness, fixed DM,
+signatures and outcome ordering apply unchanged. The owner helper cannot submit
+completeness flags or change the omitted-section list.
+
+Legacy partial packets without that explicit request-completeness provenance
+stay incomplete. No frozen intent is rewritten or upgraded, and no new read
+attestation is introduced. Ordinary complete packets keep their existing rules.
 
 Definite pre-send refusal retains that packet. If its registered owner settles
 before an unsent continuation reaches T3, the receiver repeats the pause, stop,

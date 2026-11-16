@@ -13,6 +13,8 @@ const payload=(ts='1700000000.000001',extra={})=>({type:'event_callback',team_id
   event:{type:'message',channel_type:'im',channel:'DOWNER',user:EXPECTED.user,ts,text:'Help with this message',...extra}});
 const linked=()=>({finished:true,references:[],errors:[],snapshots:[{complete:true,finished:true,files:[],
   messages:Array.from({length:7},(_,i)=>({ts:`1700000000.00000${i}`,text:'x'.repeat(18000)}))}]});
+const advisoryMemory=(count=200)=>Object.fromEntries(Array.from({length:count},(_,i)=>[
+  `fact-${i}`,{text:'m'.repeat(4000),source:'a'.repeat(64),updatedAt:1}]));
 
 function fixture(t,{settled=false,ambiguous=false}={}) {
   const root=mkdtempSync(join(tmpdir(),'sfl-packet-bound-'));t.after(()=>rmSync(root,{recursive:true,force:true}));
@@ -125,6 +127,99 @@ test('incomplete packed evidence cannot claim success through admission or retai
   const partial=enqueue(f.root,{...failure,signature:signOperation(secret,failure)});writeFileSync(partial.path,partial.bytes);
   await f.receiver.pump();assert.equal(f.store.state.operations[partial.id].status,'delivered');
   assert.equal(e.outcome.kind,'failure');assert.equal(f.replies.length,1);assert.equal(f.replies[0].args.channel,'DOWNER');
+});
+
+for(const [name,count,messageCount] of [['largest advisory section',200,0],['larger required evidence',20,5]])
+test(`advisory memory does not force a fully evidenced request to fail with ${name}`,async t=>{
+  const f=fixture(t);
+  f.store.state.memory=advisoryMemory(count);
+  const e=f.request();e.linked={finished:true,references:[],errors:[],snapshots:[]};
+  if(messageCount){e.linked=linked();e.linked.snapshots[0].messages.length=messageCount;}
+  await f.receiver.pump();
+  assert.equal(e.status,'delivered');assert.equal(e.packetEvidence.complete,false);
+  assert.deepEqual(e.packetEvidence.omittedSections,['memory']);
+  assert.ok(e.intent.args.message.length<=LIMIT);
+  const evidence=JSON.parse(readFileSync(e.packetEvidence.path));
+  assert.deepEqual(evidence.memory,f.store.state.memory);assert.deepEqual(evidence.source,e.source);
+  assert.ok(e.intent.args.message.includes(JSON.stringify(e.linked)));
+  const intent=JSON.stringify(e.intent);f.restart();
+  const body={operation:'complete-request',kind:'success',text:'The requested answer is complete.',readFiles:[],source:e.key,thread:e.owner.threadId};
+  const secret=readFileSync(join(f.root,'files',e.key,'owner.cap'));
+  const item=enqueue(f.root,{...body,signature:signOperation(secret,body)});writeFileSync(item.path,item.bytes);
+  await f.receiver.pump();
+  assert.equal(f.store.state.operations[item.id]?.status,'delivered');
+  assert.equal(f.store.state.requests[e.key].outcome?.kind,'success');assert.equal(f.replies.length,1);
+  assert.equal(JSON.stringify(f.store.state.requests[e.key].intent),intent);assert.equal(f.writes.length,1);
+  assert.equal(f.replies[0].args.channel,'DOWNER');
+  assert.ok(e.intent.args.message.includes('OwnerContextExcerpted'));
+  assert.ok(!e.intent.args.message.includes('OwnerPacketIncomplete'));
+});
+
+for(const section of ['source','context','linked'])test(`advisory excerpts do not excuse incomplete ${section} evidence`,async t=>{
+  const f=fixture(t);f.store.state.memory=advisoryMemory();
+  const e=f.request();e.linked={finished:true,references:[],errors:[],snapshots:[]};
+  if(section==='source')e.source.blocks=Array.from({length:50},()=>({type:'section',text:{type:'plain_text',text:'x'.repeat(3000)}}));
+  if(section==='context')e.context={source:{text:'prior request'},linked:linked(),previousAnswer:'x'.repeat(35000),files:[]};
+  if(section==='linked')e.linked=linked();
+  await f.receiver.pump();
+  assert.equal(e.status,'delivered');assert.ok(e.packetEvidence.omittedSections.includes(section));
+  assert.equal(e.packetEvidence.requestComplete,false);
+  assert.ok(e.intent.args.message.includes('OwnerPacketIncomplete'));
+  // A completeness boolean alone cannot override required-section omissions.
+  e.packetEvidence.requestComplete=true;
+  const op={operation:'incomplete-answer',kind:'success',text:'Cannot claim complete.',readFiles:[],source:e.key,thread:e.owner.threadId};
+  const secret=readFileSync(join(f.root,'files',e.key,'owner.cap'));
+  const item=enqueue(f.root,{...op,signature:signOperation(secret,op)});writeFileSync(item.path,item.bytes);
+  await f.receiver.loadOperations();assert.equal(f.store.state.operations[item.id],undefined);
+  assert.equal(f.store.state.incidents[item.id].reason,'OwnerPacketIncomplete');
+  const {source,thread,...body}=op;
+  assert.throws(()=>f.receiver.validateReply({...body,source,thread,id:item.id,bodyHash:hash(JSON.stringify(body))}),/OwnerPacketIncomplete/);
+  assert.equal(f.replies.length,0);
+});
+
+for(const fault of ['UnreadAttachment','LinkedReadIncomplete'])test(`advisory-only packing preserves ${fault} checks`,async t=>{
+  const f=fixture(t);f.store.state.memory=advisoryMemory();
+  const e=f.request();e.linked={finished:true,references:[],errors:[],snapshots:[]};
+  if(fault==='UnreadAttachment'){
+    const path=join(f.root,'required-image.png');writeFileSync(path,'local fixture image');
+    e.files=[{id:'FIMAGE',path,sha256:hash(readFileSync(path)),size:19}];
+  }else e.linked.errors=['retained inaccessible linked message'];
+  await f.receiver.pump();assert.equal(e.packetEvidence.requestComplete,true);
+  if(fault==='UnreadAttachment')assert.ok(e.intent.args.message.includes(JSON.stringify(e.files[0].path)));
+  const op={operation:'guarded-answer',kind:'success',text:'Missing required read cannot pass.',readFiles:[],source:e.key,thread:e.owner.threadId};
+  const secret=readFileSync(join(f.root,'files',e.key,'owner.cap'));
+  const item=enqueue(f.root,{...op,signature:signOperation(secret,op)});writeFileSync(item.path,item.bytes);
+  await f.receiver.loadOperations();assert.equal(f.store.state.operations[item.id],undefined);
+  assert.equal(f.store.state.incidents[item.id].reason,fault);
+  const {source,thread,...body}=op;
+  assert.throws(()=>f.receiver.validateReply({...body,source,thread,id:item.id,bodyHash:hash(JSON.stringify(body))}),new RegExp(fault));
+  assert.equal(f.replies.length,0);
+});
+
+test('advisory-only retained evidence is still hash-checked before ambiguous recovery',async t=>{
+  const f=fixture(t,{ambiguous:true});f.store.state.memory=advisoryMemory();
+  const e=f.request();e.linked={finished:true,references:[],errors:[],snapshots:[]};
+  await f.receiver.pump();assert.equal(e.status,'uncertain');assert.equal(e.packetEvidence.requestComplete,true);
+  const intent=JSON.stringify(e.intent),writes=f.writes.length;
+  writeFileSync(e.packetEvidence.path,'altered advisory snapshot');
+  await assert.rejects(f.receiver.deliver(e),/PacketEvidenceChanged/);
+  assert.equal(JSON.stringify(e.intent),intent);assert.equal(e.status,'uncertain');assert.equal(f.writes.length,writes);
+});
+
+test('legacy partial-packet metadata stays incomplete without changing its frozen intent',async t=>{
+  const f=fixture(t);f.store.state.memory=advisoryMemory();
+  const e=f.request();e.linked={finished:true,references:[],errors:[],snapshots:[]};await f.receiver.pump();
+  // Prior releases recorded only complete:false, path, digest and omissions.
+  delete e.packetEvidence.requestComplete;f.receiver.save();
+  const intent=JSON.stringify(e.intent),writes=f.writes.length;f.restart();
+  const restored=f.store.state.requests[e.key];
+  const op={operation:'legacy-answer',kind:'success',text:'Legacy incomplete packet remains held.',readFiles:[],source:e.key,thread:e.owner.threadId};
+  const secret=readFileSync(join(f.root,'files',e.key,'owner.cap'));
+  const item=enqueue(f.root,{...op,signature:signOperation(secret,op)});writeFileSync(item.path,item.bytes);
+  await f.receiver.loadOperations();assert.equal(f.store.state.operations[item.id],undefined);
+  const {source,thread,...body}=op;
+  assert.throws(()=>f.receiver.validateReply({...body,source,thread,id:item.id,bodyHash:hash(JSON.stringify(body))}),/OwnerPacketIncomplete/);
+  assert.equal(JSON.stringify(restored.intent),intent);assert.equal(f.writes.length,writes);assert.equal(f.replies.length,0);
 });
 
 test('quote-heavy Unicode context is retained intact while its encoded packet stays bounded',async t=>{
